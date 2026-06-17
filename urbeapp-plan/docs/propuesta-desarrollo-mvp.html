@@ -1,0 +1,1524 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Propuesta de Desarrollo - Plataforma Inmobiliaria</title>
+    <style>
+        :root {
+            --primary: #2d5a7b;
+            --primary-dark: #1e3d5c;
+            --primary-light: #e8f0f5;
+            --secondary: #5a6872;
+            --success: #3d7a5c;
+            --warning: #8b6914;
+            --danger: #8b3d3d;
+            --bg-light: #f5f7f9;
+            --bg-white: #ffffff;
+            --text-dark: #2c3e50;
+            --text-muted: #5a6872;
+            --border: #d8dfe6;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.7;
+            color: var(--text-dark);
+            background: var(--bg-light);
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: var(--bg-white);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+        }
+
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, #2d5a7b 0%, #1e3d5c 100%);
+            color: white;
+            padding: 3rem 2rem;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.2rem;
+            margin-bottom: 0.5rem;
+            font-weight: 700;
+        }
+
+        .header .subtitle {
+            font-size: 1.3rem;
+            opacity: 0.9;
+            font-weight: 300;
+        }
+
+        .header-meta {
+            display: flex;
+            justify-content: center;
+            gap: 2rem;
+            margin-top: 1.5rem;
+            font-size: 0.9rem;
+            opacity: 0.85;
+        }
+
+        /* PDF Button */
+        .pdf-button-container {
+            padding: 1rem 2rem;
+            background: #f5f7f9;
+            text-align: right;
+            border-bottom: 1px solid #d8dfe6;
+        }
+
+        .pdf-button {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.6rem 1.2rem;
+            background: #2d5a7b;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .pdf-button:hover {
+            background: #1e3d5c;
+        }
+
+        .pdf-button .icon {
+            font-weight: bold;
+            font-size: 1rem;
+        }
+
+        /* Content */
+        .content {
+            padding: 2rem;
+        }
+
+        /* Sections */
+        .section {
+            margin-bottom: 2.5rem;
+        }
+
+        .section-title {
+            font-size: 1.4rem;
+            color: #2d5a7b;
+            border-bottom: 3px solid #2d5a7b;
+            padding-bottom: 0.5rem;
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .section-title .number {
+            background: #2d5a7b;
+            color: white;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.9rem;
+            font-weight: bold;
+        }
+
+        .subsection {
+            margin: 1.5rem 0;
+        }
+
+        .subsection-title {
+            font-size: 1.1rem;
+            color: #2c3e50;
+            margin-bottom: 1rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .subsection-title .icon {
+            color: #2d5a7b;
+            font-weight: bold;
+        }
+
+        /* Tables */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+            font-size: 0.95rem;
+        }
+
+        th, td {
+            padding: 0.75rem 1rem;
+            text-align: left;
+            border-bottom: 1px solid #d8dfe6;
+        }
+
+        th {
+            background: #f5f7f9;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+
+        tr:hover {
+            background: #f5f7f9;
+        }
+
+        /* Cards */
+        .card {
+            background: #ffffff;
+            border: 1px solid #d8dfe6;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin: 1rem 0;
+        }
+
+        .card-highlight {
+            border-left: 4px solid #2d5a7b;
+        }
+
+        .card-success {
+            border-left: 4px solid #3d7a5c;
+            background: #f4f9f6;
+        }
+
+        .card-warning {
+            border-left: 4px solid #8b6914;
+            background: #faf8f0;
+        }
+
+        /* Price boxes */
+        .price-box {
+            background: linear-gradient(135deg, #2d5a7b 0%, #1e3d5c 100%);
+            color: white;
+            padding: 1.5rem;
+            border-radius: 8px;
+            text-align: center;
+            margin: 1rem 0;
+        }
+
+        .price-box .label {
+            font-size: 0.9rem;
+            opacity: 0.9;
+            margin-bottom: 0.5rem;
+        }
+
+        .price-box .amount {
+            font-size: 2rem;
+            font-weight: 700;
+        }
+
+        /* Plan cards */
+        .plans-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1rem;
+            margin: 1.5rem 0;
+        }
+
+        .plan-card {
+            border: 2px solid #d8dfe6;
+            border-radius: 12px;
+            padding: 1.5rem;
+            text-align: center;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .plan-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 20px -5px rgba(0, 0, 0, 0.08);
+        }
+
+        .plan-card.recommended {
+            border-color: #2d5a7b;
+            position: relative;
+        }
+
+        .plan-card.recommended::before {
+            content: '* Recomendado';
+            position: absolute;
+            top: -12px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #2d5a7b;
+            color: white;
+            padding: 0.25rem 1rem;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .plan-card .plan-name {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 0.5rem;
+        }
+
+        .plan-card .plan-price {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #2d5a7b;
+            margin-bottom: 1rem;
+        }
+
+        .plan-card .plan-price span {
+            font-size: 0.9rem;
+            font-weight: 400;
+            color: #5a6872;
+        }
+
+        .plan-card ul {
+            text-align: left;
+            list-style: none;
+            font-size: 0.85rem;
+        }
+
+        .plan-card ul li {
+            padding: 0.4rem 0;
+            border-bottom: 1px solid #d8dfe6;
+        }
+
+        .plan-card ul li:last-child {
+            border-bottom: none;
+        }
+
+        .plan-card ul li.included::before {
+            content: '+';
+            color: #3d7a5c;
+            font-weight: bold;
+            margin-right: 0.5rem;
+        }
+
+        .plan-card ul li.excluded::before {
+            content: '-';
+            color: #8b3d3d;
+            font-weight: bold;
+            margin-right: 0.5rem;
+        }
+
+        /* Timeline */
+        .timeline {
+            position: relative;
+            padding-left: 2rem;
+        }
+
+        .timeline::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 3px;
+            background: #d8dfe6;
+        }
+
+        .timeline-item {
+            position: relative;
+            padding-bottom: 1.5rem;
+        }
+
+        .timeline-item::before {
+            content: '';
+            position: absolute;
+            left: -2rem;
+            top: 0.25rem;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #2d5a7b;
+            border: 3px solid white;
+            box-shadow: 0 0 0 2px #2d5a7b;
+        }
+
+        .timeline-item .phase {
+            font-weight: 600;
+            color: #2d5a7b;
+            font-size: 0.9rem;
+        }
+
+        .timeline-item .title {
+            font-weight: 600;
+            margin: 0.25rem 0;
+        }
+
+        .timeline-item .duration {
+            font-size: 0.85rem;
+            color: #5a6872;
+        }
+
+        /* Architecture diagram */
+        .architecture {
+            background: #f5f7f9;
+            border-radius: 8px;
+            padding: 1.5rem;
+            text-align: center;
+            font-family: monospace;
+            font-size: 0.85rem;
+            line-height: 1.4;
+            overflow-x: auto;
+        }
+
+        /* Lists */
+        ul.check-list {
+            list-style: none;
+        }
+
+        ul.check-list li {
+            padding: 0.5rem 0;
+            padding-left: 1.5rem;
+            position: relative;
+        }
+
+        ul.check-list li::before {
+            content: '+';
+            position: absolute;
+            left: 0;
+            color: #3d7a5c;
+            font-weight: bold;
+            font-size: 1.1rem;
+        }
+
+        ul.x-list {
+            list-style: none;
+        }
+
+        ul.x-list li {
+            padding: 0.5rem 0;
+            padding-left: 1.5rem;
+            position: relative;
+        }
+
+        ul.x-list li::before {
+            content: '-';
+            position: absolute;
+            left: 0;
+            color: #8b3d3d;
+            font-weight: bold;
+            font-size: 1.1rem;
+        }
+
+        /* Summary box */
+        .summary-box {
+            background: #f5f7f9;
+            border-radius: 12px;
+            padding: 2rem;
+            margin: 1.5rem 0;
+        }
+
+        .summary-box h3 {
+            color: #2d5a7b;
+            margin-bottom: 1rem;
+        }
+
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1rem;
+        }
+
+        .summary-item {
+            background: white;
+            padding: 1rem;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .summary-item .label {
+            font-size: 0.85rem;
+            color: #5a6872;
+            margin-bottom: 0.5rem;
+        }
+
+        .summary-item .value {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: #2c3e50;
+        }
+
+        /* Footer */
+        .footer {
+            background: #1e3d5c;
+            color: white;
+            padding: 2rem;
+            text-align: center;
+        }
+
+        .footer h3 {
+            margin-bottom: 1rem;
+        }
+
+        .footer-contact {
+            display: flex;
+            justify-content: center;
+            gap: 2rem;
+            flex-wrap: wrap;
+        }
+
+        .footer-contact div {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        /* Badges */
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .badge-primary {
+            background: #2d5a7b;
+            color: white;
+        }
+
+        .badge-success {
+            background: #3d7a5c;
+            color: white;
+        }
+
+        .badge-warning {
+            background: #8b6914;
+            color: white;
+        }
+
+        /* Section Headers with icons */
+        .card-header {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .card-header .icon {
+            font-weight: bold;
+            font-size: 1rem;
+        }
+
+        .card-header.success .icon {
+            color: #3d7a5c;
+        }
+
+        .card-header.danger .icon {
+            color: #8b3d3d;
+        }
+
+        .card-header.info .icon {
+            color: #2d5a7b;
+        }
+
+        /* Row highlight */
+        .row-highlight {
+            background: #f5f7f9 !important;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .plans-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .summary-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .header-meta {
+                flex-direction: column;
+                gap: 0.5rem;
+            }
+
+            .footer-contact {
+                flex-direction: column;
+                gap: 1rem;
+            }
+        }
+
+        /* Print styles - Mantener formato exacto en PDF */
+        @media print {
+            * {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+                color-adjust: exact !important;
+            }
+
+            body {
+                background: white !important;
+                margin: 0;
+                padding: 0;
+            }
+
+            .container {
+                box-shadow: none;
+                max-width: 100%;
+                margin: 0;
+            }
+
+            .pdf-button-container {
+                display: none !important;
+            }
+
+            /* Header con gradiente */
+            .header {
+                background: linear-gradient(135deg, #2d5a7b 0%, #1e3d5c 100%) !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+
+            /* Price box con gradiente */
+            .price-box {
+                background: linear-gradient(135deg, #2d5a7b 0%, #1e3d5c 100%) !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+
+            /* Footer */
+            .footer {
+                background: #1e3d5c !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+
+            /* Cards */
+            .card-success {
+                background: #f4f9f6 !important;
+                border-left: 4px solid #3d7a5c !important;
+            }
+
+            .card-warning {
+                background: #faf8f0 !important;
+                border-left: 4px solid #8b6914 !important;
+            }
+
+            .card-highlight {
+                border-left: 4px solid #2d5a7b !important;
+            }
+
+            /* Summary boxes */
+            .summary-box {
+                background: #f5f7f9 !important;
+            }
+
+            .summary-item {
+                background: white !important;
+            }
+
+            /* Architecture */
+            .architecture {
+                background: #f5f7f9 !important;
+            }
+
+            /* Tables */
+            th {
+                background: #f5f7f9 !important;
+            }
+
+            .row-highlight {
+                background: #f5f7f9 !important;
+            }
+
+            /* Badges */
+            .badge-primary {
+                background: #2d5a7b !important;
+                color: white !important;
+            }
+
+            .badge-success {
+                background: #3d7a5c !important;
+                color: white !important;
+            }
+
+            .badge-warning {
+                background: #8b6914 !important;
+                color: white !important;
+            }
+
+            /* Plan cards */
+            .plan-card.recommended {
+                border-color: #2d5a7b !important;
+            }
+
+            .plan-card.recommended::before {
+                background: #2d5a7b !important;
+                color: white !important;
+            }
+
+            /* Section numbers */
+            .section-title .number {
+                background: #2d5a7b !important;
+                color: white !important;
+            }
+
+            /* Timeline */
+            .timeline::before {
+                background: #d8dfe6 !important;
+            }
+
+            .timeline-item::before {
+                background: #2d5a7b !important;
+                box-shadow: 0 0 0 2px #2d5a7b !important;
+            }
+
+            /* Colores de texto */
+            .section-title {
+                color: #2d5a7b !important;
+                border-bottom-color: #2d5a7b !important;
+            }
+
+            .timeline-item .phase {
+                color: #2d5a7b !important;
+            }
+
+            .plan-card .plan-price {
+                color: #2d5a7b !important;
+            }
+
+            .summary-box h3 {
+                color: #2d5a7b !important;
+            }
+
+            /* Lists icons */
+            ul.check-list li::before {
+                color: #3d7a5c !important;
+            }
+
+            ul.x-list li::before {
+                color: #8b3d3d !important;
+            }
+
+            .plan-card ul li.included::before {
+                color: #3d7a5c !important;
+            }
+
+            .plan-card ul li.excluded::before {
+                color: #8b3d3d !important;
+            }
+
+            .card-header.success .icon {
+                color: #3d7a5c !important;
+            }
+
+            .card-header.danger .icon {
+                color: #8b3d3d !important;
+            }
+
+            .card-header.info .icon {
+                color: #2d5a7b !important;
+            }
+
+            /* Evitar cortes de pagina */
+            .section {
+                page-break-inside: avoid;
+            }
+
+            .card {
+                page-break-inside: avoid;
+            }
+
+            table {
+                page-break-inside: avoid;
+            }
+
+            .plan-card {
+                page-break-inside: avoid;
+            }
+
+            .timeline-item {
+                page-break-inside: avoid;
+            }
+
+            /* Sin hover en print */
+            .plan-card:hover {
+                transform: none;
+                box-shadow: none;
+            }
+
+            tr:hover {
+                background: transparent;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>Propuesta de Desarrollo</h1>
+            <div class="subtitle">Plataforma Inmobiliaria con Video</div>
+            <div class="header-meta">
+                <span>27 de Enero de 2026</span>
+                <span>|</span>
+                <span>Guadalajara, Jalisco</span>
+                <span>|</span>
+                <span>Version 1.0</span>
+            </div>
+        </div>
+
+        <!-- PDF Download Button -->
+        <div class="pdf-button-container">
+            <button class="pdf-button" onclick="downloadPDF()">
+                <span class="icon">[PDF]</span>
+                Descargar PDF
+            </button>
+        </div>
+
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+        <script>
+            function downloadPDF() {
+                const button = document.querySelector('.pdf-button-container');
+                button.style.display = 'none';
+
+                const element = document.querySelector('.container');
+                const opt = {
+                    margin: 0,
+                    filename: 'propuesta-desarrollo-mvp.pdf',
+                    image: { type: 'jpeg', quality: 0.98 },
+                    html2canvas: { scale: 2, useCORS: true },
+                    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+                };
+
+                html2pdf().set(opt).from(element).save().then(() => {
+                    button.style.display = 'block';
+                });
+            }
+        </script>
+
+        <div class="content">
+            <!-- Resumen Ejecutivo -->
+            <div class="section">
+                <h2 class="section-title">
+                    <span class="number">1</span>
+                    Resumen
+                </h2>
+                <p>Esta propuesta presenta el plan de desarrollo para una <strong>plataforma movil de busqueda de propiedades en alquiler</strong>, diferenciada por el uso de video como formato principal de presentacion y un sistema de filtros inteligentes basado en ubicacion y preferencias del usuario.</p>
+                <br>
+                <p>El proyecto contempla el desarrollo de una aplicacion movil para <strong>Android e iOS</strong>, con un backend en la nube, sistema de gestion de videos y paneles administrativos tanto para inmobiliarias como para administradores de la plataforma.</p>
+            </div>
+
+            <!-- Alcance del MVP -->
+            <div class="section">
+                <h2 class="section-title">
+                    <span class="number">2</span>
+                    Alcance del MVP
+                </h2>
+
+                <div class="subsection">
+                    <h3 class="subsection-title">
+                        <span class="icon">+</span>
+                        Funcionalidades Incluidas
+                    </h3>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Modulo</th>
+                                <th>Funcionalidades</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>Aplicacion Movil</strong></td>
+                                <td>iOS y Android</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Catalogo de Propiedades</strong></td>
+                                <td>Lista con filtros, busqueda, ordenamiento por cercania</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Sistema de Video</strong></td>
+                                <td>Reproduccion de videos asociados a cada propiedad</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Mapa Interactivo</strong></td>
+                                <td>Visualizacion de propiedades por ubicacion</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Registro de Usuarios</strong></td>
+                                <td>Correo electronico y redes sociales</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Interacciones</strong></td>
+                                <td>Likes, favoritos, historial de vistos</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Contacto Directo</strong></td>
+                                <td>Integracion con WhatsApp</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Panel Inmobiliaria</strong></td>
+                                <td>Publicacion y gestion de propiedades</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Panel Administracion</strong></td>
+                                <td>Metricas, moderacion, gestion de usuarios</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="subsection">
+                    <h3 class="subsection-title">
+                        <span class="icon">-</span>
+                        No Incluido en MVP
+                    </h3>
+                    <ul class="x-list">
+                        <li>Publicidad integrada</li>
+                        <li>Algoritmos avanzados de inteligencia artificial</li>
+                        <li>Chat interno entre usuarios y agentes</li>
+                        <li>Sistema de pagos/transacciones</li>
+                        <li>Version web completa (solo app movil)</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Arquitectura Tecnica -->
+            <div class="section">
+                <h2 class="section-title">
+                    <span class="number">3</span>
+                    Arquitectura Tecnica
+                </h2>
+
+                <div class="subsection">
+                    <h3 class="subsection-title">Stack Tecnologico</h3>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Componente</th>
+                                <th>Tecnologia</th>
+                                <th>Justificacion</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>App Movil</strong></td>
+                                <td>React Native + Expo</td>
+                                <td>Codigo unico para iOS y Android</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Backend</strong></td>
+                                <td>Supabase</td>
+                                <td>Base de datos, autenticacion, APIs</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Almacenamiento</strong></td>
+                                <td>Cloudflare R2</td>
+                                <td>Fotos y archivos estaticos</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Video Streaming</strong></td>
+                                <td>Cloudflare Stream</td>
+                                <td>Procesamiento y entrega de video</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Mapas</strong></td>
+                                <td>Google Maps API</td>
+                                <td>Geolocalizacion y visualizacion</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Analytics</strong></td>
+                                <td>Firebase Analytics</td>
+                                <td>Metricas de uso</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="architecture">
+<pre>
++-------------------------------------------------------------+
+|                        USUARIOS                             |
+|              (iOS / Android / Inmobiliarias)                |
++-----------------------------+-------------------------------+
+                              |
+                              v
++-------------------------------------------------------------+
+|                     APLICACION MOVIL                        |
+|                    (React Native + Expo)                    |
++-----------------------------+-------------------------------+
+                              |
+            +-----------------+-----------------+
+            v                 v                 v
++---------------+     +---------------+     +---------------+
+|   Supabase    |     |  Cloudflare   |     |    Google     |
+|   (Backend)   |     |   (Videos)    |     |     Maps      |
+|               |     |               |     |               |
+|  - Auth       |     |  - Stream     |     |  - Mapas      |
+|  - Database   |     |  - R2 Storage |     |  - Geocoding  |
+|  - APIs       |     |  - CDN        |     |               |
++---------------+     +---------------+     +---------------+
+</pre>
+                </div>
+            </div>
+
+            <!-- Plan de Desarrollo -->
+            <div class="section">
+                <h2 class="section-title">
+                    <span class="number">4</span>
+                    Plan de Desarrollo
+                </h2>
+
+                <div class="summary-box">
+                    <div class="summary-grid">
+                        <div class="summary-item">
+                            <div class="label">Dedicacion</div>
+                            <div class="value">40 hrs/semana</div>
+                        </div>
+                        <div class="summary-item">
+                            <div class="label">Duracion Total</div>
+                            <div class="value">10 semanas</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="timeline">
+                    <div class="timeline-item">
+                        <div class="phase">FASE 1</div>
+                        <div class="title">Setup y Fundamentos</div>
+                        <div class="duration">5 dias (Semana 1)</div>
+                    </div>
+                    <div class="timeline-item">
+                        <div class="phase">FASE 2</div>
+                        <div class="title">Autenticacion y Perfil</div>
+                        <div class="duration">5 dias (Semana 2)</div>
+                    </div>
+                    <div class="timeline-item">
+                        <div class="phase">FASE 3</div>
+                        <div class="title">Catalogo de Propiedades</div>
+                        <div class="duration">10 dias (Semanas 3-4)</div>
+                    </div>
+                    <div class="timeline-item">
+                        <div class="phase">FASE 4</div>
+                        <div class="title">Mapa e Integracion de Ubicacion</div>
+                        <div class="duration">5 dias (Semana 5)</div>
+                    </div>
+                    <div class="timeline-item">
+                        <div class="phase">FASE 5</div>
+                        <div class="title">Interacciones de Usuario</div>
+                        <div class="duration">3 dias (Semana 6)</div>
+                    </div>
+                    <div class="timeline-item">
+                        <div class="phase">FASE 6</div>
+                        <div class="title">Panel Inmobiliaria</div>
+                        <div class="duration">8 dias (Semanas 6-7)</div>
+                    </div>
+                    <div class="timeline-item">
+                        <div class="phase">FASE 7</div>
+                        <div class="title">Panel de Administracion</div>
+                        <div class="duration">4 dias (Semana 8)</div>
+                    </div>
+                    <div class="timeline-item">
+                        <div class="phase">FASE 8</div>
+                        <div class="title">Testing y Correccion de Errores</div>
+                        <div class="duration">5 dias (Semana 9)</div>
+                    </div>
+                    <div class="timeline-item">
+                        <div class="phase">FASE 9</div>
+                        <div class="title">Pulido y Lanzamiento</div>
+                        <div class="duration">5 dias (Semana 10)</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Costos del Proyecto -->
+            <div class="section">
+                <h2 class="section-title">
+                    <span class="number">5</span>
+                    Costos del Proyecto
+                </h2>
+
+                <!-- Costo de Desarrollo -->
+                <div class="subsection">
+                    <h3 class="subsection-title">A. Costo de Desarrollo</h3>
+                    <div class="price-box">
+                        <div class="label">Desarrollo del MVP Completo</div>
+                        <div class="amount">$100,000 MXN</div>
+                    </div>
+
+                    <h4 style="margin: 1.5rem 0 1rem;">Esquema de Pagos (3 pagos):</h4>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Pago</th>
+                                <th>Momento</th>
+                                <th>Monto</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>Pago 1</strong></td>
+                                <td>Inicio del proyecto</td>
+                                <td><strong>$40,000 MXN</strong> (40%)</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Pago 2</strong></td>
+                                <td>Entrega de Fase 5 (semana 6)</td>
+                                <td><strong>$30,000 MXN</strong> (30%)</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Pago 3</strong></td>
+                                <td>Entrega final y publicacion</td>
+                                <td><strong>$30,000 MXN</strong> (30%)</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <div class="card card-highlight" style="margin-top: 1rem;">
+                        <strong>Alternativa en 2 pagos:</strong>
+                        <br>- Pago 1: $50,000 MXN (50%) - Inicio del proyecto
+                        <br>- Pago 2: $50,000 MXN (50%) - Entrega final
+                    </div>
+                </div>
+
+                <!-- Licencias -->
+                <div class="subsection">
+                    <h3 class="subsection-title">B. Costos de Licencias</h3>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Concepto</th>
+                                <th>Costo</th>
+                                <th>Frecuencia</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>Apple Developer Program</td>
+                                <td>$1,782 MXN</td>
+                                <td>Anual</td>
+                            </tr>
+                            <tr>
+                                <td>Google Play Developer</td>
+                                <td>$450 MXN</td>
+                                <td>Unico</td>
+                            </tr>
+                            <tr>
+                                <td>Dominio .com</td>
+                                <td>$250 MXN</td>
+                                <td>Anual</td>
+                            </tr>
+                            <tr class="row-highlight">
+                                <td><strong>Total licencias Año 1</strong></td>
+                                <td><strong>$2,482 MXN</strong></td>
+                                <td></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Costos Operativos -->
+                <div class="subsection">
+                    <h3 class="subsection-title">C. Costos Operativos Mensuales</h3>
+
+                    <h4 style="margin: 1rem 0;">Escenario: Lanzamiento (0-500 usuarios)</h4>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Servicio</th>
+                                <th>Plan</th>
+                                <th>Costo Mensual</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>Supabase</td>
+                                <td>Pro</td>
+                                <td>$450 MXN</td>
+                            </tr>
+                            <tr>
+                                <td>Cloudflare R2 (storage)</td>
+                                <td>Pay-as-you-go</td>
+                                <td>$20-50 MXN</td>
+                            </tr>
+                            <tr>
+                                <td>Cloudflare Stream (video)</td>
+                                <td>Pay-as-you-go</td>
+                                <td>$100-250 MXN</td>
+                            </tr>
+                            <tr>
+                                <td>Google Maps API</td>
+                                <td>Free Tier</td>
+                                <td>$0 MXN</td>
+                            </tr>
+                            <tr>
+                                <td>Firebase Analytics</td>
+                                <td>Free</td>
+                                <td>$0 MXN</td>
+                            </tr>
+                            <tr class="row-highlight">
+                                <td><strong>Total mensual</strong></td>
+                                <td></td>
+                                <td><strong>$570-750 MXN</strong></td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <h4 style="margin: 1.5rem 0 1rem;">Escenario: Crecimiento (500-2,000 usuarios)</h4>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Servicio</th>
+                                <th>Plan</th>
+                                <th>Costo Mensual</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>Supabase</td>
+                                <td>Pro</td>
+                                <td>$450 MXN</td>
+                            </tr>
+                            <tr>
+                                <td>Cloudflare R2 (storage)</td>
+                                <td>Pay-as-you-go</td>
+                                <td>$100-180 MXN</td>
+                            </tr>
+                            <tr>
+                                <td>Cloudflare Stream (video)</td>
+                                <td>Pay-as-you-go</td>
+                                <td>$400-900 MXN</td>
+                            </tr>
+                            <tr>
+                                <td>Google Maps API</td>
+                                <td>Free Tier</td>
+                                <td>$0 MXN</td>
+                            </tr>
+                            <tr>
+                                <td>Monitoreo (Sentry)</td>
+                                <td>Team</td>
+                                <td>$470 MXN</td>
+                            </tr>
+                            <tr class="row-highlight">
+                                <td><strong>Total mensual</strong></td>
+                                <td></td>
+                                <td><strong>$1,420-2,000 MXN</strong></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Requisito de Hardware -->
+                <div class="subsection">
+                    <h3 class="subsection-title">D. Requisito de Hardware: Equipo macOS</h3>
+                    <div class="card card-warning">
+                        <p>Para el desarrollo y mantenimiento de la aplicacion iOS, se requiere un dispositivo con macOS y chip Apple Silicon (M2 o superior). <strong>El cliente debera proporcionar este equipo adicional al costo de desarrollo.</strong></p>
+                        <br>
+                        <p><strong>Especificaciones minimas requeridas:</strong></p>
+                        <ul style="margin-top: 0.5rem; margin-left: 1.5rem;">
+                            <li>MacBook Air con chip M2 o superior (nuevo o usado en buen estado)</li>
+                            <li>Alternativa: Mac Mini con chip M2 o superior</li>
+                            <li>Minimo 16GB de RAM y 256GB de almacenamiento</li>
+                        </ul>
+                        <br>
+                        <p><em>Este equipo es necesario para compilar, probar y publicar actualizaciones en la App Store. El equipo permanecera en posesion del desarrollador durante la vigencia del contrato de desarrollo y soporte.</em></p>
+                    </div>
+                </div>
+
+                <!-- Planes de Soporte -->
+                <div class="subsection">
+                    <h3 class="subsection-title">E. Planes de Soporte y Mantenimiento</h3>
+                    <p style="margin-bottom: 1rem;">Una vez finalizado el desarrollo del MVP y transcurridos los 30 dias de garantia incluidos, se ofrecen los siguientes planes de soporte continuo:</p>
+
+                    <div class="plans-grid">
+                        <!-- Plan Basico -->
+                        <div class="plan-card">
+                            <div class="plan-name">Basico</div>
+                            <div class="plan-price">$3,500<span>/mes</span></div>
+                            <ul>
+                                <li class="included">Bugs criticos</li>
+                                <li class="included">Monitoreo semanal</li>
+                                <li class="included">Respuesta 24-48 hrs</li>
+                                <li class="included">Parches de seguridad</li>
+                                <li class="excluded">Bugs menores</li>
+                                <li class="excluded">Optimizaciones</li>
+                            </ul>
+                            <p style="margin-top: 1rem; font-size: 0.8rem; color: #5a6872;">Ideal para lanzamiento</p>
+                        </div>
+
+                        <!-- Plan Estandar -->
+                        <div class="plan-card recommended">
+                            <div class="plan-name">Estandar</div>
+                            <div class="plan-price">$6,000<span>/mes</span></div>
+                            <ul>
+                                <li class="included">Todo lo del Basico</li>
+                                <li class="included">Bugs menores</li>
+                                <li class="included">Actualizacion deps</li>
+                                <li class="included">Optimizaciones basicas</li>
+                                <li class="included">Reporte mensual</li>
+                                <li class="included">Compat. nuevos OS</li>
+                            </ul>
+                            <p style="margin-top: 1rem; font-size: 0.8rem; color: #5a6872;">Ideal para crecimiento</p>
+                        </div>
+
+                        <!-- Plan Premium -->
+                        <div class="plan-card">
+                            <div class="plan-name">Premium</div>
+                            <div class="plan-price">$12,000<span>/mes</span></div>
+                            <ul>
+                                <li class="included">Todo lo del Estandar</li>
+                                <li class="included">Features menores</li>
+                                <li class="included">Optimiz. avanzadas</li>
+                                <li class="included">Respuesta 12-24 hrs</li>
+                                <li class="included">Soporte prioritario</li>
+                                <li class="included">Analisis de metricas</li>
+                            </ul>
+                            <p style="margin-top: 1rem; font-size: 0.8rem; color: #5a6872;">Ideal para alta traccion</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Resumen de Inversion -->
+                <div class="subsection">
+                    <h3 class="subsection-title">F. Resumen de Inversion Total</h3>
+
+                    <h4 style="margin: 1rem 0;">Costos Iniciales (Unicos)</h4>
+                    <table>
+                        <tbody>
+                            <tr>
+                                <td>Desarrollo MVP</td>
+                                <td><strong>$100,000 MXN</strong></td>
+                            </tr>
+                            <tr>
+                                <td>Licencias (Año 1)</td>
+                                <td>$2,482 MXN</td>
+                            </tr>
+                            <tr>
+                                <td>Equipo macOS (proporcionado por cliente)</td>
+                                <td>$12,000 - $20,000 MXN*</td>
+                            </tr>
+                            <tr class="row-highlight">
+                                <td><strong>Total inicial</strong></td>
+                                <td><strong>$114,482 - $122,482 MXN</strong></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <p style="font-size: 0.85rem; color: #5a6872; margin-top: 0.5rem;">*Precio aproximado segun modelo y condicion del equipo.</p>
+
+                    <div class="summary-box" style="margin-top: 1.5rem;">
+                        <h3>Inversion Año 1 Completo</h3>
+                        <div class="summary-grid">
+                            <div class="summary-item">
+                                <div class="label">Con Soporte Basico</div>
+                                <div class="value">$164,882 - $172,882 MXN</div>
+                            </div>
+                            <div class="summary-item">
+                                <div class="label">Con Soporte Estandar</div>
+                                <div class="value">$198,482 - $206,482 MXN</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Desafios Tecnicos -->
+            <div class="section">
+                <h2 class="section-title">
+                    <span class="number">6</span>
+                    Desafios Tecnicos y Optimizaciones
+                </h2>
+
+                <div class="subsection">
+                    <h3 class="subsection-title">Desafios Identificados</h3>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Desafio</th>
+                                <th>Descripcion</th>
+                                <th>Impacto</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>Rendimiento de video</strong></td>
+                                <td>Reproduccion fluida depende de conexion y optimizacion</td>
+                                <td><span class="badge badge-warning">Medio-Alto</span></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Carga de listas largas</strong></td>
+                                <td>Con miles de propiedades puede volverse lenta</td>
+                                <td><span class="badge badge-warning">Medio</span></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Precision GPS</strong></td>
+                                <td>Ubicacion puede variar en interiores</td>
+                                <td><span class="badge badge-success">Bajo</span></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Tamano de app</strong></td>
+                                <td>Assets pueden aumentar tamano de descarga</td>
+                                <td><span class="badge badge-success">Bajo</span></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="subsection">
+                    <h3 class="subsection-title">Plan de Optimizaciones Post-Lanzamiento</h3>
+
+                    <div class="card">
+                        <h4 style="color: #2d5a7b;">Corto Plazo (1-3 meses)</h4>
+                        <ul class="check-list">
+                            <li>Cache de imagenes para reducir consumo de datos</li>
+                            <li>Lazy loading de videos</li>
+                            <li>Compresion de imagenes sin perdida visible</li>
+                            <li>Paginacion optimizada</li>
+                        </ul>
+                    </div>
+
+                    <div class="card">
+                        <h4 style="color: #2d5a7b;">Mediano Plazo (3-6 meses)</h4>
+                        <ul class="check-list">
+                            <li>Pre-carga inteligente de contenido</li>
+                            <li>Multiples resoluciones de video segun conexion</li>
+                            <li>Indices de base de datos optimizados</li>
+                            <li>CDN regional para menor latencia</li>
+                        </ul>
+                    </div>
+
+                    <div class="card">
+                        <h4 style="color: #2d5a7b;">Largo Plazo (6-12 meses)</h4>
+                        <ul class="check-list">
+                            <li>Sistema de recomendaciones mejorado</li>
+                            <li>Notificaciones inteligentes</li>
+                            <li>Modo offline parcial</li>
+                            <li>Analytics avanzados de conversion</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Entregables -->
+            <div class="section">
+                <h2 class="section-title">
+                    <span class="number">7</span>
+                    Entregables
+                </h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Entregable</th>
+                            <th>Descripcion</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Aplicacion Android</strong></td>
+                            <td>Publicada en Google Play Store</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Aplicacion iOS</strong></td>
+                            <td>Publicada en Apple App Store</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Base de datos</strong></td>
+                            <td>Esquema y datos iniciales configurados</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Panel de administracion</strong></td>
+                            <td>Acceso y credenciales</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Condiciones -->
+            <div class="section">
+                <h2 class="section-title">
+                    <span class="number">8</span>
+                    Condiciones
+                </h2>
+
+                <div class="card card-success">
+                    <div class="card-header success">
+                        <span class="icon">+</span>
+                        <h4>Incluido en el desarrollo:</h4>
+                    </div>
+                    <ul class="check-list">
+                        <li>Desarrollo completo del MVP segun especificaciones</li>
+                        <li>Configuracion de servicios en la nube</li>
+                        <li>Publicacion en tiendas de aplicaciones</li>
+                        <li>30 dias de soporte post-lanzamiento para bugs criticos</li>
+                        <li>Documentacion basica del proyecto</li>
+                    </ul>
+                </div>
+
+                <div class="card" style="border-left: 4px solid #8b3d3d;">
+                    <div class="card-header danger">
+                        <span class="icon">-</span>
+                        <h4>No incluido:</h4>
+                    </div>
+                    <ul class="x-list">
+                        <li>Costos de licencias y servicios (pagados por el cliente)</li>
+                        <li>Marketing y promocion de la aplicacion</li>
+                        <li>Creacion de contenido (videos, fotos de propiedades)</li>
+                        <li>Mantenimiento posterior a los 30 dias de garantia</li>
+                        <li>Nuevas funcionalidades no especificadas en este documento</li>
+                    </ul>
+                </div>
+
+                <div class="card card-highlight">
+                    <div class="card-header info">
+                        <span class="icon">*</span>
+                        <h4>Requisitos del cliente:</h4>
+                    </div>
+                    <ul style="margin-left: 1.5rem;">
+                        <li>Proporcionar equipo macOS con chip M2 o superior (16GB RAM)</li>
+                        <li>Proporcionar contenido de prueba (10-20 propiedades con fotos/videos)</li>
+                        <li>Disponibilidad para revisiones y feedback durante el desarrollo</li>
+                        <li>Cuenta de Apple Developer (el cliente debe ser titular)</li>
+                        <li>Cuenta de Google Play Developer (el cliente debe ser titular)</li>
+                        <li>Decisiones oportunas sobre dudas de diseno o funcionalidad</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Siguiente Paso -->
+            <div class="section">
+                <h2 class="section-title">
+                    <span class="number">9</span>
+                    Siguiente Paso
+                </h2>
+                <div class="card card-success">
+                    <h4 style="margin-bottom: 1rem;">Para iniciar el proyecto se requiere:</h4>
+                    <ol style="margin-left: 1.5rem;">
+                        <li style="margin-bottom: 0.5rem;"><strong>Aprobacion</strong> de esta propuesta</li>
+                        <li style="margin-bottom: 0.5rem;"><strong>Primer pago</strong> segun el esquema seleccionado</li>
+                        <li style="margin-bottom: 0.5rem;"><strong>Entrega del equipo macOS</strong> (MacBook Air M2 o Mac Mini M2, 16GB RAM)</li>
+                        <li style="margin-bottom: 0.5rem;"><strong>Creacion de cuentas</strong> de desarrollador (Apple/Google) por parte del cliente</li>
+                    </ol>
+                    <br>
+                    <p><strong>Una vez completados estos pasos, el desarrollo comenzara en un plazo maximo de 5 dias habiles.</strong></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <h3>Contacto</h3>
+            <p style="margin-bottom: 1rem;">Para dudas o aclaraciones sobre esta propuesta:</p>
+            <div class="footer-contact">
+                <div><strong>Abraham Cabrera</strong></div>
+                <div>swacg08@gmail.com</div>
+                <div>3329483044</div>
+                <div>Guadalajara, Jalisco</div>
+            </div>
+            <br>
+            <p style="opacity: 0.7; font-size: 0.85rem;">Propuesta valida por 30 dias a partir de la fecha de emision.</p>
+        </div>
+    </div>
+</body>
+</html>
