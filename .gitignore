@@ -1,0 +1,51 @@
+# Dependencias
+node_modules/
+.pnp/
+.pnp.js
+
+# Expo / React Native
+.expo/
+.expo-shared/
+dist/
+web-build/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+
+# Builds
+build/
+*.apk
+*.aab
+*.ipa
+
+# Entornos / secretos
+.env
+.env.*
+!.env.example
+
+# Supabase local
+supabase/.branches/
+supabase/.temp/
+
+# Logs
+*.log
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+
+# Editores
+.idea/
+*.swp
+*.swo
+
+# Cobertura / cache
+coverage/
+.cache/
+*.tsbuildinfo

@@ -1,0 +1,22 @@
+-- Rollback 0001 — (las extensiones se dejan instaladas; son inocuas)
+drop function if exists public.set_updated_at();
+drop type if exists property_report_status;
+drop type if exists property_report_reason;
+drop type if exists lead_status;
+drop type if exists property_video_status;
+drop type if exists property_closed_reason;
+drop type if exists property_status;
+drop type if exists operation_type;
+drop type if exists property_type;
+drop type if exists agent_interest_status;
+drop type if exists agent_interest_source;
+drop type if exists agent_application_status;
+drop type if exists agent_application_type;
+drop type if exists agency_member_status;
+drop type if exists agency_member_role;
+drop type if exists agency_status;
+drop type if exists deletion_request_status;
+drop type if exists deletion_request_reason;
+drop type if exists consent_type;
+drop type if exists doc_type;
+drop type if exists user_role;

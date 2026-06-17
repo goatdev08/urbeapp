@@ -1,0 +1,16 @@
+# Configuración de Supabase CLI para el proyecto Urbea.
+# Doc: https://supabase.com/docs/guides/cli/config
+# Vincular el proyecto remoto:  supabase link --project-ref mvpvqmyhrrkwbnpctpuq
+
+project_id = "urbea-app"
+
+[db]
+# Versión mayor de Postgres del proyecto remoto (urbea-app corre Postgres 17).
+major_version = 17
+
+[db.seed]
+enabled = true
+sql_paths = ["./seed.sql"]
+
+[db.migrations]
+schema_paths = []
