@@ -1,21 +1,26 @@
 /**
  * AvatarPicker — área presionable de foto de perfil.
  *
- * En 6.1 muestra solo el placeholder (silhouette + icono de cámara).
- * En 6.2 se conectará a expo-image-picker.
- * En 6.4 se añadirá compresión.
+ * En 6.2 integra expo-image-picker: al presionar ofrece Cámara / Galería
+ *        (Alert con opciones), y muestra la preview de la imagen seleccionada.
+ * En 6.4 se añadirá compresión sobre el uri retornado.
  * En 6.5 se integrará upload a Supabase Storage.
  *
- * Acepta `uri` opcional para mostrar la imagen seleccionada (cuando 6.2 esté listo).
- * El onPress está declarado pero muestra un TODO hasta que 6.2 lo conecte.
+ * El uri seleccionado se eleva al padre mediante `onChange`.
+ * TODO 6.4 — comprimir el uri antes de pasarlo a `onChange`.
+ * TODO 6.5 — `onChange` será consumido por la lógica de upload en OnboardingScreen.
  */
 import React from 'react';
 import {
+  Alert,
+  Image,
   Pressable,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+
+import { useImagePicker } from '../hooks/useImagePicker';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -23,15 +28,16 @@ import {
 
 interface AvatarPickerProps {
   /**
-   * URI de la imagen seleccionada.
-   * En 6.1 siempre es undefined; 6.2 la populará.
+   * URI de la imagen seleccionada; undefined → muestra el placeholder.
+   * Proviene del estado de OnboardingScreen (elevado por onChange).
    */
   uri?: string | undefined;
   /**
-   * Callback al presionar el área de avatar.
-   * 6.2 conectará expo-image-picker aquí.
+   * Callback cuando se selecciona un nuevo avatar.
+   * TODO 6.4 — el uri llegará crudo; compresión se aplica en 6.4 antes de llamarlo.
+   * TODO 6.5 — OnboardingScreen usará este uri para el upload a Supabase Storage.
    */
-  onPress: () => void;
+  onChange?: (uri: string) => void;
   /** Muestra estado de carga (e.g. durante upload en 6.5). */
   uploading?: boolean;
 }
@@ -48,34 +54,77 @@ const BG_PAPER = '#F6F2EB';
 // Componente
 // ---------------------------------------------------------------------------
 
-export function AvatarPicker({ uri: _uri, onPress, uploading = false }: AvatarPickerProps) {
-  // En 6.2: si `uri` está definido, mostrar <Image source={{ uri }} />.
-  // Por ahora siempre mostramos el placeholder de silhouette.
+export function AvatarPicker({ uri, onChange, uploading = false }: AvatarPickerProps) {
+  const { pick_from_gallery, pick_from_camera } = useImagePicker();
+
+  /**
+   * Muestra un Alert con opciones Cámara / Galería y lanza el picker elegido.
+   * Si el usuario cancela el Alert o el picker, no hace nada (uri queda igual).
+   */
+  const handle_press = () => {
+    Alert.alert(
+      'Foto de perfil',
+      'Elige cómo quieres agregar tu foto',
+      [
+        {
+          text: 'Tomar foto',
+          onPress: async () => {
+            const result = await pick_from_camera();
+            if (result.uri) {
+              onChange?.(result.uri);
+            }
+          },
+        },
+        {
+          text: 'Elegir de galería',
+          onPress: async () => {
+            const result = await pick_from_gallery();
+            if (result.uri) {
+              onChange?.(result.uri);
+            }
+          },
+        },
+        {
+          text: 'Cancelar',
+          style: 'cancel',
+        },
+      ],
+      { cancelable: true },
+    );
+  };
+
+  const has_image = Boolean(uri);
 
   return (
     <View style={styles.container}>
       <Pressable
-        onPress={onPress}
+        onPress={handle_press}
         disabled={uploading}
         accessibilityRole="button"
         accessibilityLabel="Seleccionar foto de perfil"
-        accessibilityHint="Abre la galería para elegir una foto"
+        accessibilityHint="Abre opciones para tomar foto o elegir de galería"
         style={({ pressed }) => [
           styles.avatar_circle,
           pressed && styles.avatar_circle_pressed,
         ]}
       >
-        {/* Silhouette placeholder — se reemplazará por <Image> en 6.2 */}
-        <View style={styles.silhouette_wrap}>
-          {/* Círculo cabeza */}
-          <View style={styles.silhouette_head} />
-          {/* Arco torso */}
-          <View style={styles.silhouette_body} />
-        </View>
+        {has_image ? (
+          /* Preview de la imagen seleccionada */
+          <Image
+            source={{ uri: uri as string }}
+            style={styles.avatar_image}
+            accessibilityLabel="Foto de perfil seleccionada"
+          />
+        ) : (
+          /* Silhouette placeholder */
+          <View style={styles.silhouette_wrap}>
+            <View style={styles.silhouette_head} />
+            <View style={styles.silhouette_body} />
+          </View>
+        )}
 
-        {/* Badge de cámara */}
+        {/* Badge de cámara — siempre visible como indicador de edición */}
         <View style={styles.camera_badge}>
-          {/* Icono de cámara con formas nativas RN (sin SVG externo) */}
           <View style={styles.camera_body}>
             <View style={styles.camera_lens} />
           </View>
@@ -83,7 +132,7 @@ export function AvatarPicker({ uri: _uri, onPress, uploading = false }: AvatarPi
       </Pressable>
 
       <Text style={styles.hint_text}>
-        {uploading ? 'Subiendo…' : 'Toca para agregar foto'}
+        {uploading ? 'Subiendo…' : has_image ? 'Toca para cambiar foto' : 'Toca para agregar foto'}
       </Text>
     </View>
   );
@@ -102,7 +151,7 @@ const styles = StyleSheet.create({
     width: AVATAR_SIZE,
     height: AVATAR_SIZE,
     borderRadius: AVATAR_SIZE / 2,
-    backgroundColor: '#E8E4DC', // tono cálido sobre paper
+    backgroundColor: '#E8E4DC',
     borderWidth: 2,
     borderColor: COLOR_SALVIA,
     justifyContent: 'center',
@@ -112,6 +161,13 @@ const styles = StyleSheet.create({
   avatar_circle_pressed: {
     opacity: 0.82,
     transform: [{ scale: 0.96 }],
+  },
+
+  // ── Preview de imagen ────────────────────────────────────────────────────
+  avatar_image: {
+    width: AVATAR_SIZE - 4, // descuenta el border (2px × 2)
+    height: AVATAR_SIZE - 4,
+    borderRadius: (AVATAR_SIZE - 4) / 2,
   },
 
   // ── Silhouette placeholder ──────────────────────────────────────────────

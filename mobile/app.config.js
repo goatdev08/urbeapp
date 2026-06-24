@@ -42,6 +42,11 @@ module.exports = ({ config }) => ({
       supportsBackgroundPlayback: false,
       supportsPictureInPicture: false,
     }],
+    ['expo-image-picker', {
+      photosPermission: 'Urbea necesita acceso a tu galería para elegir tu foto de perfil.',
+      cameraPermission: 'Urbea necesita acceso a la cámara para tomar tu foto de perfil.',
+      microphonePermission: false,
+    }],
   ],
   extra: {
     eas: {

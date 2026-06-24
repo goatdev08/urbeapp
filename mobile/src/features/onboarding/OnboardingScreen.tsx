@@ -7,7 +7,6 @@
  * Superficie: CLARA ("paper" #F6F2EB) — pantalla de gestión, estética híbrida.
  *
  * TODOs explícitos por subtarea:
- *   TODO 6.2 — conectar AvatarPicker.onPress a expo-image-picker (permisos + launch).
  *   TODO 6.4 — comprimir imagen seleccionada antes de setear uri.
  *   TODO 6.5 — upload de la imagen a Supabase Storage al guardar.
  *   TODO 6.6 — validación de nombre (requerido, mín 2 chars), guardar en public.users
@@ -49,20 +48,19 @@ export function OnboardingScreen() {
   const [full_name, set_full_name] = useState('');
   const [avatar_uri, set_avatar_uri] = useState<string | undefined>(undefined);
 
-  // TODO 6.2 — set_avatar_uri se llamará desde el image-picker.
   // TODO 6.5 — `uploading` provendrá de la lógica de upload a Storage.
   const uploading = false;
 
   // ── Handlers ────────────────────────────────────────────────────────────
 
   /**
-   * Abre el selector de foto de perfil.
-   * TODO 6.2 — implementar con expo-image-picker (requestMediaLibraryPermissionsAsync,
-   * launchImageLibraryAsync con mediaTypes: Images, allowsEditing: true, aspect: [1,1]).
+   * Recibe el uri seleccionado desde AvatarPicker (ya integrado en 6.2).
+   * TODO 6.4 — comprimir/redimensionar el uri antes de setearlo en el estado.
+   * TODO 6.5 — disparar el upload a Supabase Storage aquí o al presionar "Continuar".
    */
-  const handle_pick_avatar = () => {
-    // TODO 6.2: lanzar image picker aquí.
-    // set_avatar_uri(result.assets[0].uri)
+  const handle_avatar_change = (uri: string) => {
+    // TODO 6.4: comprimir uri antes de setear.
+    set_avatar_uri(uri);
   };
 
   /**
@@ -107,7 +105,7 @@ export function OnboardingScreen() {
           {/* ── Foto de perfil ──────────────────────────────────────────── */}
           <AvatarPicker
             uri={avatar_uri}
-            onPress={handle_pick_avatar}
+            onChange={handle_avatar_change}
             uploading={uploading}
           />
 

@@ -501,10 +501,10 @@
             "description": "Build the main onboarding screen (app/onboarding.tsx) with form fields for capturing the agent's full name and profile photo selection area",
             "dependencies": [],
             "details": "Create app/onboarding.tsx with Expo Router. Include: (1) TextInput for full_name with proper styling, (2) pressable avatar placeholder showing default silhouette or selected image, (3) form state management with useState or react-hook-form, (4) proper keyboard handling (KeyboardAvoidingView), (5) screen layout following the hybrid aesthetic (clear/light for management screens per PRD). Import and display the AuthContext to ensure user is authenticated before showing onboarding. Add route protection to redirect non-authenticated users to login.\n<info added on 2026-06-24T23:19:49.934Z>\nImplemented the complete onboarding screen with liquid-glass aesthetic and reusable components. Created mobile/src/components/PrimaryButton.tsx (reusable CTA button with BlurView backdrop, surface prop for light/dark contexts, salvia overlay opacity 0.82 for light surfaces and 0.48 for dark, pill shape 54px height), mobile/src/features/onboarding/components/AvatarPicker.tsx (pressable photo area with silhouette placeholder and camera badge, onPress stubbed for 6.2), mobile/src/features/onboarding/OnboardingScreen.tsx (full screen layout with editorial hierarchy: BIENVENIDO A URBEA eyebrow salvia 11px/700/letterSpacing 2.5, title 38px, subtitle, paper background #F6F2EB, controlled TextInput for name, PrimaryButton Continuar disabled if name<2 chars, ghost Saltar button, TODOs marked for 6.2/6.4/6.5/6.6), and mobile/app/onboarding.tsx (Expo Router /onboarding route with useAuth session guard redirecting to /login if unauthenticated). Installed expo-blur@56.0.3 via pnpm (no plugin required in SDK 56). Liquid-glass effect achieved with BlurView real blur plus translucent View overlay with #5A8A5E salvia at context-dependent opacity (no native backdrop-filter in RN), 1px rgba(255,255,255,0.28) border simulates light reflection. Typography uses system fonts (zero expo-font, branding gated to #19). Verified with pnpm tsc --noEmit clean (0 errors), fixed StyleSheet.absoluteFill vs absoluteFillObject type issue. No dev build required for 6.1. No eslint config present in mobile.\n</info added on 2026-06-24T23:19:49.934Z>",
-            "status": "in-progress",
+            "status": "done",
             "testStrategy": "Verify: (1) Screen renders correctly on iOS/Android, (2) Name input accepts text and shows validation state, (3) Avatar placeholder is tappable, (4) Keyboard doesn't obscure inputs, (5) Back navigation is disabled (user must complete onboarding)",
             "parentId": "undefined",
-            "updatedAt": "2026-06-24T23:15:32.586Z"
+            "updatedAt": "2026-06-24T23:20:24.200Z"
           },
           {
             "id": 2,
@@ -513,10 +513,11 @@
             "dependencies": [
               1
             ],
-            "details": "Install expo-image-picker with pnpm. Create a reusable hook (hooks/useImagePicker.ts) that: (1) requests camera and media library permissions using expo-image-picker, (2) shows ActionSheet with 'Take Photo' and 'Choose from Gallery' options, (3) launches camera or gallery picker with mediaTypes: Images, allowsEditing: true, aspect: [1, 1] for square crop, quality: 0.8, (4) returns the selected image URI. Handle permission denial gracefully with alert explaining why permissions are needed. Integrate hook into onboarding screen's avatar placeholder onPress.",
-            "status": "pending",
+            "details": "Install expo-image-picker with pnpm. Create a reusable hook (hooks/useImagePicker.ts) that: (1) requests camera and media library permissions using expo-image-picker, (2) shows ActionSheet with 'Take Photo' and 'Choose from Gallery' options, (3) launches camera or gallery picker with mediaTypes: Images, allowsEditing: true, aspect: [1, 1] for square crop, quality: 0.8, (4) returns the selected image URI. Handle permission denial gracefully with alert explaining why permissions are needed. Integrate hook into onboarding screen's avatar placeholder onPress.\n<info added on 2026-06-24T23:23:27.914Z>\nCOMPLETED. Package installed (expo-image-picker@56.0.18). Config plugin added to app.config.js with Spanish permission messages (photos + camera, microphone disabled). Hook created at mobile/src/features/onboarding/hooks/useImagePicker.ts exposing pick_from_gallery() and pick_from_camera() with permission handling (denial → Spanish Alert with settings instructions, returns {uri: null}; cancellation → {uri: null}). AvatarPicker.tsx refactored: replaced onPress with onChange callback, integrated useImagePicker internally, Alert with Spanish options (Tomar foto/Elegir de galería/Cancelar), shows Image preview when URI present vs placeholder, dynamic hint text. OnboardingScreen.tsx updated with handle_avatar_change(uri) calling set_avatar_uri(uri), TODOs added for 6.4 (compression) and 6.5 (upload). TypeScript verification passed (pnpm tsc --noEmit clean). Permission denial edge case handled with Spanish Alert and safe null return. Raw URIs returned; compression deferred to 6.4. Upload deferred to 6.5.\n</info added on 2026-06-24T23:23:27.914Z>",
+            "status": "in-progress",
             "testStrategy": "Test: (1) Permission request appears on first use, (2) Camera opens and captures photo, (3) Gallery opens and allows selection, (4) Image is cropped to square, (5) Selected image displays in avatar placeholder, (6) Permission denial shows helpful message",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-06-24T23:20:33.099Z"
           },
           {
             "id": 3,
@@ -571,7 +572,7 @@
         "complexity": 4,
         "recommendedSubtasks": 6,
         "expansionPrompt": "Break down onboarding into: (1) create onboarding screen with name and photo input, (2) implement expo-image-picker for camera/gallery selection, (3) create profile-photos Storage bucket with RLS, (4) implement image resize/compress with expo-image-manipulator, (5) upload to Storage and update user_preferences, (6) add skip button, validation, progress indicator, and navigation to main app",
-        "updatedAt": "2026-06-24T23:15:32.586Z"
+        "updatedAt": "2026-06-24T23:20:33.099Z"
       },
       {
         "id": 7,
@@ -2200,13 +2201,13 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-06-24T23:15:32.586Z",
+      "lastModified": "2026-06-24T23:20:33.099Z",
       "taskCount": 20,
       "completedCount": 5,
       "tags": [
         "master"
       ],
-      "created": "2026-06-24T23:19:29.255Z",
+      "created": "2026-06-24T23:23:15.693Z",
       "description": "Tasks for master context"
     }
   }
