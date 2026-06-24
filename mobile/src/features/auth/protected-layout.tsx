@@ -1,17 +1,47 @@
 /**
- * ProtectedLayout — stub mínimo fase RED (subtarea 2.5).
+ * ProtectedLayout — guard de rutas autenticadas (Expo Router SDK 56).
+ * Subtarea 2.5 — fase GREEN.
  *
- * Firma del componente que el GREEN implementará:
- *   - isLoading=true  → indicador de carga (ActivityIndicator testID='loading-indicator')
- *   - !session        → <Redirect href="/login" />
- *   - session         → <Slot /> (contenido protegido)
+ * Contrato:
+ *   - isLoading=true                  → <ActivityIndicator testID="loading-indicator" />
+ *   - isLoading=false, session=null   → <Redirect href="/login" />
+ *   - isLoading=false, session=<obj>  → <Slot /> (contenido protegido)
  *
- * El stub renderiza null (no implementado) para que los tests fallen por aserción
- * ("unable to find element with testID ..."), no por error de import.
+ * isLoading tiene prioridad sobre el estado de session para evitar
+ * race conditions (EC-PL5): si todavía estamos validando la sesión,
+ * no redirigimos ni mostramos contenido protegido prematuramente.
  */
 import React from 'react';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { Redirect, Slot } from 'expo-router';
 
-export default function ProtectedLayout(): React.ReactElement | null {
-  // Stub: sin implementación real. El GREEN reemplaza esto con la lógica real.
-  return null;
+import { useAuth } from '@/features/auth/context';
+
+export default function ProtectedLayout(): React.ReactElement {
+  const { session, isLoading } = useAuth();
+
+  // Estado de carga — isLoading tiene prioridad absoluta
+  if (isLoading) {
+    return (
+      <View style={styles.loading_container}>
+        <ActivityIndicator testID="loading-indicator" size="large" />
+      </View>
+    );
+  }
+
+  // Sin sesión confirmada — redirige a login
+  if (session === null) {
+    return <Redirect href="/login" />;
+  }
+
+  // Sesión activa — renderiza el contenido protegido
+  return <Slot />;
 }
+
+const styles = StyleSheet.create({
+  loading_container: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});
