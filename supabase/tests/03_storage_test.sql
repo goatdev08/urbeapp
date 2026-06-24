@@ -5,7 +5,7 @@
 -- Secciones organizadas por subtarea; 3.2 y 3.3 extenderán este archivo.
 
 begin;
-select plan(11);  -- 3.1: 6 asserts · 3.2: 5 asserts
+select plan(16);  -- 3.1: 6 asserts · 3.2: 5 asserts · 3.3: 5 asserts
 
 -- ══ 3.1 ══ bucket property-videos: existencia, privacidad, límites de tamaño y MIME
 -- El bucket y la columna storage_path son creados por la migración GREEN.
@@ -192,7 +192,126 @@ select lives_ok(
 );
 reset role;
 
--- ══ 3.3 ══ (reservado — RLS de Storage: restricciones de path {user_id}/{property_id}/{video_id}.mp4)
+-- ══ 3.3 ══ RLS SELECT en storage.objects: lectura pública de videos de propiedades activas
+-- Política esperada (GREEN):
+--   for select to anon, authenticated
+--   using (
+--     bucket_id = 'property-videos'
+--     AND (
+--       private.property_is_public((storage.foldername(name))[2]::uuid)
+--       OR (storage.foldername(name))[1] = (select auth.uid())::text
+--     )
+--   )
+--
+-- UUIDs de esta sección (terminados en a0f0a / a0f0d para no colisionar):
+--   P_active : 00000000-0000-0000-0000-0000000a0f0a  (status='active')
+--   P_draft  : 00000000-0000-0000-0000-0000000a0f0d  (status='draft')
+--   Dueño A1 : 00000000-0000-0000-0000-0000000a0a01  (ya insertado en 3.2)
+--   Agente A2: 00000000-0000-0000-0000-0000000a0a02  (ya insertado en 3.2)
+--
+-- Todos los dígitos son hex válidos (0-9, a-f).
+
+-- ── Fixtures 3.3 (como superusuario — bypass RLS) ────────────────────────────
+
+-- 2 propiedades de A1: una activa y una en draft.
+insert into public.properties
+  (id, owner_user_id, property_type, operation_type, address, location, price, status)
+values
+  (
+    '00000000-0000-0000-0000-0000000a0f0a',
+    '00000000-0000-0000-0000-0000000a0a01',
+    'departamento', 'rent',
+    'Av. Prueba 3.3 Activa 100',
+    extensions.ST_SetSRID(extensions.ST_MakePoint(-103.35, 20.67), 4326)::extensions.geography,
+    1650000,
+    'active'
+  ),
+  (
+    '00000000-0000-0000-0000-0000000a0f0d',
+    '00000000-0000-0000-0000-0000000a0a01',
+    'departamento', 'rent',
+    'Av. Prueba 3.3 Draft 200',
+    extensions.ST_SetSRID(extensions.ST_MakePoint(-103.36, 20.68), 4326)::extensions.geography,
+    1650000,
+    'draft'
+  );
+
+-- 2 objetos en storage.objects (insert directo como superusuario, bypass RLS).
+-- Path sigue la convención: {owner_user_id}/{property_id}/{filename}.
+insert into storage.objects (bucket_id, name, owner, metadata)
+values
+  (
+    'property-videos',
+    '00000000-0000-0000-0000-0000000a0a01/00000000-0000-0000-0000-0000000a0f0a/vid.mp4',
+    '00000000-0000-0000-0000-0000000a0a01'::uuid,
+    '{}'::jsonb
+  ),
+  (
+    'property-videos',
+    '00000000-0000-0000-0000-0000000a0a01/00000000-0000-0000-0000-0000000a0f0d/vid.mp4',
+    '00000000-0000-0000-0000-0000000a0a01'::uuid,
+    '{}'::jsonb
+  );
+
+-- ── Asserts 3.3 ──────────────────────────────────────────────────────────────
+
+-- 3.3.1 — anon VE el video de propiedad ACTIVA (count=1).
+-- RED: falla porque no existe política SELECT en storage.objects → count=0 en vez de 1.
+-- GREEN: la política permite lectura pública cuando property_is_public=true.
+select pg_temp.act_as(null, 'anon');
+select is(
+  (select count(*)::int from storage.objects
+   where name = '00000000-0000-0000-0000-0000000a0a01/00000000-0000-0000-0000-0000000a0f0a/vid.mp4'),
+  1,
+  'anon_ve_video_de_propiedad_activa'
+);
+reset role;
+
+-- 3.3.2 — anon NO ve el video de propiedad en DRAFT (count=0).
+-- RED: pasa por razón incorrecta (sin policy todo da 0); GREEN: pasa porque property_is_public=false y sin JWT no aplica rama dueño.
+select pg_temp.act_as(null, 'anon');
+select is(
+  (select count(*)::int from storage.objects
+   where name = '00000000-0000-0000-0000-0000000a0a01/00000000-0000-0000-0000-0000000a0f0d/vid.mp4'),
+  0,
+  'anon_no_ve_video_de_propiedad_en_draft'
+);
+reset role;
+
+-- 3.3.3 — El DUEÑO A1 ve su propio video aunque la propiedad esté en DRAFT (count=1).
+-- RED: falla porque no existe política SELECT → count=0 en vez de 1.
+-- GREEN: (foldername(name))[1] = auth.uid()::text → rama dueño permite lectura.
+select pg_temp.act_as('00000000-0000-0000-0000-0000000a0a01');
+select is(
+  (select count(*)::int from storage.objects
+   where name = '00000000-0000-0000-0000-0000000a0a01/00000000-0000-0000-0000-0000000a0f0d/vid.mp4'),
+  1,
+  'dueno_ve_su_propio_video_aunque_propiedad_en_draft'
+);
+reset role;
+
+-- 3.3.4 — Otro agente A2 NO ve el video draft ajeno (count=0).
+-- RED: pasa por razón incorrecta (sin policy todo da 0); GREEN: path[1]≠A2 y property_is_public=false → count=0.
+select pg_temp.act_as('00000000-0000-0000-0000-0000000a0a02');
+select is(
+  (select count(*)::int from storage.objects
+   where name = '00000000-0000-0000-0000-0000000a0a01/00000000-0000-0000-0000-0000000a0f0d/vid.mp4'),
+  0,
+  'otro_agente_no_ve_video_draft_ajeno'
+);
+reset role;
+
+-- 3.3.5 — Otro agente A2 SÍ ve el video de propiedad activa ajena (lectura pública, count=1).
+-- RED: falla porque no existe política SELECT → count=0 en vez de 1.
+-- GREEN: property_is_public(P_active)=true → lectura pública para cualquier rol autenticado.
+select pg_temp.act_as('00000000-0000-0000-0000-0000000a0a02');
+select is(
+  (select count(*)::int from storage.objects
+   where name = '00000000-0000-0000-0000-0000000a0a01/00000000-0000-0000-0000-0000000a0f0a/vid.mp4'),
+  1,
+  'otro_agente_ve_video_de_propiedad_activa_ajena'
+);
+reset role;
 
 select * from finish();
 rollback;
