@@ -18,7 +18,7 @@ Esquema PostgreSQL/PostGIS para el MVP de Urbea (app inmobiliaria tipo TikTok pa
 
 ```
 supabase/
-  migrations/            10 migraciones .sql versionadas (idempotentes)
+  migrations/            12 migraciones .sql versionadas (idempotentes)
     rollbacks/           un rollback por migración (lineamientos §12.3)
   tests/                 tests pgTAP (constraints + RLS)
   types/database.types.ts  tipos TypeScript generados (para la app)
@@ -40,6 +40,8 @@ supabase/
 | `..._0008_rls_helpers_and_policies` | Habilita RLS + 65 políticas + grants |
 | `..._0009_seed_terms` | Versión vigente inicial de Términos y Aviso de Privacidad |
 | `..._0010_security_perf_hardening` | Mueve helpers a esquema `private`, optimiza RLS (`(select auth.uid())`), índices de FK, blinda triggers |
+| `..._0011_storage_property_videos` | Bucket `property-videos` (Storage) + políticas RLS de Storage: INSERT solo para el agente dueño, SELECT público para propiedades activas. **Solo para la demo** (sin transcoding); el video en producción irá en Cloudflare Stream. |
+| `..._0012_property_videos_ready_requires_storage` | CHECK constraint `property_videos_ready_requires_storage`: un video con `status='ready'` exige al menos uno de `storage_path` o `cloudflare_uid`. Los estados `uploading`, `processing` y `failed` no requieren referencia. Complementa la política de Storage de `0011`; no tiene relación con billing. |
 
 ---
 

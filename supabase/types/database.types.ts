@@ -877,6 +877,7 @@ export type Database = {
           ready_at: string | null
           size_bytes: number | null
           status: Database["public"]["Enums"]["property_video_status"]
+          storage_path: string | null
           thumbnail_url: string | null
           updated_at: string
         }
@@ -893,6 +894,7 @@ export type Database = {
           ready_at?: string | null
           size_bytes?: number | null
           status?: Database["public"]["Enums"]["property_video_status"]
+          storage_path?: string | null
           thumbnail_url?: string | null
           updated_at?: string
         }
@@ -909,6 +911,7 @@ export type Database = {
           ready_at?: string | null
           size_bytes?: number | null
           status?: Database["public"]["Enums"]["property_video_status"]
+          storage_path?: string | null
           thumbnail_url?: string | null
           updated_at?: string
         }
