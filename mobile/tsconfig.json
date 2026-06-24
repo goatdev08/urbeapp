@@ -6,6 +6,7 @@
     "exactOptionalPropertyTypes": true,
     "paths": {
       "@/*": ["./src/*"]
-    }
+    },
+    "types": ["jest"]
   }
 }
