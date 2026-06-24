@@ -13,6 +13,7 @@ import {
   type AuthAdminClient,
   create_agent_auth_user,
 } from "../_shared/auth_user.ts";
+import type { InvitationRedeemer } from "../_shared/redeem.ts";
 
 /**
  * Dependencias inyectables del handler (DI pattern).
@@ -22,6 +23,7 @@ import {
 export interface RedeemDeps {
   db?: InvitationDb;
   authAdmin?: AuthAdminClient;
+  redeemer?: InvitationRedeemer;
 }
 
 // Mensajes legibles para errores de validación del token
