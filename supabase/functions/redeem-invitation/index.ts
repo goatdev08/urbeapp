@@ -1,10 +1,23 @@
 // supabase/functions/redeem-invitation/index.ts
 // Fase GREEN 5.1: scaffold + validación de entrada implementados.
 // La lógica de negocio (canje real) se enchufará en 5.2+.
+// Firma de deps preparada para 5.3+ (DI de InvitationDb y AuthAdminClient).
 
 import { handle_cors_preflight } from "../_shared/cors.ts";
 import { error_response, json_response } from "../_shared/response.ts";
 import { parse_redeem_invitation_input } from "../_shared/validation.ts";
+import type { InvitationDb } from "../_shared/invitation.ts";
+import type { AuthAdminClient } from "../_shared/auth_user.ts";
+
+/**
+ * Dependencias inyectables del handler (DI pattern).
+ * Opcionales: en producción se construyen a partir del cliente Supabase real;
+ * en tests se inyectan fakes controlados.
+ */
+export interface RedeemDeps {
+  db?: InvitationDb;
+  authAdmin?: AuthAdminClient;
+}
 
 /**
  * Handler exportado para facilitar tests unitarios sin Deno.serve().
@@ -15,9 +28,12 @@ import { parse_redeem_invitation_input } from "../_shared/validation.ts";
  *   OPTIONS → 200 con headers CORS
  *   GET/PUT/DELETE → 405
  *   POST inválido → 400 { error: { code: "INVALID_INPUT", message } }
- *   POST válido → 200 { ... } (lógica real en 5.2+)
+ *   POST válido → 200 { ... } (lógica real en 5.3+)
+ *
+ * @param deps  Dependencias inyectables (db, authAdmin). En producción: undefined → se
+ *              construyen internamente. En tests: se pasan fakes controlados.
  */
-export async function handler(req: Request): Promise<Response> {
+export async function handler(req: Request, _deps?: RedeemDeps): Promise<Response> {
   // CORS preflight
   if (req.method === "OPTIONS") {
     return handle_cors_preflight(req);
@@ -59,5 +75,5 @@ export async function handler(req: Request): Promise<Response> {
   return json_response({ status: "ok", data: parsed.data }, 200);
 }
 
-// Punto de entrada Deno
-Deno.serve(handler);
+// Punto de entrada Deno — wrapping para que Deno.serve solo reciba (req: Request)
+Deno.serve((req: Request) => handler(req));
