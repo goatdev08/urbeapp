@@ -3,8 +3,8 @@ tipo: concepto
 dominio: producto
 estado: vivo
 fuentes: [docs/PRD.md §4, docs/PRD-MVP-demo.md]
-codigo: [supabase/migrations/0002_identity_users.sql]
-actualizado: 2026-06-17
+codigo: [supabase/migrations/0002_identity_users.sql, mobile/src/features/auth/context.tsx]
+actualizado: 2026-06-24
 ---
 
 # Roles y permisos
@@ -25,7 +25,8 @@ actualizado: 2026-06-17
 - El rol determina visibilidad vía helpers RLS (`current_user_role`, `is_admin`).
 
 ## En el código
-- Backend: `0002_identity_users.sql`. App: `mobile/src/features/auth/`, `admin/` (pendiente).
+- Backend: `0002_identity_users.sql`. App: `mobile/src/features/auth/` (**Auth vivo, tarea #2**), `admin/` (pendiente).
+- **Auth móvil (tarea #2):** `useAuth()` (`context.tsx`) carga el perfil de `public.users` por `id=auth.uid()` tras el login y lo expone como `user`; el `role` viene de ahí (read-only para el cliente por los column-grants). Login email/password (`signInWithPassword`); **solo login**, cuentas sembradas en la demo (sin signup). El canje de código de invitación que asigna `agency_id`/rol agente es **tarea #3** (server-side). Rutas protegidas vía `protected-layout.tsx`.
 
 ## Detalle exhaustivo
 - `docs/PRD.md` §4 (jerarquía completa: visitante→registrado→premium→agente→admin, para fases futuras) · migración `0002` · [[db-schema-map]]

@@ -56,3 +56,11 @@ Tip: `grep "^## \[" log.md | tail -5` → últimas 5 entradas.
 - Primer `eas build` (development, Android) exitoso tras resolver cascada: `npx eas-cli` (no pnpm-global), `app.config.js` (no `.ts`), y `mobile/` self-contained (sin `pnpm-workspace.yaml` raíz que hoisteaba deps nativas fuera de EAS).
 - `.apk` instalado; Urbea corriendo nativo en device vía `pnpm expo start --dev-client` (Supabase activo).
 - Nuevo: `wiki/codebase/comandos.md` (referencia de comandos dev/EAS/verificación/Taskmaster).
+
+## [2026-06-24] tarea | #2 Auth Supabase email/password en mobile
+- BD verificada para la demo: tabla public.users + trigger handle_new_user + RLS + column-grants YA cubren el flujo (sin migración nueva). Hueco menor: last_login_at no se auto-actualiza (cosmético).
+- AuthContext (src/features/auth/context.tsx): useAuth {session,user(perfil public.users),isLoading,signIn,signOut} + onAuthStateChange. Login solo (cuentas sembradas; signup/invitación → #3).
+- Pantalla login (app/login.tsx) + validación pura (validation.ts) + mapeo de errores ES (auth-errors.ts) + guard de rutas (protected-layout.tsx → app/(protected)/) + AuthProvider en root.
+- Persistencia AsyncStorage ya estaba en client.ts (tarea #1); añadido listener AppState para start/stopAutoRefresh.
+- Harness de tests jest-expo + testing-library (nuevo). TDD en críticas (2.1, 2.4, 2.5) con guardian (3 mutantes verificados por subtarea). Total: 60 tests verdes, tsc strict limpio.
+- Estructura feature-based confirmada (src/features/auth/). Rama tarea/2-auth-supabase (commits locales).

@@ -32,18 +32,20 @@ Detalle de tablas/migraciones en [[db-schema-map]].
 | Alcance demo | `docs/PRD-MVP-demo.md` |
 | Lineamientos | `docs/lineamientos-desarrollo.md` |
 
-## App móvil — `mobile/` (inicializada · tarea #1)
+## App móvil — `mobile/` (inicializada · tareas #1, #2)
 Base **existe** (Expo SDK 56, dev build, Expo Router, TS strict, standalone). Lo ya construido:
 - `mobile/app.config.ts` — config dinámica: `com.urbea.app` (iOS+Android), slug/scheme `urbea`, owner EAS `deabratech`, Google Maps vía `process.env.GOOGLE_MAPS_API_KEY`, plugins (expo-dev-client/router/video). projectId EAS `85c7157a-…`.
 - `mobile/eas.json` — perfiles `development`/`preview`/`production`. Proyecto EAS: `@deabratech/urbea`.
 - `mobile/.npmrc` — `node-linker=hoisted` (gotcha Metro+pnpm). `mobile/.env.local` (gitignored) con credenciales Supabase; `.env.example` con nombres.
-- `mobile/app/_layout.tsx` (Stack + SafeAreaProvider) · `mobile/app/index.tsx` (placeholder "Urbea").
-- `mobile/src/lib/supabase/client.ts` — **cliente Supabase tipado** `createClient<Database>` + AsyncStorage (hotspot global; smoke test 200 OK contra remoto) → [[rls-seguridad]].
+- `mobile/app/_layout.tsx` — root: `SafeAreaProvider > AuthProvider > Stack` (headerShown:false). `mobile/app/login.tsx` — pantalla de login (fuera del grupo protegido).
+- `mobile/app/(protected)/_layout.tsx` — guard de rutas (thin wrapper de `ProtectedLayout`) · `mobile/app/(protected)/index.tsx` — home protegida (placeholder "Urbea"; `/` resuelve aquí, el grupo es transparente a la URL).
+- `mobile/src/lib/supabase/client.ts` — **cliente Supabase tipado** `createClient<Database>` + AsyncStorage (persistSession, autoRefreshToken) + listener `AppState` start/stopAutoRefresh (hotspot global; smoke test 200 OK contra remoto) → [[rls-seguridad]].
 - `mobile/src/types/database.ts` — re-export de `supabase/types/database.types.ts`.
 - `mobile/tsconfig.json` — strict (+ noUncheckedIndexedAccess, exactOptionalPropertyTypes), alias `@/*`→`src/*`.
+- **Tests** (tarea #2): `jest-expo` + `@testing-library/react-native`; `mobile/jest.config.js` (preset, `moduleNameMapper @/`, `transformIgnorePatterns` con fix `.pnpm`), `mobile/jest.setup.js` (mock AsyncStorage). Correr: `pnpm test`. Ver [[comandos]].
 
 Estructura prevista por feature (carpetas `src/{features,components,theme,hooks}` ya creadas, vacías):
-- `src/features/auth/` — login, canje de código → [[roles-y-permisos]], [[inmobiliarias-y-agentes]]
+- `src/features/auth/` — **Auth email/password (tarea #2, vivo)**: `context.tsx` (AuthProvider + `useAuth()` → {session,user(perfil public.users),isLoading,signIn,signOut}; carga perfil por `id=auth.uid()`, listener onAuthStateChange), `validation.ts` (validación pura de form), `auth-errors.ts` (`map_auth_error` → mensajes ES), `protected-layout.tsx` (guard: loading→Redirect→Slot), `components/form-field.tsx`. **Solo login** (cuentas sembradas, sin signup); canje de código de invitación → tarea #3. → [[roles-y-permisos]], [[inmobiliarias-y-agentes]]
 - `src/features/onboarding/` → [[onboarding-y-preferencias]]
 - `src/features/feed/` — feed vertical → [[feed-vertical-video]]
 - `src/features/search/` — filtros → [[busqueda-y-filtros]]
