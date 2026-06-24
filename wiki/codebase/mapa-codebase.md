@@ -16,11 +16,12 @@ Detalle de tablas/migraciones en [[db-schema-map]].
 | Inmobiliarias/Agentes | `..._agencies_and_agents.sql` | [[inmobiliarias-y-agentes]] |
 | Propiedades/Video | `..._properties_and_videos.sql` | [[propiedades-y-video]] |
 | Storage (video) | `..._storage_property_videos.sql` (0011: bucket `property-videos` + col `storage_path` + RLS INSERT/SELECT en `storage.objects`) · `..._property_videos_ready_requires_storage.sql` (0012: CHECK `ready` exige `storage_path` o `cloudflare_uid`) | [[propiedades-y-video]] |
+| Storage (foto perfil) | `..._profile_photos_storage.sql` (0015, #6: bucket **público** `profile-photos` + RLS por path `auth.uid()` en `storage.objects` + cols `full_name`/`profile_photo_url` en `user_preferences`) | [[onboarding-y-preferencias]] |
 | Engagement/CRM | `..._engagement_crm.sql` | [[crm-leads]], [[feed-vertical-video]] |
 | Moderación/Analítica | `..._analytics_moderation_audit.sql` | [[moderacion]], [[notificaciones]] |
 | RLS/Seguridad | `..._rls_helpers_and_policies.sql`, `..._security_perf_hardening.sql` | [[rls-seguridad]] |
 | Legal | `..._user_profile_legal.sql` | [[legal-consentimientos]] |
-| Tests | `supabase/tests/01_constraints_test.sql`, `02_rls_test.sql`, `03_storage_test.sql` | [[rls-seguridad]] |
+| Tests | `supabase/tests/01_constraints_test.sql`, `02_rls_test.sql`, `03_storage_test.sql`, `03_redeem_invitation_test.sql`, `04_profile_photos_test.sql` (#6: 17 asserts bucket+RLS+cols) | [[rls-seguridad]] |
 
 ## Documentación de producto
 | Concepto | Fuente |
@@ -47,7 +48,7 @@ Base **existe** (Expo SDK 56, dev build, Expo Router, TS strict, standalone). Lo
 
 Estructura prevista por feature (carpetas `src/{features,components,theme,hooks}` ya creadas, vacías):
 - `src/features/auth/` — **Auth email/password (tarea #2, vivo)**: `context.tsx` (AuthProvider + `useAuth()` → {session,user(perfil public.users),isLoading,signIn,signOut}; carga perfil por `id=auth.uid()`, listener onAuthStateChange), `validation.ts` (validación pura de form), `auth-errors.ts` (`map_auth_error` → mensajes ES), `protected-layout.tsx` (guard: loading→Redirect→Slot), `components/form-field.tsx`. **Solo login** (cuentas sembradas, sin signup); canje de código de invitación → tarea #3. → [[roles-y-permisos]], [[inmobiliarias-y-agentes]]
-- `src/features/onboarding/` → [[onboarding-y-preferencias]]
+- `src/features/onboarding/` — **Onboarding agente (tarea #6, vivo)**: ruta `mobile/app/onboarding.tsx` → `OnboardingScreen.tsx` (nombre + foto, validación, skip foto, progreso, nav a `/(protected)`, guard re-show), `validation.ts` (`is_valid_full_name`), `components/AvatarPicker.tsx`, `hooks/useImagePicker.ts` (cámara/galería, permisos ES). Servicios en `src/lib/`: `profileService.ts` (`saveProfile`: upload Storage + upsert `user_preferences`), `imageUtils.ts` (`processProfileImage`: resize 512 + compresión ≤1MB). → [[onboarding-y-preferencias]]
 - `src/features/feed/` — feed vertical → [[feed-vertical-video]]
 - `src/features/search/` — filtros → [[busqueda-y-filtros]]
 - `src/features/map/` — mapa → [[mapa-y-ubicacion]]
@@ -55,7 +56,7 @@ Estructura prevista por feature (carpetas `src/{features,components,theme,hooks}
 - `src/features/leads/` — CRM → [[crm-leads]]
 - `src/features/profile/` — perfil
 - `src/features/admin/` — alta de inmobiliarias → [[inmobiliarias-y-agentes]]
-- `src/lib/supabase/` — cliente tipado · `src/components/` · `src/theme/`
+- `src/lib/supabase/` — cliente tipado · `src/components/` — **`PrimaryButton.tsx` (#6, vivo)**: CTA reutilizable liquid-glass salvia (BlurView + overlay opacidad por `surface` light/dark, variantes primary/ghost, loading/disabled/icon) · `src/theme/`
 
 ## Edge Functions — `supabase/functions/` (Deno; correr `deno test/lint/fmt` DESDE este dir)
 **Patrón DI (tarea #5, vivo):** cada función = `handler.ts` (lógica PURA con deps inyectables; lo que importan los tests, offline, sin supabase-js) + `index.ts` (entry de prod: construye deps reales con `Deno.serve`) + `*.test.ts`. Deps externas en `deno.json` (import map: `@supabase/supabase-js`, `@std/assert`). Errores siempre `{error:{code,message}}`. → [[inmobiliarias-y-agentes]], [[rls-seguridad]]

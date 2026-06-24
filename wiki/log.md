@@ -89,3 +89,11 @@ Tip: `grep "^## \[" log.md | tail -5` → últimas 5 entradas.
 - Otros 2 fixes de integración: filtro embebido PostgREST `.is("agencies.deleted_at",null)` descartaba la fila padre (→ validar en JS); `x-forwarded-for` lista CSV rompía el param `inet` (→ 1ª IP).
 - Verificación: smoke E2E contra remoto (validate 200/404/400; redeem 200 con efectos atómicos + compensación verificados; datos limpiados). deno fmt/lint/test: 65 verdes. Advisors security sin WARN/ERROR nuevos. Migraciones 0011–0014 aplicadas en `urbea-app`.
 - Pendiente (cliente): consolidar ramas #1→#2→#3→#5 a main.
+
+## [2026-06-24] tarea | #6 onboarding del agente (nombre + foto) — vivo
+- **Flujo completo (mobile):** `app/onboarding.tsx` → `OnboardingScreen` con nombre (validación `is_valid_full_name` ≥2 trim), `AvatarPicker` (`useImagePicker`: cámara/galería, permisos ES con manejo de denegación), compresión (`imageUtils.processProfileImage`: resize 512 + JPEG iterativo 0.8→0.6→0.4 hasta ≤1MB), guardado (`profileService.saveProfile`: upload a Storage + upsert `user_preferences`), "Saltar foto", progreso (`loading`), nav `router.replace('/(protected)')`, guard de re-show (full_name proxy).
+- **Backend (migración 0015, aplicada a `urbea-app`):** bucket **público** `profile-photos` + RLS por path `(storage.foldername(name))[1] = auth.uid()::text` (INSERT/UPDATE/DELETE dueño, SELECT público) + cols `full_name`/`profile_photo_url` en `user_preferences`. TDD: pgTAP `04_profile_photos_test.sql` (17 asserts, verde en tx contra remoto). Guardian PASS en 6.3 y 6.5.
+- **Componente de firma:** `PrimaryButton` liquid-glass salvia (BlurView + overlay salvia con **opacidad por superficie** light 0.82 / dark 0.48 — decisión del cliente; adapta el kit `003-kit` sin `backdrop-filter`). Variantes primary/ghost, reutilizable en CTAs de la app.
+- **Decisiones:** fuentes del sistema (Fraunces/Hanken diferidas a #19 branding); liquid-glass real con `expo-blur` variando opacidad por superficie.
+- **Deuda:** regenerar `database.types.ts` (post-0015) para quitar casts `as never`/`as {...}` en profileService y guard.
+- Tests: 101/101 (mobile) + 17 pgTAP. tsc limpio. Migración 0015 en historial remoto. Rama `tarea/6-onboarding`.
