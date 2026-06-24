@@ -1,12 +1,14 @@
-// _shared/crypto.ts — stub mínimo (not_implemented)
-// El agente supabase implementará el hash real en la fase GREEN.
+// _shared/crypto.ts
 
 /**
- * Calcula el hash SHA-256 de un texto plano (hex).
+ * Calcula el hash SHA-256 de un texto plano y lo devuelve como string hex.
  * Usado para comparar invitation tokens contra el campo `token` de
  * agency_invitation_tokens (que almacena el hash, nunca el valor plano).
- * STUB: lanza para que los tests fallen en rojo.
  */
-export async function sha256_hex(_plaintext: string): Promise<string> {
-  throw new Error("not_implemented");
+export async function sha256_hex(plaintext: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(plaintext);
+  const hash_buffer = await crypto.subtle.digest("SHA-256", data);
+  const hash_array = Array.from(new Uint8Array(hash_buffer));
+  return hash_array.map((b) => b.toString(16).padStart(2, "0")).join("");
 }

@@ -106,11 +106,22 @@ supabase db push
 
 ### Correr los tests
 ```bash
-supabase test db        # corre supabase/tests/*.sql con pgTAP
+supabase test db        # corre supabase/tests/*.sql con pgTAP (base de datos)
 ```
 Cobertura: `01_constraints_test.sql` (13 asserts de constraints/triggers/únicos) y
 `02_rls_test.sql` (15 asserts de visibilidad RLS por rol). Para impersonación más robusta en CI se
 recomienda instalar `supabase_test_helpers` (`tests.authenticate_as`).
+
+### Tests de Edge Functions (Deno)
+Las Edge Functions (`functions/`) corren en **Deno**, no en Node. Sus tests unitarios usan `deno test`.
+Requisito: `brew install deno` (Deno 2.x).
+```bash
+deno test --allow-net supabase/functions/**/*.test.ts   # tests de Edge Functions
+deno lint supabase/functions/                            # lint
+deno fmt supabase/functions/                             # formato
+```
+Convención: cada función vive en `functions/<nombre>/index.ts` con su `index.test.ts` al lado;
+los helpers compartidos (CORS, respuestas JSON, hash sha256, validación) en `functions/_shared/`.
 
 ### Regenerar tipos TypeScript
 ```bash

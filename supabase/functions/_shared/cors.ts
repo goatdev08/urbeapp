@@ -1,5 +1,4 @@
-// _shared/cors.ts — stub mínimo (not_implemented)
-// El agente supabase implementará los headers reales en la fase GREEN.
+// _shared/cors.ts
 
 export const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -9,8 +8,11 @@ export const CORS_HEADERS: Record<string, string> = {
 
 /**
  * Maneja la petición OPTIONS (preflight CORS).
- * STUB: lanza para que los tests fallen en rojo.
+ * Devuelve 200 con los headers CORS necesarios.
  */
 export function handle_cors_preflight(_req: Request): Response {
-  throw new Error("not_implemented");
+  return new Response(null, {
+    status: 200,
+    headers: CORS_HEADERS,
+  });
 }

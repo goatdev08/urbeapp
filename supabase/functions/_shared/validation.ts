@@ -1,5 +1,4 @@
-// _shared/validation.ts — stub mínimo (not_implemented)
-// El agente supabase implementará el schema Zod real en la fase GREEN.
+// _shared/validation.ts
 
 export interface RedeemInvitationInput {
   invitationCode: string;
@@ -12,17 +11,128 @@ export type ParseResult<T> =
   | { success: true; data: T }
   | { success: false; error: { code: string; message: string } };
 
+// Regex RFC 5322 simplificado — cubre los casos de tests sin dependencias externas
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 /**
  * Valida y parsea el payload de redeem-invitation.
  * Reglas canónicas (§7.1 lineamientos):
  *   - invitationCode: string, min 6 caracteres
- *   - email: string, formato email válido (RFC)
+ *   - email: string, formato email válido
  *   - password: string, min 8 caracteres
  *   - fullName: string, min 1 carácter (no vacío)
- * STUB: lanza para que los tests fallen en rojo.
+ * Campos extra son ignorados silenciosamente.
  */
 export function parse_redeem_invitation_input(
-  _raw: unknown,
+  raw: unknown,
 ): ParseResult<RedeemInvitationInput> {
-  throw new Error("not_implemented");
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+    return {
+      success: false,
+      error: {
+        code: "INVALID_INPUT",
+        message: "El payload debe ser un objeto JSON",
+      },
+    };
+  }
+
+  const obj = raw as Record<string, unknown>;
+
+  // invitationCode
+  if (obj.invitationCode === undefined || obj.invitationCode === null) {
+    return {
+      success: false,
+      error: { code: "INVALID_INPUT", message: "invitationCode es requerido" },
+    };
+  }
+  if (
+    typeof obj.invitationCode !== "string" || obj.invitationCode.length === 0
+  ) {
+    return {
+      success: false,
+      error: {
+        code: "INVALID_INPUT",
+        message: "invitationCode no puede ser vacío",
+      },
+    };
+  }
+  if (obj.invitationCode.length < 6) {
+    return {
+      success: false,
+      error: {
+        code: "INVALID_INPUT",
+        message: "invitationCode debe tener al menos 6 caracteres",
+      },
+    };
+  }
+
+  // email
+  if (obj.email === undefined || obj.email === null) {
+    return {
+      success: false,
+      error: { code: "INVALID_INPUT", message: "email es requerido" },
+    };
+  }
+  if (typeof obj.email !== "string" || obj.email.length === 0) {
+    return {
+      success: false,
+      error: { code: "INVALID_INPUT", message: "email no puede ser vacío" },
+    };
+  }
+  if (!EMAIL_REGEX.test(obj.email)) {
+    return {
+      success: false,
+      error: {
+        code: "INVALID_INPUT",
+        message: "email no tiene un formato válido",
+      },
+    };
+  }
+
+  // password
+  if (obj.password === undefined || obj.password === null) {
+    return {
+      success: false,
+      error: { code: "INVALID_INPUT", message: "password es requerido" },
+    };
+  }
+  if (typeof obj.password !== "string" || obj.password.length === 0) {
+    return {
+      success: false,
+      error: { code: "INVALID_INPUT", message: "password no puede ser vacío" },
+    };
+  }
+  if (obj.password.length < 8) {
+    return {
+      success: false,
+      error: {
+        code: "INVALID_INPUT",
+        message: "password debe tener al menos 8 caracteres",
+      },
+    };
+  }
+
+  // fullName
+  if (obj.fullName === undefined || obj.fullName === null) {
+    return {
+      success: false,
+      error: { code: "INVALID_INPUT", message: "fullName es requerido" },
+    };
+  }
+  if (typeof obj.fullName !== "string" || obj.fullName.trim().length === 0) {
+    return {
+      success: false,
+      error: { code: "INVALID_INPUT", message: "fullName no puede ser vacío" },
+    };
+  }
+
+  return {
+    success: true,
+    data: {
+      invitationCode: obj.invitationCode,
+      email: obj.email,
+      password: obj.password,
+      fullName: obj.fullName,
+    },
+  };
 }

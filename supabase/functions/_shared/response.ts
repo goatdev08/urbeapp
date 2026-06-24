@@ -1,5 +1,4 @@
-// _shared/response.ts — stub mínimo (not_implemented)
-// El agente supabase implementará los helpers reales en la fase GREEN.
+// _shared/response.ts
 
 export interface ErrorBody {
   error: {
@@ -10,20 +9,22 @@ export interface ErrorBody {
 
 /**
  * Devuelve una respuesta JSON con status y cuerpo tipado.
- * STUB: lanza para que los tests fallen en rojo.
  */
-export function json_response(_body: unknown, _status: number): Response {
-  throw new Error("not_implemented");
+export function json_response(body: unknown, status: number): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
 }
 
 /**
  * Devuelve siempre { error: { code, message } }.
- * STUB: lanza para que los tests fallen en rojo.
  */
 export function error_response(
-  _code: string,
-  _message: string,
-  _status: number,
+  code: string,
+  message: string,
+  status: number,
 ): Response {
-  throw new Error("not_implemented");
+  const body: ErrorBody = { error: { code, message } };
+  return json_response(body, status);
 }
