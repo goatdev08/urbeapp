@@ -4,7 +4,8 @@ export interface RedeemInvitationInput {
   invitationCode: string;
   email: string;
   password: string;
-  fullName: string;
+  firstName: string;
+  lastName: string;
 }
 
 export type ParseResult<T> =
@@ -20,7 +21,8 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  *   - invitationCode: string, min 6 caracteres
  *   - email: string, formato email válido
  *   - password: string, min 8 caracteres
- *   - fullName: string, min 1 carácter (no vacío)
+ *   - firstName: string, min 1 carácter (no vacío)
+ *   - lastName: string, min 1 carácter (no vacío)
  * Campos extra son ignorados silenciosamente.
  */
 export function parse_redeem_invitation_input(
@@ -112,17 +114,31 @@ export function parse_redeem_invitation_input(
     };
   }
 
-  // fullName
-  if (obj.fullName === undefined || obj.fullName === null) {
+  // firstName
+  if (obj.firstName === undefined || obj.firstName === null) {
     return {
       success: false,
-      error: { code: "INVALID_INPUT", message: "fullName es requerido" },
+      error: { code: "INVALID_INPUT", message: "firstName es requerido" },
     };
   }
-  if (typeof obj.fullName !== "string" || obj.fullName.trim().length === 0) {
+  if (typeof obj.firstName !== "string" || obj.firstName.trim().length === 0) {
     return {
       success: false,
-      error: { code: "INVALID_INPUT", message: "fullName no puede ser vacío" },
+      error: { code: "INVALID_INPUT", message: "firstName no puede ser vacío" },
+    };
+  }
+
+  // lastName
+  if (obj.lastName === undefined || obj.lastName === null) {
+    return {
+      success: false,
+      error: { code: "INVALID_INPUT", message: "lastName es requerido" },
+    };
+  }
+  if (typeof obj.lastName !== "string" || obj.lastName.trim().length === 0) {
+    return {
+      success: false,
+      error: { code: "INVALID_INPUT", message: "lastName no puede ser vacío" },
     };
   }
 
@@ -132,7 +148,8 @@ export function parse_redeem_invitation_input(
       invitationCode: obj.invitationCode,
       email: obj.email,
       password: obj.password,
-      fullName: obj.fullName,
+      firstName: obj.firstName,
+      lastName: obj.lastName,
     },
   };
 }

@@ -61,7 +61,8 @@ const payload_valido = {
   invitationCode: "ABCDEF",
   email: "agente@inmobiliaria.mx",
   password: "secreto123",
-  fullName: "Juan Pérez",
+  firstName: "Juan",
+  lastName: "Pérez",
 };
 
 // ── Happy path ─────────────────────────────────────────────────────────────────
@@ -145,8 +146,8 @@ Deno.test("validacion_password_menos_de_8_caracteres_retorna_400", async () => {
   assertEquals(body.error.code, "INVALID_INPUT");
 });
 
-Deno.test("validacion_full_name_ausente_retorna_400", async () => {
-  const { fullName: _omit, ...sin_nombre } = payload_valido;
+Deno.test("validacion_first_name_ausente_retorna_400", async () => {
+  const { firstName: _omit, ...sin_nombre } = payload_valido;
   const req = make_post_request(sin_nombre);
   const res = await handler(req);
   assertEquals(res.status, 400);
@@ -154,8 +155,25 @@ Deno.test("validacion_full_name_ausente_retorna_400", async () => {
   assertEquals(body.error.code, "INVALID_INPUT");
 });
 
-Deno.test("validacion_full_name_cadena_vacia_retorna_400", async () => {
-  const req = make_post_request({ ...payload_valido, fullName: "" });
+Deno.test("validacion_first_name_cadena_vacia_retorna_400", async () => {
+  const req = make_post_request({ ...payload_valido, firstName: "" });
+  const res = await handler(req);
+  assertEquals(res.status, 400);
+  const body = await res.json();
+  assertEquals(body.error.code, "INVALID_INPUT");
+});
+
+Deno.test("validacion_last_name_ausente_retorna_400", async () => {
+  const { lastName: _omit, ...sin_apellido } = payload_valido;
+  const req = make_post_request(sin_apellido);
+  const res = await handler(req);
+  assertEquals(res.status, 400);
+  const body = await res.json();
+  assertEquals(body.error.code, "INVALID_INPUT");
+});
+
+Deno.test("validacion_last_name_cadena_vacia_retorna_400", async () => {
+  const req = make_post_request({ ...payload_valido, lastName: "" });
   const res = await handler(req);
   assertEquals(res.status, 400);
   const body = await res.json();

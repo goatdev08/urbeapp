@@ -24,7 +24,7 @@
  * - email_duplicado_se_mapea_a_EMAIL_ALREADY_EXISTS
  * - password_se_pasa_sin_modificar_al_admin
  * - email_confirm_es_exactamente_true_boolean
- * - full_name_se_pasa_en_user_metadata_dot_full_name
+ * - first_name_y_last_name_se_pasan_en_user_metadata
  *
  * ### Ramas de reglas no obvias
  * - error_generico_no_duplicado_mapea_a_AUTH_CREATE_FAILED
@@ -37,13 +37,12 @@
 import {
   assertEquals,
   assertExists,
-  assertRejects,
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   type AuthAdminClient,
+  create_agent_auth_user,
   type CreateAgentAuthUserPayload,
   type CreateUserParams,
-  create_agent_auth_user,
 } from "./auth_user.ts";
 import { type InvitationDb, type InvitationTokenRow } from "./invitation.ts";
 import { sha256_hex } from "./crypto.ts";
@@ -64,17 +63,18 @@ function make_fake_admin_ok(user_id: string): FakeAdminClient {
     last_create_user_params: null,
     delete_user_call_count: 0,
     last_deleted_uid: null,
-    async createUser(params: CreateUserParams) {
+    createUser(params: CreateUserParams) {
       this.create_user_call_count++;
       this.last_create_user_params = params;
-      return {
+      return Promise.resolve({
         data: { user: { id: user_id } },
         error: null,
-      };
+      });
     },
-    async deleteUser(uid: string) {
+    deleteUser(uid: string) {
       this.delete_user_call_count++;
       this.last_deleted_uid = uid;
+      return Promise.resolve();
     },
   };
 }
@@ -85,16 +85,17 @@ function make_fake_admin_duplicate_error(): FakeAdminClient {
     last_create_user_params: null,
     delete_user_call_count: 0,
     last_deleted_uid: null,
-    async createUser(params: CreateUserParams) {
+    createUser(params: CreateUserParams) {
       this.create_user_call_count++;
       this.last_create_user_params = params;
-      return {
+      return Promise.resolve({
         data: null,
         error: { message: "User already registered" },
-      };
+      });
     },
-    async deleteUser(_uid: string) {
+    deleteUser(_uid: string) {
       this.delete_user_call_count++;
+      return Promise.resolve();
     },
   };
 }
@@ -105,16 +106,17 @@ function make_fake_admin_generic_error(error_message: string): FakeAdminClient {
     last_create_user_params: null,
     delete_user_call_count: 0,
     last_deleted_uid: null,
-    async createUser(params: CreateUserParams) {
+    createUser(params: CreateUserParams) {
       this.create_user_call_count++;
       this.last_create_user_params = params;
-      return {
+      return Promise.resolve({
         data: null,
         error: { message: error_message },
-      };
+      });
     },
-    async deleteUser(_uid: string) {
+    deleteUser(_uid: string) {
       this.delete_user_call_count++;
+      return Promise.resolve();
     },
   };
 }
@@ -147,16 +149,8 @@ function make_fila_valida(
 
 function make_fake_db_valido(row: InvitationTokenRow): InvitationDb {
   return {
-    async find_by_hash(_hash: string) {
-      return row;
-    },
-  };
-}
-
-function make_fake_db_token_invalido(): InvitationDb {
-  return {
-    async find_by_hash(_hash: string) {
-      return null; // token no existe → TOKEN_NOT_FOUND
+    find_by_hash(_hash: string) {
+      return Promise.resolve(row);
     },
   };
 }
@@ -166,7 +160,8 @@ const payload_redeem_valido = {
   invitationCode: PLAIN_CODE,
   email: "agente@inmobiliaria.mx",
   password: "secreto123",
-  fullName: "Juan Pérez",
+  firstName: "Juan",
+  lastName: "Pérez",
 };
 
 function make_post_request(body: unknown): Request {
@@ -186,7 +181,8 @@ Deno.test("crear_usuario_exitoso_devuelve_user_id", async () => {
   const payload: CreateAgentAuthUserPayload = {
     email: "agente@inmobiliaria.mx",
     password: "secreto123",
-    full_name: "Juan Pérez",
+    first_name: "Juan",
+    last_name: "Pérez",
   };
 
   const result = await create_agent_auth_user(admin, payload);
@@ -202,7 +198,8 @@ Deno.test("email_duplicado_se_mapea_a_EMAIL_ALREADY_EXISTS", async () => {
   const payload: CreateAgentAuthUserPayload = {
     email: "duplicado@inmobiliaria.mx",
     password: "secreto123",
-    full_name: "María López",
+    first_name: "María",
+    last_name: "López",
   };
 
   const result = await create_agent_auth_user(admin, payload);
@@ -220,7 +217,8 @@ Deno.test("password_se_pasa_sin_modificar_al_admin", async () => {
   const payload: CreateAgentAuthUserPayload = {
     email: "agente@inmobiliaria.mx",
     password: expected_password,
-    full_name: "Juan Pérez",
+    first_name: "Juan",
+    last_name: "Pérez",
   };
 
   await create_agent_auth_user(admin, payload).catch(() => {
@@ -249,7 +247,8 @@ Deno.test("email_confirm_es_exactamente_true_boolean", async () => {
   const payload: CreateAgentAuthUserPayload = {
     email: "agente@inmobiliaria.mx",
     password: "secreto123",
-    full_name: "Juan Pérez",
+    first_name: "Juan",
+    last_name: "Pérez",
   };
 
   await create_agent_auth_user(admin, payload).catch(() => {});
@@ -275,13 +274,15 @@ Deno.test("email_confirm_es_exactamente_true_boolean", async () => {
   }
 });
 
-Deno.test("full_name_se_pasa_en_user_metadata_dot_full_name", async () => {
-  const expected_full_name = "Ana García Ramírez";
+Deno.test("first_name_y_last_name_se_pasan_en_user_metadata", async () => {
+  const expected_first_name = "Ana García";
+  const expected_last_name = "Ramírez";
   const admin = make_fake_admin_ok(USER_ID);
   const payload: CreateAgentAuthUserPayload = {
     email: "agente@inmobiliaria.mx",
     password: "secreto123",
-    full_name: expected_full_name,
+    first_name: expected_first_name,
+    last_name: expected_last_name,
   };
 
   await create_agent_auth_user(admin, payload).catch(() => {});
@@ -292,9 +293,14 @@ Deno.test("full_name_se_pasa_en_user_metadata_dot_full_name", async () => {
       "user_metadata debe existir en los params de createUser",
     );
     assertEquals(
-      admin.last_create_user_params.user_metadata.full_name,
-      expected_full_name,
-      "user_metadata.full_name debe contener el nombre completo exacto",
+      admin.last_create_user_params.user_metadata.first_name,
+      expected_first_name,
+      "user_metadata.first_name debe contener el nombre exacto",
+    );
+    assertEquals(
+      admin.last_create_user_params.user_metadata.last_name,
+      expected_last_name,
+      "user_metadata.last_name debe contener el apellido exacto",
     );
   } else {
     assertEquals(
@@ -312,7 +318,8 @@ Deno.test("error_generico_no_duplicado_mapea_a_AUTH_CREATE_FAILED", async () => 
   const payload: CreateAgentAuthUserPayload = {
     email: "agente@inmobiliaria.mx",
     password: "secreto123",
-    full_name: "Juan Pérez",
+    first_name: "Juan",
+    last_name: "Pérez",
   };
 
   const result = await create_agent_auth_user(admin, payload);
@@ -380,17 +387,16 @@ Deno.test(
     const payload: CreateAgentAuthUserPayload = {
       email: "agente@inmobiliaria.mx",
       password: "secreto123",
-      full_name: "Juan Pérez",
+      first_name: "Juan",
+      last_name: "Pérez",
     };
 
     // Intentar crear usuario (lanza not_implemented en RED)
-    let created_user_id: string | null = null;
     const result = await create_agent_auth_user(admin, payload).catch(
       () => null,
     );
-    if (result !== null && result.ok) {
-      created_user_id = result.user_id;
-    }
+    // result.ok && result.user_id disponible para compensación en 5.4+
+    void result;
 
     // Aunque el SUT no esté implementado, verificar que deleteUser
     // es una función en la interfaz y puede ser llamada directamente.

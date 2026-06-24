@@ -28,7 +28,8 @@ export interface CreateUserParams {
   password: string;
   email_confirm: boolean;
   user_metadata: {
-    full_name: string;
+    first_name: string;
+    last_name: string;
   };
 }
 
@@ -75,7 +76,8 @@ export type CreateAgentAuthUserResult =
 export interface CreateAgentAuthUserPayload {
   email: string;
   password: string;
-  full_name: string;
+  first_name: string;
+  last_name: string;
 }
 
 // ── SUT — stub (fase RED) ─────────────────────────────────────────────────────
@@ -85,7 +87,7 @@ export interface CreateAgentAuthUserPayload {
  *
  * Pasos (GREEN lo implementará):
  *   1. Llamar admin.createUser con email, password, email_confirm: true,
- *      user_metadata: { full_name }.
+ *      user_metadata: { first_name, last_name }.
  *   2. Si error.message contiene 'already registered' → EMAIL_ALREADY_EXISTS (409).
  *   3. Si error distinto → AUTH_CREATE_FAILED (500) con el mensaje del error.
  *   4. Si ok → { ok: true, user_id: data.user.id }.
@@ -96,11 +98,50 @@ export interface CreateAgentAuthUserPayload {
  *   manualmente desde este código.
  *
  * @param admin   Cliente admin inyectable (DI).
- * @param payload { email, password, full_name } del payload validado.
+ * @param payload { email, password, first_name, last_name } del payload validado.
  */
 export async function create_agent_auth_user(
-  _admin: AuthAdminClient,
-  _payload: CreateAgentAuthUserPayload,
+  admin: AuthAdminClient,
+  payload: CreateAgentAuthUserPayload,
 ): Promise<CreateAgentAuthUserResult> {
-  throw new Error("not_implemented");
+  const { email, password, first_name, last_name } = payload;
+
+  const params: CreateUserParams = {
+    email,
+    password,
+    email_confirm: true,
+    user_metadata: { first_name, last_name },
+  };
+
+  const { data, error } = await admin.createUser(params);
+
+  if (error !== null) {
+    // Detectar email duplicado por el mensaje que devuelve Supabase Auth
+    if (error.message.includes("already registered")) {
+      return {
+        ok: false,
+        error_code: "EMAIL_ALREADY_EXISTS",
+        message: error.message,
+      };
+    }
+    // Cualquier otro error
+    return {
+      ok: false,
+      error_code: "AUTH_CREATE_FAILED",
+      message: error.message,
+    };
+  }
+
+  if (data === null || data.user === null || data.user === undefined) {
+    return {
+      ok: false,
+      error_code: "AUTH_CREATE_FAILED",
+      message: "createUser no devolvió data.user",
+    };
+  }
+
+  return {
+    ok: true,
+    user_id: data.user.id,
+  };
 }

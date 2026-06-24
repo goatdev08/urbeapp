@@ -1,13 +1,18 @@
 // supabase/functions/redeem-invitation/index.ts
-// Fase GREEN 5.1: scaffold + validación de entrada implementados.
-// La lógica de negocio (canje real) se enchufará en 5.2+.
-// Firma de deps preparada para 5.3+ (DI de InvitationDb y AuthAdminClient).
+// Fase GREEN 5.3: validación de entrada + validación de token + creación de usuario auth.
+// La orquestación completa (asociar agencia, marcar token usado) se enchufará en 5.4+.
 
 import { handle_cors_preflight } from "../_shared/cors.ts";
 import { error_response, json_response } from "../_shared/response.ts";
 import { parse_redeem_invitation_input } from "../_shared/validation.ts";
-import type { InvitationDb } from "../_shared/invitation.ts";
-import type { AuthAdminClient } from "../_shared/auth_user.ts";
+import {
+  type InvitationDb,
+  validate_invitation_token,
+} from "../_shared/invitation.ts";
+import {
+  type AuthAdminClient,
+  create_agent_auth_user,
+} from "../_shared/auth_user.ts";
 
 /**
  * Dependencias inyectables del handler (DI pattern).
@@ -19,21 +24,42 @@ export interface RedeemDeps {
   authAdmin?: AuthAdminClient;
 }
 
+// Mensajes legibles para errores de validación del token
+const TOKEN_ERROR_MESSAGES: Record<string, string> = {
+  TOKEN_NOT_FOUND: "El código de invitación no existe",
+  TOKEN_REVOKED: "El código de invitación ha sido revocado",
+  TOKEN_EXPIRED: "El código de invitación ha expirado",
+  TOKEN_MAX_USES_REACHED: "El código de invitación ya no está disponible",
+  AGENCY_INACTIVE: "La agencia asociada a este código no está activa",
+};
+
+const TOKEN_ERROR_STATUS: Record<string, number> = {
+  TOKEN_NOT_FOUND: 404,
+  TOKEN_REVOKED: 422,
+  TOKEN_EXPIRED: 422,
+  TOKEN_MAX_USES_REACHED: 422,
+  AGENCY_INACTIVE: 422,
+};
+
 /**
  * Handler exportado para facilitar tests unitarios sin Deno.serve().
  * Contrato de entrada/salida documentado en §17.3 (lineamientos) y tarea #5.
  *
- * Payload esperado: { invitationCode, email, password, fullName }
+ * Payload esperado: { invitationCode, email, password, firstName, lastName }
  * Respuestas:
  *   OPTIONS → 200 con headers CORS
  *   GET/PUT/DELETE → 405
  *   POST inválido → 400 { error: { code: "INVALID_INPUT", message } }
- *   POST válido → 200 { ... } (lógica real en 5.3+)
+ *   POST válido sin deps → 200 { status: "ok", data } (scaffold — sin deps reales)
+ *   POST válido con deps → orquesta: validar token → crear usuario → 200 { user_id }
  *
- * @param deps  Dependencias inyectables (db, authAdmin). En producción: undefined → se
- *              construyen internamente. En tests: se pasan fakes controlados.
+ * @param deps  Dependencias inyectables (db, authAdmin). En producción: undefined → stub.
+ *              En tests: se pasan fakes controlados.
  */
-export async function handler(req: Request, _deps?: RedeemDeps): Promise<Response> {
+export async function handler(
+  req: Request,
+  deps?: RedeemDeps,
+): Promise<Response> {
   // CORS preflight
   if (req.method === "OPTIONS") {
     return handle_cors_preflight(req);
@@ -62,17 +88,54 @@ export async function handler(req: Request, _deps?: RedeemDeps): Promise<Respons
     return error_response("INVALID_INPUT", parsed.error.message, 400);
   }
 
-  // TODO(5.2): enchufar lógica de negocio aquí:
-  //   1. sha256_hex(parsed.data.invitationCode) → buscar en agency_invitation_tokens
-  //   2. Verificar token vigente y no usado
-  //   3. Crear usuario via supabase.auth.admin.createUser
-  //   4. Asociar usuario a la agencia
-  //   5. Marcar token como usado
-  //   6. Devolver { jwt, user }
-  //
-  // Por ahora, retornamos 200 con los datos parseados para que el scaffold
-  // sea coherente y los tests de 5.1 pasen correctamente.
-  return json_response({ status: "ok", data: parsed.data }, 200);
+  const { invitationCode, email, password, firstName, lastName } = parsed.data;
+
+  // Si no se inyectaron deps (scaffold / tests 5.1), retornar 200 con datos parseados.
+  // Esto preserva el comportamiento del contrato 5.1 mientras las deps no estén disponibles.
+  if (deps?.db === undefined || deps?.authAdmin === undefined) {
+    return json_response({ status: "ok", data: parsed.data }, 200);
+  }
+
+  const { db, authAdmin } = deps;
+
+  // Paso 1 (5.2): Validar el token de invitación
+  const token_result = await validate_invitation_token(db, invitationCode);
+  if (!token_result.ok) {
+    const status = TOKEN_ERROR_STATUS[token_result.error_code] ?? 422;
+    const message = TOKEN_ERROR_MESSAGES[token_result.error_code] ??
+      "Error de validación";
+    return error_response(token_result.error_code, message, status);
+  }
+
+  // Paso 2 (5.3): Crear usuario en auth.users via admin client
+  // Nota: el trigger handle_new_user (migración 0002) crea public.users automáticamente.
+  // NO insertar la fila en public.users desde aquí.
+  const auth_result = await create_agent_auth_user(authAdmin, {
+    email,
+    password,
+    first_name: firstName,
+    last_name: lastName,
+  });
+
+  if (!auth_result.ok) {
+    if (auth_result.error_code === "EMAIL_ALREADY_EXISTS") {
+      return error_response(auth_result.error_code, auth_result.message, 409);
+    }
+    return error_response(auth_result.error_code, auth_result.message, 500);
+  }
+
+  // TODO(5.4): Asociar usuario a la agencia (public.users.agency_id = token_result.agency_id)
+  // TODO(5.4): Marcar token como usado (increment current_uses)
+  // TODO(5.4): Si pasos posteriores fallan → compensación: authAdmin.deleteUser(auth_result.user_id)
+
+  return json_response(
+    {
+      user_id: auth_result.user_id,
+      agency_id: token_result.agency_id,
+      agency_name: token_result.agency_name,
+    },
+    200,
+  );
 }
 
 // Punto de entrada Deno — wrapping para que Deno.serve solo reciba (req: Request)

@@ -97,9 +97,9 @@ function make_fake_db(
 ): InvitationDb & { last_hash: string | null } {
   return {
     last_hash: null,
-    async find_by_hash(hash: string) {
+    find_by_hash(hash: string) {
       this.last_hash = hash;
-      return row;
+      return Promise.resolve(row);
     },
   };
 }
