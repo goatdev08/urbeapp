@@ -41,8 +41,9 @@ supabase/
 | `..._0009_seed_terms` | Versión vigente inicial de Términos y Aviso de Privacidad |
 | `..._0010_security_perf_hardening` | Mueve helpers a esquema `private`, optimiza RLS (`(select auth.uid())`), índices de FK, blinda triggers |
 | `..._0013_redeem_invitation_rpc` | RPC `redeem_invitation_atomic` (security definer, solo `service_role`): canje de invitación de agente en una transacción (consumo de token + `agency_members` + denormalización `users` + 4 `user_consents`) |
+| `..._0014_service_role_grants` | Restablece privilegios DML de `service_role` sobre `public` (tablas/secuencias/rutinas + default privileges). Corrige bug: `service_role` no tenía SELECT/INSERT/UPDATE/DELETE en ninguna tabla (0008 solo otorgó a `authenticated`/`anon`), por lo que la capa de servicio supabase-js de las Edge Functions recibía **403** de PostgREST. La RPC 0013 no se veía afectada por ser `SECURITY DEFINER`. |
 
-> Nota de rama: las migraciones `0011_storage_property_videos` y `0012_property_videos_ready_requires_storage` viven en la rama `tarea/3-storage-videos` (Storage). La rama de la tarea #5 parte de `main` (limpia) y agrega `0013`; `0013` no depende de `0011`/`0012`. Al integrar, mergear primero la rama de Storage. En el remoto `urbea-app` ya están aplicadas `0011`–`0013`.
+> Nota de rama: las migraciones `0011_storage_property_videos` y `0012_property_videos_ready_requires_storage` viven en la rama `tarea/3-storage-videos` (Storage). La rama de la tarea #5 parte de `main` (limpia) y agrega `0013`; `0013` no depende de `0011`/`0012`. Al integrar, mergear primero la rama de Storage. En el remoto `urbea-app` ya están aplicadas `0011`–`0014`.
 
 ---
 

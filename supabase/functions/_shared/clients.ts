@@ -30,8 +30,9 @@ export function service_client(): SupabaseClient {
 
 /**
  * Adaptador real de InvitationDb. Busca el token por su HASH y trae la agencia
- * por inner join. FILTRA agencies.deleted_at IS NULL (follow-up de 5.2): una
- * agencia soft-deleted no debe permitir canjes aunque su status sea 'active'.
+ * por inner join. Descarta agencias soft-deleted (deleted_at IS NOT NULL) en JS
+ * (follow-up de 5.2): una agencia borrada no debe permitir canjes aunque su
+ * status sea 'active'.
  */
 export function make_invitation_db(client: SupabaseClient): InvitationDb {
   return {
@@ -42,15 +43,20 @@ export function make_invitation_db(client: SupabaseClient): InvitationDb {
           "id, agency_id, token, max_uses, current_uses, expires_at, revoked_at, agencies!inner(name, status, deleted_at)",
         )
         .eq("token", hash)
-        .is("agencies.deleted_at", null)
         .maybeSingle();
 
       if (error || data === null) return null;
 
-      const agency = data.agencies as unknown as {
-        name: string;
-        status: string;
-      };
+      // El filtro de soft-delete se aplica en JS, no como filtro embebido de
+      // PostgREST (`.is("agencies.deleted_at", null)`), porque ese filtro sobre
+      // el recurso embebido descarta la fila padre y devuelve null para tokens
+      // válidos. agencies!inner ya garantiza que la agencia existe.
+      const raw_agency = data.agencies as unknown;
+      const agency = (Array.isArray(raw_agency) ? raw_agency[0] : raw_agency) as
+        | { name: string; status: string; deleted_at: string | null }
+        | undefined;
+      if (agency === undefined || agency.deleted_at !== null) return null;
+
       return {
         id: data.id,
         agency_id: data.agency_id,

@@ -212,3 +212,16 @@ Deno.test("ip_x_forwarded_for_se_pasa_a_la_rpc", async () => {
   });
   assertEquals(redeemer.calls[0].ip, "189.203.10.55");
 });
+
+Deno.test("ip_x_forwarded_for_lista_csv_se_pasa_solo_la_primera_ip", async () => {
+  // x-forwarded-for puede ser una lista "cliente, proxy1, proxy2"; el tipo inet
+  // de la RPC solo acepta UNA IP. Debe pasarse la primera (el cliente real),
+  // recortada. Regresión: una lista CSV completa rompía la RPC con
+  // "invalid input syntax for type inet".
+  const db = db_valido(), admin = admin_ok(), redeemer = redeemer_ok();
+  await handler(
+    post(PAYLOAD, { "x-forwarded-for": "187.213.225.127, 99.82.166.107" }),
+    { db, authAdmin: admin, redeemer },
+  );
+  assertEquals(redeemer.calls[0].ip, "187.213.225.127");
+});

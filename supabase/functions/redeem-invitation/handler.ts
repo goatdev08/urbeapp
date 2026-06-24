@@ -132,7 +132,10 @@ export async function handler(
 
   // Paso 3 (5.4): canje atómico vía RPC redeem_invitation_atomic (migración 0013).
   // La RPC consolida: consumo del token + agency_members + denorm users + 4 consentimientos.
-  const ip = req.headers.get("x-forwarded-for");
+  // x-forwarded-for puede ser "cliente, proxy1, proxy2"; la RPC (inet) solo
+  // acepta UNA IP, así que tomamos la primera (el cliente real) recortada.
+  const xff = req.headers.get("x-forwarded-for");
+  const ip = xff?.split(",")[0].trim() || null;
   const redeem = await redeemer.redeem_atomic({
     token_id: token_result.token_id,
     user_id: auth_result.user_id,
