@@ -15,6 +15,7 @@
  */
 import React, { useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -24,7 +25,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { Redirect, useRouter } from 'expo-router';
 
 import { useAuth } from '@/features/auth/context';
 import { map_auth_error } from '@/features/auth/auth-errors';
@@ -40,7 +41,7 @@ import {
 // ---------------------------------------------------------------------------
 
 export default function LoginScreen() {
-  const { signIn } = useAuth();
+  const { signIn, session, isLoading } = useAuth();
   const router = useRouter();
 
   // Estado del formulario
@@ -58,6 +59,16 @@ export default function LoginScreen() {
   // ejecuta antes de que React haya refrescado el estado.
   const email_ref = useRef('');
   const password_ref = useRef('');
+
+  // ---------------------------------------------------------------------------
+  // Rebote: si ya hay sesión activa (y no estamos cargando), ir a la home.
+  // Usamos <Redirect> declarativo (Expo Router SDK 56) para evitar el parpadeo.
+  // Mientras isLoading=true no decidimos nada — evita redirect prematuro.
+  // ---------------------------------------------------------------------------
+
+  if (!isLoading && session !== null) {
+    return <Redirect href="/" />;
+  }
 
   // ---------------------------------------------------------------------------
   // Handlers de cambio de texto
@@ -225,9 +236,22 @@ export default function LoginScreen() {
               accessibilityLabel="Iniciar sesión"
               accessibilityState={{ disabled: !can_submit, busy: is_submitting }}
             >
-              <Text style={[styles.submit_text, !can_submit && styles.submit_text_disabled]}>
-                {is_submitting ? 'Iniciando sesión…' : 'Iniciar sesión'}
-              </Text>
+              {is_submitting ? (
+                <View style={styles.submit_loading_row}>
+                  <ActivityIndicator
+                    testID="submit-spinner"
+                    size="small"
+                    color="#9CA3AF"
+                  />
+                  <Text style={[styles.submit_text, styles.submit_text_disabled, styles.submit_loading_label]}>
+                    Iniciando sesión…
+                  </Text>
+                </View>
+              ) : (
+                <Text style={[styles.submit_text, !can_submit && styles.submit_text_disabled]}>
+                  Iniciar sesión
+                </Text>
+              )}
             </Pressable>
           </View>
         </ScrollView>
@@ -295,6 +319,14 @@ const styles = StyleSheet.create({
   },
   submit_text_disabled: {
     color: '#9CA3AF',
+  },
+  submit_loading_row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  submit_loading_label: {
+    marginLeft: 8,
   },
   error_banner: {
     marginBottom: 12,
