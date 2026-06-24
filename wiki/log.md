@@ -51,3 +51,8 @@ Tip: `grep "^## \[" log.md | tail -5` → últimas 5 entradas.
 - Deps nativas: expo-dev-client, expo-router, react-native-maps@1.27.2 (sin fricción en SDK 56), expo-video, screens, safe-area-context.
 - Cliente Supabase tipado `src/lib/supabase/client.ts` (createClient<Database> + AsyncStorage); smoke test **200 OK** contra remoto `mvpvqmyhrrkwbnpctpuq`. Credenciales en `.env.local` (gitignored).
 - Mapa-codebase actualizado (sección móvil → archivos reales). Rama `tarea/1-init-expo-mobile` (commits locales). Pendiente humano: primer `eas build` para ver la app en device.
+
+## [2026-06-23] hito | #1 dev build instalado en device
+- Primer `eas build` (development, Android) exitoso tras resolver cascada: `npx eas-cli` (no pnpm-global), `app.config.js` (no `.ts`), y `mobile/` self-contained (sin `pnpm-workspace.yaml` raíz que hoisteaba deps nativas fuera de EAS).
+- `.apk` instalado; Urbea corriendo nativo en device vía `pnpm expo start --dev-client` (Supabase activo).
+- Nuevo: `wiki/codebase/comandos.md` (referencia de comandos dev/EAS/verificación/Taskmaster).

@@ -25,6 +25,7 @@ Catálogo de todas las páginas. Actualizar en cada *ingest*.
 ## Codebase (puente conocimiento↔código)
 - [[mapa-codebase]] — concepto/dominio → archivos exactos
 - [[db-schema-map]] — cada tabla → migración → concepto
+- [[comandos]] — referencia de comandos (dev, EAS, verificación, Taskmaster)
 
 ## Conceptos
 - [[feed-vertical-video]] · [[propiedades-y-video]] · [[busqueda-y-filtros]] · [[mapa-y-ubicacion]]
