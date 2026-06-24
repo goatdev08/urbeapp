@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
+import { AppState } from 'react-native';
 
 import type { Database } from '@/types/database';
 
@@ -24,4 +25,15 @@ export const supabase = createClient<Database>(supabase_url, supabase_anon_key, 
     autoRefreshToken: true,
     detectSessionInUrl: false,
   },
+});
+
+// Patrón oficial Supabase + Expo: el auto-refresh del token debe correr solo
+// mientras la app está en foreground. AppState pausa el refresh en background
+// (ahorra trabajo/red) y lo reanuda al volver. Ver docs de supabase-js en RN.
+AppState.addEventListener('change', (state) => {
+  if (state === 'active') {
+    void supabase.auth.startAutoRefresh();
+  } else {
+    void supabase.auth.stopAutoRefresh();
+  }
 });
