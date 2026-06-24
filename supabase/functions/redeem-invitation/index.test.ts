@@ -37,11 +37,8 @@
  * - error.code === "INVALID_INPUT" para errores de payload
  */
 
-import {
-  assertEquals,
-  assertExists,
-} from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { handler } from "./index.ts";
+import { assertEquals, assertExists } from "@std/assert";
+import { handler } from "./handler.ts";
 
 // ── Helpers de test ────────────────────────────────────────────────────────────
 

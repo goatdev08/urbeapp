@@ -13,8 +13,8 @@
 // - createUser falla (duplicado) → 409; redeemer NO se llama; deleteUser NO se llama.
 // - ip (x-forwarded-for) se pasa a la RPC.
 
-import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { handler } from "./index.ts";
+import { assertEquals } from "@std/assert";
+import { handler } from "./handler.ts";
 import type {
   InvitationDb,
   InvitationTokenRow,

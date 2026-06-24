@@ -34,10 +34,7 @@
  * - compensacion_delete_user_es_invocable_con_user_id_creado
  */
 
-import {
-  assertEquals,
-  assertExists,
-} from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assertEquals, assertExists } from "@std/assert";
 import {
   type AuthAdminClient,
   create_agent_auth_user,
@@ -46,7 +43,7 @@ import {
 } from "./auth_user.ts";
 import { type InvitationDb, type InvitationTokenRow } from "./invitation.ts";
 import { sha256_hex } from "./crypto.ts";
-import { handler } from "../redeem-invitation/index.ts";
+import { handler } from "../redeem-invitation/handler.ts";
 
 // ── Fake de AuthAdminClient ───────────────────────────────────────────────────
 

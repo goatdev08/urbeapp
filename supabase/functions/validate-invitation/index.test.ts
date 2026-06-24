@@ -45,17 +45,14 @@
  * - endpoint_post_agencia_inactiva_retorna_422_agency_inactive
  */
 
-import {
-  assertEquals,
-  assertExists,
-} from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assertEquals, assertExists } from "@std/assert";
 import {
   type InvitationDb,
   type InvitationTokenRow,
   validate_invitation_token,
 } from "../_shared/invitation.ts";
 import { sha256_hex } from "../_shared/crypto.ts";
-import { handler } from "./index.ts";
+import { handler } from "./handler.ts";
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 

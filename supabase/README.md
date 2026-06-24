@@ -119,12 +119,16 @@ recomienda instalar `supabase_test_helpers` (`tests.authenticate_as`).
 Las Edge Functions (`functions/`) corren en **Deno**, no en Node. Sus tests unitarios usan `deno test`.
 Requisito: `brew install deno` (Deno 2.x).
 ```bash
-deno test --allow-net supabase/functions/**/*.test.ts   # tests de Edge Functions
-deno lint supabase/functions/                            # lint
-deno fmt supabase/functions/                             # formato
+cd supabase/functions     # correr DESDE aquí para que deno.json (import map) se autodescubra
+deno test --allow-net     # tests de Edge Functions
+deno lint                 # lint
+deno fmt                  # formato
 ```
-Convención: cada función vive en `functions/<nombre>/index.ts` con su `index.test.ts` al lado;
-los helpers compartidos (CORS, respuestas JSON, hash sha256, validación) en `functions/_shared/`.
+Convención: cada función vive en `functions/<nombre>/` con:
+- `handler.ts` — lógica PURA con dependencias inyectables (DI); es lo que importan los tests (rápidos, offline, sin supabase-js).
+- `index.ts` — entry de producción: construye las dependencias reales (supabase-js `service_role`) y llama `Deno.serve`.
+- `index.test.ts` / `*.test.ts` — tests del handler.
+Los helpers compartidos (CORS, respuestas JSON, hash sha256, validación, **adaptadores supabase-js** en `clients.ts`) en `functions/_shared/`. Las dependencias externas se declaran en `functions/deno.json` (import map) y se importan con specifier bare (`@supabase/supabase-js`, `@std/assert`).
 
 ### Regenerar tipos TypeScript
 ```bash
