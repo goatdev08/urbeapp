@@ -552,10 +552,10 @@
               4
             ],
             "details": "Create lib/profileService.ts with function saveProfile({ fullName, imageUri, userId }): Promise<void>. Implementation: (1) If imageUri provided, call processProfileImage to get base64/blob, (2) Upload to Supabase Storage: supabase.storage.from('profile-photos').upload(`${userId}/avatar.jpg`, blob, { upsert: true, contentType: 'image/jpeg' }), (3) Get public URL: supabase.storage.from('profile-photos').getPublicUrl(`${userId}/avatar.jpg`), (4) Upsert user_preferences: supabase.from('user_preferences').upsert({ user_id: userId, full_name: fullName, profile_photo_url: publicUrl, onboarding_completed_at: new Date().toISOString() }), (5) Handle errors with appropriate messages. Wire up to onboarding form submit handler.\n<info added on 2026-06-24T23:34:15.693Z>\nTest requirements covering happy path, PRD edge cases, and boundary/error conditions. Happy path: (1) With photo - upload to profile-photos bucket at {userId}/avatar.jpg, get publicUrl, upsert user_preferences with user_id/full_name/profile_photo_url, return { profilePhotoUrl: publicUrl }; (2) Without photo - skip storage operations, upsert user_preferences with profile_photo_url null, return { profilePhotoUrl: null }. PRD edge cases: (1) Target table user_preferences not users; (2) Upsert uses onConflict user_id for single row per user; (3) Storage path exactly {userId}/avatar.jpg without bucket prefix or leading slash; (4) Upsert columns are full_name and profile_photo_url per migration 0015, not display_name or photo_url. Business rules: (1) Upload with upsert true for re-onboarding overwrite and contentType image/jpeg; (2) getPublicUrl called with same path as upload. Error boundaries: (1) storage.upload error must propagate, no swallowing; (2) user_preferences.upsert error must propagate, no swallowing.\n</info added on 2026-06-24T23:34:15.693Z>\n<info added on 2026-06-24T23:49:25.473Z>\nImplementation completed with GREEN phase. Files modified: mobile/src/lib/profileService.ts (full implementation), mobile/src/features/onboarding/OnboardingScreen.tsx (integrated saveProfile with useAuth for userId, real uploading state in handle_continue). Lazy require pattern adopted for Supabase client: require() called inside saveProfile function body instead of static import at module top to resolve jest.mock factory hoisting issue—mock variables (mock_from_storage, etc.) are defined at test file module scope but babel-jest hoists ES imports before variable initialization, causing factory to see undefined; lazy require defers execution until first saveProfile call when mocks are initialized. Production behavior identical (Metro caches module). File upload in React Native: fetch(uri).then(r => r.arrayBuffer()) converts file:// URI to ArrayBuffer before supabase.storage.from('profile-photos').upload(path, buffer, {upsert:true, contentType:'image/jpeg'}). user_preferences upsert targets full_name and profile_photo_url columns per migration 0015; typed as never cast pending type regeneration. Verification: pnpm tsc --noEmit clean, 93/93 tests passing (10 new profileService tests, 83 existing unchanged).\n</info added on 2026-06-24T23:49:25.473Z>",
-            "status": "in-progress",
+            "status": "done",
             "testStrategy": "Verify: (1) Photo appears in Storage bucket at correct path, (2) user_preferences row is created/updated with correct data, (3) profile_photo_url is publicly accessible, (4) Duplicate upload (re-onboarding) overwrites previous photo, (5) Network errors show retry option",
             "parentId": "undefined",
-            "updatedAt": "2026-06-24T23:31:53.050Z"
+            "updatedAt": "2026-06-24T23:51:44.231Z"
           },
           {
             "id": 6,
@@ -565,16 +565,17 @@
               1,
               5
             ],
-            "details": "Enhance onboarding screen: (1) Add 'Skip' text button below avatar that sets photo to null/default, (2) Name validation: required, min 2 characters, show inline error message, disable submit until valid, (3) Progress indicator: show ActivityIndicator or progress bar during upload/save, disable all inputs during submission, (4) On successful save, navigate to '/(tabs)' using router.replace() to prevent back navigation, (5) If user already completed onboarding (check user_preferences.onboarding_completed_at), redirect to main app on mount. Add default avatar constant (could be a placeholder URL or bundled asset). Style skip/submit buttons according to design system.",
-            "status": "pending",
+            "details": "Enhance onboarding screen: (1) Add 'Skip' text button below avatar that sets photo to null/default, (2) Name validation: required, min 2 characters, show inline error message, disable submit until valid, (3) Progress indicator: show ActivityIndicator or progress bar during upload/save, disable all inputs during submission, (4) On successful save, navigate to '/(tabs)' using router.replace() to prevent back navigation, (5) If user already completed onboarding (check user_preferences.onboarding_completed_at), redirect to main app on mount. Add default avatar constant (could be a placeholder URL or bundled asset). Style skip/submit buttons according to design system.\n<info added on 2026-06-24T23:55:34.231Z>\nCOMPLETED. All requirements for subtask 6.6 implemented and verified.\n\nCreated files:\n- mobile/src/features/onboarding/validation.ts — pure validation function is_valid_full_name (trim + min 2 chars) with Spanish error constant\n- mobile/src/features/onboarding/__tests__/validation.test.ts — 8 test cases covering empty, whitespace, single char, exactly 2 chars, and valid names\n\nModified:\n- mobile/src/features/onboarding/OnboardingScreen.tsx — complete rewrite implementing all 6.6 requirements\n\nImplementation decisions:\n1. VALIDATION: is_valid_full_name imported from validation.ts, name_dirty state controls error visibility (only after blur or first keystroke), red border + inline Spanish error message when invalid\n2. SKIP BUTTON: labeled 'Saltar foto' (skips photo only, not name), calls saveProfile with null imageUri, requires valid name (disabled when name invalid or uploading)\n3. PROGRESS INDICATOR: loading prop on PrimaryButton during upload, TextInput disabled during upload, both buttons blocked during uploading state, uploading reset in finally block to allow retry\n4. NAVIGATION: HOME_ROUTE = '/(protected)' confirmed by reading mobile/app/_layout.tsx, mobile/app/(protected)/_layout.tsx, and mobile/app/(protected)/index.tsx; router.replace(HOME_ROUTE) used in both handle_continue and handle_skip\n5. ERROR HANDLING: Alert.alert in Spanish with retry text, set_uploading(false) in finally block\n6. ONBOARDING GUARD: useEffect on mount queries user_preferences.select('full_name').eq('user_id', user.id).maybeSingle(), if full_name exists and is valid redirects to HOME_ROUTE, uses explicit cast (as { full_name: string | null } | null) because column added in migration 0015 not yet in generated types, fail-open design if query errors\n\nVerification:\n- pnpm tsc --noEmit: CLEAN (no type errors)\n- pnpm test: 101 tests passed across 11 suites (93 existing + 8 new validation tests)\n- lint: no eslint script defined in package.json, type checking via tsc sufficient\n\nNo changes to .taskmaster/docs/exploraciones/ per restriction. No commit made.\n</info added on 2026-06-24T23:55:34.231Z>",
+            "status": "in-progress",
             "testStrategy": "Test: (1) Skip button saves profile without photo URL, (2) Name < 2 chars shows validation error, (3) Submit button disabled until name valid, (4) Progress indicator shows during upload, (5) Successful completion navigates to main app, (6) Cannot navigate back to onboarding, (7) Already onboarded user is redirected",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-06-24T23:51:45.809Z"
           }
         ],
         "complexity": 4,
         "recommendedSubtasks": 6,
         "expansionPrompt": "Break down onboarding into: (1) create onboarding screen with name and photo input, (2) implement expo-image-picker for camera/gallery selection, (3) create profile-photos Storage bucket with RLS, (4) implement image resize/compress with expo-image-manipulator, (5) upload to Storage and update user_preferences, (6) add skip button, validation, progress indicator, and navigation to main app",
-        "updatedAt": "2026-06-24T23:31:53.050Z"
+        "updatedAt": "2026-06-24T23:51:45.809Z"
       },
       {
         "id": 7,
@@ -2203,13 +2204,13 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-06-24T23:31:53.050Z",
+      "lastModified": "2026-06-24T23:51:45.809Z",
       "taskCount": 20,
       "completedCount": 5,
       "tags": [
         "master"
       ],
-      "created": "2026-06-24T23:34:04.993Z",
+      "created": "2026-06-24T23:55:12.713Z",
       "description": "Tasks for master context"
     }
   }
