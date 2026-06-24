@@ -1,7 +1,7 @@
 -- Rollback 0011 — Storage: bucket property-videos y columna storage_path
 
--- ── (3.3) RLS SELECT — placeholders para políticas añadidas en la subtarea 3.3 ──
--- drop policy if exists "public can read active property video" on storage.objects;
+-- ── (3.3) RLS SELECT — política añadida en la subtarea 3.3 ──
+drop policy if exists property_videos_storage_select on storage.objects;
 
 -- ── (3.2) RLS INSERT — política de subida añadida en la subtarea 3.2 ──
 drop policy if exists property_videos_storage_insert on storage.objects;

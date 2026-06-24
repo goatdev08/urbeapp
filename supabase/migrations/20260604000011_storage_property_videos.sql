@@ -48,6 +48,13 @@ create policy property_videos_storage_insert on storage.objects
   );
 
 -- ── (3.3) RLS SELECT ─────────────────────────────────────────────────────────
--- Placeholder: las políticas de lectura (SELECT en storage.objects) se añaden en la subtarea 3.3.
--- drop policy if exists "public can read active property video" on storage.objects;
--- create policy "public can read active property video" on storage.objects ...
+drop policy if exists property_videos_storage_select on storage.objects;
+create policy property_videos_storage_select on storage.objects
+  for select to anon, authenticated
+  using (
+    bucket_id = 'property-videos'
+    and (
+      private.property_is_public((storage.foldername(name))[2]::uuid)
+      or (storage.foldername(name))[1] = (select auth.uid())::text
+    )
+  );
