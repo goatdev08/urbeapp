@@ -35,7 +35,15 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   web: {
     favicon: './assets/favicon.png',
   },
-  plugins: ['expo-dev-client'],
+  plugins: [
+    'expo-dev-client',
+    'expo-router',
+    'expo-status-bar',
+    ['expo-video', {
+      supportsBackgroundPlayback: false,
+      supportsPictureInPicture: false,
+    }],
+  ],
   extra: {
     eas: {
       projectId: '85c7157a-818c-43fd-a78f-9766c2bc6f6f',
