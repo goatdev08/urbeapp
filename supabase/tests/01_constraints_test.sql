@@ -3,7 +3,7 @@
 -- Corre como superusuario (RLS no aplica aquí); validamos constraints, índices únicos parciales y triggers.
 
 begin;
-select plan(13);
+select plan(18);
 
 -- ── Fixtures ────────────────────────────────────────────────────────────────
 insert into auth.users (id, email) values
@@ -37,10 +37,13 @@ insert into public.properties (id, owner_user_id, agency_id, property_type, oper
   ('00000000-0000-0000-0000-00000000cabe', '00000000-0000-0000-0000-0000000000b1', '00000000-0000-0000-0000-0000000000e1',
    'local', 'rent', 'Para cascada', extensions.ST_SetSRID(extensions.ST_MakePoint(-103.34, 20.66), 4326)::extensions.geography, 8000, 'active');
 
-insert into public.property_videos (id, property_id, status, position) values
-  ('00000000-0000-0000-0000-00000000a001', '00000000-0000-0000-0000-0000000000f1', 'ready', 1),
-  ('00000000-0000-0000-0000-00000000a002', '00000000-0000-0000-0000-0000000000f1', 'processing', 2),
-  ('00000000-0000-0000-0000-00000000a009', '00000000-0000-0000-0000-00000000cabe', 'ready', 1);  -- para test de cascada
+insert into public.property_videos (id, property_id, status, position, cloudflare_uid, storage_path) values
+  -- a001: 'ready' con referencia Cloudflare (camino legacy); necesario para que constraint GREEN no lo rechace
+  ('00000000-0000-0000-0000-00000000a001', '00000000-0000-0000-0000-0000000000f1', 'ready', 1, 'cf_a001', null),
+  ('00000000-0000-0000-0000-00000000a002', '00000000-0000-0000-0000-0000000000f1', 'processing', 2, null, null),
+  -- a009: 'ready' con storage_path (camino demo Storage); necesario para que constraint GREEN no lo rechace
+  ('00000000-0000-0000-0000-00000000a009', '00000000-0000-0000-0000-00000000cabe', 'ready', 1, null,
+   '00000000-0000-0000-0000-0000000000b1/00000000-0000-0000-0000-00000000cabe/00000000-0000-0000-0000-00000000a009.mp4');  -- para test de cascada
 
 insert into public.likes (user_id, property_video_id, property_id) values
   ('00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-00000000a001', '00000000-0000-0000-0000-0000000000f1');
@@ -142,6 +145,48 @@ update public.properties set deleted_at = now() where id = '00000000-0000-0000-0
 select ok(
   (select deleted_at from public.property_videos where id = '00000000-0000-0000-0000-00000000a009') is not null,
   'cascade: soft-delete de propiedad propaga a sus videos');
+
+-- ── Asserts 14-18: constraint property_videos_ready_requires_storage ────────
+-- La constraint (migración 20260604000012) exige: status <> 'ready' OR storage_path IS NOT NULL OR cloudflare_uid IS NOT NULL.
+-- Se usa la propiedad f2 (draft, dueño b1, sin videos) con posiciones 1-5.
+
+-- 14) 'ready' sin ninguna referencia → rechazado por la constraint.
+select throws_ok(
+  $$ insert into public.property_videos (id, property_id, status, position, storage_path, cloudflare_uid)
+     values ('00000000-0000-0000-0000-00000000b401', '00000000-0000-0000-0000-0000000000f2', 'ready', 1, null, null) $$,
+  null, 'property_videos: ready sin storage_path ni cloudflare_uid es rechazado');
+
+-- 15) 'ready' con SOLO storage_path → aceptado.
+select lives_ok(
+  $$ insert into public.property_videos (id, property_id, status, position, storage_path, cloudflare_uid)
+     values ('00000000-0000-0000-0000-00000000b402', '00000000-0000-0000-0000-0000000000f2', 'ready', 1,
+             '00000000-0000-0000-0000-0000000000b1/00000000-0000-0000-0000-0000000000f2/00000000-0000-0000-0000-00000000b402.mp4',
+             null) $$,
+  'property_videos: ready con solo storage_path es aceptado');
+
+-- 16) 'ready' con SOLO cloudflare_uid → aceptado.
+select lives_ok(
+  $$ insert into public.property_videos (id, property_id, status, position, storage_path, cloudflare_uid)
+     values ('00000000-0000-0000-0000-00000000b403', '00000000-0000-0000-0000-0000000000f2', 'ready', 2,
+             null, 'cf_b403') $$,
+  'property_videos: ready con solo cloudflare_uid es aceptado');
+
+-- 17) 'uploading' sin ninguna referencia → aceptado (el flujo de subida comienza sin binario).
+select lives_ok(
+  $$ insert into public.property_videos (id, property_id, status, position, storage_path, cloudflare_uid)
+     values ('00000000-0000-0000-0000-00000000b404', '00000000-0000-0000-0000-0000000000f2', 'uploading', 3,
+             null, null) $$,
+  'property_videos: uploading sin referencias es aceptado (flujo de subida)');
+
+-- 18) Transición uploading→ready sin referencia → rechazado (la constraint aplica en UPDATE).
+--     Primero insertamos el video en uploading sin refs (válido), luego intentamos marcarlo ready.
+insert into public.property_videos (id, property_id, status, position, storage_path, cloudflare_uid)
+  values ('00000000-0000-0000-0000-00000000b405', '00000000-0000-0000-0000-0000000000f2', 'uploading', 4, null, null);
+select throws_ok(
+  $$ update public.property_videos
+     set status = 'ready'
+     where id = '00000000-0000-0000-0000-00000000b405' $$,
+  null, 'property_videos: transicion uploading->ready sin referencia es rechazada');
 
 select * from finish();
 rollback;
