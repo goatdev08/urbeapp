@@ -18,8 +18,8 @@
  * - email malformado → 400 INVALID_INPUT
  * - password ausente → 400 INVALID_INPUT
  * - password con < 8 caracteres → 400 INVALID_INPUT
- * - fullName ausente → 400 INVALID_INPUT
- * - fullName cadena vacía → 400 INVALID_INPUT
+ * - firstName ausente/vacío → 400 INVALID_INPUT
+ * - lastName ausente/vacío → 400 INVALID_INPUT
  * - Campos extra ignorados (no rompe la función)
  *
  * ### CORS — ramas de reglas no obvias
