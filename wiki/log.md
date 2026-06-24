@@ -1,0 +1,46 @@
+# Bitácora del proyecto
+
+Append-only. Prefijo: `## [YYYY-MM-DD] tipo | título`.
+Tipos: `fundacion`, `decision`, `ingest`, `query`, `lint`, `tarea`, `explore`.
+Tip: `grep "^## \[" log.md | tail -5` → últimas 5 entradas.
+
+## [2026-06-17] fundacion | vault inicializado
+- Estructura del vault creada (MOCs, conceptos, codebase, decisiones, estado).
+- Sembrado desde `docs/` y `supabase/` (DB migrada 0001–0010).
+
+## [2026-06-17] decision | alcance del primer hito = demo cerrada de 3 semanas
+- Sesión de preguntas (7 rondas) con el cliente. Ver [[0005-demo-cerrada-3-semanas]].
+- PRD destilado en `docs/PRD-MVP-demo.md`.
+- Demo: inmobiliaria+agentes, código de invitación, email+contraseña, wizard 3 pasos, video real a Supabase Storage (sin transcoding), feed vertical, filtros básicos, mapa con clustering, CRM lista+estados, contacto WhatsApp+lead. Dev build (expo-dev-client). Backend = Supabase remoto. Sin pagos.
+
+## [2026-06-17] decision | ADRs 0001–0004 aceptadas
+- [[0001-alcance-mvp-recomendado]], [[0002-monetizacion-pago-por-video]], [[0003-vault-obsidian-como-memoria]], [[0004-taskmaster-motor-de-ejecucion]].
+
+## [2026-06-17] ingest | vault densificado a síntesis densa
+- Los 13 conceptos reescritos con modelo de datos, invariantes, flujos y reglas + punteros precisos a las fuentes.
+- Añadido [[MOC-fuentes]] (catálogo de docs/ y supabase/) — la capa que dice "a dónde ir por el detalle".
+- Decisión del nivel de profundidad: síntesis densa (Karpathy), no espejo de los docs.
+
+## [2026-06-17] fundacion | Taskmaster inicializado + backlog generado
+- `task-master init` en la raíz; provider **claude-code/sonnet** (sin API key, $0). Canal: **CLI** (no MCP).
+- `parse-prd` sobre `docs/PRD-MVP-demo.md` → **20 tareas** (tag `master`).
+- `analyze-complexity` → 6 alta / 11 media / 3 baja. Reporte en `.taskmaster/reports/task-complexity-report.json`.
+- Next: **#1** init Expo + dev build. Branding (#19) en pausa por decisión del cliente.
+
+## [2026-06-17] decision | CLAUDE.md + workflow de ejecución (ADR 0006)
+- Creado `CLAUDE.md` (schema operativo): principio rector, inicio de sesión, stack, Taskmaster CLI, workflow de ejecución, cierre, mantenimiento del vault.
+- **PNPM siempre** como gestor de paquetes y dev server (nunca npm/yarn).
+- Workflow: Taskmaster como bitácora viva vía `update-subtask`; verificación con `pnpm`; ingest al vault al cerrar. Ver [[0006-workflow-ejecucion-tareas]].
+
+## [2026-06-17] fundacion | tareas expandidas a subtareas (Opus)
+- `task-master expand --all` con provider claude-code/**opus** → 20 tareas, **144 subtareas** (0 fallos, $0).
+- Modelo devuelto a `sonnet` para la operación diaria.
+- Backlog listo para ejecución fina con el workflow ([[0006-workflow-ejecucion-tareas]]). Next: **#1**.
+
+## [2026-06-17] fundacion | workflow multi-agente construido (ADR 0007)
+- `.claude/agents/`: analista-subtareas, mobile, supabase, design, test-author, guardian.
+- `.claude/skills/`: urbea-context, urbea-expo, urbea-supabase, urbea-design, urbea-testing.
+- `.claude/commands/`: tm-plan, tm-tarea (modo auto), tm-status. Hooks: tdd-guard.sh (pragmático), close-reminder.sh. settings.json con permisos + hooks.
+- TDD pragmático por criticidad, serie con checkpoints, manejo de bloqueantes, convención de nombres snake_case. graphify contemplado a futuro. Ver [[0007-workflow-multiagente]].
+
+## [2026-06-21] explore | aprobado tarea 19 — Branding + Design System de Urbea

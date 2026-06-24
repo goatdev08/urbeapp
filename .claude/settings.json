@@ -1,0 +1,57 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(task-master:*)",
+      "Bash(pnpm:*)",
+      "Bash(npx expo:*)",
+      "Bash(supabase:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git checkout:*)",
+      "Bash(git branch:*)",
+      "Bash(git restore --staged:*)",
+      "Bash(ls:*)",
+      "Bash(cat .taskmaster/*)",
+      "Bash(mkdir:*)",
+      "Bash(echo:*)",
+      "Bash(touch .taskmaster/*)",
+      "Bash(rm -f .taskmaster/.current-red)",
+      "Bash(rm -f .taskmaster/.current-plan)",
+      "Bash(rm -f .taskmaster/.tests-optional)",
+      "Skill(tm-plan)",
+      "Skill(tm-tarea)",
+      "Skill(tm-status)",
+      "Skill(urbea-context)",
+      "Skill(urbea-expo)",
+      "Skill(urbea-supabase)",
+      "Skill(urbea-design)",
+      "Skill(urbea-testing)"
+    ],
+    "deny": [
+      "Bash(rm -rf:*)",
+      "Bash(git push --force:*)",
+      "Bash(git reset --hard:*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          { "type": "command", "command": "bash .claude/hooks/tdd-guard.sh" }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "bash .claude/hooks/close-reminder.sh" }
+        ]
+      }
+    ]
+  }
+}

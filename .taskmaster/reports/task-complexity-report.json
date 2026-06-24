@@ -1,0 +1,173 @@
+{
+	"meta": {
+		"generatedAt": "2026-06-17T23:38:28.398Z",
+		"tasksAnalyzed": 20,
+		"totalTasks": 20,
+		"analysisCount": 20,
+		"thresholdScore": 5,
+		"projectName": "Task Master",
+		"usedResearch": true
+	},
+	"complexityAnalysis": [
+		{
+			"taskId": 1,
+			"taskTitle": "Initialize React Native + Expo mobile app with development build",
+			"complexityScore": 6,
+			"recommendedSubtasks": 5,
+			"expansionPrompt": "Break down the Expo + React Native initialization into: (1) create-expo-app with TypeScript template and pnpm configuration, (2) configure app.config.js for dev builds with Google Maps, (3) install core dependencies (expo-dev-client, expo-router, react-native-maps, expo-video), (4) set up TypeScript strict mode and folder structure (app/, components/, lib/, types/, hooks/), (5) configure Supabase client with environment variables and link existing database types from supabase/types/database.types.ts",
+			"reasoning": "This is greenfield development requiring multiple configuration files and dependencies. The database types already exist in supabase/types/database.types.ts which simplifies step 5. However, development builds with native dependencies (Google Maps, video) add complexity. The existing 5 subtasks are well-structured and appropriate."
+		},
+		{
+			"taskId": 2,
+			"taskTitle": "Implement Supabase Auth with email/password login",
+			"complexityScore": 5,
+			"recommendedSubtasks": 6,
+			"expansionPrompt": "Break down auth implementation into: (1) create AuthContext with Supabase Auth and session state management, (2) implement AsyncStorage session persistence, (3) build login screen UI with validation, (4) implement signInWithPassword with error handling, (5) create protected route wrapper using Expo Router, (6) add loading states and auto-redirect. Consider the existing users table schema with role field (user/agent/admin) for future role-based access.",
+			"reasoning": "Standard Supabase Auth implementation with Expo Router. The schema already supports users with roles. Depends on Task 1 completion. The existing 6 subtasks cover all necessary components. Complexity is moderate due to state management, persistence, and navigation integration."
+		},
+		{
+			"taskId": 3,
+			"taskTitle": "Create Supabase Storage bucket for videos with RLS policies",
+			"complexityScore": 4,
+			"recommendedSubtasks": 4,
+			"expansionPrompt": "Break down storage setup into: (1) create property-videos bucket via migration or dashboard with size/MIME restrictions, (2) create RLS INSERT policy for agents uploading to their own user_id path, (3) create RLS SELECT policy joining properties table for public read of active properties only, (4) configure CORS for mobile uploads and document storage path convention {user_id}/{property_id}/{video_id}.mp4",
+			"reasoning": "Storage bucket creation is straightforward but RLS policies require careful design. The SELECT policy needs to join property_videos to properties via property_id to check status='active'. The existing 4 subtasks are appropriate. Path convention must align with how property_videos.storage_path will be populated."
+		},
+		{
+			"taskId": 4,
+			"taskTitle": "Create minor migration for property_videos storage_path field",
+			"complexityScore": 2,
+			"recommendedSubtasks": 3,
+			"expansionPrompt": "Break down the migration into: (1) create migration file adding storage_path text column with check constraint (storage_path OR cloudflare_uid must be present), (2) create rollback file, (3) apply migration, regenerate TypeScript types, and verify. Note: cloudflare_uid is already nullable per migration 0005.",
+			"reasoning": "Simple ALTER TABLE migration. The existing property_videos table has cloudflare_uid (already nullable) and needs storage_path for Supabase Storage demo. The check constraint ensures at least one storage reference exists. Low complexity as it's a single column addition with constraint."
+		},
+		{
+			"taskId": 5,
+			"taskTitle": "Implement invitation code redemption and agent registration",
+			"complexityScore": 8,
+			"recommendedSubtasks": 8,
+			"expansionPrompt": "Break down invitation redemption into: (1) create Edge Function scaffold with Zod validation and CORS, (2) implement token validation (hash check, expiration, revocation, uses < max_uses), (3) create auth user via Supabase Admin API, (4) atomic transaction to increment token uses and insert agency_member, (5) update users.agency_id denormalization and insert user_preferences, (6) create user_consent records for current terms_versions, (7) build registration screen UI with two-phase flow, (8) implement error handling and auto-login. Note: agency_invitation_tokens stores hashed tokens per migration 0003.",
+			"reasoning": "Complex multi-table transaction requiring atomicity. Must handle: token hash validation (SHA256 per schema comments), race conditions on concurrent redemption, proper role assignment, legal compliance (user_consents). The existing 8 subtasks are comprehensive. This is a critical security flow per lineamientos-desarrollo.md."
+		},
+		{
+			"taskId": 6,
+			"taskTitle": "Build minimal onboarding flow with profile photo upload",
+			"complexityScore": 4,
+			"recommendedSubtasks": 6,
+			"expansionPrompt": "Break down onboarding into: (1) create onboarding screen with name and photo input, (2) implement expo-image-picker for camera/gallery selection, (3) create profile-photos Storage bucket with RLS, (4) implement image resize/compress with expo-image-manipulator, (5) upload to Storage and update user_preferences, (6) add skip button, validation, progress indicator, and navigation to main app",
+			"reasoning": "Moderate complexity involving image processing and storage. The user_preferences table already exists with onboarding_completed_at field. Image manipulation adds some complexity but expo-image-manipulator handles the heavy lifting. The existing 6 subtasks are well-scoped."
+		},
+		{
+			"taskId": 7,
+			"taskTitle": "Create admin panel for agency and owner management",
+			"complexityScore": 7,
+			"recommendedSubtasks": 7,
+			"expansionPrompt": "Break down admin panel into: (1) create admin layout with role guard, (2) build agency list screen, (3) create agency form screen, (4) create Edge Function admin-create-agency with admin role verification, (5) implement owner user creation via Auth Admin API with agency_member insertion, (6) generate initial invitation token and log to admin_actions, (7) build invitation code display and agency members list screen",
+			"reasoning": "Complex due to multiple screens, Edge Function with Admin API access, and proper role enforcement. The admin_actions table is append-only per lineamientos. Must create: agency, owner user (auth + public.users), agency_member, and initial invitation token atomically. The existing 7 subtasks cover all components."
+		},
+		{
+			"taskId": 8,
+			"taskTitle": "Build 3-step property publication wizard",
+			"complexityScore": 8,
+			"recommendedSubtasks": 10,
+			"expansionPrompt": "Break down publication wizard into: (1) create wizard layout with step indicator, (2) build step 1 for operation/property type selection, (3) build step 2 base with price and property details, (4) integrate Google Places API for address autocomplete, (5) implement map picker for exact location, (6) add niche filters toggles and step 2 validation, (7) implement form state management with Context/Zustand, (8) build step 3 with video upload and preview, (9) create Edge Function for property publication, (10) connect wizard to Edge Function and test complete flow",
+			"reasoning": "Highly complex multi-step form with: PostGIS location handling, Google Places integration, native maps, video upload to Storage, form state persistence across steps, and Edge Function for atomic property+video creation. Properties table has 30+ fields to handle. The existing 10 subtasks are necessary for proper decomposition."
+		},
+		{
+			"taskId": 9,
+			"taskTitle": "Implement vertical video feed with swipe and autoplay",
+			"complexityScore": 9,
+			"recommendedSubtasks": 9,
+			"expansionPrompt": "Break down video feed into: (1) create feed screen with FlatList and vertical paging, (2) implement full-screen video player with expo-video, (3) implement viewability detection for autoplay/pause, (4) implement video preloading for smooth scrolling, (5) create Supabase query for active properties with videos, (6) build overlay UI with property info and action buttons, (7) implement double-tap to like gesture, (8) add swipe navigation and smooth animations, (9) implement loading skeleton, pull-to-refresh, pagination, and memory management",
+			"reasoning": "This is the core product feature requiring high performance optimization. Must handle: 60fps scrolling, memory management for video players, preloading strategy, viewability-based autoplay, PostGIS location conversion, and complex UI overlays. The existing 9 subtasks are appropriate for this complexity level. Critical path per PRD-MVP-demo.md."
+		},
+		{
+			"taskId": 10,
+			"taskTitle": "Build property detail screen with full information",
+			"complexityScore": 6,
+			"recommendedSubtasks": 7,
+			"expansionPrompt": "Break down property detail into: (1) create detail screen with route parameter and data fetching, (2) implement full-screen video player at top, (3) build scrollable content with property info header, (4) display address, description, and amenities chips, (5) embed react-native-maps showing exact location, (6) build agent card with WhatsApp contact button, (7) add like/save/share buttons, navigation, and loading/error states",
+			"reasoning": "Moderate complexity with multiple UI sections and native maps integration. Requires joining properties, property_videos, users, and agencies tables. The existing 7 subtasks provide good coverage. PostGIS geography to lat/lng conversion needed for map display."
+		},
+		{
+			"taskId": 11,
+			"taskTitle": "Implement global map with property pins and clustering",
+			"complexityScore": 6,
+			"recommendedSubtasks": 7,
+			"expansionPrompt": "Break down map implementation into: (1) create map screen as secondary tab with react-native-maps, (2) fetch active properties and convert PostGIS to lat/lng, (3) implement clustering with react-native-maps-clustering, (4) create custom marker icons for rent vs sale, (5) implement marker callout with mini property card, (6) add callout tap navigation and center on user location, (7) integrate search bar filter and test performance with 50+ properties",
+			"reasoning": "Moderate complexity requiring native maps with clustering library. Must handle: PostGIS geography conversion, clustering algorithm, custom markers, callout interactions, and location permissions. Performance testing with many markers is important. The existing 7 subtasks are appropriate."
+		},
+		{
+			"taskId": 12,
+			"taskTitle": "Add basic filters for feed (operation type, property type, price range, zone)",
+			"complexityScore": 5,
+			"recommendedSubtasks": 7,
+			"expansionPrompt": "Break down filters into: (1) create FilterSheet component with react-native-bottom-sheet, (2) implement operation type checkboxes and property type multi-select, (3) add price range inputs with validation, (4) implement zone/city autocomplete from properties.zone, (5) add bedrooms selector and boolean toggles (pet-friendly, no-guarantor, student-friendly), (6) implement filter state management with WHERE clause builder, (7) add clear filters, active filter badge, query integration, and AsyncStorage persistence",
+			"reasoning": "Moderate complexity with state management across multiple filter types. Must build dynamic WHERE clauses for Supabase queries. The properties table has partial indexes for niche filters (pet_friendly, allows_no_guarantor, student_friendly). The existing 7 subtasks cover all filter types and persistence."
+		},
+		{
+			"taskId": 13,
+			"taskTitle": "Implement like, save, and saved properties screen",
+			"complexityScore": 6,
+			"recommendedSubtasks": 7,
+			"expansionPrompt": "Break down engagement features into: (1) create LikeButton component with animation, (2) create Edge Function toggle-like with atomic count update, (3) create SaveButton component, (4) create Edge Function toggle-save with atomic count update, (5) implement optimistic UI with error rollback hooks, (6) create saved properties screen with query and property cards, (7) add swipe-to-delete and empty state",
+			"reasoning": "Moderate complexity requiring two Edge Functions for atomic counter updates and optimistic UI patterns. The likes table has unique index on (user_id, property_video_id), saves has unique on (user_id, property_id). Counters (like_count, save_count) must be updated atomically per lineamientos §6.4. The existing 7 subtasks are well-structured."
+		},
+		{
+			"taskId": 14,
+			"taskTitle": "Create WhatsApp contact with automatic lead generation",
+			"complexityScore": 7,
+			"recommendedSubtasks": 7,
+			"expansionPrompt": "Break down contact flow into: (1) create ContactAgentButton component for property detail and feed, (2) create Edge Function scaffold with input validation, (3) implement property and agent info retrieval, (4) implement idempotent lead creation checking leads_agent_user_unique_active constraint, (5) insert lead_origin_properties and increment contact_count atomically, (6) generate pre-filled WhatsApp message with property details, (7) implement WhatsApp deep link with fallback and toast confirmation",
+			"reasoning": "Complex Edge Function requiring idempotent lead creation per the unique index leads_agent_user_unique_active. Must handle: existing lead lookup, new lead creation, lead_origin_properties linking, atomic counter increment. This is a critical CRM flow per lineamientos §17.6. The existing 7 subtasks are comprehensive."
+		},
+		{
+			"taskId": 15,
+			"taskTitle": "Build agent CRM with lead list and status management",
+			"complexityScore": 7,
+			"recommendedSubtasks": 9,
+			"expansionPrompt": "Break down CRM into: (1) create CRM screen with role guard for agents, (2) implement leads query with user info and property origin joins, (3) build LeadCard component with status badge and time, (4) create expanded lead view with 7-state status selector, (5) add notes, view property, and WhatsApp contact buttons, (6) create Edge Function update-lead-status with validation, (7) implement filter tabs (All, New, In Progress, Closed), (8) add search by user name, (9) implement empty state and owner visibility of agent leads",
+			"reasoning": "Complex screen with multiple queries, state management, and an Edge Function. The lead_status enum has 7 states (new, contacted, in_progress, visit_scheduled, closed_won, closed_lost, discarded). Must respect RLS for agent visibility and owner oversight. The existing 9 subtasks cover all CRM functionality including owner view."
+		},
+		{
+			"taskId": 16,
+			"taskTitle": "Create agent profile screen with published properties grid",
+			"complexityScore": 4,
+			"recommendedSubtasks": 6,
+			"expansionPrompt": "Break down profile screen into: (1) create profile screen routes for viewing any agent and own profile, (2) implement agent data fetching with table joins (users, agencies, agency_members), (3) build profile header UI with agent info, (4) implement properties grid with 2-column FlatList, (5) create property card component with video thumbnail, (6) add edit/logout buttons and empty state",
+			"reasoning": "Moderate complexity with two route variants (own profile vs other agent). Requires joining users, agencies, and agency_members. Properties query filters by owner_user_id and status. The existing 6 subtasks are appropriate. Lower complexity than CRM as it's primarily read-only display."
+		},
+		{
+			"taskId": 17,
+			"taskTitle": "Create my properties management screen",
+			"complexityScore": 6,
+			"recommendedSubtasks": 8,
+			"expansionPrompt": "Break down my listings into: (1) create screen with layout and navigation, (2) implement property fetching with video count, (3) build property list item with stats, (4) add three-dot menu with actions, (5) create Edge Function update-property-status, (6) implement filter tabs by status, (7) add confirmation dialogs for close/delete with reason selection, (8) implement edit flow pre-filling publication wizard",
+			"reasoning": "Moderate complexity with list management, status transitions, and edit integration. The property_status enum has 7 states and closed_reason enum for closing. Must handle soft-delete and status validation. The existing 8 subtasks cover CRUD operations and status management comprehensively."
+		},
+		{
+			"taskId": 18,
+			"taskTitle": "Seed demo data: 3-5 agencies with 10-20 properties and videos",
+			"complexityScore": 5,
+			"recommendedSubtasks": 7,
+			"expansionPrompt": "Break down seeding into: (1) extend seed.sql with 3-5 Guadalajara agencies, (2) create owners and agents with test accounts, (3) create 10-20 properties with varied types and locations, (4) source 3-5 royalty-free vertical real estate videos, (5) create script to upload videos and insert property_videos records, (6) create demo likes, saves, and leads for CRM testing, (7) document reset process and verify seed data loads correctly",
+			"reasoning": "Moderate complexity requiring realistic data across multiple related tables. Must respect foreign key relationships and PostGIS coordinates for Guadalajara area. Video sourcing and upload adds logistical complexity. The existing 7 subtasks cover all seed data requirements from PRD §4.1."
+		},
+		{
+			"taskId": 19,
+			"taskTitle": "Design branding and component system (pending client approval)",
+			"complexityScore": 7,
+			"recommendedSubtasks": 9,
+			"expansionPrompt": "Break down design system into: (1) create logo concepts and color palette proposals, (2) select typography for mobile readability, (3) create Figma file with design tokens, (4) design component library with variants, (5) design key screens (feed, detail, wizard, CRM), (6) use Figma MCP for design-to-code translation, (7) implement design tokens in theme.ts, (8) create base component library in React Native, (9) apply design system to all screens with dark/light modes. NOTE: Per PRD §8, wait for client approval before starting.",
+			"reasoning": "Complex design+implementation task spanning Figma design and React Native code. The hybrid aesthetic (dark feed, light management) requires careful theming. The existing 9 subtasks cover the full design-to-implementation pipeline. Blocked until client approval per PRD §8."
+		},
+		{
+			"taskId": 20,
+			"taskTitle": "Polish, testing, and deploy to remote Supabase for validation",
+			"complexityScore": 9,
+			"recommendedSubtasks": 12,
+			"expansionPrompt": "Break down polish into: (1) code review and refactoring pass, (2) performance optimization for video and images, (3) accessibility audit, (4) error handling audit, (5) end-to-end testing of complete user flows, (6) test edge cases and failure scenarios, (7) apply migration 0011 to remote Supabase, (8) deploy Edge Functions to remote, (9) test app against production with seed data, (10) build production bundles with EAS, (11) internal testing with TestFlight/Internal App Sharing, (12) create demo checklist and document known issues",
+			"reasoning": "Highly complex integration task requiring all prior tasks to be complete. Includes: code review, performance optimization, accessibility, E2E testing of 8+ user flows per acceptance criteria, production deployment, and EAS builds. The existing 12 subtasks match the comprehensive validation requirements from PRD §11."
+		}
+	]
+}
