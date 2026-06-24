@@ -25,7 +25,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AvatarPicker } from './components/AvatarPicker';
 import { PrimaryButton } from '@/components/PrimaryButton';
+import { useAuth } from '@/features/auth/context';
 import { processProfileImage } from '@/lib/imageUtils';
+import { saveProfile } from '@/lib/profileService';
 
 // ---------------------------------------------------------------------------
 // Tokens visuales — paper/gestión (alineados con personality kit)
@@ -44,12 +46,13 @@ const COLOR_INPUT_BG = '#FFFFFF';
 // ---------------------------------------------------------------------------
 
 export function OnboardingScreen() {
+  // ── Auth context ────────────────────────────────────────────────────────
+  const { user } = useAuth();
+
   // ── Estado del formulario ───────────────────────────────────────────────
   const [full_name, set_full_name] = useState('');
   const [avatar_uri, set_avatar_uri] = useState<string | undefined>(undefined);
-
-  // TODO 6.5 — `uploading` provendrá de la lógica de upload a Storage.
-  const uploading = false;
+  const [uploading, set_uploading] = useState(false);
 
   // ── Handlers ────────────────────────────────────────────────────────────
 
@@ -70,12 +73,27 @@ export function OnboardingScreen() {
 
   /**
    * Guarda el perfil del agente (nombre + foto) y navega a la home.
-   * TODO 6.5 — upload del avatar a Supabase Storage.
+   * 6.5 — upload del avatar a Supabase Storage + upsert user_preferences.
    * TODO 6.6 — validar nombre, llamar a supabase.from('users').update(...),
    *            luego router.replace('/') una vez completado.
    */
-  const handle_continue = () => {
-    // TODO 6.6: validar + guardar perfil + navegar.
+  const handle_continue = async () => {
+    if (!user) return;
+
+    set_uploading(true);
+    try {
+      await saveProfile({
+        fullName: full_name,
+        imageUri: avatar_uri ?? null,
+        userId: user.id,
+      });
+      // TODO 6.6: router.replace('/') tras guardar perfil completo.
+    } catch (err) {
+      // TODO 6.6: mostrar error al usuario (toast o alerta).
+      console.error('[OnboardingScreen] handle_continue error:', err);
+    } finally {
+      set_uploading(false);
+    }
   };
 
   /**
