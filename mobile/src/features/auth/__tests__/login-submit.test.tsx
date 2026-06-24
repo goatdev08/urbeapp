@@ -193,7 +193,7 @@ describe('EC-B2: signIn_rechaza_credenciales_invalidas_muestra_mensaje_espanol',
 // ===========================================================================
 
 describe('EC-B3: durante_submit_boton_deshabilitado_no_doble_submit', () => {
-  it('signIn en vuelo → signIn llamado solo una vez aunque se presione dos veces', async () => {
+  it('guard programático: onSubmitEditing invocado dos veces → signIn llamado solo una vez', async () => {
     let resolve_sign_in!: () => void;
     const sign_in_promise = new Promise<void>((res) => { resolve_sign_in = res; });
     mock_sign_in.mockReturnValue(sign_in_promise);
@@ -204,26 +204,39 @@ describe('EC-B3: durante_submit_boton_deshabilitado_no_doble_submit', () => {
     await act(async () => {
       fireEvent.changeText(q.getByPlaceholderText('tu@correo.com'), VALID_EMAIL);
       fireEvent.changeText(q.getByPlaceholderText('Mínimo 6 caracteres'), VALID_PASSWORD);
-      fireEvent.press(q.getByRole('button', { name: /iniciar sesión/i }));
     });
 
-    // Drenar antes del assert que falla
+    // Primer submit vía onSubmitEditing del campo password.
+    // El botón no interviene aquí — ejercitamos la ruta directa del TextInput.
+    const password_input = q.getByPlaceholderText('Mínimo 6 caracteres');
+    await act(async () => {
+      fireEvent(password_input, 'submitEditing');
+    });
+
+    // Drenar para que React procese is_submitting=true y re-renderice
+    // (campo password queda con editable={false}, botón con disabled=true)
     await drain_react_updates();
 
-    // Assert: signIn debe haberse llamado una vez → FALLA en RED (TODO actual no lo llama)
+    // signIn debe haberse llamado exactamente una vez → FALLA en RED si el wiring no existe
     expect(mock_sign_in).toHaveBeenCalledTimes(1);
 
-    // Segundo press — el botón debe estar deshabilitado (is_submitting=true)
-    try {
-      fireEvent.press(q.getByRole('button', { name: /iniciar sesión|iniciando/i }));
-    } catch {
-      // si el botón está deshabilitado getByRole puede no encontrarlo — ignorar
+    // Segundo submit: llamamos onSubmitEditing DIRECTAMENTE desde el prop del elemento
+    // (bypasea la verificación editable de RNTL).
+    // En este punto is_submitting=true en el closure del componente re-renderizado.
+    // El guard programático `if (is_submitting) return;` es LO ÚNICO que impide el doble signIn.
+    // Si se neutraliza ese guard, handle_submit llamaría signIn una segunda vez.
+    const on_submit_editing = password_input.props.onSubmitEditing as (() => void) | undefined;
+    if (on_submit_editing !== undefined) {
+      await act(async () => {
+        on_submit_editing();
+      });
+      await drain_react_updates();
     }
 
-    // signIn no debe haberse llamado una segunda vez
+    // signIn NO debe haberse llamado una segunda vez — el guard interno lo bloquea
     expect(mock_sign_in).toHaveBeenCalledTimes(1);
 
-    // Resolvemos para limpiar estado asíncrono
+    // Resolvemos la promesa para limpiar estado asíncrono pendiente
     await act(async () => {
       resolve_sign_in();
       await sign_in_promise;

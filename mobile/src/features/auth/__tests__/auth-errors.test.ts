@@ -105,12 +105,17 @@ describe('EC-A3: email_no_confirmado', () => {
 // ---------------------------------------------------------------------------
 
 describe('EC-A4: rate_limit_por_code', () => {
-  it("code='over_request_rate_limit' → mensaje de demasiados intentos", () => {
-    const error = make_auth_error('Request rate limit reached', 'over_request_rate_limit', 429);
+  it("code='over_request_rate_limit' → mensaje de demasiados intentos (no fallback)", () => {
+    // Sin status 429: aísla el branch de `code` (si tuviera 429, el branch de status
+    // lo rescataría y enmascararía un mutante que neutralice el branch de `code`).
+    const error = make_auth_error('Request rate limit reached', 'over_request_rate_limit');
 
     const result = map_auth_error(error);
 
-    expect(result).toMatch(/intent[o|os]|espera|demasiados/i);
+    // Debe contener el mensaje exacto de rate-limit, NO el mensaje de fallback.
+    // Si se neutraliza el branch de rate-limit en el SUT (cae a fallback), este test falla.
+    expect(result).toMatch(/demasiados intentos|espera un momento/i);
+    expect(result).not.toMatch(/inesperado/i);
     expect(result).not.toBe('Request rate limit reached');
     expect(result).not.toBe('');
   });
@@ -121,12 +126,15 @@ describe('EC-A4: rate_limit_por_code', () => {
 // ---------------------------------------------------------------------------
 
 describe('EC-A5: rate_limit_por_status_429', () => {
-  it('status=429 sin code → mismo mensaje de demasiados intentos', () => {
+  it('status=429 sin code → mismo mensaje de demasiados intentos (no fallback)', () => {
     const error = make_auth_error('Too many requests', undefined, 429);
 
     const result = map_auth_error(error);
 
-    expect(result).toMatch(/intent[o|os]|espera|demasiados/i);
+    // Debe contener el mensaje exacto de rate-limit, NO el mensaje de fallback.
+    // Si se neutraliza el branch status===429 en el SUT (cae a fallback), este test falla.
+    expect(result).toMatch(/demasiados intentos|espera un momento/i);
+    expect(result).not.toMatch(/inesperado/i);
     expect(result).not.toBe('Too many requests');
     expect(result).not.toBe('');
   });

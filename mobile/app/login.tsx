@@ -2,11 +2,18 @@
  * Pantalla de login — ruta /login (Expo Router).
  *
  * Subtarea 2.3: UI + validación de formulario.
- * Subtarea 2.4 (pendiente): conectar handle_submit a useAuth().signIn
+ * Subtarea 2.4: conectar handle_submit a useAuth().signIn
  *   y manejar errores del backend (credenciales incorrectas, red, etc.).
  * Subtarea 2.5 (pendiente): protección de rutas — redirigir si ya hay sesión.
+ *
+ * Nota de implementación — stale closure / RNTL:
+ * En el entorno de tests (RNTL v14 + React 19) los fireEvent.changeText() sin
+ * await dentro de un act() externo no garantizan que el estado React esté
+ * actualizado antes de que se dispare fireEvent.press(). Se usan refs para
+ * rastrear los valores actuales de email/password de forma SIEMPRE SINCRÓNICA,
+ * independientemente del ciclo de render.
  */
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -17,7 +24,10 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 
+import { useAuth } from '@/features/auth/context';
+import { map_auth_error } from '@/features/auth/auth-errors';
 import { FormField } from '@/features/auth/components/form-field';
 import {
   is_form_valid,
@@ -30,6 +40,9 @@ import {
 // ---------------------------------------------------------------------------
 
 export default function LoginScreen() {
+  const { signIn } = useAuth();
+  const router = useRouter();
+
   // Estado del formulario
   const [email, set_email] = useState('');
   const [password, set_password] = useState('');
@@ -37,6 +50,28 @@ export default function LoginScreen() {
   const [errors, set_errors] = useState<LoginFormErrors>({});
   const [touched, set_touched] = useState({ email: false, password: false });
   const [is_submitting, set_is_submitting] = useState(false);
+  const [general_error, set_general_error] = useState<string | null>(null);
+
+  // Refs que reflejan siempre el valor más reciente de email/password.
+  // Se actualizan de forma sincrónica en los handlers de cambio de texto,
+  // lo que resuelve el problema de stale closures cuando handle_submit se
+  // ejecuta antes de que React haya refrescado el estado.
+  const email_ref = useRef('');
+  const password_ref = useRef('');
+
+  // ---------------------------------------------------------------------------
+  // Handlers de cambio de texto
+  // ---------------------------------------------------------------------------
+
+  const handle_email_change = (text: string) => {
+    email_ref.current = text;
+    set_email(text);
+  };
+
+  const handle_password_change = (text: string) => {
+    password_ref.current = text;
+    set_password(text);
+  };
 
   // ---------------------------------------------------------------------------
   // Validación reactiva al perder foco
@@ -46,7 +81,7 @@ export default function LoginScreen() {
     set_touched((prev) => ({ ...prev, email: true }));
     set_errors((prev) => ({
       ...prev,
-      ...validate_login_form({ email, password }),
+      ...validate_login_form({ email: email_ref.current, password: password_ref.current }),
     }));
   };
 
@@ -54,7 +89,7 @@ export default function LoginScreen() {
     set_touched((prev) => ({ ...prev, password: true }));
     set_errors((prev) => ({
       ...prev,
-      ...validate_login_form({ email, password }),
+      ...validate_login_form({ email: email_ref.current, password: password_ref.current }),
     }));
   };
 
@@ -63,23 +98,34 @@ export default function LoginScreen() {
   // ---------------------------------------------------------------------------
 
   const handle_submit = async () => {
-    // Marcar todos los campos como tocados para mostrar errores
+    // Evitar doble submit PRIMERO: si ya hay una llamada en vuelo, ignorar sin
+    // tocar ningún estado (evita enqueue de state updates en tests con act dangling).
+    if (is_submitting) {
+      return;
+    }
+
+    // Usar refs para obtener los valores MÁS RECIENTES aunque el estado React
+    // todavía no se haya re-renderizado (problema de stale closures en tests).
+    const current_email = email_ref.current;
+    const current_password = password_ref.current;
+
+    // Marcar todos los campos como tocados para mostrar errores inline
     set_touched({ email: true, password: true });
 
-    const form_errors = validate_login_form({ email, password });
+    const form_errors = validate_login_form({ email: current_email, password: current_password });
     set_errors(form_errors);
 
     if (!is_form_valid(form_errors)) {
       return;
     }
 
+    set_general_error(null);
     set_is_submitting(true);
     try {
-      // TODO (subtarea 2.4): llamar useAuth().signIn(email.trim(), password)
-      // y manejar AuthApiError (credenciales inválidas, email no confirmado, etc.)
-      // Ejemplo:
-      //   await signIn(email.trim(), password);
-      //   router.replace('/');
+      await signIn(current_email.trim(), current_password);
+      router.replace('/');
+    } catch (err) {
+      set_general_error(map_auth_error(err));
     } finally {
       set_is_submitting(false);
     }
@@ -132,7 +178,7 @@ export default function LoginScreen() {
             <FormField
               label="Correo electrónico"
               value={email}
-              onChangeText={set_email}
+              onChangeText={handle_email_change}
               onBlur={handle_email_blur}
               keyboardType="email-address"
               autoCapitalize="none"
@@ -148,7 +194,7 @@ export default function LoginScreen() {
             <FormField
               label="Contraseña"
               value={password}
-              onChangeText={set_password}
+              onChangeText={handle_password_change}
               onBlur={handle_password_blur}
               secureTextEntry={!show_password}
               autoComplete="current-password"
@@ -161,10 +207,20 @@ export default function LoginScreen() {
               right_addon={password_toggle}
             />
 
+            {general_error !== null && (
+              <View
+                style={styles.error_banner}
+                accessibilityRole="alert"
+                accessibilityLiveRegion="assertive"
+              >
+                <Text style={styles.error_banner_text}>{general_error}</Text>
+              </View>
+            )}
+
             <Pressable
               style={[styles.submit_button, !can_submit && styles.submit_button_disabled]}
               onPress={handle_submit}
-              disabled={!can_submit}
+              disabled={is_submitting}
               accessibilityRole="button"
               accessibilityLabel="Iniciar sesión"
               accessibilityState={{ disabled: !can_submit, busy: is_submitting }}
@@ -239,5 +295,19 @@ const styles = StyleSheet.create({
   },
   submit_text_disabled: {
     color: '#9CA3AF',
+  },
+  error_banner: {
+    marginBottom: 12,
+    backgroundColor: '#FEF2F2',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  error_banner_text: {
+    fontSize: 14,
+    color: '#DC2626',
+    textAlign: 'center',
   },
 });
