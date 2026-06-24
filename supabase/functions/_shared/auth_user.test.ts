@@ -348,8 +348,16 @@ Deno.test(
     const admin = make_fake_admin_ok(USER_ID);
 
     const req = make_post_request(payload_redeem_valido);
-    // El handler debe aceptar deps con db e authAdmin inyectables
-    await handler(req, { db, authAdmin: admin });
+    // El handler orquesta validar token → crear usuario → canjear (RPC).
+    // Inyectamos un redeemer ok para que el flujo complete; aquí solo verificamos createUser.
+    const redeemer = {
+      redeem_atomic: () =>
+        Promise.resolve({
+          ok: true as const,
+          agency_member_id: "00000000-0000-0000-0000-0000000000aa",
+        }),
+    };
+    await handler(req, { db, authAdmin: admin, redeemer });
 
     // Verificar que createUser fue invocado exactamente una vez
     assertEquals(

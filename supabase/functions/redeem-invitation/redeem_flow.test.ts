@@ -13,9 +13,12 @@
 // - createUser falla (duplicado) → 409; redeemer NO se llama; deleteUser NO se llama.
 // - ip (x-forwarded-for) se pasa a la RPC.
 
-import { assertEquals } from "jsr:@std/assert";
+import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { handler } from "./index.ts";
-import type { InvitationDb, InvitationTokenRow } from "../_shared/invitation.ts";
+import type {
+  InvitationDb,
+  InvitationTokenRow,
+} from "../_shared/invitation.ts";
 import type { AuthAdminClient } from "../_shared/auth_user.ts";
 import type {
   InvitationRedeemer,
@@ -62,7 +65,7 @@ function admin_ok(): FakeAdmin {
   return {
     create_calls: 0,
     delete_calls: [],
-    createUser(params) {
+    createUser(_params) {
       this.create_calls++;
       return Promise.resolve({ data: { user: { id: USER_ID } }, error: null });
     },
