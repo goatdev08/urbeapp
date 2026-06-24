@@ -226,6 +226,11 @@ reset role;
 -- 5.4 — Usuario B NO puede DELETE el objeto de usuario A.
 -- RED y GREEN: la política DELETE exige que (foldername(name))[1] = auth.uid()::text.
 -- RLS filtra silenciosamente: DELETE afecta 0 filas.
+-- Nota: el trigger storage.protect_delete() bloquea DELETE directo en storage.objects a menos
+-- que storage.allow_delete_query='true'. El set local lo habilita solo para esta tx (tests de pgTAP
+-- corren en una transacción que hace rollback; el trigger no protege RLS, solo evita borrados
+-- accidentales fuera de la API). RLS sigue aplicando encima de esta configuración.
+set local storage.allow_delete_query = 'true';
 select pg_temp.act_as('00000000-0000-0000-0000-0000000b0002');
 select is(
   (select count(*)::int from (

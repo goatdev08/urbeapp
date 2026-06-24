@@ -6,13 +6,13 @@
 <title>Urbea · Kit de personalidad (componentes)</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400;1,9..144,500&family=Hanken+Grotesk:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Hanken+Grotesk:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 /* ============================================================================
    URBEA · KIT DE PERSONALIDAD
    Artefacto de diseño/exploración (no app code). Doc: 003-reconciliacion-y-kit.md
    Inyecta personalidad al prototipo de Cloud Design SIN cambiar la paleta:
-   serif editorial (Fraunces) + componentes de firma + anti-flatness.
+   display geométrica moderna (Space Grotesk) + componentes de firma + anti-flatness.
    ========================================================================== */
 
 :root{
@@ -47,8 +47,8 @@
   --sh_primary: 0 8px 20px -6px rgba(90,138,94,.5);   /* glow verde para elementos de marca */
 
   /* —— TIPO —— */
-  --serif: "Fraunces", Georgia, "Times New Roman", serif;
-  --sans:  "Hanken Grotesk", -apple-system, BlinkMacSystemFont, sans-serif;
+  --display: "Space Grotesk", "SF Pro Display", -apple-system, BlinkMacSystemFont, sans-serif;
+  --sans:    "Hanken Grotesk", -apple-system, BlinkMacSystemFont, sans-serif;
 
   --ease: cubic-bezier(.22,.61,.36,1);   /* suave / premium (lento-elegante) */
 }
@@ -381,9 +381,9 @@ footer b{color:var(--color_primary_deep)}
 <div class="wrap hero grain">
   <span class="eyebrow">Kit de personalidad · v0.2</span>
   <h1>Mismos colores. Mismo layout. <em>Más alma.</em></h1>
-  <p>Tres componentes de firma + un sistema tipográfico editorial para quitarle lo genérico al prototipo. La paleta no se toca; la personalidad entra por <b>Fraunces</b>, los <b>iconos a medida</b>, las <b>hairlines de plata</b> y un <b>isotipo que se repite</b> por toda la app.</p>
+  <p>Tres componentes de firma + un sistema tipográfico geométrico moderno para quitarle lo genérico al prototipo. La paleta no se toca; la personalidad entra por <b>Space Grotesk</b>, los <b>iconos a medida</b>, las <b>hairlines de plata</b> y un <b>isotipo que se repite</b> por toda la app.</p>
   <div class="tags">
-    <span class="tag">Serif <b>Fraunces</b> + Hanken</span>
+    <span class="tag">Geométrica <b>Space Grotesk</b> + Hanken</span>
     <span class="tag">Primario <b>Salvia</b> · Acento <b>Arcilla</b></span>
     <span class="tag">Dual-mode <b>feed oscuro / gestión clara</b></span>
     <span class="tag">3 componentes <b>custom</b></span>
@@ -410,7 +410,7 @@ footer b{color:var(--color_primary_deep)}
     <div class="sw"><div class="chip" style="background:var(--color_whatsapp)"></div><div class="meta"><div class="n">color_whatsapp</div><div class="h">#25D366</div></div></div>
   </div>
 
-  <div class="panel-label" style="margin-top:38px">Tipografía — Fraunces (serif editorial) + Hanken Grotesk (sans)</div>
+  <div class="panel-label" style="margin-top:38px">Tipografía — Space Grotesk (geométrica display) + Hanken Grotesk (sans)</div>
   <div class="typescale">
     <div><span class="lab">Display</span><span class="ts-display it">Departamento en Americana</span></div>
     <div><span class="lab">Precio</span><span class="ts-price">$15,000</span> <span style="font-family:var(--sans);font-weight:600;color:var(--color_gray_2)">/mes</span></div>
@@ -587,7 +587,7 @@ footer b{color:var(--color_primary_deep)}
 
 <footer class="grain">
   <p><b>Urbea</b> · Kit de personalidad — artefacto de exploración (003). No es código de app · branding gated (#19).<br>
-  Primario <b>Salvia #5A8A5E</b> · Acento <b>Arcilla #9A7150</b> · fuentes Fraunces + Hanken Grotesk vía Google Fonts.</p>
+  Primario <b>Salvia #5A8A5E</b> · Acento <b>Arcilla #9A7150</b> · fuentes Space Grotesk + Hanken Grotesk vía Google Fonts.</p>
 </footer>
 
 <script>
