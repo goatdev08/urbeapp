@@ -234,7 +234,10 @@ Deno.test("error_siempre_tiene_forma_error_code_message", async () => {
   assertEquals(res.status, 400);
   const body = await res.json();
   // Debe ser objeto con propiedad `error`
-  assertExists(body.error, "La respuesta de error no contiene propiedad 'error'");
+  assertExists(
+    body.error,
+    "La respuesta de error no contiene propiedad 'error'",
+  );
   // `error` debe tener `code`
   assertExists(body.error.code, "error.code está ausente");
   // `error` debe tener `message`

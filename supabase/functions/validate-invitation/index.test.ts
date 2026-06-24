@@ -50,9 +50,9 @@ import {
   assertExists,
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
-  validate_invitation_token,
   type InvitationDb,
   type InvitationTokenRow,
+  validate_invitation_token,
 } from "../_shared/invitation.ts";
 import { sha256_hex } from "../_shared/crypto.ts";
 import { handler } from "./index.ts";
@@ -305,7 +305,10 @@ Deno.test(
     });
 
     // El fake debe haber recibido el HASH, no el texto plano.
-    assertExists(db.last_hash, "El fake nunca recibió un hash — ¿se llamó find_by_hash?");
+    assertExists(
+      db.last_hash,
+      "El fake nunca recibió un hash — ¿se llamó find_by_hash?",
+    );
     assertEquals(
       db.last_hash,
       expected_hash,
@@ -426,7 +429,9 @@ Deno.test(
   "endpoint_post_token_expirado_retorna_422_token_expired",
   async () => {
     const hash = await sha256_hex(PLAIN_CODE);
-    const db = make_fake_db(make_fila_valida({ token: hash, expires_at: PAST_DATE }));
+    const db = make_fake_db(
+      make_fila_valida({ token: hash, expires_at: PAST_DATE }),
+    );
     const req = make_post({ invitationCode: PLAIN_CODE });
     const res = await handler(req, db);
 
