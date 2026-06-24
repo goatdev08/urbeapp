@@ -97,10 +97,11 @@
             "title": "Create AuthContext with Supabase Auth integration and session state management",
             "description": "Implement React Context for authentication state using Supabase Auth, exposing session, user profile, loading state, and auth methods (signIn, signOut) to the entire app.",
             "dependencies": [],
-            "details": "Create `lib/contexts/AuthContext.tsx` with:\n1. Define AuthContext type with: session (Session | null), user (public.users profile | null), loading (boolean), signIn, signOut methods\n2. Initialize Supabase client from `lib/supabase/client.ts` (assumes Task 1 completed)\n3. Set up `onAuthStateChange` listener in useEffect to track auth state changes\n4. When session exists, fetch the user profile from `public.users` table (the profile mirror per migration 0002)\n5. Export AuthProvider wrapper and useAuth hook\n6. Handle initial session loading state (isLoading: true until first auth state determined)\n7. Follow project patterns: TypeScript strict, feature-based structure at `src/features/auth/` or `lib/contexts/`\n<info added on 2026-06-24T04:47:34.139Z>\nPLAN APPROVED: AuthContext will be implemented at mobile/src/features/auth/context.tsx following feature-based architecture per vault decision. Component exposes {session, user (public.users profile), isLoading, signIn, signOut} via React Context. Implementation uses supabase.auth.onAuthStateChange for session tracking and queries public.users table by auth.uid() to fetch user profile. Assigned to mobile domain agent with skills urbea-expo and urbea-testing. Marked CRITICAL (authorization layer). Footprint: mobile/src/features/auth/context.tsx (new file), imports from mobile/src/lib/supabase/client.ts and mobile/src/types/database.ts.\n</info added on 2026-06-24T04:47:34.139Z>\n<info added on 2026-06-24T04:50:33.142Z>\nPLAN: AuthContext en mobile/src/features/auth/context.tsx (feature-based). Expone {session,user(perfil public.users),isLoading,signIn,signOut}. supabase.auth + onAuthStateChange; query public.users por id=auth.uid(). agente=mobile · skills=urbea-expo,urbea-testing · criticidad=CRITICA · footprint=src/features/auth/context.tsx (nuevo)\n</info added on 2026-06-24T04:50:33.142Z>",
-            "status": "pending",
+            "details": "Create `lib/contexts/AuthContext.tsx` with:\n1. Define AuthContext type with: session (Session | null), user (public.users profile | null), loading (boolean), signIn, signOut methods\n2. Initialize Supabase client from `lib/supabase/client.ts` (assumes Task 1 completed)\n3. Set up `onAuthStateChange` listener in useEffect to track auth state changes\n4. When session exists, fetch the user profile from `public.users` table (the profile mirror per migration 0002)\n5. Export AuthProvider wrapper and useAuth hook\n6. Handle initial session loading state (isLoading: true until first auth state determined)\n7. Follow project patterns: TypeScript strict, feature-based structure at `src/features/auth/` or `lib/contexts/`\n<info added on 2026-06-24T04:47:34.139Z>\nPLAN APPROVED: AuthContext will be implemented at mobile/src/features/auth/context.tsx following feature-based architecture per vault decision. Component exposes {session, user (public.users profile), isLoading, signIn, signOut} via React Context. Implementation uses supabase.auth.onAuthStateChange for session tracking and queries public.users table by auth.uid() to fetch user profile. Assigned to mobile domain agent with skills urbea-expo and urbea-testing. Marked CRITICAL (authorization layer). Footprint: mobile/src/features/auth/context.tsx (new file), imports from mobile/src/lib/supabase/client.ts and mobile/src/types/database.ts.\n</info added on 2026-06-24T04:47:34.139Z>\n<info added on 2026-06-24T04:50:33.142Z>\nPLAN: AuthContext en mobile/src/features/auth/context.tsx (feature-based). Expone {session,user(perfil public.users),isLoading,signIn,signOut}. supabase.auth + onAuthStateChange; query public.users por id=auth.uid(). agente=mobile · skills=urbea-expo,urbea-testing · criticidad=CRITICA · footprint=src/features/auth/context.tsx (nuevo)\n</info added on 2026-06-24T04:50:33.142Z>\n<info added on 2026-06-24T05:02:52.162Z>\nEDGE CASES (RED) — fase test-author:\n\n### Happy path\n- EC-1: Con sesión previa: getSession devuelve session con user.id → carga perfil de public.users, expone user con ese perfil, isLoading=false.\n- EC-6: signIn llama supabase.auth.signInWithPassword con {email, password} exactos.\n- EC-7: signOut llama supabase.auth.signOut (sin args).\n\n### Edge cases del PRD (sin signup)\n- EC-9: (Guard) useAuth() fuera de AuthProvider lanza un error claro — no signUp expuesto.\n\n### Ramas de reglas no obvias\n- EC-4: onAuthStateChange SIGNED_IN: dispara carga de perfil y actualiza session/user.\n- EC-5: onAuthStateChange SIGNED_OUT: limpia session y user a null.\n- EC-2: Sin sesión previa: getSession devuelve {session:null} → tras cargar, isLoading=false, user=null, session=null. NO consulta public.users.\n- EC-8: Cleanup: al desmontar el provider, se llama unsubscribe del listener (no leaks).\n\n### Estado inicial / boundary\n- EC-1b: Estado inicial: isLoading=true antes de resolver getSession; user=null, session=null.\n\nArchivos: mobile/src/features/auth/__tests__/context.test.tsx (test), mobile/src/features/auth/context.tsx (stub mínimo). Estado: RED — todos los tests fallan por aserción.\n</info added on 2026-06-24T05:02:52.162Z>",
+            "status": "in-progress",
             "testStrategy": "Verify AuthContext provides correct session/user data, test that onAuthStateChange listener properly updates context state, mock Supabase client for unit tests",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-06-24T05:01:21.716Z"
           },
           {
             "id": 2,
@@ -168,17 +169,17 @@
             "title": "Configurar harness de tests móvil (jest-expo + testing-library)",
             "description": "Prerrequisito para TDD de las subtareas críticas (2.1, 2.4, 2.5). Instalar jest-expo, @testing-library/react-native, jest; script test en package.json; preset jest-expo; mock de AsyncStorage. Verificar con un test trivial verde.",
             "details": "<info added on 2026-06-24T05:00:17.918Z>\nI'll analyze the codebase to understand the project structure and verify the implementation described in the user request.Configured test harness for mobile/ (Expo SDK 56, RN 0.85.3, React 19, TypeScript strict). Created mobile/jest.config.js with jest-expo preset, jest.setup.js setupFile, and transformIgnorePatterns pattern including explicit .pnpm segment to unblock transformation of @react-native/jest-preset/jest/setup.js ESM imports under pnpm hoisted layout. Created mobile/jest.setup.js with official async-storage-mock via jest.mock. Created mobile/src/__tests__/smoke.test.ts as trivial 1+1=2 smoke test. Modified mobile/package.json adding devDependencies jest-expo@56.0.5, jest@^29.7.0, @testing-library/react-native@14.0.1, @types/jest@^29.5.14 and scripts test and test:watch. Modified mobile/tsconfig.json adding types: ['jest'] so tsc recognizes describe/it/expect without errors. Chose jest-expo@56.0.5 matching SDK 56; jest@29 not 30 for compatibility with jest-expo; @testing-library/react-native@14.0.1 supporting React>=19 and RN>=0.78; configuration in jest.config.js not package.json to avoid duplication and allow explicit overrides. Peer warning for test-renderer: jest-expo bundles react-test-renderer@19.2.3. Ran pnpm add -D jest-expo@56.0.5 jest@^29.0.0 @testing-library/react-native@14.0.1 @types/jest@^29.0.0. Verified with pnpm test passing src/__tests__/smoke.test.ts 1 test in 0.957s and pnpm tsc --noEmit with 0 errors. Harness ready for TDD of critical subtasks 2.1, 2.4, 2.5.\n</info added on 2026-06-24T05:00:17.918Z>\n<info added on 2026-06-24T05:01:02.401Z>\nHarness configuration completed. Files created: mobile/jest.config.js with jest-expo preset, jest.setup.js setupFile, transformIgnorePatterns pattern including .pnpm segment for pnpm hoisted layout compatibility; mobile/jest.setup.js with official async-storage-mock; mobile/src/__tests__/smoke.test.ts (1+1=2 smoke test). Modified: mobile/package.json (scripts test/test:watch, devDeps jest-expo@56.0.5 jest@^29.7.0 @testing-library/react-native@14.0.1 @types/jest@^29.5.14); mobile/tsconfig.json (types: jest). Pnpm hoisted layout gotcha: double node_modules structure reactivates preset's default ignore; fix = .pnpm as first negative-lookahead in transformIgnorePatterns to allow transformation of @react-native/jest-preset/jest/setup.js ESM imports. Verification: pnpm test → PASS 1/1 in 0.957s; pnpm tsc --noEmit → 0 errors. Test harness ready for TDD cycles on critical subtasks 2.1, 2.4, 2.5.\n</info added on 2026-06-24T05:01:02.401Z>",
-            "status": "in-progress",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 2,
-            "updatedAt": "2026-06-24T04:55:22.167Z",
+            "updatedAt": "2026-06-24T05:01:09.157Z",
             "parentId": "undefined"
           }
         ],
         "complexity": 5,
         "recommendedSubtasks": 6,
         "expansionPrompt": "Break down auth implementation into: (1) create AuthContext with Supabase Auth and session state management, (2) implement AsyncStorage session persistence, (3) build login screen UI with validation, (4) implement signInWithPassword with error handling, (5) create protected route wrapper using Expo Router, (6) add loading states and auto-redirect. Consider the existing users table schema with role field (user/agent/admin) for future role-based access.",
-        "updatedAt": "2026-06-24T04:55:22.167Z"
+        "updatedAt": "2026-06-24T05:01:21.716Z"
       },
       {
         "id": 3,
@@ -2125,13 +2126,13 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-06-24T04:55:22.167Z",
+      "lastModified": "2026-06-24T05:01:21.716Z",
       "taskCount": 20,
       "completedCount": 1,
       "tags": [
         "master"
       ],
-      "created": "2026-06-24T04:59:56.255Z",
+      "created": "2026-06-24T05:02:35.789Z",
       "description": "Tasks for master context"
     }
   }

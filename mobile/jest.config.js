@@ -1,5 +1,7 @@
 'use strict';
 
+const path = require('path');
+
 /** @type {import('jest-expo').Config} */
 module.exports = {
   preset: 'jest-expo',
@@ -12,4 +14,8 @@ module.exports = {
   transformIgnorePatterns: [
     'node_modules/(?!.pnpm|react-native|@react-native|@react-native-community|expo|@expo|@expo-google-fonts|react-navigation|@react-navigation|@supabase)',
   ],
+  // Resuelve el alias @/ → src/ (espeja tsconfig paths)
+  moduleNameMapper: {
+    '^@/(.*)$': path.resolve(__dirname, 'src/$1'),
+  },
 };
