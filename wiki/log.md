@@ -64,3 +64,12 @@ Tip: `grep "^## \[" log.md | tail -5` → últimas 5 entradas.
 - Persistencia AsyncStorage ya estaba en client.ts (tarea #1); añadido listener AppState para start/stopAutoRefresh.
 - Harness de tests jest-expo + testing-library (nuevo). TDD en críticas (2.1, 2.4, 2.5) con guardian (3 mutantes verificados por subtarea). Total: 60 tests verdes, tsc strict limpio.
 - Estructura feature-based confirmada (src/features/auth/). Rama tarea/2-auth-supabase (commits locales).
+
+## [2026-06-24] tarea | #5 Canje de invitación + registro de agente
+- Edge Functions (Deno, patrón DI handler.ts puro / index.ts entry): `validate-invitation` (POST {invitationCode}→200 {agency_name}) y `redeem-invitation` (orquesta validar token→auth.admin.createUser→RPC canje→200; compensa deleteUser si falla). `_shared/` con cors/response/crypto(sha256)/validation/invitation/auth_user/redeem/clients (clients.ts = único import de supabase-js). Import map en deno.json; correr deno DESDE supabase/functions/.
+- Atomicidad: migración 0013 RPC `redeem_invitation_atomic` (SECURITY DEFINER): consumo token + agency_members + denorm users + 4 user_consents; errores P0001→HTTP. user_preferences NO (es onboarding de buyer).
+- Mobile: `app/register.tsx` en 2 fases (valida código→muestra agencia→datos+canje→auto-login signInWithPassword) + `src/features/registration/` (validation, registration-errors, api). 17 tests Jest.
+- **Bug sistémico hallado en despliegue real:** `service_role` sin grants DML en `public` (0008 solo otorgó a authenticated/anon) → supabase-js service_role recibía 403 de PostgREST. Las RPC SECURITY DEFINER no se veían afectadas (corren como postgres). Fix: **migración 0014_service_role_grants**. Documentado en [[rls-seguridad]].
+- Otros 2 fixes de integración: filtro embebido PostgREST `.is("agencies.deleted_at",null)` descartaba la fila padre (→ validar en JS); `x-forwarded-for` lista CSV rompía el param `inet` (→ 1ª IP).
+- Verificación: smoke E2E contra remoto (validate 200/404/400; redeem 200 con efectos atómicos + compensación verificados; datos limpiados). deno fmt/lint/test: 65 verdes. Advisors security sin WARN/ERROR nuevos. Migraciones 0011–0014 aplicadas en `urbea-app`.
+- Pendiente (cliente): consolidar ramas #1→#2→#3→#5 a main.

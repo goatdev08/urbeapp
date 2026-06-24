@@ -56,8 +56,10 @@ Estructura prevista por feature (carpetas `src/{features,components,theme,hooks}
 - `src/features/admin/` — alta de inmobiliarias → [[inmobiliarias-y-agentes]]
 - `src/lib/supabase/` — cliente tipado · `src/components/` · `src/theme/`
 
-## Edge Functions — `supabase/functions/` (pendiente)
-- `invitations/` — canje atómico de código → [[inmobiliarias-y-agentes]]
-- `properties/` — publicación (validación) → [[propiedades-y-video]]
-- `leads/` — contacto → creación de lead → [[crm-leads]]
-- `_shared/` — auth, validación, respuestas, logging con correlation_id → [[rls-seguridad]]
+## Edge Functions — `supabase/functions/` (Deno; correr `deno test/lint/fmt` DESDE este dir)
+**Patrón DI (tarea #5, vivo):** cada función = `handler.ts` (lógica PURA con deps inyectables; lo que importan los tests, offline, sin supabase-js) + `index.ts` (entry de prod: construye deps reales con `Deno.serve`) + `*.test.ts`. Deps externas en `deno.json` (import map: `@supabase/supabase-js`, `@std/assert`). Errores siempre `{error:{code,message}}`. → [[inmobiliarias-y-agentes]], [[rls-seguridad]]
+- `validate-invitation/` — **vivo**: POST `{invitationCode}` → 200 `{agency_name}` (preview del código antes de registrarse) | 404/422/400.
+- `redeem-invitation/` — **vivo**: POST `{invitationCode,email,password,firstName,lastName}` → orquesta: validar token → `auth.admin.createUser` (email_confirm:true) → RPC `redeem_invitation_atomic` (canje atómico) → 200 `{user_id,agency_id,agency_name,agency_member_id}`. **Compensación** `deleteUser` si la RPC falla (no hay tx distribuida auth↔public). `x-forwarded-for` → 1ª IP (param `inet`).
+- `_shared/` — `cors.ts`, `response.ts` (`json_response`/`error_response`), `crypto.ts` (`sha256_hex`; el token se guarda hasheado), `validation.ts` (parseo de payload), `invitation.ts` (`validate_invitation_token`: NOT_FOUND→REVOKED→EXPIRED→MAX_USES→AGENCY_INACTIVE), `auth_user.ts` (`create_agent_auth_user`), `redeem.ts` (contrato + mapeo P0001→HTTP), **`clients.ts`** (adaptadores reales supabase-js `service_role`; ÚNICO sitio que importa supabase-js).
+- ⚠️ **`service_role` necesita grants DML explícitos** en `public` (migración 0014); sin ellos PostgREST devuelve 403 a la capa de servicio. → [[rls-seguridad]]
+- _Pendientes_: `properties/` (publicación) → [[propiedades-y-video]] · `leads/` (contacto) → [[crm-leads]].
