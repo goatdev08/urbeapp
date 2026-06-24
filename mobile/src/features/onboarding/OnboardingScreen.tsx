@@ -7,8 +7,7 @@
  * Superficie: CLARA ("paper" #F6F2EB) — pantalla de gestión, estética híbrida.
  *
  * TODOs explícitos por subtarea:
- *   TODO 6.4 — comprimir imagen seleccionada antes de setear uri.
- *   TODO 6.5 — upload de la imagen a Supabase Storage al guardar.
+ *   TODO 6.5 — upload de la imagen procesada a Supabase Storage al guardar.
  *   TODO 6.6 — validación de nombre (requerido, mín 2 chars), guardar en public.users
  *              y navegar a la home; PrimaryButton habilitado según validación.
  */
@@ -26,6 +25,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AvatarPicker } from './components/AvatarPicker';
 import { PrimaryButton } from '@/components/PrimaryButton';
+import { processProfileImage } from '@/lib/imageUtils';
 
 // ---------------------------------------------------------------------------
 // Tokens visuales — paper/gestión (alineados con personality kit)
@@ -54,13 +54,18 @@ export function OnboardingScreen() {
   // ── Handlers ────────────────────────────────────────────────────────────
 
   /**
-   * Recibe el uri seleccionado desde AvatarPicker (ya integrado en 6.2).
-   * TODO 6.4 — comprimir/redimensionar el uri antes de setearlo en el estado.
+   * Recibe el uri crudo del AvatarPicker, lo comprime/redimensiona (6.4) y actualiza
+   * el estado con el uri procesado (listo para preview y, en 6.5, para upload).
    * TODO 6.5 — disparar el upload a Supabase Storage aquí o al presionar "Continuar".
    */
-  const handle_avatar_change = (uri: string) => {
-    // TODO 6.4: comprimir uri antes de setear.
-    set_avatar_uri(uri);
+  const handle_avatar_change = async (uri: string) => {
+    try {
+      const processed = await processProfileImage(uri);
+      set_avatar_uri(processed.uri);
+    } catch {
+      // Si el procesamiento falla (caso raro), caer al uri crudo para no bloquear al usuario.
+      set_avatar_uri(uri);
+    }
   };
 
   /**

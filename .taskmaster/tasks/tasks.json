@@ -514,10 +514,10 @@
               1
             ],
             "details": "Install expo-image-picker with pnpm. Create a reusable hook (hooks/useImagePicker.ts) that: (1) requests camera and media library permissions using expo-image-picker, (2) shows ActionSheet with 'Take Photo' and 'Choose from Gallery' options, (3) launches camera or gallery picker with mediaTypes: Images, allowsEditing: true, aspect: [1, 1] for square crop, quality: 0.8, (4) returns the selected image URI. Handle permission denial gracefully with alert explaining why permissions are needed. Integrate hook into onboarding screen's avatar placeholder onPress.\n<info added on 2026-06-24T23:23:27.914Z>\nCOMPLETED. Package installed (expo-image-picker@56.0.18). Config plugin added to app.config.js with Spanish permission messages (photos + camera, microphone disabled). Hook created at mobile/src/features/onboarding/hooks/useImagePicker.ts exposing pick_from_gallery() and pick_from_camera() with permission handling (denial → Spanish Alert with settings instructions, returns {uri: null}; cancellation → {uri: null}). AvatarPicker.tsx refactored: replaced onPress with onChange callback, integrated useImagePicker internally, Alert with Spanish options (Tomar foto/Elegir de galería/Cancelar), shows Image preview when URI present vs placeholder, dynamic hint text. OnboardingScreen.tsx updated with handle_avatar_change(uri) calling set_avatar_uri(uri), TODOs added for 6.4 (compression) and 6.5 (upload). TypeScript verification passed (pnpm tsc --noEmit clean). Permission denial edge case handled with Spanish Alert and safe null return. Raw URIs returned; compression deferred to 6.4. Upload deferred to 6.5.\n</info added on 2026-06-24T23:23:27.914Z>",
-            "status": "in-progress",
+            "status": "done",
             "testStrategy": "Test: (1) Permission request appears on first use, (2) Camera opens and captures photo, (3) Gallery opens and allows selection, (4) Image is cropped to square, (5) Selected image displays in avatar placeholder, (6) Permission denial shows helpful message",
             "parentId": "undefined",
-            "updatedAt": "2026-06-24T23:20:33.099Z"
+            "updatedAt": "2026-06-24T23:23:52.146Z"
           },
           {
             "id": 3,
@@ -537,10 +537,11 @@
             "dependencies": [
               2
             ],
-            "details": "Install expo-image-manipulator with pnpm. Create lib/imageUtils.ts with function processProfileImage(uri: string): Promise<{uri: string, base64: string}>. Implementation: (1) Use ImageManipulator.manipulateAsync with actions: [{ resize: { width: 512, height: 512 } }], (2) Set saveOptions: { compress: 0.8, format: SaveFormat.JPEG, base64: true }, (3) If resulting size > 1MB, re-compress with lower quality (0.6, then 0.4), (4) Return processed image URI and base64 for upload. Handle errors gracefully. Update onboarding to call this function after image selection and before displaying preview.",
-            "status": "pending",
+            "details": "Install expo-image-manipulator with pnpm. Create lib/imageUtils.ts with function processProfileImage(uri: string): Promise<{uri: string, base64: string}>. Implementation: (1) Use ImageManipulator.manipulateAsync with actions: [{ resize: { width: 512, height: 512 } }], (2) Set saveOptions: { compress: 0.8, format: SaveFormat.JPEG, base64: true }, (3) If resulting size > 1MB, re-compress with lower quality (0.6, then 0.4), (4) Return processed image URI and base64 for upload. Handle errors gracefully. Update onboarding to call this function after image selection and before displaying preview.\n<info added on 2026-06-24T23:30:55.843Z>\nFiles touched: mobile/src/lib/imageUtils.ts (new pure utility), mobile/src/lib/__tests__/imageUtils.test.ts (new file, 6 tests), mobile/src/features/onboarding/OnboardingScreen.tsx (integration: handle_avatar_change now calls processProfileImage; import added; TODO 6.4 removed), mobile/package.json (expo-image-manipulator@56.0.19 + expo-file-system@56.0.8 added).\n\nKey decisions:\n- Legacy manipulateAsync API used instead of fluent ImageManipulator API for simpler mocking in tests and compatibility with SDK 56\n- Resize only specifies width:512; aspect ratio preserved automatically (pre-cropped 1:1 avatars from picker remain square)\n- base64 NOT returned in final implementation; Supabase-js in 6.5 will upload from local URI (Blob/FormData), not base64\n- Iterative compression with QUALITY_STEPS = [0.8, 0.6, 0.4]; returns first step ≤ 1MB, or final 0.4 result if all exceed limit to avoid blocking user\n- Size measured with getInfoAsync from expo-file-system (legacy API) returning {exists: true; size: number} or {exists: false; uri: string}\n- handle_avatar_change in OnboardingScreen has try/catch fallback to raw URI if processProfileImage fails unexpectedly\n- Mock pattern follows context.test.tsx: jest.fn() inside factory, typed via jest.MockedFunction<typeof X>\n- TODO 6.5 remains in OnboardingScreen.tsx: trigger Supabase Storage upload\n\nVerification: pnpm add expo-image-manipulator expo-file-system completed, pnpm tsc --noEmit (0 errors), pnpm test (83/83 PASS including 6 new imageUtils tests).\n</info added on 2026-06-24T23:30:55.843Z>",
+            "status": "in-progress",
             "testStrategy": "Test: (1) Large image (5MB+) is reduced to under 1MB, (2) Image dimensions are 512x512 or smaller, (3) Image quality is acceptable visually, (4) Processing doesn't freeze UI (show loading indicator), (5) Corrupted/invalid images show error message",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-06-24T23:23:53.788Z"
           },
           {
             "id": 5,
@@ -572,7 +573,7 @@
         "complexity": 4,
         "recommendedSubtasks": 6,
         "expansionPrompt": "Break down onboarding into: (1) create onboarding screen with name and photo input, (2) implement expo-image-picker for camera/gallery selection, (3) create profile-photos Storage bucket with RLS, (4) implement image resize/compress with expo-image-manipulator, (5) upload to Storage and update user_preferences, (6) add skip button, validation, progress indicator, and navigation to main app",
-        "updatedAt": "2026-06-24T23:20:33.099Z"
+        "updatedAt": "2026-06-24T23:23:53.788Z"
       },
       {
         "id": 7,
@@ -2201,13 +2202,13 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-06-24T23:20:33.099Z",
+      "lastModified": "2026-06-24T23:23:53.788Z",
       "taskCount": 20,
       "completedCount": 5,
       "tags": [
         "master"
       ],
-      "created": "2026-06-24T23:23:15.693Z",
+      "created": "2026-06-24T23:30:38.497Z",
       "description": "Tasks for master context"
     }
   }
