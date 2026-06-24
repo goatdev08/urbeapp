@@ -32,8 +32,17 @@ Detalle de tablas/migraciones en [[db-schema-map]].
 | Alcance demo | `docs/PRD-MVP-demo.md` |
 | Lineamientos | `docs/lineamientos-desarrollo.md` |
 
-## App móvil — `mobile/` (pendiente, se llena al desarrollar)
-Estructura prevista (Expo + dev build, Expo Router, TS strict, por feature):
+## App móvil — `mobile/` (inicializada · tarea #1)
+Base **existe** (Expo SDK 56, dev build, Expo Router, TS strict, standalone). Lo ya construido:
+- `mobile/app.config.ts` — config dinámica: `com.urbea.app` (iOS+Android), slug/scheme `urbea`, owner EAS `deabratech`, Google Maps vía `process.env.GOOGLE_MAPS_API_KEY`, plugins (expo-dev-client/router/video). projectId EAS `85c7157a-…`.
+- `mobile/eas.json` — perfiles `development`/`preview`/`production`. Proyecto EAS: `@deabratech/urbea`.
+- `mobile/.npmrc` — `node-linker=hoisted` (gotcha Metro+pnpm). `mobile/.env.local` (gitignored) con credenciales Supabase; `.env.example` con nombres.
+- `mobile/app/_layout.tsx` (Stack + SafeAreaProvider) · `mobile/app/index.tsx` (placeholder "Urbea").
+- `mobile/src/lib/supabase/client.ts` — **cliente Supabase tipado** `createClient<Database>` + AsyncStorage (hotspot global; smoke test 200 OK contra remoto) → [[rls-seguridad]].
+- `mobile/src/types/database.ts` — re-export de `supabase/types/database.types.ts`.
+- `mobile/tsconfig.json` — strict (+ noUncheckedIndexedAccess, exactOptionalPropertyTypes), alias `@/*`→`src/*`.
+
+Estructura prevista por feature (carpetas `src/{features,components,theme,hooks}` ya creadas, vacías):
 - `src/features/auth/` — login, canje de código → [[roles-y-permisos]], [[inmobiliarias-y-agentes]]
 - `src/features/onboarding/` → [[onboarding-y-preferencias]]
 - `src/features/feed/` — feed vertical → [[feed-vertical-video]]

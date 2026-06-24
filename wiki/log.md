@@ -44,3 +44,10 @@ Tip: `grep "^## \[" log.md | tail -5` → últimas 5 entradas.
 - TDD pragmático por criticidad, serie con checkpoints, manejo de bloqueantes, convención de nombres snake_case. graphify contemplado a futuro. Ver [[0007-workflow-multiagente]].
 
 ## [2026-06-21] explore | aprobado tarea 19 — Branding + Design System de Urbea
+
+## [2026-06-23] tarea | #1 init Expo + dev build — app móvil inicializada
+- `mobile/` scaffold Expo SDK 56 (blank-typescript, standalone, `.npmrc` hoisted), Expo Router, TS strict.
+- EAS configurado: `app.config.ts` (`com.urbea.app`, owner `deabratech`), `eas.json` (development/preview/production); proyecto `@deabratech/urbea` registrado (projectId 85c7157a-…).
+- Deps nativas: expo-dev-client, expo-router, react-native-maps@1.27.2 (sin fricción en SDK 56), expo-video, screens, safe-area-context.
+- Cliente Supabase tipado `src/lib/supabase/client.ts` (createClient<Database> + AsyncStorage); smoke test **200 OK** contra remoto `mvpvqmyhrrkwbnpctpuq`. Credenciales en `.env.local` (gitignored).
+- Mapa-codebase actualizado (sección móvil → archivos reales). Rama `tarea/1-init-expo-mobile` (commits locales). Pendiente humano: primer `eas build` para ver la app en device.
