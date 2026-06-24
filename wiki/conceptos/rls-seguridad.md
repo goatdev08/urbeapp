@@ -3,8 +3,8 @@ tipo: concepto
 dominio: arquitectura
 estado: vivo
 fuentes: [docs/lineamientos-desarrollo.md, supabase/README.md]
-codigo: [supabase/migrations/0008_rls_helpers_and_policies.sql, supabase/migrations/0010_security_perf_hardening.sql]
-actualizado: 2026-06-17
+codigo: [supabase/migrations/0008_rls_helpers_and_policies.sql, supabase/migrations/0010_security_perf_hardening.sql, supabase/migrations/0014_service_role_grants.sql]
+actualizado: 2026-06-24
 ---
 
 # RLS y seguridad
@@ -21,6 +21,7 @@ actualizado: 2026-06-17
 - 🔒 `events_raw` y `admin_actions` → **solo `service_role`** (sin políticas para anon/authenticated; append-only).
 - **Público (anon):** `properties` con `status='active'` + `property_videos` con `status='ready'` + `agencies` approved|active + `terms_versions`.
 - Lógica de negocio → **Edge Functions** (validación→autorización→lógica→persistencia). RLS no orquesta; triggers solo atómicos. Ver `docs/lineamientos-desarrollo.md`.
+- ⚠️ **`service_role` tiene `bypassrls` pero NO grants DML automáticos en este proyecto.** 0008 otorgó `select/insert/update/delete` solo a `authenticated`/`anon`; en una instalación Supabase normal `service_role` los recibe vía *default privileges* del rol dueño, pero al aplicar migraciones por MCP quedó sin ellos → la capa de servicio supabase-js (Edge Functions con `service_role`) recibía **403** de PostgREST en cualquier lectura/escritura de tabla. **Migración 0014** restablece `grant all on all tables/sequences/routines … to service_role` + `alter default privileges`. Las RPC `SECURITY DEFINER` (p. ej. `redeem_invitation_atomic`) NO se ven afectadas porque corren como su dueño (`postgres`) — por eso el hueco puede pasar desapercibido hasta probar una función que lea tablas directamente.
 
 ## Al construir features nuevas (demo)
 Toda tabla/feature respeta este patrón: políticas idempotentes (`drop policy if exists … ; create policy …`), helpers `private.*`, grants mínimos. Cualquier dato sensible → test pgTAP en `02_rls_test.sql`.

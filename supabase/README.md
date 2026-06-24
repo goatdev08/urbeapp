@@ -18,7 +18,7 @@ Esquema PostgreSQL/PostGIS para el MVP de Urbea (app inmobiliaria tipo TikTok pa
 
 ```
 supabase/
-  migrations/            12 migraciones .sql versionadas (idempotentes)
+  migrations/            14 migraciones .sql versionadas (idempotentes)
     rollbacks/           un rollback por migración (lineamientos §12.3)
   tests/                 tests pgTAP (constraints + RLS)
   types/database.types.ts  tipos TypeScript generados (para la app)
@@ -42,6 +42,10 @@ supabase/
 | `..._0010_security_perf_hardening` | Mueve helpers a esquema `private`, optimiza RLS (`(select auth.uid())`), índices de FK, blinda triggers |
 | `..._0011_storage_property_videos` | Bucket `property-videos` (Storage) + políticas RLS de Storage: INSERT solo para el agente dueño, SELECT público para propiedades activas. **Solo para la demo** (sin transcoding); el video en producción irá en Cloudflare Stream. |
 | `..._0012_property_videos_ready_requires_storage` | CHECK constraint `property_videos_ready_requires_storage`: un video con `status='ready'` exige al menos uno de `storage_path` o `cloudflare_uid`. Los estados `uploading`, `processing` y `failed` no requieren referencia. Complementa la política de Storage de `0011`; no tiene relación con billing. |
+| `..._0013_redeem_invitation_rpc` | RPC `redeem_invitation_atomic` (security definer, solo `service_role`): canje de invitación de agente en una transacción (consumo de token + `agency_members` + denormalización `users` + 4 `user_consents`) |
+| `..._0014_service_role_grants` | Restablece privilegios DML de `service_role` sobre `public` (tablas/secuencias/rutinas + default privileges). Corrige bug: `service_role` no tenía SELECT/INSERT/UPDATE/DELETE en ninguna tabla (0008 solo otorgó a `authenticated`/`anon`), por lo que la capa de servicio supabase-js de las Edge Functions recibía **403** de PostgREST. La RPC 0013 no se veía afectada por ser `SECURITY DEFINER`. |
+
+> Las migraciones `0011`–`0014` ya están aplicadas en el remoto `urbea-app`. `0013`/`0014` (canje de invitación, tarea #5) no dependen de `0011`/`0012` (Storage, tareas #3/#4); ambos stacks ya están integrados en `main`.
 
 ---
 
@@ -108,11 +112,26 @@ supabase db push
 
 ### Correr los tests
 ```bash
-supabase test db        # corre supabase/tests/*.sql con pgTAP
+supabase test db        # corre supabase/tests/*.sql con pgTAP (base de datos)
 ```
 Cobertura: `01_constraints_test.sql` (13 asserts de constraints/triggers/únicos) y
 `02_rls_test.sql` (15 asserts de visibilidad RLS por rol). Para impersonación más robusta en CI se
 recomienda instalar `supabase_test_helpers` (`tests.authenticate_as`).
+
+### Tests de Edge Functions (Deno)
+Las Edge Functions (`functions/`) corren en **Deno**, no en Node. Sus tests unitarios usan `deno test`.
+Requisito: `brew install deno` (Deno 2.x).
+```bash
+cd supabase/functions     # correr DESDE aquí para que deno.json (import map) se autodescubra
+deno test --allow-net     # tests de Edge Functions
+deno lint                 # lint
+deno fmt                  # formato
+```
+Convención: cada función vive en `functions/<nombre>/` con:
+- `handler.ts` — lógica PURA con dependencias inyectables (DI); es lo que importan los tests (rápidos, offline, sin supabase-js).
+- `index.ts` — entry de producción: construye las dependencias reales (supabase-js `service_role`) y llama `Deno.serve`.
+- `index.test.ts` / `*.test.ts` — tests del handler.
+Los helpers compartidos (CORS, respuestas JSON, hash sha256, validación, **adaptadores supabase-js** en `clients.ts`) en `functions/_shared/`. Las dependencias externas se declaran en `functions/deno.json` (import map) y se importan con specifier bare (`@supabase/supabase-js`, `@std/assert`).
 
 ### Regenerar tipos TypeScript
 ```bash
