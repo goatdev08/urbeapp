@@ -146,10 +146,10 @@ beforeEach(() => {
 
   mock_auth.onAuthStateChange.mockImplementation((callback: (event: AuthChangeEvent, session: Session | null) => void) => {
     captured_auth_callback = callback;
-    return { data: { subscription: { unsubscribe: mock_unsubscribe } } } as ReturnType<typeof mock_auth.onAuthStateChange>;
+    return { data: { subscription: { unsubscribe: mock_unsubscribe } } } as unknown as ReturnType<typeof mock_auth.onAuthStateChange>;
   });
 
-  mock_auth.signInWithPassword.mockResolvedValue({ data: { user: null, session: null }, error: null } as Awaited<ReturnType<typeof mock_auth.signInWithPassword>>);
+  mock_auth.signInWithPassword.mockResolvedValue({ data: { user: null, session: null }, error: null } as unknown as Awaited<ReturnType<typeof mock_auth.signInWithPassword>>);
   mock_auth.signOut.mockResolvedValue({ error: null } as Awaited<ReturnType<typeof mock_auth.signOut>>);
 
   setup_from_mock(null);
@@ -354,7 +354,9 @@ describe('EC-8: cleanup_unsubscribe_al_desmontar', () => {
     // El stub no llama onAuthStateChange — la implementación real debe hacerlo
     expect(mock_auth.onAuthStateChange).toHaveBeenCalledTimes(1);
 
-    unmount();
+    // RNTL v14 + React 19: unmount() es async; el cleanup del effect (unsubscribe)
+    // se flushea cuando resuelve. Sin await, la aserción corre antes del cleanup.
+    await unmount();
 
     // La implementación real debe llamar unsubscribe; el stub no registra la suscripción
     expect(mock_unsubscribe).toHaveBeenCalledTimes(1);
