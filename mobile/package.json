@@ -6,6 +6,7 @@
     "@react-native-async-storage/async-storage": "2.2.0",
     "@supabase/supabase-js": "^2.108.2",
     "expo": "~56.0.12",
+    "expo-blur": "^56.0.3",
     "expo-constants": "~56.0.18",
     "expo-dev-client": "~56.0.20",
     "expo-linking": "~56.0.14",
