@@ -1,6 +1,6 @@
-import { ExpoConfig, ConfigContext } from 'expo/config';
-
-export default ({ config }: ConfigContext): ExpoConfig => ({
+// Config dinámica en JS plano (no TS) para evitar la transpilación con ts-node,
+// que falla al leer el config en el servidor de EAS bajo pnpm. Ver tarea #1.
+module.exports = ({ config }) => ({
   ...config,
   name: 'Urbea',
   slug: 'urbea',
@@ -38,7 +38,6 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   plugins: [
     'expo-dev-client',
     'expo-router',
-    'expo-status-bar',
     ['expo-video', {
       supportsBackgroundPlayback: false,
       supportsPictureInPicture: false,
