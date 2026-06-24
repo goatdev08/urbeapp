@@ -3,7 +3,7 @@ tipo: concepto
 dominio: producto
 estado: vivo
 fuentes: [docs/PRD.md §12-13, docs/PRD-MVP-demo.md]
-codigo: [supabase/migrations/20260604000005_properties_and_videos.sql, supabase/migrations/20260604000011_storage_property_videos.sql, supabase/tests/03_storage_test.sql]
+codigo: [supabase/migrations/20260604000005_properties_and_videos.sql, supabase/migrations/20260604000011_storage_property_videos.sql, supabase/migrations/20260604000012_property_videos_ready_requires_storage.sql, supabase/tests/01_constraints_test.sql, supabase/tests/03_storage_test.sql]
 actualizado: 2026-06-24
 ---
 
@@ -19,6 +19,7 @@ actualizado: 2026-06-24
 - 🔒 Máx **5 videos** por propiedad → trigger atómico `enforce_max_videos_per_property()` (rechaza el 6º).
 - 🔒 Una `position` única por propiedad → índice único parcial `(property_id, position) WHERE deleted_at IS NULL`.
 - 🔒 `status='closed'` exige `closed_reason` (CHECK).
+- 🔒 Video `status='ready'` exige **al menos una** referencia de storage — CHECK `property_videos_ready_requires_storage` (`status <> 'ready' OR storage_path IS NOT NULL OR cloudflare_uid IS NOT NULL`, migración **0012**). Condicional al status (espeja `property_closed_requires_reason`): `uploading`/`processing`/`failed` pueden no tener referencia (la fila existe antes de subir el binario; el `video_id` del path es el `id` de la fila), pero marcar `ready` exige `storage_path` o `cloudflare_uid`. Aplica también en UPDATE (transición a `ready`). Asserts 14-18 en `01_constraints_test.sql`.
 - 🔒 Soft-delete de propiedad **cascadea** a sus videos (trigger `cascade_soft_delete_property_videos`).
 - Dirección exacta **siempre visible** (decisión de cliente, no aproximada).
 

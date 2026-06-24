@@ -15,7 +15,7 @@ Detalle de tablas/migraciones en [[db-schema-map]].
 | Identidad | `supabase/migrations/..._identity_users.sql` | [[roles-y-permisos]] |
 | Inmobiliarias/Agentes | `..._agencies_and_agents.sql` | [[inmobiliarias-y-agentes]] |
 | Propiedades/Video | `..._properties_and_videos.sql` | [[propiedades-y-video]] |
-| Storage (video) | `..._storage_property_videos.sql` (0011: bucket `property-videos` + col `storage_path` + RLS INSERT/SELECT en `storage.objects`) | [[propiedades-y-video]] |
+| Storage (video) | `..._storage_property_videos.sql` (0011: bucket `property-videos` + col `storage_path` + RLS INSERT/SELECT en `storage.objects`) · `..._property_videos_ready_requires_storage.sql` (0012: CHECK `ready` exige `storage_path` o `cloudflare_uid`) | [[propiedades-y-video]] |
 | Engagement/CRM | `..._engagement_crm.sql` | [[crm-leads]], [[feed-vertical-video]] |
 | Moderación/Analítica | `..._analytics_moderation_audit.sql` | [[moderacion]], [[notificaciones]] |
 | RLS/Seguridad | `..._rls_helpers_and_policies.sql`, `..._security_perf_hardening.sql` | [[rls-seguridad]] |
