@@ -64,3 +64,12 @@ Tip: `grep "^## \[" log.md | tail -5` → últimas 5 entradas.
 - Persistencia AsyncStorage ya estaba en client.ts (tarea #1); añadido listener AppState para start/stopAutoRefresh.
 - Harness de tests jest-expo + testing-library (nuevo). TDD en críticas (2.1, 2.4, 2.5) con guardian (3 mutantes verificados por subtarea). Total: 60 tests verdes, tsc strict limpio.
 - Estructura feature-based confirmada (src/features/auth/). Rama tarea/2-auth-supabase (commits locales).
+
+## [2026-06-24] tarea | #3 Supabase Storage — bucket property-videos + RLS
+- Migración 0011 (`supabase/migrations/20260604000011_storage_property_videos.sql`, +rollback): bucket `property-videos` (privado, 100 MB, mp4/quicktime/webm), columna `property_videos.storage_path` (único parcial), y 2 políticas RLS en `storage.objects`.
+- RLS INSERT (`property_videos_storage_insert`): agente/admin sube solo a su propio path (`foldername[1]=auth.uid()` + rol). Gate dueño+rol como `properties_insert`; no hay admin-anywhere.
+- RLS SELECT (`property_videos_storage_select`): lectura pública si `private.property_is_public(foldername[2])` (helper SECURITY DEFINER 0010, sin JOIN inline → evita colisión RLS anon) o si eres el dueño.
+- Convención de path: `{user_id}/{property_id}/{video_id}.mp4`. Ver [[propiedades-y-video]] §Storage.
+- CORS: hallazgo — Supabase no tiene CORS por bucket (gateway permisivo; subidas nativas Expo/RN no aplican CORS). Nada que configurar para la demo.
+- TDD contra remoto vía MCP (sin stack local): RED→GREEN en tx con rollback, `apply_migration` al final. Tests `supabase/tests/03_storage_test.sql` (pgTAP, 16 asserts). Guardian PASS en 3.1/3.2/3.3. Aplicada a `urbea-app` (migración 20260604000011 en historial). Rama `tarea/3-storage-videos`.
+- ⚠️ Gotcha: `task-master update-task --id=3` (provider AI) **regeneró las subtareas** (pasaron de split por-feature a split por-fase). Trabajo idéntico y completo, pero los títulos quedaron reescritos. Usar `update-subtask` para notas, no `update-task`.

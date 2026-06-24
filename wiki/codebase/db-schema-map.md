@@ -35,7 +35,7 @@ Proyecto live `urbea-app` (`mvpvqmyhrrkwbnpctpuq`). 20 tablas, migraciones `0001
 | `agent_applications` | 0003 | [[inmobiliarias-y-agentes]] | diferido |
 | `agent_interest_submissions` | 0003 | [[inmobiliarias-y-agentes]] | diferido |
 | `properties` | 0005 | [[propiedades-y-video]] | vivo |
-| `property_videos` | 0005 | [[propiedades-y-video]] | vivo (ver nota Storage) |
+| `property_videos` | 0005, 0011 (`storage_path`) | [[propiedades-y-video]] | vivo |
 | `likes` | 0006 | [[feed-vertical-video]] | vivo |
 | `saves` | 0006 | [[propiedades-y-video]] | vivo |
 | `leads` | 0006 | [[crm-leads]] | vivo |
@@ -56,7 +56,7 @@ Proyecto live `urbea-app` (`mvpvqmyhrrkwbnpctpuq`). 20 tablas, migraciones `0001
 - `lead_status`: new, contacted, in_progress, visit_scheduled, closed_won, closed_lost, discarded
 
 ## Nota para la demo (video en Storage)
-`property_videos` referencia Cloudflare Stream (`cloudflare_uid`). La demo usa **Supabase Storage** sin transcoding ([[0005-demo-cerrada-3-semanas]]); revisar si hace falta una columna de ruta de Storage → posible migración menor. **No** se aplica la migración de billing.
+`property_videos` referencia Cloudflare Stream (`cloudflare_uid`, legacy). La demo usa **Supabase Storage** sin transcoding ([[0005-demo-cerrada-3-semanas]]): migración **0011** añadió el bucket `property-videos` + la columna `storage_path` + RLS INSERT/SELECT en `storage.objects` (ver [[propiedades-y-video]] §Storage). **No** se aplica la migración de billing.
 
 ## Seguridad
 Ver [[rls-seguridad]]: RLS 2ª capa, helpers en schema `private`, grants column-level, `events_raw`/`admin_actions` solo `service_role`.
