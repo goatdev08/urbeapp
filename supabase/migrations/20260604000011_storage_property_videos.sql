@@ -38,9 +38,14 @@ create unique index if not exists property_videos_storage_path_unique
   where storage_path is not null;
 
 -- ── (3.2) RLS INSERT ─────────────────────────────────────────────────────────
--- Placeholder: las políticas de subida (INSERT en storage.objects) se añaden en la subtarea 3.2.
--- drop policy if exists "agent owner can upload video" on storage.objects;
--- create policy "agent owner can upload video" on storage.objects ...
+drop policy if exists property_videos_storage_insert on storage.objects;
+create policy property_videos_storage_insert on storage.objects
+  for insert to authenticated
+  with check (
+    bucket_id = 'property-videos'
+    and (storage.foldername(name))[1] = (select auth.uid())::text
+    and private.current_user_role() in ('agent', 'admin')
+  );
 
 -- ── (3.3) RLS SELECT ─────────────────────────────────────────────────────────
 -- Placeholder: las políticas de lectura (SELECT en storage.objects) se añaden en la subtarea 3.3.
