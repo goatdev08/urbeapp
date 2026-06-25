@@ -3,16 +3,16 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Urbea · Kit de personalidad (componentes)</title>
+<title>Urbea · Identidad Visual (componentes)</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400;1,9..144,500&family=Hanken+Grotesk:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Hanken+Grotesk:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 /* ============================================================================
-   URBEA · KIT DE PERSONALIDAD
+   URBEA · IDENTIFAF VISUAL
    Artefacto de diseño/exploración (no app code). Doc: 003-reconciliacion-y-kit.md
    Inyecta personalidad al prototipo de Cloud Design SIN cambiar la paleta:
-   serif editorial (Fraunces) + componentes de firma + anti-flatness.
+   display geométrica moderna (Space Grotesk) + componentes de firma + anti-flatness.
    ========================================================================== */
 
 :root{
@@ -47,8 +47,8 @@
   --sh_primary: 0 8px 20px -6px rgba(90,138,94,.5);   /* glow verde para elementos de marca */
 
   /* —— TIPO —— */
-  --serif: "Fraunces", Georgia, "Times New Roman", serif;
-  --sans:  "Hanken Grotesk", -apple-system, BlinkMacSystemFont, sans-serif;
+  --display: "Space Grotesk", "SF Pro Display", -apple-system, BlinkMacSystemFont, sans-serif;
+  --sans:    "Hanken Grotesk", -apple-system, BlinkMacSystemFont, sans-serif;
 
   --ease: cubic-bezier(.22,.61,.36,1);   /* suave / premium (lento-elegante) */
 }
@@ -79,7 +79,7 @@ body{
   background:rgba(246,242,235,.82); backdrop-filter:blur(14px);
   border-bottom:1px solid var(--color_silver);
 }
-.topbar .brand{display:flex; align-items:center; gap:10px; font-family:var(--serif); font-weight:600; font-size:20px; letter-spacing:-.01em}
+.topbar .brand{display:flex; align-items:center; gap:10px; font-family:var(--display); font-weight:600; font-size:20px; letter-spacing:-.01em}
 .topbar nav{display:flex; gap:6px; flex-wrap:wrap; margin-left:auto}
 .topbar nav a{
   font-size:13px; font-weight:600; color:var(--color_gray_3);
@@ -99,7 +99,7 @@ section{padding:64px 0; border-bottom:1px solid var(--color_paper_3)}
 }
 .eyebrow::before{content:""; width:26px; height:2px; background:var(--color_primary); border-radius:2px}
 
-h2.sec{font-family:var(--serif); font-weight:600; font-size:34px; letter-spacing:-.02em; line-height:1.1; margin-bottom:8px}
+h2.sec{font-family:var(--display); font-weight:600; font-size:34px; letter-spacing:-.02em; line-height:1.1; margin-bottom:8px}
 .sec-lead{color:var(--color_gray_3); max-width:62ch; font-size:15.5px; margin-bottom:34px}
 .note{font-size:12.5px; color:var(--color_gray_2); margin-top:10px}
 .note code{background:var(--color_paper_2); padding:1px 6px; border-radius:var(--r_4); font-family:ui-monospace,monospace; font-size:11.5px}
@@ -115,7 +115,7 @@ h2.sec{font-family:var(--serif); font-weight:600; font-size:34px; letter-spacing
 
 /* ============================ HERO ============================ */
 .hero{padding:72px 0 56px}
-.hero h1{font-family:var(--serif); font-weight:600; font-size:clamp(40px,6vw,68px); line-height:1.02; letter-spacing:-.03em; max-width:18ch}
+.hero h1{font-family:var(--display); font-weight:600; font-size:clamp(40px,6vw,68px); line-height:1.02; letter-spacing:-.03em; max-width:18ch}
 .hero h1 em{font-style:italic; color:var(--color_primary)}
 .hero p{margin-top:20px; max-width:60ch; font-size:17px; color:var(--color_gray_3)}
 .hero .tags{display:flex; gap:10px; margin-top:26px; flex-wrap:wrap}
@@ -132,10 +132,10 @@ h2.sec{font-family:var(--serif); font-weight:600; font-size:34px; letter-spacing
 
 .typescale>div{padding:14px 0; border-bottom:1px solid var(--color_paper_3); display:flex; align-items:baseline; gap:18px; flex-wrap:wrap}
 .typescale .lab{font-size:11px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--color_gray_2); width:120px; flex:none}
-.ts-display{font-family:var(--serif); font-weight:600; font-size:44px; letter-spacing:-.02em; line-height:1}
+.ts-display{font-family:var(--display); font-weight:600; font-size:44px; letter-spacing:-.02em; line-height:1}
 .ts-display.it{font-style:italic}
-.ts-h1{font-family:var(--serif); font-weight:600; font-size:28px; letter-spacing:-.01em}
-.ts-price{font-family:var(--serif); font-weight:600; font-size:34px; letter-spacing:-.01em}
+.ts-h1{font-family:var(--display); font-weight:600; font-size:28px; letter-spacing:-.01em}
+.ts-price{font-family:var(--display); font-weight:600; font-size:34px; letter-spacing:-.01em}
 .ts-body{font-family:var(--sans); font-size:16px}
 .ts-cap{font-family:var(--sans); font-size:12px; font-weight:700; letter-spacing:.16em; text-transform:uppercase; color:var(--color_gray_2)}
 
@@ -188,12 +188,12 @@ h2.sec{font-family:var(--serif); font-weight:600; font-size:34px; letter-spacing
   border:1px solid rgba(255,255,255,.16);
   border-radius:var(--r_16); padding:15px 16px 14px; color:var(--color_paper);
 }
-.glass .ptitle{font-family:var(--serif); font-weight:600; font-size:19px; line-height:1.12; letter-spacing:-.01em}
+.glass .ptitle{font-family:var(--display); font-weight:600; font-size:19px; line-height:1.12; letter-spacing:-.01em}
 .glass .pzone{font-size:12px; color:rgba(246,242,235,.72); margin-top:3px; display:flex; align-items:center; gap:5px}
 .glass .pzone svg{width:12px;height:12px}
 
 /* PRECIO HÉROE editorial (serif + tick verde) */
-.price{font-family:var(--serif); font-weight:600; letter-spacing:-.01em; display:flex; align-items:baseline; gap:6px; position:relative; padding-top:11px; margin-top:11px}
+.price{font-family:var(--display); font-weight:600; letter-spacing:-.01em; display:flex; align-items:baseline; gap:6px; position:relative; padding-top:11px; margin-top:11px}
 .price::before{content:""; position:absolute; top:0; left:0; width:34px; height:3px; background:var(--color_primary); border-radius:3px}
 .price .amt{font-size:27px; line-height:1}
 .price .per{font-family:var(--sans); font-size:12.5px; font-weight:600; color:var(--color_gray_2)}
@@ -229,7 +229,7 @@ h2.sec{font-family:var(--serif); font-weight:600; font-size:34px; letter-spacing
 .pcard.light{background:#fff; border:1px solid var(--color_paper_3); box-shadow:var(--sh_sm)}
 .pcard.light .media{aspect-ratio:16/11}
 .pcard.light .body{padding:15px 16px 17px}
-.pcard.light .ptitle{font-family:var(--serif); font-weight:600; font-size:18px; letter-spacing:-.01em; line-height:1.15}
+.pcard.light .ptitle{font-family:var(--display); font-weight:600; font-size:18px; letter-spacing:-.01em; line-height:1.15}
 .pcard.light .pzone{font-size:12px; color:var(--color_gray_2); margin-top:3px; display:flex; align-items:center; gap:5px}
 .pcard.light .pzone svg{width:12px;height:12px}
 .pcard.light .spec{color:var(--color_ink)}
@@ -241,7 +241,7 @@ h2.sec{font-family:var(--serif); font-weight:600; font-size:34px; letter-spacing
 .iso-hero{display:flex; align-items:center; gap:26px; flex-wrap:wrap}
 .iso-badge{width:92px; height:92px; border-radius:24px; background:var(--color_primary); display:grid; place-items:center; box-shadow:var(--sh_primary)}
 .iso-badge svg{width:50px; height:50px}
-.iso-lock{display:flex; align-items:center; gap:14px; font-family:var(--serif); font-size:40px; font-weight:600; letter-spacing:-.02em}
+.iso-lock{display:flex; align-items:center; gap:14px; font-family:var(--display); font-size:40px; font-weight:600; letter-spacing:-.02em}
 .iso-lock .mk{width:46px;height:46px;border-radius:13px;background:var(--color_primary);display:grid;place-items:center}
 .iso-lock .mk svg{width:25px;height:25px}
 
@@ -270,7 +270,7 @@ h2.sec{font-family:var(--serif); font-weight:600; font-size:34px; letter-spacing
 .pin .drop{position:absolute; inset:0; background:var(--color_primary); border:2.5px solid #fff; border-radius:50% 50% 50% 0; transform:rotate(-45deg); box-shadow:var(--sh_md)}
 .pin .ico{position:absolute; inset:0; display:grid; place-items:center}
 .pin .ico svg{width:22px; height:22px}
-.pin-price{font-family:var(--serif);font-weight:600;font-size:14px;background:#fff;border:1px solid var(--color_silver);padding:3px 11px;border-radius:var(--r_pill);box-shadow:var(--sh_sm);color:var(--color_ink)}
+.pin-price{font-family:var(--display);font-weight:600;font-size:14px;background:#fff;border:1px solid var(--color_silver);padding:3px 11px;border-radius:var(--r_pill);box-shadow:var(--sh_sm);color:var(--color_ink)}
 /* loader */
 .loader{width:54px;height:54px;border-radius:16px;background:var(--color_primary);display:grid;place-items:center;animation:pulse 1.4s var(--ease) infinite}
 .loader svg{width:28px;height:28px;animation:spin 1.4s linear infinite}
@@ -381,9 +381,9 @@ footer b{color:var(--color_primary_deep)}
 <div class="wrap hero grain">
   <span class="eyebrow">Kit de personalidad · v0.2</span>
   <h1>Mismos colores. Mismo layout. <em>Más alma.</em></h1>
-  <p>Tres componentes de firma + un sistema tipográfico editorial para quitarle lo genérico al prototipo. La paleta no se toca; la personalidad entra por <b>Fraunces</b>, los <b>iconos a medida</b>, las <b>hairlines de plata</b> y un <b>isotipo que se repite</b> por toda la app.</p>
+  <p>Tres componentes de firma + un sistema tipográfico geométrico moderno para quitarle lo genérico al prototipo. La paleta no se toca; la personalidad entra por <b>Space Grotesk</b>, los <b>iconos a medida</b>, las <b>hairlines de plata</b> y un <b>isotipo que se repite</b> por toda la app.</p>
   <div class="tags">
-    <span class="tag">Serif <b>Fraunces</b> + Hanken</span>
+    <span class="tag">Geométrica <b>Space Grotesk</b> + Hanken</span>
     <span class="tag">Primario <b>Salvia</b> · Acento <b>Arcilla</b></span>
     <span class="tag">Dual-mode <b>feed oscuro / gestión clara</b></span>
     <span class="tag">3 componentes <b>custom</b></span>
@@ -410,7 +410,7 @@ footer b{color:var(--color_primary_deep)}
     <div class="sw"><div class="chip" style="background:var(--color_whatsapp)"></div><div class="meta"><div class="n">color_whatsapp</div><div class="h">#25D366</div></div></div>
   </div>
 
-  <div class="panel-label" style="margin-top:38px">Tipografía — Fraunces (serif editorial) + Hanken Grotesk (sans)</div>
+  <div class="panel-label" style="margin-top:38px">Tipografía — Space Grotesk (geométrica display) + Hanken Grotesk (sans)</div>
   <div class="typescale">
     <div><span class="lab">Display</span><span class="ts-display it">Departamento en Americana</span></div>
     <div><span class="lab">Precio</span><span class="ts-price">$15,000</span> <span style="font-family:var(--sans);font-weight:600;color:var(--color_gray_2)">/mes</span></div>
@@ -547,7 +547,7 @@ footer b{color:var(--color_primary_deep)}
     <div>
       <div class="panel-label"><span class="dot dot-light"></span>Detalle del lead · barra de embudo</div>
       <div class="funnel-card">
-        <div style="font-family:var(--serif);font-weight:600;font-size:19px;margin-bottom:4px">Jorge Luna</div>
+        <div style="font-family:var(--display);font-weight:600;font-size:19px;margin-bottom:4px">Jorge Luna</div>
         <div style="font-size:12.5px;color:var(--color_gray_2);margin-bottom:20px">Depto Americana · hace 2 h</div>
         <div class="funnel" id="funnelBar">
           <div class="fstep" data-k="new"><div class="bar"></div><div class="lab">Nuevo</div></div>
@@ -587,7 +587,7 @@ footer b{color:var(--color_primary_deep)}
 
 <footer class="grain">
   <p><b>Urbea</b> · Kit de personalidad — artefacto de exploración (003). No es código de app · branding gated (#19).<br>
-  Primario <b>Salvia #5A8A5E</b> · Acento <b>Arcilla #9A7150</b> · fuentes Fraunces + Hanken Grotesk vía Google Fonts.</p>
+  Primario <b>Salvia #5A8A5E</b> · Acento <b>Arcilla #9A7150</b> · fuentes Space Grotesk + Hanken Grotesk vía Google Fonts.</p>
 </footer>
 
 <script>
