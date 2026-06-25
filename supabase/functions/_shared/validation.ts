@@ -1,5 +1,13 @@
 // _shared/validation.ts
 
+export interface CreateAgencyInput {
+  name: string;
+  slug: string;
+  contact_email?: string | undefined;
+  contact_name?: string | undefined;
+  contact_phone?: string | undefined;
+}
+
 export interface RedeemInvitationInput {
   invitationCode: string;
   email: string;
@@ -152,4 +160,23 @@ export function parse_redeem_invitation_input(
       lastName: obj.lastName,
     },
   };
+}
+
+/**
+ * Valida y parsea el payload de admin-create-agency.
+ * Reglas canónicas (§7.4):
+ *   - name: string, min 2 caracteres
+ *   - slug: string, formato /^[a-z0-9]+(?:-[a-z0-9]+)*$/ (lowercase, guiones, sin espacios)
+ *   - contact_email: opcional; si está presente, debe ser email válido
+ *   - contact_name: opcional, cualquier string no vacío
+ *   - contact_phone: opcional, cualquier string no vacío
+ * Campos extra son ignorados silenciosamente.
+ *
+ * Stub mínimo — fase RED subtarea 7.4.
+ * GREEN implementa la lógica real de validación.
+ */
+export function parse_create_agency_input(
+  _raw: unknown,
+): ParseResult<CreateAgencyInput> {
+  throw new Error("not_implemented: parse_create_agency_input");
 }
