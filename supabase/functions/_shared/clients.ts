@@ -15,6 +15,12 @@ import type {
   RedeemParams,
   RedeemResult,
 } from "./redeem.ts";
+import type { AdminVerifier, AdminVerifyResult } from "./admin_auth.ts";
+import type {
+  AgencyCreateParams,
+  AgencyCreateResult,
+  AgencyCreator,
+} from "./agency.ts";
 
 /** Cliente supabase-js con service_role (bypassa RLS y column-grants). */
 export function service_client(): SupabaseClient {
@@ -99,6 +105,80 @@ const REDEEM_CODES = [
 
 function extract_redeem_code(message: string): string {
   return REDEEM_CODES.find((c) => message.includes(c)) ?? "REDEEM_FAILED";
+}
+
+/**
+ * Adaptador real de AdminVerifier.
+ * Verifica el JWT en el header Authorization usando el service_role client:
+ *   1. Extrae el JWT del header "Bearer <token>".
+ *   2. Llama client.auth.getUser(jwt) para validar el JWT.
+ *   3. Consulta public.users WHERE id = user.id → verifica role = 'admin'.
+ */
+export function make_admin_verifier(client: SupabaseClient): AdminVerifier {
+  return {
+    async verify_caller(
+      authHeader: string | null,
+    ): Promise<AdminVerifyResult> {
+      if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        return { ok: false, error_code: "UNAUTHENTICATED" };
+      }
+
+      const jwt = authHeader.replace(/^Bearer\s+/, "");
+      const {
+        data: { user },
+        error: auth_error,
+      } = await client.auth.getUser(jwt);
+      if (auth_error || !user) {
+        return { ok: false, error_code: "UNAUTHENTICATED" };
+      }
+
+      const { data: user_row, error: user_error } = await client
+        .from("users")
+        .select("role")
+        .eq("id", user.id)
+        .maybeSingle();
+      if (user_error || !user_row) {
+        return { ok: false, error_code: "UNAUTHENTICATED" };
+      }
+      if (user_row.role !== "admin") {
+        return { ok: false, error_code: "FORBIDDEN" };
+      }
+      return { ok: true, user_id: user.id };
+    },
+  };
+}
+
+// Códigos de negocio que la RPC admin_create_agency_atomic levanta con SQLSTATE P0001.
+const AGENCY_ERROR_CODES = ["SLUG_DUPLICATE", "NAME_DUPLICATE", "CREATED_BY_REQUIRED"];
+
+function extract_agency_error_code(message: string): string {
+  return AGENCY_ERROR_CODES.find((c) => message.includes(c)) ?? "DB_ERROR";
+}
+
+/**
+ * Adaptador real de AgencyCreator sobre la RPC admin_create_agency_atomic (migración 0016).
+ * Mapea los errores P0001 al error_code de negocio correspondiente.
+ */
+export function make_agency_creator(client: SupabaseClient): AgencyCreator {
+  return {
+    async create_atomic(
+      params: AgencyCreateParams,
+    ): Promise<AgencyCreateResult> {
+      const { data, error } = await client.rpc("admin_create_agency_atomic", {
+        p_name: params.name,
+        p_slug: params.slug,
+        p_contact_name: params.contact_name ?? null,
+        p_contact_phone: params.contact_phone ?? null,
+        p_contact_email: params.contact_email ?? null,
+        p_created_by_user_id: params.created_by_user_id,
+      });
+      if (error) {
+        const error_code = extract_agency_error_code(error.message);
+        return { ok: false, error_code };
+      }
+      return { ok: true, agency_id: data as string };
+    },
+  };
 }
 
 /** Adaptador real de InvitationRedeemer sobre la RPC redeem_invitation_atomic. */

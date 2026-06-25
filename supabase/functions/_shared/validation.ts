@@ -162,21 +162,102 @@ export function parse_redeem_invitation_input(
   };
 }
 
+// Slug: solo letras minúsculas, dígitos y guiones (sin mayúsculas, espacios, _, ni !)
+const SLUG_REGEX = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
 /**
  * Valida y parsea el payload de admin-create-agency.
  * Reglas canónicas (§7.4):
  *   - name: string, min 2 caracteres
  *   - slug: string, formato /^[a-z0-9]+(?:-[a-z0-9]+)*$/ (lowercase, guiones, sin espacios)
  *   - contact_email: opcional; si está presente, debe ser email válido
- *   - contact_name: opcional, cualquier string no vacío
- *   - contact_phone: opcional, cualquier string no vacío
+ *   - contact_name: opcional, cualquier string
+ *   - contact_phone: opcional, cualquier string
  * Campos extra son ignorados silenciosamente.
- *
- * Stub mínimo — fase RED subtarea 7.4.
- * GREEN implementa la lógica real de validación.
  */
 export function parse_create_agency_input(
-  _raw: unknown,
+  raw: unknown,
 ): ParseResult<CreateAgencyInput> {
-  throw new Error("not_implemented: parse_create_agency_input");
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+    return {
+      success: false,
+      error: {
+        code: "INVALID_INPUT",
+        message: "El payload debe ser un objeto JSON",
+      },
+    };
+  }
+
+  const obj = raw as Record<string, unknown>;
+
+  // name: requerido, mínimo 2 caracteres
+  if (obj.name === undefined || obj.name === null) {
+    return {
+      success: false,
+      error: { code: "INVALID_INPUT", message: "name es requerido" },
+    };
+  }
+  if (typeof obj.name !== "string" || obj.name.length < 2) {
+    return {
+      success: false,
+      error: {
+        code: "INVALID_INPUT",
+        message: "name debe tener al menos 2 caracteres",
+      },
+    };
+  }
+
+  // slug: requerido, formato /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+  if (obj.slug === undefined || obj.slug === null) {
+    return {
+      success: false,
+      error: { code: "INVALID_INPUT", message: "slug es requerido" },
+    };
+  }
+  if (typeof obj.slug !== "string") {
+    return {
+      success: false,
+      error: { code: "INVALID_INPUT", message: "slug debe ser un string" },
+    };
+  }
+  if (!SLUG_REGEX.test(obj.slug)) {
+    return {
+      success: false,
+      error: {
+        code: "INVALID_INPUT",
+        message:
+          "slug debe contener solo letras minúsculas, dígitos y guiones (ej: mi-agencia)",
+      },
+    };
+  }
+
+  // contact_email: opcional; si presente, debe ser email válido
+  if (obj.contact_email !== undefined && obj.contact_email !== null) {
+    if (
+      typeof obj.contact_email !== "string" ||
+      !EMAIL_REGEX.test(obj.contact_email)
+    ) {
+      return {
+        success: false,
+        error: {
+          code: "INVALID_INPUT",
+          message: "contact_email no tiene un formato válido",
+        },
+      };
+    }
+  }
+
+  return {
+    success: true,
+    data: {
+      name: obj.name,
+      slug: obj.slug,
+      contact_email:
+        typeof obj.contact_email === "string" ? obj.contact_email : undefined,
+      contact_name:
+        typeof obj.contact_name === "string" ? obj.contact_name : undefined,
+      contact_phone:
+        typeof obj.contact_phone === "string" ? obj.contact_phone : undefined,
+    },
+  };
 }
