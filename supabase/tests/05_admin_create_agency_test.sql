@@ -1,16 +1,19 @@
 -- Tests pgTAP — RPC admin_create_agency_atomic (migración 0016)
--- Fase RED subtarea 7.4: la función NO existe aún → todos los asserts fallan en rojo.
+-- Fase RED subtarea 7.4: tests 1–8 (agencia básica).
+-- Fase RED subtarea 7.5: tests 9–13 (owner_user_id, agency_members, ALREADY_ACTIVE_MEMBER).
 -- Ejecutar con: supabase test db
 -- Corre como superusuario dentro de una transacción revertida.
 
 begin;
-select plan(8);
+select plan(13);
 
 -- ── Fixtures ─────────────────────────────────────────────────────────────────
 -- El trigger handle_new_user (migración 0002) crea public.users al insertar en auth.users.
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-000000000a01', 'admin_test@urbea.mx'),
-  ('00000000-0000-0000-0000-000000000a02', 'admin2_test@urbea.mx');
+  ('00000000-0000-0000-0000-000000000a02', 'admin2_test@urbea.mx'),
+  -- owner para los tests de 7.5
+  ('00000000-0000-0000-0000-000000000a03', 'owner_test@urbea.mx');
 
 -- Agencia existente para tests de unicidad de slug y name
 insert into public.agencies (id, name, slug, status, created_by_user_id) values
@@ -104,6 +107,67 @@ select throws_ok(
        null::text,
        null::uuid) $$,
   'created_by_user_id NULL debe ser rechazado por la RPC'
+);
+
+-- ── 9) Firma extendida con p_owner_user_id (7.5) — RED: función no existe aún ──
+-- La RPC debe aceptar 7 parámetros: name, slug, contact_name, contact_phone,
+-- contact_email, created_by_user_id, owner_user_id.
+-- En RED, has_function con 7 parámetros falla porque solo existe la versión de 6.
+select has_function(
+  'public',
+  'admin_create_agency_atomic',
+  ARRAY['text', 'text', 'text', 'text', 'text', 'uuid', 'uuid'],
+  'admin_create_agency_atomic con p_owner_user_id (7 params) debe existir'
+);
+
+-- ── 10) Llamada extendida: insert con owner_user_id sin error ────────────────
+-- En RED, esta llamada falla porque la versión de 7 parámetros no existe.
+select lives_ok(
+  $$ select public.admin_create_agency_atomic(
+       'Agencia Con Owner MX'::text,
+       'agencia-con-owner-mx'::text,
+       null::text,
+       null::text,
+       null::text,
+       '00000000-0000-0000-0000-000000000a01'::uuid,
+       '00000000-0000-0000-0000-000000000a03'::uuid) $$,
+  'admin_create_agency_atomic extendida: insert con owner_user_id se ejecuta sin error'
+);
+
+-- ── 11) agency_member del owner creado con member_role=owner status=active ───
+-- En RED, la agencia no fue insertada (lives_ok falló) → SELECT devuelve NULL.
+select is(
+  (select member_role::text
+     from public.agency_members
+    where user_id = '00000000-0000-0000-0000-000000000a03'::uuid
+      and status = 'active'
+    limit 1),
+  'owner',
+  'owner insertado en agency_members con member_role=owner y status=active'
+);
+
+-- ── 12) public.users.role actualizado a agent para el owner ─────────────────
+-- En RED, la UPDATE no ocurrió → role sigue siendo 'user' (el trigger lo setea así).
+select is(
+  (select role::text from public.users where id = '00000000-0000-0000-0000-000000000a03'::uuid),
+  'agent',
+  'public.users.role actualizado a agent para el owner tras crear agencia'
+);
+
+-- ── 13) owner ya con membresía activa → P0001 ALREADY_ACTIVE_MEMBER ─────────
+-- En RED, la función de 7 params no existe → throws error distinto a P0001.
+-- El test fallará porque el errcode o el mensaje no coinciden.
+select throws_ok(
+  $$ select public.admin_create_agency_atomic(
+       'Otra Agencia Para Mismo Owner'::text,
+       'otra-agencia-para-mismo-owner'::text,
+       null::text,
+       null::text,
+       null::text,
+       '00000000-0000-0000-0000-000000000a02'::uuid,
+       '00000000-0000-0000-0000-000000000a03'::uuid) $$,
+  'P0001', 'ALREADY_ACTIVE_MEMBER',
+  'owner ya con membresía activa → P0001 ALREADY_ACTIVE_MEMBER'
 );
 
 select * from finish();

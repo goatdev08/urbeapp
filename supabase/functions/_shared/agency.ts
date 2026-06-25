@@ -13,6 +13,8 @@ export interface AgencyCreateParams {
   contact_phone?: string | undefined;
   contact_email?: string | undefined;
   created_by_user_id: string;
+  /** owner_user_id: requerido en GREEN 7.5; opcional aquí para backward-compat en stub RED */
+  owner_user_id?: string | undefined;
 }
 
 export type AgencyCreateResult =

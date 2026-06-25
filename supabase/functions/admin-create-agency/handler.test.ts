@@ -1,9 +1,9 @@
-// Tests RED — subtarea 7.4
+// Tests RED — subtareas 7.4 + 7.5
 // Edge Function: admin-create-agency/handler.ts
 // Framework: Deno.test + @std/assert (nativo Deno)
 // Runner: deno test --allow-net supabase/functions/admin-create-agency/handler.test.ts
 //
-// EDGE CASES (RED):
+// EDGE CASES (RED) — 7.4:
 // ### Happy path
 // - POST admin válido + payload válido + creator OK → 201 { agency_id }
 // - creator.create_atomic invocado con name, slug y user_id del admin correcto
@@ -42,6 +42,22 @@
 //
 // ### Forma del error
 // - Cualquier error tiene { error: { code: string, message: string } }
+//
+// EDGE CASES (RED) — 7.5 (owner vía Auth Admin invite):
+// ### Happy path con owner
+// - POST admin + payload con owner fields + invite OK + creator OK → 201 con agency_id, owner_user_id, invite_action_link
+// - create_atomic recibe owner_user_id en sus params
+//
+// ### Edge cases del PRD (decisión 7.5)
+// - owner_email duplicado → 409 EMAIL_ALREADY_EXISTS; creator NO es llamado
+// - owner_email formato inválido → 400 INVALID_INPUT
+// - owner_first_name ausente → 400 INVALID_INPUT
+// - owner_last_name ausente → 400 INVALID_INPUT
+// - owner_email ausente → 400 INVALID_INPUT
+//
+// ### Ramas de reglas no obvias
+// - RPC falla tras crear owner → deleteUser(owner_user_id) llamado; respuesta no es 201
+// - owner ya con membresía activa (ALREADY_ACTIVE_MEMBER) → deleteUser llamado; 409
 
 import { assertEquals, assertExists } from "@std/assert";
 import { handler } from "./handler.ts";
@@ -57,16 +73,36 @@ import type {
 
 const ADMIN_ID = "00000000-0000-0000-0000-000000000001";
 const AGENCY_ID = "00000000-0000-0000-0000-000000000002";
+const OWNER_ID = "00000000-0000-0000-0000-000000000003";
+const INVITE_LINK = "https://url.supabase.co/auth/v1/verify?token=tok_abc123&type=invite";
 
+// PAYLOAD_VALIDO incluye campos owner (7.5). Los tests de 7.4 que solo usan
+// slug/name siguen pasando porque el handler stub ignora campos extra del payload.
 const PAYLOAD_VALIDO = {
   name: "Inmobiliaria Urbea SA de CV",
   slug: "inmobiliaria-urbea",
   contact_email: "contacto@urbea.mx",
   contact_name: "Director Comercial",
   contact_phone: "+52 55 1234 5678",
+  owner_email: "owner@inmobiliaria-urbea.mx",
+  owner_first_name: "Ana",
+  owner_last_name: "García",
 };
 
-// ── Factories de fakes ────────────────────────────────────────────────────────
+// ── Tipos provisionales para fakes de Auth Admin 7.5 ─────────────────────────
+// Estos tipos se mueven a _shared/auth_user.ts en la fase GREEN.
+
+interface GenInviteLinkParams {
+  email: string;
+  data?: Record<string, unknown>;
+}
+
+interface GenInviteLinkResponse {
+  data: { user: { id: string }; action_link: string } | null;
+  error: { message: string } | null;
+}
+
+// ── Factories de fakes — AdminVerifier ───────────────────────────────────────
 
 interface FakeVerifier extends AdminVerifier {
   calls: (string | null)[];
@@ -102,6 +138,8 @@ function verifier_forbidden(): FakeVerifier {
   } as FakeVerifier;
 }
 
+// ── Factories de fakes — AgencyCreator ───────────────────────────────────────
+
 interface FakeCreator extends AgencyCreator {
   calls: AgencyCreateParams[];
 }
@@ -124,6 +162,59 @@ function creator_error(error_code: string): FakeCreator {
       return Promise.resolve({ ok: false, error_code });
     },
   } as FakeCreator;
+}
+
+// ── Factories de fakes — AuthAdmin (7.5) ─────────────────────────────────────
+
+interface FakeAuthAdmin {
+  invite_calls: GenInviteLinkParams[];
+  delete_calls: string[];
+  generateInviteLink(params: GenInviteLinkParams): Promise<GenInviteLinkResponse>;
+  deleteUser(uid: string): Promise<void>;
+  // createUser presente para satisfacer AuthAdminClient en GREEN
+  createUser(params: unknown): Promise<unknown>;
+}
+
+function auth_admin_invite_ok(): FakeAuthAdmin {
+  return {
+    invite_calls: [],
+    delete_calls: [],
+    generateInviteLink(params: GenInviteLinkParams): Promise<GenInviteLinkResponse> {
+      this.invite_calls.push(params);
+      return Promise.resolve({
+        data: { user: { id: OWNER_ID }, action_link: INVITE_LINK },
+        error: null,
+      });
+    },
+    deleteUser(uid: string): Promise<void> {
+      this.delete_calls.push(uid);
+      return Promise.resolve();
+    },
+    createUser(_params: unknown): Promise<unknown> {
+      return Promise.resolve({ data: null, error: { message: "not used in 7.5" } });
+    },
+  };
+}
+
+function auth_admin_invite_email_duplicate(): FakeAuthAdmin {
+  return {
+    invite_calls: [],
+    delete_calls: [],
+    generateInviteLink(params: GenInviteLinkParams): Promise<GenInviteLinkResponse> {
+      this.invite_calls.push(params);
+      return Promise.resolve({
+        data: null,
+        error: { message: "User already been registered" },
+      });
+    },
+    deleteUser(uid: string): Promise<void> {
+      this.delete_calls.push(uid);
+      return Promise.resolve();
+    },
+    createUser(_params: unknown): Promise<unknown> {
+      return Promise.resolve({ data: null, error: { message: "not used" } });
+    },
+  };
 }
 
 // ── Helpers de Request ────────────────────────────────────────────────────────
@@ -155,6 +246,7 @@ function method_request(method: string): Request {
   return new Request("http://localhost/admin-create-agency", { method });
 }
 
+// deps_admin: helpers de 7.4 (sin authAdmin — handler stub no lo usa aún)
 function deps_admin(
   verifier: AdminVerifier = verifier_admin_ok(),
   creator: AgencyCreator = creator_ok(),
@@ -162,7 +254,22 @@ function deps_admin(
   return { adminVerifier: verifier, agencyCreator: creator };
 }
 
-// ── Happy path ────────────────────────────────────────────────────────────────
+// deps_con_auth: helper de 7.5 — incluye authAdmin con generateInviteLink
+// Se castea a unknown porque AdminCreateAgencyDeps no tiene authAdmin aún (stub RED).
+function deps_con_auth(
+  verifier: AdminVerifier = verifier_admin_ok(),
+  creator: AgencyCreator = creator_ok(),
+  auth: FakeAuthAdmin = auth_admin_invite_ok(),
+): AdminCreateAgencyDeps {
+  return {
+    adminVerifier: verifier,
+    agencyCreator: creator,
+    // deno-lint-ignore no-explicit-any
+    authAdmin: auth as any,
+  };
+}
+
+// ── Happy path (7.4) ──────────────────────────────────────────────────────────
 
 Deno.test("happy_path_admin_crea_agencia_retorna_201_con_agency_id", async () => {
   const res = await handler(post_admin(PAYLOAD_VALIDO), deps_admin());
@@ -244,7 +351,7 @@ Deno.test("body_no_json_retorna_400_invalid_input", async () => {
   assertEquals(body.error.code, "INVALID_INPUT");
 });
 
-// ── Validación del payload ────────────────────────────────────────────────────
+// ── Validación del payload (7.4) ──────────────────────────────────────────────
 
 Deno.test("validacion_payload_vacio_retorna_400_invalid_input", async () => {
   const res = await handler(post_admin({}), deps_admin());
@@ -327,7 +434,7 @@ Deno.test("validacion_contact_email_invalido_retorna_400", async () => {
   assertEquals(body.error.code, "INVALID_INPUT");
 });
 
-// ── Auth — AdminVerifier ──────────────────────────────────────────────────────
+// ── Auth — AdminVerifier (7.4) ────────────────────────────────────────────────
 
 Deno.test("sin_authorization_header_retorna_401_unauthenticated", async () => {
   const verifier = verifier_unauthenticated();
@@ -383,7 +490,7 @@ Deno.test("no_admin_creator_no_es_llamado", async () => {
   assertEquals(creator.calls.length, 0);
 });
 
-// ── AgencyCreator errores ─────────────────────────────────────────────────────
+// ── AgencyCreator errores (7.4) ───────────────────────────────────────────────
 
 Deno.test("slug_duplicado_retorna_409_con_slug_duplicate", async () => {
   const creator = creator_error("SLUG_DUPLICATE");
@@ -416,7 +523,7 @@ Deno.test("error_generico_del_creator_retorna_500", async () => {
   assertEquals(res.status, 500);
 });
 
-// ── Forma del error ───────────────────────────────────────────────────────────
+// ── Forma del error (7.4) ─────────────────────────────────────────────────────
 
 Deno.test("error_siempre_tiene_forma_error_code_message", async () => {
   // Cualquier respuesta de error debe tener { error: { code: string, message: string } }
@@ -427,4 +534,217 @@ Deno.test("error_siempre_tiene_forma_error_code_message", async () => {
   assertExists(body.error.message, "error.message ausente");
   assertEquals(typeof body.error.code, "string");
   assertEquals(typeof body.error.message, "string");
+});
+
+// ── Happy path con owner (7.5) ────────────────────────────────────────────────
+
+Deno.test(
+  "happy_path_crea_agencia_con_owner_retorna_201_con_owner_user_id_e_invite_action_link",
+  async () => {
+    const auth = auth_admin_invite_ok();
+    const creator = creator_ok();
+    const res = await handler(post_admin(PAYLOAD_VALIDO), deps_con_auth(
+      verifier_admin_ok(),
+      creator,
+      auth,
+    ));
+    assertEquals(res.status, 201);
+    const body = await res.json();
+    assertEquals(body.agency_id, AGENCY_ID);
+    // owner_user_id y invite_action_link deben estar en la respuesta 7.5
+    assertEquals(
+      body.owner_user_id,
+      OWNER_ID,
+      "owner_user_id debe estar en la respuesta 201",
+    );
+    assertEquals(
+      body.invite_action_link,
+      INVITE_LINK,
+      "invite_action_link debe estar en la respuesta 201",
+    );
+  },
+);
+
+Deno.test(
+  "happy_path_create_atomic_recibe_owner_user_id_en_params",
+  async () => {
+    const auth = auth_admin_invite_ok();
+    const creator = creator_ok();
+    await handler(post_admin(PAYLOAD_VALIDO), deps_con_auth(
+      verifier_admin_ok(),
+      creator,
+      auth,
+    ));
+    assertEquals(creator.calls.length, 1, "create_atomic debe ser llamado exactamente una vez");
+    // owner_user_id debe llegar al create_atomic para la inserción de agency_members
+    assertEquals(
+      // deno-lint-ignore no-explicit-any
+      (creator.calls[0] as any).owner_user_id,
+      OWNER_ID,
+      "create_atomic debe recibir owner_user_id en sus params",
+    );
+  },
+);
+
+// ── owner_email duplicado (7.5) ───────────────────────────────────────────────
+
+Deno.test(
+  "owner_email_duplicado_retorna_409_email_already_exists",
+  async () => {
+    const auth = auth_admin_invite_email_duplicate();
+    const creator = creator_ok();
+    const res = await handler(post_admin(PAYLOAD_VALIDO), deps_con_auth(
+      verifier_admin_ok(),
+      creator,
+      auth,
+    ));
+    assertEquals(res.status, 409);
+    const body = await res.json();
+    assertEquals(body.error.code, "EMAIL_ALREADY_EXISTS");
+  },
+);
+
+Deno.test(
+  "owner_email_duplicado_rpc_no_es_llamada",
+  async () => {
+    // Si el owner_email ya existe en Auth, la RPC NO debe ser llamada
+    // (no se crea una agencia huérfana sin owner)
+    const auth = auth_admin_invite_email_duplicate();
+    const creator = creator_ok();
+    await handler(post_admin(PAYLOAD_VALIDO), deps_con_auth(
+      verifier_admin_ok(),
+      creator,
+      auth,
+    ));
+    assertEquals(
+      creator.calls.length,
+      0,
+      "create_atomic NO debe ser llamado cuando owner_email ya existe en Auth",
+    );
+  },
+);
+
+// ── Compensación: RPC falla tras crear owner (7.5) ────────────────────────────
+
+Deno.test(
+  "rpc_falla_despues_de_crear_owner_deleteUser_llamado_compensacion",
+  async () => {
+    // Flujo: invite OK → RPC DB_ERROR → deleteUser(owner_user_id) best-effort
+    const auth = auth_admin_invite_ok();
+    const creator = creator_error("DB_ERROR");
+    await handler(post_admin(PAYLOAD_VALIDO), deps_con_auth(
+      verifier_admin_ok(),
+      creator,
+      auth,
+    ));
+    // La compensación debe haber sido llamada con el owner_user_id correcto
+    assertEquals(
+      auth.delete_calls.length,
+      1,
+      "deleteUser debe ser llamado exactamente una vez como compensación",
+    );
+    assertEquals(
+      auth.delete_calls[0],
+      OWNER_ID,
+      "deleteUser debe recibir el owner_user_id del usuario creado en Auth",
+    );
+  },
+);
+
+Deno.test(
+  "rpc_falla_despues_de_crear_owner_respuesta_no_es_201",
+  async () => {
+    // El error de la RPC debe traducirse en una respuesta de error (no 201)
+    const auth = auth_admin_invite_ok();
+    const creator = creator_error("DB_ERROR");
+    const res = await handler(post_admin(PAYLOAD_VALIDO), deps_con_auth(
+      verifier_admin_ok(),
+      creator,
+      auth,
+    ));
+    assertEquals(
+      res.status >= 400,
+      true,
+      "Cuando la RPC falla después de crear el owner, el status debe ser >= 400",
+    );
+  },
+);
+
+// ── owner ya con membresía activa (7.5) ──────────────────────────────────────
+
+Deno.test(
+  "owner_ya_con_membresia_activa_retorna_409_already_active_member",
+  async () => {
+    // RPC devuelve ALREADY_ACTIVE_MEMBER → handler debe mapear a 409
+    const auth = auth_admin_invite_ok();
+    const creator = creator_error("ALREADY_ACTIVE_MEMBER");
+    const res = await handler(post_admin(PAYLOAD_VALIDO), deps_con_auth(
+      verifier_admin_ok(),
+      creator,
+      auth,
+    ));
+    assertEquals(res.status, 409);
+    const body = await res.json();
+    assertEquals(body.error.code, "ALREADY_ACTIVE_MEMBER");
+  },
+);
+
+Deno.test(
+  "owner_ya_con_membresia_activa_deleteUser_llamado_compensacion",
+  async () => {
+    // ALREADY_ACTIVE_MEMBER también requiere compensar al owner recién creado en Auth
+    const auth = auth_admin_invite_ok();
+    const creator = creator_error("ALREADY_ACTIVE_MEMBER");
+    await handler(post_admin(PAYLOAD_VALIDO), deps_con_auth(
+      verifier_admin_ok(),
+      creator,
+      auth,
+    ));
+    assertEquals(
+      auth.delete_calls.length,
+      1,
+      "deleteUser debe ser llamado como compensación para ALREADY_ACTIVE_MEMBER",
+    );
+    assertEquals(
+      auth.delete_calls[0],
+      OWNER_ID,
+      "deleteUser debe recibir el owner_user_id correcto",
+    );
+  },
+);
+
+// ── Validación de owner fields (7.5) ─────────────────────────────────────────
+
+Deno.test("validacion_owner_email_ausente_retorna_400", async () => {
+  const { owner_email: _omit, ...sin_owner_email } = PAYLOAD_VALIDO;
+  const res = await handler(post_admin(sin_owner_email), deps_con_auth());
+  assertEquals(res.status, 400);
+  const body = await res.json();
+  assertEquals(body.error.code, "INVALID_INPUT");
+});
+
+Deno.test("validacion_owner_email_invalido_retorna_400", async () => {
+  const res = await handler(
+    post_admin({ ...PAYLOAD_VALIDO, owner_email: "no-es-email" }),
+    deps_con_auth(),
+  );
+  assertEquals(res.status, 400);
+  const body = await res.json();
+  assertEquals(body.error.code, "INVALID_INPUT");
+});
+
+Deno.test("validacion_owner_first_name_ausente_retorna_400", async () => {
+  const { owner_first_name: _omit, ...sin_first_name } = PAYLOAD_VALIDO;
+  const res = await handler(post_admin(sin_first_name), deps_con_auth());
+  assertEquals(res.status, 400);
+  const body = await res.json();
+  assertEquals(body.error.code, "INVALID_INPUT");
+});
+
+Deno.test("validacion_owner_last_name_ausente_retorna_400", async () => {
+  const { owner_last_name: _omit, ...sin_last_name } = PAYLOAD_VALIDO;
+  const res = await handler(post_admin(sin_last_name), deps_con_auth());
+  assertEquals(res.status, 400);
+  const body = await res.json();
+  assertEquals(body.error.code, "INVALID_INPUT");
 });

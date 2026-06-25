@@ -9,7 +9,12 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import type { InvitationDb, InvitationTokenRow } from "./invitation.ts";
-import type { AuthAdminClient, CreateUserParams } from "./auth_user.ts";
+import type {
+  AuthAdminClient,
+  CreateUserParams,
+  GenerateInviteLinkParams,
+  GenerateInviteLinkResponse,
+} from "./auth_user.ts";
 import type {
   InvitationRedeemer,
   RedeemParams,
@@ -90,6 +95,14 @@ export function make_auth_admin(client: SupabaseClient): AuthAdminClient {
     },
     async deleteUser(uid: string) {
       await client.auth.admin.deleteUser(uid);
+    },
+    /** Stub RED 7.5 — GREEN implementará la llamada real a generateLink. */
+    async generateInviteLink(
+      _params: GenerateInviteLinkParams,
+    ): Promise<GenerateInviteLinkResponse> {
+      throw new Error(
+        "not_implemented: generateInviteLink en clients.ts — implement in GREEN 7.5",
+      );
     },
   };
 }

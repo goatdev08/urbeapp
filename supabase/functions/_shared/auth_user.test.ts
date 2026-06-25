@@ -40,6 +40,8 @@ import {
   create_agent_auth_user,
   type CreateAgentAuthUserPayload,
   type CreateUserParams,
+  type GenerateInviteLinkParams,
+  type GenerateInviteLinkResponse,
 } from "./auth_user.ts";
 import { type InvitationDb, type InvitationTokenRow } from "./invitation.ts";
 import { sha256_hex } from "./crypto.ts";
@@ -52,6 +54,13 @@ interface FakeAdminClient extends AuthAdminClient {
   last_create_user_params: CreateUserParams | null;
   delete_user_call_count: number;
   last_deleted_uid: string | null;
+}
+
+/** No-op de generateInviteLink para fakes que no lo necesitan en 5.x. */
+function noop_generate_invite_link(
+  _params: GenerateInviteLinkParams,
+): Promise<GenerateInviteLinkResponse> {
+  return Promise.resolve({ data: null, error: { message: "not used in 5.x tests" } });
 }
 
 function make_fake_admin_ok(user_id: string): FakeAdminClient {
@@ -73,6 +82,7 @@ function make_fake_admin_ok(user_id: string): FakeAdminClient {
       this.last_deleted_uid = uid;
       return Promise.resolve();
     },
+    generateInviteLink: noop_generate_invite_link,
   };
 }
 
@@ -94,6 +104,7 @@ function make_fake_admin_duplicate_error(): FakeAdminClient {
       this.delete_user_call_count++;
       return Promise.resolve();
     },
+    generateInviteLink: noop_generate_invite_link,
   };
 }
 
@@ -115,6 +126,7 @@ function make_fake_admin_generic_error(error_message: string): FakeAdminClient {
       this.delete_user_call_count++;
       return Promise.resolve();
     },
+    generateInviteLink: noop_generate_invite_link,
   };
 }
 

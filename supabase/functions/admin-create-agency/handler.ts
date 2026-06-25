@@ -14,15 +14,21 @@ import {
   AGENCY_CREATE_ERROR_MESSAGES,
   AGENCY_CREATE_ERROR_STATUS,
 } from "../_shared/agency.ts";
+import type { AuthAdminClient } from "../_shared/auth_user.ts";
 
 /**
  * Dependencias inyectables del handler (DI pattern).
  * En producción se construyen desde _shared/clients.ts.
  * En tests se inyectan fakes controlados.
+ *
+ * authAdmin (7.5): cliente para generateInviteLink (crear owner sin password)
+ * y deleteUser (compensación si la RPC falla tras crear el owner en Auth).
  */
 export interface AdminCreateAgencyDeps {
   adminVerifier?: AdminVerifier;
   agencyCreator?: AgencyCreator;
+  /** Stub RED 7.5: wired en GREEN para llamar create_owner_invite + compensación. */
+  authAdmin?: AuthAdminClient;
 }
 
 /**
