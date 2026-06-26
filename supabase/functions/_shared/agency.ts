@@ -15,10 +15,29 @@ export interface AgencyCreateParams {
   created_by_user_id: string;
   /** owner_user_id: requerido en GREEN 7.5; opcional aquí para backward-compat en stub RED */
   owner_user_id?: string | undefined;
+  /**
+   * token_hash (7.6): sha256_hex del código plano generado por generate_invitation_code.
+   * Se persiste en agency_invitation_tokens.token; el plano NUNCA se persiste.
+   * STUB fase RED 7.6 — pasado a la RPC en la fase GREEN.
+   */
+  token_hash?: string | undefined;
+  /** token_max_uses (7.6): límite de usos del token inicial; null = ilimitado */
+  token_max_uses?: number | undefined;
 }
 
 export type AgencyCreateResult =
-  | { ok: true; agency_id: string }
+  | {
+    ok: true;
+    agency_id: string;
+    /**
+     * token_id (7.6): UUID de la fila en agency_invitation_tokens creada por la RPC.
+     * Devuelto en la respuesta 201 junto con plain_token.
+     * STUB fase RED 7.6 — poblado por la RPC extendida en fase GREEN.
+     */
+    token_id?: string | undefined;
+    /** agency_member_id (7.6): UUID del agency_member del owner creado en la misma tx. */
+    agency_member_id?: string | undefined;
+  }
   | { ok: false; error_code: string; message?: string };
 
 /**

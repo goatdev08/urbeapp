@@ -1,7 +1,19 @@
-// Tests RED — subtareas 7.4 + 7.5
+// Tests RED — subtareas 7.4 + 7.5 + 7.6
 // Edge Function: admin-create-agency/handler.ts
 // Framework: Deno.test + @std/assert (nativo Deno)
 // Runner: deno test --allow-net supabase/functions/admin-create-agency/handler.test.ts
+//
+// EDGE CASES (RED) — 7.6 (token inicial + admin_actions):
+// ### Happy path
+// - 201 incluye plain_token de 8 chars alfanuméricos [A-Za-z0-9]
+// - 201 incluye token_id (devuelto por la RPC)
+// - create_atomic recibe token_hash = sha256_hex(plain_token) — contrato hash≠plano
+// - plain_token tiene longitud 8; token_hash (sha256 hex) tiene longitud 64
+// ### Edge cases del PRD (§7.6)
+// - plain_token NO es igual al token_hash enviado a create_atomic (plano nunca se persiste)
+// ### Ramas de reglas no obvias
+// - generate_invitation_code(8) genera 8 chars alfanuméricos [A-Za-z0-9] (stub lanza en RED)
+// - sha256_hex determinismo: mismo input → mismo output en dos llamadas (ya implementado)
 //
 // EDGE CASES (RED) — 7.4:
 // ### Happy path
@@ -60,6 +72,7 @@
 // - owner ya con membresía activa (ALREADY_ACTIVE_MEMBER) → deleteUser llamado; 409
 
 import { assertEquals, assertExists } from "@std/assert";
+import { generate_invitation_code, sha256_hex } from "../_shared/crypto.ts";
 import { handler } from "./handler.ts";
 import type { AdminCreateAgencyDeps } from "./handler.ts";
 import type { AdminVerifier, AdminVerifyResult } from "../_shared/admin_auth.ts";
@@ -74,6 +87,7 @@ import type {
 const ADMIN_ID = "00000000-0000-0000-0000-000000000001";
 const AGENCY_ID = "00000000-0000-0000-0000-000000000002";
 const OWNER_ID = "00000000-0000-0000-0000-000000000003";
+const TOKEN_ID = "00000000-0000-0000-0000-000000000004";
 const INVITE_LINK = "https://url.supabase.co/auth/v1/verify?token=tok_abc123&type=invite";
 
 // PAYLOAD_VALIDO incluye campos owner (7.5). Los tests de 7.4 que solo usan
@@ -748,3 +762,165 @@ Deno.test("validacion_owner_last_name_ausente_retorna_400", async () => {
   const body = await res.json();
   assertEquals(body.error.code, "INVALID_INPUT");
 });
+
+// ── Token inicial de invitación (7.6) ─────────────────────────────────────────
+// Fase RED: handler aún no genera ni devuelve plain_token/token_id.
+// Estos tests fallan por aserción (los campos no existen en la respuesta).
+
+/** Factory: creator que devuelve token_id en el resultado de éxito (7.6) */
+function creator_ok_con_token_id(): FakeCreator {
+  return {
+    calls: [],
+    create_atomic(params: AgencyCreateParams): Promise<AgencyCreateResult> {
+      this.calls.push(params);
+      // token_id se añade al tipo AgencyCreateResult en el stub de agency.ts (7.6)
+      // deno-lint-ignore no-explicit-any
+      return Promise.resolve({ ok: true, agency_id: AGENCY_ID, token_id: TOKEN_ID } as any);
+    },
+  } as FakeCreator;
+}
+
+Deno.test(
+  "token_7_6_happy_path_201_incluye_plain_token_de_8_chars_alfanumericos",
+  async () => {
+    const auth = auth_admin_invite_ok();
+    const creator = creator_ok_con_token_id();
+    const res = await handler(
+      post_admin(PAYLOAD_VALIDO),
+      deps_con_auth(verifier_admin_ok(), creator, auth),
+    );
+    assertEquals(res.status, 201);
+    const body = await res.json();
+    assertExists(body.plain_token, "plain_token debe estar en la respuesta 201");
+    assertEquals(typeof body.plain_token, "string");
+    assertEquals(
+      /^[A-Za-z0-9]{8}$/.test(body.plain_token),
+      true,
+      "plain_token debe ser 8 chars del alfabeto [A-Za-z0-9]",
+    );
+  },
+);
+
+Deno.test(
+  "token_7_6_happy_path_201_incluye_token_id_de_la_rpc",
+  async () => {
+    const auth = auth_admin_invite_ok();
+    const creator = creator_ok_con_token_id();
+    const res = await handler(
+      post_admin(PAYLOAD_VALIDO),
+      deps_con_auth(verifier_admin_ok(), creator, auth),
+    );
+    assertEquals(res.status, 201);
+    const body = await res.json();
+    assertEquals(
+      body.token_id,
+      TOKEN_ID,
+      "token_id debe estar en la respuesta 201 con el valor devuelto por la RPC",
+    );
+  },
+);
+
+Deno.test(
+  "token_7_6_plain_token_no_es_igual_al_token_hash_enviado_a_rpc",
+  async () => {
+    // Invariante: el plano se retorna al admin; el hash se persiste en BD. Nunca coinciden.
+    const auth = auth_admin_invite_ok();
+    const creator = creator_ok_con_token_id();
+    const res = await handler(
+      post_admin(PAYLOAD_VALIDO),
+      deps_con_auth(verifier_admin_ok(), creator, auth),
+    );
+    assertEquals(res.status, 201);
+    const body = await res.json();
+    // deno-lint-ignore no-explicit-any
+    const captured_hash = (creator.calls[0] as any).token_hash as string | undefined;
+    assertExists(body.plain_token, "plain_token debe estar en la respuesta 201");
+    assertExists(captured_hash, "create_atomic debe haber recibido token_hash");
+    assertEquals(
+      body.plain_token === captured_hash,
+      false,
+      "plain_token NO debe ser igual al token_hash (plano ≠ hash sha256)",
+    );
+  },
+);
+
+Deno.test(
+  "token_7_6_create_atomic_recibe_token_hash_sha256_del_plain_token",
+  async () => {
+    // Contrato: hash(plano) que llega a la RPC debe ser exactamente sha256_hex(plain_token devuelto)
+    const auth = auth_admin_invite_ok();
+    const creator = creator_ok_con_token_id();
+    const res = await handler(
+      post_admin(PAYLOAD_VALIDO),
+      deps_con_auth(verifier_admin_ok(), creator, auth),
+    );
+    assertEquals(res.status, 201);
+    const body = await res.json();
+    assertExists(body.plain_token, "plain_token debe estar en la respuesta 201");
+    // deno-lint-ignore no-explicit-any
+    const captured_hash = (creator.calls[0] as any).token_hash as string | undefined;
+    assertExists(captured_hash, "create_atomic debe recibir token_hash en sus params");
+    // Calcular sha256 del plain_token devuelto y comparar con el hash enviado a la RPC
+    const expected_hash = await sha256_hex(body.plain_token);
+    assertEquals(
+      captured_hash,
+      expected_hash,
+      "token_hash pasado a create_atomic debe ser sha256_hex(plain_token) — contrato hash≠plano",
+    );
+  },
+);
+
+Deno.test(
+  "token_7_6_plain_token_longitud_8_distinta_de_hash_64_chars",
+  async () => {
+    // sha256 hex siempre tiene 64 chars; plain_token tiene 8 — longitudes distintas confirman que son valores distintos
+    const auth = auth_admin_invite_ok();
+    const creator = creator_ok_con_token_id();
+    const res = await handler(
+      post_admin(PAYLOAD_VALIDO),
+      deps_con_auth(verifier_admin_ok(), creator, auth),
+    );
+    assertEquals(res.status, 201);
+    const body = await res.json();
+    assertExists(body.plain_token, "plain_token debe estar en la respuesta 201");
+    assertEquals(
+      body.plain_token.length,
+      8,
+      "plain_token debe tener exactamente 8 caracteres",
+    );
+    // deno-lint-ignore no-explicit-any
+    const captured_hash = (creator.calls[0] as any).token_hash as string | undefined;
+    assertExists(captured_hash, "token_hash debe haber sido pasado a create_atomic");
+    assertEquals(
+      captured_hash.length,
+      64,
+      "sha256 hex tiene siempre 64 chars — longitud distinta a plain_token (8)",
+    );
+  },
+);
+
+Deno.test(
+  "token_7_6_generate_invitation_code_genera_8_chars_alfanumericos",
+  () => {
+    // stub lanza not_implemented en fase RED; GREEN implementará la lógica real
+    const code = generate_invitation_code(8);
+    assertEquals(typeof code, "string", "generate_invitation_code debe devolver string");
+    assertEquals(code.length, 8, "generate_invitation_code debe devolver 8 chars por defecto");
+    assertEquals(
+      /^[A-Za-z0-9]{8}$/.test(code),
+      true,
+      "El código debe ser 8 chars del alfabeto alfanumérico [A-Za-z0-9]",
+    );
+  },
+);
+
+Deno.test(
+  "token_7_6_sha256_hex_determinismo_mismo_input_mismo_output",
+  async () => {
+    // sha256_hex ya está implementado; test documental/regresión
+    const hash1 = await sha256_hex("urbea-test-token-determinismo");
+    const hash2 = await sha256_hex("urbea-test-token-determinismo");
+    assertEquals(hash1, hash2, "sha256_hex debe devolver el mismo hash para el mismo input");
+    assertEquals(hash1.length, 64, "sha256 hex debe tener siempre 64 chars");
+  },
+);
