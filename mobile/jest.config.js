@@ -5,7 +5,7 @@ const path = require('path');
 /** @type {import('jest-expo').Config} */
 module.exports = {
   preset: 'jest-expo',
-  setupFiles: ['./jest.setup.js'],
+  setupFilesAfterEnv: ['./jest.setup.js'],
   // En pnpm hoisted el path real de node_modules es:
   //   node_modules/.pnpm/<pkg@ver>/node_modules/<pkg>/...
   // El regex del preset de jest-expo falla porque el segundo "/node_modules/"
