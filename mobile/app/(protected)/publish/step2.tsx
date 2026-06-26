@@ -20,6 +20,7 @@ import {
   SafeAreaView,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -27,6 +28,7 @@ import {
 import { useRouter } from 'expo-router';
 
 import { usePublishForm } from '@/features/publish/store/PublishFormContext';
+import { validate_step2 } from '@/features/publish/validation';
 import { AddressAutocomplete } from '@/features/publish/components/AddressAutocomplete';
 import { MapPicker } from '@/features/publish/components/MapPicker';
 import { NumericStepper } from '@/features/publish/components/NumericStepper';
@@ -43,6 +45,8 @@ const COLOR_BORDER = '#E5E7EB';
 const COLOR_BORDER_FOCUS = '#5A8A5E'; // SALVIA
 const COLOR_INPUT_BG = '#FFFFFF';
 const COLOR_HINT = '#9CA3AF';
+const COLOR_ACCENT = '#5A8A5E'; // SALVIA
+const COLOR_ERROR = '#DC2626';
 
 // ---------------------------------------------------------------------------
 // Screen
@@ -52,10 +56,18 @@ export default function Step2Screen() {
   const router = useRouter();
   const { state, update } = usePublishForm();
 
-  // Validación TEMPORAL: solo price > 0.
-  // ponytail: inline — no importa validate_step2 completo hasta que 8.6 lo cablee.
-  // 8.6 reemplazará esta línea por: const { valid } = validate_step2(state)
-  const price_valid = state.price !== null && state.price > 0;
+  // Validación completa (8.6): price > 0, address, lat y lng presentes.
+  const { valid, errors } = validate_step2(state);
+
+  // Mensajes de error deduplicados para mostrar al usuario.
+  // lat y lng comparten el mismo texto — se colapsan en uno solo.
+  const error_messages = (() => {
+    const msgs: string[] = [];
+    if (errors.price) msgs.push(errors.price);
+    if (errors.address) msgs.push(errors.address);
+    if (errors.lat || errors.lng) msgs.push('La ubicación en el mapa es requerida');
+    return msgs;
+  })();
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
@@ -94,9 +106,9 @@ export default function Step2Screen() {
   );
 
   const handle_next = useCallback(() => {
-    if (!price_valid) return;
+    if (!valid) return;
     router.push('/publish/step3');
-  }, [price_valid, router]);
+  }, [valid, router]);
 
   // ── Valores controlados (string para los TextInput numéricos) ─────────────
 
@@ -232,12 +244,44 @@ export default function Step2Screen() {
             />
           </View>
 
-          {/* ── 8.6: niche toggles ────────────────────────────────────────
-              Aquí irán los SelectionCard/Switch para:
-                pet_friendly, allows_no_guarantor, student_friendly.
-              8.6 también reemplaza la validación temporal del botón por
-              validate_step2(state).valid (incluye address/lat/lng).
-          ─────────────────────────────────────────────────────────────── */}
+          {/* ── Características (niche toggles) ─────────────────────── */}
+          <Text style={[styles.section_label, styles.section_gap]}>
+            Características
+          </Text>
+          <View style={styles.toggles_card}>
+            <View style={styles.toggle_row}>
+              <Text style={styles.toggle_label}>Acepta mascotas</Text>
+              <Switch
+                value={state.pet_friendly}
+                onValueChange={(value) => update({ pet_friendly: value })}
+                trackColor={{ false: COLOR_BORDER, true: COLOR_ACCENT }}
+                thumbColor="#FFFFFF"
+                accessibilityLabel="Acepta mascotas"
+              />
+            </View>
+            <View style={styles.toggle_divider} />
+            <View style={styles.toggle_row}>
+              <Text style={styles.toggle_label}>Sin aval / fiador</Text>
+              <Switch
+                value={state.allows_no_guarantor}
+                onValueChange={(value) => update({ allows_no_guarantor: value })}
+                trackColor={{ false: COLOR_BORDER, true: COLOR_ACCENT }}
+                thumbColor="#FFFFFF"
+                accessibilityLabel="Sin aval o fiador"
+              />
+            </View>
+            <View style={styles.toggle_divider} />
+            <View style={styles.toggle_row}>
+              <Text style={styles.toggle_label}>Apto estudiantes</Text>
+              <Switch
+                value={state.student_friendly}
+                onValueChange={(value) => update({ student_friendly: value })}
+                trackColor={{ false: COLOR_BORDER, true: COLOR_ACCENT }}
+                thumbColor="#FFFFFF"
+                accessibilityLabel="Apto para estudiantes"
+              />
+            </View>
+          </View>
 
           {/* Espacio final para que el contenido no quede bajo el botón */}
           <View style={styles.bottom_spacer} />
@@ -245,11 +289,21 @@ export default function Step2Screen() {
 
         {/* ── Botón Siguiente (fijo al fondo) ───────────────────────────── */}
         <View style={styles.cta_area}>
+          {!valid && error_messages.length > 0 && (
+            <View style={styles.errors_container}>
+              <Text style={styles.errors_title}>Falta completar:</Text>
+              {error_messages.map((msg) => (
+                <Text key={msg} style={styles.error_item}>
+                  {'•'} {msg}
+                </Text>
+              ))}
+            </View>
+          )}
           <PrimaryButton
             label="Siguiente"
             onPress={handle_next}
             surface="light"
-            disabled={!price_valid}
+            disabled={!valid}
           />
         </View>
       </KeyboardAvoidingView>
@@ -376,6 +430,49 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: COLOR_HINT,
     marginTop: 4,
+  },
+
+  // ── Toggles niche ────────────────────────────────────────────────────────
+  toggles_card: {
+    backgroundColor: COLOR_INPUT_BG,
+    borderWidth: 1,
+    borderColor: COLOR_BORDER,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  toggle_row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+  },
+  toggle_label: {
+    fontSize: 15,
+    color: COLOR_TEXT_PRIMARY,
+    flex: 1,
+  },
+  toggle_divider: {
+    height: 1,
+    backgroundColor: COLOR_BORDER,
+    marginHorizontal: 14,
+  },
+
+  // ── Errores sobre el botón ───────────────────────────────────────────────
+  errors_container: {
+    marginBottom: 10,
+    paddingHorizontal: 4,
+  },
+  errors_title: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLOR_ERROR,
+    marginBottom: 4,
+  },
+  error_item: {
+    fontSize: 12,
+    color: COLOR_ERROR,
+    lineHeight: 18,
   },
 
   // ── CTA ──────────────────────────────────────────────────────────────────

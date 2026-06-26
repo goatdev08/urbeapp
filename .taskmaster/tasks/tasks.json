@@ -768,10 +768,11 @@
             "dependencies": [
               5
             ],
-            "details": "Add three toggle/switch components in Step 2: pet_friendly (Se aceptan mascotas), allows_no_guarantor (Sin aval), student_friendly (Ideal para estudiantes). Default all to false. Add validation logic for Step 2: price required and > 0, address required (must have selected from autocomplete or map), location coordinates required. Show validation errors inline or as a toast when user tries to advance without required fields. Next button navigates to step3 only when validation passes. Ensure all Step 2 data is properly stored in form state before navigation.",
-            "status": "pending",
+            "details": "Add three toggle/switch components in Step 2: pet_friendly (Se aceptan mascotas), allows_no_guarantor (Sin aval), student_friendly (Ideal para estudiantes). Default all to false. Add validation logic for Step 2: price required and > 0, address required (must have selected from autocomplete or map), location coordinates required. Show validation errors inline or as a toast when user tries to advance without required fields. Next button navigates to step3 only when validation passes. Ensure all Step 2 data is properly stored in form state before navigation.\n<info added on 2026-06-26T07:31:24.390Z>\nI need to analyze the codebase to understand the current implementation of step2.tsx and provide accurate implementation details for this update.Based on my codebase analysis, here is the implementation plan for subtask 8.6:\n\nIn mobile/app/(protected)/publish/step2.tsx: Replace comment anchor 8.6 (lines 235-240) with three Switch components for pet_friendly, allows_no_guarantor, and student_friendly boolean fields. Use React Native core Switch component (no custom wrapper exists in codebase). Add handlers that call update({ pet_friendly: newValue }) for each toggle. Labels: \"Se aceptan mascotas\", \"Sin aval\", \"Ideal para estudiantes\". Replace line 58 temporary validation (price_valid) with const { valid, errors } = validate_step2(state) imported from @/features/publish/validation (validation.ts already implements complete step2 validation checking price > 0, address not empty, and lat/lng present). Update handle_next (line 96-99) to check valid instead of price_valid. Update PrimaryButton disabled prop (line 252) to use !valid. Display validation errors: either show errors.price, errors.address, errors.lat/lng as inline Text below respective fields when present, or use a toast/alert when user tries to advance with invalid state. Change router.push target from '/publish/step3' to '/(protected)/publish/step3' to match the protected route structure. Verify all changes work with existing PublishFormContext state management and validation.ts functions which are already complete.\n</info added on 2026-06-26T07:31:24.390Z>\n<info added on 2026-06-26T07:33:51.885Z>\nImplementation completed: Step2.tsx anchor 8.6 replaced with three toggle switches (pet_friendly, allows_no_guarantor, student_friendly) using React Native Switch component with salvia green trackColor (#5A8A5E). Integrated validate_step2 function from @/features/publish/validation.ts replacing temporary price_valid validation. Validation now checks price > 0, address not empty, and lat/lng coordinates present. Error messages deduplicated (lat/lng collapsed into single location message). Toggles rendered in styled card with separators between rows. CTA area shows \"Falta completar: ...\" list only when form invalid; primary button disabled={!valid}. TypeScript compilation verified clean (0 errors via pnpm tsc --noEmit).\n</info added on 2026-06-26T07:33:51.885Z>\n<info added on 2026-06-26T07:34:32.099Z>\nImplementation completed in step2.tsx: Added three boolean toggles (pet_friendly labeled 'Acepta mascotas', allows_no_guarantor labeled 'Sin aval/fiador', student_friendly labeled 'Apto estudiantes') rendered within toggles_card component. Each Switch uses salvia green (#5A8A5E) for active trackColor and calls update() to write state changes. Replaced temporary price_valid check with validate_step2(state).valid function which enforces price > 0, non-empty address, and presence of lat/lng coordinates. Deduplicated error messages to display maximum 3 messages. Added 'Falta completar:' red warning list that appears only when form is invalid. Primary button remains disabled until valid === true, then navigates to '/publish/step3'. Step 2 now feature-complete with all validation gates in place. TypeScript compilation verified clean with pnpm tsc --noEmit returning PASS (0 errors).\n</info added on 2026-06-26T07:34:32.099Z>",
+            "status": "done",
             "testStrategy": "Verify: (1) All three toggles work and persist state, (2) Cannot advance without price, (3) Cannot advance without address/location, (4) Validation errors display clearly, (5) Valid form advances to Step 3.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-06-26T07:34:38.725Z"
           },
           {
             "id": 7,
@@ -826,7 +827,7 @@
         "complexity": 8,
         "recommendedSubtasks": 10,
         "expansionPrompt": "Break down publication wizard into: (1) create wizard layout with step indicator, (2) build step 1 for operation/property type selection, (3) build step 2 base with price and property details, (4) integrate Google Places API for address autocomplete, (5) implement map picker for exact location, (6) add niche filters toggles and step 2 validation, (7) implement form state management with Context/Zustand, (8) build step 3 with video upload and preview, (9) create Edge Function for property publication, (10) connect wizard to Edge Function and test complete flow",
-        "updatedAt": "2026-06-26T07:26:00.980Z"
+        "updatedAt": "2026-06-26T07:34:38.725Z"
       },
       {
         "id": "9",
@@ -2220,7 +2221,7 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-06-26T07:26:00.980Z",
+      "lastModified": "2026-06-26T07:34:38.725Z",
       "taskCount": 20,
       "completedCount": 7,
       "tags": [
