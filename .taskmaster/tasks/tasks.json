@@ -755,10 +755,11 @@
             "dependencies": [
               4
             ],
-            "details": "Add react-native-maps MapView component below the address input in Step 2. Initial map center: coordinates from Google Places selection, or default (Mexico City center) if not yet selected. Include a draggable marker for exact location placement. When marker is moved, update the location coordinates in form state. Show current coordinates as small text below map (for debugging/verification). Map should be a reasonable height (200-250px) and expand to show clearly. Use Google Maps provider (via Expo dev build). Store final coordinates as { latitude, longitude } in form state, to be converted to PostGIS geography on submission.",
-            "status": "pending",
+            "details": "Add react-native-maps MapView component below the address input in Step 2. Initial map center: coordinates from Google Places selection, or default (Mexico City center) if not yet selected. Include a draggable marker for exact location placement. When marker is moved, update the location coordinates in form state. Show current coordinates as small text below map (for debugging/verification). Map should be a reasonable height (200-250px) and expand to show clearly. Use Google Maps provider (via Expo dev build). Store final coordinates as { latitude, longitude } in form state, to be converted to PostGIS geography on submission.\n<info added on 2026-06-26T07:22:11.782Z>\nMapPicker.tsx component implementation plan: Use react-native-maps v1.27.2 (already installed) with Google Maps provider. Component accepts address autocomplete coordinates as prop and stores selected coordinates in parent form state via callback. Map region initializes from autocomplete coords if available, otherwise defaults to Mexico City center (19.4326, -99.1332). Draggable marker updates coordinates on drag end. Map also accepts onPress events to reposition marker and update coordinates. Coordinates displayed below map as debug text. Map height set to 230px with proper layout constraints. Component gracefully handles missing Maps availability (show placeholder or text fallback). Optional reverse geocoding: if map marker is placed without prior address autocomplete selection, reverse-geocode coordinates to populate address field. Integrated at anchor point 8.5 in step2.tsx (below address input, above price field). GOOGLE_MAPS_API_KEY already configured in app.config.js.\n</info added on 2026-06-26T07:22:11.782Z>\n<info added on 2026-06-26T07:25:06.438Z>\nImplemented MapPicker component and integrated into Step 2 of publish wizard. Created MapPicker.tsx as decoupled component accepting lat/lng props and onLocationChange callback. User location is set only on explicit interaction (map tap or marker drag); before interaction, coordinates remain null and marker is hidden. Initial map region centers on existing lat/lng (delta 0.01) if available, otherwise defaults to Mexico City (19.4326, -99.1332, delta 0.05). Map height fixed at 240px within ScrollView. Added MapErrorBoundary class component wrapper to gracefully handle native module failures and prevent wizard crashes. No new dependencies required (react-native-maps 1.27.2 already installed). TypeScript compilation passes with zero errors. Note: Map rendering requires development build (expo run:ios/android or EAS build); will not render in Expo Go due to native module requirement.\n</info added on 2026-06-26T07:25:06.438Z>\n<info added on 2026-06-26T07:25:54.356Z>\nCompleted MapPicker implementation. Created mobile/src/features/publish/components/MapPicker.tsx with react-native-maps integration. Map behavior: marker only mounts when has_location is true; coordinates remain null until first user interaction (tap or drag); no false coordinates written. User can place marker via MapView.onPress or drag existing Marker; both trigger onLocationChange callback with {latitude, longitude}. Initial region calculated from existing coordinates (if any) or defaults to Mexico City (19.4326, -99.1332). Added MapErrorBoundary class component as fallback wrapper (renders 240px placeholder on native module failure). Integrated into step2.tsx at anchor point 8.5 (between address autocomplete and price field); subtask 8.6 remains untouched. Verification: pnpm tsc --noEmit passes with zero errors. Critical note: Map rendering requires development build (pnpm expo run:ios or pnpm expo run:android, or EAS build) due to native module dependency; will not render in Expo Go. GOOGLE_MAPS_API_KEY already configured in app.config.js.\n</info added on 2026-06-26T07:25:54.356Z>",
+            "status": "done",
             "testStrategy": "Verify: (1) Map renders with correct initial position, (2) Marker is draggable and updates coordinates, (3) Map centers on address when selected from autocomplete, (4) Works with Expo dev build (native Google Maps).",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-06-26T07:26:00.980Z"
           },
           {
             "id": 6,
@@ -825,7 +826,7 @@
         "complexity": 8,
         "recommendedSubtasks": 10,
         "expansionPrompt": "Break down publication wizard into: (1) create wizard layout with step indicator, (2) build step 1 for operation/property type selection, (3) build step 2 base with price and property details, (4) integrate Google Places API for address autocomplete, (5) implement map picker for exact location, (6) add niche filters toggles and step 2 validation, (7) implement form state management with Context/Zustand, (8) build step 3 with video upload and preview, (9) create Edge Function for property publication, (10) connect wizard to Edge Function and test complete flow",
-        "updatedAt": "2026-06-26T07:05:57.831Z"
+        "updatedAt": "2026-06-26T07:26:00.980Z"
       },
       {
         "id": "9",
@@ -2219,7 +2220,7 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-06-26T07:05:57.832Z",
+      "lastModified": "2026-06-26T07:26:00.980Z",
       "taskCount": 20,
       "completedCount": 7,
       "tags": [

@@ -28,6 +28,7 @@ import { useRouter } from 'expo-router';
 
 import { usePublishForm } from '@/features/publish/store/PublishFormContext';
 import { AddressAutocomplete } from '@/features/publish/components/AddressAutocomplete';
+import { MapPicker } from '@/features/publish/components/MapPicker';
 import { NumericStepper } from '@/features/publish/components/NumericStepper';
 import { PrimaryButton } from '@/components/PrimaryButton';
 
@@ -220,9 +221,16 @@ export default function Step2Screen() {
           </Text>
 
           {/* ── 8.5: map picker ───────────────────────────────────────────
-              Aquí irá el mapa interactivo (react-native-maps) que escribe
-              update({ lat, lng }) con el pin del usuario.
+              Mapa interactivo — escribe update({ lat, lng }) solo al interactuar.
+              Requiere dev build con módulo nativo de react-native-maps.
           ─────────────────────────────────────────────────────────────── */}
+          <View style={styles.section_gap}>
+            <MapPicker
+              lat={state.lat}
+              lng={state.lng}
+              onLocationChange={(lat, lng) => update({ lat, lng })}
+            />
+          </View>
 
           {/* ── 8.6: niche toggles ────────────────────────────────────────
               Aquí irán los SelectionCard/Switch para:
