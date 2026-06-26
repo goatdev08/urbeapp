@@ -37,13 +37,21 @@ function get_default_supabase(): SupabaseClient {
   return (require('@/lib/supabase/client') as { supabase: SupabaseClient }).supabase;
 }
 
+// ponytail: UUID vía expo-crypto (no crypto.randomUUID — NO existe en Hermes).
+// Lazy-require para que los tests, que siempre inyectan su propio generador, no
+// carguen el módulo nativo.
+function default_uuid(): string {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  return (require('expo-crypto') as { randomUUID: () => string }).randomUUID();
+}
+
 export type UploadStatus = 'idle' | 'uploading' | 'success' | 'error';
 
 export interface UseVideoUploadDeps {
   /** Cliente Supabase — inyectable para tests. Por defecto el singleton del módulo. */
   supabase?: SupabaseClient;
   /**
-   * Generador de UUID — inyectable para tests deterministas. Por defecto crypto.randomUUID.
+   * Generador de UUID — inyectable para tests deterministas. Por defecto expo-crypto randomUUID.
    * ponytail: tipado como `() => any` para aceptar jest.Mock sin forzar downcast en tests.
    *   En prod siempre devuelve string; en tests el mock también devuelve string en runtime.
    */
@@ -68,8 +76,8 @@ export interface UseVideoUploadResult {
  */
 export function useVideoUpload(deps?: UseVideoUploadDeps): UseVideoUploadResult {
   const supabase_client = deps?.supabase ?? get_default_supabase();
-  // ponytail: default uuid usa crypto.randomUUID — disponible en Hermes ≥ 0.71 y Jest
-  const uuid_fn = deps?.uuid ?? (() => crypto.randomUUID());
+  // ponytail: default uuid vía expo-crypto (crypto.randomUUID no existe en Hermes)
+  const uuid_fn = deps?.uuid ?? default_uuid;
 
   const { update } = usePublishForm();
 
