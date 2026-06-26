@@ -2,7 +2,7 @@
   "master": {
     "tasks": [
       {
-        "id": 1,
+        "id": "1",
         "title": "Initialize React Native + Expo mobile app with development build",
         "description": "Set up mobile/ directory with Expo SDK 52+, expo-dev-client, Expo Router, TypeScript strict mode, and EAS build configuration",
         "details": "1. Create mobile/ directory\n2. Run `npx create-expo-app@latest mobile --template blank-typescript`\n3. Configure app.json/app.config.js with development build settings\n4. Install expo-dev-client, expo-router, react-native-maps\n5. Set up TypeScript strict mode in tsconfig.json\n6. Configure EAS build (eas.json) for development builds with Google Maps native support\n7. Install expo-video for video playback\n8. Create basic folder structure: app/, components/, lib/, types/, hooks/\n9. Install and configure Supabase JS client v2+\n10. Add environment variables setup (.env.example with SUPABASE_URL, SUPABASE_ANON_KEY)\n11. Generate TypeScript types from Supabase (already exists at supabase/types/database.types.ts, link to mobile/types/)\n12. Test: Run dev build on iOS/Android simulator with hot reload working",
@@ -81,7 +81,7 @@
         "updatedAt": "2026-06-24T01:31:36.246Z"
       },
       {
-        "id": 2,
+        "id": "2",
         "title": "Implement Supabase Auth with email/password login",
         "description": "Create login screen with email/password authentication using Supabase Auth, session persistence, and auth state management",
         "details": "1. Create auth context (lib/contexts/AuthContext.tsx) using Supabase Auth\n2. Implement session persistence with AsyncStorage\n3. Build login screen (app/login.tsx) with email/password fields\n4. Add form validation (email format, password length)\n5. Implement signInWithPassword using supabase.auth\n6. Handle auth errors gracefully (invalid credentials, network errors)\n7. Auto-redirect to main app on successful login\n8. Add loading states during authentication\n9. Implement auth state listener to handle session changes\n10. Create protected route wrapper for authenticated routes\n11. Test: Login with valid/invalid credentials, session persistence across app restarts",
@@ -187,7 +187,7 @@
         "updatedAt": "2026-06-24T06:54:54.503Z"
       },
       {
-        "id": 3,
+        "id": "3",
         "title": "Create Supabase Storage bucket for videos with RLS policies",
         "description": "Set up Supabase Storage bucket 'property-videos' with RLS policies for agent upload and public read of active property videos, plus storage_path column in property_videos table",
         "status": "done",
@@ -293,7 +293,7 @@
         "updatedAt": "2026-06-24T08:47:14.868Z"
       },
       {
-        "id": 4,
+        "id": "4",
         "title": "Create minor migration for property_videos storage_path field",
         "description": "Add storage_path column to property_videos table to support Supabase Storage instead of Cloudflare Stream for demo",
         "details": "1. Create migration file: supabase/migrations/20260617000011_demo_video_storage.sql\n2. Add column: ALTER TABLE property_videos ADD COLUMN storage_path text\n3. Make cloudflare_uid nullable (already is) and optional for demo\n4. Add check constraint: storage_path OR cloudflare_uid must be present (at least one)\n5. Update comment to reflect dual support (Cloudflare for future, Storage for demo)\n6. Create corresponding rollback in rollbacks/\n7. Apply migration to local Supabase: supabase db reset\n8. Regenerate TypeScript types: supabase gen types typescript\n9. Test migration rollback works correctly\n10. Document in README that migration 0011 is for demo video storage, NOT billing",
@@ -348,7 +348,7 @@
         "updatedAt": "2026-06-24T09:52:25.206Z"
       },
       {
-        "id": 5,
+        "id": "5",
         "title": "Implement invitation code redemption and agent registration",
         "description": "Create registration flow where agent redeems invitation code, creates account, and gets linked to agency via Edge Function",
         "details": "1. Create Edge Function: supabase/functions/redeem-invitation/index.ts\n2. Input: { invitationCode: string, email: string, password: string, fullName: string }\n3. Logic: (a) Validate invitation token exists and is valid (not expired, current_uses < max_uses), (b) Create auth user via Admin API, (c) Atomically increment token.current_uses, (d) Insert agency_member with agency_id from token, role='agent', status='active', (e) Update users.agency_id denormalization, (f) Insert user_preferences with profile data, (g) Create user_consent for latest terms_versions\n4. Transaction handling: Use Supabase transaction or make idempotent\n5. Return JWT token for immediate login\n6. Create registration screen (app/register.tsx) with invitation code input first, then email/password/name\n7. Show agency name after valid code entered\n8. Handle errors: invalid code, expired code, email already exists\n9. Auto-login after successful registration\n10. Test: Redeem valid code, verify agent linked to correct agency",
@@ -484,7 +484,7 @@
         "updatedAt": "2026-06-24T19:44:21.854Z"
       },
       {
-        "id": 6,
+        "id": "6",
         "title": "Build minimal onboarding flow with profile photo upload",
         "description": "Create onboarding screen to capture agent name and profile photo, storing in user_preferences and Supabase Storage",
         "details": "1. Create onboarding screen (app/onboarding.tsx) with name and photo fields\n2. Use expo-image-picker for profile photo selection (camera or gallery)\n3. Create storage bucket 'profile-photos' with RLS (user can upload their own, public read)\n4. Resize/compress image before upload (max 1MB, 512x512px) using expo-image-manipulator\n5. Upload to storage: profile-photos/{user_id}/avatar.jpg\n6. Update user_preferences: full_name, profile_photo_url\n7. Skip button with default avatar if user wants to skip photo\n8. Show progress indicator during upload\n9. Validate: name required (min 2 chars)\n10. Navigate to main app after completion\n11. Test: Upload photo, skip photo, verify data saved correctly",
@@ -578,7 +578,7 @@
         "updatedAt": "2026-06-24T23:56:06.080Z"
       },
       {
-        "id": 7,
+        "id": "7",
         "title": "Create admin panel for agency and owner management",
         "description": "Build in-app admin panel (role=admin only) to create agencies and their owner users with invitation codes",
         "details": "1. Create admin layout (app/admin/_layout.tsx) with role guard (redirect if not admin)\n2. Build agency list screen (app/admin/agencies.tsx) showing all agencies\n3. Create agency form (app/admin/agencies/create.tsx): name, address, contact info\n4. Edge Function: supabase/functions/admin-create-agency/index.ts\n5. Logic: (a) Verify caller is admin role, (b) Create agency record, (c) Create owner user via Auth Admin API, (d) Create agency_member with role='owner', (e) Generate initial invitation token for owner to invite agents, (f) Send email with credentials (or show in UI for demo), (g) Log to admin_actions\n6. Create owner invitation code generator screen\n7. Show generated codes with copy button\n8. List agency's members and their status\n9. Test: Admin can create agency + owner, non-admin cannot access\n10. Style: Clean, utilitarian design (not immersive like feed)",
@@ -686,7 +686,7 @@
         "updatedAt": "2026-06-26T01:15:01.420Z"
       },
       {
-        "id": 8,
+        "id": "8",
         "title": "Build 3-step property publication wizard",
         "description": "Create multi-step wizard for publishing properties: (1) operation/type, (2) details/location, (3) video upload",
         "details": "1. Create wizard layout (app/publish/_layout.tsx) with step indicator (1/3, 2/3, 3/3)\n2. Step 1 (app/publish/step1.tsx): Select operation_type (rent/sale) and property_type (house/apartment/etc)\n3. Step 2 (app/publish/step2.tsx): Price, bedrooms, bathrooms, square_meters, address autocomplete with Google Places API, map picker for exact location (react-native-maps), pet_friendly, allows_no_guarantor, student_friendly checkboxes, description textarea\n4. Step 3 (app/publish/step3.tsx): Video upload with expo-document-picker (video filter), show preview, upload to storage bucket, display progress bar\n5. Form state management with React Context or Zustand across steps\n6. Edge Function: supabase/functions/publish-property/index.ts\n7. Logic: (a) Validate all required fields, (b) Create property record with status='active' (auto-approved for demo), (c) Create property_videos record with storage_path, status='ready', (d) Set published_at to now(), (e) Return property_id\n8. Back/Next navigation between steps with validation\n9. Draft saving (optional, nice-to-have)\n10. Test: Complete flow creates property with video",
@@ -716,10 +716,11 @@
             "dependencies": [
               1
             ],
-            "details": "Create app/publish/step1.tsx with two selection groups: operation_type (rent/sale using operation_type enum) and property_type (house, apartment, land, commercial, room using property_type enum). Use visually distinct cards or buttons for selection (tap to select, highlight selected). Both fields required before enabling Next button. Property types should map to the DB enum: house, apartment, land, commercial, room. Include clear labels in Spanish matching the PRD. Connect to form state context (will be created in subtask 7). Add Next button that validates selection and navigates to step2.",
-            "status": "pending",
+            "details": "Create app/publish/step1.tsx with two selection groups: operation_type (rent/sale using operation_type enum) and property_type (house, apartment, land, commercial, room using property_type enum). Use visually distinct cards or buttons for selection (tap to select, highlight selected). Both fields required before enabling Next button. Property types should map to the DB enum: house, apartment, land, commercial, room. Include clear labels in Spanish matching the PRD. Connect to form state context (will be created in subtask 7). Add Next button that validates selection and navigates to step2.\n<info added on 2026-06-26T06:51:10.254Z>\nI need to analyze the codebase to understand the current implementation state and provide an accurate plan update.Plan confirmed: mobile/app/(protected)/publish/step1.tsx creates the Step 1 screen with two selection groups for operation_type (enum values: rent, sale, both) and property_type (enum values: casa, departamento, local, oficina, terreno). Uses selectable cards with visual feedback. Calls usePublishForm hook to access update() method from PublishFormContext (already exists at mobile/src/features/publish/store/PublishFormContext.tsx). Next button validates using validate_step1 from mobile/src/features/publish/validation.ts before navigating to step2 via router.push. Reuses PrimaryButton component from mobile/src/components/PrimaryButton.tsx. Spanish labels for all property types. Both fields required to enable navigation.\n</info added on 2026-06-26T06:51:10.254Z>\n<info added on 2026-06-26T06:56:02.694Z>\nFiles created: mobile/src/features/publish/components/SelectionCard.tsx (reusable selectable card component with active/inactive states using SALVIA brand color), mobile/app/(protected)/publish/step1.tsx (Step 1 screen with two selection sections: operation in 3-column row, property type in 2-column flex-wrap grid). Technical decisions: (1) SelectionCard built with Pressable + StyleSheet only, no external dependencies; (2) validate_step1 called on each render to derive button state — pure function, minimal cost; (3) Next button disabled when !valid, no additional error text shown (cards make missing selections obvious); (4) Navigation uses router.push('/publish/step2'); (5) Colors follow project tokens (SALVIA #5A8A5E, background #FAFAF8, border #E5E7EB). Verification: pnpm tsc --noEmit passed with 0 errors; pnpm lint not configured in mobile/package.json (skipped).\n</info added on 2026-06-26T06:56:02.694Z>\n<info added on 2026-06-26T06:56:42.438Z>\nCompleted: mobile/app/(protected)/publish/step1.tsx implements two selection sections — operation_type with rent/sale/both options (Spanish labels: Renta/Venta/Ambos) and property_type with casa/departamento/local/oficina/terreno. User selections call update() from usePublishForm context. PrimaryButton labeled 'Siguiente' stays disabled until validate_step1 returns valid, then navigates to /publish/step2 via router.push. SelectionCard component created in mobile/src/features/publish/components with active state using SALVIA brand color border. TypeScript compilation verified clean with pnpm tsc --noEmit.\n</info added on 2026-06-26T06:56:42.438Z>",
+            "status": "done",
             "testStrategy": "Verify: (1) Both operation types display and are selectable, (2) All property types display and are selectable, (3) Cannot advance without selecting both, (4) Selection persists when navigating back from step 2.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-06-26T06:56:49.053Z"
           },
           {
             "id": 3,
@@ -799,10 +800,10 @@
             "description": "Build Edge Function supabase/functions/publish-property/index.ts that validates all fields, creates property with status='active', creates property_videos record, and returns property_id.",
             "dependencies": [],
             "details": "Create supabase/functions/publish-property/index.ts following lineamientos: (1) Authenticate user via Supabase auth, (2) Validate payload with Zod schema matching properties table: operation_type, property_type, address, location (convert lat/lng to PostGIS), price, bedrooms, bathrooms, square_meters, description, pet_friendly, allows_no_guarantor, student_friendly, storage_path, (3) Get user's agency_id from agency_members if applicable, (4) Insert into properties with status='active', published_at=now(), owner_user_id=auth.uid(), (5) Insert into property_videos with storage_path, status='ready', position=1, (6) Return { property_id, success: true }. Use service_role for insert. Include proper error responses (400 for validation, 401 for auth, 500 for DB errors). Add _shared/ imports for auth validation and response helpers.\n<info added on 2026-06-26T04:24:55.196Z>\nI'll analyze the codebase to understand the current Edge Function structure and PostgreSQL setup before generating the update.Based on my analysis of the codebase, I can see that:\n\n1. PostGIS location column uses `geography(Point, 4326)` format in migration 20260604000005_properties_and_videos.sql:15\n2. The `property_videos` table has `storage_path` column added in migration 20260604000011\n3. The Edge Functions follow a pattern with DI, using _shared helpers like `auth_user.ts`, `response.ts`, and `clients.ts`\n4. The service_role client is used for RPC calls that bypass RLS\n5. Similar Edge Functions like `redeem-invitation` show the pattern of using atomicity via RPC functions\n\nHere's the new text for the subtask update:\n\nDECISION: The Edge Function receives video_id (UUID generated by client) and storage_path (already uploaded to Supabase Storage bucket property-videos). Inserts property (status=active, published_at=now()) + property_videos (id=video_id, status=ready, storage_path) in a single transaction using service_role client. Converts lat/lng to PostGIS Point using raw SQL: `ST_Point(lng, lat)` cast to `geography(Point, 4326)` to match the properties.location column type from migration 20260604000005. Pattern: call client.rpc() for the atomic insert or use two sequential inserts wrapped in a transaction (investigate which approach aligns with existing lineamientos). Import helpers from _shared/: error_response, json_response (response.ts), service_client (clients.ts). The client generates video_id to avoid race conditions between upload and property creation.\n</info added on 2026-06-26T04:24:55.196Z>\n<info added on 2026-06-26T04:35:28.165Z>\nPlan: Implement publish-property Edge Function following DI pattern (handler.ts + index.ts + handler.test.ts + types.ts). Receives payload: step1 data (operation_type, property_type), step2 data (price, bedrooms, bathrooms, square_meters, address, location {lat, lng}, description, pet_friendly, allows_no_guarantor, student_friendly), video_id (UUID, client-generated), storage_path (already uploaded to property-videos bucket). Validates schema with Zod (types.ts). Checks auth.uid has role IN (agent, admin) by querying agency_members. Uses service_role client to: INSERT properties (status=active, published_at=now(), owner_user_id=auth.uid(), location=ST_Point(lng,lat)::geography(Point,4326), agency_id from agency_members if exists) RETURNING id, then INSERT property_videos (id=video_id, property_id, storage_path, status=ready, position=1). Returns {property_id, success: true}. Reuses _shared/ helpers: cors.ts (CORS headers), response.ts (jsonResponse, errorResponse), auth_user.ts (getUserFromRequest), validation.ts (validateRequest), clients.ts (getServiceClient). Error responses: 401 unauthorized if auth fails or role check fails, 400 bad request for validation errors, 500 for DB errors. Handler pattern separates HTTP concerns (index.ts) from business logic (handler.ts) for testability.\n</info added on 2026-06-26T04:35:28.165Z>\n<info added on 2026-06-26T04:44:37.477Z>\nRED phase complete for subtask 8.9 — publish-property Edge Function stubs and test suite created:\n\nFILES CREATED:\n- supabase/functions/publish-property/handler.test.ts (43 edge case tests, Deno test runner)\n- supabase/functions/publish-property/types.ts (DI interfaces: CallerVerifier, PropertyPublisher + PublishPropertyInput schema + OperationType/PropertyType enums)\n- supabase/functions/publish-property/handler.ts (handler stub returning 500 NOT_IMPLEMENTED)\n- supabase/functions/publish-property/index.ts (Deno.serve entry stub)\n\nTEST COVERAGE (43 tests, all FAIL by assertion):\nHappy path: POST válido → 201 {property_id}, publisher called once with correct params (property_status=active, video_status=ready, user_id from auth not payload, ST_Point args lat/lng), CORS preflight OPTIONS → 200 with headers\nHTTP methods: GET/PUT → 405\nParse errors: non-JSON body → 400 INVALID_INPUT, empty payload → 400 INVALID_INPUT\nRequired fields (PRD §12): operation_type/property_type/price/address missing or invalid → 400 INVALID_INPUT\nLat/lng validation (PRD §13): lat/lng missing/null/non-numeric → 400 INVALID_INPUT (cannot build PostGIS Point)\nVideo validation (PRD §13): video_id/storage_path missing or empty string → 400 INVALID_INPUT\nAuth branches (CallerVerifier DI): missing JWT → 401 UNAUTHENTICATED, invalid JWT → 401, role=user (not agent/admin) → 403 FORBIDDEN (publisher NOT called, 0 invocations)\nError propagation: publisher DB_ERROR → 500 with {error: {code, message}}, publisher WAS invoked (calls.length=1)\nAtomicity signal: publisher fails → no property_id returned, status >= 400, calls.length=1 (distinguishes from auth-blocked)\n\nRUNNER: `deno test --allow-net supabase/functions/publish-property/handler.test.ts` from supabase/functions/\nRESULT: 0 passed | 43 failed — all failures are assertion errors (expect 201 got 500 NOT_IMPLEMENTED), NOT import errors\n\nDI PATTERN ENFORCED: CallerVerifier.verify_caller(authHeader) → ok+user_id | UNAUTHENTICATED | FORBIDDEN; PropertyPublisher.publish(params) → ok+property_id | error_code. Stubs return NOT_IMPLEMENTED to fail all tests by assertion until GREEN implementation.\n\nNEXT (GREEN): Implement real CallerVerifier (query agency_members for role IN agent,admin), real PropertyPublisher (RPC publish_property_atomic for atomic INSERT properties + property_videos with ST_Point PostGIS conversion), wire into handler.ts to pass all 43 tests.\n</info added on 2026-06-26T04:44:37.477Z>\n<info added on 2026-06-26T04:55:12.086Z>\nGREEN phase complete for subtask 8.9 — Edge Function publish-property fully implemented and verified:\n\nIMPLEMENTATION (DI pattern + ponytail simplifications):\n- handler.ts: Validates payload with Zod BEFORE auth check (fail fast). CallerVerifier injected, checks role IN (agent, admin) → 401 if unauthenticated, 403 if role forbidden. PropertyPublisher injected, receives user_id from CALLER (auth.uid) NOT from payload. Returns 201 {property_id} on success, 500 on DB errors.\n- index.ts: Deno.serve entrypoint with real implementations inline (ponytail: no _shared/caller_auth abstraction, query agency_members directly). CallerVerifier queries agency_members for role check. PropertyPublisher calls RPC publish_property_atomic.\n- Migration 20260625000001_publish_property_rpc.sql: RPC function publish_property_atomic with SECURITY DEFINER, fixed search_path (PUBLIC,extensions), atomic transaction with 2 INSERT (properties + property_videos), NO EXCEPTION block (uses native rollback on error). Sets status=active, published_at=now(), location=ST_Point(lng,lat,4326)::geography(Point,4326), property_videos.id=video_id, status=ready, position=1.\n- rollbacks/20260625000001_publish_property_rpc.sql: Symmetric rollback DROP FUNCTION.\n- supabase/tests/06_publish_property_rpc_test.sql: 8 pgTAP assertions covering happy path (property+video inserted, location PostGIS format, published_at set), missing fields rejection, invalid lat/lng handling, atomicity verification.\n\nVERIFICATION RESULTS:\n- deno test: 43/43 PASS (all edge cases green)\n- deno check: clean (no type errors)\n- pnpm tsc --noEmit: PASS (no TypeScript errors in project)\n- guardian agent: PASS (no TDD violations, coverage complete, tests non-trivial)\n\nFOLLOW-UP (non-blocking, documented for future): Add pgTAP test that artificially forces failure of 2nd INSERT (property_videos) and asserts properties table count=0, empirically proving rollback atomicity. Not executable here without supabase CLI access to running DB instance.\n</info added on 2026-06-26T04:55:12.086Z>",
-            "status": "in-progress",
+            "status": "done",
             "testStrategy": "Verify: (1) Rejects unauthenticated requests with 401, (2) Validates all required fields, (3) Creates property with correct data, (4) Creates property_videos with storage_path, (5) Returns property_id on success, (6) Handles validation errors with clear messages.",
             "parentId": "undefined",
-            "updatedAt": "2026-06-26T04:35:07.850Z"
+            "updatedAt": "2026-06-26T04:55:18.887Z"
           },
           {
             "id": 10,
@@ -822,10 +823,10 @@
         "complexity": 8,
         "recommendedSubtasks": 10,
         "expansionPrompt": "Break down publication wizard into: (1) create wizard layout with step indicator, (2) build step 1 for operation/property type selection, (3) build step 2 base with price and property details, (4) integrate Google Places API for address autocomplete, (5) implement map picker for exact location, (6) add niche filters toggles and step 2 validation, (7) implement form state management with Context/Zustand, (8) build step 3 with video upload and preview, (9) create Edge Function for property publication, (10) connect wizard to Edge Function and test complete flow",
-        "updatedAt": "2026-06-26T04:35:07.850Z"
+        "updatedAt": "2026-06-26T06:56:49.053Z"
       },
       {
-        "id": 9,
+        "id": "9",
         "title": "Implement vertical video feed with swipe and autoplay",
         "description": "Create TikTok-style vertical video feed showing active properties with expo-video, swipe navigation, and autoplay",
         "details": "1. Create feed screen (app/(tabs)/index.tsx) as main home tab\n2. Use FlatList with pagingEnabled and vertical scroll\n3. Each item full-screen video player using expo-video (Video component)\n4. Implement viewability logic: autoplay video when 70% visible, pause when scrolled away\n5. Preload next 2 videos for smooth scrolling\n6. Query properties: status='active', deleted_at is null, join property_videos where status='ready', order by created_at desc, paginate with limit=10 + cursor\n7. Overlay UI: Property info card at bottom (price, address, bedrooms/bathrooms), like/save buttons (floating), agent profile picture (tap to view profile)\n8. Double-tap to like gesture\n9. Swipe up to next video, swipe down to previous\n10. Loading skeleton while videos load\n11. Pull-to-refresh for new properties\n12. Test: Smooth scrolling, autoplay works, preloading prevents lag",
@@ -953,7 +954,7 @@
         "expansionPrompt": "Break down video feed into: (1) create feed screen with FlatList and vertical paging, (2) implement full-screen video player with expo-video, (3) implement viewability detection for autoplay/pause, (4) implement video preloading for smooth scrolling, (5) create Supabase query for active properties with videos, (6) build overlay UI with property info and action buttons, (7) implement double-tap to like gesture, (8) add swipe navigation and smooth animations, (9) implement loading skeleton, pull-to-refresh, pagination, and memory management"
       },
       {
-        "id": 10,
+        "id": "10",
         "title": "Build property detail screen with full information",
         "description": "Create comprehensive property detail view with video, all property data, location map, and agent info",
         "details": "1. Create detail screen (app/property/[id].tsx) with route parameter\n2. Fetch property with join: property_videos, user (agent), agency\n3. Layout: Full-screen video player at top (expo-video), scrollable content below\n4. Display: Operation type badge, price (large), property type, bedrooms/bathrooms/sqm icons, full address, description, amenities chips (pet_friendly, no_guarantor, student_friendly, amenities array)\n5. Embedded map (react-native-maps) showing exact location with marker\n6. Agent card: Photo, name, agency name, contact button (WhatsApp)\n7. Like/save buttons (floating over video or in header)\n8. Share button (react-native-share)\n9. Back button navigation\n10. Loading state while fetching\n11. Error state if property not found\n12. Test: All data displays correctly, map shows right location, contact button works",
@@ -1060,7 +1061,7 @@
         "expansionPrompt": "Break down property detail into: (1) create detail screen with route parameter and data fetching, (2) implement full-screen video player at top, (3) build scrollable content with property info header, (4) display address, description, and amenities chips, (5) embed react-native-maps showing exact location, (6) build agent card with WhatsApp contact button, (7) add like/save/share buttons, navigation, and loading/error states"
       },
       {
-        "id": 11,
+        "id": "11",
         "title": "Implement global map with property pins and clustering",
         "description": "Create map view showing all active properties as pins with clustering for dense areas using react-native-maps",
         "details": "1. Create map screen (app/(tabs)/map.tsx) as secondary tab\n2. Use react-native-maps MapView with Google Maps (via dev build)\n3. Fetch active properties with location: SELECT id, price, location, operation_type FROM properties WHERE status='active' AND deleted_at IS NULL\n4. Convert PostGIS geography to lat/lng for markers\n5. Implement clustering with react-native-maps-clustering or custom logic (group markers within 50px radius at current zoom)\n6. Custom marker icons: different colors for rent vs sale\n7. Marker callout shows mini property card: price, type, bedrooms/bathrooms\n8. Tap callout to navigate to property detail\n9. Center map on user's location (ask permission) or default to Guadalajara\n10. Search bar integration (filter map by location/zone)\n11. Test: Map loads all properties, clustering works, markers tap to detail",
@@ -1161,7 +1162,7 @@
         "expansionPrompt": "Break down map implementation into: (1) create map screen as secondary tab with react-native-maps, (2) fetch active properties and convert PostGIS to lat/lng, (3) implement clustering with react-native-maps-clustering, (4) create custom marker icons for rent vs sale, (5) implement marker callout with mini property card, (6) add callout tap navigation and center on user location, (7) integrate search bar filter and test performance with 50+ properties"
       },
       {
-        "id": 12,
+        "id": "12",
         "title": "Add basic filters for feed (operation type, property type, price range, zone)",
         "description": "Create filter sheet/modal for feed and map to filter by operation type, property type, price range, and location zone",
         "details": "1. Create filter bottom sheet component (components/FilterSheet.tsx) using react-native-bottom-sheet or Modal\n2. Filter options: (a) Operation type: checkboxes for rent/sale, (b) Property type: multi-select for house/apartment/studio/commercial, (c) Price range: two number inputs (min/max) or slider, (d) Zone/city: text input with autocomplete from distinct properties.zone, (e) Bedrooms: min select (any, 1+, 2+, 3+), (f) Pet-friendly, no-guarantor, student-friendly toggles\n3. Filter state management with Context or Zustand\n4. Apply filters button builds WHERE clause: operation_type IN (...), property_type IN (...), price BETWEEN min AND max, zone ILIKE %search%, bedrooms >= min, pet_friendly = true, etc.\n5. Clear filters button\n6. Show active filter count badge on filter icon\n7. Update feed query and map query when filters change\n8. Persist filters in AsyncStorage for session\n9. Test: Filters correctly narrow down results",
@@ -1264,7 +1265,7 @@
         "expansionPrompt": "Break down filters into: (1) create FilterSheet component with react-native-bottom-sheet, (2) implement operation type checkboxes and property type multi-select, (3) add price range inputs with validation, (4) implement zone/city autocomplete from properties.zone, (5) add bedrooms selector and boolean toggles (pet-friendly, no-guarantor, student-friendly), (6) implement filter state management with WHERE clause builder, (7) add clear filters, active filter badge, query integration, and AsyncStorage persistence"
       },
       {
-        "id": 13,
+        "id": "13",
         "title": "Implement like, save, and saved properties screen",
         "description": "Add like and save interactions with backend persistence, and create saved properties list screen",
         "details": "1. Create like button component with animation (heart icon)\n2. Edge Function: supabase/functions/toggle-like/index.ts (insert/delete in likes table, update property.like_count)\n3. Create save button component (bookmark icon)\n4. Edge Function: supabase/functions/toggle-save/index.ts (insert/delete in saves table, update property.save_count)\n5. Optimistic UI updates: immediate visual feedback, rollback on error\n6. Create saved properties screen (app/(tabs)/saved.tsx) showing user's saves with property cards\n7. Query: SELECT properties.* FROM saves JOIN properties ON saves.property_id = properties.id WHERE saves.user_id = current_user AND saves.deleted_at IS NULL ORDER BY saves.created_at DESC\n8. Property card component: thumbnail (video first frame or placeholder), price, address, bedrooms/bathrooms, tap to detail\n9. Swipe-to-delete from saved list\n10. Empty state when no saved properties\n11. Test: Like persists, save persists, saved list updates",
@@ -1363,7 +1364,7 @@
         "expansionPrompt": "Break down engagement features into: (1) create LikeButton component with animation, (2) create Edge Function toggle-like with atomic count update, (3) create SaveButton component, (4) create Edge Function toggle-save with atomic count update, (5) implement optimistic UI with error rollback hooks, (6) create saved properties screen with query and property cards, (7) add swipe-to-delete and empty state"
       },
       {
-        "id": 14,
+        "id": "14",
         "title": "Create WhatsApp contact with automatic lead generation",
         "description": "Implement contact button that opens WhatsApp with pre-filled message and creates lead record via Edge Function",
         "details": "1. Create contact button component on property detail and feed overlay\n2. Edge Function: supabase/functions/contact-agent/index.ts\n3. Input: { propertyId: string }\n4. Logic: (a) Get property and agent info, (b) Check if lead already exists (leads table unique on agent_id + user_id), (c) If not exists, insert lead with status='new', (d) Insert lead_origin_properties linking lead to property, (e) Increment property.contact_count, (f) Return agent phone number and pre-filled message\n5. Pre-filled WhatsApp message template: 'Hola [Agent Name], vi tu propiedad en Urbea: [Property Address] - [Price]. Me gustaría recibir más información.'\n6. Open WhatsApp using Linking.openURL(`whatsapp://send?phone=${phone}&text=${encodeURIComponent(message)}`)\n7. Handle case where WhatsApp not installed (show error or fallback to SMS)\n8. Idempotent: multiple taps don't create duplicate leads\n9. Show toast confirmation: 'Contacto enviado'\n10. Test: Contact creates lead, opens WhatsApp, no duplicates",
@@ -1461,7 +1462,7 @@
         "expansionPrompt": "Break down contact flow into: (1) create ContactAgentButton component for property detail and feed, (2) create Edge Function scaffold with input validation, (3) implement property and agent info retrieval, (4) implement idempotent lead creation checking leads_agent_user_unique_active constraint, (5) insert lead_origin_properties and increment contact_count atomically, (6) generate pre-filled WhatsApp message with property details, (7) implement WhatsApp deep link with fallback and toast confirmation"
       },
       {
-        "id": 15,
+        "id": "15",
         "title": "Build agent CRM with lead list and status management",
         "description": "Create CRM screen for agents to view their leads, update lead status through 7-state funnel, and see property origin",
         "details": "1. Create CRM screen (app/(tabs)/crm.tsx) for agents only (hide for non-agents)\n2. Query: SELECT leads.*, users.full_name, users.profile_photo_url, lead_origin_properties.property_id FROM leads JOIN users ON leads.user_id = users.id LEFT JOIN lead_origin_properties ON leads.id = lead_origin_properties.lead_id WHERE leads.agent_id = current_user AND leads.deleted_at IS NULL ORDER BY leads.updated_at DESC\n3. Lead card component: User photo/name, lead status badge, property thumbnail, time since last update, tap to expand\n4. Expanded view: Status selector dropdown (7 states: new, contacted, qualified, visit_scheduled, visit_done, negotiation, closed), notes textarea, view property button, contact user button (WhatsApp)\n5. Edge Function: supabase/functions/update-lead-status/index.ts (validate status transition, update lead.status and lead.updated_at, optionally add note to lead metadata)\n6. Filter tabs: All, New, In Progress (contacted-negotiation), Closed\n7. Search by user name\n8. Empty state for new agents\n9. Test: Lead status updates, list filters work, property link works",
@@ -1586,7 +1587,7 @@
         "expansionPrompt": "Break down CRM into: (1) create CRM screen with role guard for agents, (2) implement leads query with user info and property origin joins, (3) build LeadCard component with status badge and time, (4) create expanded lead view with 7-state status selector, (5) add notes, view property, and WhatsApp contact buttons, (6) create Edge Function update-lead-status with validation, (7) implement filter tabs (All, New, In Progress, Closed), (8) add search by user name, (9) implement empty state and owner visibility of agent leads"
       },
       {
-        "id": 16,
+        "id": "16",
         "title": "Create agent profile screen with published properties grid",
         "description": "Build agent profile view showing photo, name, agency, bio, and grid of their active published properties",
         "details": "1. Create profile screen (app/profile/[id].tsx) for viewing any agent\n2. Create own profile tab (app/(tabs)/profile.tsx) for current user\n3. Fetch agent data: user, user_preferences, agency, agency_member\n4. Display: Profile photo (large), full name, agency name, member since date, bio (if in user_preferences)\n5. Properties section: Grid layout (2 columns) showing agent's properties\n6. Query: SELECT * FROM properties WHERE owner_user_id = agent_id AND status IN ('active', 'paused') AND deleted_at IS NULL ORDER BY published_at DESC\n7. Property card in grid: Video thumbnail, price overlay, status badge if paused\n8. Tap property card to navigate to detail\n9. Edit profile button (only on own profile) to update photo/bio\n10. Logout button (only on own profile)\n11. Test: Profile shows correct data, properties grid loads, navigation works",
@@ -1675,7 +1676,7 @@
         "expansionPrompt": "Break down profile screen into: (1) create profile screen routes for viewing any agent and own profile, (2) implement agent data fetching with table joins (users, agencies, agency_members), (3) build profile header UI with agent info, (4) implement properties grid with 2-column FlatList, (5) create property card component with video thumbnail, (6) add edit/logout buttons and empty state"
       },
       {
-        "id": 17,
+        "id": "17",
         "title": "Create my properties management screen",
         "description": "Build screen for agents to view, edit, pause, and close their own property listings",
         "details": "1. Create my listings screen (app/(tabs)/listings.tsx) or (app/profile/my-listings.tsx)\n2. Query: SELECT properties.*, COUNT(property_videos.id) as video_count FROM properties LEFT JOIN property_videos ON properties.id = property_videos.property_id WHERE properties.owner_user_id = current_user AND properties.deleted_at IS NULL GROUP BY properties.id ORDER BY properties.created_at DESC\n3. Property list item: Thumbnail, address, price, status badge (draft/active/paused/closed), stats (views, likes, saves, contacts), three-dot menu\n4. Menu actions: Edit (navigate to edit form), Pause/Unpause (update status), Close (mark as rented/sold, select closed_reason), Delete (soft delete)\n5. Edge Function: supabase/functions/update-property-status/index.ts (validate transition, update status and closed_reason if closing)\n6. Filter tabs: All, Active, Paused, Closed\n7. Edit form pre-fills publication wizard with existing data\n8. Confirmation dialog for close/delete actions\n9. Empty state for agents with no properties yet\n10. Test: Status changes work, edit loads correct data, close requires reason",
@@ -1787,7 +1788,7 @@
         "expansionPrompt": "Break down my listings into: (1) create screen with layout and navigation, (2) implement property fetching with video count, (3) build property list item with stats, (4) add three-dot menu with actions, (5) create Edge Function update-property-status, (6) implement filter tabs by status, (7) add confirmation dialogs for close/delete with reason selection, (8) implement edit flow pre-filling publication wizard"
       },
       {
-        "id": 18,
+        "id": "18",
         "title": "Seed demo data: 3-5 agencies with 10-20 properties and videos",
         "description": "Create seed data script to populate database with realistic demo agencies, agents, and properties with videos for testing",
         "details": "1. Extend supabase/seed.sql with demo data\n2. Create 3-5 agencies: Real estate names for Guadalajara area (e.g., 'Inmobiliaria GDL Premium', 'Casas y Terrenos del Oeste')\n3. Create owner + 2-3 agents per agency (total ~15 agents)\n4. Use auth.users for test accounts: demo+agent1@urbea.mx, etc., with known passwords\n5. Create 10-20 properties distributed across agencies\n6. Property variety: Mix of rent/sale, house/apartment, different zones (Providencia, Chapultepec, Americana, Zapopan, Tlaquepaque), price ranges (5k-50k rent, 2M-15M sale), bedrooms (1-4), with realistic addresses\n7. For videos: Use 3-5 sample vertical real estate videos (find royalty-free or create simple ones)\n8. Upload sample videos to storage bucket with script\n9. Insert property_videos records with storage_path pointing to uploaded videos, status='ready'\n10. Create some likes, saves, leads between demo users for realistic CRM\n11. Document how to reset seed data: supabase db reset\n12. Test: Seed data loads, feed shows properties, CRM has leads",
@@ -1893,7 +1894,7 @@
         "expansionPrompt": "Break down seeding into: (1) extend seed.sql with 3-5 Guadalajara agencies, (2) create owners and agents with test accounts, (3) create 10-20 properties with varied types and locations, (4) source 3-5 royalty-free vertical real estate videos, (5) create script to upload videos and insert property_videos records, (6) create demo likes, saves, and leads for CRM testing, (7) document reset process and verify seed data loads correctly"
       },
       {
-        "id": 19,
+        "id": "19",
         "title": "Design branding and component system (pending client approval)",
         "description": "Create Urbea brand identity (logo, color palette, typography) and design system using CODE-FIRST approach (theme.ts + component library in preview), deferring Figma to Full/Dev seat availability",
         "status": "pending",
@@ -2034,7 +2035,7 @@
         "expansionPrompt": "Break down design system into: (1) create logo concepts and color palette proposals, (2) select typography for mobile readability, (3) create Figma file with design tokens, (4) design component library with variants, (5) design key screens (feed, detail, wizard, CRM), (6) use Figma MCP for design-to-code translation, (7) implement design tokens in theme.ts, (8) create base component library in React Native, (9) apply design system to all screens with dark/light modes. NOTE: Per PRD §8, wait for client approval before starting."
       },
       {
-        "id": 20,
+        "id": "20",
         "title": "Polish, testing, and deploy to remote Supabase for validation",
         "description": "Final polish pass, comprehensive testing with real data, performance optimization, and deployment to production Supabase project",
         "details": "1. Code review and refactoring pass: Remove dead code, improve TypeScript types, add error boundaries\n2. Performance optimization: Check video memory leaks, optimize image loading, add loading states everywhere\n3. Accessibility: Add labels for screen readers, ensure sufficient contrast, test with TalkBack/VoiceOver\n4. Error handling audit: Ensure all API calls have try/catch, show user-friendly errors\n5. Test all user flows end-to-end: (a) Admin creates agency+owner, (b) Owner generates invitation, (c) Agent redeems code and registers, (d) Agent publishes property, (e) Property appears in feed/map, (f) Another agent likes/saves/contacts, (g) Original agent sees lead in CRM, (h) Agent updates lead status\n6. Test edge cases: Network offline, slow uploads, invalid data, expired tokens, deleted properties\n7. Apply migration 0011 to remote Supabase: supabase db push\n8. Deploy Edge Functions to remote: supabase functions deploy\n9. Test against production Supabase with seed data\n10. Build production app bundle with EAS: eas build --platform ios/android\n11. Internal testing with TestFlight/Internal App Sharing\n12. Create demo checklist document for client validation\n13. Monitor logs and fix critical bugs\n14. Document known issues and post-demo improvements",
@@ -2216,14 +2217,12 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-06-26T04:35:07.850Z",
+      "lastModified": "2026-06-26T06:56:49.053Z",
       "taskCount": 20,
       "completedCount": 7,
       "tags": [
         "master"
-      ],
-      "created": "2026-06-26T04:35:09.627Z",
-      "description": "Tasks for master context"
+      ]
     }
   }
 }
