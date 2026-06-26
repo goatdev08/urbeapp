@@ -703,10 +703,11 @@
             "title": "Create wizard layout with step indicator and navigation",
             "description": "Build the wizard container layout (app/publish/_layout.tsx) with a step indicator showing current progress (1/3, 2/3, 3/3) and shared navigation logic for back/next between steps.",
             "dependencies": [],
-            "details": "Create app/publish/_layout.tsx using Expo Router's Stack navigator. Implement a StepIndicator component showing 3 steps with visual distinction for current/completed/pending states. Include a header with back button that navigates to previous step (or exits wizard on step 1). Use Slot from expo-router to render child screens. Export shared types for wizard navigation props. Follow the PRD hybrid design: light mode for publication screens. Structure: app/publish/ with _layout.tsx, step1.tsx, step2.tsx, step3.tsx.",
-            "status": "pending",
+            "details": "Create app/publish/_layout.tsx using Expo Router's Stack navigator. Implement a StepIndicator component showing 3 steps with visual distinction for current/completed/pending states. Include a header with back button that navigates to previous step (or exits wizard on step 1). Use Slot from expo-router to render child screens. Export shared types for wizard navigation props. Follow the PRD hybrid design: light mode for publication screens. Structure: app/publish/ with _layout.tsx, step1.tsx, step2.tsx, step3.tsx.\n<info added on 2026-06-26T04:31:13.457Z>\nI need to analyze the codebase to understand the existing routing structure, components, and context patterns before providing a comprehensive update for this subtask.Confirmed PublishFormProvider exists at mobile/src/features/publish/store/PublishFormContext.tsx (subtarea 8.7) with state/update/reset API matching AuthContext pattern. PrimaryButton exists at mobile/src/components/PrimaryButton.tsx with surface prop (light/dark). Route groups structure confirmed: root _layout.tsx wraps all with AuthProvider, (protected)/_layout uses ProtectedLayout guard, admin/_layout uses AdminLayout guard. app/publish/ will be a top-level peer to (protected) and admin — needs its own guard or lives inside (protected). StepIndicator will derive current step from route segments using useSegments from expo-router (1-indexed from publish/step1, step2, step3). Stack with headerShown:false confirmed as pattern (see root and existing layouts). Verified against existing patterns: thin wrapper layout file delegating to feature module is the established pattern (admin/_layout.tsx, (protected)/_layout.tsx).\n\napp/publish/_layout.tsx wraps children with PublishFormProvider, uses Stack with headerShown:false, and renders StepIndicator reading current step from route segments. StepIndicator component inline in _layout or extracted to mobile/src/features/publish/components/StepIndicator.tsx (follow feature-based organization). PrimaryButton already supports surface prop and icon. Back button logic in header: router.back on step2/step3, router.replace on step1 exits wizard. Placement: publish/ at app root level (peer to (protected), admin) — requires auth guard (session required to publish). Recommendation: nested inside (protected) as app/(protected)/publish/ to inherit existing auth guard, or add ProtectedLayout wrapper in publish/_layout if kept at root.\n</info added on 2026-06-26T04:31:13.457Z>\n<info added on 2026-06-26T04:34:04.145Z>\nFiles created: mobile/app/(protected)/publish/_layout.tsx (wizard layout with PublishFormProvider, WizardHeader containing persistent StepIndicator, Stack with headerShown:false), mobile/src/components/StepIndicator.tsx (dots with SALVIA color for active step, gray for inactive, larger dot for current step, label 'Paso X de Y'). Routing decision: placed in (protected)/publish/ to inherit ProtectedLayout auth guard without duplication, resulting URLs /publish/step1, /publish/step2, /publish/step3. WizardHeader uses useSegments from expo-router to derive current step index from route segment (step1→1, step2→2, step3→3). Verification passed: pnpm tsc --noEmit returned 0 errors.\n</info added on 2026-06-26T04:34:04.145Z>\n<info added on 2026-06-26T04:34:47.177Z>\nImplemented and verified. Created wizard layout at mobile/app/(protected)/publish/_layout.tsx wrapping Stack with PublishFormProvider and persistent WizardHeader component. WizardHeader uses useSegments() hook from expo-router to extract current step from route segments (step1→1, step2→2, step3→3) and passes to StepIndicator. StepIndicator component created at mobile/src/components/StepIndicator.tsx with dot-based progress visualization using SALVIA brand color (#5A8A5E) for active step, gray for inactive/pending, larger dot size for current step, label displays 'Paso X de Y'. Wizard placed under (protected) route group to leverage existing ProtectedLayout auth guard without duplication, resulting URLs /publish/step1, /publish/step2, /publish/step3. TypeScript compilation verified clean with pnpm tsc --noEmit.\n</info added on 2026-06-26T04:34:47.177Z>",
+            "status": "done",
             "testStrategy": "Verify: (1) Step indicator displays correctly on each screen, (2) Back button works on each step, (3) Layout renders child screens properly, (4) Visual styles match hybrid design (light mode).",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-06-26T04:34:53.956Z"
           },
           {
             "id": 2,
@@ -820,7 +821,7 @@
         "complexity": 8,
         "recommendedSubtasks": 10,
         "expansionPrompt": "Break down publication wizard into: (1) create wizard layout with step indicator, (2) build step 1 for operation/property type selection, (3) build step 2 base with price and property details, (4) integrate Google Places API for address autocomplete, (5) implement map picker for exact location, (6) add niche filters toggles and step 2 validation, (7) implement form state management with Context/Zustand, (8) build step 3 with video upload and preview, (9) create Edge Function for property publication, (10) connect wizard to Edge Function and test complete flow",
-        "updatedAt": "2026-06-26T04:29:51.089Z"
+        "updatedAt": "2026-06-26T04:34:53.956Z"
       },
       {
         "id": "9",
@@ -2214,7 +2215,7 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-06-26T04:29:51.090Z",
+      "lastModified": "2026-06-26T04:34:53.956Z",
       "taskCount": 20,
       "completedCount": 7,
       "tags": [
