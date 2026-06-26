@@ -729,10 +729,11 @@
             "dependencies": [
               1
             ],
-            "details": "Create app/publish/step2.tsx with a scrollable form containing: price (numeric input, required, format with currency), bedrooms (numeric picker 0-10+), bathrooms (numeric picker 0-10+), square_meters (numeric input, optional), description (multiline textarea, optional, max 2000 chars). Use controlled inputs connected to form state. Add input validation (price > 0, bedrooms/bathrooms >= 0). Include clear labels and placeholders in Spanish. Make the form scrollable to accommodate all fields plus location section. Style inputs consistently with the light-mode design.",
-            "status": "pending",
+            "details": "Create app/publish/step2.tsx with a scrollable form containing: price (numeric input, required, format with currency), bedrooms (numeric picker 0-10+), bathrooms (numeric picker 0-10+), square_meters (numeric input, optional), description (multiline textarea, optional, max 2000 chars). Use controlled inputs connected to form state. Add input validation (price > 0, bedrooms/bathrooms >= 0). Include clear labels and placeholders in Spanish. Make the form scrollable to accommodate all fields plus location section. Style inputs consistently with the light-mode design.\n<info added on 2026-06-26T06:57:42.814Z>\nImplementation approach: Create app/(protected)/publish/step2.tsx as a scrollable form screen with basic property detail inputs (price, bedrooms, bathrooms, square_meters, description). All inputs write to PublishFormContext via the update() method. Price input is numeric with validation >0 and marked required. Bedrooms/bathrooms/square_meters are numeric steppers (optional, can default to 0 or undefined). Description is a multiline TextInput with Spanish placeholder. Navigation uses router.push to /publish/step3 with a reused PrimaryButton component. Form layout leaves structural placeholders (commented sections or empty View blocks) for future integration: Google Places autocomplete input (task 8.4), map picker (task 8.5), and pet_friendly/allows_no_guarantor/student_friendly toggles plus final validation (task 8.6). No actual validation logic beyond basic price >0 check; comprehensive validation deferred to 8.6. Design follows light-mode styling consistent with step1.tsx. Use KeyboardAwareScrollView or ScrollView to ensure all inputs are accessible when keyboard is open.\n</info added on 2026-06-26T06:57:42.814Z>\n<info added on 2026-06-26T07:00:22.807Z>\nFiles created: mobile/app/(protected)/publish/step2.tsx (main Step 2 screen with KeyboardAvoidingView + ScrollView wrapper, price TextInput with MXN hint and $ prefix/suffix validation, square_meters TextInput, description multiline TextInput with Spanish placeholder) and mobile/src/features/publish/components/NumericStepper.tsx (reusable +/− stepper component used for bedrooms and bathrooms, configurable min/max, defaults 0–20). All inputs write to PublishFormContext via update(). Temporary \"Next\" button validation: price !== null && price > 0 (explicit comment notes 8.6 will replace with validate_step2(state).valid for comprehensive validation). Integration anchors left as comments: \"8.4: address autocomplete\", \"8.5: map picker\", \"8.6: niche toggles\". Verification: pnpm tsc --noEmit passed (0 errors), pnpm lint passed (0 errors). Step 2 base implementation complete; screen functional and ready for location and niche feature integration in subsequent subtasks.\n</info added on 2026-06-26T07:00:22.807Z>\n<info added on 2026-06-26T07:01:11.550Z>\nBased on the user request, here is the new text content that should be appended to the subtask's details:\n\nCompleted: Created app/(protected)/publish/step2.tsx with KeyboardAvoidingView + ScrollView wrapper. Price field implemented as TextInput with MXN currency hint and $ prefix/suffix validation, marked required. Bedrooms and bathrooms use new reusable NumericStepper component (min 0, max 20). Square meters is optional TextInput. Description is multiline TextInput with Spanish placeholder. Created mobile/src/features/publish/components/NumericStepper.tsx as configurable +/- stepper component with min/max bounds, defaults 0-20. All inputs connected to PublishFormContext via update() method. Temporary Next button validation: price !== null && price > 0 (explicit comment indicates subtask 8.6 will replace with validate_step2(state).valid for comprehensive validation). Integration anchors left as inline comments for future subtasks: {/* 8.4 address autocomplete */}, {/* 8.5 map picker */}, {/* 8.6 niche toggles */}. Verification: pnpm tsc --noEmit passed with 0 errors, pnpm lint passed with 0 errors. Step 2 base screen is functional and ready for location and niche feature integration in subsequent subtasks.\n</info added on 2026-06-26T07:01:11.550Z>",
+            "status": "done",
             "testStrategy": "Verify: (1) All numeric inputs accept valid values and reject invalid, (2) Price displays formatted correctly, (3) Description textarea works with character limit, (4) Form scrolls properly on smaller screens.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-06-26T07:01:18.190Z"
           },
           {
             "id": 4,
@@ -823,7 +824,7 @@
         "complexity": 8,
         "recommendedSubtasks": 10,
         "expansionPrompt": "Break down publication wizard into: (1) create wizard layout with step indicator, (2) build step 1 for operation/property type selection, (3) build step 2 base with price and property details, (4) integrate Google Places API for address autocomplete, (5) implement map picker for exact location, (6) add niche filters toggles and step 2 validation, (7) implement form state management with Context/Zustand, (8) build step 3 with video upload and preview, (9) create Edge Function for property publication, (10) connect wizard to Edge Function and test complete flow",
-        "updatedAt": "2026-06-26T06:56:49.053Z"
+        "updatedAt": "2026-06-26T07:01:18.190Z"
       },
       {
         "id": "9",
@@ -2217,7 +2218,7 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-06-26T06:56:49.053Z",
+      "lastModified": "2026-06-26T07:01:18.190Z",
       "taskCount": 20,
       "completedCount": 7,
       "tags": [
