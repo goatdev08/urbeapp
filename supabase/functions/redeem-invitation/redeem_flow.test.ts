@@ -73,6 +73,10 @@ function admin_ok(): FakeAdmin {
       this.delete_calls.push(uid);
       return Promise.resolve();
     },
+    // redeem-invitation no usa invitación por email; no-op para satisfacer AuthAdminClient.
+    generateInviteLink(_params) {
+      return Promise.resolve({ data: null, error: null });
+    },
   } as FakeAdmin;
 }
 
@@ -90,6 +94,10 @@ function admin_duplicate(): FakeAdmin {
     deleteUser(uid: string) {
       this.delete_calls.push(uid);
       return Promise.resolve();
+    },
+    // redeem-invitation no usa invitación por email; no-op para satisfacer AuthAdminClient.
+    generateInviteLink(_params) {
+      return Promise.resolve({ data: null, error: null });
     },
   } as FakeAdmin;
 }

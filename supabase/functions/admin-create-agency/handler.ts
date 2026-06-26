@@ -18,6 +18,7 @@ import {
 } from "../_shared/agency.ts";
 import type { AuthAdminClient } from "../_shared/auth_user.ts";
 import { create_owner_invite } from "../_shared/auth_user.ts";
+import { generate_invitation_code, sha256_hex } from "../_shared/crypto.ts";
 
 // Regex RFC 5322 simplificado — igual al de validation.ts
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -187,6 +188,10 @@ export async function handler(
     invite_action_link = invite_result.action_link;
   }
 
+  // Generar token inicial de invitación (7.6): plano → se devuelve al admin; hash → se persiste.
+  const plain_token = generate_invitation_code(8);
+  const token_hash = await sha256_hex(plain_token);
+
   // Crear agencia atómicamente (RPC)
   const createResult = await deps!.agencyCreator!.create_atomic({
     name,
@@ -196,6 +201,7 @@ export async function handler(
     contact_email,
     created_by_user_id: verifyResult.user_id,
     owner_user_id,
+    token_hash,
   });
 
   if (!createResult.ok) {
@@ -222,7 +228,7 @@ export async function handler(
     return error_response(createResult.error_code, message, status);
   }
 
-  // Construir respuesta de éxito (7.5 incluye owner_user_id e invite_action_link)
+  // Construir respuesta de éxito (7.5: owner_user_id + invite_action_link; 7.6: plain_token + token_id)
   const response_body: Record<string, string> = {
     agency_id: createResult.agency_id,
   };
@@ -231,6 +237,11 @@ export async function handler(
   }
   if (invite_action_link !== undefined) {
     response_body.invite_action_link = invite_action_link;
+  }
+  // plain_token: se devuelve al admin SOLO en la respuesta; NUNCA se persiste en BD.
+  response_body.plain_token = plain_token;
+  if (createResult.token_id !== undefined) {
+    response_body.token_id = createResult.token_id;
   }
 
   return json_response(response_body, 201);

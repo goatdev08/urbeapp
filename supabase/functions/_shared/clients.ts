@@ -180,7 +180,8 @@ function extract_agency_error_code(message: string): string {
 }
 
 /**
- * Adaptador real de AgencyCreator sobre la RPC admin_create_agency_atomic (migración 0016).
+ * Adaptador real de AgencyCreator sobre la RPC admin_create_agency_atomic (migración 0016, 9 params).
+ * Llama la versión de 9 parámetros que inserta token + admin_actions en la misma transacción.
  * Mapea los errores P0001 al error_code de negocio correspondiente.
  */
 export function make_agency_creator(client: SupabaseClient): AgencyCreator {
@@ -196,12 +197,21 @@ export function make_agency_creator(client: SupabaseClient): AgencyCreator {
         p_contact_email: params.contact_email ?? null,
         p_created_by_user_id: params.created_by_user_id,
         p_owner_user_id: params.owner_user_id ?? null,
+        p_token_hash: params.token_hash ?? null,
+        p_token_max_uses: params.token_max_uses ?? null,
       });
       if (error) {
         const error_code = extract_agency_error_code(error.message);
         return { ok: false, error_code };
       }
-      return { ok: true, agency_id: data as string };
+      // La RPC de 9 params devuelve table(agency_id, agency_member_id, token_id).
+      const row = Array.isArray(data) ? data[0] : data;
+      return {
+        ok: true,
+        agency_id: row.agency_id,
+        agency_member_id: row.agency_member_id ?? undefined,
+        token_id: row.token_id ?? undefined,
+      };
     },
   };
 }

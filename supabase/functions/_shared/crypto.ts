@@ -20,9 +20,11 @@ export async function sha256_hex(plaintext: string): Promise<string> {
  * es sha256_hex(código) en el campo agency_invitation_tokens.token.
  *
  * Alfabeto: A-Z, a-z, 0-9 (62 chars).
- *
- * STUB fase RED 7.6 — implementación pendiente en fase GREEN.
  */
-export function generate_invitation_code(_len: number = 8): string {
-  throw new Error("not_implemented: generate_invitation_code");
+export function generate_invitation_code(len: number = 8): string {
+  const alphabet =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  const bytes = new Uint8Array(len);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => alphabet[b % 62]).join("");
 }

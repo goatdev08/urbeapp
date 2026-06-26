@@ -13,8 +13,10 @@ select plan(20);
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-000000000a01', 'admin_test@urbea.mx'),
   ('00000000-0000-0000-0000-000000000a02', 'admin2_test@urbea.mx'),
-  -- owner para los tests de 7.5
-  ('00000000-0000-0000-0000-000000000a03', 'owner_test@urbea.mx');
+  -- owner para los tests de 7.5 (a03 se usa en #10 y #13; ya tendrá membresía activa)
+  ('00000000-0000-0000-0000-000000000a03', 'owner_test@urbea.mx'),
+  -- owner fresco para el test de éxito de 7.6 (#15): no tiene membresía previa
+  ('00000000-0000-0000-0000-000000000a04', 'owner2_test@urbea.mx');
 
 -- Agencia existente para tests de unicidad de slug y name
 insert into public.agencies (id, name, slug, status, created_by_user_id) values
@@ -98,7 +100,9 @@ select throws_ok(
 );
 
 -- ── 8) created_by_user_id NULL → la RPC debe rechazarlo ─────────────────────
--- Puede ser NOT NULL en el INSERT o un RAISE explícito en la función.
+-- La RPC levanta RAISE con errcode=P0001 y msg 'created_by_user_id es requerido'.
+-- Usamos la forma de 4 args (sql, errcode, errmsg, description) para no ambigüedad:
+-- throws_ok(sql, text) usa octet_length: si != 5 trata el 2do arg como errmsg a casar.
 select throws_ok(
   $$ select public.admin_create_agency_atomic(
        'Agencia Sin Owner'::text,
@@ -107,18 +111,20 @@ select throws_ok(
        null::text,
        null::text,
        null::uuid) $$,
+  'P0001',
+  'created_by_user_id es requerido',
   'created_by_user_id NULL debe ser rechazado por la RPC'
 );
 
--- ── 9) Firma extendida con p_owner_user_id (7.5) — RED: función no existe aún ──
--- La RPC debe aceptar 7 parámetros: name, slug, contact_name, contact_phone,
--- contact_email, created_by_user_id, owner_user_id.
--- En RED, has_function con 7 parámetros falla porque solo existe la versión de 6.
+-- ── 9) Firma unificada de 9 params con DEFAULTs en los trailing tres ────────────
+-- La función única acepta: name, slug, contact_name, contact_phone, contact_email,
+-- created_by_user_id, owner_user_id, token_hash, token_max_uses.
+-- Llamadas con 6/7 args resuelven por defaults — no hay overload de 7 params.
 select has_function(
   'public',
   'admin_create_agency_atomic',
-  ARRAY['text', 'text', 'text', 'text', 'text', 'uuid', 'uuid'],
-  'admin_create_agency_atomic con p_owner_user_id (7 params) debe existir'
+  ARRAY['text', 'text', 'text', 'text', 'text', 'uuid', 'uuid', 'text', 'integer'],
+  'admin_create_agency_atomic firma unificada de 9 params (trailing 3 con DEFAULT) debe existir'
 );
 
 -- ── 10) Llamada extendida: insert con owner_user_id sin error ────────────────
@@ -184,7 +190,8 @@ select has_function(
 );
 
 -- ── 15) Llamada con 9 params y token_hash se ejecuta sin error ───────────────
--- En RED, la función no acepta 9 params → lives_ok falla.
+-- Usa owner fresco a04 (sin membresía previa) para que la llamada sea un caso de éxito.
+-- a03 ya tiene membresía activa desde test #10 → usarlo aquí levantaría ALREADY_ACTIVE_MEMBER.
 -- Hash de prueba (64 chars hex válido): representa sha256('ABCD1234') en el test.
 select lives_ok(
   $$ select public.admin_create_agency_atomic(
@@ -194,7 +201,7 @@ select lives_ok(
        null::text,
        null::text,
        '00000000-0000-0000-0000-000000000a01'::uuid,
-       '00000000-0000-0000-0000-000000000a03'::uuid,
+       '00000000-0000-0000-0000-000000000a04'::uuid,
        'aabbccddeeff0011aabbccddeeff0011aabbccddeeff0011aabbccddeeff0011'::text,
        null::integer) $$,
   'admin_create_agency_atomic: llamada con 9 params y p_token_hash se ejecuta sin error'
@@ -231,25 +238,29 @@ select is(
   'agency_invitation_tokens: current_uses = 0 al crear el token inicial'
 );
 
--- ── 19) admin_actions: existe 1 fila con action_type=create_agency ────────────
--- Conteo de filas con action_type='create_agency' para el admin del test 15.
+-- ── 19) admin_actions: existe 1 fila con action_type=create_agency y token_id ──
+-- La función unificada inserta admin_actions en cada llamada exitosa (tests #3, #10, #15…).
+-- Filtramos por token_id not null para aislar la fila del test #15 (único con token).
 select is(
   (select count(*)::integer
      from public.admin_actions
     where action_type = 'create_agency'
       and entity_type = 'agency'
-      and admin_id = '00000000-0000-0000-0000-000000000a01'::uuid),
+      and admin_id = '00000000-0000-0000-0000-000000000a01'::uuid
+      and (new_values->>'token_id') is not null),
   1,
-  'admin_actions: existe 1 fila con action_type=create_agency, entity_type=agency, admin_id=admin'
+  'admin_actions: existe exactamente 1 fila con token_id not null (la del test con p_token_hash)'
 );
 
 -- ── 20) admin_actions: new_values contiene token_id (not null) ────────────────
+-- Mismo filtro que #19: aislamos la fila del test #15 (token_id not null).
 select is(
   (select (new_values->>'token_id') is not null
      from public.admin_actions
     where action_type = 'create_agency'
       and entity_type = 'agency'
       and admin_id = '00000000-0000-0000-0000-000000000a01'::uuid
+      and (new_values->>'token_id') is not null
     limit 1),
   true,
   'admin_actions: new_values contiene token_id (not null) tras crear agencia con token'
