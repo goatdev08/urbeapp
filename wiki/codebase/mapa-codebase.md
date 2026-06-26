@@ -1,6 +1,6 @@
 ---
 tipo: codebase
-actualizado: 2026-06-17
+actualizado: 2026-06-26
 ---
 
 # Mapa del codebase
@@ -17,11 +17,14 @@ Detalle de tablas/migraciones en [[db-schema-map]].
 | Propiedades/Video | `..._properties_and_videos.sql` | [[propiedades-y-video]] |
 | Storage (video) | `..._storage_property_videos.sql` (0011: bucket `property-videos` + col `storage_path` + RLS INSERT/SELECT en `storage.objects`) · `..._property_videos_ready_requires_storage.sql` (0012: CHECK `ready` exige `storage_path` o `cloudflare_uid`) | [[propiedades-y-video]] |
 | Storage (foto perfil) | `..._profile_photos_storage.sql` (0015, #6: bucket **público** `profile-photos` + RLS por path `auth.uid()` en `storage.objects` + cols `full_name`/`profile_photo_url` en `user_preferences`) | [[onboarding-y-preferencias]] |
+| Publicación (RPC) | `20260625000001_publish_property_rpc.sql` (#8: RPC `publish_property_atomic` SECURITY DEFINER search_path fijo — inserta `properties` status=active + `property_videos` status=ready en 1 tx atómica sin EXCEPTION; `location=ST_Point(lng,lat,4326)`) + rollback | [[propiedades-y-video]] |
+| Edge Functions | `supabase/functions/publish-property/` (#8: handler DI + `index.ts` impls reales `CallerVerifier`[agent/admin]+`PropertyPublisher`; valida payload, 401/403, llama RPC) · `admin-create-agency/` (#7) · `_shared/` (cors/response/auth/validation/clients) | [[propiedades-y-video]], [[inmobiliarias-y-agentes]] |
 | Engagement/CRM | `..._engagement_crm.sql` | [[crm-leads]], [[feed-vertical-video]] |
 | Moderación/Analítica | `..._analytics_moderation_audit.sql` | [[moderacion]], [[notificaciones]] |
 | RLS/Seguridad | `..._rls_helpers_and_policies.sql`, `..._security_perf_hardening.sql` | [[rls-seguridad]] |
 | Legal | `..._user_profile_legal.sql` | [[legal-consentimientos]] |
-| Tests | `supabase/tests/01_constraints_test.sql`, `02_rls_test.sql`, `03_storage_test.sql`, `03_redeem_invitation_test.sql`, `04_profile_photos_test.sql` (#6: 17 asserts bucket+RLS+cols), `05_admin_create_agency_test.sql` (#7: RPC 0016, plan 20) | [[rls-seguridad]] |
+| Tests | `supabase/tests/01_constraints_test.sql`, `02_rls_test.sql`, `03_storage_test.sql`, `03_redeem_invitation_test.sql`, `04_profile_photos_test.sql` (#6: 17 asserts bucket+RLS+cols), `05_admin_create_agency_test.sql` (#7: RPC 0016, plan 20), `06_publish_property_rpc_test.sql` (#8: RPC publish_property_atomic, plan 8) | [[rls-seguridad]] |
+| Tests EF/hooks (mobile+deno) | `supabase/functions/publish-property/handler.test.ts` (#8: 43 Deno tests, DI) · `mobile/src/features/publish/__tests__/{useVideoUpload,usePublish}.test.tsx` (#8: 14+10 Jest tests) | [[propiedades-y-video]] |
 
 ## Documentación de producto
 | Concepto | Fuente |
@@ -52,7 +55,7 @@ Estructura prevista por feature (carpetas `src/{features,components,theme,hooks}
 - `src/features/feed/` — feed vertical → [[feed-vertical-video]]
 - `src/features/search/` — filtros → [[busqueda-y-filtros]]
 - `src/features/map/` — mapa → [[mapa-y-ubicacion]]
-- `src/features/publish/` — wizard 3 pasos + subida video → [[propiedades-y-video]]
+- `src/features/publish/` — **wizard 3 pasos + subida video (tarea #8, vivo)**: rutas `app/(protected)/publish/_layout.tsx` (`PublishFormProvider` envuelve Stack + `WizardHeader` con `useSegments()`→StepIndicator), `step1.tsx` (operación rent/sale/both + tipo casa/departamento/local/oficina/terreno), `step2.tsx` (price/recámaras/baños/m²/descripción + `AddressAutocomplete` + `MapPicker` + toggles nicho + `validate_step2`), `step3.tsx` (expo-image-picker video → preview expo-video → upload → botón Publicar). `store/PublishFormContext.tsx` (`usePublishForm`→{state,update,reset}), `store/types.ts` (`PublishFormState`/`PublishFormPayload`), `validation.ts` (`validate_step1/2/3`, `get_property_payload`). Componentes: `SelectionCard`, `NumericStepper`, `AddressAutocomplete` (Places API New REST+fetch, key `EXPO_PUBLIC_GOOGLE_PLACES_API_KEY`, degrada sin key), `MapPicker` (react-native-maps, marker draggable, no escribe coords falsas). Hooks (críticos, TDD): `hooks/useVideoUpload.ts` (genera video_id UUID → sube a `{user_id}/{video_id}.mp4` bucket property-videos, escribe storage_path solo en éxito), `hooks/usePublish.ts` (invoca EF `publish-property`, reset en éxito, no-reset en error). Componente reutilizado fuera del feature: `src/components/StepIndicator.tsx`. → [[propiedades-y-video]]
 - `src/features/leads/` — CRM → [[crm-leads]]
 - `src/features/profile/` — perfil
 - `app/admin/` — **panel admin (#7, vivo)**: `_layout.tsx` (guard, re-exporta `src/features/admin/admin-layout.tsx`), `index.tsx` (lista de inmobiliarias, SELECT directo RLS admin), `agencies/create.tsx` (form → invoca `admin-create-agency`), `agencies/[id].tsx` (detalle: token+invite-link de un solo uso vía params + lista de miembros) → [[inmobiliarias-y-agentes]]
