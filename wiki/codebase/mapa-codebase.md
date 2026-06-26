@@ -21,7 +21,7 @@ Detalle de tablas/migraciones en [[db-schema-map]].
 | Moderación/Analítica | `..._analytics_moderation_audit.sql` | [[moderacion]], [[notificaciones]] |
 | RLS/Seguridad | `..._rls_helpers_and_policies.sql`, `..._security_perf_hardening.sql` | [[rls-seguridad]] |
 | Legal | `..._user_profile_legal.sql` | [[legal-consentimientos]] |
-| Tests | `supabase/tests/01_constraints_test.sql`, `02_rls_test.sql`, `03_storage_test.sql`, `03_redeem_invitation_test.sql`, `04_profile_photos_test.sql` (#6: 17 asserts bucket+RLS+cols) | [[rls-seguridad]] |
+| Tests | `supabase/tests/01_constraints_test.sql`, `02_rls_test.sql`, `03_storage_test.sql`, `03_redeem_invitation_test.sql`, `04_profile_photos_test.sql` (#6: 17 asserts bucket+RLS+cols), `05_admin_create_agency_test.sql` (#7: RPC 0016, plan 20) | [[rls-seguridad]] |
 
 ## Documentación de producto
 | Concepto | Fuente |
@@ -55,13 +55,15 @@ Estructura prevista por feature (carpetas `src/{features,components,theme,hooks}
 - `src/features/publish/` — wizard 3 pasos + subida video → [[propiedades-y-video]]
 - `src/features/leads/` — CRM → [[crm-leads]]
 - `src/features/profile/` — perfil
-- `src/features/admin/` — alta de inmobiliarias → [[inmobiliarias-y-agentes]]
+- `app/admin/` — **panel admin (#7, vivo)**: `_layout.tsx` (guard, re-exporta `src/features/admin/admin-layout.tsx`), `index.tsx` (lista de inmobiliarias, SELECT directo RLS admin), `agencies/create.tsx` (form → invoca `admin-create-agency`), `agencies/[id].tsx` (detalle: token+invite-link de un solo uso vía params + lista de miembros) → [[inmobiliarias-y-agentes]]
+- `src/features/admin/` — **`admin-layout.tsx` (#7, vivo)**: guard `role=admin` (isLoading→spinner, sin sesión→/login, no-admin→/(protected), admin→Slot) → [[inmobiliarias-y-agentes]]
 - `src/lib/supabase/` — cliente tipado · `src/components/` — **`PrimaryButton.tsx` (#6, vivo)**: CTA reutilizable liquid-glass salvia (BlurView + overlay opacidad por `surface` light/dark, variantes primary/ghost, loading/disabled/icon) · `src/theme/`
 
 ## Edge Functions — `supabase/functions/` (Deno; correr `deno test/lint/fmt` DESDE este dir)
 **Patrón DI (tarea #5, vivo):** cada función = `handler.ts` (lógica PURA con deps inyectables; lo que importan los tests, offline, sin supabase-js) + `index.ts` (entry de prod: construye deps reales con `Deno.serve`) + `*.test.ts`. Deps externas en `deno.json` (import map: `@supabase/supabase-js`, `@std/assert`). Errores siempre `{error:{code,message}}`. → [[inmobiliarias-y-agentes]], [[rls-seguridad]]
 - `validate-invitation/` — **vivo**: POST `{invitationCode}` → 200 `{agency_name}` (preview del código antes de registrarse) | 404/422/400.
 - `redeem-invitation/` — **vivo**: POST `{invitationCode,email,password,firstName,lastName}` → orquesta: validar token → `auth.admin.createUser` (email_confirm:true) → RPC `redeem_invitation_atomic` (canje atómico) → 200 `{user_id,agency_id,agency_name,agency_member_id}`. **Compensación** `deleteUser` si la RPC falla (no hay tx distribuida auth↔public). `x-forwarded-for` → 1ª IP (param `inet`).
-- `_shared/` — `cors.ts`, `response.ts` (`json_response`/`error_response`), `crypto.ts` (`sha256_hex`; el token se guarda hasheado), `validation.ts` (parseo de payload), `invitation.ts` (`validate_invitation_token`: NOT_FOUND→REVOKED→EXPIRED→MAX_USES→AGENCY_INACTIVE), `auth_user.ts` (`create_agent_auth_user`), `redeem.ts` (contrato + mapeo P0001→HTTP), **`clients.ts`** (adaptadores reales supabase-js `service_role`; ÚNICO sitio que importa supabase-js).
+- `admin-create-agency/` — **vivo (#7)**: POST (requiere JWT admin) `{name,slug,contact_*,owner_email,owner_first_name,owner_last_name}` → verifica `role=admin` (`AdminVerifier`: JWT→`auth.getUser`→`users.role`, 403 si no) → owner por **invitación** (`auth.admin.generateLink({type:'invite'})`, sin password) → RPC **`admin_create_agency_atomic`** (0016: agency+member owner+UPDATE users+token hasheado+admin_actions, atómico) → 201 `{agency_id,owner_user_id,invite_action_link,plain_token,token_id}`. Token plano **solo en la respuesta**; persiste el hash. **Compensación** `deleteUser` si la RPC falla.
+- `_shared/` — `cors.ts`, `response.ts` (`json_response`/`error_response`), `crypto.ts` (`sha256_hex`; el token se guarda hasheado; **`generate_invitation_code(8)`** alfanumérico, #7), `validation.ts` (`parse_redeem_invitation_input`, **`parse_create_agency_input`** #7), `invitation.ts` (`validate_invitation_token`: NOT_FOUND→REVOKED→EXPIRED→MAX_USES→AGENCY_INACTIVE), `auth_user.ts` (`create_agent_auth_user`, **`create_owner_invite`** + `generateInviteLink` en `AuthAdminClient`, #7), `redeem.ts` (contrato + mapeo P0001→HTTP), **`admin_auth.ts`** (`AdminVerifier`, #7), **`agency.ts`** (`AgencyCreator` + mapeo error→HTTP, #7), **`clients.ts`** (adaptadores reales supabase-js `service_role`; ÚNICO sitio que importa supabase-js; `make_admin_verifier`/`make_agency_creator`/`make_auth_admin`).
 - ⚠️ **`service_role` necesita grants DML explícitos** en `public` (migración 0014); sin ellos PostgREST devuelve 403 a la capa de servicio. → [[rls-seguridad]]
 - _Pendientes_: `properties/` (publicación) → [[propiedades-y-video]] · `leads/` (contacto) → [[crm-leads]].
