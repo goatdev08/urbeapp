@@ -189,11 +189,12 @@ export type CreateOwnerInviteResult =
   };
 
 /**
- * Stub — fase RED subtarea 7.5.
+ * Crea un owner de agencia en auth.users vía invitación (sin password).
+ * El owner activa su cuenta usando el action_link que Supabase envía por email.
  *
- * GREEN implementará:
+ * Pasos:
  *   1. admin.generateInviteLink({ email, data: { first_name, last_name } })
- *   2. Si error.message contiene 'already been registered'/'already registered' → EMAIL_ALREADY_EXISTS.
+ *   2. Si error.message contiene 'already been registered' o 'already registered' → EMAIL_ALREADY_EXISTS.
  *   3. Cualquier otro error → AUTH_INVITE_FAILED.
  *   4. Si ok → { ok: true, user_id: data.user.id, action_link: data.action_link }.
  *
@@ -201,10 +202,46 @@ export type CreateOwnerInviteResult =
  * el owner activa su cuenta usando el action_link recibido por email.
  */
 export async function create_owner_invite(
-  _admin: AuthAdminClient,
-  _payload: CreateOwnerInvitePayload,
+  admin: AuthAdminClient,
+  payload: CreateOwnerInvitePayload,
 ): Promise<CreateOwnerInviteResult> {
-  throw new Error(
-    "not_implemented: create_owner_invite — implement in GREEN 7.5",
-  );
+  const { email, first_name, last_name } = payload;
+
+  const { data, error } = await admin.generateInviteLink({
+    email,
+    data: { first_name, last_name },
+  });
+
+  if (error !== null) {
+    // Detectar email duplicado por el mensaje que devuelve Supabase Auth
+    if (
+      error.message.includes("already been registered") ||
+      error.message.includes("already registered")
+    ) {
+      return {
+        ok: false,
+        error_code: "EMAIL_ALREADY_EXISTS",
+        message: error.message,
+      };
+    }
+    return {
+      ok: false,
+      error_code: "AUTH_INVITE_FAILED",
+      message: error.message,
+    };
+  }
+
+  if (data === null || data.user === null || data.user === undefined) {
+    return {
+      ok: false,
+      error_code: "AUTH_INVITE_FAILED",
+      message: "generateInviteLink no devolvió data.user",
+    };
+  }
+
+  return {
+    ok: true,
+    user_id: data.user.id,
+    action_link: data.action_link,
+  };
 }

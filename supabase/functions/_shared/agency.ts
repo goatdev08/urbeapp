@@ -35,6 +35,7 @@ export const AGENCY_CREATE_ERROR_STATUS: Record<string, number> = {
   SLUG_DUPLICATE: 409,
   NAME_DUPLICATE: 409,
   CREATED_BY_REQUIRED: 400,
+  ALREADY_ACTIVE_MEMBER: 409,
 };
 
 // Mensajes legibles (ES). Los errores de servidor no filtran detalle interno.
@@ -42,4 +43,5 @@ export const AGENCY_CREATE_ERROR_MESSAGES: Record<string, string> = {
   SLUG_DUPLICATE: "Ya existe una agencia activa con ese slug",
   NAME_DUPLICATE: "Ya existe una agencia activa con ese nombre",
   CREATED_BY_REQUIRED: "created_by_user_id es requerido",
+  ALREADY_ACTIVE_MEMBER: "El owner ya tiene una membresía activa en otra agencia",
 };

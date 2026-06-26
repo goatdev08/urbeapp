@@ -96,13 +96,24 @@ export function make_auth_admin(client: SupabaseClient): AuthAdminClient {
     async deleteUser(uid: string) {
       await client.auth.admin.deleteUser(uid);
     },
-    /** Stub RED 7.5 — GREEN implementará la llamada real a generateLink. */
     async generateInviteLink(
-      _params: GenerateInviteLinkParams,
+      params: GenerateInviteLinkParams,
     ): Promise<GenerateInviteLinkResponse> {
-      throw new Error(
-        "not_implemented: generateInviteLink en clients.ts — implement in GREEN 7.5",
-      );
+      const { data, error } = await client.auth.admin.generateLink({
+        type: "invite",
+        email: params.email,
+        options: { data: params.data },
+      });
+      if (error || !data) {
+        return { data: null, error: error ? { message: error.message } : { message: "generateLink devolvió sin data" } };
+      }
+      return {
+        data: {
+          user: { id: data.user.id },
+          action_link: data.properties.action_link,
+        },
+        error: null,
+      };
     },
   };
 }
@@ -162,7 +173,7 @@ export function make_admin_verifier(client: SupabaseClient): AdminVerifier {
 }
 
 // Códigos de negocio que la RPC admin_create_agency_atomic levanta con SQLSTATE P0001.
-const AGENCY_ERROR_CODES = ["SLUG_DUPLICATE", "NAME_DUPLICATE", "CREATED_BY_REQUIRED"];
+const AGENCY_ERROR_CODES = ["SLUG_DUPLICATE", "NAME_DUPLICATE", "CREATED_BY_REQUIRED", "ALREADY_ACTIVE_MEMBER"];
 
 function extract_agency_error_code(message: string): string {
   return AGENCY_ERROR_CODES.find((c) => message.includes(c)) ?? "DB_ERROR";
@@ -184,6 +195,7 @@ export function make_agency_creator(client: SupabaseClient): AgencyCreator {
         p_contact_phone: params.contact_phone ?? null,
         p_contact_email: params.contact_email ?? null,
         p_created_by_user_id: params.created_by_user_id,
+        p_owner_user_id: params.owner_user_id ?? null,
       });
       if (error) {
         const error_code = extract_agency_error_code(error.message);

@@ -7,6 +7,7 @@ import { handler } from "./handler.ts";
 import {
   make_admin_verifier,
   make_agency_creator,
+  make_auth_admin,
   service_client,
 } from "../_shared/clients.ts";
 
@@ -15,5 +16,6 @@ Deno.serve((req: Request) => {
   return handler(req, {
     adminVerifier: make_admin_verifier(client),
     agencyCreator: make_agency_creator(client),
+    authAdmin: make_auth_admin(client),
   });
 });
