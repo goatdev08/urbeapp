@@ -31,6 +31,7 @@ import { useRouter } from 'expo-router';
 
 import { usePublishForm } from '@/features/publish/store/PublishFormContext';
 import { useVideoUpload, type UploadStatus } from '@/features/publish/hooks/useVideoUpload';
+import { usePublish } from '@/features/publish/hooks/usePublish';
 import { PrimaryButton } from '@/components/PrimaryButton';
 
 // ---------------------------------------------------------------------------
@@ -54,6 +55,7 @@ export default function Step3Screen() {
   const router = useRouter();
   const { update } = usePublishForm();
   const hook = useVideoUpload();
+  const publish_hook = usePublish();
 
   // ── Local state para reactivity en la UI ──────────────────────────────────
   // useVideoUpload usa refs (sin useState) → el screen gestiona sus propios
@@ -61,6 +63,9 @@ export default function Step3Screen() {
   const [local_uri, set_local_uri] = useState<string | null>(null);
   const [ui_status, set_ui_status] = useState<UploadStatus>('idle');
   const [ui_error, set_ui_error] = useState<string | null>(null);
+  // Estados de publicación (usePublish también usa refs — espejamos aquí para reactivity).
+  const [publish_status, set_publish_status] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle');
+  const [publish_error, set_publish_error] = useState<string | null>(null);
 
   // ── Video player (expo-video) ──────────────────────────────────────────────
   // ponytail: nativeControls=true → expo-video maneja play/pause, sin boilerplate.
@@ -115,17 +120,29 @@ export default function Step3Screen() {
     set_ui_error(hook.error);
   }, [local_uri, hook]);
 
-  const handle_publish = useCallback(() => {
-    // ponytail: "Publicar" es placeholder en la demo — la tarea de creación de
-    // publicación se implementa en una subtarea posterior. Por ahora mostramos
-    // un Alert y volvemos al inicio del wizard.
-    Alert.alert('¡Video listo!', 'Tu publicación se enviará a revisión.', [
-      {
-        text: 'Aceptar',
-        onPress: () => router.replace('/publish/step1'),
-      },
-    ]);
-  }, [router]);
+  const handle_publish = useCallback(async () => {
+    // 8.10: submit a publish-property
+    set_publish_status('submitting');
+    set_publish_error(null);
+
+    await publish_hook.publish();
+
+    const final_status = publish_hook.status;
+    const final_error = publish_hook.error;
+
+    set_publish_status(final_status);
+    set_publish_error(final_error);
+
+    if (final_status === 'success') {
+      Alert.alert('¡Publicada!', 'Tu propiedad ya está disponible en el feed.', [
+        {
+          text: 'Aceptar',
+          // Navega a la home del feed (app/(protected)/index.tsx).
+          onPress: () => router.replace('/'),
+        },
+      ]);
+    }
+  }, [publish_hook, router]);
 
   // ── Derivados de estado ────────────────────────────────────────────────────
 
@@ -133,6 +150,8 @@ export default function Step3Screen() {
   const is_success = ui_status === 'success';
   const is_error = ui_status === 'error';
   const has_video = local_uri !== null;
+  const is_publishing = publish_status === 'submitting';
+  const is_publish_error = publish_status === 'error';
 
   return (
     <SafeAreaView style={styles.container}>
@@ -216,11 +235,16 @@ export default function Step3Screen() {
 
       {/* ── CTA (fijo al fondo) ───────────────────────────────────────── */}
       <View style={styles.cta_area}>
+        {is_publish_error && (
+          <Text style={styles.error_text}>
+            {publish_error ?? 'Error al publicar. Intenta de nuevo.'}
+          </Text>
+        )}
         <PrimaryButton
-          label="Publicar"
+          label={is_publishing ? 'Publicando…' : 'Publicar'}
           onPress={handle_publish}
           surface="light"
-          disabled={!is_success}
+          disabled={!is_success || is_publishing}
         />
       </View>
     </SafeAreaView>
