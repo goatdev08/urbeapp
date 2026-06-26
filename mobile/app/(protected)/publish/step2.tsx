@@ -27,6 +27,7 @@ import {
 import { useRouter } from 'expo-router';
 
 import { usePublishForm } from '@/features/publish/store/PublishFormContext';
+import { AddressAutocomplete } from '@/features/publish/components/AddressAutocomplete';
 import { NumericStepper } from '@/features/publish/components/NumericStepper';
 import { PrimaryButton } from '@/components/PrimaryButton';
 
@@ -206,10 +207,17 @@ export default function Step2Screen() {
             accessibilityLabel="Descripción de la propiedad"
           />
 
-          {/* ── 8.4: address autocomplete ─────────────────────────────────
-              Aquí irá el campo de texto con autocompletado de Google Places
-              que escribe update({ address }) y dispara el mapa en 8.5.
-          ─────────────────────────────────────────────────────────────── */}
+          {/* ── 8.4: address autocomplete ─────────────────────────────── */}
+          <Text style={[styles.section_label, styles.section_gap]}>
+            Dirección
+          </Text>
+          <AddressAutocomplete
+            value={state.address}
+            onSelect={(address) => update({ address })}
+          />
+          <Text style={styles.field_hint}>
+            Escribe y selecciona de las sugerencias, o ingresa la dirección completa.
+          </Text>
 
           {/* ── 8.5: map picker ───────────────────────────────────────────
               Aquí irá el mapa interactivo (react-native-maps) que escribe
