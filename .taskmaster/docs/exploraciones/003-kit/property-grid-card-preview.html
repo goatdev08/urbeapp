@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Urbea · PropertyGridCard (preview #16.5)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Hanken+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --color_primary:#5A8A5E; --color_primary_soft:#86B089; --color_primary_tint:#DEE9DF; --color_primary_deep:#2F5A34;
+    --color_accent:#9A7150; --color_accent_soft:#C2A07C; --color_accent_tint:#EADBCE; --color_accent_deep:#5E4226;
+    --color_ink:#1E1A15; --color_paper:#F6F2EB; --color_paper_2:#EEE7DC; --color_paper_3:#E3DCCF;
+    --color_gray_1:#A39A8C; --color_gray_2:#857C70; --color_gray_3:#6B6256; --color_silver:#C2C2BD;
+    --r_8:8px; --r_12:12px; --r_16:16px; --r_24:24px; --r_pill:999px;
+    --sh_sm:0 1px 3px rgba(30,22,12,.08),0 1px 2px rgba(30,22,12,.06);
+    --display:"Space Grotesk",sans-serif; --sans:"Hanken Grotesk",sans-serif;
+  }
+  *{box-sizing:border-box; margin:0; padding:0}
+  body{font-family:var(--sans); background:#cfc8bb; color:var(--color_ink); padding:32px 16px; display:flex; flex-direction:column; align-items:center; gap:26px}
+  .hint{font-size:13px; color:#5f574a; text-align:center; max-width:420px; line-height:1.5}
+  .hint b{color:var(--color_ink)}
+  /* Marco que simula la pantalla del telefono (modo gestion claro) */
+  .phone{width:390px; background:var(--color_paper); border-radius:30px; padding:22px 16px 30px; box-shadow:0 30px 70px -20px rgba(30,22,12,.45)}
+  .phone-h{display:flex; align-items:center; gap:8px; font-family:var(--display); font-weight:600; font-size:15px; color:var(--color_gray_3); margin:2px 4px 18px; letter-spacing:.02em}
+  .phone-h .dot{width:7px;height:7px;border-radius:50%;background:var(--color_primary)}
+  /* GRID 2 columnas */
+  .grid{display:grid; grid-template-columns:1fr 1fr; gap:12px}
+
+  /* ====== PropertyGridCard ====== */
+  .pcard{background:#fff; border:1px solid var(--color_paper_3); border-radius:var(--r_16); overflow:hidden; box-shadow:var(--sh_sm); cursor:pointer; transition:transform .25s cubic-bezier(.22,.61,.36,1), box-shadow .25s}
+  .pcard:active{transform:scale(.985)}
+  .pcard:hover{box-shadow:0 10px 24px -10px rgba(30,22,12,.28)}
+  /* media: thumbnail vertical 4:5 (videos verticales) */
+  .pcard .media{position:relative; aspect-ratio:4/5; background:linear-gradient(150deg,#8a6f57 0%,#6f5742 40%,#473829 100%); overflow:hidden}
+  .pcard .media img{width:100%;height:100%;object-fit:cover;display:block}
+  /* placeholder cuando no hay thumbnail (caso comun en la demo) */
+  .pcard .media.placeholder{display:flex; align-items:center; justify-content:center; background:linear-gradient(150deg,var(--color_paper_2),var(--color_paper_3))}
+  .pcard .media.placeholder svg{width:46px;height:46px;opacity:.55;color:var(--color_gray_2)}
+  /* badge operacion (arriba-izq) */
+  .toprow{position:absolute; top:9px; left:9px; right:9px; display:flex; gap:6px; align-items:flex-start; flex-wrap:wrap}
+  .op-badge{display:inline-flex; align-items:center; gap:4px; font-family:var(--sans); font-size:11px; font-weight:700; letter-spacing:.01em; color:#fff; background:var(--color_primary); padding:5px 10px; border-radius:var(--r_pill); box-shadow:0 6px 16px -6px rgba(90,138,94,.5)}
+  .op-badge.venta{background:var(--color_accent); box-shadow:0 6px 16px -6px rgba(154,113,80,.5)}
+  .op-badge svg{width:11px;height:11px}
+  /* badge pausada (status) */
+  .pause-badge{display:inline-flex; align-items:center; gap:4px; font-family:var(--sans); font-size:11px; font-weight:700; color:var(--color_ink); background:rgba(246,242,235,.92); backdrop-filter:blur(4px); padding:5px 10px; border-radius:var(--r_pill); border:1px solid var(--color_silver)}
+  .pause-badge .pdot{width:6px;height:6px;border-radius:50%;background:var(--color_gray_2)}
+  /* cuerpo */
+  .body{padding:11px 12px 13px}
+  .ptitle{font-family:var(--display); font-weight:600; font-size:14.5px; line-height:1.18; letter-spacing:-.01em; color:var(--color_ink); display:-webkit-box; -webkit-line-clamp:1; -webkit-box-orient:vertical; overflow:hidden}
+  .pzone{font-family:var(--sans); font-size:11.5px; color:var(--color_gray_2); margin-top:3px; display:flex; align-items:center; gap:4px}
+  .pzone svg{width:11px;height:11px;flex:none}
+  .pzone span{white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  /* precio heroe con tick Salvia */
+  .price{font-family:var(--display); font-weight:600; font-size:18px; letter-spacing:-.01em; color:var(--color_ink); display:flex; align-items:baseline; gap:4px; position:relative; padding-top:9px; margin-top:9px}
+  .price::before{content:""; position:absolute; top:0; left:0; width:26px; height:3px; background:var(--color_primary); border-radius:3px}
+  .price .per{font-family:var(--sans); font-size:11.5px; font-weight:600; color:var(--color_gray_2)}
+  /* la card pausada se atenua un poco el media */
+  .pcard.is-paused .media::after{content:""; position:absolute; inset:0; background:rgba(30,22,12,.18)}
+  .legend{font-size:11px;color:#6f6757;text-align:center;margin-top:4px}
+</style>
+</head>
+<body>
+  <div class="hint">
+    <b>PropertyGridCard · preview #16.5</b><br>
+    Variante grid (2 columnas, modo gestión claro) para la pantalla de perfil del agente.
+    Basada en el C01 del kit 003. Muestra los estados: Renta/Venta, con thumbnail y sin (placeholder), y propiedad <b>Pausada</b>.
+  </div>
+
+  <div class="phone">
+    <div class="phone-h"><span class="dot"></span> Propiedades publicadas · 4</div>
+    <div class="grid">
+
+      <!-- 1 · Renta, activa, con thumbnail -->
+      <div class="pcard">
+        <div class="media">
+          <img src="https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=400&q=70&auto=format&fit=crop" alt="">
+          <div class="toprow">
+            <span class="op-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M21 10c0 6-9 12-9 12s-9-6-9-12a9 9 0 0 1 18 0Z"/><circle cx="12" cy="10" r="2.6"/></svg> Renta</span>
+          </div>
+        </div>
+        <div class="body">
+          <div class="ptitle">Departamento en Americana</div>
+          <div class="pzone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 10c0 6-9 12-9 12s-9-6-9-12a9 9 0 0 1 18 0Z"/></svg><span>Av. Chapultepec, GDL</span></div>
+          <div class="price">$15,000<span class="per">/mes</span></div>
+        </div>
+      </div>
+
+      <!-- 2 · Venta, activa, con thumbnail -->
+      <div class="pcard">
+        <div class="media">
+          <img src="https://images.unsplash.com/photo-1568605114967-8130f3a36994?w=400&q=70&auto=format&fit=crop" alt="">
+          <div class="toprow">
+            <span class="op-badge venta"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M21 10c0 6-9 12-9 12s-9-6-9-12a9 9 0 0 1 18 0Z"/><circle cx="12" cy="10" r="2.6"/></svg> Venta</span>
+          </div>
+        </div>
+        <div class="body">
+          <div class="ptitle">Casa en Providencia</div>
+          <div class="pzone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 10c0 6-9 12-9 12s-9-6-9-12a9 9 0 0 1 18 0Z"/></svg><span>Col. Providencia, GDL</span></div>
+          <div class="price">$2,400,000</div>
+        </div>
+      </div>
+
+      <!-- 3 · Renta, PAUSADA, sin thumbnail (placeholder) -->
+      <div class="pcard is-paused">
+        <div class="media placeholder">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m23 7-7 5 7 5V7Z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+          <div class="toprow">
+            <span class="op-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M21 10c0 6-9 12-9 12s-9-6-9-12a9 9 0 0 1 18 0Z"/><circle cx="12" cy="10" r="2.6"/></svg> Renta</span>
+            <span class="pause-badge"><span class="pdot"></span> Pausada</span>
+          </div>
+        </div>
+        <div class="body">
+          <div class="ptitle">Loft en Lafayette</div>
+          <div class="pzone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 10c0 6-9 12-9 12s-9-6-9-12a9 9 0 0 1 18 0Z"/></svg><span>Col. Lafayette, GDL</span></div>
+          <div class="price">$11,500<span class="per">/mes</span></div>
+        </div>
+      </div>
+
+      <!-- 4 · Venta, activa, sin thumbnail (placeholder) -->
+      <div class="pcard">
+        <div class="media placeholder">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m23 7-7 5 7 5V7Z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+          <div class="toprow">
+            <span class="op-badge venta"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M21 10c0 6-9 12-9 12s-9-6-9-12a9 9 0 0 1 18 0Z"/><circle cx="12" cy="10" r="2.6"/></svg> Venta</span>
+          </div>
+        </div>
+        <div class="body">
+          <div class="ptitle">Terreno en Zapopan Centro</div>
+          <div class="pzone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 10c0 6-9 12-9 12s-9-6-9-12a9 9 0 0 1 18 0Z"/></svg><span>Zapopan Centro</span></div>
+          <div class="price">$1,850,000</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  <div class="legend">Fondos café = placeholder de video sin thumbnail (caso común en la demo). Tap en la card → detalle de la propiedad.</div>
+</body>
+</html>
