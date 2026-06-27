@@ -8,6 +8,7 @@ Decisiones de fondo: `wiki/decisiones/0003` (vault), `0004` (Taskmaster), `0006`
 - Antes de escribir código nuevo, consulta `wiki/codebase/mapa-codebase.md` — ¿ya existe algo reutilizable? **Reusar > reescribir.**
 - Cada tarea cierra con una mini-retro: ¿se puede hacer el flujo más eficiente? Si sí, mejora *este archivo*, el vault o un skill — **no** agregues código de app.
 - Métrica de éxito: tareas cerradas con **mínimo código nuevo** y máxima claridad. No LOC.
+- 🪶 **Skill `ponytail` (modo `full` por defecto) está activo al escribir código.** Es el reflejo que hace cumplir este principio: la escalera YAGNI → ¿ya existe? → stdlib/Expo/Supabase nativo → dependencia ya instalada → una línea → mínimo que funciona. Marca simplificaciones deliberadas con un comentario `// ponytail:` (intención + techo conocido). Companions: `/ponytail-review` (revisar un diff por sobre-ingeniería), `/ponytail-audit` (escanear el repo), `/ponytail-debt` (cosechar los `ponytail:` pendientes). No aplica a validación en fronteras de confianza, manejo de errores, RLS/seguridad ni a lo que el usuario pida explícito.
 
 ## 1. Qué es Urbea / dónde está todo
 - Plataforma inmobiliaria móvil (Expo + Supabase), feed vertical de video. Primer hito: **demo cerrada de 3 semanas** → `docs/PRD-MVP-demo.md`.

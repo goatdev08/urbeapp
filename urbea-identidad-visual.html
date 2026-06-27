@@ -1,0 +1,1228 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Urbea · Identidad visual</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Hanken+Grotesk:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+/* ============================================================================
+   URBEA · IDENTIDAD VISUAL
+   Artefacto de diseño/exploración (no app code). Doc: 003-reconciliacion-y-kit.md
+   Inyecta personalidad al prototipo de Cloud Design SIN cambiar la paleta:
+   display geométrica moderna (Space Grotesk) + componentes de firma + anti-flatness.
+   ========================================================================== */
+
+:root{
+  /* —— COLOR (snake_case, convención skill urbea-design) —— */
+  --color_primary:      #5A8A5E;  /* VERDE SALVIA · primario (CTAs, marca, estados activos, ganado) */
+  --color_primary_soft: #86B089;  /* verde aclarado — acentos/hover sobre fondos oscuros */
+  --color_primary_tint: #DEE9DF;  /* relleno verde claro — seleccionado / fondos suaves en claro */
+  --color_primary_deep: #2F5A34;  /* verde profundo — texto sobre tint */
+  --color_accent:       #9A7150;  /* ARCILLA / MARRÓN · acento (secundario cálido, progreso embudo) */
+  --color_accent_soft:  #C2A07C;  /* arcilla aclarada — sobre oscuro / hover */
+  --color_accent_tint:  #EADBCE;  /* relleno arcilla claro */
+  --color_accent_deep:  #5E4226;  /* arcilla profunda — texto sobre tint */
+  --color_ink_feed:     #17140F;  /* fondo feed (oscuro inmersivo) */
+  --color_ink:          #1E1A15;  /* tinta / texto base cálido */
+  --color_paper:        #F6F2EB;  /* fondo gestión (claro/editorial) */
+  --color_paper_2:      #EEE7DC;  /* superficie marfil */
+  --color_paper_3:      #E3DCCF;  /* superficie marfil 2 / bordes cálidos */
+  --color_gray_1:       #A39A8C;  /* gris cálido claro */
+  --color_gray_2:       #857C70;  /* gris cálido medio */
+  --color_gray_3:       #6B6256;  /* gris cálido oscuro */
+  --color_silver:       #C2C2BD;  /* plata/platino · micro-acento, hairlines (sin dorado) */
+  --color_silver_dk:    #8C8E8A;  /* plata sobre fondos oscuros */
+  --color_whatsapp:     #25D366;
+
+  /* —— ESCALA DE RADIOS (sistematizada — mata la inconsistencia 3/11/13/18/46) —— */
+  --r_4:4px; --r_8:8px; --r_12:12px; --r_16:16px; --r_24:24px; --r_pill:999px;
+
+  /* —— SOMBRAS —— */
+  --sh_sm: 0 1px 3px rgba(30,22,12,.08), 0 1px 2px rgba(30,22,12,.06);
+  --sh_md: 0 8px 22px -8px rgba(30,22,12,.22);
+  --sh_lg: 0 22px 55px -18px rgba(30,22,12,.40);
+  --sh_primary: 0 8px 20px -6px rgba(90,138,94,.5);   /* glow verde para elementos de marca */
+
+  /* —— TIPO —— */
+  --display: "Space Grotesk", "SF Pro Display", -apple-system, BlinkMacSystemFont, sans-serif;
+  --sans:    "Hanken Grotesk", -apple-system, BlinkMacSystemFont, sans-serif;
+
+  --ease: cubic-bezier(.22,.61,.36,1);   /* suave / premium (lento-elegante) */
+}
+
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  font-family:var(--sans); color:var(--color_ink);
+  background:var(--color_paper);
+  -webkit-font-smoothing:antialiased;
+  line-height:1.5;
+}
+
+/* —— TEXTURA SUTIL (grano de papel) — anti-flatness en superficies claras —— */
+.grain{position:relative}
+.grain::before{
+  content:""; position:absolute; inset:0; pointer-events:none; z-index:0;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+  opacity:.035; mix-blend-mode:multiply;
+}
+.grain>*{position:relative; z-index:1}
+
+/* ============================ LAYOUT / NAV ============================ */
+.topbar{
+  position:sticky; top:0; z-index:50;
+  display:flex; align-items:center; gap:18px;
+  padding:14px 28px;
+  background:rgba(246,242,235,.82); backdrop-filter:blur(14px);
+  border-bottom:1px solid var(--color_silver);
+}
+.topbar .brand{display:flex; align-items:center; gap:10px; font-family:var(--display); font-weight:600; font-size:20px; letter-spacing:-.01em}
+.topbar nav{display:flex; gap:6px; flex-wrap:wrap; margin-left:auto}
+.topbar nav a{
+  font-size:13px; font-weight:600; color:var(--color_gray_3);
+  text-decoration:none; padding:7px 13px; border-radius:var(--r_pill);
+  transition:all .25s var(--ease);
+}
+.topbar nav a:hover{color:var(--color_primary_deep); background:var(--color_primary_tint)}
+
+.wrap{max-width:1180px; margin:0 auto; padding:0 28px}
+section{padding:64px 0; border-bottom:1px solid var(--color_paper_3)}
+
+/* —— EYEBROW (label small-caps con tick verde) — firma editorial recurrente —— */
+.eyebrow{
+  display:inline-flex; align-items:center; gap:10px;
+  font-size:12px; font-weight:700; letter-spacing:.18em; text-transform:uppercase;
+  color:var(--color_gray_3); margin-bottom:14px;
+}
+.eyebrow::before{content:""; width:26px; height:2px; background:var(--color_primary); border-radius:2px}
+
+h2.sec{font-family:var(--display); font-weight:600; font-size:34px; letter-spacing:-.02em; line-height:1.1; margin-bottom:8px}
+.sec-lead{color:var(--color_gray_3); max-width:62ch; font-size:15.5px; margin-bottom:34px}
+.note{font-size:12.5px; color:var(--color_gray_2); margin-top:10px}
+.note code{background:var(--color_paper_2); padding:1px 6px; border-radius:var(--r_4); font-family:ui-monospace,monospace; font-size:11.5px}
+
+.grid{display:grid; gap:26px}
+.cols-2{grid-template-columns:repeat(2,1fr)}
+.cols-3{grid-template-columns:repeat(3,1fr)}
+@media(max-width:820px){.cols-2,.cols-3{grid-template-columns:1fr}}
+
+.panel-label{font-size:12px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--color_gray_2); margin-bottom:14px; display:flex; align-items:center; gap:8px}
+.panel-label .dot{width:8px; height:8px; border-radius:50%}
+.dot-dark{background:var(--color_ink_feed)} .dot-light{background:var(--color_primary)}
+
+/* ============================ HERO ============================ */
+.hero{padding:72px 0 56px}
+.hero h1{font-family:var(--display); font-weight:600; font-size:clamp(40px,6vw,68px); line-height:1.02; letter-spacing:-.03em; max-width:18ch}
+.hero h1 em{font-style:italic; color:var(--color_primary)}
+.hero p{margin-top:20px; max-width:60ch; font-size:17px; color:var(--color_gray_3)}
+.hero .tags{display:flex; gap:10px; margin-top:26px; flex-wrap:wrap}
+.tag{font-size:12.5px; font-weight:600; padding:7px 14px; border-radius:var(--r_pill); background:#fff; border:1px solid var(--color_silver); color:var(--color_gray_3)}
+.tag b{color:var(--color_primary_deep)}
+
+/* ============================ TOKENS ============================ */
+.swatches{display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:14px}
+.sw{border-radius:var(--r_16); overflow:hidden; background:#fff; border:1px solid var(--color_paper_3); box-shadow:var(--sh_sm)}
+.sw .chip{height:74px}
+.sw .meta{padding:11px 13px}
+.sw .meta .n{font-weight:700; font-size:13px}
+.sw .meta .h{font-family:ui-monospace,monospace; font-size:11.5px; color:var(--color_gray_2); margin-top:2px}
+
+.typescale>div{padding:14px 0; border-bottom:1px solid var(--color_paper_3); display:flex; align-items:baseline; gap:18px; flex-wrap:wrap}
+.typescale .lab{font-size:11px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--color_gray_2); width:120px; flex:none}
+.ts-display{font-family:var(--display); font-weight:600; font-size:44px; letter-spacing:-.02em; line-height:1}
+.ts-display.it{font-style:italic}
+.ts-h1{font-family:var(--display); font-weight:600; font-size:28px; letter-spacing:-.01em}
+.ts-price{font-family:var(--display); font-weight:600; font-size:34px; letter-spacing:-.01em}
+.ts-body{font-family:var(--sans); font-size:16px}
+.ts-cap{font-family:var(--sans); font-size:12px; font-weight:700; letter-spacing:.16em; text-transform:uppercase; color:var(--color_gray_2)}
+
+.scaleboxes{display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end}
+.scalebox{text-align:center}
+.scalebox .b{background:var(--color_primary_tint); border:1px solid var(--color_primary_soft); width:74px; height:74px}
+.scalebox small{display:block; margin-top:7px; font-size:11px; color:var(--color_gray_2); font-family:ui-monospace,monospace}
+
+/* ============================ PHONE / SURFACES ============================ */
+.surface-dark{
+  background:
+    radial-gradient(120% 80% at 50% 0%, #221d16 0%, var(--color_ink_feed) 64%),
+    var(--color_ink_feed);
+  border-radius:var(--r_24); padding:26px; position:relative; overflow:hidden;
+  border:1px solid #2a241c;
+}
+.surface-dark::after{ /* viñeta — anti-flatness en oscuro */
+  content:""; position:absolute; inset:0; pointer-events:none;
+  background:radial-gradient(130% 100% at 50% 35%, transparent 55%, rgba(0,0,0,.5) 100%);
+}
+.surface-light{background:var(--color_paper_2); border-radius:var(--r_24); padding:26px; border:1px solid var(--color_paper_3)}
+
+/* ============================ PROPERTY CARD ============================ */
+.pcard{border-radius:var(--r_24); overflow:hidden; position:relative; transition:transform .4s var(--ease), box-shadow .4s var(--ease)}
+.pcard:hover{transform:translateY(-4px)}
+
+/* media */
+.pcard .media{position:relative; aspect-ratio:4/5; background:linear-gradient(150deg,#8a6f57 0%,#6f5742 38%,#473829 100%)}
+.pcard .media .ph{position:absolute; inset:0; display:flex; align-items:center; justify-content:center; opacity:.5}
+.pcard .media .ph svg{width:62px; height:62px}
+.media .toprow{position:absolute; top:13px; left:13px; right:13px; display:flex; align-items:center; gap:8px; z-index:3}
+.op-badge{
+  display:inline-flex; align-items:center; gap:7px; font-size:11.5px; font-weight:700; letter-spacing:.04em;
+  color:#fff; background:var(--color_primary); padding:6px 12px; border-radius:var(--r_pill);
+  box-shadow:var(--sh_primary);
+}
+.op-badge.venta{background:var(--color_accent); box-shadow:0 8px 20px -6px rgba(154,113,80,.5)}
+.vid-count{
+  margin-left:auto; display:inline-flex; align-items:center; gap:6px; font-size:11.5px; font-weight:600;
+  color:#fff; background:rgba(23,20,15,.42); backdrop-filter:blur(8px);
+  border:1px solid rgba(255,255,255,.22); padding:5px 10px; border-radius:var(--r_pill);
+}
+.vid-count svg{width:13px;height:13px}
+
+/* glass info (variante OSCURA: datos sobre el video) */
+.glass{
+  position:absolute; left:11px; right:11px; bottom:11px; z-index:3;
+  background:linear-gradient(180deg, rgba(23,20,15,.05), rgba(23,20,15,.34));
+  backdrop-filter:blur(14px) saturate(1.1);
+  border:1px solid rgba(255,255,255,.16);
+  border-radius:var(--r_16); padding:15px 16px 14px; color:var(--color_paper);
+}
+.glass .ptitle{font-family:var(--display); font-weight:600; font-size:19px; line-height:1.12; letter-spacing:-.01em}
+.glass .pzone{font-size:12px; color:rgba(246,242,235,.72); margin-top:3px; display:flex; align-items:center; gap:5px}
+.glass .pzone svg{width:12px;height:12px}
+
+/* PRECIO HÉROE editorial (serif + tick verde) */
+.price{font-family:var(--display); font-weight:600; letter-spacing:-.01em; display:flex; align-items:baseline; gap:6px; position:relative; padding-top:11px; margin-top:11px}
+.price::before{content:""; position:absolute; top:0; left:0; width:34px; height:3px; background:var(--color_primary); border-radius:3px}
+.price .amt{font-size:27px; line-height:1}
+.price .per{font-family:var(--sans); font-size:12.5px; font-weight:600; color:var(--color_gray_2)}
+.glass .price{margin-top:12px}
+.glass .price::before{background:var(--color_primary_soft)}
+.glass .price .per{color:rgba(246,242,235,.7)}
+
+/* SPEC ROW — iconos finos a medida + hairlines de plata (no chips) */
+.specs{display:flex; align-items:center; margin-top:13px}
+.spec{display:flex; align-items:center; gap:7px; font-size:13px; font-weight:600; padding:0 15px}
+.spec:first-child{padding-left:0}
+.spec+.spec{border-left:1px solid var(--color_silver)}
+.glass .spec+.spec{border-left:1px solid rgba(194,194,189,.35)}
+.spec svg{width:17px; height:17px; opacity:.8; flex:none}
+.glass .specs .spec{color:var(--color_paper)}
+
+/* acción flotante guardar/like (variante oscura) — FIX: botón position:relative + contador centrado */
+.frail{position:absolute; right:14px; bottom:152px; z-index:4; display:flex; flex-direction:column; gap:20px; align-items:center}
+.fbtn{
+  position:relative;
+  width:46px; height:46px; border-radius:50%; display:grid; place-items:center; cursor:pointer;
+  background:rgba(23,20,15,.36); backdrop-filter:blur(10px); border:1px solid rgba(255,255,255,.2);
+  color:#fff; transition:transform .3s var(--ease), background .3s var(--ease);
+}
+.fbtn:hover{transform:scale(1.08)}
+.fbtn svg{width:22px;height:22px}
+.fbtn.on{color:var(--color_accent_soft)}
+.fbtn.on svg{fill:var(--color_accent_soft); animation:breathe .9s var(--ease)}
+.fbtn .cnt{position:absolute; bottom:-15px; left:50%; transform:translateX(-50%); font-size:10px; font-weight:700; color:rgba(246,242,235,.85); white-space:nowrap; pointer-events:none}
+@keyframes breathe{0%{transform:scale(1)}40%{transform:scale(1.32)}100%{transform:scale(1)}}
+
+/* VARIANTE CLARA — media arriba, datos sobre papel */
+.pcard.light{background:#fff; border:1px solid var(--color_paper_3); box-shadow:var(--sh_sm)}
+.pcard.light .media{aspect-ratio:16/11}
+.pcard.light .body{padding:15px 16px 17px}
+.pcard.light .ptitle{font-family:var(--display); font-weight:600; font-size:18px; letter-spacing:-.01em; line-height:1.15}
+.pcard.light .pzone{font-size:12px; color:var(--color_gray_2); margin-top:3px; display:flex; align-items:center; gap:5px}
+.pcard.light .pzone svg{width:12px;height:12px}
+.pcard.light .spec{color:var(--color_ink)}
+.pcard.light .save-inline{position:absolute; top:13px; right:13px; width:38px; height:38px; border-radius:50%; background:rgba(246,242,235,.85); backdrop-filter:blur(6px); border:1px solid var(--color_silver); display:grid; place-items:center; cursor:pointer; color:var(--color_ink); transition:.3s var(--ease)}
+.pcard.light .save-inline:hover{background:#fff; transform:scale(1.06)}
+.pcard.light .save-inline svg{width:18px;height:18px}
+
+/* ============================ ISOTIPO MOTIF ============================ */
+.iso-hero{display:flex; align-items:center; gap:26px; flex-wrap:wrap}
+.iso-badge{width:92px; height:92px; border-radius:24px; background:var(--color_primary); display:grid; place-items:center; box-shadow:var(--sh_primary)}
+.iso-badge svg{width:50px; height:50px}
+.iso-lock{display:flex; align-items:center; gap:14px; font-family:var(--display); font-size:40px; font-weight:600; letter-spacing:-.02em}
+.iso-lock .mk{width:46px;height:46px;border-radius:13px;background:var(--color_primary);display:grid;place-items:center}
+.iso-lock .mk svg{width:25px;height:25px}
+
+.apps{display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:18px}
+.appcell{border-radius:var(--r_16); padding:22px 16px 16px; text-align:center; border:1px solid var(--color_paper_3); background:#fff}
+.appcell.dark{background:var(--color_ink_feed); border-color:#2a241c; color:var(--color_paper)}
+.appcell .stage{height:104px; display:grid; place-items:center; margin-bottom:12px}
+.appcell .cap{font-size:12px; font-weight:700; color:var(--color_gray_2)}
+.appcell.dark .cap{color:var(--color_silver_dk)}
+
+/* play button */
+.play-btn{width:66px;height:66px;border-radius:50%;background:rgba(246,242,235,.16);backdrop-filter:blur(8px);border:1.5px solid rgba(246,242,235,.5);display:grid;place-items:center;color:#fff;transition:.3s var(--ease)}
+.play-btn:hover{transform:scale(1.06);background:rgba(246,242,235,.24)}
+.play-btn svg{width:26px;height:26px;margin-left:3px}
+/* avatar ring */
+.avatar{position:relative;width:72px;height:72px}
+.avatar .ring{position:absolute;inset:-5px;border-radius:50%;background:conic-gradient(from 220deg,var(--color_primary),var(--color_primary_soft),var(--color_primary))}
+.avatar .ph{position:absolute;inset:0;border-radius:50%;background:linear-gradient(150deg,#9b8067,#5f4a38);border:3px solid #fff}
+.appcell.dark .avatar .ph{border-color:var(--color_ink_feed)}
+.avatar .badge{position:absolute;bottom:-3px;right:-3px;width:26px;height:26px;border-radius:9px;background:var(--color_primary);display:grid;place-items:center;border:2px solid #fff}
+.appcell.dark .avatar .badge{border-color:var(--color_ink_feed)}
+.avatar .badge svg{width:13px;height:13px}
+/* map pin — FIX: gota rotada con ícono recto y centrado */
+.pin-wrap{display:flex; flex-direction:column; align-items:center; gap:10px}
+.pin{position:relative; width:50px; height:50px}
+.pin .drop{position:absolute; inset:0; background:var(--color_primary); border:2.5px solid #fff; border-radius:50% 50% 50% 0; transform:rotate(-45deg); box-shadow:var(--sh_md)}
+.pin .ico{position:absolute; inset:0; display:grid; place-items:center}
+.pin .ico svg{width:22px; height:22px}
+.pin-price{font-family:var(--display);font-weight:600;font-size:14px;background:#fff;border:1px solid var(--color_silver);padding:3px 11px;border-radius:var(--r_pill);box-shadow:var(--sh_sm);color:var(--color_ink)}
+/* loader */
+.loader{width:54px;height:54px;border-radius:16px;background:var(--color_primary);display:grid;place-items:center;animation:pulse 1.4s var(--ease) infinite}
+.loader svg{width:28px;height:28px;animation:spin 1.4s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes pulse{0%,100%{transform:scale(1);box-shadow:0 0 0 0 rgba(90,138,94,.4)}50%{transform:scale(.94);box-shadow:0 0 0 12px rgba(90,138,94,0)}}
+/* empty state mark */
+.empty-mk{width:60px;height:60px;border-radius:18px;border:2px dashed var(--color_silver);display:grid;place-items:center;color:var(--color_gray_1)}
+.empty-mk svg{width:28px;height:28px}
+
+/* ============================ LEAD FUNNEL ============================ */
+.funnel-card{background:#fff;border:1px solid var(--color_paper_3);border-radius:var(--r_24);padding:24px;box-shadow:var(--sh_sm)}
+.funnel{display:flex;gap:5px;align-items:stretch}
+.fstep{flex:1;position:relative}
+.fstep .bar{height:8px;border-radius:var(--r_pill);background:var(--color_paper_3);transition:background .4s var(--ease)}
+.fstep .lab{margin-top:9px;font-size:11px;font-weight:700;letter-spacing:.02em;color:var(--color_gray_2);text-align:center;transition:color .3s var(--ease)}
+.fstep.done .bar{background:var(--color_accent_soft)}
+.fstep.current .bar{background:var(--color_accent)}
+.fstep.current .lab{color:var(--color_accent_deep)}
+.fstep.current::after{content:"";position:absolute;top:-6px;left:50%;transform:translateX(-50%);width:6px;height:6px;border-radius:50%;background:var(--color_accent)}
+.fstep.won .bar{background:var(--color_primary)}
+.fstep.won .lab{color:var(--color_primary_deep)}
+
+.terminals{display:flex;gap:10px;margin-top:18px;padding-top:16px;border-top:1px solid var(--color_paper_3)}
+.lead-chip{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:700;padding:5px 12px;border-radius:var(--r_pill)}
+.lead-chip .d{width:7px;height:7px;border-radius:50%}
+.chip-new{background:var(--color_accent_tint);color:var(--color_accent_deep)} .chip-new .d{background:var(--color_accent)}
+.chip-prog{background:#e9e3d7;color:var(--color_gray_3)} .chip-prog .d{background:var(--color_gray_2)}
+.chip-won{background:var(--color_primary_tint);color:var(--color_primary_deep)} .chip-won .d{background:var(--color_primary)}
+.chip-lost{background:#ece4dd;color:var(--color_gray_3)} .chip-lost .d{background:#b46a5c}
+.chip-disc{background:#eceae6;color:var(--color_gray_2)} .chip-disc .d{background:var(--color_silver_dk)}
+
+.state-switch{display:flex;gap:7px;flex-wrap:wrap;margin-top:20px}
+.state-switch button{font-family:var(--sans);font-size:12px;font-weight:600;cursor:pointer;padding:6px 12px;border-radius:var(--r_pill);border:1px solid var(--color_silver);background:#fff;color:var(--color_gray_3);transition:.25s var(--ease)}
+.state-switch button:hover{border-color:var(--color_accent)}
+.state-switch button.active{background:var(--color_accent);border-color:var(--color_accent);color:#fff}
+
+/* lead rows (lista CRM con chip de fila) */
+.lead-list{background:#fff;border:1px solid var(--color_paper_3);border-radius:var(--r_24);overflow:hidden;box-shadow:var(--sh_sm)}
+.lead-row{display:flex;align-items:center;gap:14px;padding:15px 18px;transition:background .25s var(--ease)}
+.lead-row+.lead-row{border-top:1px solid var(--color_paper_2)}
+.lead-row:hover{background:var(--color_paper)}
+.lead-av{width:42px;height:42px;border-radius:13px;background:var(--color_accent_tint);color:var(--color_accent_deep);display:grid;place-items:center;font-weight:800;font-size:14px;flex:none}
+.lead-info .nm{font-weight:700;font-size:14.5px}
+.lead-info .meta{font-size:12px;color:var(--color_gray_2);margin-top:1px}
+.lead-row .chip-wrap{margin-left:auto}
+
+/* ============================ PANTALLAS · MOCKUPS DE LA DEMO ============================ */
+#screens{background:linear-gradient(180deg,var(--color_paper),var(--color_paper_2))}
+.screens-groups{display:flex;flex-direction:column;gap:48px;margin-top:14px}
+.sgroup>.gh{display:flex;align-items:center;gap:12px;margin-bottom:24px}
+.sgroup .gh .gt{font-family:var(--display);font-weight:600;font-size:20px;letter-spacing:-.01em}
+.sgroup .gh .gline{flex:1;height:1px;background:var(--color_paper_3)}
+.sgroup .gh .gn{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--color_gray_2)}
+.phone-grid{display:flex;flex-wrap:wrap;gap:42px 30px;justify-content:center;align-items:flex-start}
+
+/* —— chasis del teléfono —— */
+.phone-fig{width:282px;flex:none}
+.phone{width:282px;height:592px;border-radius:46px;background:#0c0b09;padding:8px;box-shadow:var(--sh_lg),0 0 0 2px #232019;position:relative}
+.phone::before{content:"";position:absolute;top:8px;left:50%;transform:translateX(-50%);width:96px;height:24px;background:#0c0b09;border-radius:0 0 15px 15px;z-index:30}
+.scr{width:100%;height:100%;border-radius:38px;overflow:hidden;position:relative;background:var(--color_paper);color:var(--color_ink);display:flex;flex-direction:column;font-family:var(--sans)}
+.scr.dark{background:var(--color_ink_feed);color:var(--color_paper)}
+.phone-cap{margin-top:15px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:3px}
+.phone-cap .t{font-family:var(--display);font-weight:600;font-size:14.5px;letter-spacing:-.01em;display:flex;align-items:center;gap:8px}
+.phone-cap .t .num{width:20px;height:20px;border-radius:7px;background:var(--color_primary);color:#fff;font-size:11px;font-weight:700;display:grid;place-items:center;font-family:var(--display)}
+.phone-cap .d{font-size:11.5px;color:var(--color_gray_2);max-width:24ch}
+
+/* —— status bar —— */
+.sbar{height:30px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:8px 22px 0;font-family:var(--display);font-weight:600;font-size:12px}
+.sbar .sig{display:flex;gap:5px;align-items:center}
+.sbar .sig b{width:16px;height:9px;border:1.4px solid currentColor;border-radius:3px;display:inline-block;position:relative;opacity:.9}
+.sbar .sig b::after{content:"";position:absolute;right:-3px;top:2px;width:1.5px;height:4px;background:currentColor;border-radius:2px}
+.sbar .sig i{width:14px;height:11px;background:currentColor;opacity:.85;-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M2 22h3V10H2zM7 22h3V6H7zM12 22h3V13h-3zM17 22h3V2h-3z'/%3E%3C/svg%3E") center/contain no-repeat}
+
+.scr-body{flex:1;overflow:hidden;position:relative;display:flex;flex-direction:column}
+.scr-scroll{flex:1;overflow:hidden;position:relative}
+.pad{padding:0 20px}
+
+/* —— app bar (gestión clara) —— */
+.appbar{display:flex;align-items:center;gap:12px;padding:6px 18px 14px}
+.appbar .ico{width:34px;height:34px;border-radius:11px;display:grid;place-items:center;color:var(--color_ink);background:var(--color_paper_2);border:1px solid var(--color_paper_3)}
+.appbar .ico svg{width:18px;height:18px}
+.appbar .at{font-family:var(--display);font-weight:600;font-size:18px;letter-spacing:-.01em}
+.appbar .as{font-size:11px;color:var(--color_gray_2)}
+.appbar .right{margin-left:auto;display:flex;gap:8px}
+
+/* —— form helpers —— */
+.lab2{font-size:10px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--color_gray_2);margin:0 0 6px;display:block}
+.fld{background:#fff;border:1px solid var(--color_paper_3);border-radius:var(--r_12);padding:12px 13px;font-size:13px;display:flex;align-items:center;gap:10px;box-shadow:var(--sh_sm)}
+.fld svg{width:17px;height:17px;color:var(--color_gray_2);flex:none}
+.fld .ph{color:var(--color_gray_1)}
+.fld .val{color:var(--color_ink);font-weight:500}
+.pbtn{display:block;background:var(--color_primary);color:#fff;border-radius:var(--r_pill);padding:14px;text-align:center;font-family:var(--display);font-weight:600;font-size:14px;box-shadow:var(--sh_primary);position:relative;overflow:hidden}
+.pbtn.glass::before{content:"";position:absolute;inset:0 0 50% 0;background:linear-gradient(180deg,rgba(255,255,255,.28),transparent)}
+.pbtn.ghost{background:transparent;color:var(--color_gray_3);box-shadow:none;font-family:var(--sans);font-weight:600;font-size:13px}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.fchip{font-size:12px;font-weight:600;padding:8px 13px;border-radius:var(--r_pill);background:#fff;border:1px solid var(--color_silver);color:var(--color_gray_3);display:inline-flex;align-items:center;gap:6px}
+.fchip svg{width:13px;height:13px}
+.fchip.on{background:var(--color_primary);border-color:var(--color_primary);color:#fff;box-shadow:var(--sh_primary)}
+.fchip.alt.on{background:var(--color_accent);border-color:var(--color_accent);box-shadow:0 8px 20px -6px rgba(154,113,80,.5)}
+
+/* —— tab bar —— */
+.tabbar{flex:none;height:60px;display:flex;align-items:center;justify-content:space-around;padding:0 10px 8px;background:rgba(246,242,235,.94);backdrop-filter:blur(12px);border-top:1px solid var(--color_paper_3)}
+.scr.dark .tabbar{background:rgba(18,15,11,.7);border-top:1px solid rgba(255,255,255,.08)}
+.tab{display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--color_gray_2);font-size:9px;font-weight:600}
+.tab svg{width:23px;height:23px}
+.tab.on{color:var(--color_primary)}
+.scr.dark .tab{color:var(--color_silver_dk)}.scr.dark .tab.on{color:var(--color_primary_soft)}
+.tab-fab{width:48px;height:48px;border-radius:16px;background:var(--color_primary);display:grid;place-items:center;color:#fff;box-shadow:var(--sh_primary);margin-top:-16px;border:3px solid var(--color_paper)}
+.scr.dark .tab-fab{border-color:var(--color_ink_feed)}
+.tab-fab svg{width:25px;height:25px}
+
+/* —— feed pantalla completa —— */
+.feedscr{position:absolute;inset:0;background:linear-gradient(160deg,#6f5742 0%,#473829 55%,#2a2018 100%)}
+.feedscr .vph{position:absolute;inset:0;display:grid;place-items:center;opacity:.34}
+.feedscr .vph .play-btn{width:60px;height:60px}
+.feedscr::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(23,20,15,.35) 0%,transparent 26% 52%,rgba(23,20,15,.86) 100%)}
+.feed-top{position:absolute;top:12px;left:16px;right:16px;z-index:5;display:flex;align-items:center;gap:8px}
+.feed-rail{position:absolute;right:14px;bottom:140px;z-index:6;display:flex;flex-direction:column;gap:22px;align-items:center}
+.feed-info{position:absolute;left:16px;right:74px;bottom:118px;z-index:6;color:var(--color_paper)}
+.feed-agent{display:flex;align-items:center;gap:9px;margin-bottom:12px}
+.feed-agent .av{width:34px;height:34px;border-radius:50%;background:linear-gradient(150deg,#9b8067,#5f4a38);border:2px solid var(--color_primary_soft);flex:none}
+.feed-agent .nm{font-weight:700;font-size:12.5px}.feed-agent .ag{font-size:10.5px;color:rgba(246,242,235,.7)}
+.feed-info .ptitle{font-family:var(--display);font-weight:600;font-size:19px;letter-spacing:-.01em;line-height:1.1}
+.feed-info .pzone{font-size:11.5px;color:rgba(246,242,235,.75);margin-top:3px;display:flex;align-items:center;gap:5px}
+.feed-info .pzone svg{width:12px;height:12px}
+
+/* —— hojas / cards de gestión —— */
+.sheet{background:#fff;border:1px solid var(--color_paper_3);border-radius:var(--r_16);box-shadow:var(--sh_sm)}
+.miniprop{display:flex;gap:11px;align-items:center;padding:10px;background:#fff;border:1px solid var(--color_paper_3);border-radius:var(--r_16);box-shadow:var(--sh_sm)}
+.miniprop .thumb{width:62px;height:62px;border-radius:var(--r_12);background:linear-gradient(150deg,#8a6f57,#473829);flex:none;position:relative;overflow:hidden}
+.miniprop .thumb .pl{position:absolute;inset:0;display:grid;place-items:center;color:#fff;opacity:.6}
+.miniprop .thumb .pl svg{width:20px;height:20px}
+.miniprop .mt{font-family:var(--display);font-weight:600;font-size:13.5px;letter-spacing:-.01em}
+.miniprop .mz{font-size:11px;color:var(--color_gray_2);margin-top:1px}
+.miniprop .mp{font-family:var(--display);font-weight:600;font-size:14px;margin-top:5px}
+.stbadge{font-size:9.5px;font-weight:700;padding:3px 8px;border-radius:var(--r_pill);letter-spacing:.02em}
+.st-active{background:var(--color_primary_tint);color:var(--color_primary_deep)}
+.st-paused{background:#e9e3d7;color:var(--color_gray_3)}
+.st-sold{background:var(--color_accent_tint);color:var(--color_accent_deep)}
+
+/* —— stepper wizard —— */
+.stepper{display:flex;align-items:center;gap:6px;padding:4px 0 2px}
+.stepper .sdot{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-family:var(--display);font-weight:600;font-size:12px;background:var(--color_paper_2);color:var(--color_gray_2);border:1px solid var(--color_paper_3);flex:none}
+.stepper .sdot.on{background:var(--color_primary);color:#fff;border-color:var(--color_primary);box-shadow:var(--sh_primary)}
+.stepper .sdot.ok{background:var(--color_primary_tint);color:var(--color_primary_deep);border-color:var(--color_primary_soft)}
+.stepper .sln{flex:1;height:2px;background:var(--color_paper_3);border-radius:2px}
+.stepper .sln.ok{background:var(--color_primary_soft)}
+.typegrid{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.typecell{background:#fff;border:1px solid var(--color_paper_3);border-radius:var(--r_12);padding:13px 11px;display:flex;flex-direction:column;gap:7px;box-shadow:var(--sh_sm)}
+.typecell.on{border-color:var(--color_primary);background:var(--color_primary_tint)}
+.typecell svg{width:20px;height:20px;color:var(--color_gray_3)}
+.typecell.on svg{color:var(--color_primary_deep)}
+.typecell .tl{font-weight:600;font-size:12.5px}
+
+/* —— mapa —— */
+.mapbg{position:absolute;inset:0;background:#e7e3d8;
+  background-image:
+    linear-gradient(rgba(168,160,144,.5) 1.5px,transparent 1.5px),
+    linear-gradient(90deg,rgba(168,160,144,.5) 1.5px,transparent 1.5px),
+    linear-gradient(rgba(168,160,144,.25) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(168,160,144,.25) 1px,transparent 1px);
+  background-size:78px 78px,78px 78px,26px 26px,26px 26px}
+.mapbg::before{content:"";position:absolute;top:-10%;left:30%;width:60%;height:120%;background:linear-gradient(120deg,#cfd8c9,#dbe3d4);transform:rotate(18deg);opacity:.7}
+.mapbg::after{content:"";position:absolute;bottom:18%;left:-12%;width:80%;height:14px;background:#c7cdb6;transform:rotate(-8deg);opacity:.8;box-shadow:0 60px 0 -3px #c7cdb6,0 -90px 0 -4px #cdd3c2}
+.mappin{position:absolute;z-index:3;display:flex;flex-direction:column;align-items:center}
+.mpin{position:relative;width:30px;height:30px}
+.mpin .drop{position:absolute;inset:0;background:var(--color_primary);border:2px solid #fff;border-radius:50% 50% 50% 0;transform:rotate(-45deg);box-shadow:var(--sh_md)}
+.mpin .ico{position:absolute;inset:0;display:grid;place-items:center;color:#fff}
+.mpin .ico svg{width:14px;height:14px}
+.mclus{width:42px;height:42px;border-radius:50%;background:var(--color_accent);border:3px solid #fff;display:grid;place-items:center;color:#fff;font-family:var(--display);font-weight:600;font-size:14px;box-shadow:var(--sh_md)}
+.mpriceTag{font-family:var(--display);font-weight:600;font-size:11px;background:#fff;border:1px solid var(--color_silver);padding:2px 8px;border-radius:var(--r_pill);box-shadow:var(--sh_sm);margin-top:3px;white-space:nowrap}
+
+/* —— perfil header —— */
+.profhead{display:flex;flex-direction:column;align-items:center;text-align:center;gap:5px;padding:8px 0 6px}
+.profhead .pav{width:80px;height:80px;border-radius:50%;background:linear-gradient(150deg,#9b8067,#5f4a38);border:3px solid #fff;box-shadow:var(--sh_md);position:relative}
+.profhead .pav .vb{position:absolute;bottom:0;right:0;width:26px;height:26px;border-radius:9px;background:var(--color_primary);display:grid;place-items:center;border:2px solid var(--color_paper)}
+.profhead .pav .vb svg{width:13px;height:13px;color:#fff}
+.profstats{display:flex;justify-content:center;gap:0;margin-top:8px}
+.profstats .ps{flex:1;text-align:center;padding:0 6px}
+.profstats .ps+.ps{border-left:1px solid var(--color_paper_3)}
+.profstats .n{font-family:var(--display);font-weight:600;font-size:18px}
+.profstats .l{font-size:10px;color:var(--color_gray_2);text-transform:uppercase;letter-spacing:.06em}
+.minigrid{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.gcell{border-radius:var(--r_12);overflow:hidden;aspect-ratio:3/4;background:linear-gradient(150deg,#8a6f57,#473829);position:relative}
+.gcell .gp{position:absolute;left:7px;bottom:7px;color:#fff;font-family:var(--display);font-weight:600;font-size:11px;text-shadow:0 1px 4px rgba(0,0,0,.5)}
+.gcell .gv{position:absolute;top:6px;right:6px;color:#fff;opacity:.85}
+.gcell .gv svg{width:14px;height:14px}
+
+/* —— lead row compacto (reusa tokens del embudo) —— */
+.lrow{display:flex;align-items:center;gap:11px;padding:11px 4px}
+.lrow+.lrow{border-top:1px solid var(--color_paper_2)}
+.lrow .la{width:38px;height:38px;border-radius:12px;background:var(--color_accent_tint);color:var(--color_accent_deep);display:grid;place-items:center;font-weight:800;font-size:13px;flex:none}
+.lrow .ln{font-weight:700;font-size:13px}
+.lrow .lm{font-size:11px;color:var(--color_gray_2);margin-top:1px}
+.minichip{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:700;padding:4px 9px;border-radius:var(--r_pill);margin-left:auto;flex:none}
+.minichip .d{width:6px;height:6px;border-radius:50%}
+
+/* —— code input (canje) —— */
+.codeboxes{display:flex;gap:8px;justify-content:center}
+.codeboxes b{width:38px;height:46px;border-radius:var(--r_12);background:#fff;border:1px solid var(--color_paper_3);display:grid;place-items:center;font-family:var(--display);font-weight:600;font-size:22px;box-shadow:var(--sh_sm)}
+.codeboxes b.fill{border-color:var(--color_primary);color:var(--color_primary_deep);background:var(--color_primary_tint)}
+.agencychip{display:inline-flex;align-items:center;gap:8px;background:var(--color_primary_tint);color:var(--color_primary_deep);border:1px solid var(--color_primary_soft);padding:9px 14px;border-radius:var(--r_pill);font-weight:700;font-size:12.5px}
+.agencychip svg{width:16px;height:16px}
+
+footer{padding:48px 28px 80px;text-align:center;color:var(--color_gray_2);font-size:13px}
+footer b{color:var(--color_primary_deep)}
+</style>
+</head>
+<body>
+
+<!-- ================= SPRITE DE ICONOS A MEDIDA (trazo fino, 24x24) ================= -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <!-- isotipo: U + play -->
+    <symbol id="iso" viewBox="0 0 24 24">
+      <path d="M6 4.2v8.2a6 6 0 0 0 12 0V4.2" fill="none" stroke="#fff" stroke-width="2.1" stroke-linecap="round"/>
+      <path d="M10.4 9.1l4.3 2.5-4.3 2.5z" fill="#fff"/>
+    </symbol>
+    <symbol id="i-bed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 17v-5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5M3 13V7M21 17v3M3 17v3M7 10V8.5A1.5 1.5 0 0 1 8.5 7h7A1.5 1.5 0 0 1 17 8.5V10"/>
+    </symbol>
+    <symbol id="i-bath" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 12V6.5A2.5 2.5 0 0 1 6.5 4 2.5 2.5 0 0 1 9 6.5M3 12h18v2a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4zM6 18l-1 2M18 18l1 2"/>
+    </symbol>
+    <symbol id="i-area" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 4h16v16H4zM4 9h3M17 4v3M20 15h-3M7 20v-3"/>
+    </symbol>
+    <symbol id="i-heart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 20.5C6.5 16.4 3 13.1 3 9.4 3 6.9 5 5 7.4 5c1.6 0 3 .8 3.8 2.1l.8 1.2.8-1.2C13.6 5.8 15 5 16.6 5 19 5 21 6.9 21 9.4c0 3.7-3.5 7-9 11.1z"/>
+    </symbol>
+    <symbol id="i-bookmark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M6 4h12v16l-6-4-6 4z"/>
+    </symbol>
+    <symbol id="i-share" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="6" cy="12" r="2.4"/><circle cx="17" cy="6" r="2.4"/><circle cx="17" cy="18" r="2.4"/><path d="M8.1 10.9l6.8-3.7M8.1 13.1l6.8 3.7"/>
+    </symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13l11-6.5z" fill="currentColor"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 21s-6.5-5.6-6.5-10.5A6.5 6.5 0 0 1 12 4a6.5 6.5 0 0 1 6.5 6.5C18.5 15.4 12 21 12 21z"/><circle cx="12" cy="10.5" r="2.3"/>
+    </symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.6"/>
+    </symbol>
+    <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4-4"/>
+    </symbol>
+    <symbol id="i-wa" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.6 15l-1.3 4.7 4.8-1.3A10 10 0 1 0 12 2zm5.3 14.1c-.2.6-1.3 1.2-1.8 1.2-.5.1-1 .2-3.4-.7-2.9-1.2-4.7-4.1-4.8-4.3-.1-.2-1.1-1.5-1.1-2.9 0-1.3.7-2 1-2.3.2-.3.5-.3.7-.3h.5c.2 0 .4 0 .6.5l.8 2c.1.2.1.3 0 .5l-.4.6c-.2.2-.3.3-.1.6.2.3.8 1.3 1.7 2.1 1.2 1 2.1 1.4 2.4 1.5.3.1.4.1.6-.1l.7-.8c.2-.2.4-.2.6-.1l1.9.9c.2.1.4.2.4.3.1.2.1.7-.1 1.3z"/></symbol>
+    <symbol id="i-camera" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 8h3l1.4-2h7.2L17 8h3v11H4zM12 16.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/>
+    </symbol>
+    <!-- iconos de navegación / pantallas -->
+    <symbol id="i-home" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11.5 12 4l8 7.5M6 10v9h12v-9"/></symbol>
+    <symbol id="i-map" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4 3.5 6v14L9 18l6 2 5.5-2V4L15 6 9 4zM9 4v14M15 6v14"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.6"/><path d="M5 20c.6-3.6 3.4-5.5 7-5.5s6.4 1.9 7 5.5"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M3 19c.5-3 2.7-4.6 6-4.6S14.5 16 15 19M16 5.2a3 3 0 0 1 0 5.6M21 19c-.3-2.3-1.5-3.8-3.5-4.4"/></symbol>
+    <symbol id="i-sliders" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h9M18 7h1M5 12h2M11 12h8M5 17h6M15 17h4"/><circle cx="16" cy="7" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="13" cy="17" r="2"/></symbol>
+    <symbol id="i-mail" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5.5" width="17" height="13" rx="2.5"/><path d="m4 7 8 5.5L20 7"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2.5"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m15 6-6 6 6 6"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4 20 8 9 19l-4 1 1-4z"/></symbol>
+    <symbol id="i-building" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 20V5a1 1 0 0 1 1-1h7a1 1 0 0 1 1 1v15M14 9h4a1 1 0 0 1 1 1v10M3 20h18M8 8h2M8 12h2M8 16h2"/></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2.5"/><circle cx="9" cy="9.5" r="1.6"/><path d="m5 17 5-4.5 4 3.5 2-2 3 3"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M9 5v14M15 5v14"/></symbol>
+    <symbol id="i-dots" viewBox="0 0 24 24" fill="currentColor"><circle cx="6" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="18" cy="12" r="1.7"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 8v4.5l3 1.8"/></symbol>
+    <symbol id="i-tag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h7l9 9-7 7-9-9V4z"/><circle cx="8" cy="8" r="1.3"/></symbol>
+  </defs>
+</svg>
+
+<!-- ================= TOPBAR ================= -->
+<div class="topbar">
+  <span class="brand"><svg width="22" height="22" viewBox="0 0 24 24" style="border-radius:7px;background:var(--color_primary);padding:3px"><use href="#iso"/></svg> urbea</span>
+  <nav>
+    <a href="#tokens">Tokens</a>
+    <a href="#card">Tarjeta</a>
+    <a href="#iso">Isotipo</a>
+    <a href="#funnel">Embudo</a>
+    <a href="#screens" style="color:var(--color_primary_deep);background:var(--color_primary_tint)">Pantallas</a>
+  </nav>
+</div>
+
+<!-- ================= HERO ================= -->
+<div class="wrap hero grain">
+  <span class="eyebrow">Identidad visual</span>
+  <h1>La identidad visual de <em>Urbea</em>.</h1>
+  <p>Sistema de tokens, tipografía y componentes de firma sobre la paleta actual: <b>Space Grotesk</b> para los títulos, <b>iconos a medida</b>, <b>hairlines de plata</b> y un <b>isotipo</b> que se repite por toda la app. Incluye la representación de las pantallas de la demo.</p>
+  <div class="tags">
+    <span class="tag">Geométrica <b>Space Grotesk</b> + Hanken</span>
+    <span class="tag">Primario <b>Salvia</b> · Acento <b>Arcilla</b></span>
+    <span class="tag">Dual-mode <b>feed oscuro / gestión clara</b></span>
+    <span class="tag">3 componentes <b>custom</b></span>
+  </div>
+</div>
+
+<!-- ================= TOKENS ================= -->
+<section id="tokens"><div class="wrap grain">
+  <span class="eyebrow">Fundación</span>
+  <h2 class="sec">Tokens & sistema</h2>
+  <p class="sec-lead">Lo que faltaba en el prototipo: una escala consistente. Aquí los colores actuales (<b>Salvia</b> primario, <b>Arcilla</b> acento), la tipografía editorial y escalas sistematizadas de radio y sombra. Nombres en <code>snake_case</code> según el skill <code>urbea-design</code>.</p>
+
+  <div class="panel-label" style="margin-top:8px">Paleta</div>
+  <div class="swatches">
+    <div class="sw"><div class="chip" style="background:var(--color_primary)"></div><div class="meta"><div class="n">color_primary · Salvia</div><div class="h">#5A8A5E</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--color_primary_tint)"></div><div class="meta"><div class="n">color_primary_tint</div><div class="h">#DEE9DF</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--color_accent)"></div><div class="meta"><div class="n">color_accent · Arcilla</div><div class="h">#9A7150</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--color_accent_tint)"></div><div class="meta"><div class="n">color_accent_tint</div><div class="h">#EADBCE</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--color_ink_feed)"></div><div class="meta"><div class="n">color_ink_feed</div><div class="h">#17140F</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--color_paper)"></div><div class="meta"><div class="n">color_paper</div><div class="h">#F6F2EB</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--color_paper_3)"></div><div class="meta"><div class="n">color_paper_3</div><div class="h">#E3DCCF</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--color_gray_2)"></div><div class="meta"><div class="n">color_gray_2</div><div class="h">#857C70</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--color_silver)"></div><div class="meta"><div class="n">color_silver · Plata</div><div class="h">#C2C2BD</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--color_whatsapp)"></div><div class="meta"><div class="n">color_whatsapp</div><div class="h">#25D366</div></div></div>
+  </div>
+
+  <div class="panel-label" style="margin-top:38px">Tipografía — Space Grotesk (geométrica display) + Hanken Grotesk (sans)</div>
+  <div class="typescale">
+    <div><span class="lab">Display</span><span class="ts-display it">Departamento en Americana</span></div>
+    <div><span class="lab">Precio</span><span class="ts-price">$15,000</span> <span style="font-family:var(--sans);font-weight:600;color:var(--color_gray_2)">/mes</span></div>
+    <div><span class="lab">H1 título</span><span class="ts-h1">Únete a tu inmobiliaria</span></div>
+    <div><span class="lab">Body</span><span class="ts-body">Texto de interfaz, datos y formularios en Hanken Grotesk: legible y neutro.</span></div>
+    <div><span class="lab">Eyebrow</span><span class="ts-cap">Descubrimiento · feed</span></div>
+  </div>
+
+  <div class="panel-label" style="margin-top:34px">Escala de radios &amp; sombra</div>
+  <div class="scaleboxes">
+    <div class="scalebox"><div class="b" style="border-radius:4px"></div><small>r_4</small></div>
+    <div class="scalebox"><div class="b" style="border-radius:8px"></div><small>r_8</small></div>
+    <div class="scalebox"><div class="b" style="border-radius:12px"></div><small>r_12</small></div>
+    <div class="scalebox"><div class="b" style="border-radius:16px"></div><small>r_16</small></div>
+    <div class="scalebox"><div class="b" style="border-radius:24px"></div><small>r_24</small></div>
+    <div class="scalebox"><div class="b" style="border-radius:999px"></div><small>r_pill</small></div>
+    <div class="scalebox" style="margin-left:20px"><div class="b" style="border-radius:16px;background:#fff;border-color:var(--color_paper_3);box-shadow:var(--sh_sm)"></div><small>sh_sm</small></div>
+    <div class="scalebox"><div class="b" style="border-radius:16px;background:#fff;border:0;box-shadow:var(--sh_md)"></div><small>sh_md</small></div>
+    <div class="scalebox"><div class="b" style="border-radius:16px;background:#fff;border:0;box-shadow:var(--sh_lg)"></div><small>sh_lg</small></div>
+  </div>
+</div></section>
+
+<!-- ================= COMPONENTE 1 · TARJETA ================= -->
+<section id="card"><div class="wrap grain">
+  <span class="eyebrow">Componente 01</span>
+  <h2 class="sec">Tarjeta de propiedad editorial</h2>
+  <p class="sec-lead">El caballo de batalla de toda la app. Precio-héroe en serif con tick Salvia, specs con iconos a medida separados por hairlines de plata (no chips genéricos), y overlay glass. Misma anatomía en dos mundos: <b>oscuro</b> (feed/detalle) y <b>claro</b> (búsqueda/guardados/mis publicaciones).</p>
+
+  <div class="grid cols-2">
+    <!-- VARIANTE OSCURA -->
+    <div>
+      <div class="panel-label"><span class="dot dot-dark"></span>Variante oscura · feed / detalle</div>
+      <div class="surface-dark">
+        <div class="pcard">
+          <div class="media">
+            <div class="ph"><svg viewBox="0 0 24 24"><use href="#i-play"/></svg></div>
+            <div class="toprow">
+              <span class="op-badge"><svg width="13" height="13" viewBox="0 0 24 24" style="color:#fff"><use href="#i-pin"/></svg> Renta</span>
+              <span class="vid-count"><svg><use href="#i-play"/></svg> 3 videos</span>
+            </div>
+            <div class="frail">
+              <div class="fbtn on" onclick="this.classList.toggle('on')"><svg><use href="#i-heart"/></svg><span class="cnt">248</span></div>
+              <div class="fbtn" onclick="this.classList.toggle('on')"><svg><use href="#i-bookmark"/></svg></div>
+              <div class="fbtn"><svg><use href="#i-share"/></svg></div>
+            </div>
+            <div class="glass">
+              <div class="ptitle">Departamento en Americana</div>
+              <div class="pzone"><svg><use href="#i-pin"/></svg> Av. Chapultepec, GDL</div>
+              <div class="price"><span class="amt">$15,000</span><span class="per">/mes</span></div>
+              <div class="specs">
+                <span class="spec"><svg><use href="#i-bed"/></svg> 2 rec</span>
+                <span class="spec"><svg><use href="#i-bath"/></svg> 2 baños</span>
+                <span class="spec"><svg><use href="#i-area"/></svg> 85 m²</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- VARIANTE CLARA -->
+    <div>
+      <div class="panel-label"><span class="dot dot-light"></span>Variante clara · búsqueda / guardados</div>
+      <div class="surface-light">
+        <div class="pcard light">
+          <div class="media" style="aspect-ratio:16/11">
+            <div class="ph"><svg viewBox="0 0 24 24" style="color:#fff"><use href="#i-play"/></svg></div>
+            <div class="save-inline" onclick="this.classList.toggle('on'); this.querySelector('svg').style.fill=this.classList.contains('on')?'var(--color_primary)':'none'; this.style.color=this.classList.contains('on')?'var(--color_primary)':''"><svg fill="none"><use href="#i-bookmark"/></svg></div>
+            <div class="toprow"><span class="op-badge venta"><svg width="13" height="13" viewBox="0 0 24 24" style="color:#fff"><use href="#i-pin"/></svg> Venta</span></div>
+          </div>
+          <div class="body">
+            <div class="ptitle">Casa en Providencia</div>
+            <div class="pzone"><svg><use href="#i-pin"/></svg> Col. Providencia, GDL</div>
+            <div class="price"><span class="amt">$2,400,000</span></div>
+            <div class="specs">
+              <span class="spec"><svg><use href="#i-bed"/></svg> 3 rec</span>
+              <span class="spec"><svg><use href="#i-bath"/></svg> 2.5 baños</span>
+              <span class="spec"><svg><use href="#i-area"/></svg> 140 m²</span>
+            </div>
+          </div>
+        </div>
+        <p class="note" style="margin-top:16px">Sobre papel, la misma tarjeta cambia tokens (texto tinta, fondo blanco) pero conserva precio-héroe, iconos a medida y hairlines → cohesión entre los dos mundos.</p>
+      </div>
+    </div>
+  </div>
+</div></section>
+
+<!-- ================= COMPONENTE 2 · ISOTIPO ================= -->
+<section id="iso"><div class="wrap grain">
+  <span class="eyebrow">Componente 02</span>
+  <h2 class="sec">Isotipo “U + play” como motivo</h2>
+  <p class="sec-lead">El styleguide decía “el isotipo es un play” pero no aparecía en ningún lado. Aquí se vuelve <b>recurrente</b>: el mismo gesto (la U que abraza un play) cose botón de video, avatares, pines, loaders y estados vacíos. Eso es lo que hace que una marca se sienta una sola.</p>
+
+  <div class="iso-hero" style="margin-bottom:34px">
+    <div class="iso-badge"><svg viewBox="0 0 24 24"><use href="#iso"/></svg></div>
+    <div class="iso-lock"><span class="mk"><svg viewBox="0 0 24 24"><use href="#iso"/></svg></span> urbea</div>
+  </div>
+
+  <div class="apps">
+    <div class="appcell dark">
+      <div class="stage"><div class="play-btn"><svg viewBox="0 0 24 24"><use href="#i-play"/></svg></div></div>
+      <div class="cap">Play · feed</div>
+    </div>
+    <div class="appcell">
+      <div class="stage"><div class="avatar"><div class="ring"></div><div class="ph"></div><div class="badge"><svg viewBox="0 0 24 24"><use href="#iso"/></svg></div></div></div>
+      <div class="cap">Anillo de avatar</div>
+    </div>
+    <div class="appcell">
+      <div class="stage"><div class="pin-wrap"><div class="pin"><div class="drop"></div><div class="ico"><svg viewBox="0 0 24 24"><use href="#iso"/></svg></div></div><div class="pin-price">$15k</div></div></div>
+      <div class="cap">Pin de mapa</div>
+    </div>
+    <div class="appcell dark">
+      <div class="stage"><div class="loader"><svg viewBox="0 0 24 24"><use href="#iso"/></svg></div></div>
+      <div class="cap">Loader</div>
+    </div>
+    <div class="appcell">
+      <div class="stage"><div class="empty-mk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><use href="#i-bookmark"/></svg></div></div>
+      <div class="cap">Estado vacío</div>
+    </div>
+    <div class="appcell">
+      <div class="stage"><svg width="50" height="50" viewBox="0 0 24 24" style="background:var(--color_primary);border-radius:14px;padding:10px"><use href="#iso"/></svg></div>
+      <div class="cap">Ícono de app</div>
+    </div>
+  </div>
+</div></section>
+
+<!-- ================= COMPONENTE 3 · EMBUDO ================= -->
+<section id="funnel"><div class="wrap grain">
+  <span class="eyebrow">Componente 03</span>
+  <h2 class="sec">Embudo de leads · 7 estados</h2>
+  <p class="sec-lead">El lado gestión es donde un CRM se siente “hoja de cálculo”. Este embudo de firma muestra los <b>7 estados reales</b> (<code>lead_status</code>) como barra segmentada: el progreso avanza en <b>Arcilla</b> y al cerrarse se vuelve <b>Salvia</b> (Ganado) — en vez de píldoras de color planas. Incluye variante de detalle y chip de fila para la lista.</p>
+
+  <div class="grid cols-2">
+    <div>
+      <div class="panel-label"><span class="dot dot-light"></span>Detalle del lead · barra de embudo</div>
+      <div class="funnel-card">
+        <div style="font-family:var(--display);font-weight:600;font-size:19px;margin-bottom:4px">Jorge Luna</div>
+        <div style="font-size:12.5px;color:var(--color_gray_2);margin-bottom:20px">Depto Americana · hace 2 h</div>
+        <div class="funnel" id="funnelBar">
+          <div class="fstep" data-k="new"><div class="bar"></div><div class="lab">Nuevo</div></div>
+          <div class="fstep" data-k="contacted"><div class="bar"></div><div class="lab">Contactado</div></div>
+          <div class="fstep" data-k="in_progress"><div class="bar"></div><div class="lab">En proceso</div></div>
+          <div class="fstep" data-k="visit_scheduled"><div class="bar"></div><div class="lab">Visita</div></div>
+          <div class="fstep won-step" data-k="closed_won"><div class="bar"></div><div class="lab">Ganado</div></div>
+        </div>
+        <div class="terminals">
+          <span style="font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--color_gray_2);align-self:center">Terminales</span>
+          <span class="lead-chip chip-lost"><span class="d"></span>Perdido</span>
+          <span class="lead-chip chip-disc"><span class="d"></span>Descartado</span>
+        </div>
+        <div class="state-switch" id="switch">
+          <button data-s="new" class="active">Nuevo</button>
+          <button data-s="contacted">Contactado</button>
+          <button data-s="in_progress">En proceso</button>
+          <button data-s="visit_scheduled">Visita</button>
+          <button data-s="closed_won">Ganado</button>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="panel-label"><span class="dot dot-light"></span>Lista CRM · chip de fila</div>
+      <div class="lead-list">
+        <div class="lead-row"><div class="lead-av">JL</div><div class="lead-info"><div class="nm">Jorge Luna</div><div class="meta">Depto Americana · hace 2 h</div></div><div class="chip-wrap"><span class="lead-chip chip-new"><span class="d"></span>Nuevo</span></div></div>
+        <div class="lead-row"><div class="lead-av">AM</div><div class="lead-info"><div class="nm">Ana Mora</div><div class="meta">Casa Providencia · ayer</div></div><div class="chip-wrap"><span class="lead-chip chip-prog"><span class="d"></span>En proceso</span></div></div>
+        <div class="lead-row"><div class="lead-av">RC</div><div class="lead-info"><div class="nm">Rafa Cano</div><div class="meta">Depto Americana · 3 propiedades</div></div><div class="chip-wrap"><span class="lead-chip chip-prog"><span class="d"></span>Contactado</span></div></div>
+        <div class="lead-row"><div class="lead-av">DB</div><div class="lead-info"><div class="nm">Daniel Brito</div><div class="meta">Estudio Lafayette · hace 5 d</div></div><div class="chip-wrap"><span class="lead-chip chip-won"><span class="d"></span>Ganado</span></div></div>
+        <div class="lead-row"><div class="lead-av">SP</div><div class="lead-info"><div class="nm">Sofía Páez</div><div class="meta">Local Centro · hace 1 sem</div></div><div class="chip-wrap"><span class="lead-chip chip-lost"><span class="d"></span>Perdido</span></div></div>
+      </div>
+      <p class="note" style="margin-top:16px">Clic en los estados del panel izquierdo para ver el embudo avanzar. El chip de fila reusa los mismos tokens de color por estado.</p>
+    </div>
+  </div>
+</div></section>
+
+<!-- ================= PANTALLAS · MOCKUPS DE LA DEMO ================= -->
+<section id="screens"><div class="wrap grain">
+  <span class="eyebrow">La demo, pantalla por pantalla</span>
+  <h2 class="sec">Las ~13 pantallas del MVP</h2>
+  <p class="sec-lead">Representación visual fiel de toda la app de la <b>demo cerrada de 3 semanas</b> (<code>docs/PRD-MVP-demo.md</code> §6), montada con los tokens y componentes de este kit. Estética <b>híbrida</b>: descubrimiento <b>oscuro e inmersivo</b> (feed/detalle/mapa), gestión <b>clara y editorial</b> (publicar, CRM, perfil, admin). Son mockups estáticos — los efectos reales (video, blur, gestos, mapa nativo) llegan en código con <code>expo-video</code>, <code>react-native-maps</code> y BlurView.</p>
+
+  <div class="screens-groups">
+
+  <!-- ===== GRUPO: ACCESO Y ALTA ===== -->
+  <div class="sgroup">
+    <div class="gh"><span class="gn">Identidad &amp; acceso</span><span class="gt">Entrar y darse de alta</span><span class="gline"></span></div>
+    <div class="phone-grid">
+
+      <!-- 1 · LOGIN -->
+      <div class="phone-fig">
+        <div class="phone"><div class="scr">
+          <div class="sbar"><span>9:41</span><span class="sig"><i></i><b></b></span></div>
+          <div class="scr-body pad" style="justify-content:center;gap:16px;padding-bottom:40px">
+            <div style="text-align:center;margin-bottom:6px">
+              <div class="iso-badge" style="width:66px;height:66px;border-radius:20px;margin:0 auto 14px"><svg viewBox="0 0 24 24"><use href="#iso"/></svg></div>
+              <div style="font-family:var(--display);font-weight:600;font-size:26px;letter-spacing:-.02em">urbea</div>
+              <div class="sub" style="margin-top:4px">Bienvenido de vuelta</div>
+            </div>
+            <div><span class="lab2">Correo</span><div class="fld"><svg><use href="#i-mail"/></svg><span class="val">agente@inmobiliaria.mx</span></div></div>
+            <div><span class="lab2">Contraseña</span><div class="fld"><svg><use href="#i-lock"/></svg><span class="val">••••••••</span></div></div>
+            <div class="pbtn glass" style="margin-top:6px">Iniciar sesión</div>
+            <div style="text-align:center;font-size:12px;color:var(--color_gray_2);margin-top:2px">¿Tienes un <b style="color:var(--color_primary_deep)">código de invitación?</b></div>
+          </div>
+        </div></div>
+        <div class="phone-cap"><div class="t"><span class="num">1</span> Login</div><div class="d">Email + contraseña (Supabase Auth)</div></div>
+      </div>
+
+      <!-- 2 · CANJE DE CÓDIGO -->
+      <div class="phone-fig">
+        <div class="phone"><div class="scr">
+          <div class="sbar"><span>9:41</span><span class="sig"><i></i><b></b></span></div>
+          <div class="appbar"><div class="ico"><svg><use href="#i-back"/></svg></div><div><div class="at">Únete a tu equipo</div><div class="as">Canjea el código de tu inmobiliaria</div></div></div>
+          <div class="scr-body pad" style="gap:18px">
+            <div><span class="lab2">Código de invitación</span>
+              <div class="codeboxes"><b class="fill">U</b><b class="fill">R</b><b class="fill">B</b><b class="fill">7</b><b>·</b><b>·</b></div>
+            </div>
+            <div class="agencychip" style="align-self:center"><svg><use href="#i-building"/></svg> Inmobiliaria Centro · válido</div>
+            <div style="height:1px;background:var(--color_paper_3);margin:2px 0"></div>
+            <div><span class="lab2">Correo</span><div class="fld"><svg><use href="#i-mail"/></svg><span class="ph">tu@correo.com</span></div></div>
+            <div><span class="lab2">Crea una contraseña</span><div class="fld"><svg><use href="#i-lock"/></svg><span class="ph">mínimo 8 caracteres</span></div></div>
+            <div class="pbtn glass" style="margin-top:4px">Crear mi cuenta de agente</div>
+            <div style="font-size:11px;color:var(--color_gray_2);text-align:center">Al continuar aceptas los términos vigentes</div>
+          </div>
+        </div></div>
+        <div class="phone-cap"><div class="t"><span class="num">2</span> Canje de código</div><div class="d">Token de invitación → alta de agente</div></div>
+      </div>
+
+      <!-- 3 · ONBOARDING -->
+      <div class="phone-fig">
+        <div class="phone"><div class="scr">
+          <div class="sbar"><span>9:41</span><span class="sig"><i></i><b></b></span></div>
+          <div class="scr-body pad" style="gap:20px;padding-top:18px">
+            <div><div style="font-family:var(--display);font-weight:600;font-size:22px;letter-spacing:-.01em">Completa tu perfil</div><div class="sub" style="margin-top:4px">Así te verán en el feed y tus leads.</div></div>
+            <div style="display:flex;justify-content:center;margin:6px 0">
+              <div class="avatar" style="width:104px;height:104px"><div class="ring"></div><div class="ph"></div><div class="badge" style="width:34px;height:34px;border-radius:12px;bottom:-2px;right:-2px"><svg viewBox="0 0 24 24" style="width:17px;height:17px"><use href="#i-camera"/></svg></div></div>
+            </div>
+            <div><span class="lab2">Nombre completo</span><div class="fld"><svg><use href="#i-user"/></svg><span class="val">María Fernanda Ruiz</span></div></div>
+            <div class="agencychip" style="align-self:flex-start"><svg><use href="#i-building"/></svg> Inmobiliaria Centro</div>
+            <div style="margin-top:auto;padding-bottom:8px">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px"><div style="flex:1;height:6px;border-radius:999px;background:var(--color_paper_3);overflow:hidden"><div style="width:66%;height:100%;background:var(--color_primary)"></div></div><span style="font-size:11px;font-weight:700;color:var(--color_gray_2)">2 / 3</span></div>
+              <div class="pbtn glass">Continuar</div>
+              <div class="pbtn ghost" style="margin-top:6px">Saltar foto por ahora</div>
+            </div>
+          </div>
+        </div></div>
+        <div class="phone-cap"><div class="t"><span class="num">3</span> Onboarding</div><div class="d">Nombre + foto · saltar foto · progreso</div></div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ===== GRUPO: DESCUBRIMIENTO ===== -->
+  <div class="sgroup">
+    <div class="gh"><span class="gn">Descubrimiento · oscuro</span><span class="gt">Feed, detalle, mapa y búsqueda</span><span class="gline"></span></div>
+    <div class="phone-grid">
+
+      <!-- 4 · FEED VERTICAL -->
+      <div class="phone-fig">
+        <div class="phone"><div class="scr dark">
+          <div class="sbar" style="position:absolute;left:0;right:0;z-index:10"><span>9:41</span><span class="sig"><i></i><b></b></span></div>
+          <div class="scr-body" style="position:relative">
+            <div class="feedscr">
+              <div class="vph"><div class="play-btn"><svg viewBox="0 0 24 24"><use href="#i-play"/></svg></div></div>
+            </div>
+            <div class="feed-top">
+              <span class="op-badge"><svg width="13" height="13" viewBox="0 0 24 24" style="color:#fff"><use href="#i-pin"/></svg> Renta</span>
+              <span class="vid-count" style="margin-left:auto"><svg><use href="#i-play"/></svg> 1/3</span>
+            </div>
+            <div class="feed-rail">
+              <div class="fbtn on"><svg><use href="#i-heart"/></svg><span class="cnt">248</span></div>
+              <div class="fbtn"><svg><use href="#i-bookmark"/></svg><span class="cnt">Guardar</span></div>
+              <div class="fbtn" style="background:var(--color_whatsapp);border-color:rgba(255,255,255,.3)"><svg><use href="#i-wa"/></svg><span class="cnt">Contactar</span></div>
+              <div class="fbtn"><svg><use href="#i-share"/></svg></div>
+            </div>
+            <div class="feed-info">
+              <div class="feed-agent"><div class="av"></div><div><div class="nm">María Ruiz</div><div class="ag">Inmobiliaria Centro</div></div></div>
+              <div class="ptitle">Departamento en Americana</div>
+              <div class="pzone"><svg><use href="#i-pin"/></svg> Av. Chapultepec, GDL</div>
+              <div class="price" style="color:var(--color_paper)"><span class="amt">$15,000</span><span class="per" style="color:rgba(246,242,235,.7)">/mes</span></div>
+              <div class="specs" style="margin-top:9px">
+                <span class="spec" style="color:var(--color_paper);padding-left:0"><svg><use href="#i-bed"/></svg> 2</span>
+                <span class="spec" style="color:var(--color_paper);border-left:1px solid rgba(194,194,189,.35)"><svg><use href="#i-bath"/></svg> 2</span>
+                <span class="spec" style="color:var(--color_paper);border-left:1px solid rgba(194,194,189,.35)"><svg><use href="#i-area"/></svg> 85 m²</span>
+              </div>
+            </div>
+          </div>
+          <div class="tabbar">
+            <div class="tab on"><svg><use href="#i-home"/></svg>Feed</div>
+            <div class="tab"><svg><use href="#i-map"/></svg>Mapa</div>
+            <div class="tab-fab"><svg><use href="#i-plus"/></svg></div>
+            <div class="tab"><svg><use href="#i-users"/></svg>Leads</div>
+            <div class="tab"><svg><use href="#i-user"/></svg>Perfil</div>
+          </div>
+        </div></div>
+        <div class="phone-cap"><div class="t"><span class="num">4</span> Feed vertical</div><div class="d">Pantalla completa, swipe vertical, autoplay</div></div>
+      </div>
+
+      <!-- 5 · DETALLE -->
+      <div class="phone-fig">
+        <div class="phone"><div class="scr">
+          <div class="scr-body" style="position:relative">
+            <div style="position:relative;height:230px;background:linear-gradient(160deg,#8a6f57,#473829);flex:none">
+              <div class="sbar" style="color:#fff;position:absolute;left:0;right:0;z-index:5"><span>9:41</span><span class="sig"><i></i><b></b></span></div>
+              <div style="position:absolute;top:34px;left:14px;z-index:6" class="fbtn"><svg><use href="#i-back"/></svg></div>
+              <div style="position:absolute;inset:0;display:grid;place-items:center;opacity:.5"><div class="play-btn"><svg viewBox="0 0 24 24"><use href="#i-play"/></svg></div></div>
+              <span class="op-badge" style="position:absolute;left:14px;bottom:14px;z-index:5"><svg width="13" height="13" viewBox="0 0 24 24" style="color:#fff"><use href="#i-pin"/></svg> Renta</span>
+              <span class="vid-count" style="position:absolute;right:14px;bottom:14px;z-index:5"><svg><use href="#i-play"/></svg> 3 videos</span>
+            </div>
+            <div class="scr-scroll pad" style="padding-top:14px">
+              <div class="ptitle" style="font-family:var(--display);font-weight:600;font-size:20px;letter-spacing:-.01em">Departamento en Americana</div>
+              <div class="pzone" style="font-size:12px;color:var(--color_gray_2);margin-top:3px;display:flex;align-items:center;gap:5px"><svg style="width:13px;height:13px"><use href="#i-pin"/></svg> Av. Chapultepec 480, GDL</div>
+              <div class="price"><span class="amt">$15,000</span><span class="per">/mes</span></div>
+              <div class="specs" style="margin-top:12px;padding-bottom:14px;border-bottom:1px solid var(--color_paper_3)">
+                <span class="spec" style="padding-left:0"><svg><use href="#i-bed"/></svg> 2 rec</span>
+                <span class="spec"><svg><use href="#i-bath"/></svg> 2 baños</span>
+                <span class="spec"><svg><use href="#i-area"/></svg> 85 m²</span>
+              </div>
+              <p style="font-size:12px;color:var(--color_gray_3);line-height:1.55;margin:13px 0">Luminoso, cocina equipada y amenidades. A pasos de Chapultepec, ideal para vivir el corazón de la ciudad.</p>
+              <div class="sheet" style="display:flex;align-items:center;gap:11px;padding:12px;margin-bottom:12px">
+                <div class="feed-agent" style="margin:0"><div class="av" style="width:42px;height:42px"></div></div>
+                <div style="flex:1"><div style="font-weight:700;font-size:13px">María Ruiz</div><div style="font-size:11px;color:var(--color_gray_2)">Inmobiliaria Centro</div></div>
+                <div style="width:40px;height:40px;border-radius:13px;background:var(--color_whatsapp);display:grid;place-items:center;color:#fff"><svg style="width:22px;height:22px"><use href="#i-wa"/></svg></div>
+              </div>
+              <div style="height:96px;border-radius:var(--r_16);position:relative;overflow:hidden;border:1px solid var(--color_paper_3)"><div class="mapbg"></div><div class="mappin" style="top:32%;left:42%"><div class="mpin"><div class="drop"></div><div class="ico"><svg viewBox="0 0 24 24"><use href="#iso"/></svg></div></div></div></div>
+            </div>
+          </div>
+          <div class="pad" style="padding-top:10px;padding-bottom:14px;border-top:1px solid var(--color_paper_3)"><div class="pbtn glass" style="display:flex;align-items:center;justify-content:center;gap:8px"><svg style="width:18px;height:18px"><use href="#i-wa"/></svg> Contactar por WhatsApp</div></div>
+        </div></div>
+        <div class="phone-cap"><div class="t"><span class="num">5</span> Detalle</div><div class="d">Video, datos, agente, mapa, contacto</div></div>
+      </div>
+
+      <!-- 6 · MAPA -->
+      <div class="phone-fig">
+        <div class="phone"><div class="scr">
+          <div class="scr-body" style="position:relative">
+            <div class="mapbg"></div>
+            <div class="sbar" style="position:absolute;left:0;right:0;z-index:8"><span>9:41</span><span class="sig"><i></i><b></b></span></div>
+            <div class="pad" style="position:absolute;top:34px;left:0;right:0;z-index:8"><div class="fld" style="background:rgba(255,255,255,.95);backdrop-filter:blur(6px)"><svg><use href="#i-search"/></svg><span class="ph">Buscar zona o ciudad</span><svg style="margin-left:auto"><use href="#i-sliders"/></svg></div></div>
+            <div class="mappin" style="top:30%;left:20%"><div class="mpin"><div class="drop"></div><div class="ico"><svg viewBox="0 0 24 24"><use href="#iso"/></svg></div></div><div class="mpriceTag">$15k</div></div>
+            <div class="mappin" style="top:46%;left:62%"><div class="mpin"><div class="drop"></div><div class="ico"><svg viewBox="0 0 24 24"><use href="#iso"/></svg></div></div><div class="mpriceTag">$2.4M</div></div>
+            <div class="mappin" style="top:60%;left:34%"><div class="mclus">8</div></div>
+            <div class="mappin" style="top:22%;left:74%"><div class="mpin"><div class="drop"></div><div class="ico"><svg viewBox="0 0 24 24"><use href="#iso"/></svg></div></div></div>
+            <div class="pad" style="position:absolute;left:0;right:0;bottom:12px;z-index:8"><div class="miniprop"><div class="thumb"><div class="pl"><svg><use href="#i-play"/></svg></div></div><div style="flex:1"><div class="mt">Casa en Providencia</div><div class="mz">Col. Providencia, GDL</div><div class="mp">$2,400,000</div></div><svg style="width:18px;height:18px;color:var(--color_gray_2)"><use href="#i-chevron"/></svg></div></div>
+          </div>
+          <div class="tabbar">
+            <div class="tab"><svg><use href="#i-home"/></svg>Feed</div>
+            <div class="tab on"><svg><use href="#i-map"/></svg>Mapa</div>
+            <div class="tab-fab"><svg><use href="#i-plus"/></svg></div>
+            <div class="tab"><svg><use href="#i-users"/></svg>Leads</div>
+            <div class="tab"><svg><use href="#i-user"/></svg>Perfil</div>
+          </div>
+        </div></div>
+        <div class="phone-cap"><div class="t"><span class="num">6</span> Mapa global</div><div class="d">Pines + clustering · ubicación exacta</div></div>
+      </div>
+
+      <!-- 7 · BÚSQUEDA / FILTROS -->
+      <div class="phone-fig">
+        <div class="phone"><div class="scr">
+          <div class="sbar"><span>9:41</span><span class="sig"><i></i><b></b></span></div>
+          <div class="appbar" style="padding-bottom:8px"><div><div class="at">Buscar</div></div></div>
+          <div class="pad"><div class="fld"><svg><use href="#i-search"/></svg><span class="ph">Zona, colonia o ciudad…</span></div></div>
+          <div class="pad" style="margin-top:12px"><div class="chips">
+            <span class="fchip on">Renta</span><span class="fchip">Venta</span>
+            <span class="fchip alt on"><svg><use href="#i-tag"/></svg> Depto</span>
+            <span class="fchip">$5k–20k</span>
+          </div></div>
+          <div class="scr-scroll pad" style="margin-top:14px;display:flex;flex-direction:column;gap:11px">
+            <div class="miniprop"><div class="thumb"><div class="pl"><svg><use href="#i-play"/></svg></div></div><div style="flex:1"><div class="mt">Depto en Americana</div><div class="mz">Av. Chapultepec · 2 rec</div><div class="mp">$15,000<span style="font-size:11px;font-weight:500;color:var(--color_gray_2)">/mes</span></div></div><div class="save-inline" style="position:static;width:32px;height:32px"><svg fill="none"><use href="#i-bookmark"/></svg></div></div>
+            <div class="miniprop"><div class="thumb"><div class="pl"><svg><use href="#i-play"/></svg></div></div><div style="flex:1"><div class="mt">Estudio Lafayette</div><div class="mz">Col. Lafayette · 1 rec</div><div class="mp">$9,500<span style="font-size:11px;font-weight:500;color:var(--color_gray_2)">/mes</span></div></div><div class="save-inline" style="position:static;width:32px;height:32px"><svg fill="none"><use href="#i-bookmark"/></svg></div></div>
+            <div class="miniprop"><div class="thumb"><div class="pl"><svg><use href="#i-play"/></svg></div></div><div style="flex:1"><div class="mt">Loft Centro</div><div class="mz">Centro Histórico · 1 rec</div><div class="mp">$12,000<span style="font-size:11px;font-weight:500;color:var(--color_gray_2)">/mes</span></div></div><div class="save-inline" style="position:static;width:32px;height:32px"><svg fill="none"><use href="#i-bookmark"/></svg></div></div>
+          </div>
+          <div class="tabbar">
+            <div class="tab"><svg><use href="#i-home"/></svg>Feed</div>
+            <div class="tab on"><svg><use href="#i-search"/></svg>Buscar</div>
+            <div class="tab-fab"><svg><use href="#i-plus"/></svg></div>
+            <div class="tab"><svg><use href="#i-users"/></svg>Leads</div>
+            <div class="tab"><svg><use href="#i-user"/></svg>Perfil</div>
+          </div>
+        </div></div>
+        <div class="phone-cap"><div class="t"><span class="num">7</span> Búsqueda / filtros</div><div class="d">Operación, tipo, zona, rango de precio</div></div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ===== GRUPO: PUBLICACIÓN ===== -->
+  <div class="sgroup">
+    <div class="gh"><span class="gn">Oferta · publicación</span><span class="gt">Wizard de 3 pasos y gestión</span><span class="gline"></span></div>
+    <div class="phone-grid">
+
+      <!-- 8a · WIZARD PASO 1 -->
+      <div class="phone-fig">
+        <div class="phone"><div class="scr">
+          <div class="sbar"><span>9:41</span><span class="sig"><i></i><b></b></span></div>
+          <div class="appbar"><div class="ico"><svg><use href="#i-x"/></svg></div><div><div class="at">Publicar propiedad</div><div class="as">Paso 1 de 3 · Operación</div></div></div>
+          <div class="pad"><div class="stepper"><div class="sdot on">1</div><div class="sln"></div><div class="sdot">2</div><div class="sln"></div><div class="sdot">3</div></div></div>
+          <div class="scr-body pad" style="gap:16px;padding-top:18px">
+            <div><span class="lab2">Operación</span><div class="chips"><span class="fchip on" style="flex:1;justify-content:center;padding:12px">Renta</span><span class="fchip alt" style="flex:1;justify-content:center;padding:12px">Venta</span></div></div>
+            <div><span class="lab2">Tipo de propiedad</span>
+              <div class="typegrid">
+                <div class="typecell on"><svg><use href="#i-building"/></svg><span class="tl">Departamento</span></div>
+                <div class="typecell"><svg><use href="#i-home"/></svg><span class="tl">Casa</span></div>
+                <div class="typecell"><svg><use href="#i-image"/></svg><span class="tl">Estudio</span></div>
+                <div class="typecell"><svg><use href="#i-tag"/></svg><span class="tl">Local</span></div>
+              </div>
+            </div>
+            <div style="margin-top:auto;padding-bottom:8px"><div class="pbtn glass" style="display:flex;align-items:center;justify-content:center;gap:7px">Continuar <svg style="width:18px;height:18px"><use href="#i-chevron"/></svg></div></div>
+          </div>
+        </div></div>
+        <div class="phone-cap"><div class="t"><span class="num">8</span> Wizard · Paso 1</div><div class="d">Operación + tipo de propiedad</div></div>
+      </div>
+
+      <!-- 8b · WIZARD PASO 2 -->
+      <div class="phone-fig">
+        <div class="phone"><div class="scr">
+          <div class="sbar"><span>9:41</span><span class="sig"><i></i><b></b></span></div>
+          <div class="appbar"><div class="ico"><svg><use href="#i-back"/></svg></div><div><div class="at">Publicar propiedad</div><div class="as">Paso 2 de 3 · Detalles</div></div></div>
+          <div class="pad"><div class="stepper"><div class="sdot ok"><svg viewBox="0 0 24 24" style="width:13px;height:13px"><use href="#i-check"/></svg></div><div class="sln ok"></div><div class="sdot on">2</div><div class="sln"></div><div class="sdot">3</div></div></div>
+          <div class="scr-scroll pad" style="padding-top:16px;display:flex;flex-direction:column;gap:13px">
+            <div><span class="lab2">Precio (MXN / mes)</span><div class="fld"><span style="font-family:var(--display);font-weight:600;color:var(--color_gray_2)">$</span><span class="val">15,000</span></div></div>
+            <div style="display:flex;gap:10px">
+              <div style="flex:1"><span class="lab2">Recámaras</span><div class="fld" style="justify-content:center"><svg><use href="#i-bed"/></svg><span class="val">2</span></div></div>
+              <div style="flex:1"><span class="lab2">Baños</span><div class="fld" style="justify-content:center"><svg><use href="#i-bath"/></svg><span class="val">2</span></div></div>
+              <div style="flex:1"><span class="lab2">m²</span><div class="fld" style="justify-content:center"><svg><use href="#i-area"/></svg><span class="val">85</span></div></div>
+            </div>
+            <div><span class="lab2">Dirección exacta</span><div class="fld"><svg><use href="#i-pin"/></svg><span class="val">Av. Chapultepec 480</span></div></div>
+            <div style="height:108px;border-radius:var(--r_16);position:relative;overflow:hidden;border:1px solid var(--color_paper_3)"><div class="mapbg"></div><div class="mappin" style="top:34%;left:44%"><div class="mpin"><div class="drop"></div><div class="ico"><svg viewBox="0 0 24 24"><use href="#iso"/></svg></div></div></div></div>
+          </div>
+          <div class="pad" style="padding-top:10px;padding-bottom:14px"><div class="pbtn glass" style="display:flex;align-items:center;justify-content:center;gap:7px">Continuar <svg style="width:18px;height:18px"><use href="#i-chevron"/></svg></div></div>
+        </div></div>
+        <div class="phone-cap"><div class="t"><span class="num">8</span> Wizard · Paso 2</div><div class="d">Precio, recs, baños, m², dirección + mapa</div></div>
+      </div>
+
+      <!-- 8c · WIZARD PASO 3 -->
+      <div class="phone-fig">
+        <div class="phone"><div class="scr">
+          <div class="sbar"><span>9:41</span><span class="sig"><i></i><b></b></span></div>
+          <div class="appbar"><div class="ico"><svg><use href="#i-back"/></svg></div><div><div class="at">Publicar propiedad</div><div class="as">Paso 3 de 3 · Video</div></div></div>
+          <div class="pad"><div class="stepper"><div class="sdot ok"><svg viewBox="0 0 24 24" style="width:13px;height:13px"><use href="#i-check"/></svg></div><div class="sln ok"></div><div class="sdot ok"><svg viewBox="0 0 24 24" style="width:13px;height:13px"><use href="#i-check"/></svg></div><div class="sln ok"></div><div class="sdot on">3</div></div></div>
+          <div class="scr-body pad" style="gap:14px;padding-top:16px">
+            <span class="lab2">Video de la propiedad</span>
+            <div style="border:1.5px dashed var(--color_silver);border-radius:var(--r_16);aspect-ratio:9/12;max-height:200px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;background:var(--color_paper_2);position:relative;overflow:hidden">
+              <div style="position:absolute;inset:0;background:linear-gradient(160deg,#8a6f57,#473829)"></div>
+              <div class="play-btn" style="position:relative"><svg viewBox="0 0 24 24"><use href="#i-play"/></svg></div>
+              <div style="position:absolute;left:10px;right:10px;bottom:10px;height:5px;border-radius:999px;background:rgba(255,255,255,.3)"><div style="width:100%;height:100%;border-radius:999px;background:var(--color_primary_soft)"></div></div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--color_primary_deep);font-weight:600"><svg viewBox="0 0 24 24" style="width:16px;height:16px;color:var(--color_primary)"><use href="#i-check"/></svg> Subido a Storage · formato vertical OK</div>
+            <div style="margin-top:auto;padding-bottom:8px">
+              <div style="font-size:11px;color:var(--color_gray_2);text-align:center;margin-bottom:10px">Se publica de inmediato (auto-aprobación)</div>
+              <div class="pbtn glass">Publicar propiedad</div>
+            </div>
+          </div>
+        </div></div>
+        <div class="phone-cap"><div class="t"><span class="num">8</span> Wizard · Paso 3</div><div class="d">Subida real de video + publicar</div></div>
+      </div>
+
+      <!-- 9 · MIS PUBLICACIONES -->
+      <div class="phone-fig">
+        <div class="phone"><div class="scr">
+          <div class="sbar"><span>9:41</span><span class="sig"><i></i><b></b></span></div>
+          <div class="appbar"><div><div class="at">Mis publicaciones</div><div class="as">4 activas · 1 pausada</div></div><div class="right"><div class="ico" style="background:var(--color_primary);color:#fff;border-color:var(--color_primary)"><svg><use href="#i-plus"/></svg></div></div></div>
+          <div class="scr-scroll pad" style="display:flex;flex-direction:column;gap:11px">
+            <div class="miniprop"><div class="thumb"><div class="pl"><svg><use href="#i-play"/></svg></div></div><div style="flex:1"><div style="display:flex;align-items:center;gap:6px"><div class="mt">Depto Americana</div><span class="stbadge st-active">Activa</span></div><div class="mz" style="display:flex;gap:10px;margin-top:3px"><span><svg viewBox="0 0 24 24" style="width:11px;height:11px;vertical-align:-1px"><use href="#i-eye"/></svg> 1.2k</span><span><svg viewBox="0 0 24 24" style="width:11px;height:11px;vertical-align:-1px"><use href="#i-heart"/></svg> 248</span></div><div class="mp">$15,000<span style="font-size:11px;font-weight:500;color:var(--color_gray_2)">/mes</span></div></div><svg style="width:18px;height:18px;color:var(--color_gray_2)"><use href="#i-dots"/></svg></div>
+            <div class="miniprop"><div class="thumb"><div class="pl"><svg><use href="#i-play"/></svg></div></div><div style="flex:1"><div style="display:flex;align-items:center;gap:6px"><div class="mt">Estudio Lafayette</div><span class="stbadge st-active">Activa</span></div><div class="mz" style="display:flex;gap:10px;margin-top:3px"><span><svg viewBox="0 0 24 24" style="width:11px;height:11px;vertical-align:-1px"><use href="#i-eye"/></svg> 640</span><span><svg viewBox="0 0 24 24" style="width:11px;height:11px;vertical-align:-1px"><use href="#i-heart"/></svg> 73</span></div><div class="mp">$9,500<span style="font-size:11px;font-weight:500;color:var(--color_gray_2)">/mes</span></div></div><svg style="width:18px;height:18px;color:var(--color_gray_2)"><use href="#i-dots"/></svg></div>
+            <div class="miniprop" style="opacity:.72"><div class="thumb"><div class="pl"><svg><use href="#i-pause"/></svg></div></div><div style="flex:1"><div style="display:flex;align-items:center;gap:6px"><div class="mt">Loft Centro</div><span class="stbadge st-paused">Pausada</span></div><div class="mz" style="margin-top:3px">Sin visibilidad en el feed</div><div class="mp">$12,000<span style="font-size:11px;font-weight:500;color:var(--color_gray_2)">/mes</span></div></div><svg style="width:18px;height:18px;color:var(--color_gray_2)"><use href="#i-dots"/></svg></div>
+            <div class="miniprop"><div class="thumb"><div class="pl"><svg><use href="#i-check"/></svg></div></div><div style="flex:1"><div style="display:flex;align-items:center;gap:6px"><div class="mt">Casa Providencia</div><span class="stbadge st-sold">Vendida</span></div><div class="mz" style="margin-top:3px">Cerrada hace 3 días</div><div class="mp">$2,400,000</div></div><svg style="width:18px;height:18px;color:var(--color_gray_2)"><use href="#i-dots"/></svg></div>
+          </div>
+          <div class="tabbar">
+            <div class="tab"><svg><use href="#i-home"/></svg>Feed</div>
+            <div class="tab"><svg><use href="#i-map"/></svg>Mapa</div>
+            <div class="tab-fab"><svg><use href="#i-plus"/></svg></div>
+            <div class="tab"><svg><use href="#i-users"/></svg>Leads</div>
+            <div class="tab on"><svg><use href="#i-user"/></svg>Perfil</div>
+          </div>
+        </div></div>
+        <div class="phone-cap"><div class="t"><span class="num">9</span> Mis publicaciones</div><div class="d">Activa / pausada / vendida · editar</div></div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ===== GRUPO: RELACIÓN Y CRM ===== -->
+  <div class="sgroup">
+    <div class="gh"><span class="gn">Relación con el lead</span><span class="gt">CRM, guardados y perfil</span><span class="gline"></span></div>
+    <div class="phone-grid">
+
+      <!-- 11 · CRM / LEADS -->
+      <div class="phone-fig">
+        <div class="phone"><div class="scr">
+          <div class="sbar"><span>9:41</span><span class="sig"><i></i><b></b></span></div>
+          <div class="appbar"><div><div class="at">Mis leads</div><div class="as">12 activos · 3 nuevos</div></div></div>
+          <div class="pad"><div class="chips" style="overflow:hidden">
+            <span class="fchip on" style="border-radius:var(--r_pill)">Todos</span>
+            <span class="fchip"><span style="width:7px;height:7px;border-radius:50%;background:var(--color_accent)"></span> Nuevos</span>
+            <span class="fchip">En proceso</span>
+            <span class="fchip">Ganados</span>
+          </div></div>
+          <div class="scr-scroll pad" style="margin-top:6px">
+            <div class="lrow"><div class="la">JL</div><div style="flex:1"><div class="ln">Jorge Luna</div><div class="lm">Depto Americana · hace 2 h</div></div><span class="minichip chip-new"><span class="d"></span>Nuevo</span></div>
+            <div class="lrow"><div class="la">AM</div><div style="flex:1"><div class="ln">Ana Mora</div><div class="lm">Casa Providencia · ayer</div></div><span class="minichip chip-prog"><span class="d"></span>En proceso</span></div>
+            <div class="lrow"><div class="la">RC</div><div style="flex:1"><div class="ln">Rafa Cano</div><div class="lm">Depto Americana · hace 2 d</div></div><span class="minichip chip-prog"><span class="d"></span>Contactado</span></div>
+            <div class="lrow"><div class="la">DB</div><div style="flex:1"><div class="ln">Daniel Brito</div><div class="lm">Estudio Lafayette · hace 5 d</div></div><span class="minichip chip-won"><span class="d"></span>Ganado</span></div>
+            <div class="lrow"><div class="la">SP</div><div style="flex:1"><div class="ln">Sofía Páez</div><div class="lm">Loft Centro · hace 1 sem</div></div><span class="minichip chip-lost"><span class="d"></span>Perdido</span></div>
+            <div class="sheet" style="margin-top:12px;padding:13px">
+              <div style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--color_gray_2);margin-bottom:9px">Jorge Luna · embudo</div>
+              <div class="funnel" style="gap:4px"><div class="fstep current" data-k="new"><div class="bar"></div></div><div class="fstep" data-k="contacted"><div class="bar"></div></div><div class="fstep" data-k="in_progress"><div class="bar"></div></div><div class="fstep" data-k="visit_scheduled"><div class="bar"></div></div><div class="fstep won-step" data-k="closed_won"><div class="bar"></div></div></div>
+            </div>
+          </div>
+          <div class="tabbar">
+            <div class="tab"><svg><use href="#i-home"/></svg>Feed</div>
+            <div class="tab"><svg><use href="#i-map"/></svg>Mapa</div>
+            <div class="tab-fab"><svg><use href="#i-plus"/></svg></div>
+            <div class="tab on"><svg><use href="#i-users"/></svg>Leads</div>
+            <div class="tab"><svg><use href="#i-user"/></svg>Perfil</div>
+          </div>
+        </div></div>
+        <div class="phone-cap"><div class="t"><span class="num">11</span> CRM / leads</div><div class="d">Lista + 7 estados · embudo del lead</div></div>
+      </div>
+
+      <!-- 12 · GUARDADOS -->
+      <div class="phone-fig">
+        <div class="phone"><div class="scr">
+          <div class="sbar"><span>9:41</span><span class="sig"><i></i><b></b></span></div>
+          <div class="appbar"><div><div class="at">Guardados</div><div class="as">6 propiedades</div></div></div>
+          <div class="scr-scroll pad"><div class="minigrid">
+            <div class="gcell"><span class="op-badge" style="position:absolute;top:7px;left:7px;font-size:9px;padding:3px 8px;z-index:2">Renta</span><div class="gv"><svg><use href="#i-bookmark"/></svg></div><div class="gp">$15,000<br><span style="font-weight:500;opacity:.85;font-size:10px">Americana</span></div></div>
+            <div class="gcell"><span class="op-badge venta" style="position:absolute;top:7px;left:7px;font-size:9px;padding:3px 8px;z-index:2">Venta</span><div class="gv"><svg><use href="#i-bookmark"/></svg></div><div class="gp">$2.4M<br><span style="font-weight:500;opacity:.85;font-size:10px">Providencia</span></div></div>
+            <div class="gcell"><span class="op-badge" style="position:absolute;top:7px;left:7px;font-size:9px;padding:3px 8px;z-index:2">Renta</span><div class="gv"><svg><use href="#i-bookmark"/></svg></div><div class="gp">$9,500<br><span style="font-weight:500;opacity:.85;font-size:10px">Lafayette</span></div></div>
+            <div class="gcell"><span class="op-badge" style="position:absolute;top:7px;left:7px;font-size:9px;padding:3px 8px;z-index:2">Renta</span><div class="gv"><svg><use href="#i-bookmark"/></svg></div><div class="gp">$12,000<br><span style="font-weight:500;opacity:.85;font-size:10px">Centro</span></div></div>
+            <div class="gcell"><span class="op-badge venta" style="position:absolute;top:7px;left:7px;font-size:9px;padding:3px 8px;z-index:2">Venta</span><div class="gv"><svg><use href="#i-bookmark"/></svg></div><div class="gp">$1.8M<br><span style="font-weight:500;opacity:.85;font-size:10px">Chapalita</span></div></div>
+            <div class="gcell"><span class="op-badge" style="position:absolute;top:7px;left:7px;font-size:9px;padding:3px 8px;z-index:2">Renta</span><div class="gv"><svg><use href="#i-bookmark"/></svg></div><div class="gp">$18,000<br><span style="font-weight:500;opacity:.85;font-size:10px">Country</span></div></div>
+          </div></div>
+          <div class="tabbar">
+            <div class="tab"><svg><use href="#i-home"/></svg>Feed</div>
+            <div class="tab"><svg><use href="#i-bookmark"/></svg>Guardados</div>
+            <div class="tab-fab"><svg><use href="#i-plus"/></svg></div>
+            <div class="tab"><svg><use href="#i-users"/></svg>Leads</div>
+            <div class="tab"><svg><use href="#i-user"/></svg>Perfil</div>
+          </div>
+        </div></div>
+        <div class="phone-cap"><div class="t"><span class="num">12</span> Guardados</div><div class="d">Favoritos del agente en cuadrícula</div></div>
+      </div>
+
+      <!-- 10 · PERFIL -->
+      <div class="phone-fig">
+        <div class="phone"><div class="scr">
+          <div class="sbar"><span>9:41</span><span class="sig"><i></i><b></b></span></div>
+          <div class="appbar" style="padding-bottom:4px"><div class="at" style="margin:0 auto">Perfil</div><div class="right" style="position:absolute;right:18px"><div class="ico"><svg><use href="#i-edit"/></svg></div></div></div>
+          <div class="scr-scroll pad">
+            <div class="profhead">
+              <div class="pav"><div class="vb"><svg viewBox="0 0 24 24"><use href="#iso"/></svg></div></div>
+              <div style="font-family:var(--display);font-weight:600;font-size:20px;letter-spacing:-.01em;margin-top:6px">María Ruiz</div>
+              <div class="agencychip" style="margin-top:4px"><svg><use href="#i-building"/></svg> Inmobiliaria Centro</div>
+            </div>
+            <div class="profstats sheet" style="padding:12px 0;margin:14px 0"><div class="ps"><div class="n">8</div><div class="l">Publicaciones</div></div><div class="ps"><div class="n">12</div><div class="l">Leads</div></div><div class="ps"><div class="n">4</div><div class="l">Cerrados</div></div></div>
+            <div style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--color_gray_2);margin-bottom:9px">Mis publicaciones</div>
+            <div class="minigrid">
+              <div class="gcell"><div class="gv"><svg><use href="#i-play"/></svg></div><div class="gp">$15,000</div></div>
+              <div class="gcell"><div class="gv"><svg><use href="#i-play"/></svg></div><div class="gp">$9,500</div></div>
+              <div class="gcell"><div class="gv"><svg><use href="#i-play"/></svg></div><div class="gp">$12,000</div></div>
+              <div class="gcell"><div class="gv"><svg><use href="#i-play"/></svg></div><div class="gp">$2.4M</div></div>
+            </div>
+          </div>
+          <div class="tabbar">
+            <div class="tab"><svg><use href="#i-home"/></svg>Feed</div>
+            <div class="tab"><svg><use href="#i-map"/></svg>Mapa</div>
+            <div class="tab-fab"><svg><use href="#i-plus"/></svg></div>
+            <div class="tab"><svg><use href="#i-users"/></svg>Leads</div>
+            <div class="tab on"><svg><use href="#i-user"/></svg>Perfil</div>
+          </div>
+        </div></div>
+        <div class="phone-cap"><div class="t"><span class="num">10</span> Perfil del agente</div><div class="d">Foto, nombre, inmobiliaria + publicaciones</div></div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ===== GRUPO: ADMIN ===== -->
+  <div class="sgroup">
+    <div class="gh"><span class="gn">Operación interna</span><span class="gt">Panel admin (rol admin)</span><span class="gline"></span></div>
+    <div class="phone-grid">
+
+      <!-- 13 · PANEL ADMIN -->
+      <div class="phone-fig">
+        <div class="phone"><div class="scr">
+          <div class="sbar"><span>9:41</span><span class="sig"><i></i><b></b></span></div>
+          <div class="appbar"><div><div class="at">Administración</div><div class="as">Inmobiliarias &amp; owners</div></div><div class="right"><div class="ico" style="background:var(--color_primary);color:#fff;border-color:var(--color_primary)"><svg><use href="#i-plus"/></svg></div></div></div>
+          <div class="scr-scroll pad" style="display:flex;flex-direction:column;gap:11px">
+            <div class="sheet" style="padding:13px;display:flex;align-items:center;gap:11px"><div class="lead-av" style="width:42px;height:42px;border-radius:13px;background:var(--color_primary_tint);color:var(--color_primary_deep);display:grid;place-items:center"><svg viewBox="0 0 24 24" style="width:20px;height:20px"><use href="#i-building"/></svg></div><div style="flex:1"><div style="font-weight:700;font-size:13.5px">Inmobiliaria Centro</div><div style="font-size:11px;color:var(--color_gray_2)">Owner: Luis Vega · 6 agentes</div></div><span class="stbadge st-active">Activa</span></div>
+            <div class="sheet" style="padding:13px;display:flex;align-items:center;gap:11px"><div class="lead-av" style="width:42px;height:42px;border-radius:13px;background:var(--color_primary_tint);color:var(--color_primary_deep);display:grid;place-items:center"><svg viewBox="0 0 24 24" style="width:20px;height:20px"><use href="#i-building"/></svg></div><div style="flex:1"><div style="font-weight:700;font-size:13.5px">Grupo Providencia</div><div style="font-size:11px;color:var(--color_gray_2)">Owner: Marta Gil · 3 agentes</div></div><span class="stbadge st-active">Activa</span></div>
+            <div class="sheet" style="padding:13px">
+              <div style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--color_gray_2);margin-bottom:10px">Código de invitación generado</div>
+              <div style="display:flex;align-items:center;gap:10px"><div class="codeboxes" style="gap:5px"><b class="fill" style="width:30px;height:38px;font-size:18px">U</b><b class="fill" style="width:30px;height:38px;font-size:18px">R</b><b class="fill" style="width:30px;height:38px;font-size:18px">B</b><b class="fill" style="width:30px;height:38px;font-size:18px">7</b></div><div style="font-size:11px;color:var(--color_gray_2);flex:1">Para: Inmobiliaria Centro<br>Expira en 7 días</div></div>
+            </div>
+            <div class="pbtn glass" style="display:flex;align-items:center;justify-content:center;gap:7px;margin-top:2px"><svg style="width:18px;height:18px"><use href="#i-plus"/></svg> Nueva inmobiliaria</div>
+          </div>
+        </div></div>
+        <div class="phone-cap"><div class="t"><span class="num">13</span> Panel admin</div><div class="d">Alta de inmobiliarias + owners · invitaciones</div></div>
+      </div>
+
+    </div>
+  </div>
+
+  </div>
+
+  <p class="note" style="margin-top:42px;text-align:center">13 pantallas del PRD-MVP-demo (§6) · estética híbrida feed-oscuro / gestión-clara · todas con los tokens <code>color_primary</code> Salvia + <code>color_accent</code> Arcilla, el isotipo <b>U+play</b> recurrente y los componentes de firma de este kit.</p>
+</div></section>
+
+<footer class="grain">
+  <p><b>Urbea</b> · Kit de personalidad — artefacto de exploración (003). No es código de app · branding gated (#19).<br>
+  Primario <b>Salvia #5A8A5E</b> · Acento <b>Arcilla #9A7150</b> · fuentes Space Grotesk + Hanken Grotesk vía Google Fonts.</p>
+</footer>
+
+<script>
+// —— Embudo: avanzar estados (demo) ——
+const ORDER = ["new","contacted","in_progress","visit_scheduled","closed_won"];
+const steps = [...document.querySelectorAll('#funnelBar .fstep')];
+function setState(s){
+  const idx = ORDER.indexOf(s);
+  steps.forEach((st,i)=>{
+    st.classList.remove('done','current','won');
+    if(s==="closed_won" && i===ORDER.length-1){ st.classList.add('won'); }
+    else if(i<idx) st.classList.add('done');
+    else if(i===idx) st.classList.add('current');
+  });
+  if(s==="closed_won"){ steps.forEach((st,i)=>{ if(i<ORDER.length-1) st.classList.add('done'); }); }
+}
+document.querySelectorAll('#switch button').forEach(b=>{
+  b.addEventListener('click',()=>{
+    document.querySelectorAll('#switch button').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active'); setState(b.dataset.s);
+  });
+});
+setState('new');
+</script>
+</body>
+</html>
