@@ -117,12 +117,16 @@ export function useVideoUpload(deps?: UseVideoUploadDeps): UseVideoUploadResult 
       const video_id = uuid_fn();
       const storage_path = `${user_id}/${video_id}.mp4`;
 
-      // ponytail: pasamos local_uri directamente como body.
-      //   - En tests: el mock de upload lo ignora y resuelve con el resultado configurado.
-      //   - En producción RN/Expo: migrar a fetch(uri).blob() o FormData { uri, type, name }.
+      // Leer el archivo local como ArrayBuffer — mismo patrón probado que la
+      // subida de foto de perfil (profileService): fetch() en RN/Expo entiende
+      // los file:// URIs de expo-image-picker. Pasar el URI como string subía
+      // 92 bytes (el texto del path), no el video. ponytail: para videos grandes,
+      // migrar a createSignedUploadUrl + FileSystem.uploadAsync (streaming nativo).
+      const file_body = await (await fetch(local_uri)).arrayBuffer();
+
       const { error: upload_error } = await supabase_client.storage
         .from('property-videos')
-        .upload(storage_path, local_uri as unknown as Blob, {
+        .upload(storage_path, file_body, {
           contentType: 'video/mp4',
           upsert: false,
         });

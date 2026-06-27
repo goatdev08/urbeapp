@@ -130,6 +130,19 @@ import { useVideoUpload } from '../hooks/useVideoUpload';
 // ---------------------------------------------------------------------------
 
 describe('useVideoUpload', () => {
+  // El hook lee el archivo con fetch(local_uri).arrayBuffer() (igual que la
+  // subida de foto de perfil). Mockeamos fetch para que devuelva bytes; el body
+  // no afecta las aserciones (el mock de storage.upload lo ignora).
+  const real_fetch = globalThis.fetch;
+  beforeEach(() => {
+    globalThis.fetch = jest.fn().mockResolvedValue({
+      arrayBuffer: async () => new ArrayBuffer(8),
+    }) as unknown as typeof fetch;
+  });
+  afterEach(() => {
+    globalThis.fetch = real_fetch;
+  });
+
   // ── (EC-11) Estado inicial ──────────────────────────────────────────────────
 
   it('(EC-11) estado_inicial_es_idle: al montar, status=idle, progress=0, error=null', async () => {
