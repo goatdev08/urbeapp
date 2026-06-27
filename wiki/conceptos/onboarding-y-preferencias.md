@@ -13,7 +13,7 @@ actualizado: 2026-06-24
 
 ## Modelo de datos
 - **`user_preferences`** (migración 0004) — 1:1 con `users`. Onboarding del buscador: `location` (PostGIS) + `radius` + filtros. Pensado para personalizar el feed.
-- **`user_preferences.full_name` + `profile_photo_url`** (migración **0015**, #6) — columnas `TEXT` nullable para el onboarding del agente. `full_name` no-nulo funciona como proxy de "onboarding hecho" (guard de re-show).
+- **`user_preferences.full_name` + `profile_photo_url`** (migración **0015**, #6) — columnas `TEXT` nullable para el onboarding del agente. `full_name` no-nulo funciona como proxy de "onboarding hecho" (guard de re-show). ⚠️ **Aquí vive la identidad del agente (nombre+foto), NO en `users`** — el perfil ([[perfil-agente]], #16) lee de aquí, no de `users.first_name/avatar_url` (que quedan sin poblar). La bio (`users.bio`) aún no tiene writer → tarea #22.
 - **Bucket Storage `profile-photos`** (0015) — **público de lectura**, escritura solo del dueño. RLS en `storage.objects`: SELECT público; INSERT/UPDATE/DELETE exigen `(storage.foldername(name))[1] = auth.uid()::text`. Path: `{user_id}/avatar.jpg`. Mismo patrón que `property-videos` (0011) pero público y sin gate de rol. → [[rls-seguridad]]
 
 ## Flujo (demo · #6 vivo)

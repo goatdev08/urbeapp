@@ -19,6 +19,10 @@ Conceptos de producto de Urbea. Estado según [[0005-demo-cerrada-3-semanas|la d
 - [[roles-y-permisos]] — admin / owner / agente (vivo)
 - [[inmobiliarias-y-agentes]] — modelo de cuentas + códigos (vivo)
 - [[onboarding-y-preferencias]] — onboarding mínimo (vivo)
+- [[perfil-agente]] — perfil + grid de propiedades (vivo)
+
+## Interfaz
+- [[design-system]] — tokens, tipografía, componentes de firma (vivo)
 
 ## Relación con el agente
 - [[crm-leads]] — contacto WhatsApp + CRM lista/estados (vivo)
