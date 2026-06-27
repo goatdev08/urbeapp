@@ -76,4 +76,4 @@ Decisiones de fondo: `wiki/decisiones/0003` (vault), `0004` (Taskmaster), `0006`
 - El vault es **síntesis densa**, no espejo de los docs ni índice escueto.
 
 ## 8. Branding
-**En pausa** hasta indicación expresa del cliente (tarea #19). No iniciar diseño sin su visto bueno.
+**Gate LEVANTADO** (cliente, 2026-06-26). Método: **bajo demanda por pantalla**, diseñar antes de implementar escalado por complejidad — simple → mini-spec escrito; componente de **firma** → preview HTML aprobable → portar a RN (ReactBits/galerías web = referencia, NO import; recrear con primitivas RN). El design system (`mobile/src/theme/theme.ts`) **crece orgánicamente**: lo sembró la tarea #16. Identidad: Salvia `#5A8A5E` / Arcilla `#9A7150` / gestión claro `#F6F2EB` / feed oscuro `#17140F`; **Space Grotesk** (display) + **Hanken Grotesk** (UI) — la del kit `003-kit`, NO Fraunces. Ver [[design-system]].
