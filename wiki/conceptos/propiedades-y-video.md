@@ -40,6 +40,7 @@ Wizard **3 pasos** en `mobile/app/(protected)/publish/` (estado compartido `Publ
 ## Reglas / gotchas
 - Video en la demo: **subida real → Supabase Storage** (sin transcoding), bucket `property-videos`. La columna de ruta de Storage (`storage_path`) ya existe (migración 0011). `cloudflare_uid` queda como ref legacy/futuro (coexisten; cada uno único cuando no es nulo).
 - Validación de publicación en **Edge Function** (`supabase/functions/publish-property/`, #8), **no** en cliente (el cliente valida UX con `validate_step1/2/3` pero la EF revalida + aplica RLS/rol).
+- ⚠️ **Gotcha PostGIS + `SECURITY DEFINER` (#8):** en Supabase, PostGIS (`geography`, `ST_Point`, `ST_SetSRID`) vive en el schema **`extensions`**, no en `public`. Una función `SECURITY DEFINER set search_path = public` falla con `42704 type "geography" does not exist`. Hay que **incluir `extensions` en el search_path y calificar** (`extensions.ST_SetSRID(extensions.ST_Point(lng,lat),4326)::extensions.geography`, como `seed.sql`). Bug que se escapó de los tests porque corrieron con el RPC **mockeado** (Deno) y pgTAP no se ejecutó contra PostGIS real — solo apareció contra el remoto. Lección: las funciones con PostGIS necesitan test contra una BD real, no solo mock.
 
 ## Detalle exhaustivo
 - `docs/PRD.md` §12-13 · migración `0005` · [[db-schema-map]]
