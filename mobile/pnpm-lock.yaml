@@ -8,6 +8,12 @@ importers:
 
   .:
     dependencies:
+      '@expo-google-fonts/hanken-grotesk':
+        specifier: ^0.4.3
+        version: 0.4.3
+      '@expo-google-fonts/space-grotesk':
+        specifier: ^0.4.1
+        version: 0.4.1
       '@react-native-async-storage/async-storage':
         specifier: 2.2.0
         version: 2.2.0(react-native@0.85.3(@babel/core@7.29.7)(@react-native/jest-preset@0.85.3(@babel/core@7.29.7)(react@19.2.3))(@react-native/metro-config@0.86.0(@babel/core@7.29.7))(@types/react@19.2.17)(react@19.2.3))
@@ -35,6 +41,9 @@ importers:
       expo-file-system:
         specifier: ^56.0.8
         version: 56.0.8(expo@56.0.12)(react-native@0.85.3(@babel/core@7.29.7)(@react-native/jest-preset@0.85.3(@babel/core@7.29.7)(react@19.2.3))(@react-native/metro-config@0.86.0(@babel/core@7.29.7))(@types/react@19.2.17)(react@19.2.3))
+      expo-font:
+        specifier: ^56.0.7
+        version: 56.0.7(expo@56.0.12)(react-native@0.85.3(@babel/core@7.29.7)(@react-native/jest-preset@0.85.3(@babel/core@7.29.7)(react@19.2.3))(@react-native/metro-config@0.86.0(@babel/core@7.29.7))(@types/react@19.2.17)(react@19.2.3))(react@19.2.3)
       expo-image-manipulator:
         specifier: ^56.0.19
         version: 56.0.19(expo@56.0.12)
@@ -550,8 +559,14 @@ packages:
   '@bcoe/v8-coverage@0.2.3':
     resolution: {integrity: sha512-0hYQ8SB4Db5zvZB4axdMHGwEaQjkZzFjQiN9LVYvIFB2nSUHW9tYpxWriPrWDASIxiaXax83REcLxuSdnGPZtw==}
 
+  '@expo-google-fonts/hanken-grotesk@0.4.3':
+    resolution: {integrity: sha512-TZn/Ux+nCxEjG/zAenCFbEhOAPxSXN3lo2YU2jHcPsNBPFeicm8feQStL81igJuAwJLCn62VvEOdTtmVEBDl0g==}
+
   '@expo-google-fonts/material-symbols@0.4.38':
     resolution: {integrity: sha512-IJkBtN1o8u9BW5fvSii1MyHPQ7Q0HxbWcVBvOrOzgMLpVtZw7R2w94wBTVR7kZwv3w1JNTESMmLA5Sqn1+Z36A==}
+
+  '@expo-google-fonts/space-grotesk@0.4.1':
+    resolution: {integrity: sha512-ZVQYw4Ok/pgcSJiufP8oRZE3AVxS9xtmKEUfsurbHkHNdMc/GA1gDXP9G4Cr7KL4KqSc0haexR2TuMigotCn4Q==}
 
   '@expo/cli@56.1.16':
     resolution: {integrity: sha512-VBQn0mqAwc67b9Cn0RVXyeodghomAx5xGRhA/bXaQzuxDjMQk0zIOb6pXMZX7yiIwJW66UZt/zQiJNSv6aWJYw==}
@@ -4382,7 +4397,11 @@ snapshots:
 
   '@bcoe/v8-coverage@0.2.3': {}
 
+  '@expo-google-fonts/hanken-grotesk@0.4.3': {}
+
   '@expo-google-fonts/material-symbols@0.4.38': {}
+
+  '@expo-google-fonts/space-grotesk@0.4.1': {}
 
   '@expo/cli@56.1.16(@expo/dom-webview@56.0.5)(@expo/metro-runtime@56.0.15)(expo-constants@56.0.18)(expo-font@56.0.7)(expo-router@56.2.11)(expo@56.0.12)(react-native@0.85.3(@babel/core@7.29.7)(@react-native/jest-preset@0.85.3(@babel/core@7.29.7)(react@19.2.3))(@react-native/metro-config@0.86.0(@babel/core@7.29.7))(@types/react@19.2.17)(react@19.2.3))(react@19.2.3)(typescript@6.0.3)':
     dependencies:

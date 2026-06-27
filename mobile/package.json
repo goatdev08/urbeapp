@@ -3,6 +3,8 @@
   "version": "1.0.0",
   "main": "expo-router/entry",
   "dependencies": {
+    "@expo-google-fonts/hanken-grotesk": "^0.4.3",
+    "@expo-google-fonts/space-grotesk": "^0.4.1",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@supabase/supabase-js": "^2.108.2",
     "expo": "~56.0.12",
@@ -12,6 +14,7 @@
     "expo-crypto": "^56.0.4",
     "expo-dev-client": "~56.0.20",
     "expo-file-system": "^56.0.8",
+    "expo-font": "^56.0.7",
     "expo-image-manipulator": "^56.0.19",
     "expo-image-picker": "^56.0.18",
     "expo-linking": "~56.0.14",
