@@ -1,28 +1,36 @@
 /**
  * Tab "Perfil" — perfil propio del usuario autenticado.
- * Stub de navegación (subtarea 16.1).
  *
- * TODO 16.3/16.4/16.6: ProfileHeader + PropertiesGrid + acciones (editar, cerrar sesión).
+ * Delega el ensamblaje completo a ProfileScreen con is_own_profile=true.
+ * Subtarea 16.6 — ensamblaje final.
  */
-import { StyleSheet, Text, View } from 'react-native';
+import React from 'react';
+import { View, StyleSheet } from 'react-native';
 
-export default function OwnProfileScreen() {
+import { useAuth } from '@/features/auth/context';
+import { ProfileScreen } from '@/features/profile/ProfileScreen';
+import { colors } from '@/theme/theme';
+
+export default function OwnProfileTab() {
+  const { user } = useAuth();
+
+  // Dentro de (protected) el guard ya garantiza sesión activa,
+  // pero protegemos el render por si user llega null en el frame inicial.
+  if (user === null) {
+    return <View style={styles.bg} />;
+  }
+
   return (
-    <View style={styles.container}>
-      <Text style={styles.label}>Perfil</Text>
-    </View>
+    <ProfileScreen
+      agent_id={user.id}
+      is_own_profile
+    />
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  bg: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#fff',
-  },
-  label: {
-    fontSize: 20,
-    fontWeight: '500',
+    backgroundColor: colors.paper,
   },
 });

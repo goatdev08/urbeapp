@@ -30,6 +30,7 @@ import { PropertyGridCard } from '@/components/PropertyGridCard';
 import { colors, spacing, type_scale } from '@/theme/theme';
 import { usePropertiesGrid } from '../hooks/usePropertiesGrid';
 import type { GridProperty } from '../types';
+import { EmptyState } from './EmptyState';
 
 // ---------------------------------------------------------------------------
 // Constantes de layout
@@ -47,6 +48,8 @@ const COLUMN_GAP = spacing.s_8;
 export interface PropertiesGridProps {
   owner_user_id: string;
   onPressProperty: (property_id: string) => void;
+  /** Controla el copy del EmptyState: propio vs. ajeno. */
+  is_own_profile?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -56,6 +59,7 @@ export interface PropertiesGridProps {
 export function PropertiesGrid({
   owner_user_id,
   onPressProperty,
+  is_own_profile = false,
 }: PropertiesGridProps): React.JSX.Element {
   const { loading, error, data } = usePropertiesGrid(owner_user_id);
 
@@ -88,7 +92,7 @@ export function PropertiesGrid({
           onPress={() => onPressProperty(item.id)}
         />
       )}
-      // TODO 16.6: ListEmptyComponent para el estado vacío global
+      ListEmptyComponent={<EmptyState is_own_profile={is_own_profile} />}
       scrollEnabled={false}
       // La pantalla padre (profile) es el scroll container; deshabilitar scroll
       // propio evita scroll anidado. Si la grilla se extrae de ese contexto,
