@@ -50,7 +50,9 @@ create or replace function public.publish_property_atomic(
 returns table(property_id uuid)
 language plpgsql
 security definer
-set search_path = public
+-- PostGIS (geography, ST_Point, ST_SetSRID) vive en el schema `extensions` en
+-- Supabase; se incluye en el search_path y se califica explícitamente abajo.
+set search_path = public, extensions
 as $$
 declare
   v_property_id uuid;
@@ -101,7 +103,7 @@ begin
     p_bathrooms,
     p_square_meters,
     p_address,
-    ST_SetSRID(ST_Point(p_lng, p_lat), 4326)::geography,
+    extensions.ST_SetSRID(extensions.ST_Point(p_lng, p_lat), 4326)::extensions.geography,
     p_pet_friendly,
     p_allows_no_guarantor,
     p_student_friendly,
