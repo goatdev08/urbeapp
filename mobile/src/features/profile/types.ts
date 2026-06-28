@@ -18,6 +18,7 @@ import type { Database } from '@/types/database';
 type UserRow = Database['public']['Tables']['users']['Row'];
 type AgencyRow = Database['public']['Tables']['agencies']['Row'];
 type PropertyRow = Database['public']['Tables']['properties']['Row'];
+type VideoRow = Database['public']['Tables']['property_videos']['Row'];
 
 /**
  * GridProperty — propiedad resumida para la grilla 2-columnas del perfil.
@@ -37,6 +38,40 @@ export interface GridProperty {
   thumbnail_url: string | null;
   /** storage_path del primer video. Puede ser null (sin video aún). */
   storage_path: string | null;
+}
+
+/**
+ * MyProperty — propiedad propia del agente autenticado para la lista "Mis publicaciones".
+ *
+ * Incluye TODOS los status (draft/active/paused/closed), ordenada por created_at DESC.
+ * Los contadores (view_count, like_count, save_count, contact_count) son reales — viven
+ * en la tabla `properties`. Los contadores de analítica avanzada (tarea #11) se añadirán
+ * cuando esa tarea esté lista; el list item (17.3) expondrá stubs si hace falta.
+ */
+export interface MyProperty {
+  id: PropertyRow['id'];
+  price: PropertyRow['price'];
+  operation_type: PropertyRow['operation_type'];
+  property_type: PropertyRow['property_type'];
+  status: PropertyRow['status'];
+  address: PropertyRow['address'];
+  created_at: PropertyRow['created_at'];
+  closed_reason: PropertyRow['closed_reason'];
+  /** Contadores reales de la tabla properties (no requieren tarea #11). */
+  view_count: PropertyRow['view_count'];
+  like_count: PropertyRow['like_count'];
+  save_count: PropertyRow['save_count'];
+  contact_count: PropertyRow['contact_count'];
+  /**
+   * Número de videos de la propiedad (sin excluir deleted — coincide con lo que
+   * devuelve el embedded select sin filtros adicionales).
+   * ponytail: contado en cliente desde el mismo fetch del thumbnail; sin query extra.
+   */
+  video_count: number;
+  /** URL del thumbnail del primer video (menor position). Null si sin video. */
+  thumbnail_url: VideoRow['thumbnail_url'];
+  /** Storage path del primer video. Null si sin video. */
+  storage_path: VideoRow['storage_path'];
 }
 
 export interface AgentProfile {

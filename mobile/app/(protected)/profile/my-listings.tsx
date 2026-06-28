@@ -22,16 +22,16 @@ import {
 import { Stack } from 'expo-router';
 
 import { EmptyState } from '@/features/profile/components/EmptyState';
+import { useMyProperties } from '@/features/profile/hooks/useMyProperties';
+import type { MyProperty } from '@/features/profile/types';
 import { colors, spacing, type_scale } from '@/theme/theme';
 
 // ---------------------------------------------------------------------------
-// Tipos — placeholders hasta 17.2/17.3
+// Tipos — ListingItem es MyProperty; renderItem se expande en 17.3
 // ---------------------------------------------------------------------------
 
-/** Ítem de listing — estructura mínima; se expande en 17.3. */
-type ListingItem = {
-  id: string;
-};
+/** Alias semántico para el FlatList de esta pantalla. */
+type ListingItem = MyProperty;
 
 // ---------------------------------------------------------------------------
 // Sub-componente: fila de estadísticas
@@ -56,8 +56,9 @@ function StatsRow() {
 // ---------------------------------------------------------------------------
 
 export default function MyListingsScreen() {
-  // ponytail: data=[] estático hasta 17.2 (fetch hook); renderItem=null hasta 17.3 (ListingCard)
-  const listings: ListingItem[] = [];
+  // 17.2: hook real; renderItem=null hasta 17.3 (ListingCard)
+  const { loading: _loading, error: _error, data } = useMyProperties();
+  const listings: ListingItem[] = data ?? [];
 
   return (
     <>
