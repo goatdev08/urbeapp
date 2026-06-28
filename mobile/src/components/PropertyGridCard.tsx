@@ -7,7 +7,7 @@
  * Estructura:
  *   - Card: Pressable con sombra (outer) + View con overflow:hidden (inner/clip).
  *     Dos capas necesarias en RN para tener shadow visible + borderRadius clip.
- *   - Media: aspect-ratio 4/5. Image si hay thumbnail_url; LinearGradient placeholder
+ *   - Media: aspect-ratio 4/5. Image si hay thumbnail_url; placeholder café sólido
  *     con ícono ▷ si no (ponytail: Text porque react-native-svg no está instalado).
  *   - Badge operación (arriba-izq): Renta (primary) / Venta (accent) / Renta-Venta (accent).
  *   - Badge Pausada (junto a op-badge si status==='paused'): pill glass claro.
@@ -15,13 +15,12 @@
  *   - Body: título (property_type label), zona (address), precio héroe con tick Salvia.
  *
  * ponytail: sin react-native-svg; íconos como Text unicode. Sin BlurView en el
- * pause-badge (rgba 92% es suficiente para el demo). El gradiente se aproxima
- * a 150deg con start/end en expo-linear-gradient.
+ * pause-badge (rgba 92% es suficiente para el demo). Placeholder de miniatura =
+ * color sólido (sin expo-linear-gradient, que exigiría módulo nativo en el dev build).
  */
 
 import React from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 
 import { colors, fonts, radii, shadows } from '@/theme/theme';
 import type { GridProperty } from '@/features/profile/types';
@@ -92,16 +91,13 @@ export function PropertyGridCard({ item, onPress }: PropertyGridCardProps): Reac
               resizeMode="cover"
             />
           ) : (
-            /* Placeholder: gradiente café claro (paper_2 → paper_3, ~150deg) */
-            <LinearGradient
-              colors={[colors.paper_2, colors.paper_3]}
-              start={{ x: 0.85, y: 0 }}
-              end={{ x: 0.15, y: 1 }}
-              style={[StyleSheet.absoluteFill, styles.placeholder_gradient]}
-            >
+            /* ponytail: placeholder café sólido (paper_2) — sin expo-linear-gradient
+               para no exigir módulo nativo (el dev build no lo incluye); un tono plano
+               basta como fondo de la miniatura ausente. */
+            <View style={[StyleSheet.absoluteFill, styles.placeholder_gradient]}>
               {/* ponytail: ícono de video como Text '▷' — react-native-svg no instalado */}
               <Text style={styles.placeholder_icon}>▷</Text>
-            </LinearGradient>
+            </View>
           )}
 
           {/* Overlay de atenuación cuando la propiedad está pausada */}
@@ -191,6 +187,7 @@ const styles = StyleSheet.create({
   placeholder_gradient: {
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: colors.paper_2,
   },
   placeholder_icon: {
     fontSize: 34,

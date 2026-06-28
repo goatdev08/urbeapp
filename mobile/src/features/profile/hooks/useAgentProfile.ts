@@ -65,9 +65,13 @@ export function useAgentProfile(agent_id: string): UseAgentProfileState {
       set_state({ loading: true, error: null, data: null });
 
       // Query 1: datos tipados — users + join agencies(name).
+      // Desambiguación obligatoria: existen dos FK entre users y agencies
+      // (users.agency_id → agencies, y agencies.owner_user_id → users), así que
+      // PostgREST exige nombrar la constraint del embed o falla con
+      // "more than one relationship was found".
       const user_query = supabase
         .from('users')
-        .select('bio, created_at, agencies(name)')
+        .select('bio, created_at, agencies!users_agency_id_fkey(name)')
         .eq('id', agent_id)
         .single();
 
