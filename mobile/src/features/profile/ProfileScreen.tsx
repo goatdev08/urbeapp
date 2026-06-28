@@ -55,8 +55,7 @@ export function ProfileScreen({ agent_id, is_own_profile }: ProfileScreenProps) 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
   function handle_edit_profile() {
-    // TODO #22: navegar a la pantalla de edición de perfil
-    Alert.alert('Editar perfil', 'Próximamente (tarea #22)');
+    router.push('/profile/edit');
   }
 
   async function handle_sign_out() {
