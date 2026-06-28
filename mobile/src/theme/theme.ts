@@ -39,6 +39,10 @@ export const colors = {
   silver:       '#C2C2BD',
   silver_dk:    '#8C8E8A', // plata sobre fondos oscuros
 
+  // Semánticos
+  /** Rojo cálido para acciones destructivas. Encaja con la paleta arcilla/tierra. */
+  danger:       '#C94B3E',
+
   // Integraciones
   whatsapp:     '#25D366',
 } as const;

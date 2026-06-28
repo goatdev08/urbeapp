@@ -12,8 +12,9 @@
  *
  * Subtarea 17.1.
  */
-import React from 'react';
+import React, { useState } from 'react';
 import {
+  Alert,
   FlatList,
   StyleSheet,
   Text,
@@ -22,6 +23,10 @@ import {
 import { Stack } from 'expo-router';
 
 import { EmptyState } from '@/features/profile/components/EmptyState';
+import {
+  PropertyActionMenu,
+  type PropertyActionCallbacks,
+} from '@/features/profile/components/PropertyActionMenu';
 import { PropertyListItem } from '@/features/profile/components/PropertyListItem';
 import { useMyProperties } from '@/features/profile/hooks/useMyProperties';
 import type { MyProperty } from '@/features/profile/types';
@@ -61,6 +66,41 @@ export default function MyListingsScreen() {
   const { loading: _loading, error: _error, data } = useMyProperties();
   const listings: ListingItem[] = data ?? [];
 
+  // ── Menú de tres puntos (17.4) ───────────────────────────────────────────
+  // null = cerrado; MyProperty = abierto para ese item
+  const [menu_item, set_menu_item] = useState<MyProperty | null>(null);
+
+  const close_menu = () => set_menu_item(null);
+
+  /**
+   * Devuelve los callbacks del menú para un item dado.
+   * TODO 17.7: reemplazar stubs con mutaciones reales (invocar EF update-property-status).
+   * TODO 17.8: on_edit debe navegar al wizard con los datos del item.
+   */
+  const get_menu_callbacks = (_item: MyProperty): PropertyActionCallbacks => ({
+    on_edit: () => {
+      // TODO 17.8 — navegar al wizard de edición con _item.id
+      console.log('[menu] editar', _item.id);
+      Alert.alert('Próximamente', 'Edición disponible en la siguiente versión.');
+    },
+    on_toggle_pause: () => {
+      // TODO 17.7 — llamar EF update-property-status (active↔paused)
+      const next = _item.status === 'active' ? 'paused' : 'active';
+      console.log('[menu] toggle pause', _item.id, '→', next);
+      Alert.alert('Próximamente', `Cambio a ${next} disponible en la siguiente versión.`);
+    },
+    on_close: () => {
+      // TODO 17.7 — confirmar y llamar EF update-property-status → closed
+      console.log('[menu] cerrar', _item.id);
+      Alert.alert('Próximamente', 'Cierre disponible en la siguiente versión.');
+    },
+    on_delete: () => {
+      // TODO 17.7 — confirmación destructiva y delete
+      console.log('[menu] eliminar', _item.id);
+      Alert.alert('Próximamente', 'Eliminación disponible en la siguiente versión.');
+    },
+  });
+
   return (
     <>
       {/* Header Stack — mismo estilo que edit.tsx para consistencia */}
@@ -81,7 +121,7 @@ export default function MyListingsScreen() {
         FlatList vacío:
           - ListHeaderComponent → StatsRow + placeholder para filtros (17.6)
           - ListEmptyComponent  → EmptyState (is_own_profile: esta pantalla es solo propia)
-          - renderItem          → null placeholder, reemplazado en 17.3 con ListingCard
+          - renderItem          → PropertyListItem con on_menu_press cableado (17.4)
         contentContainerStyle con flexGrow:1 para que el EmptyState quede centrado.
       */}
       <FlatList<ListingItem>
@@ -95,6 +135,7 @@ export default function MyListingsScreen() {
             on_press={() => {
               // ponytail: navegación a detalle/editar — se implementa en subtarea posterior
             }}
+            on_menu_press={() => set_menu_item(item)}
           />
         )}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
@@ -109,6 +150,19 @@ export default function MyListingsScreen() {
           <EmptyState is_own_profile />
         }
         showsVerticalScrollIndicator={false}
+      />
+
+      {/* Menú de tres puntos — renderiza fuera del FlatList para z-index correcto */}
+      <PropertyActionMenu
+        visible={menu_item !== null}
+        item={menu_item}
+        on_dismiss={close_menu}
+        callbacks={menu_item ? get_menu_callbacks(menu_item) : {
+          on_edit: close_menu,
+          on_toggle_pause: close_menu,
+          on_close: close_menu,
+          on_delete: close_menu,
+        }}
       />
     </>
   );
