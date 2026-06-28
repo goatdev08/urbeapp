@@ -1,11 +1,15 @@
 /**
  * Ruta Stack — editar perfil de agente.
  *
- * Scaffold de UI (subtarea 22.1). Contiene el formulario completo pero
- * sin lógica de carga ni guardado:
- *   - 22.2 cargará los datos reales del perfil.
+ * Subtarea 22.2: pre-puebla el formulario con los datos reales del usuario.
  *   - 22.3 implementará el guardado (Supabase + Storage).
  *   - 22.4 añadirá validación de campos.
+ *
+ * Estrategia de fetch (ponytail: una sola query):
+ *   - bio viene de useAuth().user (ya cargado en memoria por el AuthContext).
+ *   - user_preferences → full_name, profile_photo_url (migración 0015; cast `as never`
+ *     igual que useAgentProfile.ts y profileService.ts).
+ * Loading state: spinner mientras la query de prefs no resuelve.
  *
  * Navegación: Stack hijo de (protected)/profile/. El header nativo provee
  * el botón de retroceso; añadimos un link "Cancelar" a la derecha del header.
@@ -14,11 +18,10 @@
  *   uri?: string        → URI de la imagen actual (undefined = placeholder)
  *   onChange?: (uri: string) => void  → callback cuando el usuario elige nueva foto
  *   uploading?: boolean → bloquea el picker durante upload
- *
- * ponytail: estado local vacío por ahora; no fetch, no save — solo UI.
  */
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -30,9 +33,21 @@ import {
 import { Stack } from 'expo-router';
 import { useRouter } from 'expo-router';
 
+import { supabase } from '@/lib/supabase/client';
+import { useAuth } from '@/features/auth/context';
 import { AvatarPicker } from '@/features/onboarding/components/AvatarPicker';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { colors, radii, spacing, type_scale } from '@/theme/theme';
+
+// ---------------------------------------------------------------------------
+// Tipos locales — columnas de migración 0015 no generadas en types
+// ---------------------------------------------------------------------------
+
+/** Columnas de user_preferences relevantes para el form de edición. */
+type PrefsRow = {
+  full_name: string | null;
+  profile_photo_url: string | null;
+};
 
 // ---------------------------------------------------------------------------
 // Componente
@@ -40,11 +55,68 @@ import { colors, radii, spacing, type_scale } from '@/theme/theme';
 
 export default function EditProfileScreen() {
   const router = useRouter();
+  const { user, session, isLoading: auth_loading } = useAuth();
 
-  // Estado local del formulario — datos reales se cargan en 22.2
+  // Estado del formulario — inicializado vacío, pre-poblado en useEffect
   const [avatar_uri, set_avatar_uri] = useState<string | undefined>(undefined);
   const [full_name, set_full_name] = useState('');
   const [bio, set_bio] = useState('');
+
+  // Loading de prefs: true hasta que la query resuelva (o no haya sesión)
+  const [prefs_loading, set_prefs_loading] = useState(true);
+
+  // Loading compuesto: auth + prefs
+  const loading = auth_loading || prefs_loading;
+
+  // Pre-poblar el form al montar.
+  // ponytail: bio viene de useAuth().user (ya en memoria); solo una query a Supabase
+  // para las cols de migración 0015 que no están en el tipo generado.
+  useEffect(() => {
+    // Espera a que auth resuelva antes de saber el user_id
+    if (auth_loading) return;
+
+    const user_id = session?.user?.id;
+    if (!user_id) {
+      set_prefs_loading(false);
+      return;
+    }
+
+    // bio ya disponible desde el AuthContext (select('*') en users)
+    set_bio(user?.bio ?? '');
+
+    // Captura como string definido para que TS no se queje dentro de la closure
+    const uid: string = user_id;
+
+    let ignore = false;
+
+    async function fetch_prefs(): Promise<void> {
+      // Cast `as never` — mismo patrón que useAgentProfile.ts y profileService.ts
+      const { data: raw_prefs, error } = await supabase
+        .from('user_preferences')
+        .select('full_name, profile_photo_url' as never)
+        .eq('user_id', uid)
+        .maybeSingle();
+
+      if (ignore) return;
+
+      if (error) {
+        console.warn('[EditProfile] Error al cargar user_preferences:', error.message);
+        set_prefs_loading(false);
+        return;
+      }
+
+      const prefs = raw_prefs as PrefsRow | null;
+      set_full_name(prefs?.full_name ?? '');
+      set_avatar_uri(prefs?.profile_photo_url ?? undefined);
+      set_prefs_loading(false);
+    }
+
+    void fetch_prefs();
+
+    return () => {
+      ignore = true;
+    };
+  }, [auth_loading, session?.user?.id, user?.bio]);
 
   // No-op por ahora — 22.3 implementará el guardado real
   function handle_save() {
@@ -78,7 +150,15 @@ export default function EditProfileScreen() {
         }}
       />
 
-      <KeyboardAvoidingView
+      {/* Spinner mientras cargan los datos del perfil */}
+      {loading ? (
+        <View style={styles.loading_wrap}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      ) : null}
+
+      {/* Formulario — oculto durante la carga para evitar flash de estado vacío */}
+      {!loading ? <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
@@ -139,7 +219,7 @@ export default function EditProfileScreen() {
             />
           </View>
         </ScrollView>
-      </KeyboardAvoidingView>
+      </KeyboardAvoidingView> : null}
     </>
   );
 }
@@ -151,6 +231,14 @@ export default function EditProfileScreen() {
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
+    backgroundColor: colors.paper,
+  },
+
+  // ── Loading ──────────────────────────────────────────────────────────────────
+  loading_wrap: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
     backgroundColor: colors.paper,
   },
   scroll: {
