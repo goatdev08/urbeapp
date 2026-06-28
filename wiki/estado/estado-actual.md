@@ -27,4 +27,4 @@ actualizado: 2026-06-27
 
 ## Pendiente inmediato (detalle en Taskmaster)
 - **Next:** `task-master next` (siguiente tarea del backlog).
-- **Branding (#19): en pausa** hasta indicación del cliente.
+- **Branding (#19): gate LEVANTADO** (2026-06-26). Referencia visual canónica = `urbea-identidad-visual.html` (raíz): mockups de las ~13 pantallas de la demo; cada pantalla = techo de alcance de su tarea. Ver [[design-system]].

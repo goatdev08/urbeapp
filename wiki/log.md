@@ -4,6 +4,11 @@ Append-only. Prefijo: `## [YYYY-MM-DD] tipo | título`.
 Tipos: `fundacion`, `decision`, `ingest`, `query`, `lint`, `tarea`, `explore`.
 Tip: `grep "^## \[" log.md | tail -5` → últimas 5 entradas.
 
+## [2026-06-27] decision | referencia visual canónica = urbea-identidad-visual.html
+- Cliente: usar `urbea-identidad-visual.html` (raíz) como guía de diseño + plan de la demo. Enshrined en CLAUDE.md §8, [[design-system]] (mapeo pantalla→tarea + divergencias #16 vs mockup #10 + firmas pendientes: isotipo U+play, iconos a medida) y memoria branding-working-method.
+- Regla durable: cada pantalla del mockup = techo de alcance de su tarea (UI ausente = trabajo nuevo, no scope-creep).
+- Gotcha grabado: `expo-linear-gradient`/`react-native-svg` no están en el dev build → crashean; PropertyGridCard pasó a placeholder sólido.
+
 ## [2026-06-17] fundacion | vault inicializado
 - Estructura del vault creada (MOCs, conceptos, codebase, decisiones, estado).
 - Sembrado desde `docs/` y `supabase/` (DB migrada 0001–0010).
