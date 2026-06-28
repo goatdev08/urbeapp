@@ -4,6 +4,14 @@ Append-only. Prefijo: `## [YYYY-MM-DD] tipo | título`.
 Tipos: `fundacion`, `decision`, `ingest`, `query`, `lint`, `tarea`, `explore`.
 Tip: `grep "^## \[" log.md | tail -5` → últimas 5 entradas.
 
+## [2026-06-28] tarea | #17 Mis publicaciones (gestión de propiedades del agente)
+- Pantalla `app/(protected)/profile/my-listings.tsx` (Stack bajo profile, NO tab — mockup #9 tab activo=Perfil; entrada desde `ProfileScreen`). 8 subtareas en serie.
+- **EF `update-property-status`** (crítica, TDD): patrón DI + `make_property_status_updater` extraído a módulo testeable (transiciones/ownership/closed_reason); 54 Deno tests. Guardian dio FAIL en ciclo 1 (lógica de dominio solo en `index.ts`, sin tests = trampa mock-vs-prod del #8) → se extrajo y se añadieron 10 tests sobre la lógica real; PASS verificado **por mutación**.
+- **UI**: `useMyProperties` (todos los status + video_count + contadores) · `PropertyListItem` (badge/stats) · `FilterTabs` · `PropertyActionMenu` (Modal nativo, sin dep nueva).
+- **Acciones** (crítica, TDD): `usePropertyActions` (22 tests) — guard cliente close-sin-reason NO invoca EF; soft-delete por RLS; diálogos Close (motivo obligatorio)/Delete. Guardian PASS.
+- **Editar** (crítica, TDD): `useLoadProperty` pre-llena el wizard; `usePublish` ramifica create(EF)/edit(**UPDATE directo con RLS**, decisión cliente); video opcional en edit; 17 tests + guardias de regresión del create. Guardian PASS (create intacto).
+- Verificación final: mobile **193/193**, EF deno **54/54**, `tsc` 0. Follow-up creado: cablear `isWorking` en my-listings (UX, low). Commits locales en `tarea/17-mis-publicaciones`.
+
 ## [2026-06-27] decision | referencia visual canónica = urbea-identidad-visual.html
 - Cliente: usar `urbea-identidad-visual.html` (raíz) como guía de diseño + plan de la demo. Enshrined en CLAUDE.md §8, [[design-system]] (mapeo pantalla→tarea + divergencias #16 vs mockup #10 + firmas pendientes: isotipo U+play, iconos a medida) y memoria branding-working-method.
 - Regla durable: cada pantalla del mockup = techo de alcance de su tarea (UI ausente = trabajo nuevo, no scope-creep).
