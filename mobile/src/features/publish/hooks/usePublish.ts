@@ -38,6 +38,10 @@ export type PublishStatus = 'idle' | 'submitting' | 'success' | 'error';
 export interface UsePublishDeps {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase?: any;
+  /** true cuando el wizard opera sobre una propiedad existente (modo edición) */
+  editMode?: boolean;
+  /** UUID de la propiedad a editar — requerido cuando editMode=true */
+  propertyId?: string | null;
 }
 
 export interface UsePublishResult {
