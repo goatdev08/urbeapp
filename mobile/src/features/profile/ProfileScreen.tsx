@@ -58,6 +58,10 @@ export function ProfileScreen({ agent_id, is_own_profile }: ProfileScreenProps) 
     router.push('/profile/edit');
   }
 
+  function handle_my_listings() {
+    router.push('/profile/my-listings');
+  }
+
   async function handle_sign_out() {
     Alert.alert(
       'Cerrar sesión',
@@ -115,6 +119,12 @@ export function ProfileScreen({ agent_id, is_own_profile }: ProfileScreenProps) 
       {/* Botones de acción — solo en perfil propio */}
       {is_own_profile && (
         <View style={styles.actions}>
+          <PrimaryButton
+            label="Mis publicaciones"
+            variant="ghost"
+            surface="light"
+            onPress={handle_my_listings}
+          />
           <PrimaryButton
             label="Editar perfil"
             variant="ghost"
