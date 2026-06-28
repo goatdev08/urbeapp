@@ -3,7 +3,7 @@
  *
  * Subtarea 22.2: pre-puebla el formulario con los datos reales del usuario.
  *   - 22.3 implementará el guardado (Supabase + Storage).
- *   - 22.4 añadirá validación de campos.
+ *   - 22.4 validación de campos + char counter bio.
  *
  * Estrategia de fetch (ponytail: una sola query):
  *   - bio viene de useAuth().user (ya cargado en memoria por el AuthContext).
@@ -38,8 +38,16 @@ import { supabase } from '@/lib/supabase/client';
 import { useAuth } from '@/features/auth/context';
 import { useEditProfile } from '@/features/profile/hooks/useEditProfile';
 import { AvatarPicker } from '@/features/onboarding/components/AvatarPicker';
+import { is_valid_full_name } from '@/features/onboarding/validation';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { colors, radii, spacing, type_scale } from '@/theme/theme';
+
+// ---------------------------------------------------------------------------
+// Constantes de validación
+// ---------------------------------------------------------------------------
+
+const NAME_MAX_LENGTH = 100;
+const BIO_MAX_LENGTH  = 280;
 
 // ---------------------------------------------------------------------------
 // Tipos locales — columnas de migración 0015 no generadas en types
@@ -61,10 +69,13 @@ export default function EditProfileScreen() {
 
   // Estado del formulario — inicializado vacío, pre-poblado en useEffect
   const [avatar_uri, set_avatar_uri] = useState<string | undefined>(undefined);
-  // ponytail: removePhoto fijo en false hasta 22.4 (botón de quitar foto aún no existe)
+  // ponytail: removePhoto fijo en false hasta trabajo nuevo (botón de quitar foto)
   const remove_photo = false;
   const [full_name, set_full_name] = useState('');
   const [bio, set_bio] = useState('');
+
+  // Dirty: solo mostrar el error de nombre tras el primer blur o intento de guardar
+  const [name_dirty, set_name_dirty] = useState(false);
 
   // Loading de prefs: true hasta que la query resuelva (o no haya sesión)
   const [prefs_loading, set_prefs_loading] = useState(true);
@@ -76,6 +87,20 @@ export default function EditProfileScreen() {
 
   // Loading compuesto: auth + prefs
   const loading = auth_loading || prefs_loading;
+
+  // ── Validación derivada ──────────────────────────────────────────────────────
+
+  /** Mensaje de error del nombre (null = válido). */
+  function get_name_error(name: string): string | null {
+    const trimmed = name.trim();
+    if (trimmed.length === 0) return 'Nombre requerido';
+    if (!is_valid_full_name(name)) return 'Mínimo 2 caracteres';  // reusa is_valid_full_name
+    if (trimmed.length > NAME_MAX_LENGTH) return 'Máximo 100 caracteres';
+    return null;
+  }
+
+  const name_error   = get_name_error(full_name);
+  const is_form_valid = name_error === null;
 
   // Pre-poblar el form al montar.
   // ponytail: bio viene de useAuth().user (ya en memoria); solo una query a Supabase
@@ -127,8 +152,12 @@ export default function EditProfileScreen() {
     };
   }, [auth_loading, session?.user?.id, user?.bio]);
 
-  // Guardado — dual-write híbrido (22.3). Validación fina en 22.4.
+  // Guardado — dual-write híbrido (22.3) + validación (22.4).
   async function handle_save() {
+    // Marcar el campo nombre como tocado para mostrar errores si aplica
+    set_name_dirty(true);
+    if (!is_form_valid) return;
+
     // Usamos el valor DEVUELTO por save() (no la variable destructurada del render
     // anterior, que es un snapshot obsoleto): garantiza que un fallo parcial
     // siempre llegue al usuario aunque el componente no se haya re-renderizado aún.
@@ -202,15 +231,20 @@ export default function EditProfileScreen() {
           <View style={styles.field}>
             <Text style={styles.label}>Nombre completo</Text>
             <TextInput
-              style={styles.input}
+              style={[styles.input, name_dirty && name_error ? styles.input_error : null]}
               value={full_name}
               onChangeText={set_full_name}
+              onBlur={() => set_name_dirty(true)}
               placeholder="Tu nombre como aparecerá en el perfil"
               placeholderTextColor={colors.gray_1}
               autoCapitalize="words"
+              maxLength={NAME_MAX_LENGTH}
               returnKeyType="next"
               accessibilityLabel="Nombre completo"
             />
+            {name_dirty && name_error ? (
+              <Text style={styles.field_error}>{name_error}</Text>
+            ) : null}
           </View>
 
           {/* Campo: Bio */}
@@ -224,10 +258,15 @@ export default function EditProfileScreen() {
               placeholderTextColor={colors.gray_1}
               multiline
               numberOfLines={4}
+              maxLength={BIO_MAX_LENGTH}
               textAlignVertical="top"
               returnKeyType="default"
               accessibilityLabel="Biografía profesional"
             />
+            {/* Char counter: muestra siempre; se torna accent al llegar al límite */}
+            <Text style={[styles.bio_counter, bio.length >= BIO_MAX_LENGTH ? styles.bio_counter_limit : null]}>
+              {bio.length}/{BIO_MAX_LENGTH}
+            </Text>
           </View>
 
           {/* Botón Guardar */}
@@ -237,7 +276,7 @@ export default function EditProfileScreen() {
               variant="primary"
               surface="light"
               onPress={handle_save}
-              disabled={isSaving}
+              disabled={isSaving || !is_form_valid}
             />
           </View>
         </ScrollView>
@@ -313,5 +352,31 @@ const styles = StyleSheet.create({
     ...type_scale.body,
     color: colors.primary,
     paddingRight: spacing.s_8,
+  },
+
+  // ── Validación ───────────────────────────────────────────────────────────────
+  /** Borde de error en el input de nombre */
+  input_error: {
+    borderColor: colors.accent,
+  },
+  /** Mensaje de error inline bajo el campo */
+  field_error: {
+    ...type_scale.caption,
+    color: colors.accent,
+    marginTop: spacing.s_4,
+    // ponytail: textTransform uppercase viene de caption; sobreescribir para legibilidad
+    textTransform: 'none',
+    letterSpacing: 0,
+  },
+
+  // ── Char counter bio ─────────────────────────────────────────────────────────
+  bio_counter: {
+    ...type_scale.caption,
+    color: colors.gray_1,
+    marginTop: spacing.s_4,
+    textAlign: 'right',
+  },
+  bio_counter_limit: {
+    color: colors.accent,
   },
 });
