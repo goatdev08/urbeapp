@@ -22,6 +22,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -35,6 +36,7 @@ import { useRouter } from 'expo-router';
 
 import { supabase } from '@/lib/supabase/client';
 import { useAuth } from '@/features/auth/context';
+import { useEditProfile } from '@/features/profile/hooks/useEditProfile';
 import { AvatarPicker } from '@/features/onboarding/components/AvatarPicker';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { colors, radii, spacing, type_scale } from '@/theme/theme';
@@ -59,11 +61,18 @@ export default function EditProfileScreen() {
 
   // Estado del formulario — inicializado vacío, pre-poblado en useEffect
   const [avatar_uri, set_avatar_uri] = useState<string | undefined>(undefined);
+  // ponytail: removePhoto fijo en false hasta 22.4 (botón de quitar foto aún no existe)
+  const remove_photo = false;
   const [full_name, set_full_name] = useState('');
   const [bio, set_bio] = useState('');
 
   // Loading de prefs: true hasta que la query resuelva (o no haya sesión)
   const [prefs_loading, set_prefs_loading] = useState(true);
+
+  // Hook de guardado (22.3 — dual-write híbrido).
+  // error no se destructura aquí: usamos el valor DEVUELTO por save() en handle_save
+  // para evitar leer un snapshot obsoleto de la closure del render anterior (V2 fix).
+  const { save, isSaving } = useEditProfile();
 
   // Loading compuesto: auth + prefs
   const loading = auth_loading || prefs_loading;
@@ -118,10 +127,22 @@ export default function EditProfileScreen() {
     };
   }, [auth_loading, session?.user?.id, user?.bio]);
 
-  // No-op por ahora — 22.3 implementará el guardado real
-  function handle_save() {
-    // TODO 22.3 — validar (22.4), subir avatar si cambió, persistir en Supabase
-    console.log('[EditProfile] handle_save — pendiente 22.3');
+  // Guardado — dual-write híbrido (22.3). Validación fina en 22.4.
+  async function handle_save() {
+    // Usamos el valor DEVUELTO por save() (no la variable destructurada del render
+    // anterior, que es un snapshot obsoleto): garantiza que un fallo parcial
+    // siempre llegue al usuario aunque el componente no se haya re-renderizado aún.
+    const save_result = await save({
+      fullName: full_name,
+      imageUri: avatar_uri ?? null,
+      bio,
+      removePhoto: remove_photo,
+    });
+    if (save_result.error) {
+      Alert.alert('Error al guardar', save_result.error);
+      return;
+    }
+    router.back();
   }
 
   return (
@@ -212,10 +233,11 @@ export default function EditProfileScreen() {
           {/* Botón Guardar */}
           <View style={styles.save_wrap}>
             <PrimaryButton
-              label="Guardar"
+              label={isSaving ? 'Guardando…' : 'Guardar'}
               variant="primary"
               surface="light"
               onPress={handle_save}
+              disabled={isSaving}
             />
           </View>
         </ScrollView>
