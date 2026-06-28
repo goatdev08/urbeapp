@@ -22,6 +22,7 @@ import {
 import { Stack } from 'expo-router';
 
 import { EmptyState } from '@/features/profile/components/EmptyState';
+import { PropertyListItem } from '@/features/profile/components/PropertyListItem';
 import { useMyProperties } from '@/features/profile/hooks/useMyProperties';
 import type { MyProperty } from '@/features/profile/types';
 import { colors, spacing, type_scale } from '@/theme/theme';
@@ -88,8 +89,15 @@ export default function MyListingsScreen() {
         contentContainerStyle={styles.list_content}
         data={listings}
         keyExtractor={(item) => item.id}
-        // ponytail: renderItem vacío — ListingCard se conecta en 17.3
-        renderItem={() => null}
+        renderItem={({ item }) => (
+          <PropertyListItem
+            item={item}
+            on_press={() => {
+              // ponytail: navegación a detalle/editar — se implementa en subtarea posterior
+            }}
+          />
+        )}
+        ItemSeparatorComponent={() => <View style={styles.separator} />}
         ListHeaderComponent={
           <View style={styles.header_block}>
             <StatsRow />
@@ -117,12 +125,18 @@ const styles = StyleSheet.create({
   },
   list_content: {
     flexGrow: 1,
+    paddingHorizontal: spacing.s_16,
     paddingBottom: spacing.s_32,
+  },
+
+  // ── Separador entre items ─────────────────────────────────────────────────
+  separator: {
+    height: spacing.s_8,
   },
 
   // ── Bloque de cabecera (stats + filtros) ──────────────────────────────────
   header_block: {
-    paddingHorizontal: spacing.s_24,
+    // paddingHorizontal viene del contentContainerStyle (s_16) — no duplicar
     paddingTop: spacing.s_16,
     paddingBottom: spacing.s_8,
   },
