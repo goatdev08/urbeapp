@@ -29,6 +29,8 @@ import * as ImagePicker from 'expo-image-picker';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { useRouter } from 'expo-router';
 
+import { useLocalSearchParams } from 'expo-router';
+
 import { usePublishForm } from '@/features/publish/store/PublishFormContext';
 import { useVideoUpload, type UploadStatus } from '@/features/publish/hooks/useVideoUpload';
 import { usePublish } from '@/features/publish/hooks/usePublish';
@@ -53,9 +55,17 @@ const COLOR_PICKER_BG = '#F3F4F6';
 
 export default function Step3Screen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ propertyId?: string }>();
+  const property_id = params.propertyId ?? null;
+  const is_edit_mode = property_id !== null;
+
   const { update } = usePublishForm();
   const hook = useVideoUpload();
-  const publish_hook = usePublish();
+  // Edit mode: UPDATE directo sin EF; create mode: invoca EF (sin cambios).
+  const publish_hook = usePublish({
+    editMode: is_edit_mode,
+    propertyId: property_id,
+  });
 
   // ── Local state para reactivity en la UI ──────────────────────────────────
   // useVideoUpload usa refs (sin useState) → el screen gestiona sus propios
@@ -153,6 +163,9 @@ export default function Step3Screen() {
   const is_publishing = publish_status === 'submitting';
   const is_publish_error = publish_status === 'error';
 
+  // ponytail: en edit mode sin video nuevo → se conserva el existente, no se requiere re-subir.
+  const can_publish_without_new_video = is_edit_mode && !has_video;
+
   return (
     <SafeAreaView style={styles.container}>
       {/* ── Encabezado ───────────────────────────────────────────────── */}
@@ -241,10 +254,12 @@ export default function Step3Screen() {
           </Text>
         )}
         <PrimaryButton
-          label={is_publishing ? 'Publicando…' : 'Publicar'}
+          label={is_publishing
+            ? (is_edit_mode ? 'Guardando…' : 'Publicando…')
+            : (is_edit_mode ? 'Guardar cambios' : 'Publicar')}
           onPress={handle_publish}
           surface="light"
-          disabled={!is_success || is_publishing}
+          disabled={(!is_success && !can_publish_without_new_video) || is_publishing}
         />
       </View>
     </SafeAreaView>

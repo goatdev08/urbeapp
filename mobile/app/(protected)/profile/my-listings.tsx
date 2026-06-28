@@ -24,7 +24,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 
 import { ClosePropertyDialog } from '@/features/profile/components/ClosePropertyDialog';
 import { DeletePropertyDialog } from '@/features/profile/components/DeletePropertyDialog';
@@ -73,6 +73,7 @@ function StatsRow({ count_active, count_paused }: { count_active: number; count_
 // ---------------------------------------------------------------------------
 
 export default function MyListingsScreen() {
+  const router = useRouter();
   // 17.2: hook real; renderItem=null hasta 17.3 (ListingCard)
   const { loading: _loading, error: _error, data, refetch } = useMyProperties();
   const listings: ListingItem[] = data ?? [];
@@ -118,8 +119,12 @@ export default function MyListingsScreen() {
    */
   const get_menu_callbacks = (item: MyProperty): PropertyActionCallbacks => ({
     on_edit: () => {
-      // TODO 17.8 — navegar al wizard de edición con item.id
-      Alert.alert('Próximamente', 'Edición disponible en la siguiente versión.');
+      close_menu();
+      // 17.8 — navega al wizard en edit mode pasando propertyId como param
+      router.push({
+        pathname: '/(protected)/publish/step1',
+        params: { propertyId: item.id },
+      });
     },
     on_toggle_pause: () => {
       close_menu();

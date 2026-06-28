@@ -4,24 +4,26 @@
  *
  * Estructura de rutas:
  *   app/(protected)/publish/_layout.tsx  ← este archivo
- *   app/(protected)/publish/step1.tsx    (implementado en 8.2)
- *   app/(protected)/publish/step2.tsx    (implementado en 8.3)
- *   app/(protected)/publish/step3.tsx    (implementado en 8.8)
+ *   app/(protected)/publish/step1.tsx
+ *   app/(protected)/publish/step2.tsx
+ *   app/(protected)/publish/step3.tsx
+ *
+ * 17.8 — edit mode:
+ *   Cuando se navega con params.propertyId, se activa modo edición:
+ *   FormPrefiller carga la propiedad y pre-llena el PublishFormContext.
  *
  * El grupo (protected) ya aplica el guard de autenticación (ProtectedLayout).
- * Este layout solo añade:
+ * Este layout añade:
  *   1. PublishFormProvider — estado compartido entre los 3 pasos.
  *   2. WizardHeader        — StepIndicator persistente que lee la ruta activa.
  *   3. Stack               — navegación nativa entre pasos, sin header nativo.
- *
- * useSegments() en WizardHeader se actualiza reactivamente al cambiar de paso;
- * el último segmento es 'step1' | 'step2' | 'step3'.
  */
-import React from 'react';
+import React, { useEffect } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { Stack, useSegments } from 'expo-router';
+import { Stack, useSegments, useLocalSearchParams } from 'expo-router';
 
-import { PublishFormProvider } from '@/features/publish/store/PublishFormContext';
+import { PublishFormProvider, usePublishForm } from '@/features/publish/store/PublishFormContext';
+import { useLoadProperty } from '@/features/publish/hooks/useLoadProperty';
 import { StepIndicator } from '@/components/StepIndicator';
 
 // ---------------------------------------------------------------------------
@@ -48,13 +50,38 @@ function WizardHeader() {
 }
 
 // ---------------------------------------------------------------------------
+// FormPrefiller — carga la propiedad en edit mode y pre-llena el contexto
+// Solo se monta cuando hay propertyId (renderizado condicional en el padre).
+// ponytail: componente hijo dentro del Provider para poder llamar usePublishForm.
+// ---------------------------------------------------------------------------
+
+function FormPrefiller({ property_id }: { property_id: string }) {
+  const { update } = usePublishForm();
+  const { formState, loading } = useLoadProperty(property_id);
+
+  useEffect(() => {
+    if (formState && !loading) {
+      update(formState);
+    }
+  }, [formState, loading, update]);
+
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // PublishWizardLayout
 // ---------------------------------------------------------------------------
 
 export default function PublishWizardLayout() {
+  const params = useLocalSearchParams<{ propertyId?: string }>();
+  const property_id = params.propertyId ?? null;
+
   return (
     <PublishFormProvider>
       <View style={styles.root}>
+        {/* Pre-llena el form en edit mode (sin render visible) */}
+        {property_id !== null && <FormPrefiller property_id={property_id} />}
+
         {/* Indicador de progreso persistente sobre todos los pasos */}
         <WizardHeader />
 
