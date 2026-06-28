@@ -24,6 +24,10 @@ import { Stack } from 'expo-router';
 
 import { EmptyState } from '@/features/profile/components/EmptyState';
 import {
+  FilterTabs,
+  type FilterValue,
+} from '@/features/profile/components/FilterTabs';
+import {
   PropertyActionMenu,
   type PropertyActionCallbacks,
 } from '@/features/profile/components/PropertyActionMenu';
@@ -43,15 +47,14 @@ type ListingItem = MyProperty;
 // Sub-componente: fila de estadísticas
 // ---------------------------------------------------------------------------
 
-/** Placeholder estático de conteo. Los valores reales llegan en 17.2. */
-function StatsRow() {
+/** Fila de estadísticas con conteos reales del array completo. */
+function StatsRow({ count_active, count_paused }: { count_active: number; count_paused: number }) {
   return (
     <View style={styles.stats_row}>
-      {/* ponytail: placeholder estático — datos reales en 17.2 */}
       <Text style={styles.stats_text}>
-        <Text style={styles.stats_count}>0</Text> activas
+        <Text style={styles.stats_count}>{count_active}</Text> activas
         {'  ·  '}
-        <Text style={styles.stats_count}>0</Text> pausadas
+        <Text style={styles.stats_count}>{count_paused}</Text> pausadas
       </Text>
     </View>
   );
@@ -65,6 +68,27 @@ export default function MyListingsScreen() {
   // 17.2: hook real; renderItem=null hasta 17.3 (ListingCard)
   const { loading: _loading, error: _error, data } = useMyProperties();
   const listings: ListingItem[] = data ?? [];
+
+  // ── Filtro de status (17.6) ──────────────────────────────────────────────
+  const [active_filter, set_active_filter] = useState<FilterValue>('all');
+
+  /** Conteos calculados sobre el array completo (no el filtrado). */
+  const counts: Record<FilterValue, number> = {
+    all:    listings.length,
+    active: listings.filter((i) => i.status === 'active').length,
+    paused: listings.filter((i) => i.status === 'paused').length,
+    closed: listings.filter((i) => i.status === 'closed').length,
+  };
+
+  /**
+   * Array filtrado que recibe el FlatList.
+   * 'all' muestra TODOS los items (draft/pending_review/needs_changes/suspended
+   * también aparecen aquí — no tienen tab propio; ver FilterTabs.tsx §decisión).
+   */
+  const filtered_listings: ListingItem[] =
+    active_filter === 'all'
+      ? listings
+      : listings.filter((i) => i.status === active_filter);
 
   // ── Menú de tres puntos (17.4) ───────────────────────────────────────────
   // null = cerrado; MyProperty = abierto para ese item
@@ -127,7 +151,7 @@ export default function MyListingsScreen() {
       <FlatList<ListingItem>
         style={styles.list}
         contentContainerStyle={styles.list_content}
-        data={listings}
+        data={filtered_listings}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
           <PropertyListItem
@@ -141,9 +165,12 @@ export default function MyListingsScreen() {
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         ListHeaderComponent={
           <View style={styles.header_block}>
-            <StatsRow />
-            {/* Placeholder del bloque de filtros (17.6) */}
-            <View style={styles.filters_placeholder} />
+            <StatsRow count_active={counts.active} count_paused={counts.paused} />
+            <FilterTabs
+              value={active_filter}
+              on_change={set_active_filter}
+              counts={counts}
+            />
           </View>
         }
         ListEmptyComponent={
@@ -209,9 +236,4 @@ const styles = StyleSheet.create({
     // ponytail: no peso extra (ya es body); resaltar solo con color
   },
 
-  // ── Placeholder filtros (17.6 conectará aquí) ────────────────────────────
-  filters_placeholder: {
-    // Altura 0: sin espacio visual hasta que 17.6 lo pueble
-    height: 0,
-  },
 });
