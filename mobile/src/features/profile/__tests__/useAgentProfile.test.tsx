@@ -45,20 +45,31 @@ import { renderHook, act } from '@testing-library/react-native';
 //
 // Estrategia:
 //   1. `captured_focus_callback` almacena el callback que el hook pase a
-//      useFocusEffect (si lo llama alguna vez).
-//   2. El mock auto-invoca el callback una vez (simula foco de mount).
-//   3. En EC-2, el test lo invoca manualmente para simular refoco.
-//   4. HOY el hook no llama useFocusEffect → null → EC-2 falla en rojo.
+//      useFocusEffect.
+//   2. El mock imita la semántica REAL de useFocusEffect: el callback se invoca
+//      UNA VEZ tras el commit (foco de mount) vía React.useEffect con dep [cb].
+//      Como el SUT memoiza con useCallback([agent_id]), la identidad de `cb` es
+//      estable — el useEffect solo corre en mount (= foco inicial).
+//      NO se invoca síncronamente en cada render (eso era el defecto anterior).
+//   3. En EC-2, el test invoca `captured_focus_callback()` manualmente para
+//      simular que el usuario vuelve de EditProfile (re-foco real).
 // ---------------------------------------------------------------------------
 
-/** Callback registrado por el SUT en useFocusEffect. Null si el hook no lo usa. */
+/** Callback registrado por el SUT en useFocusEffect. */
 let captured_focus_callback: (() => void) | null = null;
 
 jest.mock('expo-router', () => ({
   useFocusEffect: (callback: () => void) => {
     captured_focus_callback = callback;
-    // Auto-invoca: simula el foco inicial que React Navigation dispara en mount.
-    callback();
+    // Imita commit-once: el useEffect solo corre cuando `callback` cambia de
+    // identidad (es decir, cuando agent_id cambia). En un foco real, React
+    // Navigation llama el callback directamente; aquí lo modelamos con useEffect.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const React = require('react');
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    React.useEffect(() => {
+      callback();
+    }, [callback]);
   },
   useRouter: jest.fn().mockReturnValue({ back: jest.fn(), push: jest.fn() }),
   useLocalSearchParams: jest.fn().mockReturnValue({}),
@@ -193,22 +204,14 @@ describe('useAgentProfile', () => {
     expect(result.current.data?.agency_name).toBe('Inmobiliaria Urbea SA');
   });
 
-  // ── EC-2: Re-fetch on focus — ROJO INTENCIONAL ───────────────────────────
+  // ── EC-2: Re-fetch on focus ───────────────────────────────────────────────
   //
-  // Debe FALLAR hasta que el implementador añada useFocusEffect en
-  // useAgentProfile.ts. Cuando se implemente, pasará a GREEN.
-  //
-  // Flujo actual (HOY → rojo):
-  //   1. Hook monta → useEffect → from llamado 2 veces (baseline).
-  //   2. captured_focus_callback === null (hook no registró callback en useFocusEffect).
-  //   3. captured_focus_callback?.() → no-op.
-  //   4. count sigue en 2; aserción de >2 falla por aserción.
-  //
-  // Flujo esperado (GREEN tras implementación):
-  //   1. Hook monta → useFocusEffect registra callback → mock lo captura + lo auto-invoca
-  //      → fetch inicial vía useFocusEffect (NO via useEffect) → 2 calls.
-  //   2. Test dispara captured_focus_callback() → re-fetch → 4 calls totales.
-  //   3. Aserción: 4 > 2 → pasa.
+  // Flujo:
+  //   1. Hook monta → useFocusEffect registra callback → mock lo captura y lo
+  //      invoca una vez vía useEffect (foco de mount) → 2 queries (baseline).
+  //   2. Test dispara captured_focus_callback() manualmente (= re-foco real tras
+  //      volver de EditProfile) → SUT re-fetcha → 4 queries totales.
+  //   3. Aserción: 4 > 2 → pasa por la razón correcta (re-fetch real, no artefacto).
 
   it('(EC-2) re_fetch_on_focus_invoca_queries_de_nuevo: cuando la pantalla recupera el foco, supabase.from se llama de nuevo (re-fetch anti-stale)', async () => {
     const { result } = await renderHook(() => useAgentProfile(TEST_AGENT_ID));
