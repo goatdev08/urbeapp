@@ -13,7 +13,7 @@
  * propiedades). Agregar cursor si el dato lo justifica.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 import { useAuth } from '@/features/auth/context';
 import { supabase } from '@/lib/supabase/client';
@@ -27,6 +27,8 @@ export interface UseMyPropertiesState {
   loading: boolean;
   error: string | null;
   data: MyProperty[] | null;
+  /** Fuerza un re-fetch de la lista (por ej. tras una mutación exitosa). */
+  refetch: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -52,7 +54,11 @@ type VideoEmbed = {
 export function useMyProperties(): UseMyPropertiesState {
   const { user } = useAuth();
 
-  const [state, set_state] = useState<UseMyPropertiesState>({
+  // tick se incrementa en refetch() para disparar el useEffect sin cambio de user.id
+  const [tick, set_tick] = useState(0);
+  const refetch = useCallback(() => set_tick((t) => t + 1), []);
+
+  const [state, set_state] = useState<Omit<UseMyPropertiesState, 'refetch'>>({
     loading: true,
     error: null,
     data: null,
@@ -138,7 +144,8 @@ export function useMyProperties(): UseMyPropertiesState {
     return () => {
       ignore = true;
     };
-  }, [user?.id]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, tick]);
 
-  return state;
+  return { ...state, refetch };
 }

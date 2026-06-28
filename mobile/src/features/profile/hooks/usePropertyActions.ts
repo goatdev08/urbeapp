@@ -1,9 +1,9 @@
 /**
  * usePropertyActions — acciones de mutación sobre propiedades propias.
  *
- * Subtarea 17.7 — stub mínimo RED (no_implemented).
+ * Subtarea 17.7 — implementación GREEN.
  *
- * Contrato (a implementar en GREEN):
+ * Contrato:
  *   changeStatus({property_id, new_status, closed_reason?})
  *     → invoca EF 'update-property-status'; devuelve {ok, error}.
  *   closeProperty({property_id, closed_reason})
@@ -17,7 +17,17 @@
  *   error: null en éxito; string en fallo.
  *
  * INYECCIÓN DE DEPS (para tests): usePropertyActions({ supabase: mock }).
+ *
+ * NOTA DE IMPLEMENTACIÓN — isWorking vía ref + getter:
+ *   run_action() es una función SÍNCRONA que retorna una Promise. Esto garantiza
+ *   que is_working_ref.current = true se ejecute antes del primer await, haciendo
+ *   que EC-20 (isWorking=true durante la acción pendiente) pase sin race condition.
+ *   El patrón espeja useEditProfile.ts (aprendizaje de #22).
  */
+
+import { useRef, useReducer, useCallback, useMemo } from 'react';
+
+import { useAuth } from '@/features/auth/context';
 
 // ---------------------------------------------------------------------------
 // Tipos públicos
@@ -76,31 +86,195 @@ export interface UsePropertyActionsReturn {
 }
 
 // ---------------------------------------------------------------------------
-// Hook — stub mínimo RED: lanza not_implemented en cada acción
+// Hook
 // ---------------------------------------------------------------------------
 
-export function usePropertyActions(
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _deps?: UsePropertyActionsDeps,
-): UsePropertyActionsReturn {
-  // ponytail: stub que lanza — las acciones deben fallar por excepción en RED.
-  // isWorking/error retornan valores triviales para que el hook sea renderable
-  // (renderHook no explota); las acciones lanzan para que los tests fallen.
-  const not_implemented = async (): Promise<ActionResult> => {
-    throw new Error('not_implemented: usePropertyActions');
+export function usePropertyActions(deps?: UsePropertyActionsDeps): UsePropertyActionsReturn {
+  // useAuth — disponible para contexto de usuario en extensiones futuras.
+  // ponytail: no usamos user.id aquí (el guard lo hace la EF via RLS) pero el
+  // hook debe llamar a useAuth para respetar el orden de hooks entre renders.
+  useAuth();
+
+  // ponytail: refs para estado mutable síncrono; force_update provoca re-render
+  // al final de cada acción para consumidores React. El getter en el objeto
+  // retornado permite leer el valor sin esperar al re-render (necesario en EC-20).
+  const is_working_ref = useRef(false);
+  const error_ref = useRef<string | null>(null);
+  const [, force_update] = useReducer((n: number) => n + 1, 0);
+
+  // Resolución del cliente Supabase — lazy para que jest.mock intercepte.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const get_client = (): any => {
+    if (deps?.supabase) return deps.supabase;
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return (require('@/lib/supabase/client') as { supabase: unknown }).supabase;
   };
 
-  return {
-    changeStatus: not_implemented,
-    closeProperty: not_implemented,
-    pauseProperty: not_implemented,
-    unpauseProperty: not_implemented,
-    deleteProperty: not_implemented,
-    get isWorking() {
-      return false;
-    },
-    get error() {
-      return null;
-    },
+  /**
+   * run_action: wrapper SÍNCRONO que fija is_working=true antes del primer await.
+   * No es async — retorna la Promise de action() directamente, sin añadir una
+   * suspensión extra. Esto garantiza que EC-20 lea is_working=true en el mismo
+   * tick síncrono en que la acción arranca.
+   */
+  const run_action = (action: () => Promise<ActionResult>): Promise<ActionResult> => {
+    is_working_ref.current = true;
+    error_ref.current = null;
+    force_update();
+
+    return action().then(
+      (result) => {
+        is_working_ref.current = false;
+        error_ref.current = result.error;
+        force_update();
+        return result;
+      },
+      (err: unknown) => {
+        const msg = err instanceof Error ? err.message : 'Error inesperado';
+        is_working_ref.current = false;
+        error_ref.current = msg;
+        force_update();
+        return { ok: false as const, error: msg };
+      },
+    );
   };
+
+  /**
+   * invoke_status: invoca la EF update-property-status y mapea el resultado
+   * al formato {ok, error}. Función pura de I/O — no gestiona isWorking.
+   */
+  const invoke_status = (body: Record<string, unknown>): Promise<ActionResult> => {
+    const client = get_client();
+    return (
+      client.functions.invoke('update-property-status', { body }) as Promise<{
+        data: unknown;
+        error: { message?: string } | null;
+      }>
+    ).then(({ error }) => {
+      if (error) {
+        return { ok: false as const, error: error.message ?? 'Error al actualizar el estado' };
+      }
+      return { ok: true as const, error: null };
+    });
+  };
+
+  // ── Acciones públicas ────────────────────────────────────────────────────
+
+  const changeStatus = useCallback(
+    (params: {
+      property_id: string;
+      new_status: PropertyStatusTarget;
+      closed_reason?: ClosedReason | null;
+    }): Promise<ActionResult> => {
+      const body: Record<string, unknown> = {
+        property_id: params.property_id,
+        new_status: params.new_status,
+      };
+      // Incluir closed_reason en el body solo si se proporciona explícitamente.
+      // Undefined omitido → body limpio para pause/unpause/draft.
+      if (params.closed_reason !== undefined) {
+        body.closed_reason = params.closed_reason;
+      }
+      return run_action(() => invoke_status(body));
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [deps?.supabase],
+  );
+
+  const closeProperty = useCallback(
+    (params: {
+      property_id: string;
+      // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents
+      closed_reason: ClosedReason | null | undefined;
+    }): Promise<ActionResult> => {
+      // Guard en cliente — INVARIANTE PRD: closed_reason es OBLIGATORIO.
+      // Si falta (null / undefined), NO invocamos la EF y devolvemos error.
+      if (!params.closed_reason) {
+        return Promise.resolve({
+          ok: false,
+          error: 'Se requiere un motivo de cierre (closed_reason) para cerrar la publicación.',
+        });
+      }
+      return run_action(() =>
+        invoke_status({
+          property_id: params.property_id,
+          new_status: 'closed',
+          closed_reason: params.closed_reason,
+        }),
+      );
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [deps?.supabase],
+  );
+
+  const pauseProperty = useCallback(
+    (params: { property_id: string }): Promise<ActionResult> => {
+      // closed_reason: null explícito → body lo incluye como null (EC-11 acepta null)
+      return run_action(() =>
+        invoke_status({
+          property_id: params.property_id,
+          new_status: 'paused',
+          closed_reason: null,
+        }),
+      );
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [deps?.supabase],
+  );
+
+  const unpauseProperty = useCallback(
+    (params: { property_id: string }): Promise<ActionResult> => {
+      // Sin closed_reason — reactivación limpia.
+      return run_action(() =>
+        invoke_status({
+          property_id: params.property_id,
+          new_status: 'active',
+        }),
+      );
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [deps?.supabase],
+  );
+
+  const deleteProperty = useCallback(
+    (params: { property_id: string }): Promise<ActionResult> => {
+      return run_action(() => {
+        const client = get_client();
+        return (
+          client
+            .from('properties')
+            .update({ deleted_at: new Date().toISOString() })
+            .eq('id', params.property_id) as Promise<{
+            error: { message?: string } | null;
+          }>
+        ).then(({ error }) => {
+          if (error) {
+            return { ok: false as const, error: error.message ?? 'Error al eliminar la propiedad' };
+          }
+          return { ok: true as const, error: null };
+        });
+      });
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [deps?.supabase],
+  );
+
+  // El objeto retornado usa getters para que isWorking y error sean siempre
+  // el valor actual de la ref, incluso sin re-render previo (EC-20).
+  return useMemo(() => {
+    const r: UsePropertyActionsReturn = {
+      changeStatus,
+      closeProperty,
+      pauseProperty,
+      unpauseProperty,
+      deleteProperty,
+      get isWorking() {
+        return is_working_ref.current;
+      },
+      get error() {
+        return error_ref.current;
+      },
+    };
+    return r;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [changeStatus, closeProperty, pauseProperty, unpauseProperty, deleteProperty]);
 }

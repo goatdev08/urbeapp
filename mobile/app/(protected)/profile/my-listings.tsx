@@ -10,7 +10,11 @@
  *   - FlatList vacío listo para recibir items (17.3) y filtros (17.6).
  *   - EmptyState reutilizado de features/profile/components.
  *
- * Subtarea 17.1.
+ * 17.7 — acciones reales:
+ *   - pause/unpause llaman a EF update-property-status.
+ *   - close abre ClosePropertyDialog (requiere motivo).
+ *   - delete abre DeletePropertyDialog (confirmación destructiva).
+ *   - Tras acción exitosa → refetch de la lista.
  */
 import React, { useState } from 'react';
 import {
@@ -22,6 +26,8 @@ import {
 } from 'react-native';
 import { Stack } from 'expo-router';
 
+import { ClosePropertyDialog } from '@/features/profile/components/ClosePropertyDialog';
+import { DeletePropertyDialog } from '@/features/profile/components/DeletePropertyDialog';
 import { EmptyState } from '@/features/profile/components/EmptyState';
 import {
   FilterTabs,
@@ -33,7 +39,9 @@ import {
 } from '@/features/profile/components/PropertyActionMenu';
 import { PropertyListItem } from '@/features/profile/components/PropertyListItem';
 import { useMyProperties } from '@/features/profile/hooks/useMyProperties';
+import { usePropertyActions } from '@/features/profile/hooks/usePropertyActions';
 import type { MyProperty } from '@/features/profile/types';
+import type { ClosedReason } from '@/features/profile/hooks/usePropertyActions';
 import { colors, spacing, type_scale } from '@/theme/theme';
 
 // ---------------------------------------------------------------------------
@@ -66,8 +74,11 @@ function StatsRow({ count_active, count_paused }: { count_active: number; count_
 
 export default function MyListingsScreen() {
   // 17.2: hook real; renderItem=null hasta 17.3 (ListingCard)
-  const { loading: _loading, error: _error, data } = useMyProperties();
+  const { loading: _loading, error: _error, data, refetch } = useMyProperties();
   const listings: ListingItem[] = data ?? [];
+
+  // Acciones de mutación (17.7)
+  const { pauseProperty, unpauseProperty, closeProperty, deleteProperty } = usePropertyActions();
 
   // ── Filtro de status (17.6) ──────────────────────────────────────────────
   const [active_filter, set_active_filter] = useState<FilterValue>('all');
@@ -96,32 +107,39 @@ export default function MyListingsScreen() {
 
   const close_menu = () => set_menu_item(null);
 
+  // ── Estado de diálogos de confirmación (17.7) ────────────────────────────
+  const [close_dialog_item, set_close_dialog_item] = useState<MyProperty | null>(null);
+  const [delete_dialog_item, set_delete_dialog_item] = useState<MyProperty | null>(null);
+
   /**
    * Devuelve los callbacks del menú para un item dado.
-   * TODO 17.7: reemplazar stubs con mutaciones reales (invocar EF update-property-status).
-   * TODO 17.8: on_edit debe navegar al wizard con los datos del item.
+   * 17.7: pause/unpause llaman directo; close/delete abren diálogos.
+   * 17.8: on_edit debe navegar al wizard con los datos del item.
    */
-  const get_menu_callbacks = (_item: MyProperty): PropertyActionCallbacks => ({
+  const get_menu_callbacks = (item: MyProperty): PropertyActionCallbacks => ({
     on_edit: () => {
-      // TODO 17.8 — navegar al wizard de edición con _item.id
-      console.log('[menu] editar', _item.id);
+      // TODO 17.8 — navegar al wizard de edición con item.id
       Alert.alert('Próximamente', 'Edición disponible en la siguiente versión.');
     },
     on_toggle_pause: () => {
-      // TODO 17.7 — llamar EF update-property-status (active↔paused)
-      const next = _item.status === 'active' ? 'paused' : 'active';
-      console.log('[menu] toggle pause', _item.id, '→', next);
-      Alert.alert('Próximamente', `Cambio a ${next} disponible en la siguiente versión.`);
+      close_menu();
+      // Lanza la acción asíncrona sin bloquear el handler del menú.
+      const action = item.status === 'active' ? pauseProperty : unpauseProperty;
+      void action({ property_id: item.id }).then((result) => {
+        if (result.ok) {
+          refetch();
+        } else {
+          Alert.alert('Error', result.error ?? 'No se pudo actualizar el estado.');
+        }
+      });
     },
     on_close: () => {
-      // TODO 17.7 — confirmar y llamar EF update-property-status → closed
-      console.log('[menu] cerrar', _item.id);
-      Alert.alert('Próximamente', 'Cierre disponible en la siguiente versión.');
+      close_menu();
+      set_close_dialog_item(item);
     },
     on_delete: () => {
-      // TODO 17.7 — confirmación destructiva y delete
-      console.log('[menu] eliminar', _item.id);
-      Alert.alert('Próximamente', 'Eliminación disponible en la siguiente versión.');
+      close_menu();
+      set_delete_dialog_item(item);
     },
   });
 
@@ -191,6 +209,42 @@ export default function MyListingsScreen() {
           on_delete: close_menu,
         }}
       />
+
+      {/* Diálogo de cierre — requiere motivo (17.7) */}
+      {close_dialog_item !== null && (
+        <ClosePropertyDialog
+          visible
+          property_id={close_dialog_item.id}
+          on_dismiss={() => set_close_dialog_item(null)}
+          on_confirm={async ({ property_id, closed_reason }: { property_id: string; closed_reason: ClosedReason }) => {
+            const result = await closeProperty({ property_id, closed_reason });
+            if (result.ok) {
+              set_close_dialog_item(null);
+              refetch();
+            } else {
+              Alert.alert('Error', result.error ?? 'No se pudo cerrar la publicación.');
+            }
+          }}
+        />
+      )}
+
+      {/* Diálogo de eliminación — confirmación destructiva (17.7) */}
+      {delete_dialog_item !== null && (
+        <DeletePropertyDialog
+          visible
+          property_id={delete_dialog_item.id}
+          on_dismiss={() => set_delete_dialog_item(null)}
+          on_confirm={async ({ property_id }: { property_id: string }) => {
+            const result = await deleteProperty({ property_id });
+            if (result.ok) {
+              set_delete_dialog_item(null);
+              refetch();
+            } else {
+              Alert.alert('Error', result.error ?? 'No se pudo eliminar la publicación.');
+            }
+          }}
+        />
+      )}
     </>
   );
 }
