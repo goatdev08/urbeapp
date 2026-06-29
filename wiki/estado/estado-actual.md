@@ -1,13 +1,15 @@
 ---
 tipo: estado
-actualizado: 2026-06-27
+actualizado: 2026-06-28
 ---
 
 # Estado actual
 
 > Narrativa de "dónde estamos hoy". El **qué sigue / qué está hecho** vive en **Taskmaster** (`task-master list`), no aquí.
 
-## Hoy (2026-06-27)
+## Hoy (2026-06-28)
+
+- **Feed desbloqueado (#21, vivo + verificado en prod):** Edge Function **`mint-video-url`** desplegada al remoto (verify_jwt ON) — minter PURO de signed URLs de video con `service_role`. Resuelve el gotcha del path 2-seg que rompía la RLS SELECT pública: el feed (#9, **next**) llama esta EF con un batch de `property_ids` y recibe `{property_id,video_id,signed_url}` (exp 1h). Smoke test E2E contra el remoto: 200 con subconjunto (excluye ids sin video, nunca 404), el `signed_url` sirve el `.mp4` real (confirma bypass de RLS), 401 sin JWT, 400 input vacío. TDD+guardian PASS en las 2 críticas (handler + adapter). Ver [[propiedades-y-video]], [[feed-vertical-video]].
 
 - **Documentación:** madura (`docs/`), incluido el [[0001-alcance-mvp-recomendado|MVP recomendado]] y el PRD oficial completo. Alcance de la demo en `docs/PRD-MVP-demo.md`.
 - **Base de datos:** Supabase migrada y endurecida — 20 tablas, RLS, tests pgTAP; migraciones `0001`–`0016` aplicadas al proyecto live `urbea-app` (`mvpvqmyhrrkwbnpctpuq`); **20260625000001 (#8): RPC `publish_property_atomic`** (publicación atómica property+video, **aplicada al remoto** vía MCP el 26-jun). Edge Function **`publish-property` desplegada** al remoto (ACTIVE v1, verify_jwt) vía supabase CLI el 26-jun — backend de publicación completo. *(Pendiente desplegar `admin-create-agency` de #7.)* **0011 (#3): bucket Storage `property-videos` + columna `storage_path` + RLS de Storage.** **0012 (#4): CHECK `property_videos_ready_requires_storage` — un video `ready` exige `storage_path` o `cloudflare_uid`.** **0013 (#5): RPC `redeem_invitation_atomic` de canje atómico.** **0014 (#5): grants DML de `service_role` (gotcha en [[rls-seguridad]]).** **0015 (#6): bucket público `profile-photos` + RLS por path `auth.uid()` + cols `full_name`/`profile_photo_url` en `user_preferences`.** **0016 (#7): RPC `admin_create_agency_atomic` (alta atómica de inmobiliaria + owner + member + token hasheado + admin_actions).** Ver [[db-schema-map]] y [[propiedades-y-video]].
@@ -23,7 +25,7 @@ actualizado: 2026-06-27
 - Auth: login + **registro por invitación de agente** (#2, #5) y **alta de inmobiliarias/owner por admin** (#7) ya vivos. Decisiones de #7 confirmadas con el cliente: atomicidad en RPC, owner por **invitación email** (sin password), token inicial de **8 chars** (hasheado en BD, plano mostrado 1 vez).
 - Storage de video (#3): bucket privado + RLS dueño/lectura-pública; CORS no aplica (Supabase lo sirve a nivel gateway; nativo no lo exige).
 - Patrón de canje: la **atomicidad vive en una RPC `SECURITY DEFINER`** (0013), la Edge Function orquesta y compensa. `service_role` requiere grants DML explícitos (0014) — gotcha durable en [[rls-seguridad]].
-- Publicación (#8): upload **"Opción C"** (cliente genera `video_id` y sube **antes** de la EF → propiedad solo se crea si el upload tuvo éxito, sin huérfanos) sobre RPC atómica. ⚠️ El path de 2 segmentos rompe la RLS SELECT pública del video → **diferido a #21** (feed minta signed URLs vía EF con `service_role`, mismo patrón que la futura migración a **Cloudflare R2**). Ver gotcha en [[propiedades-y-video]].
+- Publicación (#8): upload **"Opción C"** (cliente genera `video_id` y sube **antes** de la EF → propiedad solo se crea si el upload tuvo éxito, sin huérfanos) sobre RPC atómica. ⚠️ El path de 2 segmentos rompe la RLS SELECT pública del video → **RESUELTO en #21** (EF `mint-video-url` minta signed URLs vía `service_role`; desplegada y verificada E2E el 28-jun), mismo patrón que la futura migración a **Cloudflare R2**. Ver gotcha en [[propiedades-y-video]].
 
 ## Pendiente inmediato (detalle en Taskmaster)
 - **Next:** `task-master next` (siguiente tarea del backlog).
