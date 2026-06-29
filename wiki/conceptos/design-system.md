@@ -2,9 +2,9 @@
 tipo: concepto
 dominio: ui
 estado: vivo
-fuentes: [urbea-identidad-visual.html, .taskmaster/docs/exploraciones/003-reconciliacion-y-kit.md]
+fuentes: [urbea-identidad-visual.html, "Urbea Prototipo (standalone).html", .taskmaster/docs/exploraciones/003-reconciliacion-y-kit.md, .taskmaster/docs/exploraciones/026-layout-system-extraction.md]
 codigo: [mobile/src/theme/theme.ts, mobile/app/_layout.tsx, mobile/src/components/PropertyGridCard.tsx, mobile/src/components/PrimaryButton.tsx]
-actualizado: 2026-06-27
+actualizado: 2026-06-28
 ---
 
 # Design system
@@ -15,6 +15,21 @@ actualizado: 2026-06-27
 **Antes de diseñar/implementar CUALQUIER pantalla de la demo, ábrelo en el navegador y úsalo como spec visual.** Es el entregable maduro del kit 003 (sucede al borrado `urbea-personality-kit.html`): tokens + tipografía + 3 componentes de firma + **mockups fieles de las ~13 pantallas del MVP** (`docs/PRD-MVP-demo.md` §6), montados con estos mismos tokens. Sus tokens coinciden 1:1 con `theme.ts` (verificado #16) → es la fuente de verdad del *look*, no solo inspiración. Estética **híbrida**: descubrimiento oscuro/inmersivo (feed, detalle, mapa) · gestión clara/editorial (publicar, CRM, perfil, admin).
 
 **Cómo usarlo para acotar alcance (scope) por tarea:** cada `<div class="phone-fig">` numerado es **una pantalla = el techo de alcance** de su tarea. El `phone-cap` dice qué incluye. No agregues UI que el mockup no muestra (evita scope-creep); si una pantalla real necesita algo ausente del mockup, es **trabajo nuevo** → `add-task`/`add-subtask`, no se cuela en la tarea en curso.
+
+## 📐 Dos referencias canónicas — lenguaje visual vs layout (#26)
+Hay **dos** specs canónicos en la raíz, con roles distintos (CLAUDE.md §8):
+- `urbea-identidad-visual.html` = techo del **lenguaje visual** → color, tipografía, componentes de firma.
+- `Urbea Prototipo (standalone).html` (export de Claude Design) = techo del **layout** → acomodo, jerarquía, grid, espaciado y composición por pantalla.
+
+⚠️ **Del prototipo se toma SOLO el layout; nunca color ni fuente** (los manda la identidad). Regla: **layout del prototipo + lenguaje visual de la identidad = pantalla final.**
+
+### Sistema de layout extraído (#26.2, medido en navegador)
+Doc completo: `.taskmaster/docs/exploraciones/026-layout-system-extraction.md`. El prototipo es **off-grid** (usa 11/13/18/30 px) → se mapea su *intención* a la escala base-4 de `theme.ts`, no se copian px sucios. Tokens vivos:
+- **Frame de pantalla:** 390×844 (lógico); el bezel r46 es del device, **no** se porta.
+- **`layout.screen_inset = 20`** — inset horizontal de página (prototipo midió 18 → base-4 20).
+- **`layout.grid_gutter = 14`** — separación de columnas del grid de tarjetas (medido exacto; `PropertyGridCard` 2-col en contenido de 354 = 170+14+170).
+- **`layout.grid_cols = 2`** — grid de propiedades por defecto.
+- Anatomía por pantalla (Feed/Detalle/Wizard/Perfil/CRM) en [[layout-anatomy-screens]] (#26.5).
 
 ### Mapeo pantalla → tarea (techo de alcance)
 | # | Pantalla (mockup) | Tarea | Estado |
@@ -56,7 +71,8 @@ Fuente única de tokens, **plana** (sin theming engine). 6 grupos, todos snake_c
 - **`shadows`** — sm/md/lg/primary (objetos RN `shadowColor/Offset/Opacity/Radius/elevation`, traducidos de los box-shadow CSS del kit; `primary` = glow verde).
 - **`fonts`** — `display: SpaceGrotesk_600SemiBold` + `sans: HankenGrotesk_400/500/600/700`.
 - **`type_scale`** — display 44 / h1 28 / price 34 / body 16 / caption 12 (caption uppercase, letterSpacing ~1.6; display/h1 letterSpacing negativo en px absolutos).
-- **`spacing`** — base-4 (s_4…s_32), derivada (el kit no la define explícita).
+- **`spacing`** — base-4 (s_4…s_40), incl. `s_20`/`s_40` añadidos del prototipo (#26); el kit no la define explícita.
+- **`layout`** (#26) — `screen_inset: 20` (inset horizontal de página), `grid_gutter: 14`, `grid_cols: 2`. Estructura de pantalla extraída del prototipo de layout (ver ↓).
 - ⚠️ **ponytail — sin dual-mode aún:** solo modo **gestión claro** (paper/ink). El modo **feed oscuro** (`ink_feed`) se añadirá cuando lo toque el feed **#9**.
 
 ## Tipografía

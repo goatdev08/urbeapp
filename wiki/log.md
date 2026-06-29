@@ -4,6 +4,12 @@ Append-only. Prefijo: `## [YYYY-MM-DD] tipo | título`.
 Tipos: `fundacion`, `decision`, `ingest`, `query`, `lint`, `tarea`, `explore`.
 Tip: `grep "^## \[" log.md | tail -5` → últimas 5 entradas.
 
+## [2026-06-28] tarea | #26 Sistema de layout desde el prototipo Claude Design
+- **#19 cancelada** (superada): nació de la exploración 001 (21-jun, identidad provisional URBEARG `#1F3B2D`+Fraunces), NO del HTML canónico. Reemplazada por el kit 003 (Salvia/Arcilla + Space Grotesk/Hanken); su contenido vivo ya está en el HTML + theme.ts + método orgánico desde #16.
+- **Modelo dual-referencia** (CLAUDE.md §8): `urbea-identidad-visual.html` = techo del **lenguaje visual**; `Urbea Prototipo (standalone).html` (raíz, export Claude Design) = techo del **layout**. Del prototipo SOLO layout, nunca color/fuente.
+- **Extracción medida en navegador** (Chrome MCP + `getComputedStyle`, servido por http local porque `file://` se rechaza): frame 390×844; inset de página 18→**20**; grid 2-col `170+14+170` (gutter **14**); el prototipo es off-grid (11/13/18/30) → se mapea la intención a base-4, no se copian px. Doc `.taskmaster/docs/exploraciones/026-layout-system-extraction.md`.
+- **`theme.ts` (aditivo)**: `spacing.s_20`/`s_40` + `export const layout {screen_inset:20, grid_gutter:14, grid_cols:2}`. Gate `pnpm tsc --noEmit` limpio (lint N/A hasta #24). Anatomía por pantalla en [[layout-anatomy-screens]].
+
 ## [2026-06-28] tarea | #17 Mis publicaciones (gestión de propiedades del agente)
 - Pantalla `app/(protected)/profile/my-listings.tsx` (Stack bajo profile, NO tab — mockup #9 tab activo=Perfil; entrada desde `ProfileScreen`). 8 subtareas en serie.
 - **EF `update-property-status`** (crítica, TDD): patrón DI + `make_property_status_updater` extraído a módulo testeable (transiciones/ownership/closed_reason); 54 Deno tests. Guardian dio FAIL en ciclo 1 (lógica de dominio solo en `index.ts`, sin tests = trampa mock-vs-prod del #8) → se extrajo y se añadieron 10 tests sobre la lógica real; PASS verificado **por mutación**.
