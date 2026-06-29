@@ -7,6 +7,7 @@
 //   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { VideoUrlMinter } from "../mint-video-url/types.ts";
 
 import type { InvitationDb, InvitationTokenRow } from "./invitation.ts";
 import type {
@@ -231,6 +232,22 @@ export function make_redeemer(client: SupabaseClient): InvitationRedeemer {
       }
       const row = Array.isArray(data) ? data[0] : data;
       return { ok: true, agency_member_id: row.agency_member_id };
+    },
+  };
+}
+
+/**
+ * STUB — subtarea 21.3 (RED)
+ * Adapter que implementará VideoUrlMinter con service_role.
+ * Pendiente de implementación: lanza para que los tests fallen por aserción.
+ * ponytail: stub mínimo solo con signature; la lógica va en GREEN.
+ */
+export function make_video_url_minter(
+  _client: SupabaseClient,
+): VideoUrlMinter {
+  return {
+    mint_signed_urls(_property_ids: string[]) {
+      throw new Error("not_implemented: make_video_url_minter");
     },
   };
 }
