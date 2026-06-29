@@ -237,17 +237,54 @@ export function make_redeemer(client: SupabaseClient): InvitationRedeemer {
 }
 
 /**
- * STUB — subtarea 21.3 (RED)
- * Adapter que implementará VideoUrlMinter con service_role.
- * Pendiente de implementación: lanza para que los tests fallen por aserción.
- * ponytail: stub mínimo solo con signature; la lógica va en GREEN.
+ * Adaptador real de VideoUrlMinter. Opera con service_role (bypassa RLS);
+ * los filtros SQL son la ÚNICA barrera de seguridad que impide mintar URLs
+ * de propiedades no publicadas (draft/paused/closed) o videos no listos.
+ * ponytail: batch degradado — errores de red/storage se excluyen sin lanzar.
  */
-export function make_video_url_minter(
-  _client: SupabaseClient,
-): VideoUrlMinter {
+export function make_video_url_minter(client: SupabaseClient): VideoUrlMinter {
   return {
-    mint_signed_urls(_property_ids: string[]) {
-      throw new Error("not_implemented: make_video_url_minter");
+    async mint_signed_urls(property_ids: string[]): Promise<import("../mint-video-url/types.ts").MintedVideo[]> {
+      // Defensa: array vacío → no tocar la red
+      if (property_ids.length === 0) return [];
+
+      const { data, error } = await client
+        .from("property_videos")
+        .select("id, property_id, storage_path, properties!inner(status)")
+        .in("property_id", property_ids)
+        .eq("status", "ready")
+        .eq("properties.status", "active")
+        .is("deleted_at", null);
+
+      // Fail-closed: error de red/DB → batch degradado, no lanzar
+      if (error) return [];
+
+      const rows = (data as unknown) as Array<{
+        id: string;
+        property_id: string;
+        storage_path: string | null;
+      }>;
+
+      const results: import("../mint-video-url/types.ts").MintedVideo[] = [];
+      for (const row of rows) {
+        // Filas sin storage_path (path aún no registrado) → excluir sin llamar storage
+        if (!row.storage_path) continue;
+
+        const { data: signed, error: sign_err } = await client.storage
+          .from("property-videos")
+          .createSignedUrl(row.storage_path, 3600);
+
+        // Error de storage para esta fila → excluir solo ella (no romper el batch)
+        if (sign_err || !signed?.signedUrl) continue;
+
+        results.push({
+          property_id: row.property_id,
+          video_id: row.id,
+          signed_url: signed.signedUrl,
+        });
+      }
+
+      return results;
     },
   };
 }
