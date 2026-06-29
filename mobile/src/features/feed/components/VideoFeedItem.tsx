@@ -7,12 +7,14 @@
  *
  * ponytail: sin poster real — fondo oscuro sólido mientras carga
  *   (sin transcoding ni thumbnails en la demo).
- *   Sin overlay de datos (likes, CTA) — llegan en 9.6/9.7.
+ *   isLiked/isSaved son estado local temporal — la persistencia real llega en 9.7.
  */
 
-import React, { memo, useEffect, useState } from 'react';
+import React, { memo, useCallback, useEffect, useState } from 'react';
 import { StyleSheet, View, Text, useWindowDimensions } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
+
+import { PropertyOverlay } from './PropertyOverlay';
 
 import { colors, type_scale } from '@/theme/theme';
 import type { FeedPropertyWithUrl } from '../types';
@@ -34,6 +36,16 @@ export type VideoFeedItemProps = {
 function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedItemProps) {
   const { width, height } = useWindowDimensions();
   const [has_error, set_has_error] = useState(false);
+
+  // ponytail: estado local temporal de like/guardar — la persistencia real
+  // (Supabase likes + saved_properties) llega en subtarea 9.7.
+  const [is_liked, set_is_liked] = useState(false);
+  const [is_saved, set_is_saved] = useState(false);
+
+  const handle_like = useCallback(() => set_is_liked((prev) => !prev), []);
+  const handle_save = useCallback(() => set_is_saved((prev) => !prev), []);
+  // ponytail: navegación al perfil del agente diferida — sin ruta feed→perfil en 9.6.
+  const handle_agent_press = useCallback(() => undefined, []);
 
   const player = useVideoPlayer(property.signed_url, (p) => {
     p.loop = true;
@@ -93,6 +105,16 @@ function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedIte
         style={styles.video}
         contentFit="cover"
         nativeControls={false}
+      />
+
+      {/* Overlay de UI: info de la propiedad + botones like/guardar + avatar agente */}
+      <PropertyOverlay
+        property={property}
+        isLiked={is_liked}
+        isSaved={is_saved}
+        onLike={handle_like}
+        onSave={handle_save}
+        onAgentPress={handle_agent_press}
       />
     </View>
   );
