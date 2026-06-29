@@ -169,7 +169,7 @@ describe('useLikeProperty', () => {
 
   it('(EC-1) like_exitoso_inserta_con_user_id_property_video_id_property_id: no-liked → likeOnly → INSERT recibe {user_id (del auth), property_video_id, property_id} exactos, isLiked=true tras éxito', async () => {
     const mock_supabase = make_mock_supabase_like();
-    const { result } = renderHook(() =>
+    const { result } = await renderHook(() =>
       useLikeProperty({
         property_video_id: TEST_PROPERTY_VIDEO_ID,
         property_id: TEST_PROPERTY_ID,
@@ -197,7 +197,7 @@ describe('useLikeProperty', () => {
 
   it('(EC-2) toggle_like_nuevo_exitoso: no-liked → toggleLike → INSERT en likes, isLiked=true', async () => {
     const mock_supabase = make_mock_supabase_like();
-    const { result } = renderHook(() =>
+    const { result } = await renderHook(() =>
       useLikeProperty({
         property_video_id: TEST_PROPERTY_VIDEO_ID,
         property_id: TEST_PROPERTY_ID,
@@ -218,7 +218,7 @@ describe('useLikeProperty', () => {
 
   it('(EC-3) toggle_like_unlike_exitoso: liked → toggleLike → DELETE con eq(user_id) y eq(property_video_id), isLiked=false', async () => {
     const mock_supabase = make_mock_supabase_like();
-    const { result } = renderHook(() =>
+    const { result } = await renderHook(() =>
       useLikeProperty({
         property_video_id: TEST_PROPERTY_VIDEO_ID,
         property_id: TEST_PROPERTY_ID,
@@ -244,7 +244,7 @@ describe('useLikeProperty', () => {
 
   it('(EC-4) like_only_idempotente_ya_liked_no_inserta: ya liked → likeOnly → NO llama INSERT, isLiked sigue true', async () => {
     const mock_supabase = make_mock_supabase_like();
-    const { result } = renderHook(() =>
+    const { result } = await renderHook(() =>
       useLikeProperty({
         property_video_id: TEST_PROPERTY_VIDEO_ID,
         property_id: TEST_PROPERTY_ID,
@@ -267,7 +267,7 @@ describe('useLikeProperty', () => {
     const mock_supabase = make_mock_supabase_like({
       insert_result: { error: { message: 'network error', code: '50000' } },
     });
-    const { result } = renderHook(() =>
+    const { result } = await renderHook(() =>
       useLikeProperty({
         property_video_id: TEST_PROPERTY_VIDEO_ID,
         property_id: TEST_PROPERTY_ID,
@@ -290,7 +290,7 @@ describe('useLikeProperty', () => {
     const mock_supabase = make_mock_supabase_like({
       delete_result: { error: { message: 'connection lost' } },
     });
-    const { result } = renderHook(() =>
+    const { result } = await renderHook(() =>
       useLikeProperty({
         property_video_id: TEST_PROPERTY_VIDEO_ID,
         property_id: TEST_PROPERTY_ID,
@@ -318,7 +318,7 @@ describe('useLikeProperty', () => {
         },
       },
     });
-    const { result } = renderHook(() =>
+    const { result } = await renderHook(() =>
       useLikeProperty({
         property_video_id: TEST_PROPERTY_VIDEO_ID,
         property_id: TEST_PROPERTY_ID,
@@ -342,7 +342,7 @@ describe('useLikeProperty', () => {
     const mock_supabase = make_mock_supabase_like();
 
     // El hook recibe property_id pero el user_id debe venir del auth, no de props
-    const { result } = renderHook(() =>
+    const { result } = await renderHook(() =>
       useLikeProperty({
         property_video_id: TEST_PROPERTY_VIDEO_ID,
         property_id: TEST_PROPERTY_ID,
@@ -373,7 +373,7 @@ describe('useLikeProperty', () => {
     });
 
     const mock_supabase = make_mock_supabase_like();
-    const { result } = renderHook(() =>
+    const { result } = await renderHook(() =>
       useLikeProperty({
         property_video_id: TEST_PROPERTY_VIDEO_ID,
         property_id: TEST_PROPERTY_ID,

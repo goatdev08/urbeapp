@@ -161,7 +161,7 @@ describe('useSaveProperty', () => {
 
   it('(EC-10) save_exitoso_inserta_user_id_property_id_sin_video_id: no-saved → toggleSave → INSERT {user_id, property_id} (SIN property_video_id), isSaved=true', async () => {
     const mock_supabase = make_mock_supabase_save();
-    const { result } = renderHook(() =>
+    const { result } = await renderHook(() =>
       useSaveProperty({
         property_id: TEST_PROPERTY_ID,
         initialSaved: false,
@@ -188,7 +188,7 @@ describe('useSaveProperty', () => {
 
   it('(EC-11) unsave_exitoso_delete_por_user_property: saved → toggleSave → DELETE filtrado por (user_id, property_id), isSaved=false', async () => {
     const mock_supabase = make_mock_supabase_save();
-    const { result } = renderHook(() =>
+    const { result } = await renderHook(() =>
       useSaveProperty({
         property_id: TEST_PROPERTY_ID,
         initialSaved: true,
@@ -215,7 +215,7 @@ describe('useSaveProperty', () => {
     const mock_supabase = make_mock_supabase_save({
       insert_result: { error: { message: 'network error', code: '50000' } },
     });
-    const { result } = renderHook(() =>
+    const { result } = await renderHook(() =>
       useSaveProperty({
         property_id: TEST_PROPERTY_ID,
         initialSaved: false,
@@ -237,7 +237,7 @@ describe('useSaveProperty', () => {
     const mock_supabase = make_mock_supabase_save({
       delete_result: { error: { message: 'connection lost' } },
     });
-    const { result } = renderHook(() =>
+    const { result } = await renderHook(() =>
       useSaveProperty({
         property_id: TEST_PROPERTY_ID,
         initialSaved: true,
@@ -264,7 +264,7 @@ describe('useSaveProperty', () => {
         },
       },
     });
-    const { result } = renderHook(() =>
+    const { result } = await renderHook(() =>
       useSaveProperty({
         property_id: TEST_PROPERTY_ID,
         initialSaved: false,
@@ -284,7 +284,7 @@ describe('useSaveProperty', () => {
 
   it('(EC-15) save_inserta_en_tabla_saves_no_en_likes: INSERT va a from("saves"), NO a from("likes")', async () => {
     const mock_supabase = make_mock_supabase_save();
-    const { result } = renderHook(() =>
+    const { result } = await renderHook(() =>
       useSaveProperty({
         property_id: TEST_PROPERTY_ID,
         initialSaved: false,
@@ -312,7 +312,7 @@ describe('useSaveProperty', () => {
     });
 
     const mock_supabase = make_mock_supabase_save();
-    const { result } = renderHook(() =>
+    const { result } = await renderHook(() =>
       useSaveProperty({
         property_id: TEST_PROPERTY_ID,
         initialSaved: false,
