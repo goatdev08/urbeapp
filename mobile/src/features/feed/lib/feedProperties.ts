@@ -89,13 +89,17 @@ export async function fetchFeedProperties(
     videos_map.set(v.property_id, v);
   }
 
-  // Merge fail-closed: omite propiedades sin signed_url
+  // Merge fail-closed: omite propiedades sin signed_url o sin video embebido que corresponda
   const data: FeedPropertyWithUrl[] = [];
   for (const row of rows) {
     const minted = videos_map.get(row.id);
     if (!minted) continue;
 
-    const first_video = row.property_videos[0];
+    // ponytail: reconciliar por video_id de la EF, no por índice — la EF elige el video
+    // READY; tomar [0] sería incorrecto si hay varios videos y el ready no está primero.
+    const video_entry = row.property_videos.find((v) => v.id === minted.video_id);
+    // ponytail: fail-closed — si el video_id de la EF no matchea ningún embebido, omitir
+    if (!video_entry) continue;
 
     data.push({
       id: row.id,
@@ -107,9 +111,9 @@ export async function fetchFeedProperties(
       agency_id: row.agency_id,
       created_at: row.created_at,
       video: {
-        id: first_video?.id ?? '',
-        storage_path: first_video?.storage_path ?? '',
-        position: first_video?.position ?? 0,
+        id: video_entry.id,
+        storage_path: video_entry.storage_path,
+        position: video_entry.position,
       },
       signed_url: minted.signed_url,
       video_id: minted.video_id,
