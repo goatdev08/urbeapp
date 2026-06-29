@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "README.md",
+                "file": "conceptos/busqueda-y-filtros.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "README"
+              "title": "busqueda-y-filtros"
             }
           }
         ]
@@ -185,6 +185,7 @@
   },
   "active": "31f50b2d835e432f",
   "lastOpenFiles": [
+    "README.md",
     "decisiones/0007-workflow-multiagente.md",
     "decisiones/0006-workflow-ejecucion-tareas.md",
     "conceptos/mapa-y-ubicacion.md",
@@ -194,7 +195,6 @@
     "_index/MOC-negocio.md",
     "_index/MOC-fuentes.md",
     "_index/MOC-arquitectura.md",
-    "README.md",
     "log.md",
     "index.md",
     "decisiones/0005-demo-cerrada-3-semanas.md",
