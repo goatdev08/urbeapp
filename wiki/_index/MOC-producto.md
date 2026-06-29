@@ -23,6 +23,7 @@ Conceptos de producto de Urbea. Estado según [[0005-demo-cerrada-3-semanas|la d
 
 ## Interfaz
 - [[design-system]] — tokens, tipografía, componentes de firma (vivo)
+- [[layout-anatomy-screens]] — anatomía de layout por pantalla, extraída del prototipo (#26, vivo)
 
 ## Relación con el agente
 - [[crm-leads]] — contacto WhatsApp + CRM lista/estados (vivo)
