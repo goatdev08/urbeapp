@@ -13,8 +13,9 @@
  * removeClippedSubviews: FlashList v2 no lo documenta/soporta; omitido.
  */
 
+import { useCallback } from 'react';
 import { StyleSheet, TouchableOpacity, Text, View, useWindowDimensions } from 'react-native';
-import { FlashList } from '@shopify/flash-list';
+import { FlashList, type ListRenderItemInfo } from '@shopify/flash-list';
 import { useRouter } from 'expo-router';
 
 import { colors } from '@/theme/theme';
@@ -22,6 +23,9 @@ import { colors } from '@/theme/theme';
 import { VideoFeedItem } from './components/VideoFeedItem';
 import { useFeedActiveIndex } from './hooks/useFeedActiveIndex';
 import type { FeedPropertyWithUrl } from './types';
+
+// ponytail: module-level — referencia estable, sin deps de closure.
+const key_extractor = (item: FeedPropertyWithUrl): string => item.id;
 
 const MOCK_FEED: FeedPropertyWithUrl[] = [
   {
@@ -70,6 +74,17 @@ export function FeedScreen() {
   const router = useRouter();
   const { viewabilityConfigCallbackPairs, isItemActive } = useFeedActiveIndex();
 
+  // ponytail: useCallback con [isItemActive] — se recreará solo cuando cambie
+  // activeIndex (es decir, al hacer swipe). React.memo en VideoFeedItem
+  // garantiza que solo re-renderizan los dos ítems cuya prop `isActive` cambia
+  // (el que sale y el que entra); el resto son bailout.
+  const render_item = useCallback(
+    ({ item, index }: ListRenderItemInfo<FeedPropertyWithUrl>) => (
+      <VideoFeedItem property={item} isActive={isItemActive(index)} />
+    ),
+    [isItemActive],
+  );
+
   return (
     <View style={styles.root}>
       {/* ponytail: FlashList v2 (2.0.2) mide ítems automáticamente (new arch);
@@ -78,21 +93,25 @@ export function FeedScreen() {
           el hook combina viewability + AppState + foco de tab para el gating de isActive.
           drawDistance=height: pre-renderiza un ítem fuera de pantalla en cada dirección →
           su useVideoPlayer bufferea sin prefetch explícito (SDK56 no lo expone). */}
+      {/* Snap vertical por ítem full-screen.
+          snapToAlignment="start" + snapToInterval=height → cada swipe
+          ancla al inicio del ítem siguiente/anterior.
+          decelerationRate="fast" → decelera rápido para sensación de snap limpio.
+          bounces={false} → sin rebote en los extremos (iOS); Android ya no rebota.
+          Todas estas props son ScrollViewProps, que FlashList v2 re-exporta
+          directamente (extiende Omit<ScrollViewProps, 'maintainVisibleContentPosition'>). */}
       <FlashList
         data={MOCK_FEED}
-        keyExtractor={(item) => item.id}
+        keyExtractor={key_extractor}
+        renderItem={render_item}
         pagingEnabled
         snapToInterval={height}
+        snapToAlignment="start"
         decelerationRate="fast"
         showsVerticalScrollIndicator={false}
+        bounces={false}
         drawDistance={height}
         viewabilityConfigCallbackPairs={viewabilityConfigCallbackPairs}
-        renderItem={({ item, index }) => (
-          <VideoFeedItem
-            property={item}
-            isActive={isItemActive(index)}
-          />
-        )}
       />
 
       {/* ponytail: botón flotante temporal — único acceso al wizard de publicación
