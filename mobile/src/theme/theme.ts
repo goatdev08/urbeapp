@@ -166,8 +166,21 @@ export const spacing = {
   s_8:  8,
   s_12: 12,
   s_16: 16,
+  s_20: 20, // inset de página (prototipo #26 midió 18 → base-4 20)
   s_24: 24,
   s_32: 32,
+  s_40: 40, // separación de sección grande (prototipo #26)
+} as const;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LAYOUT (estructura de pantalla — extraído del prototipo #26, ver
+// .taskmaster/docs/exploraciones/026-layout-system-extraction.md)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const layout = {
+  screen_inset: 20, // padding horizontal de página (prototipo 18 → base-4 20)
+  grid_gutter: 14,  // separación entre columnas del grid de tarjetas (medido exacto)
+  grid_cols: 2,     // columnas por defecto del grid de propiedades
 } as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -181,6 +194,7 @@ export const theme = {
   fonts,
   type_scale,
   spacing,
+  layout,
 } as const;
 
 export type Theme = typeof theme;
