@@ -48,7 +48,8 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "test": "jest",
-    "test:watch": "jest --watch"
+    "test:watch": "jest --watch",
+    "emu": "bash scripts/emu.sh"
   },
   "private": true
 }

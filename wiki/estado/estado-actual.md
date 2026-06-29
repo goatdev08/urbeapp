@@ -17,6 +17,7 @@ actualizado: 2026-06-28
 - **EAS:** proyecto `@deabratech/urbea` registrado; `eas.json` listo. **✅ Primer `eas build` (development, Android) hecho** — `.apk` instalado en device del cliente y **Urbea corriendo nativo** (Metro `--dev-client` + Supabase activo). Comandos en [[comandos]].
 - **Branding:** **gate LEVANTADO** (cliente, 2026-06-26; CLAUDE.md §8). Método orgánico: bajo demanda por pantalla, diseñar antes de implementar (firma → preview HTML aprobable → portar a RN). Design system sembrado por #16. Identidad: Salvia/Arcilla/gestión-claro/feed-oscuro + Space Grotesk + Hanken (la del kit, NO Fraunces). Ver [[design-system]].
 - **Sistema de trabajo:** vault Obsidian densificado ([[0003-vault-obsidian-como-memoria]]); **Taskmaster** con backlog de **22 tareas** (9 done, 13 pending; #16 cerrada; #22 nueva = editar perfil del agente, dep de #16), provider `claude-code/sonnet` ([[0004-taskmaster-motor-de-ejecucion]]).
+- **Acceso demo (login app):** `demo.agente@urbea.app` / `urbea2026` (única cuenta en `auth.users`; password reseteada el 29-jun, no estaba en seeds). Iterar en la Mac sin builds vía emulador Android: `cd mobile && pnpm emu` (script `mobile/scripts/emu.sh`).
 - **Primer hito:** [[0005-demo-cerrada-3-semanas|demo cerrada de 3 semanas]].
 
 ## Decisiones recientes

@@ -111,9 +111,9 @@ function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedIte
     } else {
       player.pause();
     }
-    return () => {
-      player.pause();
-    };
+    // ponytail: sin cleanup con player.pause() — useVideoPlayer libera el player
+    // al desmontar y pausar un objeto liberado truena ("shared object already
+    // released"). El else de arriba ya pausa al desactivarse.
   }, [isActive, player]);
 
   // ── Fallback de error ──────────────────────────────────────────────────────
