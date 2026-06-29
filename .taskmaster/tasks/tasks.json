@@ -843,7 +843,7 @@
           "8",
           "21"
         ],
-        "status": "pending",
+        "status": "in-progress",
         "subtasks": [
           {
             "id": 1,
@@ -959,15 +959,18 @@
             "id": 10,
             "title": "Instalar deps nativas del feed + nuevo dev build",
             "description": "Prerrequisito (bloquea 9.1/9.7): pnpm add @shopify/flash-list react-native-reanimated react-native-gesture-handler expo-haptics; configurar reanimated/gesture-handler (babel plugin + GestureHandlerRootView en root layout); nuevo eas/dev build e instalar en device. Sin esto el feed no corre en device.",
-            "details": "<info added on 2026-06-29T04:01:45.928Z>\nBased on the analysis of the codebase and the user request, here is the new content for the subtask details:\n\nPLAN (2026-06-28): Prerrequisito para subtareas 9.1 (FlashList) y 9.7 (gesture/animación). Decisión tomada: instalar stack nativo requerido y crear nuevo dev build.\n\nPasos de implementación:\n\n1. Instalar dependencias nativas vía pnpm:\n   - @shopify/flash-list (lista virtualizada de alto rendimiento para feed vertical)\n   - react-native-reanimated (animaciones nativas para transiciones de video)\n   - react-native-gesture-handler (detección de gestos para swipe y double-tap)\n   - expo-haptics (feedback táctil en interacciones como like)\n   \n   Comando: pnpm add @shopify/flash-list react-native-reanimated react-native-gesture-handler expo-haptics\n\n2. Configurar Reanimated en mobile/babel.config.js:\n   - Agregar plugin 'react-native-reanimated/plugin' al FINAL del array de plugins\n   - Este plugin debe ir último para funcionar correctamente con transformaciones de código\n\n3. Configurar GestureHandler en mobile/app/_layout.tsx:\n   - Envolver el componente root con <GestureHandlerRootView style={{ flex: 1 }}>\n   - Importar desde 'react-native-gesture-handler'\n   - Necesario para que los gestures funcionen en toda la app\n\n4. Crear nuevo development build con EAS:\n   - Comando: eas build --profile development --platform android\n   - Descargar e instalar el .apk resultante en el device físico\n   - Este build incluirá el código nativo de las nuevas dependencias\n\nBloquea: subtarea 9.1 (requiere FlashList) y 9.7 (requiere GestureDetector, Reanimated, Haptics)\n\nFootprint: mobile/package.json, mobile/babel.config.js, mobile/app/_layout.tsx\n\nAgente: mobile | Skills: urbea-expo | Criticidad: no (configuración/build, no requiere tests)\n</info added on 2026-06-29T04:01:45.928Z>",
-            "status": "pending",
+            "details": "<info added on 2026-06-29T04:01:45.928Z>\nBased on the analysis of the codebase and the user request, here is the new content for the subtask details:\n\nPLAN (2026-06-28): Prerrequisito para subtareas 9.1 (FlashList) y 9.7 (gesture/animación). Decisión tomada: instalar stack nativo requerido y crear nuevo dev build.\n\nPasos de implementación:\n\n1. Instalar dependencias nativas vía pnpm:\n   - @shopify/flash-list (lista virtualizada de alto rendimiento para feed vertical)\n   - react-native-reanimated (animaciones nativas para transiciones de video)\n   - react-native-gesture-handler (detección de gestos para swipe y double-tap)\n   - expo-haptics (feedback táctil en interacciones como like)\n   \n   Comando: pnpm add @shopify/flash-list react-native-reanimated react-native-gesture-handler expo-haptics\n\n2. Configurar Reanimated en mobile/babel.config.js:\n   - Agregar plugin 'react-native-reanimated/plugin' al FINAL del array de plugins\n   - Este plugin debe ir último para funcionar correctamente con transformaciones de código\n\n3. Configurar GestureHandler en mobile/app/_layout.tsx:\n   - Envolver el componente root con <GestureHandlerRootView style={{ flex: 1 }}>\n   - Importar desde 'react-native-gesture-handler'\n   - Necesario para que los gestures funcionen en toda la app\n\n4. Crear nuevo development build con EAS:\n   - Comando: eas build --profile development --platform android\n   - Descargar e instalar el .apk resultante en el device físico\n   - Este build incluirá el código nativo de las nuevas dependencias\n\nBloquea: subtarea 9.1 (requiere FlashList) y 9.7 (requiere GestureDetector, Reanimated, Haptics)\n\nFootprint: mobile/package.json, mobile/babel.config.js, mobile/app/_layout.tsx\n\nAgente: mobile | Skills: urbea-expo | Criticidad: no (configuración/build, no requiere tests)\n</info added on 2026-06-29T04:01:45.928Z>\n<info added on 2026-06-29T04:54:02.134Z>\nHECHO (2026-06-28): Instalación y configuración de dependencias nativas completada. Instaladas con `pnpm expo install` (versiones SDK-56 resueltas automáticamente): @shopify/flash-list@2.0.2, react-native-reanimated@4.3.1, react-native-gesture-handler@2.31.2, expo-haptics@56.0.3. Archivos modificados: mobile/babel.config.js (agregado plugin 'react-native-reanimated/plugin' al final del array de plugins), mobile/app/_layout.tsx (importado GestureHandlerRootView desde react-native-gesture-handler y envuelto el árbol root con <GestureHandlerRootView style={{flex:1}}>). Gotcha técnico detectado: react-native-reanimated v4 usa internamente react-native-worklets y el plugin 'react-native-reanimated/plugin' es proxy del 'react-native-worklets/plugin' — se configuró con el nombre del proxy porque react-native-worklets no está hoisted al root node_modules pero sí disponible en el scope de reanimated. Verificación técnica: pnpm tsc --noEmit → 0 errores de tipo. pnpm lint → script ausente (no existe configuración ESLint en mobile/, condición pre-existente, no bloqueante para esta subtarea). PENDIENTE: crear nuevo development build con EAS y descargarlo en device físico.\n</info added on 2026-06-29T04:54:02.134Z>\n<info added on 2026-06-29T04:55:37.258Z>\nHECHO (2026-06-28): Instalación completa de dependencias nativas vía pnpm expo install. Versiones resueltas: @shopify/flash-list@2.0.2, react-native-reanimated@4.3.1, react-native-gesture-handler@2.31.2, expo-haptics@56.0.3. GOTCHA resuelto: react-native-reanimated v4 migrò su motor a react-native-worklets (peerDep ^0.8.0) que con pnpm NO se hoistea al root node_modules → instalado explícitamente react-native-worklets@0.8.3 para evitar que Metro/babel fallen al resolver módulo. Configuración de babel: agregado plugin 'react-native-reanimated/plugin' al final del array de plugins en mobile/babel.config.js (este plugin es un proxy que reexporta react-native-worklets/plugin). Configuración de gesture-handler: árbol raíz de la app envuelto en GestureHandlerRootView con style={{flex:1}} en mobile/app/_layout.tsx (importado desde 'react-native-gesture-handler'). Verificación: pnpm tsc --noEmit → 0 errores de tipo. Archivos tocados: mobile/package.json (deps), mobile/pnpm-lock.yaml (lockfile), mobile/babel.config.js (plugin reanimated), mobile/app/_layout.tsx (GestureHandlerRootView wrapper). PENDIENTE: crear nuevo development build de EAS para Android y descargarlo/instalarlo en device físico — paso manual del usuario con su device y cuenta EAS. Este build es bloqueante antes de probar el feed en device porque las 4 librerías agregadas tienen módulos nativos que requieren código compilado (no soportados en Expo Go).\n</info added on 2026-06-29T04:55:37.258Z>",
+            "status": "in-progress",
             "dependencies": [],
-            "parentTaskId": 9
+            "parentTaskId": 9,
+            "updatedAt": "2026-06-29T04:51:39.765Z",
+            "parentId": "undefined"
           }
         ],
         "complexity": 9,
         "recommendedSubtasks": 9,
-        "expansionPrompt": "Break down video feed into: (1) create feed screen with FlatList and vertical paging, (2) implement full-screen video player with expo-video, (3) implement viewability detection for autoplay/pause, (4) implement video preloading for smooth scrolling, (5) create Supabase query for active properties with videos, (6) build overlay UI with property info and action buttons, (7) implement double-tap to like gesture, (8) add swipe navigation and smooth animations, (9) implement loading skeleton, pull-to-refresh, pagination, and memory management"
+        "expansionPrompt": "Break down video feed into: (1) create feed screen with FlatList and vertical paging, (2) implement full-screen video player with expo-video, (3) implement viewability detection for autoplay/pause, (4) implement video preloading for smooth scrolling, (5) create Supabase query for active properties with videos, (6) build overlay UI with property info and action buttons, (7) implement double-tap to like gesture, (8) add swipe navigation and smooth animations, (9) implement loading skeleton, pull-to-refresh, pagination, and memory management",
+        "updatedAt": "2026-06-29T04:51:39.765Z"
       },
       {
         "id": 10,
@@ -2400,13 +2403,13 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-06-29T02:53:24.071Z",
+      "lastModified": "2026-06-29T04:51:39.765Z",
       "taskCount": 26,
       "completedCount": 13,
       "tags": [
         "master"
       ],
-      "created": "2026-06-29T03:32:37.317Z",
+      "created": "2026-06-29T04:53:47.718Z",
       "description": "Tasks for master context"
     }
   }
