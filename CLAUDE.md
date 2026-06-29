@@ -77,3 +77,8 @@ Decisiones de fondo: `wiki/decisiones/0003` (vault), `0004` (Taskmaster), `0006`
 
 ## 8. Branding
 **Gate LEVANTADO** (cliente, 2026-06-26). ⭐ **Referencia visual canónica: `urbea-identidad-visual.html` (raíz del repo)** — tokens + componentes de firma + mockups de las ~13 pantallas de la demo; **cada pantalla del mockup = techo de alcance de su tarea** (no agregues UI ausente del mockup; lo que falte = trabajo nuevo vía `add-task`). Ábrelo antes de diseñar cualquier pantalla. Método: **bajo demanda por pantalla**, diseñar antes de implementar escalado por complejidad — simple → mini-spec escrito; componente de **firma** → preview HTML aprobable → portar a RN (ReactBits/galerías web = referencia, NO import; recrear con primitivas RN). El design system (`mobile/src/theme/theme.ts`) **crece orgánicamente**: lo sembró la tarea #16. Identidad: Salvia `#5A8A5E` / Arcilla `#9A7150` / gestión claro `#F6F2EB` / feed oscuro `#17140F`; **Space Grotesk** (display) + **Hanken Grotesk** (UI) — la del kit `003-kit`, NO Fraunces. Ver [[design-system]].
+
+⭐ **Dos referencias canónicas, roles distintos (tarea #26):**
+- `urbea-identidad-visual.html` = techo del **lenguaje visual** → color, tipografía, componentes de firma, mockups de pantalla.
+- `Urbea Prototipo (standalone).html` (raíz, export de Claude Design) = techo del **layout** → acomodo, jerarquía, grid, escala de espaciado/padding/gap, proporciones y composición por pantalla.
+- ⚠️ Del prototipo se toma **SOLO el layout**; **nunca** sus colores ni fuentes (los manda la identidad). Regla: **layout del prototipo + lenguaje visual de la identidad = pantalla final.** Los tokens de layout viven en `theme.ts`.
