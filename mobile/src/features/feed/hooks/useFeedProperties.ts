@@ -28,7 +28,9 @@ export interface UseFeedPropertiesState {
 
 export function useFeedProperties(): UseFeedPropertiesState {
   const [data, set_data] = useState<FeedPropertyWithUrl[]>([]);
-  const [isLoading, set_is_loading] = useState(false);
+  // ponytail: arranca en true — FeedScreen siempre llama loadInitial en mount;
+  // esto evita un frame de "empty state" antes de que useEffect dispare.
+  const [isLoading, set_is_loading] = useState(true);
   const [error, set_error] = useState<string | null>(null);
   const [nextCursor, set_next_cursor] = useState<string | null>(null);
 

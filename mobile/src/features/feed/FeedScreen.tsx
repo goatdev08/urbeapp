@@ -2,77 +2,50 @@
  * FeedScreen.tsx — Feed vertical inmersivo, estilo TikTok.
  *
  * Usa FlashList v2 (@shopify/flash-list 2.0.2) con snap por ítem full-screen.
- * Por ahora los datos son mock; la query real + signed URLs llegan en 9.5.
+ * Datos reales: hook useFeedProperties (query Supabase + signed URLs vía EF
+ * mint-video-url). Paginación acumulativa con scroll infinito.
  *
- * ponytail: datos mock hardcoded (3 ítems) para validar el scaffold y el snap.
- * La query real (supabase + EF mint-video-url) se conecta en subtarea 9.5.
- *
- * Precarga: drawDistance={height} mantiene el ítem vecino (idx+1 / idx-1)
- * montado fuera de pantalla. Su useVideoPlayer arranca buffering automáticamente
- * sin ningún hook adicional — expo-video SDK56 no expone prefetch explícito.
- * removeClippedSubviews: FlashList v2 no lo documenta/soporta; omitido.
+ * ponytail: FlashList v2 recicla ítems → la paginación no monta ítems
+ * ilimitados en memoria; drawDistance=height acota lo pre-renderizado.
+ * RefreshControl + onEndReached cubren pull-to-refresh y scroll infinito;
+ * la guardia contra disparos duplicados vive en loadMore (hook).
  */
 
-import { useCallback } from 'react';
-import { StyleSheet, TouchableOpacity, Text, View, useWindowDimensions } from 'react-native';
+import { useCallback, useEffect } from 'react';
+import {
+  StyleSheet,
+  TouchableOpacity,
+  Text,
+  View,
+  useWindowDimensions,
+  RefreshControl,
+} from 'react-native';
 import { FlashList, type ListRenderItemInfo } from '@shopify/flash-list';
 import { useRouter } from 'expo-router';
 
 import { colors } from '@/theme/theme';
 
 import { VideoFeedItem } from './components/VideoFeedItem';
+import { FeedSkeleton } from './components/FeedSkeleton';
 import { useFeedActiveIndex } from './hooks/useFeedActiveIndex';
+import { useFeedProperties } from './hooks/useFeedProperties';
 import type { FeedPropertyWithUrl } from './types';
 
 // ponytail: module-level — referencia estable, sin deps de closure.
 const key_extractor = (item: FeedPropertyWithUrl): string => item.id;
 
-const MOCK_FEED: FeedPropertyWithUrl[] = [
-  {
-    id: '1',
-    price: 250000,
-    address: 'Av. Corrientes 1234, CABA',
-    bedrooms: 2,
-    bathrooms: 1,
-    owner_user_id: 'u1',
-    agency_id: null,
-    created_at: '2024-01-01T00:00:00Z',
-    video: { id: 'v1', storage_path: 'videos/v1.mp4', position: 0 },
-    signed_url: '',
-    video_id: 'v1',
-  },
-  {
-    id: '2',
-    price: 180000,
-    address: 'Thames 532, Palermo, CABA',
-    bedrooms: 1,
-    bathrooms: 1,
-    owner_user_id: 'u2',
-    agency_id: 'a1',
-    created_at: '2024-01-02T00:00:00Z',
-    video: { id: 'v2', storage_path: 'videos/v2.mp4', position: 0 },
-    signed_url: '',
-    video_id: 'v2',
-  },
-  {
-    id: '3',
-    price: 320000,
-    address: 'Libertador 4200, Núñez, CABA',
-    bedrooms: 3,
-    bathrooms: 2,
-    owner_user_id: 'u3',
-    agency_id: null,
-    created_at: '2024-01-03T00:00:00Z',
-    video: { id: 'v3', storage_path: 'videos/v3.mp4', position: 0 },
-    signed_url: '',
-    video_id: 'v3',
-  },
-];
-
 export function FeedScreen() {
   const { height } = useWindowDimensions();
   const router = useRouter();
   const { viewabilityConfigCallbackPairs, isItemActive } = useFeedActiveIndex();
+  const { data, isLoading, error, loadInitial, refetch, loadMore } = useFeedProperties();
+
+  // Carga la primera página al montar la pantalla.
+  // loadInitial es estable (useCallback con deps vacías), por lo que
+  // este effect solo dispara una vez.
+  useEffect(() => {
+    loadInitial();
+  }, [loadInitial]);
 
   // ponytail: useCallback con [isItemActive] — se recreará solo cuando cambie
   // activeIndex (es decir, al hacer swipe). React.memo en VideoFeedItem
@@ -84,6 +57,45 @@ export function FeedScreen() {
     ),
     [isItemActive],
   );
+
+  // ── Estados de carga, error y vacío ─────────────────────────────────────────
+
+  // Carga inicial (sin datos previos): muestra skeleton full-screen.
+  // isLoading arranca en true en el hook, por lo que no hay flash de empty state.
+  if (isLoading && data.length === 0) {
+    return (
+      <View style={styles.root}>
+        <FeedSkeleton />
+      </View>
+    );
+  }
+
+  // Error sin datos previos: mensaje + reintentar.
+  if (error !== null && data.length === 0) {
+    return (
+      <View style={[styles.root, styles.state_root]}>
+        <Text style={styles.state_text}>{error}</Text>
+        <TouchableOpacity
+          onPress={loadInitial}
+          style={styles.retry_btn}
+          accessibilityLabel="Reintentar carga del feed"
+        >
+          <Text style={styles.retry_text}>Reintentar</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  // Sin propiedades tras carga exitosa.
+  if (!isLoading && data.length === 0) {
+    return (
+      <View style={[styles.root, styles.state_root]}>
+        <Text style={styles.state_text}>Aún no hay propiedades</Text>
+      </View>
+    );
+  }
+
+  // ── Feed principal ───────────────────────────────────────────────────────────
 
   return (
     <View style={styles.root}>
@@ -101,7 +113,7 @@ export function FeedScreen() {
           Todas estas props son ScrollViewProps, que FlashList v2 re-exporta
           directamente (extiende Omit<ScrollViewProps, 'maintainVisibleContentPosition'>). */}
       <FlashList
-        data={MOCK_FEED}
+        data={data}
         keyExtractor={key_extractor}
         renderItem={render_item}
         pagingEnabled
@@ -112,6 +124,19 @@ export function FeedScreen() {
         bounces={false}
         drawDistance={height}
         viewabilityConfigCallbackPairs={viewabilityConfigCallbackPairs}
+        // Pull-to-refresh: resetea cursor y recarga desde el inicio.
+        // refreshing solo true durante un refresh (ya hay datos en pantalla).
+        refreshControl={
+          <RefreshControl
+            refreshing={isLoading && data.length > 0}
+            onRefresh={refetch}
+            tintColor={colors.gray_1}
+          />
+        }
+        // Scroll infinito: dispara al estar a ~30% del final de la lista.
+        // ponytail: loadMore ya guarda internamente contra !nextCursor / isLoading.
+        onEndReached={loadMore}
+        onEndReachedThreshold={0.3}
       />
 
       {/* ponytail: botón flotante temporal — único acceso al wizard de publicación
@@ -132,6 +157,29 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: colors.ink_feed,
+  },
+  // Estado de carga vacía / error / empty: centrado en pantalla.
+  state_root: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 16,
+  },
+  state_text: {
+    color: colors.gray_1,
+    fontSize: 16,
+    textAlign: 'center',
+    paddingHorizontal: 32,
+  },
+  retry_btn: {
+    paddingVertical: 10,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.gray_2,
+  },
+  retry_text: {
+    color: colors.gray_1,
+    fontSize: 15,
   },
   publish_btn: {
     position: 'absolute',
