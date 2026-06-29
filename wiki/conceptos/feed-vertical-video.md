@@ -2,9 +2,9 @@
 tipo: concepto
 dominio: producto
 estado: vivo
-fuentes: [docs/PRD.md §9, docs/PRD-MVP-demo.md]
-codigo: [supabase/migrations/0006_engagement_crm.sql]
-actualizado: 2026-06-17
+fuentes: [docs/PRD.md §9, docs/PRD-MVP-demo.md, .taskmaster (tarea #9)]
+codigo: [supabase/migrations/20260604000006_engagement_crm.sql, supabase/functions/mint-video-url/, mobile/src/features/feed/]
+actualizado: 2026-06-29
 ---
 
 # Feed vertical de video
@@ -19,8 +19,9 @@ actualizado: 2026-06-17
   - Métricas: "video visto" (criterio definido) y "video completado" (100% reproducido) alimentan el scoring (diferido en demo).
 
 ## En la demo
-- **vivo.** Feed vertical con `expo-video`, swipe, autoplay. Lo consumen los propios agentes. Filtros básicos ([[busqueda-y-filtros]]). Interacción: like + guardar.
-- El radio progresivo y el anti-clustering se simplifican (pocas propiedades semilla); se respetan si el orden lo permite.
+- **vivo (tarea #9, código en `mobile/src/features/feed/`).** Feed vertical con `expo-video` (FlashList v2 paginada), swipe, autoplay por viewability (70%, pausa en background/al salir del tab). Lo consumen los propios agentes. Interacción **persistida de verdad**: like (doble-tap estilo TikTok = `likeOnly` idempotente, + botón overlay = toggle) en `likes` por video; guardar en `saves` por propiedad — optimista + rollback + conflicto único 23505.
+- **Alcance #9 (decisión cliente):** feed **simple** — query `active`+video `ready`, `ORDER BY created_at DESC`, cursor + scroll infinito. El **radio progresivo y el anti-clustering NO se implementaron** (PRD los marca diferibles; pocas semillas en la demo) → trabajo futuro si se necesita. Filtros básicos pendientes ([[busqueda-y-filtros]]).
+- ⚠️ **Requiere nuevo dev build** antes de correr en device: #9 añadió módulos nativos (`@shopify/flash-list`, `react-native-reanimated` v4 + `react-native-worklets`, `react-native-gesture-handler`, `expo-haptics`). Ver [[comandos]].
 
 ## Datos / técnico
 - `likes` (`user_id`, `property_video_id`, único). Videos de [[propiedades-y-video]] (`status='ready'`).
