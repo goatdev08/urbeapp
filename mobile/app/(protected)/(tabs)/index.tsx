@@ -1,38 +1,12 @@
-import { StyleSheet, Text, View } from 'react-native';
-import { useRouter } from 'expo-router';
+/**
+ * (tabs)/index.tsx — Tab "Home" (feed vertical).
+ *
+ * Solo delega a FeedScreen; la lógica vive en features/feed/ siguiendo
+ * la convención del repo (rutas finas, feature fat).
+ */
 
-import { PrimaryButton } from '@/components/PrimaryButton';
+import { FeedScreen } from '@/features/feed/FeedScreen';
 
 export default function HomeScreen() {
-  const router = useRouter();
-  return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Urbea</Text>
-      {/* ponytail: launcher temporal para llegar al wizard de publicación (#8).
-          Retirar cuando exista la navegación/CTA definitiva (feed/tab bar). */}
-      <View style={styles.cta}>
-        <PrimaryButton
-          label="Publicar propiedad"
-          surface="light"
-          onPress={() => router.push('/publish/step1')}
-        />
-      </View>
-    </View>
-  );
+  return <FeedScreen />;
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#fff',
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: '600',
-  },
-  cta: {
-    marginTop: 24,
-  },
-});
