@@ -6,6 +6,11 @@
  *
  * ponytail: datos mock hardcoded (3 ítems) para validar el scaffold y el snap.
  * La query real (supabase + EF mint-video-url) se conecta en subtarea 9.5.
+ *
+ * Precarga: drawDistance={height} mantiene el ítem vecino (idx+1 / idx-1)
+ * montado fuera de pantalla. Su useVideoPlayer arranca buffering automáticamente
+ * sin ningún hook adicional — expo-video SDK56 no expone prefetch explícito.
+ * removeClippedSubviews: FlashList v2 no lo documenta/soporta; omitido.
  */
 
 import { StyleSheet, TouchableOpacity, Text, View, useWindowDimensions } from 'react-native';
@@ -70,7 +75,9 @@ export function FeedScreen() {
       {/* ponytail: FlashList v2 (2.0.2) mide ítems automáticamente (new arch);
           estimatedItemSize ya no existe. Los ítems fijan su propio height=screenHeight.
           viewabilityConfigCallbackPairs (ref estable) activa el reproductor del ítem visible;
-          el hook combina viewability + AppState + foco de tab para el gating de isActive. */}
+          el hook combina viewability + AppState + foco de tab para el gating de isActive.
+          drawDistance=height: pre-renderiza un ítem fuera de pantalla en cada dirección →
+          su useVideoPlayer bufferea sin prefetch explícito (SDK56 no lo expone). */}
       <FlashList
         data={MOCK_FEED}
         keyExtractor={(item) => item.id}
@@ -78,6 +85,7 @@ export function FeedScreen() {
         snapToInterval={height}
         decelerationRate="fast"
         showsVerticalScrollIndicator={false}
+        drawDistance={height}
         viewabilityConfigCallbackPairs={viewabilityConfigCallbackPairs}
         renderItem={({ item, index }) => (
           <VideoFeedItem

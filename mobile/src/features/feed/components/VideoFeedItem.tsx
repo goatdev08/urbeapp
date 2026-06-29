@@ -11,8 +11,8 @@
  */
 
 import React, { memo, useCallback, useEffect, useState } from 'react';
-import { StyleSheet, View, Text, useWindowDimensions } from 'react-native';
-import { useVideoPlayer, VideoView } from 'expo-video';
+import { ActivityIndicator, StyleSheet, View, Text, useWindowDimensions } from 'react-native';
+import { useVideoPlayer, VideoView, type VideoPlayerStatus } from 'expo-video';
 
 import { PropertyOverlay } from './PropertyOverlay';
 
@@ -36,6 +36,11 @@ export type VideoFeedItemProps = {
 function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedItemProps) {
   const { width, height } = useWindowDimensions();
   const [has_error, set_has_error] = useState(false);
+  // ponytail: player_status para mostrar spinner mientras carga el ítem activo.
+  // expo-video SDK56 no expone prefetch; la precarga ocurre porque drawDistance
+  // en FlashList mantiene los ítems vecinos montados → su useVideoPlayer bufferea.
+  // useVideoPlayer auto-libera el player al desmontar (SDK56 gestiona el ciclo de vida).
+  const [player_status, set_player_status] = useState<VideoPlayerStatus>('loading');
 
   // ponytail: estado local temporal de like/guardar — la persistencia real
   // (Supabase likes + saved_properties) llega en subtarea 9.7.
@@ -52,10 +57,11 @@ function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedIte
     p.muted = false;
   });
 
-  // Detectar error de carga (URL firmada inválida/expirada).
+  // Detectar error de carga (URL firmada inválida/expirada) y trackear status.
   // statusChange event: { status: 'idle'|'loading'|'readyToPlay'|'error', error? }
   useEffect(() => {
     const sub = player.addListener('statusChange', ({ status }) => {
+      set_player_status(status);
       if (status === 'error') {
         set_has_error(true);
       }
@@ -107,6 +113,16 @@ function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedIte
         nativeControls={false}
       />
 
+      {/* Spinner mientras el ítem activo carga. Los ítems vecinos (pre-montados
+          por drawDistance) no muestran spinner — solo el visible lo necesita. */}
+      {isActive && player_status === 'loading' && (
+        <ActivityIndicator
+          style={styles.loading_spinner}
+          size="large"
+          color="rgba(255,255,255,0.7)"
+        />
+      )}
+
       {/* Overlay de UI: info de la propiedad + botones like/guardar + avatar agente */}
       <PropertyOverlay
         property={property}
@@ -143,5 +159,12 @@ const styles = StyleSheet.create({
   error_text: {
     ...type_scale.body,
     color: colors.gray_1,
+  },
+  loading_spinner: {
+    position: 'absolute' as const,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
 });
