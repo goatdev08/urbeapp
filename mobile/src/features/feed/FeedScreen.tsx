@@ -8,14 +8,14 @@
  * La query real (supabase + EF mint-video-url) se conecta en subtarea 9.5.
  */
 
-import { useCallback, useState } from 'react';
 import { StyleSheet, TouchableOpacity, Text, View, useWindowDimensions } from 'react-native';
-import { FlashList, type ViewToken } from '@shopify/flash-list';
+import { FlashList } from '@shopify/flash-list';
 import { useRouter } from 'expo-router';
 
 import { colors } from '@/theme/theme';
 
 import { VideoFeedItem } from './components/VideoFeedItem';
+import { useFeedActiveIndex } from './hooks/useFeedActiveIndex';
 import type { FeedPropertyWithUrl } from './types';
 
 const MOCK_FEED: FeedPropertyWithUrl[] = [
@@ -63,23 +63,14 @@ const MOCK_FEED: FeedPropertyWithUrl[] = [
 export function FeedScreen() {
   const { height } = useWindowDimensions();
   const router = useRouter();
-  const [active_index, set_active_index] = useState(0);
-
-  const on_viewable_items_changed = useCallback(
-    ({ viewableItems }: { viewableItems: ViewToken<FeedPropertyWithUrl>[] }) => {
-      const first = viewableItems[0];
-      if (first && first.index !== null && first.index !== undefined) {
-        set_active_index(first.index);
-      }
-    },
-    [],
-  );
+  const { viewabilityConfigCallbackPairs, isItemActive } = useFeedActiveIndex();
 
   return (
     <View style={styles.root}>
       {/* ponytail: FlashList v2 (2.0.2) mide ítems automáticamente (new arch);
           estimatedItemSize ya no existe. Los ítems fijan su propio height=screenHeight.
-          onViewableItemsChanged activa el reproductor del ítem visible. */}
+          viewabilityConfigCallbackPairs (ref estable) activa el reproductor del ítem visible;
+          el hook combina viewability + AppState + foco de tab para el gating de isActive. */}
       <FlashList
         data={MOCK_FEED}
         keyExtractor={(item) => item.id}
@@ -87,12 +78,11 @@ export function FeedScreen() {
         snapToInterval={height}
         decelerationRate="fast"
         showsVerticalScrollIndicator={false}
-        onViewableItemsChanged={on_viewable_items_changed}
-        viewabilityConfig={{ itemVisiblePercentThreshold: 60 }}
+        viewabilityConfigCallbackPairs={viewabilityConfigCallbackPairs}
         renderItem={({ item, index }) => (
           <VideoFeedItem
             property={item}
-            isActive={index === active_index}
+            isActive={isItemActive(index)}
           />
         )}
       />
