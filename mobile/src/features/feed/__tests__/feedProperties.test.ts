@@ -69,7 +69,9 @@ type QueryRow = {
   owner_user_id: string;
   agency_id: string | null;
   created_at: string;
-  property_videos: Array<{ id: string; storage_path: string; position: number }>;
+  // status es opcional: la query embebida puede incluirlo para que la impl
+  // pueda reconciliar por video_id (y filtrar por status si lo necesita).
+  property_videos: Array<{ id: string; storage_path: string; position: number; status?: string }>;
 };
 
 type MintedVideo = {
@@ -114,6 +116,31 @@ function make_query_rows(count: number): QueryRow[] {
 /** Genera N MintedVideo (uno por prop). */
 function make_minted_videos(count: number): MintedVideo[] {
   return Array.from({ length: count }, (_, i) => make_minted_video(i + 1));
+}
+
+/**
+ * Crea una fila con DOS videos embebidos: el primero es NOT-ready (uploading),
+ * el segundo es el ready. El NOT-ready está en índice 0 para exponer que
+ * `property_videos[0]` es la elección incorrecta cuando la EF elige el ready.
+ * Incluye `status` para que la implementación correcta pueda reconciliar.
+ */
+function make_query_row_con_videos_multiples(prop_id: string): QueryRow {
+  return {
+    id: prop_id,
+    price: 2500000,
+    address: 'Av. Insurgentes Sur #1234, CDMX',
+    bedrooms: 3,
+    bathrooms: 2,
+    owner_user_id: 'agent-uuid-multi',
+    agency_id: null,
+    created_at: '2026-06-28T10:00:00Z',
+    property_videos: [
+      // índice 0: uploading — el que toma [0] erróneamente
+      { id: 'vid-upload', storage_path: 'x/upload.mp4', position: 1, status: 'uploading' },
+      // índice 1: ready — el que la EF devuelve via video_id
+      { id: 'vid-ready', storage_path: 'x/ready.mp4', position: 2, status: 'ready' },
+    ],
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -428,6 +455,82 @@ describe('fetchFeedProperties', () => {
       'mint-video-url',
       expect.anything(),
     );
+  });
+
+  // ── (EC-14) Múltiples videos: video reconciliado con video_id de la EF ────
+  //
+  // Hueco mock-vs-prod (lección #8): la impl toma property_videos[0] sin
+  // reconciliar. Si el primer video es uploading y el segundo es ready, el
+  // campo `video` del resultado describe el uploading en lugar del ready.
+
+  it('(EC-14) video_reconciliado_con_video_id_ef_no_primer_elemento_array: propiedad con dos videos embebidos (uploading en [0], ready en [1]) → video del resultado corresponde al ready (el que devuelve la EF por video_id), NO al uploading del índice 0', async () => {
+    const prop_id = 'prop-multi-video';
+    const row = make_query_row_con_videos_multiples(prop_id);
+
+    // La EF elige el video ready (vid-ready), que está en índice 1 del array.
+    const minted: MintedVideo = {
+      property_id: prop_id,
+      video_id: 'vid-ready',
+      signed_url: 'https://signed/ready',
+    };
+
+    const mock_supabase = make_mock_supabase({
+      query_result: { data: [row], error: null },
+      invoke_result: { data: { videos: [minted] }, error: null },
+    });
+
+    const result = await fetchFeedProperties(undefined, { supabase: mock_supabase });
+
+    expect(result.data).toHaveLength(1);
+    const item = result.data[0]!;
+
+    // El video debe ser el ready (reconciliado con video_id de la EF),
+    // NO el uploading que está en property_videos[0].
+    expect(item.video.id).toBe('vid-ready');
+    expect(item.video.storage_path).toBe('x/ready.mp4');
+    expect(item.video.position).toBe(2);
+    // El signed_url debe corresponder al video ready
+    expect(item.signed_url).toBe('https://signed/ready');
+    expect(item.video_id).toBe('vid-ready');
+  });
+
+  // ── (EC-15) Fail-closed: video_id de la EF no matchea ningún video embebido
+
+  it('(EC-15) propiedad_omitida_cuando_video_id_ef_no_matchea_ningun_video_embebido: EF devuelve video_id que no existe en property_videos → la propiedad se OMITE (fail-closed, no aparece en data)', async () => {
+    // La propiedad tiene un solo video embebido con id 'vid-other'.
+    const row: QueryRow = {
+      id: 'prop-huerfana',
+      price: 1800000,
+      address: 'Calle Inconsistente #42, CDMX',
+      bedrooms: 2,
+      bathrooms: 1,
+      owner_user_id: 'agent-uuid-huerfana',
+      agency_id: null,
+      created_at: '2026-06-28T09:00:00Z',
+      property_videos: [
+        { id: 'vid-other', storage_path: 'x/other.mp4', position: 0, status: 'ready' },
+      ],
+    };
+
+    // La EF devuelve un video_id que NO existe en el array embebido — caso
+    // degenerado de inconsistencia de datos entre la query y la EF.
+    const minted: MintedVideo = {
+      property_id: 'prop-huerfana',
+      video_id: 'vid-nonexistent',
+      signed_url: 'https://signed/nonexistent',
+    };
+
+    const mock_supabase = make_mock_supabase({
+      query_result: { data: [row], error: null },
+      invoke_result: { data: { videos: [minted] }, error: null },
+    });
+
+    const result = await fetchFeedProperties(undefined, { supabase: mock_supabase });
+
+    // La propiedad debe OMITIRSE porque no se puede reconciliar el video.
+    expect(result.data).toHaveLength(0);
+    const ids = result.data.map((item: FeedPropertyWithUrl) => item.id);
+    expect(ids).not.toContain('prop-huerfana');
   });
 
 });

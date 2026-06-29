@@ -7,21 +7,117 @@
  *   - Merge fail-closed: propiedades sin URL se omiten.
  *   - Paginación por cursor (created_at), LIMIT 10.
  *
- * STUB — subtarea 9.5 fase RED.
- * Implementación real: fase GREEN (otro agente).
+ * ponytail: DI opcional via deps.supabase; prod usa lazy-require del singleton
+ * para evitar que el top-level de client.ts (que lanza sin env vars) rompa los tests.
  */
 
 import type { FeedPropertyWithUrl } from '../types';
 
-// ponytail: DI opcional para testabilidad; prod usa el singleton de @/lib/supabase/client
+// ponytail: sin explicit any en la interfaz pública — solo en los internos inevitables
 export interface FeedPropertiesDeps {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any;
 }
 
+const PAGE_SIZE = 10;
+
+type MintedVideo = {
+  property_id: string;
+  video_id: string;
+  signed_url: string;
+};
+
+type QueryRow = {
+  id: string;
+  price: number;
+  address: string;
+  bedrooms: number;
+  bathrooms: number;
+  owner_user_id: string;
+  agency_id: string | null;
+  created_at: string;
+  property_videos: Array<{ id: string; storage_path: string; position: number }>;
+};
+
 export async function fetchFeedProperties(
-  _cursor?: string,
-  _deps?: FeedPropertiesDeps,
+  cursor?: string,
+  deps?: FeedPropertiesDeps,
 ): Promise<{ data: FeedPropertyWithUrl[]; nextCursor: string | null }> {
-  throw new Error('not_implemented');
+  // ponytail: lazy-require del cliente real; nunca se evalúa en tests (deps siempre inyectado)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const client: any = deps?.supabase ?? (require('@/lib/supabase/client') as any).supabase;
+
+  // Construye la query base
+  let query = client
+    .from('properties')
+    .select(
+      `id, price, address, bedrooms, bathrooms, owner_user_id, agency_id, created_at,
+       property_videos(id, storage_path, position)`,
+    )
+    .eq('status', 'active')
+    .is('deleted_at', null)
+    .order('created_at', { ascending: false })
+    .limit(PAGE_SIZE);
+
+  if (cursor) {
+    query = query.lt('created_at', cursor);
+  }
+
+  const { data: rows, error } = (await query) as {
+    data: QueryRow[] | null;
+    error: { message: string } | null;
+  };
+
+  if (error) throw new Error(error.message);
+
+  if (!rows || rows.length === 0) {
+    return { data: [], nextCursor: null };
+  }
+
+  // Extrae ids para la EF
+  const property_ids = rows.map((r) => r.id);
+
+  const { data: ef_data, error: ef_error } = (await client.functions.invoke('mint-video-url', {
+    body: { property_ids },
+  })) as { data: { videos: MintedVideo[] } | null; error: { message: string } | null };
+
+  if (ef_error) throw new Error(ef_error.message);
+
+  // Índice por property_id para merge O(1)
+  const videos_map = new Map<string, MintedVideo>();
+  for (const v of ef_data?.videos ?? []) {
+    videos_map.set(v.property_id, v);
+  }
+
+  // Merge fail-closed: omite propiedades sin signed_url
+  const data: FeedPropertyWithUrl[] = [];
+  for (const row of rows) {
+    const minted = videos_map.get(row.id);
+    if (!minted) continue;
+
+    const first_video = row.property_videos[0];
+
+    data.push({
+      id: row.id,
+      price: row.price,
+      address: row.address,
+      bedrooms: row.bedrooms,
+      bathrooms: row.bathrooms,
+      owner_user_id: row.owner_user_id,
+      agency_id: row.agency_id,
+      created_at: row.created_at,
+      video: {
+        id: first_video?.id ?? '',
+        storage_path: first_video?.storage_path ?? '',
+        position: first_video?.position ?? 0,
+      },
+      signed_url: minted.signed_url,
+      video_id: minted.video_id,
+    });
+  }
+
+  // nextCursor: created_at del último item de la QUERY (no del merge), null si <PAGE_SIZE
+  const nextCursor = rows.length === PAGE_SIZE ? (rows[rows.length - 1]!.created_at) : null;
+
+  return { data, nextCursor };
 }
