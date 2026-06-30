@@ -26,6 +26,7 @@ import { cluster_properties } from './lib/clusterMarkers';
 import { PropertyMarker } from './components/PropertyMarker';
 import { ClusterMarker } from './components/ClusterMarker';
 import { PropertyMiniCard } from './components/PropertyMiniCard';
+import { MapSearchBar } from './components/MapSearchBar';
 import type { MapProperty } from './types';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -75,10 +76,28 @@ function MapContent(): React.JSX.Element {
   const { data, loading, error } = useMapProperties();
   const [region, set_region] = useState<Region>(GDL_REGION);
   const [selected, set_selected] = useState<MapProperty | null>(null);
+  const [query, set_query] = useState('');
+
+  /*
+   * ponytail: filtro cliente sin geocoding ni nueva dependencia — cubre el scope #11.7.
+   * Filtra por address y property_type; recalcula solo cuando data o query cambian.
+   * clustered deriva de filtered → no recalcula todo el clustering ante un cambio
+   * de región si el query no cambió. tracksViewChanges={false} en markers (ver
+   * PropertyMarker.tsx) evita re-renders por frame con 50+ pins en pantalla.
+   */
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return data ?? [];
+    return (data ?? []).filter(
+      (p) =>
+        p.address.toLowerCase().includes(q) ||
+        p.property_type.toLowerCase().includes(q),
+    );
+  }, [data, query]);
 
   const clustered = useMemo(
-    () => cluster_properties(data ?? [], region),
-    [data, region],
+    () => cluster_properties(filtered, region),
+    [filtered, region],
   );
 
   /** Centra y hace zoom-in sobre el cluster tocado. */
@@ -145,6 +164,15 @@ function MapContent(): React.JSX.Element {
           <Text style={styles.error_text}>{error}</Text>
         </View>
       )}
+
+      {/* ── Barra de búsqueda flotante — overlay superior (z-index último) ── */}
+      {/*
+       * Renderizado después del MapView y los overlays para quedar por encima
+       * (orden de render = z-index en RN). Los taps en la barra no alcanzan
+       * el onPress del MapView (set_selected(null)) porque la barra está fuera
+       * del MapView y tiene mayor z-index.
+       */}
+      <MapSearchBar value={query} on_change={set_query} />
     </View>
   );
 }
