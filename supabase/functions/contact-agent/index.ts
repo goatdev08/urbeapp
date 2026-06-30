@@ -7,7 +7,12 @@
 //   - CallerVerifier real: JWT → getUser → user_id
 
 import { make_contact_agent_handler } from "./handler.ts";
-import type { CallerVerifier, CallerVerifyResult } from "./types.ts";
+import type {
+  CallerVerifier,
+  CallerVerifyResult,
+  PropertyResolver,
+  PropertyResolveResult,
+} from "./types.ts";
 
 // ponytail: stub — se completará en GREEN con deps reales
 const callerVerifier: CallerVerifier = {
@@ -16,6 +21,13 @@ const callerVerifier: CallerVerifier = {
   },
 };
 
-const handle = make_contact_agent_handler({ callerVerifier });
+// ponytail: stub — se conectará al repo Postgres real en 14.3 GREEN
+const propertyResolver: PropertyResolver = {
+  resolve(_propertyId: string): Promise<PropertyResolveResult> {
+    throw new Error("not_implemented");
+  },
+};
+
+const handle = make_contact_agent_handler({ callerVerifier, propertyResolver });
 
 Deno.serve((req: Request) => handle(req));

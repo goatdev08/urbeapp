@@ -95,7 +95,33 @@ export function make_contact_agent_handler(
       return error_response(parsed.error.code, parsed.error.message, 400);
     }
 
-    // (f) Placeholder — subtareas 14.3-14.6 implementarán la lógica real
+    // (f) Resolver propiedad + agente (14.3)
+    const property_result = await deps.propertyResolver.resolve(parsed.data.propertyId);
+    if (!property_result.ok) {
+      if (property_result.error_code === "PROPERTY_NOT_FOUND") {
+        return error_response("NOT_FOUND", "Propiedad no encontrada", 404);
+      }
+      // DB_ERROR → 500
+      return error_response("DB_ERROR", "Error interno al obtener la propiedad", 500);
+    }
+
+    const property = property_result.data;
+
+    // (g) Validar estado de la propiedad — solo 'active' es contactable
+    if (property.status !== "active") {
+      return error_response(
+        "INVALID_PROPERTY_STATE",
+        `La propiedad no está disponible para contacto (estado: ${property.status})`,
+        400,
+      );
+    }
+
+    // (h) Validar teléfono del agente — requerido para abrir WhatsApp
+    if (!property.agent_phone || property.agent_phone.trim() === "") {
+      return error_response("AGENT_PHONE_MISSING", "El agente no tiene teléfono registrado", 400);
+    }
+
+    // Placeholder — subtareas 14.4-14.6 añadirán leads/counter/mensaje
     return json_response({ ok: true }, 200);
   };
 }
