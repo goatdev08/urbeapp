@@ -28,6 +28,7 @@
 
 import React from 'react';
 import {
+  Linking,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -39,7 +40,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
 import { colors, fonts, layout, spacing } from '@/theme/theme';
-import { PrimaryButton } from '@/components/PrimaryButton';
+import { ContactAgentButton } from '@/components/ContactAgentButton';
 import { usePropertyDetail } from './hooks/usePropertyDetail';
 import { PropertyVideoPlayer } from './components/PropertyVideoPlayer';
 import { PropertyInfoHeader } from './components/PropertyInfoHeader';
@@ -48,7 +49,6 @@ import { AgentCard } from './components/AgentCard';
 import { PropertyMap } from './components/PropertyMap';
 import { ActionButtons } from './components/ActionButtons';
 import { DetailSkeleton } from './components/DetailSkeleton';
-import { open_whatsapp } from './utils/whatsapp';
 
 // Espacio inferior reservado para el CTA sticky:
 // PrimaryButton height (54) + paddingTop (8) + paddingBottom (16) + margen visual (8)
@@ -180,16 +180,22 @@ export function PropertyDetailScreen(): React.JSX.Element {
       </ScrollView>
 
       {/* ── CTA sticky "Contactar por WhatsApp" — anclado al fondo,
-           fuera del ScrollView, visible solo si hay teléfono. ─────── */}
+           fuera del ScrollView, visible solo si hay teléfono.
+           Gate temprano: si la EF devuelve AGENT_PHONE_MISSING lo
+           manejará el componente inline; esta guarda evita mostrarlo
+           cuando ya sabemos que no hay teléfono. ────────────────────── */}
       {data.agent.phone !== null && (
         <View style={styles.sticky_cta}>
-          <PrimaryButton
-            label="Contactar por WhatsApp"
-            surface="light"
-            icon={<Ionicons name="logo-whatsapp" size={20} color="#FFFFFF" />}
-            onPress={() => {
-              // ponytail: sin registro de lead CRM — llega en #11
-              open_whatsapp(data.agent.phone, data.address);
+          <ContactAgentButton
+            propertyId={property_id}
+            agentName={data.agent.full_name ?? 'Agente'}
+            onContactReady={(phone, message) => {
+              // ponytail: stub mínimo — deep link real + fallback + Alert de
+              // confirmación ("Contacto enviado") los implementa 14.7.
+              const clean = phone.replace(/\D/g, '');
+              void Linking.openURL(
+                `https://wa.me/${clean}?text=${encodeURIComponent(message)}`,
+              );
             }}
           />
         </View>
