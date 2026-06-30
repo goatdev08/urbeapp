@@ -1,11 +1,15 @@
 ---
 tipo: estado
-actualizado: 2026-06-28
+actualizado: 2026-06-29
 ---
 
 # Estado actual
 
 > Narrativa de "dónde estamos hoy". El **qué sigue / qué está hecho** vive en **Taskmaster** (`task-master list`), no aquí.
+
+## Hoy (2026-06-29)
+
+- **Detalle de propiedad (#10, vivo):** pantalla `app/(protected)/property/[id].tsx` (feature `mobile/src/features/property-detail/`) — el destino del tap del feed. **Tema híbrido fiel al mockup #5: hero video oscuro + contenido paper claro.** `usePropertyDetail` reusa la EF `mint-video-url` (fail-soft) y junta agente (`user_preferences`)/agencia/videos; UI: video hero (position 1 + badge), precio-héroe + specs null-safe, amenidades, mapa (`parseLocation` WKT 13 tests), card de agente + WhatsApp (sin lead CRM → #11), like/save flotantes (reusan hooks de #9, **única subtarea crítica, TDD+guardian PASS, 10 tests**) + CTA sticky. Share omitido. Suite 247/247, tsc 0. Rama `tarea/10-property-detail`. ⚠️ pendiente nuevo dev build (módulos nativos de #9) para probar en device. Ver [[propiedades-y-video]], [[feed-vertical-video]].
 
 ## Hoy (2026-06-28)
 

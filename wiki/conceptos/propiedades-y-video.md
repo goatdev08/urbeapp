@@ -2,9 +2,9 @@
 tipo: concepto
 dominio: producto
 estado: vivo
-fuentes: [docs/PRD.md §12-13, docs/PRD-MVP-demo.md, .taskmaster (tareas #8, #17, #21)]
-codigo: [supabase/migrations/20260604000005_properties_and_videos.sql, supabase/migrations/20260604000011_storage_property_videos.sql, supabase/migrations/20260604000012_property_videos_ready_requires_storage.sql, supabase/migrations/20260625000001_publish_property_rpc.sql, supabase/functions/publish-property/, supabase/functions/update-property-status/, supabase/functions/mint-video-url/, supabase/functions/_shared/clients.ts (make_video_url_minter), supabase/functions/_shared/video_url_minter.test.ts, supabase/tests/01_constraints_test.sql, supabase/tests/03_storage_test.sql, supabase/tests/06_publish_property_rpc_test.sql, mobile/src/features/publish/, mobile/app/(protected)/profile/my-listings.tsx]
-actualizado: 2026-06-28
+fuentes: [docs/PRD.md §12-13, docs/PRD-MVP-demo.md, .taskmaster (tareas #8, #10, #17, #21)]
+codigo: [supabase/migrations/20260604000005_properties_and_videos.sql, supabase/migrations/20260604000011_storage_property_videos.sql, supabase/migrations/20260604000012_property_videos_ready_requires_storage.sql, supabase/migrations/20260625000001_publish_property_rpc.sql, supabase/functions/publish-property/, supabase/functions/update-property-status/, supabase/functions/mint-video-url/, supabase/functions/_shared/clients.ts (make_video_url_minter), supabase/functions/_shared/video_url_minter.test.ts, supabase/tests/01_constraints_test.sql, supabase/tests/03_storage_test.sql, supabase/tests/06_publish_property_rpc_test.sql, mobile/src/features/publish/, mobile/app/(protected)/profile/my-listings.tsx, mobile/src/features/property-detail/, mobile/app/(protected)/property/[id].tsx]
+actualizado: 2026-06-29
 ---
 
 # Propiedades y video
