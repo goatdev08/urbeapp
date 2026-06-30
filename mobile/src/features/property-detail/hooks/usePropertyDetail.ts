@@ -22,6 +22,8 @@
 import { useState, useCallback, useEffect } from 'react';
 
 import { supabase } from '@/lib/supabase/client';
+import { localizeSignedUrl } from '@/lib/supabase/localizeSignedUrl';
+
 import type { PropertyDetail, PropertyVideoDetail } from '../types';
 
 // ---------------------------------------------------------------------------
@@ -172,7 +174,7 @@ export function usePropertyDetail(id: string): UsePropertyDetailResult {
         };
         // Asigna signed_url al video que coincide con el minted por la EF
         if (minted !== undefined && minted.video_id === v.id) {
-          video.signed_url = minted.signed_url;
+          video.signed_url = localizeSignedUrl(minted.signed_url);
         }
         return video;
       });

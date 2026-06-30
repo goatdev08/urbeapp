@@ -11,6 +11,8 @@
  * para evitar que el top-level de client.ts (que lanza sin env vars) rompa los tests.
  */
 
+import { localizeSignedUrl } from '@/lib/supabase/localizeSignedUrl';
+
 import type { FeedPropertyWithUrl } from '../types';
 
 // ponytail: sin explicit any en la interfaz pública — solo en los internos inevitables
@@ -115,7 +117,7 @@ export async function fetchFeedProperties(
         storage_path: video_entry.storage_path,
         position: video_entry.position,
       },
-      signed_url: minted.signed_url,
+      signed_url: localizeSignedUrl(minted.signed_url),
       video_id: minted.video_id,
     });
   }
