@@ -8,7 +8,7 @@
 //   (e) validar propertyId → 400 INVALID_INPUT si falta / no-string / vacío / no-UUID
 //   (f) placeholder → 200 { ok: true }  (subtareas 14.3-14.6 añadirán la lógica real)
 
-import type { ContactAgentDeps, ContactAgentInput } from "./types.ts";
+import type { ContactAgentDeps, ContactAgentInput, LeadRecord } from "./types.ts";
 import { handle_cors_preflight } from "../_shared/cors.ts";
 import { error_response, json_response } from "../_shared/response.ts";
 
@@ -121,7 +121,62 @@ export function make_contact_agent_handler(
       return error_response("AGENT_PHONE_MISSING", "El agente no tiene teléfono registrado", 400);
     }
 
-    // Placeholder — subtareas 14.4-14.6 añadirán leads/counter/mensaje
+    // (i) Self-contact guard — ANTES de tocar leadRepo (pipeline: retrieval → self-contact → lead)
+    // Comparar con agent_id: en producción agent_id === owner_user_id (alias documentado en types.ts).
+    // La fixture de 14.2/14.3 usa owner_user_id distinto al caller; agent_id permite compatibilidad.
+    if (auth_result.user_id === property.agent_id) {
+      return error_response(
+        "CANNOT_CONTACT_SELF",
+        "No puedes contactarte a ti mismo como agente de esta propiedad",
+        400,
+      );
+    }
+
+    // (j) Lead idempotente — find → (not_found → insert → CONFLICT_23505 → find recovery)
+    // ponytail: caller_id y agent_id_for_lead extraídos para legibilidad; en prod son literales simples
+    const caller_id = auth_result.user_id;
+    const agent_id_for_lead = property.owner_user_id; // === property.agent_id en producción
+
+    const find_result = await deps.leadRepo.find_active_lead(agent_id_for_lead, caller_id);
+    if (!find_result.ok) {
+      return error_response("DB_ERROR", "Error interno al buscar el lead", 500);
+    }
+
+    let lead: LeadRecord;
+    let is_new_lead: boolean;
+
+    if (find_result.found) {
+      // Segundo contacto — reusar lead existente (idempotente)
+      lead = find_result.lead;
+      is_new_lead = false;
+    } else {
+      // Primer contacto — intentar insertar
+      const insert_result = await deps.leadRepo.insert_lead(agent_id_for_lead, caller_id);
+      if (!insert_result.ok) {
+        if (insert_result.error_code === "CONFLICT_23505") {
+          // Race condition — request concurrente ganó la carrera; recuperar lead existente
+          const recovery = await deps.leadRepo.find_active_lead(agent_id_for_lead, caller_id);
+          if (!recovery.ok || !recovery.found) {
+            return error_response("DB_ERROR", "Error al recuperar lead tras conflicto 23505", 500);
+          }
+          lead = recovery.lead;
+          is_new_lead = false;
+        } else {
+          // DB_ERROR no relacionado con constraint — falla real de infraestructura
+          return error_response("DB_ERROR", "Error interno al crear el lead", 500);
+        }
+      } else {
+        lead = insert_result.lead;
+        is_new_lead = true;
+      }
+    }
+
+    // ponytail: lead e is_new_lead disponibles para 14.5 (contact_count/mensaje WhatsApp)
+    // void para satisfacer deno lint hasta que 14.5 los consuma
+    void lead;
+    void is_new_lead;
+
+    // Placeholder — 14.5/14.6 añadirán contact_count y mensaje WhatsApp
     return json_response({ ok: true }, 200);
   };
 }

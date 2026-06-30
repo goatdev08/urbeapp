@@ -1126,11 +1126,11 @@
             "dependencies": [
               1
             ],
-            "details": "Create hook useMapProperties() in lib/hooks/ that fetches properties with: SELECT id, price, location, operation_type, property_type, bedrooms, bathrooms, address FROM properties WHERE status='active' AND deleted_at IS NULL. PostGIS geography is stored as Point(4326) - use ST_Y(location::geometry) for latitude and ST_X(location::geometry) for longitude in the query, or extract from GeoJSON if Supabase returns it that way. Define TypeScript interface MapProperty with id, price, lat, lng, operationType, propertyType, bedrooms, bathrooms, address. Handle loading/error states. Cache results appropriately.",
-            "status": "in-progress",
+            "details": "Create hook useMapProperties() in lib/hooks/ that fetches properties with: SELECT id, price, location, operation_type, property_type, bedrooms, bathrooms, address FROM properties WHERE status='active' AND deleted_at IS NULL. PostGIS geography is stored as Point(4326) - use ST_Y(location::geometry) for latitude and ST_X(location::geometry) for longitude in the query, or extract from GeoJSON if Supabase returns it that way. Define TypeScript interface MapProperty with id, price, lat, lng, operationType, propertyType, bedrooms, bathrooms, address. Handle loading/error states. Cache results appropriately.\n<info added on 2026-06-30T05:34:34.773Z>\nImplementation completed using TDD approach with guardian verification passing. Created mapProperties.ts data layer with fetchMapProperties function that queries active properties (status='active', deleted_at IS NULL) selecting id, price, address, property_type, operation_type, bedrooms, bathrooms, and location fields without pagination. Location parsing reuses parse_location utility from property-detail/utils feature with fail-closed behavior (omits rows with null or unparseable location rather than throwing). Query errors throw appropriately. Created useMapProperties.ts hook following the same thin useState/useEffect/useCallback refetch pattern as useFeedProperties with optional dependency injection. Defined MapProperty type interface in types.ts. Comprehensive test coverage in __tests__/mapProperties.test.ts with 10 edge cases (EC-1 through EC-10) all passing: empty results, single property, multiple properties, missing location handling, invalid GeoJSON handling, Supabase error propagation, refetch functionality, dependency injection, proper location parsing with ST_X/ST_Y from PostGIS, and proper type transformations. Verification: jest suite 10/10 green, TypeScript compilation clean. TDD commits: RED phase cb862e2, GREEN phase follow-up.\n</info added on 2026-06-30T05:34:34.773Z>",
+            "status": "done",
             "testStrategy": "Verify query returns correct properties with coordinates. Test with mock data to ensure PostGIS conversion is accurate. Confirm lat/lng values fall within expected Guadalajara region bounds.",
             "parentId": "undefined",
-            "updatedAt": "2026-06-30T05:20:58.678Z"
+            "updatedAt": "2026-06-30T05:34:41.626Z"
           },
           {
             "id": 3,
@@ -1140,10 +1140,11 @@
               1,
               2
             ],
-            "details": "Install react-native-maps-clustering with pnpm add react-native-maps-clustering. Replace standard MapView with ClusteredMapView wrapper. Configure clustering options: radius=50 (pixels), maxZoom=16, minPoints=2 (minimum markers to form cluster). Style cluster markers to show count badge with property count. Implement onClusterPress to zoom into cluster bounds. Handle cluster expansion animation. Ensure clustering recalculates on zoom changes. Test performance with 50+ markers to ensure smooth interaction without UI jank.",
-            "status": "pending",
+            "details": "Install react-native-maps-clustering with pnpm add react-native-maps-clustering. Replace standard MapView with ClusteredMapView wrapper. Configure clustering options: radius=50 (pixels), maxZoom=16, minPoints=2 (minimum markers to form cluster). Style cluster markers to show count badge with property count. Implement onClusterPress to zoom into cluster bounds. Handle cluster expansion animation. Ensure clustering recalculates on zoom changes. Test performance with 50+ markers to ensure smooth interaction without UI jank.\n<info added on 2026-06-30T05:35:40.952Z>\nPLAN 11.3: Custom clustering implementation (no external dependency after grilling). Create pure function `cluster_properties(properties: MapProperty[], region: Region, options?: ClusterOptions)` in `mobile/src/features/map/lib/clusterMarkers.ts`. Algorithm: absolute grid anchored at (0,0) with cells of size cellLat = latitudeDelta / divisions, cellLng = longitudeDelta / divisions (divisions default 8). Bucket properties by grid key (floor(lng / cellLng), floor(lat / cellLat)). Cells with 1 property return {type: 'point', property}; cells with >1 return {type: 'cluster', cluster: {id: stable, latitude/longitude: centroid via mean, count, properties[]}}. Zoom changes (delta) change cell size, thus change grouping. Guard: delta <= 0 returns each property as point (avoid division by zero). Empty input returns []. Deterministic ordering (sorted cell keys) for stable tests. CRITICAL TDD status.\n</info added on 2026-06-30T05:35:40.952Z>",
+            "status": "in-progress",
             "testStrategy": "Test clustering behavior at different zoom levels. Verify clusters form when markers are close together and expand when zoomed in. Performance test with 50+ property markers.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-06-30T05:35:25.768Z"
           },
           {
             "id": 4,
@@ -1198,7 +1199,7 @@
         "complexity": 6,
         "recommendedSubtasks": 7,
         "expansionPrompt": "Break down map implementation into: (1) create map screen as secondary tab with react-native-maps, (2) fetch active properties and convert PostGIS to lat/lng, (3) implement clustering with react-native-maps-clustering, (4) create custom marker icons for rent vs sale, (5) implement marker callout with mini property card, (6) add callout tap navigation and center on user location, (7) integrate search bar filter and test performance with 50+ properties",
-        "updatedAt": "2026-06-30T05:20:58.678Z"
+        "updatedAt": "2026-06-30T05:35:25.768Z"
       },
       {
         "id": 12,
@@ -2454,13 +2455,13 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-06-30T05:20:58.678Z",
+      "lastModified": "2026-06-30T05:35:25.768Z",
       "taskCount": 27,
       "completedCount": 18,
       "tags": [
         "master"
       ],
-      "created": "2026-06-30T05:23:59.849Z",
+      "created": "2026-06-30T05:35:27.598Z",
       "description": "Tasks for master context"
     }
   }
