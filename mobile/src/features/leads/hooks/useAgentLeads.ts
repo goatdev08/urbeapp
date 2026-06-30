@@ -1,20 +1,26 @@
 /**
- * useAgentLeads — STUB fase RED (subtarea 15.2).
+ * useAgentLeads — carga los leads del agente autenticado con datos del buscador
+ * y propiedad de origen.
  *
- * El hook carga los leads del agente autenticado con info del usuario interesado
- * (phone de users, full_name/profile_photo_url de user_preferences) y la
- * propiedad de origen (lead_origin_properties → properties → property_videos).
+ * Query: from('leads').select(<embedded>).is('deleted_at', null).order('updated_at', {ascending:false})
+ *   - RLS (migración 0008) filtra agent_id = auth.uid() — sin filtro explícito aquí.
+ *   - Embeds: users(phone, user_preferences(full_name, profile_photo_url))
+ *             lead_origin_properties(property_id, properties(address, property_videos(thumbnail_url, position)))
  *
- * Contrato:
- *   - Filtra: deleted_at IS NULL. RLS (migración 0008) filtra agent_id = auth.uid().
- *   - Ordena: updated_at DESC.
- *   - Devuelve: { leads: AgentLead[], loading: boolean, error: string | null, refetch: () => void }
+ * Transformación raw → AgentLead:
+ *   - phone: users.phone (null si null)
+ *   - full_name / profile_photo_url: user_preferences[0] (null si array vacío)
+ *   - origin_*: lead_origin_properties[0] (null si array vacío / LEFT JOIN vacío)
+ *   - origin_property_thumbnail_url: video con menor position (null si sin videos)
  *
- * STUB: retorna estado vacío fijo para que los tests de la fase RED fallen
- * por aserción (no por import/parse). No contiene lógica de negocio.
- * La implementación real va en la fase GREEN.
+ * Patrón: useState/useEffect/useCallback (sin useFocusEffect — hook general, no pantalla).
+ * ponytail: flag `ignore` + tick counter para refetch — sin AbortController.
  */
 
+import { useState, useEffect, useCallback } from 'react';
+
+import { supabase } from '@/lib/supabase/client';
+import { useAuth } from '@/features/auth/context';
 import type { AgentLead } from '../types';
 
 // ---------------------------------------------------------------------------
@@ -24,7 +30,7 @@ import type { AgentLead } from '../types';
 export interface UseAgentLeadsState {
   /** Lista de leads del agente. Vacía mientras carga o si hay error. */
   leads: AgentLead[];
-  /** true mientras el fetch inicial está en curso. */
+  /** true mientras el fetch inicial (o re-fetch) está en curso. */
   loading: boolean;
   /** Mensaje de error si la query falló, null en caso de éxito. */
   error: string | null;
@@ -33,27 +39,153 @@ export interface UseAgentLeadsState {
 }
 
 // ---------------------------------------------------------------------------
-// Hook — STUB
+// Tipos locales — shape raw del embedded select de PostgREST
+// ---------------------------------------------------------------------------
+
+type RawPropertyVideo = {
+  thumbnail_url: string | null;
+  position: number;
+};
+
+type RawLeadOriginProperty = {
+  property_id: string;
+  properties: {
+    address: string | null;
+    property_videos: RawPropertyVideo[];
+  } | null;
+};
+
+type RawUserPreference = {
+  full_name: string | null;
+  profile_photo_url: string | null;
+};
+
+type RawLead = {
+  id: string;
+  user_id: string;
+  agent_id: string;
+  status: string;
+  internal_notes: string | null;
+  first_contact_at: string;
+  last_contact_at: string | null;
+  updated_at: string;
+  created_at: string;
+  deleted_at: string | null;
+  users: {
+    phone: string | null;
+    user_preferences: RawUserPreference[];
+  } | null;
+  lead_origin_properties: RawLeadOriginProperty[];
+};
+
+// ---------------------------------------------------------------------------
+// Helpers de transformación
 // ---------------------------------------------------------------------------
 
 /**
- * STUB: devuelve estado fijo vacío para hacer fallar los tests de RED por
- * aserción y no por import. La GREEN implementará la query real a Supabase.
- *
- * La implementación real:
- *   1. Llama useAuth() para verificar que hay sesión activa.
- *   2. Consulta supabase.from('leads').select(<embeds>).is('deleted_at', null)
- *      .order('updated_at', { ascending: false }).
- *   3. Mapea cada fila raw a AgentLead (extrae phone, full_name, profile_photo_url,
- *      origin_property_id, origin_property_address, origin_property_thumbnail_url).
- *   4. Expone refetch() vía tick (patrón useMyProperties).
+ * Elige el thumbnail del video con menor `position`.
+ * Null si el array está vacío o el video ganador no tiene thumbnail.
+ */
+function pick_thumbnail(videos: RawPropertyVideo[]): string | null {
+  if (videos.length === 0) return null;
+  const sorted = [...videos].sort((a, b) => a.position - b.position);
+  // noUncheckedIndexedAccess: sorted[0] es RawPropertyVideo | undefined
+  return sorted[0]?.thumbnail_url ?? null;
+}
+
+/** Mapea una fila raw (con embedded selects) al tipo AgentLead aplanado. */
+function transform_raw_to_agent_lead(raw: RawLead): AgentLead {
+  const prefs = raw.users?.user_preferences ?? [];
+  // noUncheckedIndexedAccess: [0] devuelve T | undefined
+  const first_pref = prefs[0] ?? null;
+
+  const origin = raw.lead_origin_properties[0] ?? null;
+  const videos = origin?.properties?.property_videos ?? [];
+
+  return {
+    // Campos directos del lead
+    id: raw.id,
+    user_id: raw.user_id,
+    agent_id: raw.agent_id,
+    status: raw.status as AgentLead['status'],
+    internal_notes: raw.internal_notes,
+    first_contact_at: raw.first_contact_at,
+    last_contact_at: raw.last_contact_at,
+    updated_at: raw.updated_at,
+    created_at: raw.created_at,
+    // Usuario interesado (buscador)
+    phone: raw.users?.phone ?? null,
+    full_name: first_pref?.full_name ?? null,
+    profile_photo_url: first_pref?.profile_photo_url ?? null,
+    // Propiedad de origen (LEFT JOIN — nullable)
+    origin_property_id: origin?.property_id ?? null,
+    origin_property_address: origin?.properties?.address ?? null,
+    origin_property_thumbnail_url: pick_thumbnail(videos),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Hook
+// ---------------------------------------------------------------------------
+
+/**
+ * Carga los leads del agente autenticado. RLS filtra por agent_id = auth.uid().
+ * Expone refetch() para re-disparar la query (p.ej. tras cambiar estado de un lead).
  */
 export function useAgentLeads(): UseAgentLeadsState {
-  // ponytail: stub que retorna estado vacío — ningún test pasa en fase RED.
-  return {
-    leads: [],
-    loading: false, // RED: EC-8 espera true en el primer render
-    error: null, // RED: EC-10 espera error != null cuando query falla
-    refetch: () => {},
-  };
+  // Consumimos useAuth para alinear el patrón del repo (contexto de sesión activa).
+  // El filtro real de agent_id lo hace RLS — no necesitamos el id aquí.
+  useAuth();
+
+  const [leads, set_leads] = useState<AgentLead[]>([]);
+  const [loading, set_loading] = useState(true); // EC-8: inicia en true
+  const [error, set_error] = useState<string | null>(null);
+  // ponytail: tick counter como señal de refetch — más simple que useReducer
+  const [tick, set_tick] = useState(0);
+
+  useEffect(() => {
+    // Flag de cancelación — evita setState tras desmontaje o refetch solapado
+    let ignore = false;
+
+    async function fetch_leads(): Promise<void> {
+      // Resetea loading en cada fetch (incluyendo refetches)
+      set_loading(true);
+
+      const { data, error: query_error } = await supabase
+        .from('leads')
+        // ponytail: cast `as never` para embedded selects con columnas de migración 0015
+        // (user_preferences.full_name / profile_photo_url) que no están en los tipos
+        // generados. Mismo patrón que useAgentProfile y profileService.
+        .select(
+          'id, user_id, agent_id, status, internal_notes, first_contact_at, last_contact_at, updated_at, created_at, deleted_at, users(phone, user_preferences(full_name, profile_photo_url)), lead_origin_properties(property_id, properties(address, property_videos(thumbnail_url, position)))' as never
+        )
+        .is('deleted_at', null)
+        .order('updated_at', { ascending: false });
+
+      if (ignore) return;
+
+      if (query_error) {
+        set_error(query_error.message);
+        set_leads([]);
+        set_loading(false);
+        return;
+      }
+
+      const raw_data = (data as unknown as RawLead[] | null) ?? [];
+      set_leads(raw_data.map(transform_raw_to_agent_lead));
+      set_error(null);
+      set_loading(false);
+    }
+
+    void fetch_leads();
+
+    return () => {
+      ignore = true;
+    };
+  }, [tick]);
+
+  // ponytail: useCallback sin deps — set_tick es estable (React garantía)
+  const refetch = useCallback(() => set_tick((t) => t + 1), []);
+
+  return { leads, loading, error, refetch };
 }

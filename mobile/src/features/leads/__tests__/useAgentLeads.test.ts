@@ -125,8 +125,53 @@ const mock_use_auth = useAuth as jest.MockedFunction<typeof useAuth>;
 //   - property_videos: one-to-many desde properties.id → array
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Interface explícita para el shape raw de Supabase (campos nullable correctos)
+//
+// Se define ANTES de RAW_LEAD_COMPLETO para poder anotar el fixture con ella.
+// Esto evita que TypeScript infiera phone/profile_photo_url como `string`
+// (no nullable) a partir de los valores literales de RAW_LEAD_COMPLETO,
+// lo que causaba TS2322 en RAW_LEAD_SIN_ORIGIN y RAW_LEAD_SIN_PHONE.
+// ---------------------------------------------------------------------------
+
+interface RawLeadUserPrefs {
+  full_name: string | null;
+  profile_photo_url: string | null;
+}
+
+interface RawLeadPropertyVideo {
+  thumbnail_url: string | null;
+  position: number;
+}
+
+interface RawLeadOriginProperties {
+  property_id: string;
+  properties: {
+    address: string;
+    property_videos: RawLeadPropertyVideo[];
+  };
+}
+
+interface RawLeadRow {
+  id: string;
+  user_id: string;
+  agent_id: string;
+  status: string;
+  internal_notes: string | null;
+  first_contact_at: string;
+  last_contact_at: string | null;
+  updated_at: string;
+  created_at: string;
+  deleted_at: string | null;
+  users: {
+    phone: string | null;
+    user_preferences: RawLeadUserPrefs[];
+  };
+  lead_origin_properties: RawLeadOriginProperties[];
+}
+
 /** Lead con todos los datos disponibles: phone, prefs, propiedad de origen con thumbnail. */
-const RAW_LEAD_COMPLETO = {
+const RAW_LEAD_COMPLETO: RawLeadRow = {
   id: TEST_LEAD_ID,
   user_id: TEST_USER_ID,
   agent_id: TEST_AGENT_ID,
@@ -211,10 +256,8 @@ const RAW_LEAD_SIN_PHONE = {
 // La cadena resuelve directamente a { data, error } (PostgREST/supabase-js v2).
 // ---------------------------------------------------------------------------
 
-type RawLead = typeof RAW_LEAD_COMPLETO;
-
 function make_supabase_mock_leads(opts: {
-  query_result?: { data: RawLead[] | null; error: { message: string } | null };
+  query_result?: { data: RawLeadRow[] | null; error: { message: string } | null };
 } = {}) {
   const {
     query_result = { data: [RAW_LEAD_COMPLETO], error: null },
@@ -434,7 +477,7 @@ describe('useAgentLeads', () => {
   it('(EC-8) estado_loading_inicial_true: loading=true mientras el fetch async está pendiente (promesa pendiente, act no espera)', async () => {
     // Promesa que nunca resuelve en este test — simula fetch en progreso.
     // act() de RNTL finaliza sin esperarla (comportamiento de React 18 con Promises arbitrarias).
-    const pending_query = new Promise<{ data: RawLead[]; error: null }>(() => {});
+    const pending_query = new Promise<{ data: RawLeadRow[]; error: null }>(() => {});
 
     mock_supabase_holder.client = {
       from: jest.fn().mockReturnValue({
