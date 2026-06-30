@@ -3,12 +3,17 @@
  *
  * Subtarea 15.1 — scaffold con role guard.
  * Subtarea 15.7 — FilterTabs + FlatList de LeadCard + filtrado client-side.
+ * Subtarea 15.8 — búsqueda client-side por full_name (compuesta con filtro de tab).
  *
  * Filtrado:
  *   all         → todos los leads
  *   new         → status === 'new'
  *   in_progress → status ∈ { contacted, in_progress, visit_scheduled }
  *   closed      → status ∈ { closed_won, closed_lost, discarded }
+ *
+ * Búsqueda:
+ *   Si search no vacío → aplica sobre el resultado del filtro de tab.
+ *   full_name null-safe: leads sin nombre no matchean cuando hay query.
  *
  * El mapeo de grupos es inline en esta pantalla (presentacional; sin utils/).
  *
@@ -18,15 +23,17 @@ import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
+  Pressable,
   RefreshControl,
   SafeAreaView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 
 import { FilterTabs } from '@/components/FilterTabs';
-import { colors, layout, spacing, type_scale } from '@/theme/theme';
+import { colors, layout, radii, spacing, type_scale } from '@/theme/theme';
 import { LeadCard } from '../components/LeadCard';
 import { useAgentLeads } from '../hooks/useAgentLeads';
 import type { AgentLead, LeadStatus } from '../types';
@@ -74,11 +81,15 @@ function apply_filter(leads: AgentLead[], filter: CrmFilter): AgentLead[] {
 export function CRMScreen(): React.ReactElement {
   const { leads, loading, error, refetch } = useAgentLeads();
   const [filter, set_filter] = useState<CrmFilter>('all');
+  const [search, set_search] = useState('');
 
-  const filtered_leads = useMemo(
-    () => apply_filter(leads, filter),
-    [leads, filter],
-  );
+  const filtered_leads = useMemo(() => {
+    const by_tab = apply_filter(leads, filter);
+    const q = search.trim().toLowerCase();
+    if (!q) return by_tab;
+    // ponytail: null-safe — leads sin full_name no matchean cuando hay query
+    return by_tab.filter((l) => l.full_name?.toLowerCase().includes(q) ?? false);
+  }, [leads, filter, search]);
 
   // ── Handlers ────────────────────────────────────────────────────────────────
 
@@ -121,6 +132,29 @@ export function CRMScreen(): React.ReactElement {
         <View style={styles.header}>
           <Text style={styles.title}>CRM</Text>
           <Text style={styles.subtitle}>Tus leads de contacto</Text>
+        </View>
+
+        {/* Búsqueda por nombre */}
+        <View style={styles.search_row}>
+          <TextInput
+            style={styles.search_input}
+            placeholder="Buscar por nombre..."
+            placeholderTextColor={colors.gray_1}
+            value={search}
+            onChangeText={set_search}
+            returnKeyType="search"
+            autoCorrect={false}
+            autoCapitalize="none"
+          />
+          {search.length > 0 && (
+            <Pressable
+              onPress={() => set_search('')}
+              style={styles.search_clear}
+              hitSlop={8}
+            >
+              <Text style={styles.search_clear_text}>✕</Text>
+            </Pressable>
+          )}
         </View>
 
         {/* Tabs de filtro */}
@@ -193,6 +227,32 @@ const styles = StyleSheet.create({
     ...type_scale.body,
     color: colors.gray_2,
     marginTop: spacing.s_4,
+  },
+
+  // ── Búsqueda ─────────────────────────────────────────────────────────────────
+  search_row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.paper_2,
+    borderRadius: radii.r_8,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.silver,
+    marginTop: spacing.s_12,
+    paddingHorizontal: spacing.s_12,
+  },
+  search_input: {
+    flex: 1,
+    ...type_scale.body,
+    color: colors.ink,
+    paddingVertical: spacing.s_12,
+  },
+  search_clear: {
+    paddingLeft: spacing.s_8,
+    paddingVertical: spacing.s_12,
+  },
+  search_clear_text: {
+    ...type_scale.body,
+    color: colors.gray_2,
   },
 
   // ── Tabs ────────────────────────────────────────────────────────────────────
