@@ -15,20 +15,26 @@
  * ponytail: Modal nativo de RN — sin dependencia de bottom-sheet externa.
  */
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableWithoutFeedback,
   View,
 } from 'react-native';
 
+import { router } from 'expo-router';
+
 import { colors, fonts, radii, spacing } from '@/theme/theme';
+import { open_whatsapp } from '../../property-detail/utils/whatsapp';
 
 import { ALL_LEAD_STATUSES, get_status_meta } from '../lead_status_meta';
 import type { AgentLead, LeadStatus } from '../types';
@@ -66,10 +72,20 @@ export function LeadExpandedView({
 }: LeadExpandedViewProps): React.JSX.Element {
   const { update_status, is_updating, error } = useUpdateLeadStatus({ onSuccess });
 
+  // ── Nota interna ─────────────────────────────────────────────────────────────
+  const [note, set_note] = useState(lead.internal_notes ?? '');
+
+  // Reset cuando cambia el lead (el modal abre un lead distinto)
+  useEffect(() => {
+    set_note(lead.internal_notes ?? '');
+  }, [lead.id]);
+
   async function handle_status_select(new_status: LeadStatus): Promise<void> {
     if (is_updating) return;
     if (new_status === lead.status) return; // ya está en ese estado
-    await update_status(lead.id, new_status);
+    // EC-8: note omitido del body si vacío (el hook controla el spread condicional)
+    const trimmed = note.trim();
+    await update_status(lead.id, new_status, trimmed.length > 0 ? trimmed : undefined);
   }
 
   const display_name = lead.full_name ?? 'Usuario sin nombre';
@@ -90,7 +106,8 @@ export function LeadExpandedView({
         <View style={styles.overlay} />
       </TouchableWithoutFeedback>
 
-      {/* Sheet */}
+      {/* Sheet — KAV sube el sheet cuando el teclado sube (iOS) */}
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={styles.sheet}>
 
         {/* Handle decorativo */}
@@ -209,14 +226,64 @@ export function LeadExpandedView({
           </View>
         )}
 
+        {/* ── Notas internas ─────────────────────────────────────────────────── */}
+        <View style={styles.divider_bottom} />
+        <Text style={styles.section_title}>Notas internas</Text>
+        <TextInput
+          style={styles.notes_input}
+          value={note}
+          onChangeText={set_note}
+          placeholder="Añadir nota…"
+          placeholderTextColor={colors.gray_1}
+          multiline
+          numberOfLines={3}
+          editable={!is_updating}
+          textAlignVertical="top"
+          accessibilityLabel="Notas internas del lead"
+        />
+
+        {/* ── Acciones: Ver propiedad + WhatsApp ─────────────────────────────── */}
+        <View style={styles.action_row}>
+          {lead.origin_property_id !== null && (
+            <Pressable
+              style={({ pressed }) => [
+                styles.action_btn,
+                styles.action_btn_property,
+                pressed && styles.action_btn_pressed,
+              ]}
+              onPress={() => { router.push(`/property/${lead.origin_property_id}`); }}
+              accessibilityRole="button"
+              accessibilityLabel="Ver propiedad de origen"
+            >
+              <Text style={styles.action_btn_text_dark}>Ver propiedad</Text>
+            </Pressable>
+          )}
+          <Pressable
+            style={({ pressed }) => [
+              styles.action_btn,
+              styles.action_btn_wa,
+              pressed && styles.action_btn_pressed,
+              lead.phone === null && styles.action_btn_disabled,
+            ]}
+            onPress={() => { open_whatsapp(lead.phone, lead.origin_property_address ?? ''); }}
+            disabled={lead.phone === null}
+            accessibilityRole="button"
+            accessibilityLabel="Contactar por WhatsApp"
+          >
+            <Text style={styles.action_btn_text_light}>WhatsApp</Text>
+          </Pressable>
+        </View>
+
       </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
 
 // ─── Estilos ──────────────────────────────────────────────────────────────────
 
-const SHEET_MAX_HEIGHT = 520;
+// Aumentado en 15.5 para acomodar textarea de notas + fila de botones
+const SHEET_MAX_HEIGHT = 680;
 
 const styles = StyleSheet.create({
 
@@ -406,5 +473,64 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.danger,
     lineHeight: 18,
+  },
+
+  // ── Notas internas ───────────────────────────────────────────────────────────
+  divider_bottom: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.silver,
+    marginHorizontal: spacing.s_16,
+    marginTop: spacing.s_8,
+    marginBottom: spacing.s_12,
+  },
+  notes_input: {
+    height: 72,                           // ponytail: altura fija ~3 líneas; scrollea internamente
+    marginHorizontal: spacing.s_16,
+    marginBottom: spacing.s_12,
+    borderWidth: 1,
+    borderColor: colors.paper_3,
+    borderRadius: radii.r_8,
+    paddingHorizontal: spacing.s_12,
+    paddingVertical: spacing.s_8,
+    fontFamily: fonts.sans,
+    fontSize: 14,
+    color: colors.ink,
+    lineHeight: 20,
+    backgroundColor: colors.paper,
+  },
+
+  // ── Fila de acciones ─────────────────────────────────────────────────────────
+  action_row: {
+    flexDirection: 'row',
+    gap: spacing.s_8,
+    paddingHorizontal: spacing.s_16,
+  },
+  action_btn: {
+    flex: 1,
+    paddingVertical: spacing.s_12,
+    borderRadius: radii.r_8,
+    alignItems: 'center',
+  },
+  action_btn_property: {
+    backgroundColor: colors.primary_tint,
+  },
+  action_btn_wa: {
+    backgroundColor: colors.whatsapp,
+  },
+  action_btn_pressed: {
+    opacity: 0.8,
+  },
+  action_btn_disabled: {
+    opacity: 0.4,
+  },
+  action_btn_text_dark: {
+    fontFamily: fonts.sans_semibold,
+    fontSize: 14,
+    color: colors.primary_deep,
+  },
+  action_btn_text_light: {
+    fontFamily: fonts.sans_semibold,
+    fontSize: 14,
+    color: '#FFFFFF',
   },
 });
