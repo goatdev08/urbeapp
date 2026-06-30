@@ -17,6 +17,7 @@ import React, { memo, useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View, Text, useWindowDimensions } from 'react-native';
 import { useVideoPlayer, VideoView, type VideoPlayerStatus } from 'expo-video';
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
+import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 
@@ -52,6 +53,10 @@ function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedIte
   // Usar número en vez de boolean para re-disparar taps consecutivos.
   const [heart_trigger, set_heart_trigger] = useState(0);
 
+  // Pausa manual (tap simple). Muestra el ícono de play centrado mientras está
+  // pausado. Se resetea al activarse el ítem (auto-play por visibilidad).
+  const [is_paused, set_is_paused] = useState(false);
+
   // ── Persistencia real (9.7) ────────────────────────────────────────────────
   // ponytail: property.video_id → property_video_id (likes); property.id → property_id.
   const { isLiked, toggleLike, likeOnly } = useLikeProperty({
@@ -71,11 +76,31 @@ function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedIte
     router.push(`/property/${property.id}`);
   }, [property.id]);
 
-  // ── Gesto de doble-tap ────────────────────────────────────────────────────
-  // Llama likeOnly (TikTok: no unlike), muestra corazón y dispara haptic.
-  // El callback de Gesture.Tap corre en hilo JS → llamadas directas a JS ok.
+  // ── Video player ──────────────────────────────────────────────────────────
+  const player = useVideoPlayer(property.signed_url, (p) => {
+    p.loop = true;
+    p.muted = false;
+  });
+
+  // Tap simple → alterna play/pausa del video activo.
+  const toggle_play_pause = useCallback(() => {
+    if (player.playing) {
+      player.pause();
+      set_is_paused(true);
+    } else {
+      player.play();
+      set_is_paused(false);
+    }
+  }, [player]);
+
+  // ── Gestos ──────────────────────────────────────────────────────────────────
+  // runOnJS(true): los callbacks llaman funciones JS (hooks, Haptics, expo-video).
+  // Sin esto, gesture-handler los corre como worklets en el UI thread y truena
+  // ("Tried to synchronously call a non-worklet function on the UI thread").
+  // Doble-tap → like (TikTok: no unlike) + corazón + haptic.
   const double_tap_gesture = Gesture.Tap()
     .numberOfTaps(2)
+    .runOnJS(true)
     .onEnd(() => {
       likeOnly();
       set_heart_trigger((t) => t + 1);
@@ -83,11 +108,14 @@ function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedIte
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     });
 
-  // ── Video player ──────────────────────────────────────────────────────────
-  const player = useVideoPlayer(property.signed_url, (p) => {
-    p.loop = true;
-    p.muted = false;
-  });
+  // Tap simple → play/pausa. Exclusive: espera a descartar el doble-tap antes de
+  // disparar el simple, así un doble-tap no pausa de pasada.
+  const single_tap_gesture = Gesture.Tap()
+    .numberOfTaps(1)
+    .runOnJS(true)
+    .onEnd(toggle_play_pause);
+
+  const tap_gesture = Gesture.Exclusive(double_tap_gesture, single_tap_gesture);
 
   // Detectar error de carga (URL firmada inválida/expirada) y trackear status.
   useEffect(() => {
@@ -114,6 +142,7 @@ function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedIte
   useEffect(() => {
     if (isActive) {
       player.play();
+      set_is_paused(false);
     } else {
       player.pause();
     }
@@ -133,7 +162,7 @@ function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedIte
 
   // ── Reproductor ────────────────────────────────────────────────────────────
   return (
-    <GestureDetector gesture={double_tap_gesture}>
+    <GestureDetector gesture={tap_gesture}>
       <View style={[styles.container, { width, height }]}>
         {/* ponytail: backgroundColor del container = poster oscuro sólido mientras
             carga el video (sin transcoding → sin thumbnail real en la demo). */}
@@ -151,6 +180,14 @@ function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedIte
             size="large"
             color="rgba(255,255,255,0.7)"
           />
+        )}
+
+        {/* Indicador de pausa manual — ícono play centrado mientras está pausado.
+            pointerEvents none → el tap para reanudar lo captura el GestureDetector. */}
+        {is_paused && (
+          <View style={styles.pause_overlay} pointerEvents="none">
+            <Ionicons name="play" size={72} color="rgba(255,255,255,0.85)" />
+          </View>
         )}
 
         {/* Corazón animado centrado — siempre montado, se dispara con trigger > 0. */}
@@ -201,5 +238,14 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+  },
+  pause_overlay: {
+    position: 'absolute' as const,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

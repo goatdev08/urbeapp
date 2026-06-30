@@ -106,9 +106,12 @@ export function FeedScreen() {
           drawDistance=height: pre-renderiza un ítem fuera de pantalla en cada dirección →
           su useVideoPlayer bufferea sin prefetch explícito (SDK56 no lo expone). */}
       {/* Snap vertical por ítem full-screen.
-          snapToAlignment="start" + snapToInterval=height → cada swipe
-          ancla al inicio del ítem siguiente/anterior.
-          decelerationRate="fast" → decelera rápido para sensación de snap limpio.
+          snapToAlignment="start" + snapToInterval=height → cada swipe ancla al
+          inicio del ítem siguiente/anterior.
+          disableIntervalMomentum → corta la inercia: el swipe avanza UN ítem y se
+          detiene ahí sin importar la velocidad (no se salta videos con el momentum).
+          NO usamos pagingEnabled: RN ignora snapToInterval cuando está activo y
+          deja pasar la inercia. decelerationRate="fast" → deceleración de snap limpio.
           bounces={false} → sin rebote en los extremos (iOS); Android ya no rebota.
           Todas estas props son ScrollViewProps, que FlashList v2 re-exporta
           directamente (extiende Omit<ScrollViewProps, 'maintainVisibleContentPosition'>). */}
@@ -116,9 +119,9 @@ export function FeedScreen() {
         data={data}
         keyExtractor={key_extractor}
         renderItem={render_item}
-        pagingEnabled
         snapToInterval={height}
         snapToAlignment="start"
+        disableIntervalMomentum
         decelerationRate="fast"
         showsVerticalScrollIndicator={false}
         bounces={false}
