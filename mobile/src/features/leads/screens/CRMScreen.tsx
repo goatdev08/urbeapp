@@ -19,7 +19,7 @@
  *
  * Paleta: gestión clara (paper) — misma que MyListings / ProfileScreen.
  */
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -36,6 +36,7 @@ import { FilterTabs } from '@/components/FilterTabs';
 import { EmptyState } from '@/features/profile/components/EmptyState';
 import { colors, layout, radii, spacing, type_scale } from '@/theme/theme';
 import { LeadCard } from '../components/LeadCard';
+import { LeadExpandedView } from '../components/LeadExpandedView';
 import { useAgentLeads } from '../hooks/useAgentLeads';
 import type { AgentLead, LeadStatus } from '../types';
 
@@ -83,6 +84,7 @@ export function CRMScreen(): React.ReactElement {
   const { leads, loading, error, refetch } = useAgentLeads();
   const [filter, set_filter] = useState<CrmFilter>('all');
   const [search, set_search] = useState('');
+  const [selected_lead, set_selected_lead] = useState<AgentLead | null>(null);
 
   const filtered_leads = useMemo(() => {
     const by_tab = apply_filter(leads, filter);
@@ -95,9 +97,17 @@ export function CRMScreen(): React.ReactElement {
   // ── Handlers ────────────────────────────────────────────────────────────────
 
   function handle_lead_press(lead: AgentLead): void {
-    // 15.4 — vista expandida del lead; por ahora no-op
-    console.log('[CRMScreen] lead pressed:', lead.id);
+    set_selected_lead(lead);
   }
+
+  const handle_expanded_close = useCallback((): void => {
+    set_selected_lead(null);
+  }, []);
+
+  const handle_expanded_success = useCallback((): void => {
+    refetch();
+    set_selected_lead(null);
+  }, [refetch]);
 
   // ── Estado de carga inicial ──────────────────────────────────────────────────
 
@@ -202,6 +212,17 @@ export function CRMScreen(): React.ReactElement {
         />
 
       </View>
+
+      {/* Vista expandida del lead (modal bottom-sheet) */}
+      {selected_lead !== null && (
+        <LeadExpandedView
+          lead={selected_lead}
+          visible={selected_lead !== null}
+          onClose={handle_expanded_close}
+          onSuccess={handle_expanded_success}
+        />
+      )}
+
     </SafeAreaView>
   );
 }

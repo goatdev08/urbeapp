@@ -14,42 +14,10 @@ import React from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { colors, fonts, radii, shadows, spacing } from '@/theme/theme';
-import type { AgentLead, LeadStatus } from '../types';
-
-// ─── Mapa estado → config del badge ──────────────────────────────────────────
-
-interface BadgeConfig {
-  label: string;
-  bg: string;
-  text: string;
-}
-
-/**
- * Color y etiqueta por estado del lead.
- * new          → salvia (primario)   — lead recién llegado, máxima atención
- * contacted    → arcilla suave       — primer contacto hecho
- * in_progress  → arcilla             — negociación activa
- * visit_scheduled → salvia suave     — visita calendarizada
- * closed_won   → salvia profundo     — éxito
- * closed_lost  → neutro cálido       — perdido sin carga visual fuerte
- * discarded    → neutro más claro    — descartado / inactivo
- */
-const STATUS_BADGE: Record<LeadStatus, BadgeConfig> = {
-  new:              { label: 'Nuevo',           bg: colors.primary,      text: '#FFFFFF' },
-  contacted:        { label: 'Contactado',      bg: colors.accent_soft,  text: colors.ink },
-  in_progress:      { label: 'En progreso',     bg: colors.accent,       text: '#FFFFFF' },
-  visit_scheduled:  { label: 'Visita agendada', bg: colors.primary_soft, text: '#FFFFFF' },
-  closed_won:       { label: 'Ganado',          bg: colors.primary_deep, text: '#FFFFFF' },
-  closed_lost:      { label: 'Perdido',         bg: colors.paper_3,      text: colors.gray_3 },
-  discarded:        { label: 'Descartado',      bg: colors.paper_2,      text: colors.gray_2 },
-};
+import { get_status_meta } from '../lead_status_meta';
+import type { AgentLead } from '../types';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-/** Fallback seguro al mapa — TypeScript garantiza que LeadStatus cubre todas las keys. */
-function get_badge(status: LeadStatus): BadgeConfig {
-  return STATUS_BADGE[status] ?? { label: status, bg: colors.paper_3, text: colors.gray_3 };
-}
 
 /**
  * Primera letra mayúscula del nombre para el avatar fallback.
@@ -100,7 +68,7 @@ export function LeadCard({ lead, onPress }: LeadCardProps): React.JSX.Element {
     updated_at,
   } = lead;
 
-  const badge        = get_badge(status);
+  const badge        = get_status_meta(status);
   const display_name = full_name ?? 'Usuario sin nombre';
   const time_label   = format_relative_time(updated_at);
 

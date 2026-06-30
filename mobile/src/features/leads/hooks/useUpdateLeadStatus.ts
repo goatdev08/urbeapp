@@ -1,19 +1,21 @@
 /**
- * useUpdateLeadStatus — STUB fase RED (subtarea 15.4).
+ * useUpdateLeadStatus — hook de mutación de estado de lead. Fase GREEN (15.4).
  *
- * Stub mínimo para que los tests de la fase RED fallen por aserción.
- * No contiene lógica de negocio:
- *   - update_status: NO invoca functions.invoke, NO llama onSuccess.
- *   - is_updating: siempre false (EC-9: is_updating=true durante acción → falla).
- *   - error: null estático.
- *   - update_status retorna {ok:false, error:'not_implemented'} (EC-1, EC-3 → fallan).
+ * Contrato:
+ *   update_status(lead_id, new_status, note?)
+ *     → invoca EF 'update-lead-status'; devuelve {ok, error}.
+ *     → note omitido del body cuando no se pasa (EC-8).
+ *   is_updating: true de forma SÍNCRONA al disparar (patrón ref+force_update EC-9).
+ *   error: null en éxito; string en fallo.
+ *   onSuccess: llamado solo en caso de éxito (EC-2, EC-11).
  *
- * La implementación GREEN seguirá el patrón de usePropertyActions.ts:
- *   - is_working_ref + force_update (síncrono antes del primer await)
- *   - get_client() lazy (require('@/lib/supabase/client'))
- *   - invoke_status() que llama functions.invoke y mapea {data,error}
- *   - onSuccess llamado solo en éxito
+ * Patrón de implementación: replica usePropertyActions (is_working_ref +
+ * force_update síncrono ANTES del primer await, DI del cliente, run_action).
  */
+
+import { useCallback, useMemo, useReducer, useRef } from 'react';
+
+import { useAuth } from '@/features/auth/context';
 
 import type { LeadStatus } from '../types';
 
@@ -46,32 +48,111 @@ export interface UseUpdateLeadStatusReturn {
 }
 
 // ---------------------------------------------------------------------------
-// Hook — STUB, fase RED
+// Hook
 // ---------------------------------------------------------------------------
 
-export function useUpdateLeadStatus(
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _deps?: UseUpdateLeadStatusDeps,
-): UseUpdateLeadStatusReturn {
-  // STUB: retorna valores incorrectos para que los tests fallen por aserción.
-  // - update_status: ok:false fuerza fallo en EC-1, EC-3.
-  //   No llama functions.invoke → EC-4..EC-8, EC-10..EC-13 fallan.
-  //   No llama onSuccess → EC-2, EC-11 fallan.
-  // - is_updating: false → EC-9 (is_updating=true durante acción) falla.
-  // - error: null (compatible con estado inicial correcto).
-  return {
-    update_status: async (
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      _lead_id: string,
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      _new_status: LeadStatus,
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      _note?: string,
-    ): Promise<ActionResult> => {
-      // ponytail: stub — sin lógica. ok:false fuerza fallo en EC-1 y EC-3.
-      return { ok: false, error: 'not_implemented' };
-    },
-    is_updating: false,
-    error: null,
+export function useUpdateLeadStatus(deps?: UseUpdateLeadStatusDeps): UseUpdateLeadStatusReturn {
+  // useAuth — disponible para contexto de usuario; preserva orden de hooks entre renders.
+  useAuth();
+
+  // ponytail: refs para estado mutable síncrono; force_update provoca re-render
+  // al final de cada acción. El getter en el objeto retornado permite leer el
+  // valor actual de la ref sin esperar al re-render (necesario en EC-9).
+  const is_working_ref = useRef(false);
+  const error_ref = useRef<string | null>(null);
+  const [, force_update] = useReducer((n: number) => n + 1, 0);
+
+  // Resolución del cliente Supabase — lazy para que jest.mock intercepte.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const get_client = (): any => {
+    if (deps?.supabase) return deps.supabase;
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return (require('@/lib/supabase/client') as { supabase: unknown }).supabase;
   };
+
+  /**
+   * run_action: wrapper SÍNCRONO que fija is_working=true antes del primer await.
+   * No es async — retorna la Promise de action() directamente, sin añadir una
+   * suspensión extra. Garantiza que EC-9 lea is_updating=true en el mismo
+   * tick síncrono en que la acción arranca (patrón de usePropertyActions).
+   */
+  const run_action = (action: () => Promise<ActionResult>): Promise<ActionResult> => {
+    is_working_ref.current = true;
+    error_ref.current = null;
+    force_update();
+
+    return action().then(
+      (result) => {
+        is_working_ref.current = false;
+        error_ref.current = result.error;
+        force_update();
+        return result;
+      },
+      (err: unknown) => {
+        const msg = err instanceof Error ? err.message : 'Error inesperado';
+        is_working_ref.current = false;
+        error_ref.current = msg;
+        force_update();
+        return { ok: false as const, error: msg };
+      },
+    );
+  };
+
+  /**
+   * invoke_lead_status: invoca la EF update-lead-status y mapea el resultado
+   * al formato {ok, error}. Función pura de I/O — no gestiona is_updating.
+   */
+  const invoke_lead_status = (body: Record<string, unknown>): Promise<ActionResult> => {
+    const client = get_client();
+    return (
+      client.functions.invoke('update-lead-status', { body }) as Promise<{
+        data: unknown;
+        error: { message?: string } | null;
+      }>
+    ).then(({ error }) => {
+      if (error) {
+        return { ok: false as const, error: error.message ?? 'Error al actualizar el lead' };
+      }
+      return { ok: true as const, error: null };
+    });
+  };
+
+  // ── Acción pública ────────────────────────────────────────────────────────
+
+  const update_status = useCallback(
+    (lead_id: string, new_status: LeadStatus, note?: string): Promise<ActionResult> => {
+      // EC-8: note omitido del body cuando no se pasa (spread condicional).
+      const body: Record<string, unknown> = {
+        lead_id,
+        new_status,
+        ...(note !== undefined ? { note } : {}),
+      };
+
+      return run_action(() => invoke_lead_status(body)).then((result) => {
+        // EC-2: onSuccess solo en éxito. EC-11: no llamado si error.
+        if (result.ok && deps?.onSuccess) {
+          deps.onSuccess();
+        }
+        return result;
+      });
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [deps?.supabase, deps?.onSuccess],
+  );
+
+  // El objeto retornado usa getters para que is_updating y error sean siempre
+  // el valor actual de la ref, incluso sin re-render previo (EC-9).
+  return useMemo(() => {
+    const r: UseUpdateLeadStatusReturn = {
+      update_status,
+      get is_updating() {
+        return is_working_ref.current;
+      },
+      get error() {
+        return error_ref.current;
+      },
+    };
+    return r;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [update_status]);
 }
