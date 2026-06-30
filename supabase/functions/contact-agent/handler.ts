@@ -194,7 +194,35 @@ export function make_contact_agent_handler(
       }
     }
 
-    // Placeholder — 14.6 añadirá el mensaje WhatsApp + response completa
-    return json_response({ ok: true }, 200);
+    // (l) Mensaje WhatsApp pre-llenado + respuesta final (14.6)
+
+    // Sanitizar teléfono: conservar solo dígitos (quitar +, espacios, guiones, paréntesis)
+    const sanitized_phone = property.agent_phone.replace(/[^\d]/g, "");
+
+    // Formatear precio con Intl — es-MX, MXN
+    const price_fmt = new Intl.NumberFormat("es-MX", {
+      style: "currency",
+      currency: "MXN",
+    }).format(property.price ?? 0);
+
+    // Sufijo '/mes' para renta y 'both'; sin sufijo para venta
+    const price_str =
+      property.operation_type === "rent" || property.operation_type === "both"
+        ? `${price_fmt}/mes`
+        : price_fmt;
+
+    const message =
+      `Hola ${property.agent_name}, vi tu propiedad en Urbea: ${property.address} - ${price_str}. Me gustaría recibir más información.`;
+
+    return json_response(
+      {
+        success: true,
+        phone: sanitized_phone,
+        message,
+        lead_id: lead.id,
+        property_id: parsed.data.propertyId,
+      },
+      200,
+    );
   };
 }
