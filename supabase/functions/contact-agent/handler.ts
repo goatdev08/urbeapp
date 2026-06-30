@@ -171,12 +171,30 @@ export function make_contact_agent_handler(
       }
     }
 
-    // ponytail: lead e is_new_lead disponibles para 14.5 (contact_count/mensaje WhatsApp)
-    // void para satisfacer deno lint hasta que 14.5 los consuma
-    void lead;
+    // ponytail: is_new_lead para 14.6 (mensaje WhatsApp — primer vs recurrente)
     void is_new_lead;
 
-    // Placeholder — 14.5/14.6 añadirán contact_count y mensaje WhatsApp
+    // (k) Registrar origen — INSERT INTO lead_origin_properties ON CONFLICT DO NOTHING
+    // property.video_id pasa como tercer arg solo cuando existe (undefined si no hay video)
+    const origin_result = await deps.originRepo.insert_origin(
+      lead.id,
+      parsed.data.propertyId,
+      property.video_id,
+    );
+    if (!origin_result.ok) {
+      return error_response("DB_ERROR", "Error interno al registrar el origen del contacto", 500);
+    }
+
+    // INVARIANTE §14.5: solo incrementar si el par (lead_id, property_id) es nuevo
+    // inserted=false → ON CONFLICT DO NOTHING fue no-op → NO doble-contar
+    if (origin_result.inserted) {
+      const counter_result = await deps.originRepo.increment_contact_count(parsed.data.propertyId);
+      if (!counter_result.ok) {
+        return error_response("DB_ERROR", "Error interno al incrementar el contador de contactos", 500);
+      }
+    }
+
+    // Placeholder — 14.6 añadirá el mensaje WhatsApp + response completa
     return json_response({ ok: true }, 200);
   };
 }
