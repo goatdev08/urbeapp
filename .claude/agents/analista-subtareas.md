@@ -71,10 +71,12 @@ Asigna **un agente de dominio** por subtarea (el que más pesa en su footprint) 
 
 Una subtarea puede empezar con un agente y necesitar otro (ej. "publicar" = `mobile` para la UI + una Edge Function de `supabase`). En ese caso, **divídela conceptualmente** y nótalo (puede ameritar dos subtareas — ver Paso 6, bloqueantes).
 
-### Paso 5 — Criticidad TDD
-Marca cada subtarea como **crítica** (TDD estricto: test primero → implementar → guardian) o **no crítica** (verificación ligera: `pnpm tsc --noEmit` + `pnpm lint` + smoke):
-- **Crítica**: toca `supabase/functions/**` (Edge Functions), `supabase/migrations/**` (migraciones/RLS/constraints), o cualquier lógica de negocio con invariantes (canje de token, creación de lead, validación de publicación).
-- **No crítica**: UI de React Native, navegación, estilos, scaffolding/config.
+### Paso 5 — Criticidad TDD (DERIVADA del footprint, no juzgada)
+**No opines: aplica la regla determinista por path de `CLAUDE.md` §5** al footprint que estimaste en el paso 4. Misma entrada (paths) → misma salida. La regla y el hook `tdd-guard.sh` deben coincidir.
+- **CRÍTICA** ⟺ algún path del footprint cae en: `supabase/functions/**`, `supabase/migrations/**`, o lógica móvil pura `mobile/**/{lib,hooks,utils}/**` y `**/validation*`.
+- **NO crítica** ⟺ todo el footprint es presentación/config: `components/**`, pantallas, navegación, estilos, scaffolding/config, docs, wiki.
+- **Desempate**: footprint incierto o que mezcla presentación con lógica de las rutas críticas → **crítica**.
+- Indica SIEMPRE qué path disparó la criticidad (p. ej. "crítica — toca `mobile/.../hooks/useX.ts`").
 
 ### Paso 6 — Orden (serie) y bloqueantes
 - **Orden**: topológico por dependencias declaradas (`subtasks[].dependencies`) y por footprint (si B necesita un archivo que A crea, B va después). La ejecución es **en serie** (una a la vez); aun así da el orden exacto.
@@ -92,7 +94,7 @@ Subtareas pendientes: {N} · Ya cerradas: {M}
 - Hotspots: {lista | ninguno}
 - Agente: mobile | supabase | design
 - Skills: urbea-… {, urbea-testing si lleva tests | "ninguno específico"}
-- Criticidad TDD: crítica | no-crítica — {1 frase}
+- Criticidad TDD: crítica | no-crítica — {path crítico que la disparó | "todo presentación/config"}
 - Confianza: alta | media | baja — {1 frase}
 
 ## Orden de ejecución (serie)
@@ -110,5 +112,5 @@ Subtareas pendientes: {N} · Ya cerradas: {M}
 - **No inventes paths ni skills**: si una keyword no está en las tablas, anota "sin mapeo claro" y baja la confianza.
 - **Subtarea con `details` vacío o ambiguo** → confianza `baja`, footprint solo por título, recomiéndala con cuidado.
 - **Respeta las dependencias declaradas** como orden duro.
-- **Ante duda de criticidad, marca crítica** (más seguro tener tests de más que de menos en lógica de negocio).
+- **Criticidad = regla determinista por path (`CLAUDE.md` §5)**, no juicio. Ante duda/footprint incierto → marca **crítica** (default seguro).
 - Consulta el **vault** antes que `grep`/exploración cruda.

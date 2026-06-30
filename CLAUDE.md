@@ -45,6 +45,15 @@ Decisiones de fondo: `wiki/decisiones/0003` (vault), `0004` (Taskmaster), `0006`
 ## 5. ⭐ Workflow de ejecución de una tarea
 **Taskmaster es el registro vivo de la ejecución:** cada subtarea guarda el log de lo que se hizo (notas con timestamp), y de ahí se lee el contexto en sesiones futuras.
 
+### ⭐ Criticidad TDD = regla DETERMINISTA por path (fuente de verdad)
+La criticidad **no se juzga**: se **deriva** del footprint de la subtarea. El analista, `/tm-plan`, `/tm-tarea` y el hook `tdd-guard.sh` aplican esta MISMA regla. Es determinista (mismo path → misma decisión).
+- **CRÍTICA → TDD estricto** (RED → GREEN → guardian) si el footprint toca lógica/invariantes:
+  - `supabase/functions/**` (Edge Functions) · `supabase/migrations/**` (migraciones/RLS/constraints)
+  - lógica móvil pura: `mobile/**/lib/**` · `mobile/**/hooks/**` · `mobile/**/utils/**` · `**/validation*`
+- **NO crítica → verificación ligera** (`pnpm tsc --noEmit` + `pnpm lint` + smoke) para todo lo demás: `components/**`, pantallas, navegación, estilos, scaffolding/config, docs, wiki.
+- **Desempate:** duda, footprint incierto o mezcla con lógica → **crítica** (más seguro tener tests de más en lógica de negocio).
+- Archivos de test, `supabase/tests/**` y `rollbacks/**` nunca se bloquean (son el RED).
+
 1. **Seleccionar** — `task-master next` → `task-master show <id>` (lee tarea, subtareas, dependencias).
 2. **Contexto** — lee las páginas del vault que la tarea toca (vía `mapa-codebase.md`).
 3. **Arrancar** — `task-master set-status --id=<id> --status=in-progress`.
