@@ -10,6 +10,9 @@ import { make_contact_agent_handler } from "./handler.ts";
 import type {
   CallerVerifier,
   CallerVerifyResult,
+  FindActiveLeadResult,
+  InsertLeadResult,
+  LeadRepo,
   PropertyResolver,
   PropertyResolveResult,
 } from "./types.ts";
@@ -28,6 +31,16 @@ const propertyResolver: PropertyResolver = {
   },
 };
 
-const handle = make_contact_agent_handler({ callerVerifier, propertyResolver });
+// ponytail: stub — se conectará al repo Postgres real en 14.4 GREEN
+const leadRepo: LeadRepo = {
+  find_active_lead(_agent_id: string, _user_id: string): Promise<FindActiveLeadResult> {
+    throw new Error("not_implemented");
+  },
+  insert_lead(_agent_id: string, _user_id: string): Promise<InsertLeadResult> {
+    throw new Error("not_implemented");
+  },
+};
+
+const handle = make_contact_agent_handler({ callerVerifier, propertyResolver, leadRepo });
 
 Deno.serve((req: Request) => handle(req));

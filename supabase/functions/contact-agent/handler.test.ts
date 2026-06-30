@@ -41,6 +41,10 @@ import type {
   CallerVerifier,
   CallerVerifyResult,
   ContactAgentDeps,
+  FindActiveLeadResult,
+  InsertLeadResult,
+  LeadRecord,
+  LeadRepo,
   PropertyResolver,
   PropertyResolveResult,
   PropertyWithAgent,
@@ -163,18 +167,176 @@ function resolver_db_error(): FakePropertyResolver {
   } as FakePropertyResolver;
 }
 
+// ── 14.4 — Constantes de lead ─────────────────────────────────────────────────
+//
+// CALLER_ID: el usuario autenticado que contacta al agente (distinto de AGENT_ID).
+// Para self-contact se usa verifier_ok(AGENT_ID) — caller == owner.
+// LEAD_ID_NUEVO: UUID del lead recién insertado.
+// LEAD_ID_EXISTENTE: UUID del lead ya existente (segundo contacto / race condition).
+
+const CALLER_ID = "00000000-0000-0000-0000-000000000003";
+const LEAD_ID_NUEVO = "11111111-1111-1111-1111-111111111111";
+const LEAD_ID_EXISTENTE = "22222222-2222-2222-2222-222222222222";
+
+// ── 14.4 — FakeLeadRepo ───────────────────────────────────────────────────────
+
+interface FakeLeadRepo extends LeadRepo {
+  find_calls: [string, string][]; // [agent_id, user_id] por cada invocación
+  insert_calls: [string, string][]; // [agent_id, user_id] por cada invocación
+}
+
+// Primer contacto: find retorna not_found; insert retorna lead nuevo.
+function lead_repo_not_found_then_inserted(): FakeLeadRepo {
+  const lead: LeadRecord = {
+    id: LEAD_ID_NUEVO,
+    status: "new",
+    first_contact_at: "2026-06-29T10:00:00Z",
+  };
+  return {
+    find_calls: [],
+    insert_calls: [],
+    find_active_lead(agent_id: string, user_id: string): Promise<FindActiveLeadResult> {
+      this.find_calls.push([agent_id, user_id]);
+      return Promise.resolve({ ok: true, found: false });
+    },
+    insert_lead(agent_id: string, user_id: string): Promise<InsertLeadResult> {
+      this.insert_calls.push([agent_id, user_id]);
+      return Promise.resolve({ ok: true, lead });
+    },
+  } as FakeLeadRepo;
+}
+
+// Segundo contacto: find retorna lead existente; insert no debería llamarse.
+function lead_repo_found_existing(): FakeLeadRepo {
+  const lead: LeadRecord = {
+    id: LEAD_ID_EXISTENTE,
+    status: "new",
+    first_contact_at: "2026-06-28T10:00:00Z",
+  };
+  return {
+    find_calls: [],
+    insert_calls: [],
+    find_active_lead(agent_id: string, user_id: string): Promise<FindActiveLeadResult> {
+      this.find_calls.push([agent_id, user_id]);
+      return Promise.resolve({ ok: true, found: true, lead });
+    },
+    insert_lead(agent_id: string, user_id: string): Promise<InsertLeadResult> {
+      this.insert_calls.push([agent_id, user_id]);
+      // No debería llamarse; si se llama, devuelve lead para no enmascarar el bug
+      return Promise.resolve({ ok: true, lead });
+    },
+  } as FakeLeadRepo;
+}
+
+// Race condition: primera find → not_found; insert → CONFLICT_23505; segunda find → lead existente.
+// El contador es local al closure para simular estado entre llamadas.
+function lead_repo_race_conflict(): FakeLeadRepo {
+  let find_count = 0;
+  const existing: LeadRecord = {
+    id: LEAD_ID_EXISTENTE,
+    status: "new",
+    first_contact_at: "2026-06-29T09:59:00Z",
+  };
+  return {
+    find_calls: [],
+    insert_calls: [],
+    find_active_lead(agent_id: string, user_id: string): Promise<FindActiveLeadResult> {
+      this.find_calls.push([agent_id, user_id]);
+      find_count++;
+      if (find_count === 1) {
+        // Primera llamada: la request concurrente todavía no terminó
+        return Promise.resolve({ ok: true, found: false });
+      }
+      // Segunda llamada: tras el 23505, el lead ya existe
+      return Promise.resolve({ ok: true, found: true, lead: existing });
+    },
+    insert_lead(agent_id: string, user_id: string): Promise<InsertLeadResult> {
+      this.insert_calls.push([agent_id, user_id]);
+      return Promise.resolve({ ok: false, error_code: "CONFLICT_23505" });
+    },
+  } as FakeLeadRepo;
+}
+
+// DB_ERROR en find_active_lead → handler debe propagar 500.
+function lead_repo_find_db_error(): FakeLeadRepo {
+  return {
+    find_calls: [],
+    insert_calls: [],
+    find_active_lead(agent_id: string, user_id: string): Promise<FindActiveLeadResult> {
+      this.find_calls.push([agent_id, user_id]);
+      return Promise.resolve({ ok: false, error_code: "DB_ERROR" });
+    },
+    insert_lead(agent_id: string, user_id: string): Promise<InsertLeadResult> {
+      this.insert_calls.push([agent_id, user_id]);
+      return Promise.resolve({ ok: true, lead: { id: "unused", status: "new", first_contact_at: "" } });
+    },
+  } as FakeLeadRepo;
+}
+
+// DB_ERROR en insert_lead (find retorna not_found, insert falla con DB_ERROR) → 500.
+function lead_repo_insert_db_error(): FakeLeadRepo {
+  return {
+    find_calls: [],
+    insert_calls: [],
+    find_active_lead(agent_id: string, user_id: string): Promise<FindActiveLeadResult> {
+      this.find_calls.push([agent_id, user_id]);
+      return Promise.resolve({ ok: true, found: false });
+    },
+    insert_lead(agent_id: string, user_id: string): Promise<InsertLeadResult> {
+      this.insert_calls.push([agent_id, user_id]);
+      return Promise.resolve({ ok: false, error_code: "DB_ERROR" });
+    },
+  } as FakeLeadRepo;
+}
+
+// No-op: para tests de 14.2/14.3 que no necesitan LeadRepo.
+// El handler no lo llama (aún no hay impl), así que cualquier respuesta sirve.
+function lead_repo_noop(): FakeLeadRepo {
+  return {
+    find_calls: [],
+    insert_calls: [],
+    find_active_lead(agent_id: string, user_id: string): Promise<FindActiveLeadResult> {
+      this.find_calls.push([agent_id, user_id]);
+      return Promise.resolve({ ok: true, found: false });
+    },
+    insert_lead(agent_id: string, user_id: string): Promise<InsertLeadResult> {
+      this.insert_calls.push([agent_id, user_id]);
+      return Promise.resolve({ ok: true, lead: { id: "noop", status: "new", first_contact_at: "" } });
+    },
+  } as FakeLeadRepo;
+}
+
+// ── 14.4 — Helpers de propiedad para tests sin self-contact ──────────────────
+//
+// Para que el handler llegue al step de lead creation, la propiedad debe:
+//   status='active', agent_phone presente, y owner_user_id !== caller.
+// En los tests de 14.4, el caller es CALLER_ID y el owner es AGENT_ID.
+
+function resolver_property_owner(): FakePropertyResolver {
+  return resolver_property_found(
+    make_property_with_agent({ owner_user_id: AGENT_ID, agent_id: AGENT_ID }),
+  );
+}
+
+// verifier que devuelve CALLER_ID (distinto de AGENT_ID → no self-contact).
+function verifier_caller(): FakeCallerVerifier {
+  return verifier_ok(CALLER_ID);
+}
+
 // ── Factory helper ────────────────────────────────────────────────────────────
 //
-// Segundo parámetro (14.3+): propertyResolver con default happy → los 21 tests de
-// 14.2 no necesitan cambiarse (el handler aún no llama al resolver en el stub).
+// Tercer parámetro (14.4+): leadRepo con default noop → los 32 tests de
+// 14.2/14.3 no necesitan cambiarse (el handler aún no llama al repo en el stub).
 
 function make_handler(
   verifier: CallerVerifier = verifier_ok(),
   resolver: PropertyResolver = resolver_property_found(),
+  lead_repo: LeadRepo = lead_repo_noop(),
 ): (req: Request) => Promise<Response> {
   const deps: ContactAgentDeps = {
     callerVerifier: verifier,
     propertyResolver: resolver,
+    leadRepo: lead_repo,
   };
   return make_contact_agent_handler(deps);
 }
@@ -533,4 +695,250 @@ Deno.test("resolver_db_error_retorna_500", async () => {
   const h = make_handler(verifier_ok(), resolver_db_error());
   const res = await h(post_auth(PAYLOAD_VALIDO));
   assertEquals(res.status, 500, "error de DB en el resolver debe devolver 500");
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TESTS 14.4 — Creación idempotente del lead con guard de self-contact
+//
+// EDGE CASES:
+//
+// ### Happy path (primer contacto)
+// - find_active_lead llamado exactamente una vez con agent_id=property.owner_user_id y user_id=caller
+// - insert_lead llamado cuando find retorna not_found
+// - insert_lead llamado con los argumentos correctos (agent_id=owner, user_id=caller)
+//
+// ### Idempotencia (segundo contacto — lead ya existe)
+// - find retorna lead existente → insert NO llamado
+//
+// ### Race condition (INSERT viola constraint 23505 de leads_agent_user_unique_active)
+// - insert retorna CONFLICT_23505 → handler NO devuelve 500
+// - Después del 23505: find llamado por segunda vez para recuperar el lead
+// - find_calls.length == 2 en total (antes y después del conflict)
+//
+// ### Self-contact (caller == property.owner_user_id)
+// - 400 CANNOT_CONTACT_SELF ANTES de llamar a leadRepo
+// - body.error.code === 'CANNOT_CONTACT_SELF'
+// - find_active_lead y insert_lead NO llamados
+//
+// ### Boundary / error
+// - find_active_lead retorna DB_ERROR → 500
+// - insert_lead retorna DB_ERROR (sin CONFLICT_23505) → 500
+//
+// Diseño DI: LeadRepo con find_active_lead/insert_lead; callerVerifier ya expone user_id.
+// El handler detecta self-contact comparando auth_result.user_id con property.owner_user_id.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ── Happy path 14.4 — primer contacto ────────────────────────────────────────
+
+Deno.test("lead_14_4_primer_contacto_find_activo_llamado_exactamente_una_vez", async () => {
+  // El handler debe llamar find_active_lead una sola vez para comprobar idempotencia.
+  // RED: handler no llama leadRepo → find_calls.length === 0, no 1 → FALLA.
+  const repo = lead_repo_not_found_then_inserted();
+  const h = make_handler(verifier_caller(), resolver_property_owner(), repo);
+  await h(post_auth(PAYLOAD_VALIDO));
+  assertEquals(
+    repo.find_calls.length,
+    1,
+    "find_active_lead debe llamarse exactamente una vez en el primer contacto",
+  );
+});
+
+Deno.test("lead_14_4_primer_contacto_find_llamado_con_agent_id_owner_user_id", async () => {
+  // agent_id del lead = property.owner_user_id (AGENT_ID en el fixture de 14.4).
+  // RED: handler no llama leadRepo → find_calls vacío → la primera aserción FALLA.
+  const repo = lead_repo_not_found_then_inserted();
+  const h = make_handler(verifier_caller(), resolver_property_owner(), repo);
+  await h(post_auth(PAYLOAD_VALIDO));
+  assertEquals(repo.find_calls.length, 1, "find_active_lead debe llamarse una vez");
+  assertEquals(
+    repo.find_calls[0][0],
+    AGENT_ID,
+    "primer arg de find_active_lead debe ser agent_id = property.owner_user_id",
+  );
+});
+
+Deno.test("lead_14_4_primer_contacto_find_llamado_con_user_id_caller", async () => {
+  // user_id del lead = el caller autenticado (CALLER_ID, extraído del JWT).
+  // RED: handler no llama leadRepo → find_calls vacío → la primera aserción FALLA.
+  const repo = lead_repo_not_found_then_inserted();
+  const h = make_handler(verifier_caller(), resolver_property_owner(), repo);
+  await h(post_auth(PAYLOAD_VALIDO));
+  assertEquals(repo.find_calls.length, 1, "find_active_lead debe llamarse una vez");
+  assertEquals(
+    repo.find_calls[0][1],
+    CALLER_ID,
+    "segundo arg de find_active_lead debe ser user_id = caller autenticado",
+  );
+});
+
+Deno.test("lead_14_4_primer_contacto_insert_llamado_cuando_not_found", async () => {
+  // Cuando find retorna not_found, el handler debe llamar insert_lead.
+  // RED: handler no llama leadRepo → insert_calls.length === 0, no 1 → FALLA.
+  const repo = lead_repo_not_found_then_inserted();
+  const h = make_handler(verifier_caller(), resolver_property_owner(), repo);
+  await h(post_auth(PAYLOAD_VALIDO));
+  assertEquals(
+    repo.insert_calls.length,
+    1,
+    "insert_lead debe llamarse exactamente una vez cuando find retorna not_found",
+  );
+});
+
+Deno.test("lead_14_4_primer_contacto_insert_con_agent_id_owner_user_id_correcto", async () => {
+  // insert_lead debe recibir agent_id = property.owner_user_id.
+  // RED: handler no llama leadRepo → insert_calls vacío → primera aserción FALLA.
+  const repo = lead_repo_not_found_then_inserted();
+  const h = make_handler(verifier_caller(), resolver_property_owner(), repo);
+  await h(post_auth(PAYLOAD_VALIDO));
+  assertEquals(repo.insert_calls.length, 1, "insert_lead debe llamarse una vez");
+  assertEquals(
+    repo.insert_calls[0][0],
+    AGENT_ID,
+    "primer arg de insert_lead debe ser agent_id = property.owner_user_id",
+  );
+});
+
+Deno.test("lead_14_4_primer_contacto_insert_con_user_id_caller_correcto", async () => {
+  // insert_lead debe recibir user_id = caller autenticado.
+  // RED: handler no llama leadRepo → insert_calls vacío → primera aserción FALLA.
+  const repo = lead_repo_not_found_then_inserted();
+  const h = make_handler(verifier_caller(), resolver_property_owner(), repo);
+  await h(post_auth(PAYLOAD_VALIDO));
+  assertEquals(repo.insert_calls.length, 1, "insert_lead debe llamarse una vez");
+  assertEquals(
+    repo.insert_calls[0][1],
+    CALLER_ID,
+    "segundo arg de insert_lead debe ser user_id = caller autenticado",
+  );
+});
+
+// ── Idempotencia — segundo contacto ──────────────────────────────────────────
+
+Deno.test("lead_14_4_segundo_contacto_find_llamado_y_insert_no_llamado", async () => {
+  // Cuando ya existe un lead activo para (agent_id, user_id), el handler reutiliza
+  // el existente y NO crea uno nuevo. find debe llamarse 1 vez, insert 0 veces.
+  // RED: handler no llama leadRepo → find_calls.length === 0 (no 1) → FALLA.
+  const repo = lead_repo_found_existing();
+  const h = make_handler(verifier_caller(), resolver_property_owner(), repo);
+  await h(post_auth(PAYLOAD_VALIDO));
+  assertEquals(
+    repo.find_calls.length,
+    1,
+    "find_active_lead debe llamarse exactamente una vez en el segundo contacto",
+  );
+  assertEquals(
+    repo.insert_calls.length,
+    0,
+    "insert_lead NO debe llamarse cuando el lead ya existe",
+  );
+});
+
+// ── Race condition — 23505 ────────────────────────────────────────────────────
+
+Deno.test("lead_14_4_race_condition_insert_intentado", async () => {
+  // El handler debe intentar insert aunque find retornó not_found.
+  // RED: handler no llama leadRepo → insert_calls.length === 0 (no 1) → FALLA.
+  const repo = lead_repo_race_conflict();
+  const h = make_handler(verifier_caller(), resolver_property_owner(), repo);
+  await h(post_auth(PAYLOAD_VALIDO));
+  assertEquals(
+    repo.insert_calls.length,
+    1,
+    "insert_lead debe intentarse cuando find retornó not_found (antes del conflict 23505)",
+  );
+});
+
+Deno.test("lead_14_4_race_condition_23505_find_recupera_lead_segunda_vez", async () => {
+  // Tras recibir CONFLICT_23505, el handler debe llamar find_active_lead de nuevo
+  // para obtener el lead que ganó la carrera concurrente.
+  // Total find_calls esperado: 2 (primera búsqueda + recuperación tras conflict).
+  // RED: handler no llama leadRepo → find_calls.length === 0 (no 2) → FALLA.
+  const repo = lead_repo_race_conflict();
+  const h = make_handler(verifier_caller(), resolver_property_owner(), repo);
+  await h(post_auth(PAYLOAD_VALIDO));
+  assertEquals(
+    repo.find_calls.length,
+    2,
+    "find_active_lead debe llamarse dos veces: antes del INSERT y después del CONFLICT_23505",
+  );
+});
+
+Deno.test("lead_14_4_race_condition_23505_no_retorna_500", async () => {
+  // Un conflict 23505 es idempotencia exitosa, NO un error de servidor.
+  // Primero verificamos que insert fue intentado (falla en RED porque handler no llama leadRepo).
+  // Si el primer assert pasara: verificamos que la respuesta NO es 500.
+  const repo = lead_repo_race_conflict();
+  const h = make_handler(verifier_caller(), resolver_property_owner(), repo);
+  const res = await h(post_auth(PAYLOAD_VALIDO));
+  // RED: insert_calls.length === 0 ≠ 1 → FALLA (garantiza que el test no pase trivialmente)
+  assertEquals(
+    repo.insert_calls.length,
+    1,
+    "insert_lead debe intentarse durante la race condition — si no se intenta, el test no es válido",
+  );
+  assertEquals(res.status, 200, "CONFLICT_23505 debe resolverse en 200, no en 500");
+});
+
+// ── Self-contact ──────────────────────────────────────────────────────────────
+
+Deno.test("lead_14_4_self_contact_retorna_400_cannot_contact_self", async () => {
+  // El caller ES el dueño de la propiedad (AGENT_ID == owner_user_id).
+  // El handler debe detectar self-contact y retornar 400 ANTES de llamar al leadRepo.
+  // RED: handler no implementa self-contact check → retorna 200 → FALLA.
+  const verifier = verifier_ok(AGENT_ID); // caller = AGENT_ID = owner
+  const h = make_handler(verifier, resolver_property_owner(), lead_repo_noop());
+  const res = await h(post_auth(PAYLOAD_VALIDO));
+  assertEquals(res.status, 400, "self-contact debe retornar 400 CANNOT_CONTACT_SELF");
+});
+
+Deno.test("lead_14_4_self_contact_body_code_cannot_contact_self", async () => {
+  // El cuerpo del 400 por self-contact debe incluir error.code específico.
+  // RED: handler retorna 200 { ok: true } → body.error es undefined → FALLA.
+  const verifier = verifier_ok(AGENT_ID);
+  const h = make_handler(verifier, resolver_property_owner(), lead_repo_noop());
+  const res = await h(post_auth(PAYLOAD_VALIDO));
+  const body = await res.json();
+  assertExists(body.error, "respuesta de self-contact debe tener campo 'error'");
+  assertEquals(
+    body.error.code,
+    "CANNOT_CONTACT_SELF",
+    "error.code debe ser 'CANNOT_CONTACT_SELF' cuando el caller es el dueño de la propiedad",
+  );
+  assertEquals(typeof body.error.message, "string", "error.message debe ser string");
+});
+
+Deno.test("lead_14_4_self_contact_lead_repo_no_tocado", async () => {
+  // En self-contact el handler debe cortar ANTES de llamar al leadRepo.
+  // La aserción de status (400) es la que falla en RED; las de repo son documentación.
+  const repo = lead_repo_noop();
+  const verifier = verifier_ok(AGENT_ID);
+  const h = make_handler(verifier, resolver_property_owner(), repo);
+  const res = await h(post_auth(PAYLOAD_VALIDO));
+  // RED: handler retorna 200 → falla aquí (400 !== 200)
+  assertEquals(res.status, 400, "self-contact debe retornar 400 antes de tocar leadRepo");
+  // Si pasa: verificar que el repo no fue tocado
+  assertEquals(repo.find_calls.length, 0, "find_active_lead NO debe llamarse en self-contact");
+  assertEquals(repo.insert_calls.length, 0, "insert_lead NO debe llamarse en self-contact");
+});
+
+// ── Boundary / error — DB_ERROR en leadRepo ───────────────────────────────────
+
+Deno.test("lead_14_4_find_db_error_retorna_500", async () => {
+  // Falla de infraestructura en find_active_lead → handler debe propagar 500.
+  // RED: handler no llama leadRepo → retorna 200 (no 500) → FALLA.
+  const h = make_handler(verifier_caller(), resolver_property_owner(), lead_repo_find_db_error());
+  const res = await h(post_auth(PAYLOAD_VALIDO));
+  assertEquals(res.status, 500, "DB_ERROR en find_active_lead debe devolver 500");
+});
+
+Deno.test("lead_14_4_insert_db_error_retorna_500", async () => {
+  // Falla de infraestructura en insert_lead (sin CONFLICT_23505) → handler debe propagar 500.
+  // RED: handler no llama leadRepo → retorna 200 (no 500) → FALLA.
+  const h = make_handler(
+    verifier_caller(),
+    resolver_property_owner(),
+    lead_repo_insert_db_error(),
+  );
+  const res = await h(post_auth(PAYLOAD_VALIDO));
+  assertEquals(res.status, 500, "DB_ERROR en insert_lead debe devolver 500");
 });

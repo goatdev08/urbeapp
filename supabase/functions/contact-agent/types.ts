@@ -69,10 +69,62 @@ export interface PropertyResolver {
   resolve(propertyId: string): Promise<PropertyResolveResult>;
 }
 
+// ── LeadRecord ────────────────────────────────────────────────────────────────
+//
+// Fila mínima de `leads` que el handler necesita para continuar el flujo (14.4+).
+// Los campos extra (internal_notes, last_contact_at, etc.) los gestiona 14.5/14.6.
+
+export interface LeadRecord {
+  id: string;               // UUID del lead
+  status: string;           // 'new' | 'contacted' | ... (lead_status enum)
+  first_contact_at: string; // ISO 8601
+}
+
+// ── LeadRepo ──────────────────────────────────────────────────────────────────
+//
+// Puerto DI para operaciones idempotentes sobre la tabla `leads`.
+// El índice único parcial leads_agent_user_unique_active (WHERE deleted_at IS NULL)
+// garantiza 1 lead activo por par (agent_id, user_id).
+//
+// Flujo defensivo ante race condition:
+//   1. find_active_lead → si found → reusar
+//   2. insert_lead → si CONFLICT_23505 → find_active_lead de nuevo
+//   El handler nunca propaga un 500 por un INSERT concurrente duplicado.
+//
+// DB invariante: CHECK lead_agent_not_self (agent_id <> user_id).
+// El handler corta el self-contact (400 CANNOT_CONTACT_SELF) ANTES de llamar
+// al repo, por lo que el CHECK es una segunda capa defensiva.
+
+export type FindActiveLeadResult =
+  | { ok: true; found: true; lead: LeadRecord }
+  | { ok: true; found: false }
+  | { ok: false; error_code: "DB_ERROR" };
+
+export type InsertLeadResult =
+  | { ok: true; lead: LeadRecord }
+  | { ok: false; error_code: "CONFLICT_23505" | "DB_ERROR" };
+
+export interface LeadRepo {
+  /**
+   * SELECT id, status, first_contact_at
+   * FROM leads
+   * WHERE agent_id = ? AND user_id = ? AND deleted_at IS NULL
+   */
+  find_active_lead(agent_id: string, user_id: string): Promise<FindActiveLeadResult>;
+
+  /**
+   * INSERT INTO leads (agent_id, user_id, status, first_contact_at)
+   * VALUES (?, ?, 'new', now()) RETURNING id, status, first_contact_at
+   *
+   * Puede devolver CONFLICT_23505 si otra request ganó la carrera.
+   */
+  insert_lead(agent_id: string, user_id: string): Promise<InsertLeadResult>;
+}
+
 // ── Deps inyectables del handler ───────────────────────────────────────────────
 
 export interface ContactAgentDeps {
   callerVerifier: CallerVerifier;
   propertyResolver: PropertyResolver; // 14.3: resolver de propiedad + agente dueño
-  // 14.4+: leadWriter, etc. se agregarán progresivamente
+  leadRepo: LeadRepo;                 // 14.4: creación idempotente del lead
 }
