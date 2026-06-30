@@ -33,6 +33,7 @@ import {
 } from 'react-native';
 
 import { FilterTabs } from '@/components/FilterTabs';
+import { EmptyState } from '@/features/profile/components/EmptyState';
 import { colors, layout, radii, spacing, type_scale } from '@/theme/theme';
 import { LeadCard } from '../components/LeadCard';
 import { useAgentLeads } from '../hooks/useAgentLeads';
@@ -177,13 +178,18 @@ export function CRMScreen(): React.ReactElement {
           )}
           ItemSeparatorComponent={() => <View style={styles.separator} />}
           ListEmptyComponent={
-            <View style={styles.empty}>
-              <Text style={styles.empty_text}>
-                {filter === 'all'
-                  ? 'No tienes leads aún.'
-                  : 'Sin leads en este filtro.'}
-              </Text>
-            </View>
+            // ponytail: dos casos — agente sin leads vs. filtro/búsqueda sin resultados
+            leads.length === 0
+              ? <EmptyState
+                  message="Aún no tienes leads"
+                  subtitle="Los leads aparecen cuando un usuario contacta sobre una propiedad."
+                  icon="📋"
+                />
+              : <EmptyState
+                  message="Sin resultados"
+                  subtitle="Prueba con otro filtro o búsqueda."
+                  icon="🔍"
+                />
           }
           refreshControl={
             <RefreshControl
@@ -272,19 +278,6 @@ const styles = StyleSheet.create({
   },
   separator: {
     height: spacing.s_8,
-  },
-
-  // ── Empty state ─────────────────────────────────────────────────────────────
-  empty: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: spacing.s_40,
-  },
-  empty_text: {
-    ...type_scale.body,
-    color: colors.gray_1,
-    textAlign: 'center',
   },
 
   // ── Centro (loading / error) ─────────────────────────────────────────────────
