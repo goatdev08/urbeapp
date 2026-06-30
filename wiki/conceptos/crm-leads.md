@@ -28,6 +28,7 @@ Contacto desde el **detalle** de una propiedad → CTA sticky **"Contactar por W
 - **Teléfono obligatorio:** agente sin `users.phone` → 400 `AGENT_PHONE_MISSING`; el CTA se oculta si ya se sabe que no hay phone. Los agentes demo se sembraron con phone en migración `20260630000001` (#14.8).
 - **`increment_contact_count` es read-then-write** (2 queries, no atómico) — `// ponytail:` con RPC como alternativa para prod (PostgREST no admite `col = col + 1` en PATCH).
 - **Sin scoring automático** en la demo (el PRD lo contempla; aquí va diferido).
+- ✅ **E2E happy-path verificado en remoto (2026-06-30):** con un 2º agente sembrado (propiedad activa propia), el agente principal la contactó → lead `new` creado; 2º tap → mismo `lead_id`, `contact_count=1` (no 2). Antes solo se cubría por los 79 unit tests + negativos, porque el único `auth.users` era dueño de todas las propiedades (todo daba self-contact).
 - Visibilidad por RLS: helpers `can_view_lead` / `can_edit_lead` ([[rls-seguridad]]).
 - ⚠️ Existe un 2º camino de WhatsApp **sin CRM**: el icono de `AgentCard` (`open_whatsapp`) es contacto rápido directo; el canal CRM es el CTA sticky.
 
