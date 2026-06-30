@@ -125,8 +125,10 @@ function make_property_with_agent(
     address: "Av. Insurgentes Sur 1234, Col. Del Valle, CDMX",
     price: 2_000_000, // MXN $2,000,000.00
     status: "active",
+    operation_type: "sale",    // 14.6: default venta; tests de renta pasan override
     owner_user_id: USER_ID,
     agent_id: AGENT_ID,
+    agent_name: "Agente Demo", // 14.6: default para tests existentes (no usan este campo)
     agent_phone: AGENT_PHONE,
     ...overrides,
   };
@@ -489,12 +491,16 @@ Deno.test("happy_path_post_jwt_valido_uuid_valido_retorna_200", async () => {
   assertEquals(res.status, 200);
 });
 
+// CONTRATO ACTUALIZADO en 14.6: la respuesta final usa { success:true, phone, message, ... }
+// en lugar del placeholder { ok:true } de 14.2. El nombre del test se conserva para que
+// el guardian pueda matchear la historia del test. En RED (ahora): body.success===undefined
+// → falla. En GREEN (tras 14.6): body.success===true → pasa.
 Deno.test("happy_path_respuesta_contiene_ok_true", async () => {
   const h = make_handler(verifier_ok());
   const res = await h(post_auth(PAYLOAD_VALIDO));
   assertEquals(res.status, 200);
   const body = await res.json();
-  assertEquals(body.ok, true, "placeholder 14.2 debe devolver { ok: true }");
+  assertEquals(body.success, true, "14.6: respuesta final debe tener { success:true } (no { ok:true })");
 });
 
 Deno.test("happy_path_auth_resolver_llamado_exactamente_una_vez", async () => {
@@ -1337,4 +1343,383 @@ Deno.test("origin_14_5_db_error_en_increment_contact_count_retorna_500", async (
   );
   const res = await h(post_auth(PAYLOAD_VALIDO));
   assertEquals(res.status, 500, "DB_ERROR en increment_contact_count debe devolver 500");
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TESTS 14.6 — Mensaje WhatsApp pre-llenado + respuesta final
+//
+// CAMBIO DE CONTRATO (documentado también en Taskmaster 14.6):
+//
+// 1. PropertyWithAgent ahora incluye (actualizados en types.ts y en make_property_with_agent()):
+//    - agent_name: string — nombre del agente (resolver: CONCAT(first_name, ' ', last_name))
+//    - operation_type: string — 'rent' | 'sale' | 'both' (para sufijo '/mes')
+//
+// 2. Respuesta final { success:true, phone, message, lead_id, property_id }
+//    reemplaza el placeholder { ok:true } de la subtarea 14.2.
+//    - phone: SOLO dígitos (quita +, espacios, guiones, paréntesis); conserva código de país
+//    - message: texto plano NO URL-encoded; el cliente lo encoda para el deep link en 14.7
+//    - lead_id: UUID del lead resuelto (nuevo o existente)
+//    - property_id: UUID de la propiedad contactada
+//
+// 3. Test actualizado legítimamente:
+//    - happy_path_respuesta_contiene_ok_true → ahora aserta body.success === true
+//      Nombre conservado para no invalidar referencias del guardian; comentario explica el cambio.
+//
+// EDGE CASES:
+// ### Happy path — forma de respuesta
+// - success:true en body (no ok)
+// - phone presente y es string
+// - phone contiene SOLO dígitos (/^[0-9]+$/)
+// - message presente como string no vacío
+// - property_id correcto en respuesta
+// - lead_id correcto (LEAD_ID_NUEVO en primer contacto)
+// - message NO URL-encoded (sin %)
+// ### Contenido del mensaje
+// - mensaje inicia con "Hola [agent_name],"
+// - mensaje contiene "vi tu propiedad en Urbea"
+// - mensaje contiene dirección de la propiedad
+// - mensaje contiene precio con signo $ (formato MXN)
+// - mensaje contiene precio numéricamente formateado (Intl.NumberFormat)
+// - mensaje cierra con "más información"
+// ### Precio — renta vs venta (operation_type)
+// - operation_type='sale': mensaje SIN sufijo '/mes'
+// - operation_type='rent': mensaje CON sufijo '/mes'
+// - operation_type='both': mensaje CON sufijo '/mes'
+// ### Sanitización del teléfono
+// - '+52 33 1234-5678' → '523312345678'
+// - '+5215512345678' → '5215512345678'
+// - '(55) 1234-5678' → '5512345678'
+// ### Boundary / defensivos
+// - price=0: handler no crashea → 200
+// - price=0: precio formateado aparece en el mensaje
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ── 14.6 — Constantes ────────────────────────────────────────────────────────
+
+const AGENT_NAME_14_6 = "Carlos García";
+// Teléfonos con distintos formatos para probar la sanitización:
+const PHONE_CON_ESPACIOS_GUION = "+52 33 1234-5678"; // → "523312345678"
+const PHONE_CON_PAREN = "(55) 1234-5678"; // → "5512345678"
+
+// Formatter de precio — misma llamada que usará la implementación.
+// Testear con el mismo locale evita fragilidad ante variaciones de Deno/V8.
+function format_price_mxn(price: number): string {
+  return new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" }).format(price);
+}
+
+// ── 14.6 — Factories de propiedad para mensaje ───────────────────────────────
+// Estas usan AGENT_ID como owner_user_id + agent_id para que verifier_caller()
+// (CALLER_ID = 000...003) no dispare el self-contact guard.
+
+function make_property_venta(
+  overrides: Partial<PropertyWithAgent> = {},
+): PropertyWithAgent {
+  return make_property_with_agent({
+    owner_user_id: AGENT_ID,
+    agent_id: AGENT_ID,
+    agent_name: AGENT_NAME_14_6,
+    operation_type: "sale",
+    agent_phone: AGENT_PHONE,
+    ...overrides,
+  });
+}
+
+function make_property_renta(): PropertyWithAgent {
+  return make_property_with_agent({
+    owner_user_id: AGENT_ID,
+    agent_id: AGENT_ID,
+    agent_name: AGENT_NAME_14_6,
+    operation_type: "rent",
+    agent_phone: AGENT_PHONE,
+  });
+}
+
+function make_property_both(): PropertyWithAgent {
+  return make_property_with_agent({
+    owner_user_id: AGENT_ID,
+    agent_id: AGENT_ID,
+    agent_name: AGENT_NAME_14_6,
+    operation_type: "both",
+    agent_phone: AGENT_PHONE,
+  });
+}
+
+// ── 14.6 — Handler factory para happy path de mensaje ────────────────────────
+// verifier_caller() → CALLER_ID (000...003) ≠ AGENT_ID (000...002) → no self-contact
+// lead_repo_not_found_then_inserted() → LEAD_ID_NUEVO ("111...1")
+// origin_repo_insert_new() → inserted=true → increment llamado
+
+function make_handler_para_mensaje(
+  property: PropertyWithAgent,
+): (req: Request) => Promise<Response> {
+  return make_handler(
+    verifier_caller(),
+    resolver_property_found(property),
+    lead_repo_not_found_then_inserted(),
+    origin_repo_insert_new(),
+  );
+}
+
+// ── 14.6 — Happy path: forma de respuesta ────────────────────────────────────
+
+Deno.test("respuesta_14_6_success_true", async () => {
+  // La respuesta final tiene success:true (no ok:true).
+  // RED: handler aún devuelve { ok:true } → body.success===undefined ≠ true → FALLA.
+  const h = make_handler_para_mensaje(make_property_venta());
+  const res = await h(post_auth(PAYLOAD_VALIDO));
+  assertEquals(res.status, 200);
+  const body = await res.json();
+  assertEquals(body.success, true, "14.6: respuesta final debe tener success:true (no ok)");
+});
+
+Deno.test("respuesta_14_6_phone_presente_y_es_string", async () => {
+  // El campo phone debe estar presente y ser string.
+  // RED: body.phone===undefined → typeof===undefined ≠ 'string' → FALLA.
+  const body = await (await make_handler_para_mensaje(make_property_venta())(post_auth(PAYLOAD_VALIDO))).json();
+  assertEquals(typeof body.phone, "string", "14.6: body.phone debe ser string");
+});
+
+Deno.test("respuesta_14_6_phone_contiene_solo_digitos", async () => {
+  // phone debe contener SOLO dígitos (/^[0-9]+$/): nada de +, espacios ni guiones.
+  // RED: body.phone===undefined → /^[0-9]+$/.test(undefined) → false → FALLA.
+  const body = await (await make_handler_para_mensaje(make_property_venta())(post_auth(PAYLOAD_VALIDO))).json();
+  assertEquals(
+    typeof body.phone === "string" && /^[0-9]+$/.test(body.phone),
+    true,
+    `14.6: phone debe ser solo dígitos, recibido: ${body.phone}`,
+  );
+});
+
+Deno.test("respuesta_14_6_message_es_string_no_vacio", async () => {
+  // message debe ser string no vacío.
+  // RED: body.message===undefined → typeof===undefined ≠ 'string' → FALLA.
+  const body = await (await make_handler_para_mensaje(make_property_venta())(post_auth(PAYLOAD_VALIDO))).json();
+  assertEquals(typeof body.message, "string", "14.6: body.message debe ser string");
+  assertEquals(
+    typeof body.message === "string" && body.message.length > 0,
+    true,
+    "14.6: body.message no debe estar vacío",
+  );
+});
+
+Deno.test("respuesta_14_6_property_id_correcto", async () => {
+  // property_id en la respuesta debe ser el UUID del input.
+  // RED: body.property_id===undefined ≠ PROPERTY_ID → FALLA.
+  const body = await (await make_handler_para_mensaje(make_property_venta())(post_auth(PAYLOAD_VALIDO))).json();
+  assertEquals(
+    body.property_id,
+    PROPERTY_ID,
+    "14.6: body.property_id debe ser el UUID de la propiedad contactada",
+  );
+});
+
+Deno.test("respuesta_14_6_lead_id_correcto_primer_contacto", async () => {
+  // lead_id en la respuesta debe ser el UUID del lead resuelto.
+  // lead_repo_not_found_then_inserted() devuelve LEAD_ID_NUEVO en primer contacto.
+  // RED: body.lead_id===undefined ≠ LEAD_ID_NUEVO → FALLA.
+  const body = await (await make_handler_para_mensaje(make_property_venta())(post_auth(PAYLOAD_VALIDO))).json();
+  assertEquals(
+    body.lead_id,
+    LEAD_ID_NUEVO,
+    "14.6: body.lead_id debe ser el UUID del lead resuelto (LEAD_ID_NUEVO en primer contacto)",
+  );
+});
+
+Deno.test("respuesta_14_6_message_no_url_encoded", async () => {
+  // El message debe ser texto plano; el cliente lo encoda para el deep link en 14.7.
+  // Si la respuesta contiene '%' es señal de que el EF encodeó por error.
+  // RED: body.message===undefined → .includes() lanza TypeError → falla de otra forma.
+  // Para garantizar fallo por aserción: primero verificar que es string.
+  const body = await (await make_handler_para_mensaje(make_property_venta())(post_auth(PAYLOAD_VALIDO))).json();
+  assertEquals(typeof body.message, "string", "body.message debe ser string para verificar encoding");
+  assertEquals(
+    typeof body.message === "string" && body.message.includes("%"),
+    false,
+    "14.6: body.message NO debe estar URL-encoded (% indica encoding incorrecto en el EF)",
+  );
+});
+
+// ── 14.6 — Contenido del mensaje ─────────────────────────────────────────────
+
+Deno.test("mensaje_14_6_inicia_con_hola_nombre_agente", async () => {
+  // Template: 'Hola [Agent Name], vi tu propiedad en Urbea: ...'
+  // El mensaje debe comenzar con "Hola Carlos García".
+  // RED: body.message===undefined → .startsWith() lanza → falla por aserción.
+  const body = await (await make_handler_para_mensaje(make_property_venta())(post_auth(PAYLOAD_VALIDO))).json();
+  assertEquals(typeof body.message, "string", "body.message debe ser string");
+  assertEquals(
+    typeof body.message === "string" && body.message.startsWith(`Hola ${AGENT_NAME_14_6}`),
+    true,
+    `14.6: mensaje debe empezar con "Hola ${AGENT_NAME_14_6}", recibido: ${body.message}`,
+  );
+});
+
+Deno.test("mensaje_14_6_contiene_vi_tu_propiedad_en_urbea", async () => {
+  // El template incluye literalmente "vi tu propiedad en Urbea:".
+  // RED: body.message===undefined → FALLA.
+  const body = await (await make_handler_para_mensaje(make_property_venta())(post_auth(PAYLOAD_VALIDO))).json();
+  assertEquals(typeof body.message, "string", "body.message debe ser string");
+  assertEquals(
+    typeof body.message === "string" && body.message.includes("vi tu propiedad en Urbea"),
+    true,
+    `14.6: mensaje debe contener "vi tu propiedad en Urbea", recibido: ${body.message}`,
+  );
+});
+
+Deno.test("mensaje_14_6_contiene_direccion_propiedad", async () => {
+  // El mensaje debe incluir la dirección completa de la propiedad.
+  // make_property_venta() usa address="Av. Insurgentes Sur 1234, Col. Del Valle, CDMX".
+  // RED: body.message===undefined → FALLA.
+  const property = make_property_venta();
+  const body = await (await make_handler_para_mensaje(property)(post_auth(PAYLOAD_VALIDO))).json();
+  assertEquals(typeof body.message, "string", "body.message debe ser string");
+  assertEquals(
+    typeof body.message === "string" && body.message.includes(property.address),
+    true,
+    `14.6: mensaje debe contener la dirección "${property.address}", recibido: ${body.message}`,
+  );
+});
+
+Deno.test("mensaje_14_6_contiene_precio_con_signo_pesos", async () => {
+  // El precio usa formato MXN con símbolo '$'.
+  // RED: body.message===undefined → FALLA.
+  const body = await (await make_handler_para_mensaje(make_property_venta())(post_auth(PAYLOAD_VALIDO))).json();
+  assertEquals(typeof body.message, "string", "body.message debe ser string");
+  assertEquals(
+    typeof body.message === "string" && body.message.includes("$"),
+    true,
+    `14.6: mensaje debe contener '$' (precio MXN), recibido: ${body.message}`,
+  );
+});
+
+Deno.test("mensaje_14_6_contiene_precio_numerico_formateado", async () => {
+  // El precio debe aparecer formateado con Intl.NumberFormat('es-MX', MXN).
+  // Se usa el mismo formatter en el test para evitar fragilidad ante variaciones de locale.
+  // price=2_000_000 → format_price_mxn(2_000_000) (ej. "$2,000,000.00" en Deno/V8)
+  // RED: body.message===undefined → FALLA.
+  const property = make_property_venta();
+  const expected_price_str = format_price_mxn(property.price);
+  const body = await (await make_handler_para_mensaje(property)(post_auth(PAYLOAD_VALIDO))).json();
+  assertEquals(typeof body.message, "string", "body.message debe ser string");
+  assertEquals(
+    typeof body.message === "string" && body.message.includes(expected_price_str),
+    true,
+    `14.6: mensaje debe contener "${expected_price_str}", recibido: ${body.message}`,
+  );
+});
+
+Deno.test("mensaje_14_6_cierre_me_gustaria_mas_informacion", async () => {
+  // El template cierra con "Me gustaría recibir más información."
+  // RED: body.message===undefined → FALLA.
+  const body = await (await make_handler_para_mensaje(make_property_venta())(post_auth(PAYLOAD_VALIDO))).json();
+  assertEquals(typeof body.message, "string", "body.message debe ser string");
+  assertEquals(
+    typeof body.message === "string" && body.message.includes("más información"),
+    true,
+    `14.6: mensaje debe contener "más información", recibido: ${body.message}`,
+  );
+});
+
+// ── 14.6 — Precio: renta vs venta (operation_type) ───────────────────────────
+
+Deno.test("precio_14_6_venta_mensaje_sin_sufijo_mes", async () => {
+  // operation_type='sale': el precio NO lleva sufijo '/mes'.
+  // RED: body.message===undefined → typeof check falla primero.
+  const body = await (await make_handler_para_mensaje(make_property_venta())(post_auth(PAYLOAD_VALIDO))).json();
+  assertEquals(typeof body.message, "string", "body.message debe ser string");
+  assertEquals(
+    typeof body.message === "string" && body.message.includes("/mes"),
+    false,
+    `14.6: propiedad en venta NO debe incluir "/mes", recibido: ${body.message}`,
+  );
+});
+
+Deno.test("precio_14_6_renta_mensaje_con_sufijo_mes", async () => {
+  // operation_type='rent': el precio lleva sufijo '/mes'.
+  // RED: body.message===undefined → typeof check falla primero.
+  const body = await (await make_handler_para_mensaje(make_property_renta())(post_auth(PAYLOAD_VALIDO))).json();
+  assertEquals(typeof body.message, "string", "body.message debe ser string");
+  assertEquals(
+    typeof body.message === "string" && body.message.includes("/mes"),
+    true,
+    `14.6: propiedad en renta debe incluir "/mes", recibido: ${body.message}`,
+  );
+});
+
+Deno.test("precio_14_6_both_mensaje_con_sufijo_mes", async () => {
+  // operation_type='both': el precio lleva sufijo '/mes' (convención igual que renta).
+  // RED: body.message===undefined → typeof check falla primero.
+  const body = await (await make_handler_para_mensaje(make_property_both())(post_auth(PAYLOAD_VALIDO))).json();
+  assertEquals(typeof body.message, "string", "body.message debe ser string");
+  assertEquals(
+    typeof body.message === "string" && body.message.includes("/mes"),
+    true,
+    `14.6: operation_type='both' debe incluir "/mes", recibido: ${body.message}`,
+  );
+});
+
+// ── 14.6 — Sanitización del teléfono ─────────────────────────────────────────
+
+Deno.test("telefono_14_6_con_mas_espacios_guion_sanitizado", async () => {
+  // '+52 33 1234-5678' → '523312345678': quita +, espacios y guiones; conserva código de país.
+  // RED: body.phone===undefined ≠ '523312345678' → FALLA.
+  const property = make_property_venta({ agent_phone: PHONE_CON_ESPACIOS_GUION });
+  const body = await (await make_handler_para_mensaje(property)(post_auth(PAYLOAD_VALIDO))).json();
+  assertEquals(
+    body.phone,
+    "523312345678",
+    `14.6: '${PHONE_CON_ESPACIOS_GUION}' debe sanitizarse a '523312345678', recibido: ${body.phone}`,
+  );
+});
+
+Deno.test("telefono_14_6_ya_normalizado_quita_signo_mas", async () => {
+  // '+5215512345678' → '5215512345678': solo se quita el '+'.
+  // RED: body.phone===undefined ≠ '5215512345678' → FALLA.
+  const property = make_property_venta({ agent_phone: AGENT_PHONE }); // AGENT_PHONE = "+5215512345678"
+  const body = await (await make_handler_para_mensaje(property)(post_auth(PAYLOAD_VALIDO))).json();
+  assertEquals(
+    body.phone,
+    "5215512345678",
+    `14.6: '${AGENT_PHONE}' debe sanitizarse a '5215512345678', recibido: ${body.phone}`,
+  );
+});
+
+Deno.test("telefono_14_6_con_parentesis_y_espacios_sanitizado", async () => {
+  // '(55) 1234-5678' → '5512345678': quita paréntesis, espacios y guiones.
+  // RED: body.phone===undefined ≠ '5512345678' → FALLA.
+  const property = make_property_venta({ agent_phone: PHONE_CON_PAREN });
+  const body = await (await make_handler_para_mensaje(property)(post_auth(PAYLOAD_VALIDO))).json();
+  assertEquals(
+    body.phone,
+    "5512345678",
+    `14.6: '${PHONE_CON_PAREN}' debe sanitizarse a '5512345678', recibido: ${body.phone}`,
+  );
+});
+
+// ── 14.6 — Boundary / defensivos ─────────────────────────────────────────────
+
+Deno.test("precio_14_6_cero_no_crashea_retorna_200_con_success", async () => {
+  // price=0 es un valor edge válido; el handler no debe crashear ni devolver 5xx.
+  // Intl.NumberFormat.format(0) es estable y devuelve '$0.00' (o equivalente locale).
+  // RED: handler devuelve { ok:true, no success ni message } → body.success!==true → FALLA.
+  const property = make_property_venta({ price: 0 });
+  const res = await make_handler_para_mensaje(property)(post_auth(PAYLOAD_VALIDO));
+  assertEquals(res.status, 200, "14.6: price=0 no debe causar un crash en el handler");
+  const body = await res.json();
+  assertEquals(body.success, true, "14.6: price=0 debe devolver { success:true } (no crash)");
+});
+
+Deno.test("precio_14_6_cero_formateado_aparece_en_mensaje", async () => {
+  // Cuando price=0, el mensaje debe contener la representación formateada del cero.
+  // Se usa el mismo formatter para calcular el expected (ej. "$0.00" en Deno/V8 es-MX).
+  // RED: body.message===undefined → typeof check falla.
+  const property = make_property_venta({ price: 0 });
+  const expected_zero = format_price_mxn(0);
+  const body = await (await make_handler_para_mensaje(property)(post_auth(PAYLOAD_VALIDO))).json();
+  assertEquals(typeof body.message, "string", "body.message debe ser string");
+  assertEquals(
+    typeof body.message === "string" && body.message.includes(expected_zero),
+    true,
+    `14.6: mensaje con price=0 debe contener "${expected_zero}", recibido: ${body.message}`,
+  );
 });

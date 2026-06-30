@@ -39,8 +39,10 @@ export interface PropertyWithAgent {
   address: string;
   price: number; // MXN pesos — ej. $1,650,000.00 → 1_650_000
   status: string; // 'active' | 'draft' | 'paused' | 'closed' | etc.
+  operation_type: string; // 'rent' | 'sale' | 'both' — determina sufijo '/mes' en el mensaje (14.6)
   owner_user_id: string;
   agent_id: string; // = owner_user_id (alias explícito; el resolver los normaliza)
+  agent_name: string; // CONCAT(first_name, ' ', last_name) — para el template del mensaje (14.6)
   agent_phone: string | null; // NULL si el agente no tiene teléfono registrado
   video_id?: string; // UUID del property_video principal; undefined si sin video
 }
@@ -58,8 +60,10 @@ export type PropertyResolveResult =
 //
 // DI port — obtiene propiedad + agente dueño (JOIN con disambiguación de FK).
 // Consulta equivalente (en el adapter real, creado en 14.3 GREEN):
-//   SELECT p.id, p.address, p.price, p.status, p.owner_user_id,
-//          u.id AS agent_id, u.phone AS agent_phone
+//   SELECT p.id, p.address, p.price, p.status, p.operation_type, p.owner_user_id,
+//          u.id AS agent_id,
+//          CONCAT(u.first_name, ' ', u.last_name) AS agent_name,   -- 14.6: para el mensaje
+//          u.phone AS agent_phone
 //   FROM properties p
 //   JOIN users u ON p.owner_user_id = u.id   -- hint: users!properties_owner_user_id_fkey
 //   WHERE p.id = propertyId AND p.deleted_at IS NULL
