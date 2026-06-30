@@ -70,7 +70,7 @@ type QueryRow = {
   allows_no_guarantor: boolean;
   student_friendly: boolean;
   amenities: PropertyDetail['amenities'];
-  /** PostGIS — llega como WKT string desde PostgREST; unknown en la DB. */
+  /** PostGIS — llega como EWKB hex string desde PostgREST; parse_location lo decodifica. */
   location: unknown;
   owner_user_id: string;
   agency_id: string | null;
@@ -194,7 +194,8 @@ export function usePropertyDetail(id: string): UsePropertyDetailResult {
         allows_no_guarantor: row.allows_no_guarantor,
         student_friendly: row.student_friendly,
         amenities: row.amenities,
-        // PostGIS llega como string WKT; null si no está georreferenciada
+        // PostGIS llega como EWKB hex string (PostgREST); parse_location lo decodifica.
+        // null si no está georreferenciada.
         location: typeof row.location === 'string' ? row.location : null,
         agent: {
           // Fallback a owner_user_id si el embed llega null (no debería en prod)

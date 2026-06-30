@@ -81,8 +81,7 @@ export function ProfileScreen({ agent_id, is_own_profile }: ProfileScreenProps) 
   }
 
   function handle_press_property(property_id: string) {
-    // TODO: ruta de detalle de propiedad (otra tarea — /property/[id] no existe aún)
-    Alert.alert('Propiedad', `Detalle de propiedad ${property_id} (próximamente)`);
+    router.push(`/property/${property_id}`);
   }
 
   // ── Estados de carga / error ───────────────────────────────────────────────

@@ -18,6 +18,7 @@ import { ActivityIndicator, StyleSheet, View, Text, useWindowDimensions } from '
 import { useVideoPlayer, VideoView, type VideoPlayerStatus } from 'expo-video';
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
+import { router } from 'expo-router';
 
 import { PropertyOverlay } from './PropertyOverlay';
 import { HeartAnimation } from './HeartAnimation';
@@ -64,6 +65,11 @@ function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedIte
 
   // ponytail: navegación al perfil del agente diferida — sin ruta feed→perfil en 9.6.
   const handle_agent_press = useCallback(() => undefined, []);
+
+  // Tap sobre el bloque de info → detalle de la propiedad (/property/[id]).
+  const handle_property_press = useCallback(() => {
+    router.push(`/property/${property.id}`);
+  }, [property.id]);
 
   // ── Gesto de doble-tap ────────────────────────────────────────────────────
   // Llama likeOnly (TikTok: no unlike), muestra corazón y dispara haptic.
@@ -158,6 +164,7 @@ function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedIte
           onLike={toggleLike}
           onSave={toggleSave}
           onAgentPress={handle_agent_press}
+          onPropertyPress={handle_property_press}
         />
       </View>
     </GestureDetector>

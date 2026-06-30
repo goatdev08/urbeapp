@@ -55,9 +55,46 @@ describe('parse_location', () => {
     expect(parse_location('{"type":"Point","coordinates":[-103.35,20.67]}')).toBeNull();
   });
 
-  it('devuelve null con hex EWKB', () => {
-    // Formato que Supabase podría devolver si el cast no es TEXT
+  it('devuelve null con hex EWKB truncado/inválido', () => {
+    // El '...' no es hex y la longitud es incompleta → no parseable
     expect(parse_location('0101000020E6100000...')).toBeNull();
+  });
+
+  // ── EWKB hex (lo que PostgREST realmente devuelve para geography) ───────────
+  // PostgREST no devuelve WKT texto sino EWKB hex little-endian. parse_location
+  // debe decodificarlo SIN invertir lng/lat (mismo riesgo crítico que el WKT).
+
+  it('parsea EWKB hex little-endian (Point + SRID 4326) con el orden correcto', () => {
+    // Valor real de la DB: Zapopan, Jalisco → lng -103.43, lat 20.667
+    const result = parse_location('0101000020E61000000000A06D93DB59C09D778672B5AA3440');
+    expect(result).not.toBeNull();
+    expect(result!.lng).toBeCloseTo(-103.4308733, 5);
+    expect(result!.lat).toBeCloseTo(20.6668312, 5);
+  });
+
+  it('en EWKB, lng (X) va antes que lat (Y) — no invertidos', () => {
+    // Tijuana, Baja California → lng ~-117.04, lat ~32.51 (lng más negativa que lat)
+    const result = parse_location('0101000020E61000000000804E78AA5DC04D8805DED1935140');
+    expect(result).not.toBeNull();
+    // lng debe ser claramente longitud (oeste, ~-117), no latitud (~32)
+    expect(result!.lng).toBeLessThan(-100);
+    expect(result!.lat).toBeGreaterThan(0);
+    expect(result!.lat).toBeLessThan(90);
+  });
+
+  it('acepta EWKB hex en mayúsculas o minúsculas', () => {
+    const upper = parse_location('0101000020E61000000000A06D93DB59C09D778672B5AA3440');
+    const lower = parse_location('0101000020e61000000000a06d93db59c09d778672b5aa3440');
+    expect(lower).toEqual(upper);
+  });
+
+  it('devuelve null con EWKB de geometría no-Point (LineString hex)', () => {
+    // tipo 2 = LineString con flag SRID → 0x20000002
+    expect(parse_location('0102000020E610000000000000')).toBeNull();
+  });
+
+  it('devuelve null con hex de longitud impar', () => {
+    expect(parse_location('0101000020E6100000A')).toBeNull();
   });
 
   it('devuelve null con WKT LineString', () => {

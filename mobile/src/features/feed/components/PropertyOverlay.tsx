@@ -51,6 +51,8 @@ export type PropertyOverlayProps = {
   onLike: () => void;
   onSave: () => void;
   onAgentPress: () => void;
+  /** Tap sobre el bloque de info (dirección/precio) → abre el detalle. */
+  onPropertyPress: () => void;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -64,6 +66,7 @@ export function PropertyOverlay({
   onLike,
   onSave,
   onAgentPress,
+  onPropertyPress,
 }: PropertyOverlayProps) {
   const insets = useSafeAreaInsets();
 
@@ -128,36 +131,44 @@ export function PropertyOverlay({
           </View>
         </Pressable>
 
-        {/* Dirección (título en el feed) */}
-        <Text style={styles.address} numberOfLines={2}>
-          {property.address}
-        </Text>
+        {/* Bloque de info tappable → abre el detalle (/property/[id]).
+            Separado del avatar (onAgentPress) y del doble-tap del video (like). */}
+        <Pressable
+          onPress={onPropertyPress}
+          accessibilityRole="button"
+          accessibilityLabel="Ver detalle de la propiedad"
+        >
+          {/* Dirección (título en el feed) */}
+          <Text style={styles.address} numberOfLines={2}>
+            {property.address}
+          </Text>
 
-        {/* Precio en MXN */}
-        <Text style={styles.price} numberOfLines={1}>
-          {format_price(property.price)}
-        </Text>
+          {/* Precio en MXN */}
+          <Text style={styles.price} numberOfLines={1}>
+            {format_price(property.price)}
+          </Text>
 
-        {/* Specs: recámaras y baños con íconos */}
-        <View style={styles.specs_row} pointerEvents="none">
-          <Ionicons
-            name="bed-outline"
-            size={14}
-            color={SPEC_COLOR}
-          />
-          <Text style={styles.spec_text}>{property.bedrooms}</Text>
+          {/* Specs: recámaras y baños con íconos */}
+          <View style={styles.specs_row} pointerEvents="none">
+            <Ionicons
+              name="bed-outline"
+              size={14}
+              color={SPEC_COLOR}
+            />
+            <Text style={styles.spec_text}>{property.bedrooms}</Text>
 
-          <View style={styles.spec_divider} />
+            <View style={styles.spec_divider} />
 
-          {/* ponytail: water-outline como proxy de baño; ícono SVG custom (Urbea)
-              diferido — no hay ícon de bañera en Ionicons que encaje con el kit. */}
-          <Ionicons
-            name="water-outline"
-            size={14}
-            color={SPEC_COLOR}
-          />
-          <Text style={styles.spec_text}>{property.bathrooms}</Text>
-        </View>
+            {/* ponytail: water-outline como proxy de baño; ícono SVG custom (Urbea)
+                diferido — no hay ícon de bañera en Ionicons que encaje con el kit. */}
+            <Ionicons
+              name="water-outline"
+              size={14}
+              color={SPEC_COLOR}
+            />
+            <Text style={styles.spec_text}>{property.bathrooms}</Text>
+          </View>
+        </Pressable>
       </View>
 
     </View>
