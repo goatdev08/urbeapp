@@ -1,26 +1,27 @@
 /**
  * ActionButtons.tsx — Botones flotantes de like y save sobre el hero de video.
  *
- * Subtarea Taskmaster: 10.7 — like/save/skeleton/error states (pantalla detalle).
+ * Subtarea Taskmaster: 10.7 — GREEN phase.
  *
- * Reutiliza sin modificación:
- *   - useLikeProperty (feature/feed/hooks) — like por property_video_id + property_id
- *   - useSaveProperty (feature/feed/hooks) — save por property_id (sin video_id, schema 0006)
+ * Reutiliza SIN modificación:
+ *   - useLikeProperty (feed/hooks) — like por property_video_id + property_id
+ *   - useSaveProperty (feed/hooks) — save por property_id ÚNICO (schema 0006, sin video_id)
  *
- * Estilo: glass pill 46x46 px, borderRadius 23 — mismo patrón que PropertyOverlay.tsx.
- * Active: icon color accent_soft (#C2A07C); inactivo: blanco (#FFFFFF).
+ * Estilo: glass pill 46×46 px, borderRadius 23 — mismo patrón que PropertyOverlay.tsx.
+ * ponytail: estilos glass copiados de PropertyOverlay.action_btn (rgba hardcoded).
  *
- * Props:
- *   property_id        — id de la propiedad (para like + save)
- *   property_video_id  — id del primer video (para like); null si la propiedad no tiene videos
- *
- * STUB MÍNIMO — fase RED (test-author 10.7).
- * No implementa lógica real. Los tests fallan por aserción contra este stub.
- * Implementación GREEN: agente `mobile`.
+ * Reglas de visibilidad:
+ *   - Like: SOLO cuando property_video_id !== null (likes.property_video_id es required).
+ *   - Save: SIEMPRE presente (saves son por propiedad, sin relación de video).
  */
 
 import React from 'react';
-import { View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+
+import { colors } from '@/theme/theme';
+import { useLikeProperty } from '@/features/feed/hooks/useLikeProperty';
+import { useSaveProperty } from '@/features/feed/hooks/useSaveProperty';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tipos
@@ -37,17 +38,82 @@ export type ActionButtonsProps = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Componente (stub)
+// Componente
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Stub vacío — renderiza un View sin contenido ni lógica.
- * Los tests (fase RED) fallan porque:
- *   - No se renderizan botones con accessibilityLabel → queryByLabelText devuelve null.
- *   - useLikeProperty / useSaveProperty no se invocan → aserciones toHaveBeenCalledWith fallan.
- *   - toggleLike / toggleSave nunca se llaman → aserciones toHaveBeenCalledTimes fallan.
- */
-export function ActionButtons(_props: ActionButtonsProps): React.JSX.Element {
-  // ponytail: stub vacío — reemplazar en GREEN con botones glass + hooks conectados.
-  return <View testID="action-buttons-stub" />;
+export function ActionButtons({ property_id, property_video_id }: ActionButtonsProps): React.JSX.Element {
+  // Hooks siempre llamados (reglas de hooks — no pueden ser condicionales).
+  // Cuando no hay video se pasa '' como fallback; el botón like no se renderiza,
+  // así que la llamada vacía no tiene efecto en la UI.
+  const { isLiked, toggleLike } = useLikeProperty({
+    property_video_id: property_video_id ?? '',
+    property_id,
+  });
+
+  // ponytail: useSaveProperty recibe SOLO property_id —
+  //   schema saves (migración 0006) no incluye property_video_id.
+  const { isSaved, toggleSave } = useSaveProperty({
+    property_id,
+  });
+
+  return (
+    <View style={styles.container}>
+
+      {/* Like: solo si hay video asociado a la propiedad */}
+      {property_video_id !== null && (
+        <Pressable
+          onPress={toggleLike}
+          style={styles.btn}
+          accessibilityLabel={isLiked ? 'Quitar like' : 'Dar like'}
+          accessibilityRole="button"
+        >
+          <Ionicons
+            name={isLiked ? 'heart' : 'heart-outline'}
+            size={22}
+            // ponytail: accent_soft (#C2A07C) cuando activo — igual que PropertyOverlay
+            color={isLiked ? colors.accent_soft : '#FFFFFF'}
+          />
+        </Pressable>
+      )}
+
+      {/* Save: siempre presente (save es por propiedad, independiente de video) */}
+      <Pressable
+        onPress={toggleSave}
+        style={styles.btn}
+        accessibilityLabel={isSaved ? 'Quitar de guardados' : 'Guardar propiedad'}
+        accessibilityRole="button"
+      >
+        <Ionicons
+          name={isSaved ? 'bookmark' : 'bookmark-outline'}
+          size={22}
+          color={isSaved ? colors.accent_soft : '#FFFFFF'}
+        />
+      </Pressable>
+
+    </View>
+  );
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Estilos
+// ─────────────────────────────────────────────────────────────────────────────
+
+const styles = StyleSheet.create({
+  container: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 12,
+  },
+  // ponytail: glass pill 46×46 idéntico a PropertyOverlay.action_btn
+  //   (rgba hardcoded del mockup .fbtn — no hay token en theme.ts todavía)
+  btn: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: 'rgba(23,20,15,0.36)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});

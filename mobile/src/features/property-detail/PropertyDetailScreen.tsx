@@ -28,13 +28,14 @@
 
 import React from 'react';
 import {
-  ActivityIndicator,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
 import { colors, fonts, layout, spacing } from '@/theme/theme';
@@ -45,6 +46,8 @@ import { PropertyInfoHeader } from './components/PropertyInfoHeader';
 import { AmenityChips } from './components/AmenityChips';
 import { AgentCard } from './components/AgentCard';
 import { PropertyMap } from './components/PropertyMap';
+import { ActionButtons } from './components/ActionButtons';
+import { DetailSkeleton } from './components/DetailSkeleton';
 import { open_whatsapp } from './utils/whatsapp';
 
 // Espacio inferior reservado para el CTA sticky:
@@ -62,36 +65,70 @@ export function PropertyDetailScreen(): React.JSX.Element {
   const property_id = typeof id === 'string' ? id : '';
 
   const { data, isLoading, error } = usePropertyDetail(property_id);
+  const insets = useSafeAreaInsets();
 
-  // ── Loading mínimo ─────────────────────────────────────────────────────────
-  // ponytail: ActivityIndicator plano — skeleton animado en 10.7
+  // ── Loading — skeleton animado (10.7) ────────────────────────────────────
   if (isLoading) {
-    return (
-      <View style={styles.state_container}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
-    );
+    return <DetailSkeleton />;
   }
 
-  // ── Error mínimo ───────────────────────────────────────────────────────────
-  // ponytail: texto de error plano — UI de error rica en 10.7
+  // ── Error / propiedad no encontrada ──────────────────────────────────────
   if (error !== null || data === null) {
     return (
       <View style={styles.state_container}>
-        <Text style={styles.error_text}>
-          {error ?? 'Propiedad no encontrada'}
+        <Ionicons name="home-outline" size={48} color={colors.gray_1} style={{ marginBottom: 16 }} />
+        <Text style={styles.error_title}>
+          {error !== null ? 'No se pudo cargar la propiedad' : 'Propiedad no encontrada'}
         </Text>
+        <Text style={styles.error_text}>
+          {error ?? 'Es posible que esta propiedad ya no esté disponible.'}
+        </Text>
+        <Pressable
+          onPress={() => router.back()}
+          style={styles.error_back_btn}
+          accessibilityRole="button"
+          accessibilityLabel="Volver"
+        >
+          <Text style={styles.error_back_label}>Volver</Text>
+        </Pressable>
       </View>
     );
   }
+
+  // ID del video primario (menor position) — para useLikeProperty en ActionButtons.
+  // ponytail: misma lógica que PropertyVideoPlayer.find_primary_video.
+  const primary_video_id: string | null =
+    data.videos.reduce<{ id: string; position: number } | undefined>(
+      (acc, v) => (!acc || v.position < acc.position ? v : acc),
+      undefined,
+    )?.id ?? null;
 
   // ── Pantalla principal ─────────────────────────────────────────────────────
   return (
     <View style={styles.root}>
 
-      {/* Hero video — full-bleed, sin inset lateral (PropertyVideoPlayer ocupa
-          el ancho total; su fondo es ink_feed #17140F per spec mockup #5) */}
-      <PropertyVideoPlayer videos={data.videos} />
+      {/* Hero video + overlays flotantes (botón volver + acciones) */}
+      <View style={styles.hero_wrapper}>
+        <PropertyVideoPlayer videos={data.videos} />
+
+        {/* Botón volver — esquina superior izquierda, flotante sobre el hero */}
+        <Pressable
+          onPress={() => router.back()}
+          style={[styles.back_btn, { top: insets.top + 8 }]}
+          accessibilityRole="button"
+          accessibilityLabel="Volver"
+        >
+          <Ionicons name="chevron-back" size={22} color="#FFFFFF" />
+        </Pressable>
+
+        {/* Rail de acciones (like / save) — derecha, alineado al fondo del hero */}
+        <View style={styles.action_overlay}>
+          <ActionButtons
+            property_id={property_id}
+            property_video_id={primary_video_id}
+          />
+        </View>
+      </View>
 
       {/* Contenido scrollable — fondo paper claro (gestión-claro per mockup #5) */}
       <ScrollView
@@ -140,7 +177,6 @@ export function PropertyDetailScreen(): React.JSX.Element {
 
         <PropertyMap location={data.location} />
 
-        {/* TODO 10.7 — acciones (like/save), skeleton y error rico */}
       </ScrollView>
 
       {/* ── CTA sticky "Contactar por WhatsApp" — anclado al fondo,
@@ -171,6 +207,36 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: colors.paper,
+  },
+
+  // ── Hero wrapper — contiene el video + overlays flotantes ─────────────────
+  hero_wrapper: {
+    // RN default: position 'relative', overflow 'visible' — los overlays salen
+    // del hero si lo necesitan (ej. el back_btn puede sobrepasar el top).
+  },
+
+  // Botón volver — glass pill flotante sobre el video, esquina superior izquierda
+  // ponytail: mismos colores de glass que PropertyOverlay.action_btn
+  back_btn: {
+    position: 'absolute',
+    left: 14,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(23,20,15,0.36)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
+  },
+
+  // Rail de acciones (ActionButtons) — flotante, derecha, fondo del hero
+  action_overlay: {
+    position: 'absolute',
+    right: 14,
+    bottom: 16,
+    zIndex: 10,
   },
 
   // ScrollView toma el espacio restante bajo el hero
@@ -229,7 +295,7 @@ const styles = StyleSheet.create({
     color: colors.ink,
   },
 
-  // Contenedor de estados loading/error — centrado en pantalla completa
+  // ── Estado de error — centrado en pantalla completa ───────────────────────
   state_container: {
     flex: 1,
     alignItems: 'center',
@@ -237,10 +303,32 @@ const styles = StyleSheet.create({
     backgroundColor: colors.paper,
     padding: layout.screen_inset,
   },
+  error_title: {
+    fontFamily: fonts.display,
+    fontSize: 20,
+    lineHeight: 24,
+    color: colors.ink,
+    textAlign: 'center',
+    marginBottom: spacing.s_8,
+  },
   error_text: {
-    fontFamily: 'HankenGrotesk_400Regular',
-    fontSize: 15,
+    fontFamily: fonts.sans,
+    fontSize: 14,
+    lineHeight: 20,
     color: colors.gray_2,
     textAlign: 'center',
+    marginBottom: spacing.s_24,
+  },
+  error_back_btn: {
+    paddingHorizontal: spacing.s_24,
+    paddingVertical: spacing.s_12,
+    borderRadius: 8,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+  },
+  error_back_label: {
+    fontFamily: fonts.sans_semibold,
+    fontSize: 15,
+    color: '#FFFFFF',
   },
 });
