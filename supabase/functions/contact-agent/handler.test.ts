@@ -37,7 +37,14 @@
 
 import { assertEquals, assertExists } from "@std/assert";
 import { make_contact_agent_handler } from "./handler.ts";
-import type { CallerVerifier, CallerVerifyResult, ContactAgentDeps } from "./types.ts";
+import type {
+  CallerVerifier,
+  CallerVerifyResult,
+  ContactAgentDeps,
+  PropertyResolver,
+  PropertyResolveResult,
+  PropertyWithAgent,
+} from "./types.ts";
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 
@@ -96,12 +103,79 @@ function method_request(method: string): Request {
   return new Request("http://localhost/contact-agent", { method });
 }
 
+// ── 14.3 — Constantes de agente ──────────────────────────────────────────────
+
+const AGENT_ID = "00000000-0000-0000-0000-000000000002";
+const AGENT_PHONE = "+5215512345678";
+
+// ── 14.3 — PropertyWithAgent factory ─────────────────────────────────────────
+
+function make_property_with_agent(
+  overrides: Partial<PropertyWithAgent> = {},
+): PropertyWithAgent {
+  return {
+    id: PROPERTY_ID,
+    address: "Av. Insurgentes Sur 1234, Col. Del Valle, CDMX",
+    price: 2_000_000, // MXN $2,000,000.00
+    status: "active",
+    owner_user_id: USER_ID,
+    agent_id: AGENT_ID,
+    agent_phone: AGENT_PHONE,
+    ...overrides,
+  };
+}
+
+// ── 14.3 — FakePropertyResolver factories ────────────────────────────────────
+
+interface FakePropertyResolver extends PropertyResolver {
+  calls: string[];
+}
+
+function resolver_property_found(
+  property: PropertyWithAgent = make_property_with_agent(),
+): FakePropertyResolver {
+  return {
+    calls: [],
+    resolve(propertyId: string): Promise<PropertyResolveResult> {
+      this.calls.push(propertyId);
+      return Promise.resolve({ ok: true, data: property });
+    },
+  } as FakePropertyResolver;
+}
+
+function resolver_property_not_found(): FakePropertyResolver {
+  return {
+    calls: [],
+    resolve(propertyId: string): Promise<PropertyResolveResult> {
+      this.calls.push(propertyId);
+      return Promise.resolve({ ok: false, error_code: "PROPERTY_NOT_FOUND" });
+    },
+  } as FakePropertyResolver;
+}
+
+function resolver_db_error(): FakePropertyResolver {
+  return {
+    calls: [],
+    resolve(propertyId: string): Promise<PropertyResolveResult> {
+      this.calls.push(propertyId);
+      return Promise.resolve({ ok: false, error_code: "DB_ERROR" });
+    },
+  } as FakePropertyResolver;
+}
+
 // ── Factory helper ────────────────────────────────────────────────────────────
+//
+// Segundo parámetro (14.3+): propertyResolver con default happy → los 21 tests de
+// 14.2 no necesitan cambiarse (el handler aún no llama al resolver en el stub).
 
 function make_handler(
   verifier: CallerVerifier = verifier_ok(),
+  resolver: PropertyResolver = resolver_property_found(),
 ): (req: Request) => Promise<Response> {
-  const deps: ContactAgentDeps = { callerVerifier: verifier };
+  const deps: ContactAgentDeps = {
+    callerVerifier: verifier,
+    propertyResolver: resolver,
+  };
   return make_contact_agent_handler(deps);
 }
 
@@ -304,4 +378,159 @@ Deno.test("respuesta_400_tiene_forma_error_code_message", async () => {
   assertExists(body.error, "respuesta 400 debe contener 'error'");
   assertEquals(typeof body.error.code, "string", "error.code debe ser string");
   assertEquals(typeof body.error.message, "string", "error.message debe ser string");
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TESTS 14.3 — Property + Agent retrieval con validación
+//
+// EDGE CASES:
+// ### Happy path
+// - Resolver llamado exactamente una vez con el propertyId del input
+// ### Propiedad no encontrada → 404 NOT_FOUND
+// - Resolver devuelve PROPERTY_NOT_FOUND → 404
+// - body.error.code === "NOT_FOUND"
+// ### Propiedad inactiva → 400 INVALID_PROPERTY_STATE
+// - status 'draft' → 400
+// - status 'paused' → 400
+// - status 'closed' → 400
+// - body.error.code === "INVALID_PROPERTY_STATE"
+// ### Agente sin teléfono → 400 AGENT_PHONE_MISSING (invariante de contactabilidad)
+// - agent_phone NULL → 400
+// - agent_phone cadena vacía → 400
+// - body.error.code === "AGENT_PHONE_MISSING"
+// ### Boundary / error
+// - Resolver devuelve DB_ERROR → 500
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ── Happy path 14.3 ──────────────────────────────────────────────────────────
+
+Deno.test("happy_14_3_resolver_llamado_con_property_id_correcto", async () => {
+  // El handler debe pasar el propertyId del input al resolver, no otro valor.
+  // En RED: el handler aún no llama al resolver → resolver.calls.length === 0 → FALLA.
+  const resolver = resolver_property_found(make_property_with_agent());
+  const h = make_handler(verifier_ok(), resolver);
+  await h(post_auth(PAYLOAD_VALIDO));
+  assertEquals(
+    resolver.calls.length,
+    1,
+    "propertyResolver.resolve() debe llamarse exactamente una vez en happy path",
+  );
+  assertEquals(
+    resolver.calls[0],
+    PROPERTY_ID,
+    "propertyResolver.resolve() debe recibir el propertyId exacto del input",
+  );
+});
+
+// ── Propiedad no encontrada → 404 NOT_FOUND ──────────────────────────────────
+
+Deno.test("propiedad_no_encontrada_retorna_404", async () => {
+  // Resolver devuelve PROPERTY_NOT_FOUND → handler debe responder 404.
+  // En RED: handler devuelve 200 (placeholder) → FALLA.
+  const h = make_handler(verifier_ok(), resolver_property_not_found());
+  const res = await h(post_auth(PAYLOAD_VALIDO));
+  assertEquals(res.status, 404, "propiedad inexistente debe devolver 404");
+});
+
+Deno.test("propiedad_no_encontrada_body_code_not_found", async () => {
+  // El cuerpo del 404 debe incluir error.code === "NOT_FOUND".
+  // En RED: handler devuelve { ok: true } → FALLA al buscar body.error.
+  const h = make_handler(verifier_ok(), resolver_property_not_found());
+  const res = await h(post_auth(PAYLOAD_VALIDO));
+  const body = await res.json();
+  assertExists(body.error, "respuesta de propiedad no encontrada debe tener campo 'error'");
+  assertEquals(
+    body.error.code,
+    "NOT_FOUND",
+    "error.code debe ser 'NOT_FOUND' para propiedad inexistente",
+  );
+  assertEquals(typeof body.error.message, "string", "error.message debe ser string");
+});
+
+// ── Propiedad inactiva → 400 INVALID_PROPERTY_STATE ──────────────────────────
+
+Deno.test("propiedad_status_draft_retorna_400_invalid_property_state", async () => {
+  // Una propiedad en borrador no puede ser contactada.
+  // En RED: handler devuelve 200 (no valida status) → FALLA.
+  const prop = make_property_with_agent({ status: "draft" });
+  const h = make_handler(verifier_ok(), resolver_property_found(prop));
+  const res = await h(post_auth(PAYLOAD_VALIDO));
+  assertEquals(res.status, 400, "propiedad 'draft' debe devolver 400");
+});
+
+Deno.test("propiedad_status_paused_retorna_400_invalid_property_state", async () => {
+  // Propiedad pausada por el agente — no contactable.
+  const prop = make_property_with_agent({ status: "paused" });
+  const h = make_handler(verifier_ok(), resolver_property_found(prop));
+  const res = await h(post_auth(PAYLOAD_VALIDO));
+  assertEquals(res.status, 400, "propiedad 'paused' debe devolver 400");
+});
+
+Deno.test("propiedad_status_closed_retorna_400_invalid_property_state", async () => {
+  // Propiedad cerrada (rentada/vendida/retirada) — no contactable.
+  const prop = make_property_with_agent({ status: "closed" });
+  const h = make_handler(verifier_ok(), resolver_property_found(prop));
+  const res = await h(post_auth(PAYLOAD_VALIDO));
+  assertEquals(res.status, 400, "propiedad 'closed' debe devolver 400");
+});
+
+Deno.test("propiedad_inactiva_body_code_invalid_property_state", async () => {
+  // El cuerpo del 400 por propiedad inactiva debe identificar la razón.
+  // En RED: handler devuelve { ok: true } → FALLA.
+  const prop = make_property_with_agent({ status: "paused" });
+  const h = make_handler(verifier_ok(), resolver_property_found(prop));
+  const res = await h(post_auth(PAYLOAD_VALIDO));
+  const body = await res.json();
+  assertExists(body.error, "respuesta de propiedad inactiva debe tener campo 'error'");
+  assertEquals(
+    body.error.code,
+    "INVALID_PROPERTY_STATE",
+    "error.code debe ser 'INVALID_PROPERTY_STATE' para propiedad no active",
+  );
+  assertEquals(typeof body.error.message, "string", "error.message debe ser string");
+});
+
+// ── Agente sin teléfono → 400 AGENT_PHONE_MISSING ────────────────────────────
+
+Deno.test("agente_phone_null_retorna_400_agent_phone_missing", async () => {
+  // Agente sin número registrado → no se puede abrir WhatsApp → no se puede contactar.
+  // En RED: handler devuelve 200 (no valida phone) → FALLA.
+  const prop = make_property_with_agent({ agent_phone: null });
+  const h = make_handler(verifier_ok(), resolver_property_found(prop));
+  const res = await h(post_auth(PAYLOAD_VALIDO));
+  assertEquals(res.status, 400, "agente sin phone (null) debe devolver 400");
+});
+
+Deno.test("agente_phone_cadena_vacia_retorna_400_agent_phone_missing", async () => {
+  // Cadena vacía también es inválida — el deep link de WhatsApp fallaría.
+  const prop = make_property_with_agent({ agent_phone: "" });
+  const h = make_handler(verifier_ok(), resolver_property_found(prop));
+  const res = await h(post_auth(PAYLOAD_VALIDO));
+  assertEquals(res.status, 400, "agente con phone vacío debe devolver 400");
+});
+
+Deno.test("agente_sin_phone_body_code_agent_phone_missing", async () => {
+  // El cuerpo del 400 por ausencia de teléfono debe ser específico.
+  // En RED: handler devuelve { ok: true } → FALLA.
+  const prop = make_property_with_agent({ agent_phone: null });
+  const h = make_handler(verifier_ok(), resolver_property_found(prop));
+  const res = await h(post_auth(PAYLOAD_VALIDO));
+  const body = await res.json();
+  assertExists(body.error, "respuesta de agente sin phone debe tener campo 'error'");
+  assertEquals(
+    body.error.code,
+    "AGENT_PHONE_MISSING",
+    "error.code debe ser 'AGENT_PHONE_MISSING' cuando el agente no tiene teléfono",
+  );
+  assertEquals(typeof body.error.message, "string", "error.message debe ser string");
+});
+
+// ── Boundary: DB_ERROR → 500 ──────────────────────────────────────────────────
+
+Deno.test("resolver_db_error_retorna_500", async () => {
+  // Falla de infraestructura en el resolver → handler debe propagar 500.
+  // En RED: handler devuelve 200 (no maneja DB_ERROR) → FALLA.
+  const h = make_handler(verifier_ok(), resolver_db_error());
+  const res = await h(post_auth(PAYLOAD_VALIDO));
+  assertEquals(res.status, 500, "error de DB en el resolver debe devolver 500");
 });
