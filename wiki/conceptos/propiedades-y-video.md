@@ -2,7 +2,7 @@
 tipo: concepto
 dominio: producto
 estado: vivo
-fuentes: [docs/PRD.md §12-13, docs/PRD-MVP-demo.md, .taskmaster (tareas #8, #10, #17, #21)]
+fuentes: [docs/PRD.md §12-13, docs/PRD-MVP-demo.md, .taskmaster (tareas #8, #10, #17, #21, #27)]
 codigo: [supabase/migrations/20260604000005_properties_and_videos.sql, supabase/migrations/20260604000011_storage_property_videos.sql, supabase/migrations/20260604000012_property_videos_ready_requires_storage.sql, supabase/migrations/20260625000001_publish_property_rpc.sql, supabase/functions/publish-property/, supabase/functions/update-property-status/, supabase/functions/mint-video-url/, supabase/functions/_shared/clients.ts (make_video_url_minter), supabase/functions/_shared/video_url_minter.test.ts, supabase/tests/01_constraints_test.sql, supabase/tests/03_storage_test.sql, supabase/tests/06_publish_property_rpc_test.sql, mobile/src/features/publish/, mobile/app/(protected)/profile/my-listings.tsx, mobile/src/features/property-detail/, mobile/app/(protected)/property/[id].tsx]
 actualizado: 2026-06-29
 ---
@@ -49,6 +49,7 @@ Pantalla `mobile/app/(protected)/profile/my-listings.tsx` (Stack **bajo `profile
 - Video en la demo: **subida real → Supabase Storage** (sin transcoding), bucket `property-videos`. La columna de ruta de Storage (`storage_path`) ya existe (migración 0011). `cloudflare_uid` queda como ref legacy/futuro (coexisten; cada uno único cuando no es nulo).
 - Validación de publicación en **Edge Function** (`supabase/functions/publish-property/`, #8), **no** en cliente (el cliente valida UX con `validate_step1/2/3` pero la EF revalida + aplica RLS/rol).
 - ⚠️ **Gotcha PostGIS + `SECURITY DEFINER` (#8):** en Supabase, PostGIS (`geography`, `ST_Point`, `ST_SetSRID`) vive en el schema **`extensions`**, no en `public`. Una función `SECURITY DEFINER set search_path = public` falla con `42704 type "geography" does not exist`. Hay que **incluir `extensions` en el search_path y calificar** (`extensions.ST_SetSRID(extensions.ST_Point(lng,lat),4326)::extensions.geography`, como `seed.sql`). Bug que se escapó de los tests porque corrieron con el RPC **mockeado** (Deno) y pgTAP no se ejecutó contra PostGIS real — solo apareció contra el remoto. Lección: las funciones con PostGIS necesitan test contra una BD real, no solo mock.
+- ⚠️ **Gotcha geography al LEER (PostgREST → EWKB hex, #27):** un `select` normal de la columna `location` **NO** devuelve WKT `POINT(lng lat)` sino **EWKB hex little-endian** (`0101000020E6100000…` = byte orden · tipo+flags · SRID 4326 · X/lng double · Y/lat double). Descubierto al probar #10 en emulador: el mapa nunca aparecía porque `parse_location` solo reconocía WKT → `null` → mapa oculto. **Fix:** `parse_location` (`mobile/src/features/property-detail/utils/parseLocation.ts`) ahora **decodifica EWKB hex** (DataView + `getFloat64` LE) además de WKT; **lng (X) antes que lat (Y)** sigue siendo crítico (invertir = bug silencioso). Alternativa no usada: castear en la query con `ST_AsText(location)` (requiere RPC/vista; el parse cliente evita backend). 18 tests.
 
 ## Detalle exhaustivo
 - `docs/PRD.md` §12-13 · migración `0005` · [[db-schema-map]]
