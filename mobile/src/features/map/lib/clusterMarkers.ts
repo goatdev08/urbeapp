@@ -53,14 +53,72 @@ export type ClusterOptions = {
 };
 
 // ---------------------------------------------------------------------------
-// STUB — fase RED: la implementación real va en subtarea 11.3 (GREEN).
-// Lanza para que los tests fallen por excepción significativa, no por import.
+// Implementación — fase GREEN (11.3).
+// Algoritmo: grid absoluto anclado en (0,0), sin dependencias externas.
+// ponytail: función pura, O(n) sobre el input.
 // ---------------------------------------------------------------------------
 
 export function cluster_properties(
-  _properties: MapProperty[],
-  _region: Region,
-  _options?: ClusterOptions,
+  properties: MapProperty[],
+  region: Region,
+  options?: ClusterOptions,
 ): ClusterResult[] {
-  throw new Error('not_implemented');
+  if (properties.length === 0) return [];
+
+  // Guard: delta inválido → todas las props como points individuales, sin NaN.
+  if (region.latitudeDelta <= 0 || region.longitudeDelta <= 0) {
+    return properties.map((property) => ({ type: 'point', property }));
+  }
+
+  const divisions = options?.divisions ?? 8;
+  const cell_lng = region.longitudeDelta / divisions;
+  const cell_lat = region.latitudeDelta / divisions;
+
+  // Agrupar por clave de celda.
+  const cells = new Map<string, { cell_x: number; cell_y: number; members: MapProperty[] }>();
+
+  for (const prop of properties) {
+    const cell_x = Math.floor(prop.lng / cell_lng);
+    const cell_y = Math.floor(prop.lat / cell_lat);
+    const key = `${cell_x}_${cell_y}`;
+
+    const existing = cells.get(key);
+    if (existing) {
+      existing.members.push(prop);
+    } else {
+      cells.set(key, { cell_x, cell_y, members: [prop] });
+    }
+  }
+
+  // Construir resultados ordenados por clave de celda (determinista).
+  const sorted_keys = Array.from(cells.keys()).sort((a, b) => {
+    const [ax, ay] = a.split('_').map(Number) as [number, number];
+    const [bx, by] = b.split('_').map(Number) as [number, number];
+    return ax !== bx ? ax - bx : ay - by;
+  });
+
+  const results: ClusterResult[] = [];
+
+  for (const key of sorted_keys) {
+    const cell = cells.get(key)!;
+    if (cell.members.length === 1) {
+      results.push({ type: 'point', property: cell.members[0]! });
+    } else {
+      const count = cell.members.length;
+      const lat_sum = cell.members.reduce((sum, p) => sum + p.lat, 0);
+      const lng_sum = cell.members.reduce((sum, p) => sum + p.lng, 0);
+      results.push({
+        type: 'cluster',
+        cluster: {
+          id: `cluster_${cell.cell_x}_${cell.cell_y}`,
+          latitude: lat_sum / count,
+          longitude: lng_sum / count,
+          count,
+          properties: cell.members,
+        },
+      });
+    }
+  }
+
+  return results;
 }
