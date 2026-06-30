@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # TDD guard (PreToolUse) — versión PRAGMÁTICA para Urbea.
-# Bloquea editar lógica CRÍTICA (supabase/functions, supabase/migrations) antes de que
-# existan sus tests, SOLO cuando hay una subtarea crítica activa.
+# Bloquea editar lógica CRÍTICA antes de que existan sus tests, SOLO cuando hay una
+# subtarea crítica activa. Las rutas CRÍTICAS = regla determinista por path (CLAUDE.md §5):
+# supabase/functions, supabase/migrations, y lógica móvil pura (lib/, hooks/, utils/, validation).
 # Sentinel: .taskmaster/.current-red (lo crea /tm-tarea al abrir una subtarea CRÍTICA;
-# se borra al cerrarla). UI (mobile/**) nunca se bloquea.
+# se borra al cerrarla). La UI de presentación (components/**, pantallas, estilos) nunca se bloquea.
 
 set -uo pipefail
 
@@ -19,10 +20,15 @@ case "$TOOL_NAME" in
 esac
 [ -z "$FILE_PATH" ] && exit 0
 
-# Solo guarda rutas CRÍTICAS. Todo lo demás (mobile/**, docs, wiki, config) pasa.
+# Solo guarda rutas CRÍTICAS (regla determinista por path = CLAUDE.md §5).
+# Todo lo demás (mobile presentación, docs, wiki, config) pasa.
 case "$FILE_PATH" in
-  */supabase/functions/*|supabase/functions/*) ;;
-  */supabase/migrations/*|supabase/migrations/*) ;;
+  */supabase/functions/*|supabase/functions/*) ;;          # Edge Functions
+  */supabase/migrations/*|supabase/migrations/*) ;;        # migraciones/RLS/constraints
+  */mobile/*/lib/*|mobile/*/lib/*) ;;                       # lógica móvil pura
+  */mobile/*/hooks/*|mobile/*/hooks/*) ;;
+  */mobile/*/utils/*|mobile/*/utils/*) ;;
+  */validation.ts|*/validation.tsx) ;;                     # validación (móvil o EF _shared)
   *) exit 0 ;;
 esac
 
