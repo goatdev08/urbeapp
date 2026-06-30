@@ -42,6 +42,7 @@ export interface PropertyWithAgent {
   owner_user_id: string;
   agent_id: string; // = owner_user_id (alias explícito; el resolver los normaliza)
   agent_phone: string | null; // NULL si el agente no tiene teléfono registrado
+  video_id?: string; // UUID del property_video principal; undefined si sin video
 }
 
 // ── PropertyResolveResult ─────────────────────────────────────────────────────
@@ -121,10 +122,58 @@ export interface LeadRepo {
   insert_lead(agent_id: string, user_id: string): Promise<InsertLeadResult>;
 }
 
+// ── OriginRepo ─────────────────────────────────────────────────────────────────
+//
+// Puerto DI para operaciones sobre lead_origin_properties y properties.contact_count.
+//
+// INVARIANTE DEL CONTADOR (§14.5):
+//   contact_count se incrementa SOLO cuando se inserta una fila NUEVA en
+//   lead_origin_properties (inserted=true). Si el ON CONFLICT DO NOTHING es un no-op
+//   (par lead_id+property_id ya existía — índice lead_origin_lead_property_unique),
+//   el contador NO se incrementa. Esto mide contactos únicos lead↔property, no taps.
+//
+// Flujo:
+//   1. insert_origin → si inserted=true → increment_contact_count(property_id)
+//   2. insert_origin → si inserted=false → NO llamar increment_contact_count
+
+export type InsertOriginResult =
+  | { ok: true; inserted: boolean } // inserted=true → fila nueva; inserted=false → no-op
+  | { ok: false; error_code: "DB_ERROR" };
+
+export type IncrementContactCountResult =
+  | { ok: true }
+  | { ok: false; error_code: "DB_ERROR" };
+
+export interface OriginRepo {
+  /**
+   * INSERT INTO lead_origin_properties
+   *   (lead_id, property_id, property_video_id, contacted_at)
+   * VALUES (?, ?, ?, now())
+   * ON CONFLICT (lead_id, property_id) DO NOTHING   -- índice lead_origin_lead_property_unique
+   * RETURNING lead_id
+   *
+   * Si RETURNING devuelve fila → { ok: true, inserted: true }
+   * Si DO NOTHING (conflicto) → { ok: true, inserted: false }
+   */
+  insert_origin(
+    lead_id: string,
+    property_id: string,
+    property_video_id?: string,
+  ): Promise<InsertOriginResult>;
+
+  /**
+   * UPDATE properties SET contact_count = contact_count + 1 WHERE id = ?
+   *
+   * Solo debe llamarse cuando insert_origin devuelve inserted: true.
+   */
+  increment_contact_count(property_id: string): Promise<IncrementContactCountResult>;
+}
+
 // ── Deps inyectables del handler ───────────────────────────────────────────────
 
 export interface ContactAgentDeps {
   callerVerifier: CallerVerifier;
   propertyResolver: PropertyResolver; // 14.3: resolver de propiedad + agente dueño
   leadRepo: LeadRepo;                 // 14.4: creación idempotente del lead
+  originRepo: OriginRepo;             // 14.5: lead_origin_properties + contact_count
 }

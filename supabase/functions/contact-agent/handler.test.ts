@@ -42,9 +42,12 @@ import type {
   CallerVerifyResult,
   ContactAgentDeps,
   FindActiveLeadResult,
+  IncrementContactCountResult,
   InsertLeadResult,
+  InsertOriginResult,
   LeadRecord,
   LeadRepo,
+  OriginRepo,
   PropertyResolver,
   PropertyResolveResult,
   PropertyWithAgent,
@@ -323,20 +326,58 @@ function verifier_caller(): FakeCallerVerifier {
   return verifier_ok(CALLER_ID);
 }
 
+// ── 14.5 — Constante de video ─────────────────────────────────────────────────
+
+const VIDEO_ID = "99999999-9999-9999-9999-999999999999";
+
+// ── 14.5 — FakeOriginRepo ─────────────────────────────────────────────────────
+//
+// Puerto DI para insert_origin + increment_contact_count.
+// insert_calls: [lead_id, property_id, property_video_id | undefined]
+// increment_calls: property_id[]
+
+interface FakeOriginRepo extends OriginRepo {
+  insert_calls: [string, string, string | undefined][];
+  increment_calls: string[];
+}
+
+// No-op: insert devuelve no-op (no fila nueva); increment accesible pero no debería llamarse.
+// Se usa como default en make_handler para que los 47 tests anteriores no cambien.
+function origin_repo_noop(): FakeOriginRepo {
+  return {
+    insert_calls: [],
+    increment_calls: [],
+    insert_origin(
+      lead_id: string,
+      property_id: string,
+      property_video_id?: string,
+    ): Promise<InsertOriginResult> {
+      this.insert_calls.push([lead_id, property_id, property_video_id]);
+      return Promise.resolve({ ok: true, inserted: false });
+    },
+    increment_contact_count(property_id: string): Promise<IncrementContactCountResult> {
+      this.increment_calls.push(property_id);
+      return Promise.resolve({ ok: true });
+    },
+  } as FakeOriginRepo;
+}
+
 // ── Factory helper ────────────────────────────────────────────────────────────
 //
-// Tercer parámetro (14.4+): leadRepo con default noop → los 32 tests de
-// 14.2/14.3 no necesitan cambiarse (el handler aún no llama al repo en el stub).
+// Cuarto parámetro (14.5+): originRepo con default noop → los 47 tests de
+// 14.2/14.3/14.4 no necesitan cambiarse.
 
 function make_handler(
   verifier: CallerVerifier = verifier_ok(),
   resolver: PropertyResolver = resolver_property_found(),
   lead_repo: LeadRepo = lead_repo_noop(),
+  origin_repo: OriginRepo = origin_repo_noop(),
 ): (req: Request) => Promise<Response> {
   const deps: ContactAgentDeps = {
     callerVerifier: verifier,
     propertyResolver: resolver,
     leadRepo: lead_repo,
+    originRepo: origin_repo,
   };
   return make_contact_agent_handler(deps);
 }
@@ -344,6 +385,101 @@ function make_handler(
 // ── Payload base ──────────────────────────────────────────────────────────────
 
 const PAYLOAD_VALIDO = { propertyId: PROPERTY_ID };
+
+// ── 14.5 — Más factories OriginRepo ──────────────────────────────────────────
+
+// insert_origin devuelve fila nueva (inserted=true); increment ok.
+function origin_repo_insert_new(): FakeOriginRepo {
+  return {
+    insert_calls: [],
+    increment_calls: [],
+    insert_origin(
+      lead_id: string,
+      property_id: string,
+      property_video_id?: string,
+    ): Promise<InsertOriginResult> {
+      this.insert_calls.push([lead_id, property_id, property_video_id]);
+      return Promise.resolve({ ok: true, inserted: true });
+    },
+    increment_contact_count(property_id: string): Promise<IncrementContactCountResult> {
+      this.increment_calls.push(property_id);
+      return Promise.resolve({ ok: true });
+    },
+  } as FakeOriginRepo;
+}
+
+// insert_origin devuelve no-op (conflicto — ON CONFLICT DO NOTHING, inserted=false).
+// increment no debería llamarse; si se llama, lo registra para aserción.
+function origin_repo_no_op(): FakeOriginRepo {
+  return {
+    insert_calls: [],
+    increment_calls: [],
+    insert_origin(
+      lead_id: string,
+      property_id: string,
+      property_video_id?: string,
+    ): Promise<InsertOriginResult> {
+      this.insert_calls.push([lead_id, property_id, property_video_id]);
+      return Promise.resolve({ ok: true, inserted: false });
+    },
+    increment_contact_count(property_id: string): Promise<IncrementContactCountResult> {
+      this.increment_calls.push(property_id);
+      return Promise.resolve({ ok: true });
+    },
+  } as FakeOriginRepo;
+}
+
+// insert_origin falla con DB_ERROR → handler debe devolver 500.
+function origin_repo_insert_db_error(): FakeOriginRepo {
+  return {
+    insert_calls: [],
+    increment_calls: [],
+    insert_origin(
+      lead_id: string,
+      property_id: string,
+      property_video_id?: string,
+    ): Promise<InsertOriginResult> {
+      this.insert_calls.push([lead_id, property_id, property_video_id]);
+      return Promise.resolve({ ok: false, error_code: "DB_ERROR" });
+    },
+    increment_contact_count(property_id: string): Promise<IncrementContactCountResult> {
+      this.increment_calls.push(property_id);
+      return Promise.resolve({ ok: true });
+    },
+  } as FakeOriginRepo;
+}
+
+// insert_origin ok (fila nueva), pero increment falla con DB_ERROR → 500.
+function origin_repo_increment_db_error(): FakeOriginRepo {
+  return {
+    insert_calls: [],
+    increment_calls: [],
+    insert_origin(
+      lead_id: string,
+      property_id: string,
+      property_video_id?: string,
+    ): Promise<InsertOriginResult> {
+      this.insert_calls.push([lead_id, property_id, property_video_id]);
+      return Promise.resolve({ ok: true, inserted: true });
+    },
+    increment_contact_count(property_id: string): Promise<IncrementContactCountResult> {
+      this.increment_calls.push(property_id);
+      return Promise.resolve({ ok: false, error_code: "DB_ERROR" });
+    },
+  } as FakeOriginRepo;
+}
+
+// ── 14.5 — PropertyResolver con video_id ─────────────────────────────────────
+
+function resolver_property_owner_with_video(): FakePropertyResolver {
+  return resolver_property_found(
+    make_property_with_agent({
+      owner_user_id: AGENT_ID,
+      agent_id: AGENT_ID,
+      video_id: VIDEO_ID,
+    }),
+  );
+}
 
 // ── Happy path ────────────────────────────────────────────────────────────────
 
@@ -941,4 +1077,264 @@ Deno.test("lead_14_4_insert_db_error_retorna_500", async () => {
   );
   const res = await h(post_auth(PAYLOAD_VALIDO));
   assertEquals(res.status, 500, "DB_ERROR en insert_lead debe devolver 500");
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TESTS 14.5 — Insert lead_origin_properties + increment contact_count
+//
+// EDGE CASES (RED):
+//
+// ### Happy path (primer contacto — origin nuevo)
+// - insert_origin llamado exactamente una vez en el primer contacto
+// - insert_origin recibe lead_id del lead resuelto (LEAD_ID_NUEVO, del leadRepo)
+// - insert_origin recibe property_id igual al input (PROPERTY_ID)
+// - insert_origin retorna inserted=true → increment_contact_count llamado exactamente 1 vez
+// - increment_contact_count recibe property_id correcto (PROPERTY_ID del input)
+//
+// ### Idempotencia — segundo contacto misma (lead, property)
+// - insert_origin retorna inserted=false (ON CONFLICT DO NOTHING → no-op) →
+//   increment_contact_count NO llamado (INVARIANTE: contar contactos únicos lead↔property)
+//
+// ### Lead existente + origin nuevo (mismo buscador, propiedad distinta)
+// - Lead ya existe (find_active_lead retorna found=true) + insert_origin devuelve inserted=true
+//   → increment_contact_count SÍ llamado (la propiedad es nueva para este lead)
+//
+// ### property_video_id
+// - Propiedad con video_id: el campo se pasa como tercer arg a insert_origin (VIDEO_ID)
+// - Propiedad sin video_id (undefined): undefined pasado a insert_origin (campo opcional)
+//
+// ### Boundary / error
+// - DB_ERROR en insert_origin → 500 (falla de infraestructura antes del contador)
+// - DB_ERROR en increment_contact_count → 500 (falla de infraestructura al incrementar)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ── Happy path 14.5 — primer contacto, origin nuevo ──────────────────────────
+
+Deno.test("origin_14_5_insert_origin_llamado_exactamente_una_vez_en_primer_contacto", async () => {
+  // El handler debe llamar insert_origin exactamente una vez por request.
+  // RED: handler no llama originRepo → insert_calls.length === 0 (no 1) → FALLA.
+  const origin = origin_repo_insert_new();
+  const h = make_handler(
+    verifier_caller(),
+    resolver_property_owner(),
+    lead_repo_not_found_then_inserted(),
+    origin,
+  );
+  await h(post_auth(PAYLOAD_VALIDO));
+  assertEquals(
+    origin.insert_calls.length,
+    1,
+    "insert_origin debe llamarse exactamente una vez por request",
+  );
+});
+
+Deno.test("origin_14_5_insert_origin_recibe_lead_id_del_lead_resuelto", async () => {
+  // El primer argumento de insert_origin debe ser el lead.id resuelto por leadRepo.
+  // En primer contacto, lead_repo_not_found_then_inserted devuelve lead.id = LEAD_ID_NUEVO.
+  // RED: handler no llama originRepo → insert_calls vacío → primera aserción FALLA.
+  const origin = origin_repo_insert_new();
+  const h = make_handler(
+    verifier_caller(),
+    resolver_property_owner(),
+    lead_repo_not_found_then_inserted(),
+    origin,
+  );
+  await h(post_auth(PAYLOAD_VALIDO));
+  assertEquals(origin.insert_calls.length, 1, "insert_origin debe llamarse una vez");
+  assertEquals(
+    origin.insert_calls[0][0],
+    LEAD_ID_NUEVO,
+    "primer arg de insert_origin debe ser lead.id del lead resuelto (LEAD_ID_NUEVO)",
+  );
+});
+
+Deno.test("origin_14_5_insert_origin_recibe_property_id_del_input", async () => {
+  // El segundo argumento de insert_origin debe ser el propertyId del input validado.
+  // RED: handler no llama originRepo → insert_calls vacío → primera aserción FALLA.
+  const origin = origin_repo_insert_new();
+  const h = make_handler(
+    verifier_caller(),
+    resolver_property_owner(),
+    lead_repo_not_found_then_inserted(),
+    origin,
+  );
+  await h(post_auth(PAYLOAD_VALIDO));
+  assertEquals(origin.insert_calls.length, 1, "insert_origin debe llamarse una vez");
+  assertEquals(
+    origin.insert_calls[0][1],
+    PROPERTY_ID,
+    "segundo arg de insert_origin debe ser property_id del input (PROPERTY_ID)",
+  );
+});
+
+Deno.test("origin_14_5_origin_nuevo_llama_increment_contact_count", async () => {
+  // Cuando insert_origin devuelve inserted=true (fila nueva), el handler debe
+  // llamar increment_contact_count exactamente una vez.
+  // RED: handler no llama originRepo → increment_calls.length === 0 (no 1) → FALLA.
+  const origin = origin_repo_insert_new();
+  const h = make_handler(
+    verifier_caller(),
+    resolver_property_owner(),
+    lead_repo_not_found_then_inserted(),
+    origin,
+  );
+  await h(post_auth(PAYLOAD_VALIDO));
+  assertEquals(
+    origin.increment_calls.length,
+    1,
+    "increment_contact_count debe llamarse exactamente una vez cuando insert_origin devuelve inserted=true",
+  );
+});
+
+Deno.test("origin_14_5_increment_llamado_con_property_id_del_input", async () => {
+  // increment_contact_count debe recibir el propertyId del input (PROPERTY_ID).
+  // RED: handler no llama originRepo → increment_calls vacío → primera aserción FALLA.
+  const origin = origin_repo_insert_new();
+  const h = make_handler(
+    verifier_caller(),
+    resolver_property_owner(),
+    lead_repo_not_found_then_inserted(),
+    origin,
+  );
+  await h(post_auth(PAYLOAD_VALIDO));
+  assertEquals(origin.increment_calls.length, 1, "increment_contact_count debe llamarse una vez");
+  assertEquals(
+    origin.increment_calls[0],
+    PROPERTY_ID,
+    "increment_contact_count debe recibir el propertyId del input (PROPERTY_ID)",
+  );
+});
+
+// ── Idempotencia — segundo contacto, misma (lead, property) ──────────────────
+// INVARIANTE DEL CONTADOR: solo contar contactos únicos lead↔property.
+
+Deno.test("origin_14_5_no_op_no_llama_increment_invariante_contador", async () => {
+  // insert_origin retorna inserted=false (ON CONFLICT DO NOTHING — par ya existía) →
+  // increment_contact_count NO debe llamarse. Si se llama, se doble-contaría el mismo contacto.
+  // RED: handler no llama originRepo → increment_calls.length === 0 que es correcto,
+  //      PERO insert_calls.length también === 0 (no 1), lo que falla primero → RED significativo.
+  const origin = origin_repo_no_op();
+  const h = make_handler(
+    verifier_caller(),
+    resolver_property_owner(),
+    lead_repo_not_found_then_inserted(),
+    origin,
+  );
+  await h(post_auth(PAYLOAD_VALIDO));
+  // La primera aserción falla en RED (insert_origin no se llama aún):
+  assertEquals(
+    origin.insert_calls.length,
+    1,
+    "insert_origin debe llamarse incluso en no-op: se llama para detectar si hubo fila nueva",
+  );
+  // Si el handler implementara parcialmente y llamara insert pero no respetara inserted=false:
+  assertEquals(
+    origin.increment_calls.length,
+    0,
+    "INVARIANTE: increment_contact_count NO debe llamarse cuando insert_origin devuelve inserted=false",
+  );
+});
+
+// ── Lead existente + origin nuevo (mismo buscador, propiedad distinta) ────────
+
+Deno.test("origin_14_5_lead_existente_origin_nuevo_si_incrementa_contact_count", async () => {
+  // Escenario: usuario ya tiene lead con este agente (segunda propiedad que ve).
+  // leadRepo.find retorna lead existente (LEAD_ID_EXISTENTE).
+  // insert_origin es fila nueva (este lead nunca había contactado esta propiedad).
+  // → increment_contact_count SÍ debe llamarse (contacto único para esta propiedad).
+  // RED: handler no llama originRepo → insert_calls vacío → primera aserción FALLA.
+  const origin = origin_repo_insert_new();
+  const h = make_handler(
+    verifier_caller(),
+    resolver_property_owner(),
+    lead_repo_found_existing(), // lead ya existe (LEAD_ID_EXISTENTE)
+    origin,
+  );
+  await h(post_auth(PAYLOAD_VALIDO));
+  assertEquals(
+    origin.insert_calls.length,
+    1,
+    "insert_origin debe llamarse aunque el lead ya exista (puede ser propiedad nueva)",
+  );
+  assertEquals(
+    origin.insert_calls[0][0],
+    LEAD_ID_EXISTENTE,
+    "insert_origin debe recibir el lead.id del lead EXISTENTE (no uno nuevo)",
+  );
+  assertEquals(
+    origin.increment_calls.length,
+    1,
+    "increment_contact_count debe llamarse cuando insert_origin devuelve inserted=true (propiedad nueva para el lead existente)",
+  );
+});
+
+// ── property_video_id ─────────────────────────────────────────────────────────
+
+Deno.test("origin_14_5_property_video_id_pasado_a_insert_origin_cuando_propiedad_tiene_video", async () => {
+  // Cuando la propiedad tiene video_id, debe pasarse como 3er arg a insert_origin.
+  // La tabla lead_origin_properties.property_video_id registra de qué video surgió el contacto.
+  // RED: handler no llama originRepo → insert_calls vacío → primera aserción FALLA.
+  const origin = origin_repo_insert_new();
+  const h = make_handler(
+    verifier_caller(),
+    resolver_property_owner_with_video(), // property.video_id = VIDEO_ID
+    lead_repo_not_found_then_inserted(),
+    origin,
+  );
+  await h(post_auth(PAYLOAD_VALIDO));
+  assertEquals(origin.insert_calls.length, 1, "insert_origin debe llamarse una vez");
+  assertEquals(
+    origin.insert_calls[0][2],
+    VIDEO_ID,
+    "property_video_id (VIDEO_ID) debe pasarse como tercer arg de insert_origin cuando la propiedad tiene video",
+  );
+});
+
+Deno.test("origin_14_5_property_video_id_undefined_cuando_propiedad_sin_video", async () => {
+  // Cuando la propiedad no tiene video_id (undefined), insert_origin se llama con undefined.
+  // resolver_property_owner() NO incluye video_id → property.video_id === undefined.
+  // RED: handler no llama originRepo → insert_calls vacío → primera aserción FALLA.
+  const origin = origin_repo_insert_new();
+  const h = make_handler(
+    verifier_caller(),
+    resolver_property_owner(), // property.video_id === undefined
+    lead_repo_not_found_then_inserted(),
+    origin,
+  );
+  await h(post_auth(PAYLOAD_VALIDO));
+  assertEquals(origin.insert_calls.length, 1, "insert_origin debe llamarse una vez");
+  assertEquals(
+    origin.insert_calls[0][2],
+    undefined,
+    "property_video_id debe ser undefined cuando la propiedad no tiene video",
+  );
+});
+
+// ── Boundary / error ──────────────────────────────────────────────────────────
+
+Deno.test("origin_14_5_db_error_en_insert_origin_retorna_500", async () => {
+  // Falla de infraestructura en insert_origin → handler debe propagar 500.
+  // RED: handler no llama originRepo → retorna 200 (placeholder) → falla con 200 !== 500.
+  const h = make_handler(
+    verifier_caller(),
+    resolver_property_owner(),
+    lead_repo_not_found_then_inserted(),
+    origin_repo_insert_db_error(),
+  );
+  const res = await h(post_auth(PAYLOAD_VALIDO));
+  assertEquals(res.status, 500, "DB_ERROR en insert_origin debe devolver 500");
+});
+
+Deno.test("origin_14_5_db_error_en_increment_contact_count_retorna_500", async () => {
+  // insert_origin ok (inserted=true) pero increment_contact_count falla con DB_ERROR → 500.
+  // El handler no debe ignorar errores del incremento de contador.
+  // RED: handler no llama originRepo → retorna 200 (placeholder) → falla con 200 !== 500.
+  const h = make_handler(
+    verifier_caller(),
+    resolver_property_owner(),
+    lead_repo_not_found_then_inserted(),
+    origin_repo_increment_db_error(),
+  );
+  const res = await h(post_auth(PAYLOAD_VALIDO));
+  assertEquals(res.status, 500, "DB_ERROR en increment_contact_count debe devolver 500");
 });

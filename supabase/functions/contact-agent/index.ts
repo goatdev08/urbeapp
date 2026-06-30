@@ -11,8 +11,11 @@ import type {
   CallerVerifier,
   CallerVerifyResult,
   FindActiveLeadResult,
+  IncrementContactCountResult,
   InsertLeadResult,
+  InsertOriginResult,
   LeadRepo,
+  OriginRepo,
   PropertyResolver,
   PropertyResolveResult,
 } from "./types.ts";
@@ -41,6 +44,25 @@ const leadRepo: LeadRepo = {
   },
 };
 
-const handle = make_contact_agent_handler({ callerVerifier, propertyResolver, leadRepo });
+// ponytail: stub — se conectará al repo Postgres real en 14.5 GREEN
+const originRepo: OriginRepo = {
+  insert_origin(
+    _lead_id: string,
+    _property_id: string,
+    _property_video_id?: string,
+  ): Promise<InsertOriginResult> {
+    throw new Error("not_implemented");
+  },
+  increment_contact_count(_property_id: string): Promise<IncrementContactCountResult> {
+    throw new Error("not_implemented");
+  },
+};
+
+const handle = make_contact_agent_handler({
+  callerVerifier,
+  propertyResolver,
+  leadRepo,
+  originRepo,
+});
 
 Deno.serve((req: Request) => handle(req));
