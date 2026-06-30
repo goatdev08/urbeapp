@@ -78,8 +78,10 @@ export default function MyListingsScreen() {
   const { loading: _loading, error: _error, data, refetch } = useMyProperties();
   const listings: ListingItem[] = data ?? [];
 
-  // Acciones de mutación (17.7)
-  const { pauseProperty, unpauseProperty, closeProperty, deleteProperty } = usePropertyActions();
+  // Acciones de mutación (17.7). isWorking (#25): true mientras una mutación está
+  // en vuelo → deshabilita las acciones del menú para evitar disparos concurrentes.
+  const { pauseProperty, unpauseProperty, closeProperty, deleteProperty, isWorking } =
+    usePropertyActions();
 
   // ── Filtro de status (17.6) ──────────────────────────────────────────────
   const [active_filter, set_active_filter] = useState<FilterValue>('all');
@@ -118,6 +120,9 @@ export default function MyListingsScreen() {
    * 17.8: on_edit debe navegar al wizard con los datos del item.
    */
   const get_menu_callbacks = (item: MyProperty): PropertyActionCallbacks => ({
+    // #25: si ya hay una acción en vuelo, las filas del menú se atenúan y no
+    // disparan (corta el doble-tap por reapertura del menú).
+    disabled: isWorking,
     on_edit: () => {
       close_menu();
       // 17.8 — navega al wizard en edit mode pasando propertyId como param

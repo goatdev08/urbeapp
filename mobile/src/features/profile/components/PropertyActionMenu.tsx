@@ -45,6 +45,12 @@ export interface PropertyActionCallbacks {
   on_close: () => void;
   /** Eliminar propiedad — abre confirmación destructiva (17.7). */
   on_delete: () => void;
+  /**
+   * true mientras hay una acción asíncrona en vuelo (isWorking del hook, #25).
+   * Deshabilita y atenúa las filas de acción para evitar que reabrir el menú
+   * dispare una segunda mutación concurrente. Cancelar sigue habilitado.
+   */
+  disabled?: boolean;
 }
 
 export interface PropertyActionMenuProps {
@@ -102,6 +108,7 @@ export function PropertyActionMenu({
   if (!item) return null;
 
   const actions = get_actions(item.status, callbacks);
+  const is_disabled = callbacks.disabled ?? false;
 
   /** Cierra el modal ANTES de invocar el handler para evitar flickering. */
   const handle_action = (handler: () => void) => {
@@ -133,13 +140,16 @@ export function PropertyActionMenu({
             <Pressable
               key={action.key}
               onPress={() => handle_action(action.handler)}
+              disabled={is_disabled}
               style={({ pressed }) => [
                 styles.action_row,
                 index < actions.length - 1 && styles.action_row_border,
-                pressed && styles.action_row_pressed,
+                pressed && !is_disabled && styles.action_row_pressed,
+                is_disabled && styles.action_row_disabled,
               ]}
               accessibilityRole="button"
               accessibilityLabel={action.label}
+              accessibilityState={{ disabled: is_disabled }}
             >
               <Text
                 style={[
@@ -217,6 +227,10 @@ const styles = StyleSheet.create({
   },
   action_row_pressed: {
     backgroundColor: colors.paper_2,
+  },
+  /** Atenúa la fila mientras hay una acción en vuelo (#25). */
+  action_row_disabled: {
+    opacity: 0.4,
   },
 
   action_label: {
