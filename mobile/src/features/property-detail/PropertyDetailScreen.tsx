@@ -28,7 +28,6 @@
 
 import React from 'react';
 import {
-  Linking,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -49,6 +48,7 @@ import { AgentCard } from './components/AgentCard';
 import { PropertyMap } from './components/PropertyMap';
 import { ActionButtons } from './components/ActionButtons';
 import { DetailSkeleton } from './components/DetailSkeleton';
+import { open_whatsapp_ef } from './utils/whatsapp';
 
 // Espacio inferior reservado para el CTA sticky:
 // PrimaryButton height (54) + paddingTop (8) + paddingBottom (16) + margen visual (8)
@@ -190,12 +190,7 @@ export function PropertyDetailScreen(): React.JSX.Element {
             propertyId={property_id}
             agentName={data.agent.full_name ?? 'Agente'}
             onContactReady={(phone, message) => {
-              // ponytail: stub mínimo — deep link real + fallback + Alert de
-              // confirmación ("Contacto enviado") los implementa 14.7.
-              const clean = phone.replace(/\D/g, '');
-              void Linking.openURL(
-                `https://wa.me/${clean}?text=${encodeURIComponent(message)}`,
-              );
+              void open_whatsapp_ef(phone, message);
             }}
           />
         </View>
