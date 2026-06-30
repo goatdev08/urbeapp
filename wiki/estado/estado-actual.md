@@ -1,11 +1,15 @@
 ---
 tipo: estado
-actualizado: 2026-06-29
+actualizado: 2026-06-30
 ---
 
 # Estado actual
 
 > Narrativa de "dónde estamos hoy". El **qué sigue / qué está hecho** vive en **Taskmaster** (`task-master list`), no aquí.
+
+## Hoy (2026-06-30)
+
+- **Contacto WhatsApp + lead CRM automático (#14, vivo):** CTA sticky en el **detalle** (`ContactAgentButton`) llama la Edge Function **`contact-agent`** (desplegada a `urbea-app`), que crea/recupera el lead + `lead_origin_properties` + incrementa `contact_count` **idempotente** (solo contactos únicos, no taps), corta **self-contact** (400) y devuelve `{success,phone,message,lead_id,property_id}`; el cliente abre el **deep link** WhatsApp (fallback `wa.me`) y confirma con `Alert` nativo. El **handler se construyó por DI, una subtarea crítica por capa** (5 críticas TDD+guardian, **79 Deno tests**): skeleton/auth → retrieval → lead idempotente → origin+counter → mensaje. No-críticas: seed phone de agentes demo (migración `20260630000001`), wiring de los 4 resolvers reales en `index.ts` + deploy + smoke E2E (401/400/404 + self-contact OK; **happy-path de lead NO testeable E2E** — solo existe el agente demo y sus propiedades son propias → cubierto por unit tests), `ContactAgentButton`, deep link. ⚠️ **Para probar el write path E2E falta sembrar un 2º agente con propiedad activa.** Gotchas: `increment_contact_count` read-then-write (`// ponytail:` RPC para prod), 2º camino WhatsApp sin CRM en `AgentCard`. Rama `tarea/14-whatsapp-lead`. Ver [[crm-leads]], [[mapa-codebase]].
 
 ## Hoy (2026-06-29)
 
