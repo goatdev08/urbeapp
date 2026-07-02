@@ -13,7 +13,7 @@
  * Se añade cursor-based loading si el dato lo justifica (tarea futura).
  */
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -22,12 +22,10 @@ import {
   Text,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
 
 import { colors, spacing, type_scale } from '@/theme/theme';
-import { PropertyGridCard } from '@/components/PropertyGridCard';
-import { EmptyState } from '@/features/profile/components/EmptyState';
 import type { GridProperty } from '@/features/profile/types';
+import { SavedGridItem } from './components/SavedGridItem';
 import { useSavedProperties } from './hooks/useSavedProperties';
 
 // ---------------------------------------------------------------------------
@@ -43,9 +41,35 @@ function GridRowSeparator() {
 // ---------------------------------------------------------------------------
 
 export function SavedScreen(): React.JSX.Element {
-  const router = useRouter();
   const { properties, loading, error, refetch } = useSavedProperties();
   const [is_refreshing, set_is_refreshing] = useState(false);
+
+  // ── Estado local para quitado optimista ──────────────────────────────────
+  // hidden_ids acumula ids quitados antes de que el servidor confirme.
+  // Cuando refetch completa: si el id vuelve en properties → DELETE falló →
+  // lo restauramos (useEffect cleanup). Si no vuelve → DELETE OK → no-op.
+  const [hidden_ids, set_hidden_ids] = useState<ReadonlySet<string>>(new Set());
+
+  // Restaura items que volvieron del servidor (indica que el DELETE falló).
+  useEffect(() => {
+    if (hidden_ids.size === 0) return;
+    const server_ids = new Set(properties.map(p => p.id));
+    set_hidden_ids(prev => {
+      const next = new Set(prev);
+      let changed = false;
+      prev.forEach(id => {
+        if (server_ids.has(id)) { next.delete(id); changed = true; }
+      });
+      return changed ? next : prev;
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [properties]); // hidden_ids excluido a propósito — se lee vía set_hidden_ids(prev)
+
+  // Lista visible: propiedades del servidor menos las en vuelo (optimista).
+  const displayed_properties = useMemo(
+    () => properties.filter(p => !hidden_ids.has(p.id)),
+    [properties, hidden_ids],
+  );
 
   const handle_refresh = useCallback(async () => {
     set_is_refreshing(true);
@@ -53,15 +77,18 @@ export function SavedScreen(): React.JSX.Element {
     set_is_refreshing(false);
   }, [refetch]);
 
-  const handle_press = useCallback(
-    (id: string) => {
-      router.push(`/property/${id}`);
-    },
-    [router],
-  );
+  /** Oculta el item inmediatamente (optimista). */
+  const handle_removed = useCallback((id: string) => {
+    set_hidden_ids(prev => new Set([...prev, id]));
+  }, []);
+
+  /** Llamado post-DELETE para reconciliar con el servidor. */
+  const handle_synced = useCallback(() => {
+    void refetch();
+  }, [refetch]);
 
   // ── Loading inicial ───────────────────────────────────────────────────────
-  if (loading && properties.length === 0) {
+  if (loading && displayed_properties.length === 0) {
     return (
       <View style={styles.center}>
         <ActivityIndicator size="large" color={colors.primary} />
@@ -70,7 +97,7 @@ export function SavedScreen(): React.JSX.Element {
   }
 
   // ── Error ─────────────────────────────────────────────────────────────────
-  if (error && properties.length === 0) {
+  if (error && displayed_properties.length === 0) {
     return (
       <View style={styles.center}>
         <Text style={styles.error_text}>{error}</Text>
@@ -81,7 +108,7 @@ export function SavedScreen(): React.JSX.Element {
   // ── Lista (incluye estado vacío vía ListEmptyComponent) ───────────────────
   return (
     <FlatList<GridProperty>
-      data={properties}
+      data={displayed_properties}
       keyExtractor={(item) => item.id}
       numColumns={2}
       columnWrapperStyle={styles.column_wrapper}
@@ -112,7 +139,11 @@ export function SavedScreen(): React.JSX.Element {
         />
       }
       renderItem={({ item }) => (
-        <PropertyGridCard item={item} onPress={() => handle_press(item.id)} />
+        <SavedGridItem
+          item={item}
+          on_removed={handle_removed}
+          on_synced={handle_synced}
+        />
       )}
     />
   );

@@ -49,6 +49,8 @@ const OPERATION_LABEL: Record<string, string> = {
 export interface PropertyGridCardProps {
   item: GridProperty;
   onPress: () => void;
+  /** Long-press opcional — usado en "Guardados" para quitar con confirmación. */
+  onLongPress?: () => void;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -60,7 +62,7 @@ function format_price(n: number): string {
 
 // ─── Componente ───────────────────────────────────────────────────────────────
 
-export function PropertyGridCard({ item, onPress }: PropertyGridCardProps): React.JSX.Element {
+export function PropertyGridCard({ item, onPress, onLongPress }: PropertyGridCardProps): React.JSX.Element {
   const { price, operation_type, property_type, status, address, thumbnail_url } = item;
 
   const is_paused    = status === 'paused';
@@ -72,6 +74,7 @@ export function PropertyGridCard({ item, onPress }: PropertyGridCardProps): Reac
   return (
     <Pressable
       onPress={onPress}
+      onLongPress={onLongPress}
       accessibilityRole="button"
       accessibilityLabel={`${prop_label}, ${op_label}, ${format_price(price)}`}
       style={({ pressed }) => [

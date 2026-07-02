@@ -1318,7 +1318,7 @@
         "dependencies": [
           "10"
         ],
-        "status": "in-progress",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
@@ -1403,16 +1403,17 @@
             "dependencies": [
               6
             ],
-            "details": "Enhance app/(tabs)/saved.tsx: (1) Wrap PropertyCard with react-native-gesture-handler Swipeable or use react-native-swipe-list-view, (2) Swipe left reveals red 'Eliminar' action button, (3) On delete action: call toggleSave to unsave, animate card removal with LayoutAnimation or reanimated, (4) Add confirmation haptic on delete (notificationAsync success), (5) Create EmptyState component for when saves list is empty: illustration/icon (bookmark with question mark or heart), title 'No tienes propiedades guardadas', subtitle 'Explora el feed y guarda las que te interesen', optional CTA button 'Explorar' navigating to feed tab, (6) Show EmptyState when query returns 0 results, (7) Handle loading skeleton state while fetching.",
-            "status": "pending",
+            "details": "Enhance app/(tabs)/saved.tsx: (1) Wrap PropertyCard with react-native-gesture-handler Swipeable or use react-native-swipe-list-view, (2) Swipe left reveals red 'Eliminar' action button, (3) On delete action: call toggleSave to unsave, animate card removal with LayoutAnimation or reanimated, (4) Add confirmation haptic on delete (notificationAsync success), (5) Create EmptyState component for when saves list is empty: illustration/icon (bookmark with question mark or heart), title 'No tienes propiedades guardadas', subtitle 'Explora el feed y guarda las que te interesen', optional CTA button 'Explorar' navigating to feed tab, (6) Show EmptyState when query returns 0 results, (7) Handle loading skeleton state while fetching.\n<info added on 2026-07-02T06:11:39.670Z>\nScope Change: Implementation now uses long-press gesture on PropertyCard instead of swipe-to-delete (does not fit 2-column grid layout from mockup p12). On long-press, trigger Alert confirmation dialog, then remove from saved using existing useSaveProperty hook with optimistic removal and refetch. Empty state already implemented in 13.6. This subtask now focuses solely on the long-press + confirmation removal interaction. Non-critical: verification via pnpm tsc --noEmit + pnpm lint only.\n</info added on 2026-07-02T06:11:39.670Z>\n<info added on 2026-07-02T06:19:40.117Z>\nImplemented long-press removal from saved properties. Created SavedGridItem wrapper component that uses useSaveProperty hook with Alert.alert confirmation dialog, optimistic removal via hidden_ids Set tracked in SavedScreen, and safe async toggleSave call with refetch after DELETE completes. Chose hidden_ids Set over local state mutation to prevent race condition when refetch occurs before DELETE finishes. Rollback mechanism: if DELETE fails, refetch brings item back and useEffect detects id present in both hidden_ids and server data, removes from hidden_ids, making item reappear. PropertyGridCard extended with optional onLongPress prop (fully backward-compatible). Verification passed: tsc 0 errors, 292 tests passed, 0 failed.\n</info added on 2026-07-02T06:19:40.117Z>\n<info added on 2026-07-02T06:20:43.515Z>\nFiles modified:\n- mobile/src/features/saved/components/SavedGridItem.tsx (created: wrapper per saved property cell with useSaveProperty hook, long-press → Alert.alert confirmation → optimistic removal via on_removed callback + await toggleSave() to DELETE + refetch on success)\n- mobile/src/features/saved/SavedScreen.tsx (uses hidden_ids Set for optimistic removal without race condition; useEffect rollback: if deleted id returns in refetch, remove from hidden_ids to restore visibility)\n- mobile/src/components/PropertyGridCard.tsx (added optional onLongPress prop, fully backward-compatible with existing callers)\n\nImplementation: Long-press triggers Alert confirmation, then optimistic removal via hidden_ids Set (prevents race between refetch and DELETE), followed by async toggleSave DELETE and refetch. If DELETE fails, refetch brings item back and useEffect detects presence in both hidden_ids and server data, removes from hidden_ids to restore visibility.\n\nVerification: pnpm tsc --noEmit → 0 errors, pnpm test → 292 tests passed (0 failed).\n</info added on 2026-07-02T06:20:43.515Z>",
+            "status": "done",
             "testStrategy": "Test: (1) Swipe left reveals delete button, (2) Delete removes property from list with animation, (3) Delete calls unsave API correctly, (4) Empty state shows when no saves, (5) Empty state CTA navigates to feed, (6) Loading skeleton displays during fetch",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-07-02T06:20:50.281Z"
           }
         ],
         "complexity": 6,
         "recommendedSubtasks": 7,
         "expansionPrompt": "Break down engagement features into: (1) create LikeButton component with animation, (2) create Edge Function toggle-like with atomic count update, (3) create SaveButton component, (4) create Edge Function toggle-save with atomic count update, (5) implement optimistic UI with error rollback hooks, (6) create saved properties screen with query and property cards, (7) add swipe-to-delete and empty state",
-        "updatedAt": "2026-07-02T06:08:53.613Z"
+        "updatedAt": "2026-07-02T06:20:50.281Z"
       },
       {
         "id": "14",
@@ -2485,9 +2486,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-07-02T06:08:53.613Z",
+      "lastModified": "2026-07-02T06:20:50.281Z",
       "taskCount": 27,
-      "completedCount": 20,
+      "completedCount": 21,
       "tags": [
         "master"
       ]
