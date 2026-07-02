@@ -4,10 +4,6 @@
  * Subtarea 12.3.
  *
  * Funciones puras y testeables; sin side-effects ni dependencias externas.
- *
- * STUB — solo firmas exportadas. Implementación pendiente (fase GREEN).
- * Todos los métodos lanzan 'not_implemented' para que los tests fallen
- * por excepción en rojo (no por error de import).
  */
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -41,7 +37,11 @@ export interface PriceRangeErrors {
  * @returns undefined si válido; FieldError con mensaje en español si inválido.
  */
 export function validate_min_price(value: number | null): FieldError | undefined {
-  throw new Error('not_implemented');
+  if (value === null) return undefined;
+  if (Number.isNaN(value) || value <= 0) {
+    return { message: 'El precio mínimo debe ser mayor a 0' };
+  }
+  return undefined;
 }
 
 /**
@@ -52,7 +52,11 @@ export function validate_min_price(value: number | null): FieldError | undefined
  * @returns undefined si válido; FieldError con mensaje en español si inválido.
  */
 export function validate_max_price(value: number | null): FieldError | undefined {
-  throw new Error('not_implemented');
+  if (value === null) return undefined;
+  if (Number.isNaN(value) || value <= 0) {
+    return { message: 'El precio máximo debe ser mayor a 0' };
+  }
+  return undefined;
 }
 
 /**
@@ -71,7 +75,11 @@ export function validate_price_range(
   min: number | null,
   max: number | null,
 ): FieldError | undefined {
-  throw new Error('not_implemented');
+  if (min === null || max === null) return undefined;
+  if (min > max) {
+    return { message: 'El precio mínimo no puede ser mayor al máximo' };
+  }
+  return undefined;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -88,7 +96,14 @@ export function validate_price_form(
   min: number | null,
   max: number | null,
 ): PriceRangeErrors {
-  throw new Error('not_implemented');
+  const errors: PriceRangeErrors = {};
+  const min_error = validate_min_price(min);
+  if (min_error) errors.min = min_error;
+  const max_error = validate_max_price(max);
+  if (max_error) errors.max = max_error;
+  const range_error = validate_price_range(min, max);
+  if (range_error) errors.range = range_error;
+  return errors;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -109,5 +124,12 @@ export function validate_price_form(
  * @returns number si el input representa un número válido; null en cualquier otro caso.
  */
 export function parse_price(input: string): number | null {
-  throw new Error('not_implemented');
+  const trimmed = input.trim();
+  if (trimmed === '') return null;
+  // Solo acepta dígitos y opcionalmente un punto decimal seguido de dígitos.
+  // Excluye: coma de miles ('1,500'), notación científica ('1e3'), letras.
+  if (!/^\d+(\.\d+)?$/.test(trimmed)) return null;
+  const n = parseFloat(trimmed);
+  if (Number.isNaN(n)) return null;
+  return n;
 }

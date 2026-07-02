@@ -26,6 +26,7 @@ import {
   StyleSheet,
   Switch,
   Text,
+  TextInput,
   TouchableOpacity,
   TouchableWithoutFeedback,
   View,
@@ -34,6 +35,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, fonts, radii, spacing } from '@/theme/theme';
+import { parse_price, validate_price_form } from '../validation';
 import { BedroomsSelector } from './BedroomsSelector';
 import { FilterChipGroup } from './FilterChipGroup';
 
@@ -127,9 +129,22 @@ export function FilterSheet({ visible, onClose }: FilterSheetProps): React.JSX.E
   const [property_types, set_property_types] = useState<string[]>([]);
 
   const [bedrooms, set_bedrooms] = useState<number | null>(null);
+
+  // 12.3 — Precio mínimo y máximo (number|null)
+  // TODO 12.6: context.filters.price_min / context.set_price_min
+  const [price_min, set_price_min] = useState<number | null>(null);
+  // TODO 12.6: context.filters.price_max / context.set_price_max
+  const [price_max, set_price_max] = useState<number | null>(null);
+  // Texto crudo para cada TextInput (controla el valor mostrado al usuario)
+  const [price_min_text, set_price_min_text] = useState('');
+  const [price_max_text, set_price_max_text] = useState('');
+
   const [pet_friendly, set_pet_friendly] = useState(false);
   const [allows_no_guarantor, set_allows_no_guarantor] = useState(false);
   const [student_friendly, set_student_friendly] = useState(false);
+
+  // Errores de precio — función pura, se recalcula en cada render sin coste significativo
+  const price_errors = validate_price_form(price_min, price_max);
 
   return (
     <Modal
@@ -226,6 +241,58 @@ export function FilterSheet({ visible, onClose }: FilterSheetProps): React.JSX.E
               selected={property_types}
               onChange={set_property_types}
             />
+          </View>
+
+          <View style={styles.section_sep} />
+
+          {/* ── 12.3 — Rango de precio ───────────────────────────────────── */}
+          {/*
+           * Dos TextInput numéricos (Mínimo / Máximo). El texto crudo se guarda
+           * en price_*_text y se convierte a number|null vía parse_price (nunca
+           * NaN). validate_price_form deriva errores por campo y de relación.
+           * Contrato para 12.6: price_min/price_max → context.filters.price_*
+           */}
+          <View style={styles.section}>
+            <Text style={styles.section_title}>Precio</Text>
+            <View style={styles.price_row}>
+              <View style={styles.price_field}>
+                <Text style={styles.price_field_label}>Mínimo</Text>
+                <TextInput
+                  style={[styles.price_input, price_errors.min ? styles.price_input_error : null]}
+                  value={price_min_text}
+                  onChangeText={(t) => {
+                    set_price_min_text(t);
+                    set_price_min(parse_price(t));
+                  }}
+                  keyboardType="decimal-pad"
+                  inputMode="decimal"
+                  placeholder="Sin mínimo"
+                  placeholderTextColor={colors.gray_1}
+                  accessibilityLabel="Precio mínimo"
+                />
+              </View>
+              <View style={styles.price_field}>
+                <Text style={styles.price_field_label}>Máximo</Text>
+                <TextInput
+                  style={[styles.price_input, price_errors.max ? styles.price_input_error : null]}
+                  value={price_max_text}
+                  onChangeText={(t) => {
+                    set_price_max_text(t);
+                    set_price_max(parse_price(t));
+                  }}
+                  keyboardType="decimal-pad"
+                  inputMode="decimal"
+                  placeholder="Sin máximo"
+                  placeholderTextColor={colors.gray_1}
+                  accessibilityLabel="Precio máximo"
+                />
+              </View>
+            </View>
+            {(price_errors.min ?? price_errors.max ?? price_errors.range) ? (
+              <Text style={styles.price_error_text}>
+                {(price_errors.min ?? price_errors.max ?? price_errors.range)?.message}
+              </Text>
+            ) : null}
           </View>
 
           <View style={styles.section_sep} />
@@ -470,6 +537,48 @@ const styles = StyleSheet.create({
     backgroundColor: colors.silver,
     marginBottom: spacing.s_20,
     marginTop: spacing.s_16,
+  },
+
+  // ── Precio (12.3) ─────────────────────────────────────────────────────────
+  /** Fila con los dos campos Mín/Máx, uno junto al otro. */
+  price_row: {
+    flexDirection: 'row',
+    gap: spacing.s_12,
+  },
+  price_field: {
+    flex: 1,
+  },
+  /** Etiqueta pequeña sobre cada input. */
+  price_field_label: {
+    fontFamily: fonts.sans,
+    fontSize: 12,
+    lineHeight: 16,
+    color: colors.gray_2,
+    marginBottom: spacing.s_4,
+  },
+  /** Input numérico bordeado, coherente con los form-field del proyecto. */
+  price_input: {
+    borderWidth: 1,
+    borderColor: colors.paper_3,
+    borderRadius: radii.r_8,
+    paddingHorizontal: spacing.s_12,
+    paddingVertical: spacing.s_12,
+    fontFamily: fonts.sans,
+    fontSize: 15,
+    color: colors.ink,
+    backgroundColor: colors.paper_2,
+  },
+  /** Borde de error cuando el campo es inválido. */
+  price_input_error: {
+    borderColor: colors.danger,
+  },
+  /** Mensaje de error del rango, debajo de los campos. */
+  price_error_text: {
+    fontFamily: fonts.sans,
+    fontSize: 12,
+    lineHeight: 16,
+    color: colors.danger,
+    marginTop: spacing.s_8,
   },
 
   // ── ToggleRow ─────────────────────────────────────────────────────────────
