@@ -43,11 +43,30 @@ export async function fetch_distinct_zones(deps?: ZonesDeps): Promise<string[]> 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const client: any = deps?.supabase ?? (require('@/lib/supabase/client') as any).supabase;
 
-  // Referencia al cliente para que TS/lint no marquen "no usado" en el stub.
-  void client;
+  const { data: rows, error } = (await client
+    .from('properties')
+    .select('zone')
+    .eq('status', 'active')
+    .is('deleted_at', null)) as {
+    data: QueryRow[] | null;
+    error: { message: string } | null;
+  };
 
-  // STUB (fase RED, subtarea 12.4): la implementación real se escribe en GREEN.
-  throw new Error('not_implemented');
+  if (error) throw new Error(error.message);
+  if (!rows || rows.length === 0) return [];
+
+  const zones = new Set<string>();
+  for (const row of rows) {
+    const zone = row.zone?.trim();
+    if (zone) zones.add(zone);
+  }
+
+  return Array.from(zones).sort((a, b) => a.localeCompare(b));
+}
+
+/** Remueve diacríticos y normaliza a minúsculas para comparación case/accent-insensitive. */
+function normalize_for_match(value: string): string {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 }
 
 /**
@@ -55,10 +74,11 @@ export async function fetch_distinct_zones(deps?: ZonesDeps): Promise<string[]> 
  * normalizados) contra `query`. Función PURA: no muta `zones`, nunca lanza.
  */
 export function filter_zones(zones: string[], query: string): string[] {
-  // Referencia a los parámetros para que TS/lint no marquen "no usado" en el stub.
-  void zones;
-  void query;
+  if (!Array.isArray(zones)) return [];
 
-  // STUB (fase RED, subtarea 12.4): la implementación real se escribe en GREEN.
-  throw new Error('not_implemented');
+  const trimmed_query = typeof query === 'string' ? query.trim() : '';
+  if (trimmed_query === '') return [...zones];
+
+  const normalized_query = normalize_for_match(trimmed_query);
+  return zones.filter((zone) => normalize_for_match(zone).includes(normalized_query));
 }

@@ -38,6 +38,7 @@ import { colors, fonts, radii, spacing } from '@/theme/theme';
 import { parse_price, validate_price_form } from '../validation';
 import { BedroomsSelector } from './BedroomsSelector';
 import { FilterChipGroup } from './FilterChipGroup';
+import { ZoneAutocomplete } from './ZoneAutocomplete';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Opciones de filtro (constantes de módulo — no se recrean en cada render)
@@ -138,6 +139,10 @@ export function FilterSheet({ visible, onClose }: FilterSheetProps): React.JSX.E
   // Texto crudo para cada TextInput (controla el valor mostrado al usuario)
   const [price_min_text, set_price_min_text] = useState('');
   const [price_max_text, set_price_max_text] = useState('');
+
+  // 12.4 — Zona/colonia: zona EXACTA seleccionada del autocomplete, o null.
+  // TODO 12.6: context.filters.zone / context.set_zone
+  const [zone, set_zone] = useState<string | null>(null);
 
   const [pet_friendly, set_pet_friendly] = useState(false);
   const [allows_no_guarantor, set_allows_no_guarantor] = useState(false);
@@ -297,9 +302,19 @@ export function FilterSheet({ visible, onClose }: FilterSheetProps): React.JSX.E
 
           <View style={styles.section_sep} />
 
-          {/* 12.4 — Zona / colonia (autocomplete de texto libre; usa TextInput
-                directo de RN para evitar el conflicto de z-index que tendría
-                dentro de un BottomSheet externo — razón principal de usar Modal) */}
+          {/* ── 12.4 — Zona / colonia ─────────────────────────────────────── */}
+          {/*
+           * Autocomplete de texto libre; el dropdown se renderiza inline
+           * (ScrollView normal) porque el contenedor es un Modal de RN, no un
+           * BottomSheet — evita el conflicto de z-index que motivó usar Modal.
+           * Contrato para 12.6: zone → context.filters.zone / context.set_zone
+           */}
+          <View style={styles.section}>
+            <Text style={styles.section_title}>Zona o colonia</Text>
+            <ZoneAutocomplete value={zone} onChange={set_zone} />
+          </View>
+
+          <View style={styles.section_sep} />
 
           {/* ── 12.5 — Recámaras + Extras booleanos ──────────────────────── */}
 
