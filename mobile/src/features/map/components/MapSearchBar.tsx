@@ -15,7 +15,7 @@
  */
 
 import React from 'react';
-import { StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -31,13 +31,20 @@ interface MapSearchBarProps {
   on_change: (text: string) => void;
   /** Callback para abrir el FilterSheet. Wired en 12.1. */
   on_filter_press?: () => void;
+  /** Conteo de filtros activos (#12.7) — muestra un badge sobre el ícono cuando > 0. */
+  active_filter_count?: number;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Componente
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function MapSearchBar({ value, on_change, on_filter_press }: MapSearchBarProps) {
+export function MapSearchBar({
+  value,
+  on_change,
+  on_filter_press,
+  active_filter_count = 0,
+}: MapSearchBarProps) {
   const insets = useSafeAreaInsets();
 
   return (
@@ -81,8 +88,14 @@ export function MapSearchBar({ value, on_change, on_filter_press }: MapSearchBar
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           accessibilityLabel="Abrir filtros"
           accessibilityRole="button"
+          style={styles.filter_icon_wrap}
         >
           <Ionicons name="options-outline" size={20} color={colors.gray_2} />
+          {active_filter_count > 0 && (
+            <View style={styles.filter_badge}>
+              <Text style={styles.filter_badge_text}>{active_filter_count}</Text>
+            </View>
+          )}
         </TouchableOpacity>
       </View>
     </View>
@@ -145,5 +158,29 @@ const styles = StyleSheet.create({
     color: colors.ink,
     padding: 0,
     margin: 0,
+  },
+
+  /** Envuelve el ícono de filtros para posicionar el badge de conteo (#12.7). */
+  filter_icon_wrap: {
+    position: 'relative',
+  },
+  /** Badge de conteo de filtros activos — mismo patrón visual que FeedScreen. */
+  filter_badge: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    paddingHorizontal: 3,
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filter_badge_text: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '700',
+    lineHeight: 13,
   },
 });

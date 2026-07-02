@@ -14,12 +14,15 @@
  * pantallas de gestión (CRM, perfil, mi-publicaciones). Fuente de tokens:
  * src/theme/theme.ts.
  *
- * Secciones del ScrollView reservadas con comentarios para subtareas 12.2–12.5.
- * Footer con "Limpiar" y "Aplicar" → placeholders visuales para 12.7; por ahora
- * ambos llaman onClose.
+ * Estado (#12.7): todos los valores/setters vienen de FilterContext
+ * (useFilters) — ya no hay useState local para los campos de filtro. Solo el
+ * texto crudo de los inputs de precio sigue siendo estado local de UI (no es
+ * parte de FilterState). "Limpiar" llama clear_filters(); "Aplicar" solo
+ * cierra el sheet (los filtros ya viven en el Context, feed/mapa refetchean
+ * al detectar el cambio).
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Modal,
   ScrollView,
@@ -35,6 +38,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, fonts, radii, spacing } from '@/theme/theme';
+import { useFilters } from '../filterStore';
 import { parse_price, validate_price_form } from '../validation';
 import { BedroomsSelector } from './BedroomsSelector';
 import { FilterChipGroup } from './FilterChipGroup';
@@ -117,39 +121,46 @@ function ToggleRow({ label, value, onChange }: ToggleRowProps): React.JSX.Elemen
 export function FilterSheet({ visible, onClose }: FilterSheetProps): React.JSX.Element {
   const insets = useSafeAreaInsets();
 
-  // ── Estado local temporal ──────────────────────────────────────────────────
-  // TODO 12.6: reemplazar con FilterContext (los valores vendrán del Context
-  // y los setters llamarán a context.set_* en lugar de useState local).
+  // ── Estado — FilterContext (#12.7) ──────────────────────────────────────────
+  // Todos los campos de filtro viven en el Context, compartido con feed/mapa.
+  const { filters, set_filter, clear_filters } = useFilters();
+  const {
+    operation_types,
+    property_types,
+    price_min,
+    price_max,
+    zone,
+    bedrooms_min: bedrooms,
+    pet_friendly,
+    allows_no_guarantor,
+    student_friendly,
+  } = filters;
 
-  // 12.2 — Operación: subconjunto de ['rent','sale']; [] = sin filtro (ambas).
-  // TODO 12.6: context.filters.operation_types / context.set_operation_types
-  const [operation_types, set_operation_types] = useState<string[]>([]);
-
-  // 12.2 — Tipo de propiedad: subconjunto del enum property_type; [] = sin filtro.
-  // TODO 12.6: context.filters.property_types / context.set_property_types
-  const [property_types, set_property_types] = useState<string[]>([]);
-
-  const [bedrooms, set_bedrooms] = useState<number | null>(null);
-
-  // 12.3 — Precio mínimo y máximo (number|null)
-  // TODO 12.6: context.filters.price_min / context.set_price_min
-  const [price_min, set_price_min] = useState<number | null>(null);
-  // TODO 12.6: context.filters.price_max / context.set_price_max
-  const [price_max, set_price_max] = useState<number | null>(null);
-  // Texto crudo para cada TextInput (controla el valor mostrado al usuario)
+  // Texto crudo para cada TextInput de precio (controla el valor mostrado al
+  // usuario) — NO es parte de FilterState; se resincroniza desde el Context
+  // solo al abrir el sheet (evita pisar lo que el usuario está tecleando).
   const [price_min_text, set_price_min_text] = useState('');
   const [price_max_text, set_price_max_text] = useState('');
 
-  // 12.4 — Zona/colonia: zona EXACTA seleccionada del autocomplete, o null.
-  // TODO 12.6: context.filters.zone / context.set_zone
-  const [zone, set_zone] = useState<string | null>(null);
-
-  const [pet_friendly, set_pet_friendly] = useState(false);
-  const [allows_no_guarantor, set_allows_no_guarantor] = useState(false);
-  const [student_friendly, set_student_friendly] = useState(false);
+  useEffect(() => {
+    if (visible) {
+      set_price_min_text(price_min !== null ? String(price_min) : '');
+      set_price_max_text(price_max !== null ? String(price_max) : '');
+    }
+    // Solo al abrir/cerrar — un cambio de precio por tecleo propio no debe
+    // reformatear el texto mientras el usuario escribe.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
 
   // Errores de precio — función pura, se recalcula en cada render sin coste significativo
   const price_errors = validate_price_form(price_min, price_max);
+
+  /** "Limpiar" — resetea el Context completo Y el texto local de precio. */
+  function handle_clear(): void {
+    clear_filters();
+    set_price_min_text('');
+    set_price_max_text('');
+  }
 
   return (
     <Modal
@@ -218,16 +229,15 @@ export function FilterSheet({ visible, onClose }: FilterSheetProps): React.JSX.E
            * Selección múltiple: el usuario puede elegir Renta, Venta, ambas o
            * ninguna (ninguna = sin filtro, equivale a mostrar todo).
            * 'both' es un valor de dato (una propiedad que acepta ambas modalidades)
-           * y matchea automáticamente en la capa de query (12.6) — no se expone
-           * como opción de UI.
-           * Contrato para 12.6: operation_types → context.filters.operation_types
+           * y matchea automáticamente en la capa de query (build_filter_query) —
+           * no se expone como opción de UI.
            */}
           <View style={styles.section}>
             <Text style={styles.section_title}>Operación</Text>
             <FilterChipGroup
               options={OPERATION_OPTIONS}
               selected={operation_types}
-              onChange={set_operation_types}
+              onChange={(v) => set_filter('operation_types', v)}
             />
           </View>
 
@@ -237,14 +247,13 @@ export function FilterSheet({ visible, onClose }: FilterSheetProps): React.JSX.E
           {/*
            * Multi-select de los 5 valores del enum property_type.
            * [] = sin filtro (muestra todos los tipos).
-           * Contrato para 12.6: property_types → context.filters.property_types
            */}
           <View style={styles.section}>
             <Text style={styles.section_title}>Tipo de propiedad</Text>
             <FilterChipGroup
               options={PROPERTY_TYPE_OPTIONS}
               selected={property_types}
-              onChange={set_property_types}
+              onChange={(v) => set_filter('property_types', v)}
             />
           </View>
 
@@ -255,7 +264,6 @@ export function FilterSheet({ visible, onClose }: FilterSheetProps): React.JSX.E
            * Dos TextInput numéricos (Mínimo / Máximo). El texto crudo se guarda
            * en price_*_text y se convierte a number|null vía parse_price (nunca
            * NaN). validate_price_form deriva errores por campo y de relación.
-           * Contrato para 12.6: price_min/price_max → context.filters.price_*
            */}
           <View style={styles.section}>
             <Text style={styles.section_title}>Precio</Text>
@@ -267,7 +275,7 @@ export function FilterSheet({ visible, onClose }: FilterSheetProps): React.JSX.E
                   value={price_min_text}
                   onChangeText={(t) => {
                     set_price_min_text(t);
-                    set_price_min(parse_price(t));
+                    set_filter('price_min', parse_price(t));
                   }}
                   keyboardType="decimal-pad"
                   inputMode="decimal"
@@ -283,7 +291,7 @@ export function FilterSheet({ visible, onClose }: FilterSheetProps): React.JSX.E
                   value={price_max_text}
                   onChangeText={(t) => {
                     set_price_max_text(t);
-                    set_price_max(parse_price(t));
+                    set_filter('price_max', parse_price(t));
                   }}
                   keyboardType="decimal-pad"
                   inputMode="decimal"
@@ -307,11 +315,10 @@ export function FilterSheet({ visible, onClose }: FilterSheetProps): React.JSX.E
            * Autocomplete de texto libre; el dropdown se renderiza inline
            * (ScrollView normal) porque el contenedor es un Modal de RN, no un
            * BottomSheet — evita el conflicto de z-index que motivó usar Modal.
-           * Contrato para 12.6: zone → context.filters.zone / context.set_zone
            */}
           <View style={styles.section}>
             <Text style={styles.section_title}>Zona o colonia</Text>
-            <ZoneAutocomplete value={zone} onChange={set_zone} />
+            <ZoneAutocomplete value={zone} onChange={(v) => set_filter('zone', v)} />
           </View>
 
           <View style={styles.section_sep} />
@@ -321,13 +328,8 @@ export function FilterSheet({ visible, onClose }: FilterSheetProps): React.JSX.E
           {/* Sección: Recámaras mínimas */}
           <View style={styles.section}>
             <Text style={styles.section_title}>Recámaras</Text>
-            {/*
-             * BedroomsSelector — contrato para 12.6 (FilterContext):
-             *   value    → context.filters.bedrooms_min (number | null)
-             *   onChange → context.set_bedrooms_min
-             * Columna: properties.bedrooms int nullable (migración 0005).
-             */}
-            <BedroomsSelector value={bedrooms} onChange={set_bedrooms} />
+            {/* Columna: properties.bedrooms int nullable (migración 0005). */}
+            <BedroomsSelector value={bedrooms} onChange={(v) => set_filter('bedrooms_min', v)} />
           </View>
 
           <View style={styles.section_sep} />
@@ -336,42 +338,39 @@ export function FilterSheet({ visible, onClose }: FilterSheetProps): React.JSX.E
           <View style={styles.section}>
             <Text style={styles.section_title}>Extras</Text>
             {/*
-             * Toggles — contrato para 12.6 (FilterContext):
-             *   pet_friendly        → context.filters.pet_friendly / set_pet_friendly
-             *   allows_no_guarantor → context.filters.allows_no_guarantor / set_allows_no_guarantor
-             *   student_friendly    → context.filters.student_friendly / set_student_friendly
              * Columnas: properties.{pet_friendly, allows_no_guarantor, student_friendly}
              * boolean not null default false (migración 0005, índices parciales).
              */}
             <ToggleRow
               label="Acepta mascotas"
               value={pet_friendly}
-              onChange={set_pet_friendly}
+              onChange={(v) => set_filter('pet_friendly', v)}
             />
             <ToggleRow
               label="Sin aval"
               value={allows_no_guarantor}
-              onChange={set_allows_no_guarantor}
+              onChange={(v) => set_filter('allows_no_guarantor', v)}
             />
             <ToggleRow
               label="Para estudiantes"
               value={student_friendly}
-              onChange={set_student_friendly}
+              onChange={(v) => set_filter('student_friendly', v)}
             />
           </View>
         </ScrollView>
 
         {/* ── Footer — acciones ────────────────────────────────────────────── */}
         {/*
-         * "Limpiar" y "Aplicar" son placeholders visuales.
-         * La lógica real (reset/apply del Context de filtros) se cableará en
-         * la subtarea 12.7 cuando el FilterContext esté listo.
-         * Por ahora ambos llaman onClose para cerrar el sheet.
+         * "Limpiar" resetea el FilterContext completo (clear_filters) y el
+         * texto local de precio — el sheet permanece abierto para mostrar el
+         * estado limpio. "Aplicar" solo cierra el sheet: los filtros ya viven
+         * en el Context, así que feed/mapa refetchean solos al detectar el
+         * cambio (ver useFeedProperties/useMapProperties, #12.7).
          */}
         <View style={styles.footer}>
           <TouchableOpacity
             style={styles.btn_clear}
-            onPress={onClose}
+            onPress={handle_clear}
             accessibilityLabel="Limpiar filtros"
             accessibilityRole="button"
           >

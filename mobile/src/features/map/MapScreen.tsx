@@ -20,6 +20,7 @@ import MapView, { Region } from 'react-native-maps';
 import { useRouter } from 'expo-router';
 
 import { colors, spacing } from '@/theme/theme';
+import { useFilters } from '../search/filterStore';
 import { GDL_REGION } from './constants';
 import { useMapProperties } from './hooks/useMapProperties';
 import { cluster_properties } from './lib/clusterMarkers';
@@ -74,7 +75,8 @@ function MapContent(): React.JSX.Element {
   const router = useRouter();
   const map_ref = useRef<MapView>(null);
 
-  const { data, loading, error } = useMapProperties();
+  const { filters, active_filter_count } = useFilters();
+  const { data, loading, error } = useMapProperties(undefined, filters);
   const [region, set_region] = useState<Region>(GDL_REGION);
   const [selected, set_selected] = useState<MapProperty | null>(null);
   const [query, set_query] = useState('');
@@ -178,6 +180,7 @@ function MapContent(): React.JSX.Element {
         value={query}
         on_change={set_query}
         on_filter_press={() => set_filter_visible(true)}
+        active_filter_count={active_filter_count}
       />
 
       {/* FilterSheet — abierto desde el ícono options-outline del MapSearchBar */}

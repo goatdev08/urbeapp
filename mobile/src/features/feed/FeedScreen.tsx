@@ -26,6 +26,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, spacing } from '@/theme/theme';
+import { useFilters } from '../search/filterStore';
 import { FilterSheet } from '../search/components/FilterSheet';
 
 import { VideoFeedItem } from './components/VideoFeedItem';
@@ -42,7 +43,8 @@ export function FeedScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { viewabilityConfigCallbackPairs, isItemActive } = useFeedActiveIndex();
-  const { data, isLoading, error, loadInitial, refetch, loadMore } = useFeedProperties();
+  const { filters, active_filter_count } = useFilters();
+  const { data, isLoading, error, loadInitial, refetch, loadMore } = useFeedProperties(filters);
   const [filter_visible, set_filter_visible] = useState(false);
 
   // Carga la primera página al montar la pantalla.
@@ -172,6 +174,11 @@ export function FeedScreen() {
         accessibilityRole="button"
       >
         <Ionicons name="options-outline" size={20} color={colors.gray_1} />
+        {active_filter_count > 0 && (
+          <View style={styles.filter_badge}>
+            <Text style={styles.filter_badge_text}>{active_filter_count}</Text>
+          </View>
+        )}
       </TouchableOpacity>
 
       {/* FilterSheet — abierto desde el botón de filtros del feed */}
@@ -243,5 +250,27 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(23,20,15,0.60)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  /**
+   * Badge de conteo de filtros activos — píldora arcilla sobre el botón de
+   * filtros, esquina superior derecha. Mismo patrón visual en MapScreen.
+   */
+  filter_badge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    paddingHorizontal: 4,
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filter_badge_text: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+    lineHeight: 14,
   },
 });
