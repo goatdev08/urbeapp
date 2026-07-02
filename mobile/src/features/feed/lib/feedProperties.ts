@@ -1,16 +1,21 @@
 /**
  * feedProperties.ts — capa de datos del feed vertical.
  *
- * fetchFeedProperties(cursor?, deps?):
+ * fetchFeedProperties(cursor?, deps?, filters?):
  *   - Consulta properties activas con video ready.
+ *   - Aplica FilterState (#12.7) ADEMÁS de los filtros base (status/deleted_at).
  *   - Invoca mint-video-url EF para obtener signed URLs.
  *   - Merge fail-closed: propiedades sin URL se omiten.
  *   - Paginación por cursor (created_at), LIMIT 10.
  *
  * ponytail: DI opcional via deps.supabase; prod usa lazy-require del singleton
  * para evitar que el top-level de client.ts (que lanza sin env vars) rompa los tests.
+ * `filters` es el ÚLTIMO parámetro opcional (default EMPTY_FILTERS) para no
+ * romper las 15 llamadas existentes con 0-2 args.
  */
 
+import { build_filter_query, EMPTY_FILTERS } from '@/features/search/lib/filterQuery';
+import type { FilterState } from '@/features/search/types';
 import { localizeSignedUrl } from '@/lib/supabase/localizeSignedUrl';
 
 import type { FeedPropertyWithUrl } from '../types';
@@ -44,6 +49,7 @@ type QueryRow = {
 export async function fetchFeedProperties(
   cursor?: string,
   deps?: FeedPropertiesDeps,
+  filters?: FilterState,
 ): Promise<{ data: FeedPropertyWithUrl[]; nextCursor: string | null }> {
   // ponytail: lazy-require del cliente real; nunca se evalúa en tests (deps siempre inyectado)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -57,9 +63,12 @@ export async function fetchFeedProperties(
        property_videos(id, storage_path, position)`,
     )
     .eq('status', 'active')
-    .is('deleted_at', null)
-    .order('created_at', { ascending: false })
-    .limit(PAGE_SIZE);
+    .is('deleted_at', null);
+
+  // Filtros de usuario (#12.7) — ADEMÁS de los filtros base, nunca en su lugar.
+  query = build_filter_query(query, filters ?? EMPTY_FILTERS);
+
+  query = query.order('created_at', { ascending: false }).limit(PAGE_SIZE);
 
   if (cursor) {
     query = query.lt('created_at', cursor);

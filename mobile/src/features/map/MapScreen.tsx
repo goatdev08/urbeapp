@@ -20,6 +20,7 @@ import MapView, { Region } from 'react-native-maps';
 import { useRouter } from 'expo-router';
 
 import { colors, spacing } from '@/theme/theme';
+import { useFilters } from '../search/filterStore';
 import { GDL_REGION } from './constants';
 import { useMapProperties } from './hooks/useMapProperties';
 import { cluster_properties } from './lib/clusterMarkers';
@@ -27,6 +28,7 @@ import { PropertyMarker } from './components/PropertyMarker';
 import { ClusterMarker } from './components/ClusterMarker';
 import { PropertyMiniCard } from './components/PropertyMiniCard';
 import { MapSearchBar } from './components/MapSearchBar';
+import { FilterSheet } from '../search/components/FilterSheet';
 import type { MapProperty } from './types';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -73,10 +75,12 @@ function MapContent(): React.JSX.Element {
   const router = useRouter();
   const map_ref = useRef<MapView>(null);
 
-  const { data, loading, error } = useMapProperties();
+  const { filters, active_filter_count } = useFilters();
+  const { data, loading, error } = useMapProperties(undefined, filters);
   const [region, set_region] = useState<Region>(GDL_REGION);
   const [selected, set_selected] = useState<MapProperty | null>(null);
   const [query, set_query] = useState('');
+  const [filter_visible, set_filter_visible] = useState(false);
 
   /*
    * ponytail: filtro cliente sin geocoding ni nueva dependencia — cubre el scope #11.7.
@@ -172,7 +176,18 @@ function MapContent(): React.JSX.Element {
        * el onPress del MapView (set_selected(null)) porque la barra está fuera
        * del MapView y tiene mayor z-index.
        */}
-      <MapSearchBar value={query} on_change={set_query} />
+      <MapSearchBar
+        value={query}
+        on_change={set_query}
+        on_filter_press={() => set_filter_visible(true)}
+        active_filter_count={active_filter_count}
+      />
+
+      {/* FilterSheet — abierto desde el ícono options-outline del MapSearchBar */}
+      <FilterSheet
+        visible={filter_visible}
+        onClose={() => set_filter_visible(false)}
+      />
     </View>
   );
 }
