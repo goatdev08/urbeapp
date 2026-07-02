@@ -5,6 +5,76 @@ import { jest, afterEach } from '@jest/globals';
 
 jest.mock('@react-native-async-storage/async-storage', () => mockAsyncStorage);
 
+// Mock react-native-reanimated — Reanimated 4 importa react-native-worklets al nivel
+// de módulo (NativeWorklets.native.ts) → intenta inicializar el native module → falla
+// en Jest (sin runtime nativo). react-native-reanimated/mock tampoco sirve porque
+// TAMBIÉN importa ./index (que trae worklets).
+// Solución: factory manual que solo depende de react-native puro (sin worklets).
+// Cubre los casos de uso de LikeButton, SaveButton y HeartAnimation.
+// Ref: https://docs.swmansion.com/react-native-reanimated/docs/guides/testing/
+jest.mock('react-native-reanimated', () => {
+  const RN = require('react-native');
+
+  // Componentes animados: delegan al equivalente RN no-animado en tests
+  const AnimatedComponents = {
+    View: RN.View,
+    Text: RN.Text,
+    Image: RN.Image,
+    ScrollView: RN.ScrollView,
+    FlatList: RN.FlatList,
+  };
+
+  return {
+    __esModule: true,
+    default: AnimatedComponents,
+    Animated: AnimatedComponents,
+
+    // Shared values — objeto simple con .value mutable
+    useSharedValue: (init) => ({ value: init }),
+
+    // Animated style — devuelve objeto vacío; el componente renderiza igual
+    useAnimatedStyle: () => ({}),
+    useAnimatedProps: () => ({}),
+    useDerivedValue: (fn) => ({ value: fn() }),
+
+    // Animation builders — devuelven el valor destino sincrónicamente
+    withTiming: (value) => value,
+    withSpring: (value) => value,
+    withDecay: () => 0,
+    withSequence: (...args) => args[args.length - 1] ?? 0,
+    withDelay: (_delay, value) => value,
+    withRepeat: (value) => value,
+
+    // Otros helpers frecuentes
+    cancelAnimation: () => {},
+    runOnJS: (fn) => fn,
+    runOnUI: (fn) => fn,
+    useAnimatedRef: () => ({ current: null }),
+    useAnimatedScrollHandler: () => () => {},
+    useAnimatedReaction: () => {},
+
+    // Easing stub
+    Easing: {
+      linear: (t) => t,
+      ease: (t) => t,
+      out: (fn) => fn,
+      in: (fn) => fn,
+      inOut: (fn) => fn,
+      elastic: () => (t) => t,
+      bounce: (t) => t,
+      back: () => (t) => t,
+    },
+
+    // Enums / constantes usadas en HeartAnimation y otros
+    Extrapolation: { CLAMP: 'clamp', EXTEND: 'extend', IDENTITY: 'identity' },
+    ReduceMotion: { Always: 'always', Never: 'never', System: 'system' },
+
+    // interpolate stub
+    interpolate: (_value, _inRange, outRange) => outRange[0] ?? 0,
+    interpolateColor: () => '#000000',
+  };
+});
+
 /**
  * Patch RNTL act para drenar act scopes filtrados entre tests.
  *

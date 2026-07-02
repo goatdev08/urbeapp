@@ -16,12 +16,12 @@
  */
 
 import React from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { StyleSheet, View } from 'react-native';
 
-import { colors } from '@/theme/theme';
 import { useLikeProperty } from '@/features/feed/hooks/useLikeProperty';
 import { useSaveProperty } from '@/features/feed/hooks/useSaveProperty';
+import { LikeButton } from '@/components/LikeButton';
+import { SaveButton } from '@/components/SaveButton';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tipos
@@ -61,34 +61,19 @@ export function ActionButtons({ property_id, property_video_id }: ActionButtonsP
 
       {/* Like: solo si hay video asociado a la propiedad */}
       {property_video_id !== null && (
-        <Pressable
+        <LikeButton
+          active={isLiked}
           onPress={toggleLike}
           style={styles.btn}
-          accessibilityLabel={isLiked ? 'Quitar like' : 'Dar like'}
-          accessibilityRole="button"
-        >
-          <Ionicons
-            name={isLiked ? 'heart' : 'heart-outline'}
-            size={22}
-            // ponytail: accent_soft (#C2A07C) cuando activo — igual que PropertyOverlay
-            color={isLiked ? colors.accent_soft : '#FFFFFF'}
-          />
-        </Pressable>
+        />
       )}
 
       {/* Save: siempre presente (save es por propiedad, independiente de video) */}
-      <Pressable
+      <SaveButton
+        active={isSaved}
         onPress={toggleSave}
         style={styles.btn}
-        accessibilityLabel={isSaved ? 'Quitar de guardados' : 'Guardar propiedad'}
-        accessibilityRole="button"
-      >
-        <Ionicons
-          name={isSaved ? 'bookmark' : 'bookmark-outline'}
-          size={22}
-          color={isSaved ? colors.accent_soft : '#FFFFFF'}
-        />
-      </Pressable>
+      />
 
     </View>
   );
