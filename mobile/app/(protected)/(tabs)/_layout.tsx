@@ -33,6 +33,13 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="saved"
+        options={{
+          title: 'Guardados',
+          tabBarIcon: ({ focused }) => tab_icon(focused ? '🔖' : '🔖'),
+        }}
+      />
+      <Tabs.Screen
         name="map"
         options={{
           title: 'Mapa',
