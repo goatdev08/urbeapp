@@ -138,16 +138,11 @@ function transform_raw_to_agent_lead(raw: RawLead): AgentLead {
  *     (agente normal ve solo los suyos, owner ve todos los de su agencia).
  *
  * Expone refetch() para re-disparar la query (p.ej. tras cambiar estado de un lead).
- *
- * STUB (subtarea 28.3, fase RED): la firma ya acepta `agentId` para que los
- * tests nuevos compilen, pero el filtro `.eq('agent_id', …)` y la dep en el
- * useEffect aún NO están implementados — eso es GREEN.
  */
 export function useAgentLeads(agentId?: string | null): UseAgentLeadsState {
-  // ponytail: agentId aún no se usa — implementación real en GREEN (28.3).
-  void agentId;
   // Consumimos useAuth para alinear el patrón del repo (contexto de sesión activa).
-  // El filtro real de agent_id lo hace RLS — no necesitamos el id aquí.
+  // El filtro real de agent_id lo hace RLS (o el .eq condicional de abajo) —
+  // no necesitamos el id de sesión aquí.
   useAuth();
 
   const [leads, set_leads] = useState<AgentLead[]>([]);
@@ -164,14 +159,21 @@ export function useAgentLeads(agentId?: string | null): UseAgentLeadsState {
       // Resetea loading en cada fetch (incluyendo refetches)
       set_loading(true);
 
-      const { data, error: query_error } = await supabase
+      const base_query = supabase
         .from('leads')
         // ponytail: cast `as never` para embedded selects con columnas de migración 0015
         // (user_preferences.full_name / profile_photo_url) que no están en los tipos
         // generados. Mismo patrón que useAgentProfile y profileService.
         .select(
           'id, user_id, agent_id, status, internal_notes, first_contact_at, last_contact_at, updated_at, created_at, deleted_at, users(phone, user_preferences(full_name, profile_photo_url)), lead_origin_properties(property_id, properties(address, property_videos(thumbnail_url, position)))' as never
-        )
+        );
+
+      // agentId string → filtra por ese agente (caso owner viendo a un agente
+      // específico). null/undefined → sin filtro explícito, RLS decide.
+      const filtered_query =
+        typeof agentId === 'string' ? base_query.eq('agent_id', agentId) : base_query;
+
+      const { data, error: query_error } = await filtered_query
         .is('deleted_at', null)
         .order('updated_at', { ascending: false });
 
@@ -195,7 +197,7 @@ export function useAgentLeads(agentId?: string | null): UseAgentLeadsState {
     return () => {
       ignore = true;
     };
-  }, [tick]);
+  }, [tick, agentId]);
 
   // ponytail: useCallback sin deps — set_tick es estable (React garantía)
   const refetch = useCallback(() => set_tick((t) => t + 1), []);
