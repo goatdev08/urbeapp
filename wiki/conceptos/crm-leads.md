@@ -4,7 +4,7 @@ dominio: producto
 estado: vivo
 fuentes: [docs/PRD.md §19, docs/PRD-MVP-demo.md]
 codigo: [supabase/migrations/0006_engagement_crm.sql, supabase/functions/contact-agent/, supabase/functions/update-lead-status/, mobile/src/components/ContactAgentButton.tsx, mobile/src/features/property-detail/utils/whatsapp.ts, mobile/src/features/leads/]
-actualizado: 2026-06-30
+actualizado: 2026-07-02
 ---
 
 # CRM y leads
@@ -35,7 +35,7 @@ El agente abre el **tab CRM** (oculto a no-agentes vía `user.role === 'agent'` 
 - **Transiciones válidas del embudo:** `new→{contacted,discarded}` · `contacted→{in_progress,closed_lost,discarded}` · `in_progress→{visit_scheduled,closed_won,closed_lost,discarded}` · `visit_scheduled→{in_progress,closed_won,closed_lost,discarded}` · `closed_won`/`closed_lost`/`discarded` = **terminales** (sin salidas).
 - ⚠️ **La nota viaja ACOPLADA a una transición de estado** (la EF `update-lead-status` toma `note` junto a `new_status`). No hay aún forma de editar `internal_notes` sin cambiar estado → diferido a **tarea #29** (`update-lead-note`).
 - **Filtros y búsqueda son client-side** (la lista completa del agente se carga una vez por `useAgentLeads`; tabs+search filtran con `useMemo`, no re-query). El filtro "En progreso" agrupa `{contacted, in_progress, visit_scheduled}`; "Cerrados" agrupa `{closed_won, closed_lost, discarded}`.
-- **Owner ve los leads de sus agentes** — alcance **diferido a tarea #28** (la RLS `can_view_lead` ya lo permite a nivel DB; la UI de #15 muestra solo los leads propios del agente).
+- **Owner ve los leads de sus agentes — vivo (#28)** — el dueño de la inmobiliaria (`agency_members.member_role='owner'`) ve un **selector de agentes** encima de la lista; al elegir un agente filtra a sus leads, "Todos" muestra el pipeline agregado de toda la agencia. **Sin backend nuevo:** la policy RLS `leads_select` + helper `private.is_agency_owner_of(agent_id)` (migración 0010) ya lo permiten a nivel DB; #28 solo añade cliente. El rol de agencia se detecta con `agency_members.member_role` (NUNCA `users.role`, que es 'agent' incluso para owners). El owner NO aparece como chip propio; sus leads salen bajo "Todos".
 - ✅ **E2E happy-path verificado en remoto (2026-06-30):** con un 2º agente sembrado (propiedad activa propia), el agente principal la contactó → lead `new` creado; 2º tap → mismo `lead_id`, `contact_count=1` (no 2). Antes solo se cubría por los 79 unit tests + negativos, porque el único `auth.users` era dueño de todas las propiedades (todo daba self-contact).
 - Visibilidad por RLS: helpers `can_view_lead` / `can_edit_lead` ([[rls-seguridad]]).
 - ⚠️ Existe un 2º camino de WhatsApp **sin CRM**: el icono de `AgentCard` (`open_whatsapp`) es contacto rápido directo; el canal CRM es el CTA sticky.
@@ -43,7 +43,8 @@ El agente abre el **tab CRM** (oculto a no-agentes vía `user.role === 'agent'` 
 ## En el código
 - Backend: `0006_engagement_crm.sql` + EF `supabase/functions/contact-agent/` (`index.ts` cablea resolvers reales; `handler.ts` lógica pura con DI; `handler.test.ts` **79 tests**). Seed phone `20260630000001_seed_demo_agent_phone.sql`.
 - App contacto: `mobile/src/components/ContactAgentButton.tsx` (reusa `PrimaryButton`, mapea errores ES) + `mobile/src/features/property-detail/utils/whatsapp.ts` (`open_whatsapp_ef`) cableado en `PropertyDetailScreen.tsx`.
-- App CRM (#15, vivo): `mobile/src/features/leads/` — `screens/CRMScreen.tsx` (lista + tabs + búsqueda + modal), `hooks/useAgentLeads.ts` (query+transform, 10 tests), `hooks/useUpdateLeadStatus.ts` (**CRÍTICA**, invoca la EF, 13 tests, patrón `usePropertyActions`), `components/LeadCard.tsx`, `components/LeadExpandedView.tsx`, `lead_status_meta.ts` (mapa compartido estado→etiqueta/color), `types.ts` (`AgentLead`/`LeadStatus`). Ruta: `mobile/app/(protected)/(tabs)/crm.tsx` + tab en `_layout.tsx`. Genérico reutilizado: `mobile/src/components/FilterTabs.tsx` (extraído de profile). Backend CRM: `supabase/functions/update-lead-status/` (handler DI + `make_lead_status_updater`, 55 Deno tests).
+- App CRM (#15, vivo): `mobile/src/features/leads/` — `screens/CRMScreen.tsx` (lista + tabs + búsqueda + modal), `hooks/useAgentLeads.ts` (query+transform, 10 tests), `hooks/useUpdateLeadStatus.ts` (**CRÍTICA**, invoca la EF, 13 tests, patrón `usePropertyActions`), `components/LeadCard.tsx`, `components/LeadExpandedView.tsx`, `lead_status_meta.ts` (mapa compartido estado→etiqueta/color), `types.ts` (`AgentLead`/`LeadStatus`/`Agent`). Ruta: `mobile/app/(protected)/(tabs)/crm.tsx` + tab en `_layout.tsx`. Genérico reutilizado: `mobile/src/components/FilterTabs.tsx` (extraído de profile). Backend CRM: `supabase/functions/update-lead-status/` (handler DI + `make_lead_status_updater`, 55 Deno tests).
+- Owner-view de la agencia (#28, vivo): `hooks/useAgencyRole.ts` (**CRÍTICA**, 6 tests — detecta owner por `agency_members`), `hooks/useAgencyAgents.ts` (**CRÍTICA**, 7 tests — lista de agentes de la agencia vía embed `users→user_preferences` con cast `as never`; solo ejecuta si owner), `hooks/useAgentLeads.ts` extendido a `(agentId?)` (**14 tests**; `.eq('agent_id',id)` condicional), `components/AgentSelector.tsx` (rail de chips, no crítico). Todo en `CRMScreen.tsx`. Suite leads: 40/40, tsc 0.
 
 ## Detalle exhaustivo
 - `docs/PRD.md` §19 (embudo de 9 estados + scoring, para fases futuras) · migración `0006` · [[db-schema-map]]
