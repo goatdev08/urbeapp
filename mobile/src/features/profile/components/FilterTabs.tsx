@@ -9,42 +9,24 @@
  *   Caen bajo "Todas" únicamente. El mockup (pantalla 9) no muestra tab Draft,
  *   y el plan lo confirma. Si en el futuro se necesita, se añade aquí.
  *
- * ponytail: ScrollView horizontal + Pressable pill — sin librería extra.
+ * Refactorizado en 15.7: delega el renderizado al FilterTabs genérico de
+ * src/components/. Mantiene la misma API pública (value, on_change, counts)
+ * para retrocompatibilidad con my-listings.tsx — los conteos se embeben en
+ * el label del tab ("Todas (5)").
+ *
+ * ponytail: wrapper fino — sin estilos propios (los gestiona el genérico).
  */
 
 import React from 'react';
-import {
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-} from 'react-native';
 
-import { colors, radii, spacing, type_scale } from '@/theme/theme';
+import { FilterTabs as GenericFilterTabs } from '@/components/FilterTabs';
 
 // ---------------------------------------------------------------------------
-// Tipos públicos
+// Tipos públicos — mantenemos la misma API que antes de la refactorización
 // ---------------------------------------------------------------------------
 
 /** Valores de filtro de esta pantalla. */
 export type FilterValue = 'all' | 'active' | 'paused' | 'closed';
-
-interface TabDef {
-  value: FilterValue;
-  label: string;
-}
-
-/** Definición fija de los tabs en orden de aparición. */
-const TABS: TabDef[] = [
-  { value: 'all',    label: 'Todas' },
-  { value: 'active', label: 'Activas' },
-  { value: 'paused', label: 'Pausadas' },
-  { value: 'closed', label: 'Cerradas' },
-];
-
-// ---------------------------------------------------------------------------
-// Props
-// ---------------------------------------------------------------------------
 
 export interface FilterTabsProps {
   /** Valor seleccionado actualmente. */
@@ -59,65 +41,32 @@ export interface FilterTabsProps {
 }
 
 // ---------------------------------------------------------------------------
+// Definición de tabs en orden de aparición
+// ---------------------------------------------------------------------------
+
+const TABS: { value: FilterValue; base_label: string }[] = [
+  { value: 'all',    base_label: 'Todas' },
+  { value: 'active', base_label: 'Activas' },
+  { value: 'paused', base_label: 'Pausadas' },
+  { value: 'closed', base_label: 'Cerradas' },
+];
+
+// ---------------------------------------------------------------------------
 // Componente
 // ---------------------------------------------------------------------------
 
-export function FilterTabs({ value, on_change, counts }: FilterTabsProps) {
+export function FilterTabs({ value, on_change, counts }: FilterTabsProps): React.JSX.Element {
+  // Embebe el conteo en el label para respetar la API genérica
+  const tabs = TABS.map((tab) => ({
+    value: tab.value,
+    label: `${tab.base_label} (${counts[tab.value]})`,
+  }));
+
   return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.container}
-    >
-      {TABS.map((tab) => {
-        const is_active = tab.value === value;
-        return (
-          <Pressable
-            key={tab.value}
-            onPress={() => on_change(tab.value)}
-            style={[styles.tab, is_active ? styles.tab_active : styles.tab_inactive]}
-            accessibilityRole="tab"
-            accessibilityState={{ selected: is_active }}
-            accessibilityLabel={`${tab.label}, ${counts[tab.value]} propiedades`}
-          >
-            <Text style={[styles.label, is_active ? styles.label_active : styles.label_inactive]}>
-              {tab.label} ({counts[tab.value]})
-            </Text>
-          </Pressable>
-        );
-      })}
-    </ScrollView>
+    <GenericFilterTabs
+      tabs={tabs}
+      value={value}
+      onChange={on_change}
+    />
   );
 }
-
-// ---------------------------------------------------------------------------
-// Estilos — modo gestión-claro
-// ---------------------------------------------------------------------------
-
-const styles = StyleSheet.create({
-  container: {
-    flexDirection: 'row',
-    gap: spacing.s_8,
-    paddingVertical: spacing.s_4,
-  },
-  tab: {
-    borderRadius: radii.r_pill,
-    paddingHorizontal: spacing.s_16,
-    paddingVertical: spacing.s_8,
-  },
-  tab_active: {
-    backgroundColor: colors.primary_tint,
-  },
-  tab_inactive: {
-    backgroundColor: colors.paper_2,
-  },
-  label: {
-    ...type_scale.caption,
-  },
-  label_active: {
-    color: colors.primary,
-  },
-  label_inactive: {
-    color: colors.gray_2,
-  },
-});

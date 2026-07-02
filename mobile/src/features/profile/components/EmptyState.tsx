@@ -1,11 +1,14 @@
 /**
- * EmptyState — estado vacío para el grid de propiedades del perfil.
+ * EmptyState — estado vacío reutilizable (subtarea 16.6 + 15.9).
  *
- * Muestra un ícono discreto + título + subtítulo cuando el agente
- * no tiene propiedades publicadas.
+ * Uso base (grid de propiedades del perfil):
+ *   <EmptyState is_own_profile={true} />
  *
- * Props:
- *   is_own_profile — varía el copy: propio (CTA de publicar) vs. ajeno (lectura).
+ * Uso con copy personalizado (cualquier pantalla):
+ *   <EmptyState message="Sin resultados" subtitle="Prueba otro filtro." icon="🔍" />
+ *
+ * Props opcionales message/subtitle/icon sobreescriben los valores por defecto;
+ * los usos actuales de profile sin esas props siguen igual.
  *
  * Cableado: se pasa como ListEmptyComponent al FlatList de PropertiesGrid.
  * Subtarea 16.6.
@@ -21,13 +24,18 @@ import { colors, spacing, type_scale } from '@/theme/theme';
 
 export interface EmptyStateProps {
   is_own_profile?: boolean;
+  // ponytail: override props para reusar fuera del dominio profile
+  message?: string;
+  subtitle?: string;
+  icon?: string;
 }
 
 // ---------------------------------------------------------------------------
 // Constantes de copy
 // ---------------------------------------------------------------------------
 
-const TITLE = 'Aún no hay propiedades';
+const DEFAULT_TITLE = 'Aún no hay propiedades';
+const DEFAULT_ICON = '🏠';
 
 const SUBTITLE_OWN = 'Publica tu primera propiedad';
 const SUBTITLE_OTHER = 'Este agente aún no tiene publicaciones';
@@ -36,17 +44,24 @@ const SUBTITLE_OTHER = 'Este agente aún no tiene publicaciones';
 // Componente
 // ---------------------------------------------------------------------------
 
-export function EmptyState({ is_own_profile = false }: EmptyStateProps) {
-  const subtitle = is_own_profile ? SUBTITLE_OWN : SUBTITLE_OTHER;
+export function EmptyState({
+  is_own_profile = false,
+  message,
+  subtitle: subtitle_prop,
+  icon,
+}: EmptyStateProps) {
+  const title    = message       ?? DEFAULT_TITLE;
+  const subtitle = subtitle_prop ?? (is_own_profile ? SUBTITLE_OWN : SUBTITLE_OTHER);
+  const ico      = icon          ?? DEFAULT_ICON;
 
   return (
     <View style={styles.container}>
-      {/* Ícono discreto — casa vacía en texto, sin dep. de librería de íconos */}
+      {/* Ícono discreto en texto, sin dep. de librería de íconos */}
       <Text style={styles.icon} importantForAccessibility="no">
-        🏠
+        {ico}
       </Text>
 
-      <Text style={styles.title}>{TITLE}</Text>
+      <Text style={styles.title}>{title}</Text>
       <Text style={styles.subtitle}>{subtitle}</Text>
     </View>
   );
