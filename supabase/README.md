@@ -158,3 +158,75 @@ supabase gen types typescript --project-id mvpvqmyhrrkwbnpctpuq > supabase/types
 Verificación de identidad INE+selfie (Storage + flujo) · push tokens FCM · pagos/créditos (Stripe) ·
 versionado de publicaciones · auto-suspensión por reportes · purga programada (`pg_cron`/worker) ·
 catálogo completo de notificaciones · comentarios · follows.
+
+---
+
+## Datos demo locales (tarea #18)
+
+El `seed.sql` siembra una base completa para desarrollo local: 3 inmobiliarias, 10 propiedades,
+11 usuarios y datos de engagement (likes, saves, leads). Los videos se cargan en un paso separado.
+
+> **CAVEAT importante:** el emulador Android/iOS apunta al Supabase **remoto** (`urbea-app`).
+> Este seed es estrictamente **LOCAL** — solo se verá en la app si cambias `EXPO_PUBLIC_SUPABASE_URL`
+> a la URL del stack local (típicamente `http://127.0.0.1:54321`).
+
+### Flujo de arranque completo
+
+```bash
+# 1. Levanta el stack local
+supabase start
+
+# 2. Aplica migraciones + seed.sql (crea schema + datos demo)
+supabase db reset
+
+# 3. Carga los videos demo al bucket property-videos (pasa status a 'ready')
+bash supabase/scripts/seed-videos.sh
+```
+
+### Videos demo — descarga previa
+
+Los archivos `.mp4` viven en `supabase/demo-assets/` (ignorados por git). Descárgalos una vez:
+
+```bash
+mkdir -p supabase/demo-assets
+cd supabase/demo-assets
+curl -L -o sample-1.mp4 "https://media.w3.org/2010/05/sintel/trailer.mp4"
+curl -L -o sample-2.mp4 "https://www.w3schools.com/html/mov_bbb.mp4"
+curl -L -o sample-3.mp4 "https://filesamples.com/samples/video/mp4/sample_640x360.mp4"
+curl -L -o sample-4.mp4 "https://media.w3.org/2010/05/video/movie_300.mp4"
+curl -L -o sample-5.mp4 "https://filesamples.com/samples/video/mp4/sample_960x540.mp4"
+```
+
+Verifica que sean MP4 válidos: `file *.mp4` — deben mostrar `ISO Media, MP4`.
+Con al menos 3 archivos presentes, `seed-videos.sh` rota entre ellos para los 10 videos.
+
+### Cuentas demo (password: `urbea2026`)
+
+| Email | Rol en app | Inmobiliaria |
+|-------|-----------|-------------|
+| `owner.gdl@urbea.demo` | agent (owner) | Inmobiliaria GDL Premium |
+| `agente1.gdl@urbea.demo` | agent | Inmobiliaria GDL Premium |
+| `owner.oeste@urbea.demo` | agent (owner) | Casas y Terrenos del Oeste |
+| `agente2.oeste@urbea.demo` | agent | Casas y Terrenos del Oeste |
+| `agente3.oeste@urbea.demo` | agent | Casas y Terrenos del Oeste |
+| `owner.providencia@urbea.demo` | agent (owner) | Grupo Inmobiliario Providencia |
+| `agente4.providencia@urbea.demo` | agent | Grupo Inmobiliario Providencia |
+| `buscador1@urbea.demo` | user | — |
+| `buscador2@urbea.demo` | user | — |
+| `buscador3@urbea.demo` | user | — |
+| `buscador4@urbea.demo` | user | — |
+
+### Datos sembrados por el seed
+
+| Entidad | Cantidad | Detalle |
+|---------|---------|---------|
+| Inmobiliarias | 3 | GDL Premium · Del Oeste · Providencia |
+| Usuarios | 11 | 3 owners + 4 agentes + 4 buscadores |
+| Propiedades | 10 | 5 renta / 5 venta · zonas Providencia/Americana/Zapopan/Tlaquepaque |
+| property_videos | 10 | 1 por propiedad; `status='processing'` hasta correr seed-videos.sh |
+| Likes | 7 | buscadores1-3 → varios videos |
+| Saves | 6 | buscadores1-3 → varias propiedades |
+| Leads | 3 | buscador→agente con lead_origin_properties |
+
+Los contadores `like_count`, `save_count`, `contact_count` de `properties` están
+preajustados de forma coherente con los likes/saves/leads insertados.

@@ -27,6 +27,7 @@ import { PropertyMarker } from './components/PropertyMarker';
 import { ClusterMarker } from './components/ClusterMarker';
 import { PropertyMiniCard } from './components/PropertyMiniCard';
 import { MapSearchBar } from './components/MapSearchBar';
+import { FilterSheet } from '../search/components/FilterSheet';
 import type { MapProperty } from './types';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -77,6 +78,7 @@ function MapContent(): React.JSX.Element {
   const [region, set_region] = useState<Region>(GDL_REGION);
   const [selected, set_selected] = useState<MapProperty | null>(null);
   const [query, set_query] = useState('');
+  const [filter_visible, set_filter_visible] = useState(false);
 
   /*
    * ponytail: filtro cliente sin geocoding ni nueva dependencia — cubre el scope #11.7.
@@ -172,7 +174,17 @@ function MapContent(): React.JSX.Element {
        * el onPress del MapView (set_selected(null)) porque la barra está fuera
        * del MapView y tiene mayor z-index.
        */}
-      <MapSearchBar value={query} on_change={set_query} />
+      <MapSearchBar
+        value={query}
+        on_change={set_query}
+        on_filter_press={() => set_filter_visible(true)}
+      />
+
+      {/* FilterSheet — abierto desde el ícono options-outline del MapSearchBar */}
+      <FilterSheet
+        visible={filter_visible}
+        onClose={() => set_filter_visible(false)}
+      />
     </View>
   );
 }

@@ -1,0 +1,6 @@
+# Videos demo de dominio público descargados para el seed local.
+# NO commitear binarios — el .gitignore sí se trackea.
+# Para descargarlos: ver "Descargar videos demo" en supabase/README.md
+*.mp4
+*.mov
+*.webm

@@ -11,7 +11,7 @@
  * la guardia contra disparos duplicados vive en loadMore (hook).
  */
 
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   StyleSheet,
   TouchableOpacity,
@@ -22,8 +22,11 @@ import {
 } from 'react-native';
 import { FlashList, type ListRenderItemInfo } from '@shopify/flash-list';
 import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { colors } from '@/theme/theme';
+import { colors, spacing } from '@/theme/theme';
+import { FilterSheet } from '../search/components/FilterSheet';
 
 import { VideoFeedItem } from './components/VideoFeedItem';
 import { FeedSkeleton } from './components/FeedSkeleton';
@@ -37,8 +40,10 @@ const key_extractor = (item: FeedPropertyWithUrl): string => item.id;
 export function FeedScreen() {
   const { height } = useWindowDimensions();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { viewabilityConfigCallbackPairs, isItemActive } = useFeedActiveIndex();
   const { data, isLoading, error, loadInitial, refetch, loadMore } = useFeedProperties();
+  const [filter_visible, set_filter_visible] = useState(false);
 
   // Carga la primera página al montar la pantalla.
   // loadInitial es estable (useCallback con deps vacías), por lo que
@@ -152,6 +157,28 @@ export function FeedScreen() {
       >
         <Text style={styles.publish_btn_text}>+</Text>
       </TouchableOpacity>
+
+      {/*
+       * Botón de filtros — top-right flotante sobre el feed oscuro.
+       * Estética: fondo semi-translúcido oscuro (ink_feed) + ícono gris claro,
+       * para no romper la inmersión del feed de video.
+       * Posición: safe-area top + s_12 de holgura, alineado a la derecha.
+       * El FilterSheet (panel claro) se abre encima del feed vía Modal nativo.
+       */}
+      <TouchableOpacity
+        style={[styles.filter_btn, { top: insets.top + spacing.s_12 }]}
+        onPress={() => set_filter_visible(true)}
+        accessibilityLabel="Abrir filtros"
+        accessibilityRole="button"
+      >
+        <Ionicons name="options-outline" size={20} color={colors.gray_1} />
+      </TouchableOpacity>
+
+      {/* FilterSheet — abierto desde el botón de filtros del feed */}
+      <FilterSheet
+        visible={filter_visible}
+        onClose={() => set_filter_visible(false)}
+      />
     </View>
   );
 }
@@ -200,5 +227,21 @@ const styles = StyleSheet.create({
     fontSize: 28,
     lineHeight: 32,
     fontWeight: '400',
+  },
+  /**
+   * Botón de filtros — píldora circular sobre el feed oscuro.
+   * Fondo semi-translúcido oscuro (ink_feed a 0.60) para integrarse con la
+   * estética inmersiva del feed sin opacar el video de fondo.
+   * `top` es dinámico (safe area + s_12) — se inyecta via inline style.
+   */
+  filter_btn: {
+    position: 'absolute',
+    right: spacing.s_16,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(23,20,15,0.60)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
