@@ -28,6 +28,7 @@ Decisiones de fondo: `wiki/decisiones/0003` (vault), `0004` (Taskmaster), `0006`
 - App: React Native + **Expo development build** (`expo-dev-client`), **Expo Router**, **TypeScript strict**.
 - Backend: **Supabase remoto** (`urbea-app`). Migraciones idempotentes + rollback + tests pgTAP. Video → **Supabase Storage** (demo).
 - Arquitectura: lógica de negocio en **Edge Functions**; **RLS** = 2ª capa; triggers solo atómicos. Ver `wiki/conceptos/rls-seguridad.md` y `docs/lineamientos-desarrollo.md`.
+- **Git/GitHub: `gh` CLI** (instalado). Una tarea = una rama `tarea/<id>-<slug>` desde `origin/main` fresco → PR → `gh pr merge --squash --delete-branch`. Detalle en §5 paso 7. Remoto: `goatdev08/urbeapp`. Autenticar una vez con `! gh auth login` si `gh auth status` falla.
 
 ## 4. Taskmaster — SIEMPRE por CLI (NUNCA MCP)
 - Provider: `claude-code/sonnet` (sin API key, $0). Tag activo: `master`.
@@ -65,8 +66,14 @@ La criticidad **no se juzga**: se **deriva** del footprint de la subtarea. El an
       Se relee con `task-master show <id>.<n>`.
    4. **Verifica** antes de cerrar: `pnpm tsc --noEmit`, `pnpm lint`, tests/app según aplique.
    5. Cierra: `task-master set-status --id=<id>.<n> --status=done`.
-5. **Cerrar la tarea** — todas las subtareas done → `task-master set-status --id=<id> --status=done`.
+5. **Cerrar la tarea** — ⚠️ **OBLIGATORIO, NO opcional:** en cuanto la última subtarea queda done, marca la tarea: `task-master set-status --id=<id> --status=done`. Una tarea terminada **sin** `set-status done` es un bug del flujo: rompe `task-master next` y desincroniza el estado entre ramas (el problema que nos costó horas). **Verifica** con `task-master show <id>` que quedó `done` antes de seguir. Misma regla al cerrar CADA subtarea (paso 4.5) — nunca dejes trabajo terminado en `pending`/`in-progress`.
 6. **Ingest al vault** (promover lo durable) — actualiza `wiki/codebase/mapa-codebase.md` (concepto → archivos nuevos), la página de concepto (`estado: vivo`, `codigo:` con rutas reales) y una línea en `wiki/log.md`.
+7. **Integrar a `main` (PR con `gh`)** — cada tarea vive en su rama `tarea/<id>-<slug>` que **ramifica desde `origin/main` fresco** (`git fetch origin && git switch -c tarea/<id>-<slug> origin/main`), NO desde otra rama de tarea (el apilamiento es lo que confundía el estado). Al cerrar:
+   1. `pnpm tsc --noEmit` verde → `git push -u origin tarea/<id>-<slug>`.
+   2. `gh pr create --base main --fill` (título `feat(<id>): <título>`).
+   3. `gh pr merge --squash --delete-branch` → **un commit por tarea** en `main`, rama borrada local+remota.
+   4. Si trabajaste en worktree aislado: `git worktree remove <path>`.
+   **`main` es la única fuente de verdad.** Nada de ramas/worktrees viejos apilados. `main` == `origin/main` siempre.
 
 **Reglas del registro:**
 - Log paso-a-paso → en la **subtarea** (Taskmaster). Conocimiento durable (decisión, patrón, mapeo) → **vault**.
