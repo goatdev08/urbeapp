@@ -4,13 +4,20 @@
  *
  * Query: from('leads').select(<embedded>).is('deleted_at', null).order('updated_at', {ascending:false})
  *   - RLS (migración 0008) filtra agent_id = auth.uid() — sin filtro explícito aquí.
- *   - Embeds: users!leads_user_id_fkey(phone, user_preferences(full_name, profile_photo_url))
+ *   - Embeds: users!leads_user_id_fkey(first_name, last_name, avatar_url, phone)
  *     (FK explícita: leads tiene DOS FKs a users — user_id/buscador y agent_id)
  *             lead_origin_properties(property_id, properties(address, property_videos(thumbnail_url, position)))
  *
+ * ⚠️ Identidad del buscador desde `users`, NO desde `user_preferences`
+ * (subtarea 30.3, mismo motivo que useAgencyAgents): el agente NO puede leer
+ * el user_preferences ajeno del buscador vía RLS (`user_prefs_select` = fila
+ * propia), pero SÍ puede leer su fila `users` (RLS `users_select`).
+ *
  * Transformación raw → AgentLead:
  *   - phone: users.phone (null si null)
- *   - full_name / profile_photo_url: user_preferences[0] (null si array vacío)
+ *   - full_name: build_full_name(users.first_name, users.last_name) — util
+ *     compartido con useAgencyAgents (utils/full_name.ts)
+ *   - profile_photo_url: users.avatar_url (null si null)
  *   - origin_*: lead_origin_properties[0] (null si array vacío / LEFT JOIN vacío)
  *   - origin_property_thumbnail_url: video con menor position (null si sin videos)
  *
@@ -23,6 +30,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase/client';
 import { useAuth } from '@/features/auth/context';
 import type { AgentLead } from '../types';
+import { build_full_name } from '../utils/full_name';
 
 // ---------------------------------------------------------------------------
 // Tipo de retorno público
@@ -56,11 +64,6 @@ type RawLeadOriginProperty = {
   } | null;
 };
 
-type RawUserPreference = {
-  full_name: string | null;
-  profile_photo_url: string | null;
-};
-
 type RawLead = {
   id: string;
   user_id: string;
@@ -74,7 +77,9 @@ type RawLead = {
   deleted_at: string | null;
   users: {
     phone: string | null;
-    user_preferences: RawUserPreference[];
+    first_name: string | null;
+    last_name: string | null;
+    avatar_url: string | null;
   } | null;
   lead_origin_properties: RawLeadOriginProperty[];
 };
@@ -96,10 +101,6 @@ function pick_thumbnail(videos: RawPropertyVideo[]): string | null {
 
 /** Mapea una fila raw (con embedded selects) al tipo AgentLead aplanado. */
 function transform_raw_to_agent_lead(raw: RawLead): AgentLead {
-  const prefs = raw.users?.user_preferences ?? [];
-  // noUncheckedIndexedAccess: [0] devuelve T | undefined
-  const first_pref = prefs[0] ?? null;
-
   const origin = raw.lead_origin_properties[0] ?? null;
   const videos = origin?.properties?.property_videos ?? [];
 
@@ -116,8 +117,8 @@ function transform_raw_to_agent_lead(raw: RawLead): AgentLead {
     created_at: raw.created_at,
     // Usuario interesado (buscador)
     phone: raw.users?.phone ?? null,
-    full_name: first_pref?.full_name ?? null,
-    profile_photo_url: first_pref?.profile_photo_url ?? null,
+    full_name: build_full_name(raw.users?.first_name ?? null, raw.users?.last_name ?? null),
+    profile_photo_url: raw.users?.avatar_url ?? null,
     // Propiedad de origen (LEFT JOIN — nullable)
     origin_property_id: origin?.property_id ?? null,
     origin_property_address: origin?.properties?.address ?? null,
@@ -162,15 +163,17 @@ export function useAgentLeads(agentId?: string | null): UseAgentLeadsState {
 
       const base_query = supabase
         .from('leads')
-        // ponytail: cast `as never` para embedded selects con columnas de migración 0015
-        // (user_preferences.full_name / profile_photo_url) que no están en los tipos
-        // generados. Mismo patrón que useAgentProfile y profileService.
+        // ponytail: cast `as never` para el embedded select completo — el tipo
+        // generado de `leads` no modela los joins anidados (users, lead_origin_properties,
+        // properties, property_videos). Mismo patrón que useAgentProfile y profileService.
         .select(
           // ⚠️ `users!leads_user_id_fkey` — `leads` tiene DOS FKs a `users`
           // (agent_id y user_id); sin desambiguar, PostgREST devuelve
           // "Could not embed because more than one relationship was found".
           // Queremos el BUSCADOR (leads.user_id), no el agente.
-          'id, user_id, agent_id, status, internal_notes, first_contact_at, last_contact_at, updated_at, created_at, deleted_at, users!leads_user_id_fkey(phone, user_preferences(full_name, profile_photo_url)), lead_origin_properties(property_id, properties(address, property_videos(thumbnail_url, position)))' as never
+          // Identidad del buscador desde `users` (subtarea 30.3): first_name/
+          // last_name/avatar_url, NO user_preferences (RLS no lo permite).
+          'id, user_id, agent_id, status, internal_notes, first_contact_at, last_contact_at, updated_at, created_at, deleted_at, users!leads_user_id_fkey(first_name, last_name, avatar_url, phone), lead_origin_properties(property_id, properties(address, property_videos(thumbnail_url, position)))' as never
         );
 
       // agentId string → filtra por ese agente (caso owner viendo a un agente

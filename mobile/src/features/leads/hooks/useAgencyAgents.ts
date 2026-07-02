@@ -29,6 +29,7 @@ import { useState, useEffect } from 'react';
 
 import { supabase } from '@/lib/supabase/client';
 import type { Agent } from '../types';
+import { build_full_name } from '../utils/full_name';
 
 // ---------------------------------------------------------------------------
 // Tipo de retorno público
@@ -59,12 +60,6 @@ type RawAgencyMemberRow = {
 // ---------------------------------------------------------------------------
 // Helpers de transformación
 // ---------------------------------------------------------------------------
-
-/** Une first_name/last_name en un nombre completo; null si ambos vacíos. */
-function build_full_name(first: string | null, last: string | null): string | null {
-  const full = [first, last].filter(Boolean).join(' ').trim();
-  return full.length > 0 ? full : null;
-}
 
 function transform_raw_to_agent(raw: RawAgencyMemberRow): Agent {
   const user = raw.users;
