@@ -3,18 +3,24 @@
  * del CRM, subtarea #28.2).
  *
  * Query: from('agency_members')
- *   .select('user_id, users(id, user_preferences(full_name, profile_photo_url))' as never)
+ *   .select('user_id, users(id, first_name, last_name, avatar_url)')
  *   .eq('agency_id', agencyId).eq('member_role', 'agent').eq('status', 'active')
  *   - Solo se ejecuta si enabled===true && agencyId!=null (enabled = isOwner,
  *     ver useAgencyRole de la subtarea 28.1). Si no, agents=[] sin llamar supabase.
  *   - El owner NO se incluye (filtro member_role='agent' lo excluye).
  *
+ * ⚠️ Nombre/foto desde `users`, NO desde `user_preferences`: el owner NO puede
+ * leer el user_preferences de sus agentes (RLS `user_prefs_select` = fila propia),
+ * pero SÍ puede leer sus filas `users` (RLS `users_select` vía is_agency_owner_of).
+ * Además first_name/last_name/avatar_url están en los tipos generados → sin cast.
+ *
  * Transformación raw → Agent:
  *   - id: users?.id ?? user_id (fallback si el embed de users viniera null)
- *   - full_name / profile_photo_url: user_preferences[0] (null si array vacío)
+ *   - full_name: [first_name, last_name] unidos con espacio (null si ambos vacíos)
+ *   - profile_photo_url: users.avatar_url
  *
  * Orden: client-side por full_name (localeCompare), nulls al final — la query
- * no puede ordenar por full_name (vive en user_preferences, no en agency_members).
+ * no puede ordenar por el nombre compuesto.
  *
  * Patrón: useState/useEffect + flag `ignore`, idéntico a useAgentLeads.
  */
@@ -38,14 +44,11 @@ export interface UseAgencyAgentsState {
 // Tipos locales — shape raw del embedded select de PostgREST
 // ---------------------------------------------------------------------------
 
-type RawUserPreference = {
-  full_name: string | null;
-  profile_photo_url: string | null;
-};
-
 type RawUser = {
   id: string;
-  user_preferences: RawUserPreference[];
+  first_name: string | null;
+  last_name: string | null;
+  avatar_url: string | null;
 };
 
 type RawAgencyMemberRow = {
@@ -57,14 +60,19 @@ type RawAgencyMemberRow = {
 // Helpers de transformación
 // ---------------------------------------------------------------------------
 
+/** Une first_name/last_name en un nombre completo; null si ambos vacíos. */
+function build_full_name(first: string | null, last: string | null): string | null {
+  const full = [first, last].filter(Boolean).join(' ').trim();
+  return full.length > 0 ? full : null;
+}
+
 function transform_raw_to_agent(raw: RawAgencyMemberRow): Agent {
-  const prefs = raw.users?.user_preferences ?? [];
-  const first_pref = prefs[0] ?? null;
+  const user = raw.users;
 
   return {
-    id: raw.users?.id ?? raw.user_id,
-    full_name: first_pref?.full_name ?? null,
-    profile_photo_url: first_pref?.profile_photo_url ?? null,
+    id: user?.id ?? raw.user_id,
+    full_name: build_full_name(user?.first_name ?? null, user?.last_name ?? null),
+    profile_photo_url: user?.avatar_url ?? null,
   };
 }
 
@@ -114,10 +122,9 @@ export function useAgencyAgents(
 
       const { data, error: query_error } = await supabase
         .from('agency_members')
-        // ponytail: cast `as never` para embedded select con columnas de migración
-        // 0015 (user_preferences.full_name/profile_photo_url) fuera de los tipos
-        // generados. Mismo patrón que useAgentLeads/useAgentProfile.
-        .select('user_id, users(id, user_preferences(full_name, profile_photo_url))' as never)
+        // ponytail: nombre/foto desde `users` (legible por el owner vía RLS
+        // is_agency_owner_of); columnas en tipos generados → sin cast `as never`.
+        .select('user_id, users(id, first_name, last_name, avatar_url)')
         .eq('agency_id', resolved_agency_id)
         .eq('member_role', 'agent')
         .eq('status', 'active');
