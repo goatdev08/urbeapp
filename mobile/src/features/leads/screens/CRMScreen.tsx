@@ -33,6 +33,7 @@ import {
 } from 'react-native';
 
 import { FilterTabs } from '@/components/FilterTabs';
+import { useAuth } from '@/features/auth/context';
 import { EmptyState } from '@/features/profile/components/EmptyState';
 import { colors, layout, radii, spacing, type_scale } from '@/theme/theme';
 import { AgentSelector } from '../components/AgentSelector';
@@ -84,6 +85,7 @@ function apply_filter(leads: AgentLead[], filter: CrmFilter): AgentLead[] {
 // ─── Componente ───────────────────────────────────────────────────────────────
 
 export function CRMScreen(): React.ReactElement {
+  const { user } = useAuth();
   const { isOwner, agencyId } = useAgencyRole();
   const { agents } = useAgencyAgents(agencyId, isOwner);
   const [selected_agent_id, set_selected_agent_id] = useState<string | null>(null);
@@ -239,6 +241,10 @@ export function CRMScreen(): React.ReactElement {
           visible={selected_lead !== null}
           onClose={handle_expanded_close}
           onSuccess={handle_expanded_success}
+          // Solo lectura si el lead pertenece a OTRO agente (owner viendo el
+          // pipeline del equipo). La EF solo autoriza al agente dueño a editar;
+          // sin este gate el cambio de estado devolvería UNAUTHORIZED_AGENT.
+          readOnly={selected_lead.agent_id !== user?.id}
         />
       )}
 

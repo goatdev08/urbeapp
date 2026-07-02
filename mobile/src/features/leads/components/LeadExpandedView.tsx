@@ -53,6 +53,15 @@ export interface LeadExpandedViewProps {
    * el refetch antes de desmontar.
    */
   onSuccess: () => void;
+  /**
+   * Modo solo lectura: oculta el selector de estado y las notas editables.
+   * Se activa cuando el owner de la agencia abre un lead de OTRO agente — puede
+   * verlo (RLS lo permite) pero no editarlo (la EF `update-lead-status` solo
+   * autoriza al agente dueño). Sin esto, cualquier cambio devolvería un error
+   * UNAUTHORIZED_AGENT confuso. La seguridad real la imponen la EF y RLS; esto
+   * es solo UX. Default false → comportamiento del agente sin cambios.
+   */
+  readOnly?: boolean;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -69,6 +78,7 @@ export function LeadExpandedView({
   visible,
   onClose,
   onSuccess,
+  readOnly = false,
 }: LeadExpandedViewProps): React.JSX.Element {
   const { update_status, is_updating, error } = useUpdateLeadStatus({ onSuccess });
 
@@ -81,6 +91,7 @@ export function LeadExpandedView({
   }, [lead.id]);
 
   async function handle_status_select(new_status: LeadStatus): Promise<void> {
+    if (readOnly) return; // el owner viendo un lead ajeno no puede editar
     if (is_updating) return;
     if (new_status === lead.status) return; // ya está en ese estado
     // EC-8: note omitido del body si vacío (el hook controla el spread condicional)
@@ -89,6 +100,7 @@ export function LeadExpandedView({
   }
 
   const display_name = lead.full_name ?? 'Usuario sin nombre';
+  const current_meta = get_status_meta(lead.status);
 
   return (
     <Modal
@@ -161,9 +173,25 @@ export function LeadExpandedView({
         {/* Divisor */}
         <View style={styles.divider} />
 
-        {/* Sección selector de estado */}
-        <Text style={styles.section_title}>Cambiar estado</Text>
+        {/* Sección de estado — read-only (owner viendo lead ajeno) o selector editable */}
+        <Text style={styles.section_title}>{readOnly ? 'Estado' : 'Cambiar estado'}</Text>
 
+        {readOnly ? (
+          <View style={styles.readonly_status_wrap}>
+            <View style={styles.status_row}>
+              <View style={[styles.status_dot, { backgroundColor: current_meta.bg }]} />
+              <View style={[styles.status_badge, { backgroundColor: current_meta.bg }]}>
+                <Text style={[styles.status_badge_text, { color: current_meta.text }]}>
+                  {current_meta.label}
+                </Text>
+              </View>
+            </View>
+            <Text style={styles.readonly_hint}>
+              Solo lectura · este lead pertenece a otro agente de tu equipo
+            </Text>
+          </View>
+        ) : (
+        <>
         <ScrollView
           style={styles.status_list}
           contentContainerStyle={styles.status_list_content}
@@ -225,19 +253,21 @@ export function LeadExpandedView({
             <Text style={styles.error_text}>{error}</Text>
           </View>
         )}
+        </>
+        )}
 
         {/* ── Notas internas ─────────────────────────────────────────────────── */}
         <View style={styles.divider_bottom} />
         <Text style={styles.section_title}>Notas internas</Text>
         <TextInput
-          style={styles.notes_input}
-          value={note}
+          style={[styles.notes_input, readOnly && styles.notes_input_readonly]}
+          value={readOnly ? (lead.internal_notes ?? '') : note}
           onChangeText={set_note}
-          placeholder="Añadir nota…"
+          placeholder={readOnly ? 'Sin notas' : 'Añadir nota…'}
           placeholderTextColor={colors.gray_1}
           multiline
           numberOfLines={3}
-          editable={!is_updating}
+          editable={!readOnly && !is_updating}
           textAlignVertical="top"
           accessibilityLabel="Notas internas del lead"
         />
@@ -449,6 +479,19 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
 
+  // ── Estado solo lectura (owner viendo lead ajeno) ────────────────────────────
+  readonly_status_wrap: {
+    paddingHorizontal: spacing.s_16,
+    gap: spacing.s_8,
+    marginBottom: spacing.s_4,
+  },
+  readonly_hint: {
+    fontFamily: fonts.sans,
+    fontSize: 12,
+    color: colors.gray_2,
+    lineHeight: 16,
+  },
+
   // ── Actualizando ─────────────────────────────────────────────────────────────
   updating_row: {
     flexDirection: 'row',
@@ -497,6 +540,10 @@ const styles = StyleSheet.create({
     color: colors.ink,
     lineHeight: 20,
     backgroundColor: colors.paper,
+  },
+  notes_input_readonly: {
+    backgroundColor: colors.paper_2,
+    color: colors.gray_2,
   },
 
   // ── Fila de acciones ─────────────────────────────────────────────────────────
