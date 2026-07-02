@@ -1236,10 +1236,11 @@
             "dependencies": [
               1
             ],
-            "details": "Create FilterSection reusable wrapper component with title. Add operation_type section with two checkboxes (Renta, Venta) allowing both selected or none (defaults to both). Add property_type section with chip/toggle buttons for each type from property_type enum. Use local component state initially. Style chips with selected/unselected states. Map to operation_type enum values (rent, sale) and property_type enum (house, apartment, studio, commercial, office, land, other).\n<info added on 2026-07-02T07:17:14.309Z>\nPLAN: Chips operación (rent/sale/both) + multi-select tipo propiedad (house/apartment/studio/commercial/land según enum properties.property_type). REUSAR el patrón de pills existente: mobile/src/components/FilterTabs.tsx (ScrollView horizontal + Pressable pill, sin librería) — pero es single-select, así que crear FilterSection/variante multi-select reutilizando su estilo. agente=mobile · skills=urbea-expo · criticidad=no (puro UI, mapeo string→enum en componente) · footprint=search/components/FilterSheet.tsx + search/components/FilterSection.tsx (nuevo). Ejecutar 3º.\n</info added on 2026-07-02T07:17:14.309Z>",
-            "status": "pending",
+            "details": "Create FilterSection reusable wrapper component with title. Add operation_type section with two checkboxes (Renta, Venta) allowing both selected or none (defaults to both). Add property_type section with chip/toggle buttons for each type from property_type enum. Use local component state initially. Style chips with selected/unselected states. Map to operation_type enum values (rent, sale) and property_type enum (house, apartment, studio, commercial, office, land, other).\n<info added on 2026-07-02T07:17:14.309Z>\nPLAN: Chips operación (rent/sale/both) + multi-select tipo propiedad (house/apartment/studio/commercial/land según enum properties.property_type). REUSAR el patrón de pills existente: mobile/src/components/FilterTabs.tsx (ScrollView horizontal + Pressable pill, sin librería) — pero es single-select, así que crear FilterSection/variante multi-select reutilizando su estilo. agente=mobile · skills=urbea-expo · criticidad=no (puro UI, mapeo string→enum en componente) · footprint=search/components/FilterSheet.tsx + search/components/FilterSection.tsx (nuevo). Ejecutar 3º.\n</info added on 2026-07-02T07:17:14.309Z>\n<info added on 2026-07-02T07:46:42.589Z>\nDONE: Created FilterChipGroup.tsx component with multi-select chip pattern. Modified FilterSheet.tsx to integrate operation type and property type filters. FilterChipGroup accepts options (value/label pairs), selected values array, and onChange callback with toggle helper. OPERATION_OPTIONS (Renta/Venta → rent/sale) and PROPERTY_TYPE_OPTIONS (Casa/Departamento/Local/Oficina/Terreno → casa/departamento/local/oficina/terreno) defined as module constants matching DB enum. 'both' not exposed in UI (DB value only). Styles match BedroomsSelector (pill uppercase caption, primary_tint active, paper_2 inactive). Two section_sep between sections for visual consistency. Local state: operation_types (string[]) and property_types (string[]) — TODO 12.6 will wire to SearchContext. Verified: pnpm tsc --noEmit clean from mobile/. Smoke test: filters render in FilterSheet Modal ScrollView.\n</info added on 2026-07-02T07:46:42.589Z>\n<info added on 2026-07-02T07:52:21.330Z>\nFilterChipGroup.tsx (props {options, selected:string[], onChange}) multi-toggle reutizable, accessibilityRole=checkbox. Dos secciones en FilterSheet: Operacion (rent/sale — 'both' NO expuesto, lo resuelve 12.6 en query) + Tipo (5 enum: casa/departamento/local/oficina/terreno). useState //TODO 12.6: operation_types[], property_types[]. tsc limpio.\n</info added on 2026-07-02T07:52:21.330Z>",
+            "status": "done",
             "testStrategy": "Verify checkboxes toggle independently. Confirm multi-select chips show visual selected state. Test selecting all, none, and individual combinations.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-07-02T07:52:27.932Z"
           },
           {
             "id": 3,
@@ -1309,7 +1310,7 @@
         "complexity": 5,
         "recommendedSubtasks": 7,
         "expansionPrompt": "Break down filters into: (1) create FilterSheet component with react-native-bottom-sheet, (2) implement operation type checkboxes and property type multi-select, (3) add price range inputs with validation, (4) implement zone/city autocomplete from properties.zone, (5) add bedrooms selector and boolean toggles (pet-friendly, no-guarantor, student-friendly), (6) implement filter state management with WHERE clause builder, (7) add clear filters, active filter badge, query integration, and AsyncStorage persistence",
-        "updatedAt": "2026-07-02T07:42:15.202Z"
+        "updatedAt": "2026-07-02T07:52:27.932Z"
       },
       {
         "id": "13",
@@ -2525,7 +2526,7 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-07-02T07:42:15.202Z",
+      "lastModified": "2026-07-02T07:52:27.932Z",
       "taskCount": 29,
       "completedCount": 22,
       "tags": [

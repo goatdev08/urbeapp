@@ -35,6 +35,34 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, fonts, radii, spacing } from '@/theme/theme';
 import { BedroomsSelector } from './BedroomsSelector';
+import { FilterChipGroup } from './FilterChipGroup';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Opciones de filtro (constantes de módulo — no se recrean en cada render)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Operación: solo Renta y Venta como opciones de usuario.
+ * 'both' (enum DB) indica que una propiedad soporta ambas modalidades y se
+ * resuelve en la capa de query de 12.6 — no es una elección de UI.
+ */
+const OPERATION_OPTIONS: { value: string; label: string }[] = [
+  { value: 'rent', label: 'Renta' },
+  { value: 'sale', label: 'Venta' },
+];
+
+/**
+ * Tipo de propiedad: los 5 valores del enum `property_type` del DB
+ * (migración 0005). Labels en español capitalizado tal como se presentan
+ * al usuario en el resto de la app (fichas, tarjetas, publicación).
+ */
+const PROPERTY_TYPE_OPTIONS: { value: string; label: string }[] = [
+  { value: 'casa',         label: 'Casa' },
+  { value: 'departamento', label: 'Departamento' },
+  { value: 'local',        label: 'Local' },
+  { value: 'oficina',      label: 'Oficina' },
+  { value: 'terreno',      label: 'Terreno' },
+];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Props
@@ -89,6 +117,15 @@ export function FilterSheet({ visible, onClose }: FilterSheetProps): React.JSX.E
   // ── Estado local temporal ──────────────────────────────────────────────────
   // TODO 12.6: reemplazar con FilterContext (los valores vendrán del Context
   // y los setters llamarán a context.set_* en lugar de useState local).
+
+  // 12.2 — Operación: subconjunto de ['rent','sale']; [] = sin filtro (ambas).
+  // TODO 12.6: context.filters.operation_types / context.set_operation_types
+  const [operation_types, set_operation_types] = useState<string[]>([]);
+
+  // 12.2 — Tipo de propiedad: subconjunto del enum property_type; [] = sin filtro.
+  // TODO 12.6: context.filters.property_types / context.set_property_types
+  const [property_types, set_property_types] = useState<string[]>([]);
+
   const [bedrooms, set_bedrooms] = useState<number | null>(null);
   const [pet_friendly, set_pet_friendly] = useState(false);
   const [allows_no_guarantor, set_allows_no_guarantor] = useState(false);
@@ -156,9 +193,42 @@ export function FilterSheet({ visible, onClose }: FilterSheetProps): React.JSX.E
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {/* 12.2 — Tipo de operación: renta / venta / ambos */}
+          {/* ── 12.2 — Operación ─────────────────────────────────────────── */}
+          {/*
+           * Selección múltiple: el usuario puede elegir Renta, Venta, ambas o
+           * ninguna (ninguna = sin filtro, equivale a mostrar todo).
+           * 'both' es un valor de dato (una propiedad que acepta ambas modalidades)
+           * y matchea automáticamente en la capa de query (12.6) — no se expone
+           * como opción de UI.
+           * Contrato para 12.6: operation_types → context.filters.operation_types
+           */}
+          <View style={styles.section}>
+            <Text style={styles.section_title}>Operación</Text>
+            <FilterChipGroup
+              options={OPERATION_OPTIONS}
+              selected={operation_types}
+              onChange={set_operation_types}
+            />
+          </View>
 
-          {/* 12.3 — Tipo de propiedad: casa / depto / local / oficina / terreno */}
+          <View style={styles.section_sep} />
+
+          {/* ── 12.2 — Tipo de propiedad ─────────────────────────────────── */}
+          {/*
+           * Multi-select de los 5 valores del enum property_type.
+           * [] = sin filtro (muestra todos los tipos).
+           * Contrato para 12.6: property_types → context.filters.property_types
+           */}
+          <View style={styles.section}>
+            <Text style={styles.section_title}>Tipo de propiedad</Text>
+            <FilterChipGroup
+              options={PROPERTY_TYPE_OPTIONS}
+              selected={property_types}
+              onChange={set_property_types}
+            />
+          </View>
+
+          <View style={styles.section_sep} />
 
           {/* 12.4 — Zona / colonia (autocomplete de texto libre; usa TextInput
                 directo de RN para evitar el conflicto de z-index que tendría
