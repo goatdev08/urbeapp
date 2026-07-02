@@ -33,10 +33,14 @@ import {
 } from 'react-native';
 
 import { FilterTabs } from '@/components/FilterTabs';
+import { useAuth } from '@/features/auth/context';
 import { EmptyState } from '@/features/profile/components/EmptyState';
 import { colors, layout, radii, spacing, type_scale } from '@/theme/theme';
+import { AgentSelector } from '../components/AgentSelector';
 import { LeadCard } from '../components/LeadCard';
 import { LeadExpandedView } from '../components/LeadExpandedView';
+import { useAgencyAgents } from '../hooks/useAgencyAgents';
+import { useAgencyRole } from '../hooks/useAgencyRole';
 import { useAgentLeads } from '../hooks/useAgentLeads';
 import type { AgentLead, LeadStatus } from '../types';
 
@@ -81,7 +85,11 @@ function apply_filter(leads: AgentLead[], filter: CrmFilter): AgentLead[] {
 // ─── Componente ───────────────────────────────────────────────────────────────
 
 export function CRMScreen(): React.ReactElement {
-  const { leads, loading, error, refetch } = useAgentLeads();
+  const { user } = useAuth();
+  const { isOwner, agencyId } = useAgencyRole();
+  const { agents } = useAgencyAgents(agencyId, isOwner);
+  const [selected_agent_id, set_selected_agent_id] = useState<string | null>(null);
+  const { leads, loading, error, refetch } = useAgentLeads(selected_agent_id);
   const [filter, set_filter] = useState<CrmFilter>('all');
   const [search, set_search] = useState('');
   const [selected_lead, set_selected_lead] = useState<AgentLead | null>(null);
@@ -142,7 +150,9 @@ export function CRMScreen(): React.ReactElement {
         {/* Cabecera */}
         <View style={styles.header}>
           <Text style={styles.title}>CRM</Text>
-          <Text style={styles.subtitle}>Tus leads de contacto</Text>
+          <Text style={styles.subtitle}>
+            {isOwner ? 'Leads de tu equipo' : 'Tus leads de contacto'}
+          </Text>
         </View>
 
         {/* Búsqueda por nombre */}
@@ -167,6 +177,17 @@ export function CRMScreen(): React.ReactElement {
             </Pressable>
           )}
         </View>
+
+        {/* Selector de agente (solo owner con agentes en su agencia) */}
+        {isOwner && agents.length > 0 && (
+          <View style={styles.agent_selector_wrap}>
+            <AgentSelector
+              agents={agents}
+              selectedAgentId={selected_agent_id}
+              onSelectAgent={set_selected_agent_id}
+            />
+          </View>
+        )}
 
         {/* Tabs de filtro */}
         <View style={styles.tabs_wrap}>
@@ -220,6 +241,10 @@ export function CRMScreen(): React.ReactElement {
           visible={selected_lead !== null}
           onClose={handle_expanded_close}
           onSuccess={handle_expanded_success}
+          // Solo lectura si el lead pertenece a OTRO agente (owner viendo el
+          // pipeline del equipo). La EF solo autoriza al agente dueño a editar;
+          // sin este gate el cambio de estado devolvería UNAUTHORIZED_AGENT.
+          readOnly={selected_lead.agent_id !== user?.id}
         />
       )}
 
@@ -280,6 +305,11 @@ const styles = StyleSheet.create({
   search_clear_text: {
     ...type_scale.body,
     color: colors.gray_2,
+  },
+
+  // ── Selector de agente (owner) ─────────────────────────────────────────────
+  agent_selector_wrap: {
+    marginTop: spacing.s_12,
   },
 
   // ── Tabs ────────────────────────────────────────────────────────────────────

@@ -4,7 +4,8 @@
  *
  * Query: from('leads').select(<embedded>).is('deleted_at', null).order('updated_at', {ascending:false})
  *   - RLS (migración 0008) filtra agent_id = auth.uid() — sin filtro explícito aquí.
- *   - Embeds: users(phone, user_preferences(full_name, profile_photo_url))
+ *   - Embeds: users!leads_user_id_fkey(phone, user_preferences(full_name, profile_photo_url))
+ *     (FK explícita: leads tiene DOS FKs a users — user_id/buscador y agent_id)
  *             lead_origin_properties(property_id, properties(address, property_videos(thumbnail_url, position)))
  *
  * Transformación raw → AgentLead:
@@ -129,12 +130,20 @@ function transform_raw_to_agent_lead(raw: RawLead): AgentLead {
 // ---------------------------------------------------------------------------
 
 /**
- * Carga los leads del agente autenticado. RLS filtra por agent_id = auth.uid().
+ * Carga los leads del agente autenticado, o de un agente específico si se
+ * pasa `agentId` (caso owner: ver los leads de cualquier agente de su agencia).
+ *
+ * Semántica AGREGADO / RLS-driven (subtarea 28.3):
+ *   - agentId es string → añade .eq('agent_id', agentId) a la query.
+ *   - agentId es null/undefined (default) → sin filtro explícito; RLS decide
+ *     (agente normal ve solo los suyos, owner ve todos los de su agencia).
+ *
  * Expone refetch() para re-disparar la query (p.ej. tras cambiar estado de un lead).
  */
-export function useAgentLeads(): UseAgentLeadsState {
+export function useAgentLeads(agentId?: string | null): UseAgentLeadsState {
   // Consumimos useAuth para alinear el patrón del repo (contexto de sesión activa).
-  // El filtro real de agent_id lo hace RLS — no necesitamos el id aquí.
+  // El filtro real de agent_id lo hace RLS (o el .eq condicional de abajo) —
+  // no necesitamos el id de sesión aquí.
   useAuth();
 
   const [leads, set_leads] = useState<AgentLead[]>([]);
@@ -151,14 +160,25 @@ export function useAgentLeads(): UseAgentLeadsState {
       // Resetea loading en cada fetch (incluyendo refetches)
       set_loading(true);
 
-      const { data, error: query_error } = await supabase
+      const base_query = supabase
         .from('leads')
         // ponytail: cast `as never` para embedded selects con columnas de migración 0015
         // (user_preferences.full_name / profile_photo_url) que no están en los tipos
         // generados. Mismo patrón que useAgentProfile y profileService.
         .select(
-          'id, user_id, agent_id, status, internal_notes, first_contact_at, last_contact_at, updated_at, created_at, deleted_at, users(phone, user_preferences(full_name, profile_photo_url)), lead_origin_properties(property_id, properties(address, property_videos(thumbnail_url, position)))' as never
-        )
+          // ⚠️ `users!leads_user_id_fkey` — `leads` tiene DOS FKs a `users`
+          // (agent_id y user_id); sin desambiguar, PostgREST devuelve
+          // "Could not embed because more than one relationship was found".
+          // Queremos el BUSCADOR (leads.user_id), no el agente.
+          'id, user_id, agent_id, status, internal_notes, first_contact_at, last_contact_at, updated_at, created_at, deleted_at, users!leads_user_id_fkey(phone, user_preferences(full_name, profile_photo_url)), lead_origin_properties(property_id, properties(address, property_videos(thumbnail_url, position)))' as never
+        );
+
+      // agentId string → filtra por ese agente (caso owner viendo a un agente
+      // específico). null/undefined → sin filtro explícito, RLS decide.
+      const filtered_query =
+        typeof agentId === 'string' ? base_query.eq('agent_id', agentId) : base_query;
+
+      const { data, error: query_error } = await filtered_query
         .is('deleted_at', null)
         .order('updated_at', { ascending: false });
 
@@ -182,7 +202,7 @@ export function useAgentLeads(): UseAgentLeadsState {
     return () => {
       ignore = true;
     };
-  }, [tick]);
+  }, [tick, agentId]);
 
   // ponytail: useCallback sin deps — set_tick es estable (React garantía)
   const refetch = useCallback(() => set_tick((t) => t + 1), []);
