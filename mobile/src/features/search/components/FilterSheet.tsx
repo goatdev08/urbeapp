@@ -19,11 +19,12 @@
  * ambos llaman onClose.
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Modal,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TouchableOpacity,
   TouchableWithoutFeedback,
@@ -33,6 +34,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, fonts, radii, spacing } from '@/theme/theme';
+import { BedroomsSelector } from './BedroomsSelector';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Props
@@ -46,11 +48,51 @@ export interface FilterSheetProps {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ToggleRow — fila de toggle booleano (local, no exportado)
+//
+// Contrato para 12.6 (FilterContext): value/onChange vendrán del Context en
+// lugar del estado local de FilterSheet.
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface ToggleRowProps {
+  /** Texto visible al usuario. */
+  label: string;
+  /** Estado actual del switch. */
+  value: boolean;
+  /** Callback al cambiar el estado. */
+  onChange: (v: boolean) => void;
+}
+
+function ToggleRow({ label, value, onChange }: ToggleRowProps): React.JSX.Element {
+  return (
+    <View style={styles.toggle_row}>
+      <Text style={styles.toggle_label}>{label}</Text>
+      <Switch
+        value={value}
+        onValueChange={onChange}
+        trackColor={{ false: colors.paper_3, true: colors.primary_tint }}
+        thumbColor={value ? colors.primary : colors.gray_1}
+        ios_backgroundColor={colors.paper_3}
+        accessibilityLabel={label}
+      />
+    </View>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Componente
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function FilterSheet({ visible, onClose }: FilterSheetProps): React.JSX.Element {
   const insets = useSafeAreaInsets();
+
+  // ── Estado local temporal ──────────────────────────────────────────────────
+  // TODO 12.6: reemplazar con FilterContext (los valores vendrán del Context
+  // y los setters llamarán a context.set_* en lugar de useState local).
+  const [bedrooms, set_bedrooms] = useState<number | null>(null);
+  const [pet_friendly, set_pet_friendly] = useState(false);
+  const [allows_no_guarantor, set_allows_no_guarantor] = useState(false);
+  const [student_friendly, set_student_friendly] = useState(false);
 
   return (
     <Modal
@@ -122,7 +164,49 @@ export function FilterSheet({ visible, onClose }: FilterSheetProps): React.JSX.E
                 directo de RN para evitar el conflicto de z-index que tendría
                 dentro de un BottomSheet externo — razón principal de usar Modal) */}
 
-          {/* 12.5 — Rango de precio (slider dual) */}
+          {/* ── 12.5 — Recámaras + Extras booleanos ──────────────────────── */}
+
+          {/* Sección: Recámaras mínimas */}
+          <View style={styles.section}>
+            <Text style={styles.section_title}>Recámaras</Text>
+            {/*
+             * BedroomsSelector — contrato para 12.6 (FilterContext):
+             *   value    → context.filters.bedrooms_min (number | null)
+             *   onChange → context.set_bedrooms_min
+             * Columna: properties.bedrooms int nullable (migración 0005).
+             */}
+            <BedroomsSelector value={bedrooms} onChange={set_bedrooms} />
+          </View>
+
+          <View style={styles.section_sep} />
+
+          {/* Sección: Extras booleanos */}
+          <View style={styles.section}>
+            <Text style={styles.section_title}>Extras</Text>
+            {/*
+             * Toggles — contrato para 12.6 (FilterContext):
+             *   pet_friendly        → context.filters.pet_friendly / set_pet_friendly
+             *   allows_no_guarantor → context.filters.allows_no_guarantor / set_allows_no_guarantor
+             *   student_friendly    → context.filters.student_friendly / set_student_friendly
+             * Columnas: properties.{pet_friendly, allows_no_guarantor, student_friendly}
+             * boolean not null default false (migración 0005, índices parciales).
+             */}
+            <ToggleRow
+              label="Acepta mascotas"
+              value={pet_friendly}
+              onChange={set_pet_friendly}
+            />
+            <ToggleRow
+              label="Sin aval"
+              value={allows_no_guarantor}
+              onChange={set_allows_no_guarantor}
+            />
+            <ToggleRow
+              label="Para estudiantes"
+              value={student_friendly}
+              onChange={set_student_friendly}
+            />
+          </View>
         </ScrollView>
 
         {/* ── Footer — acciones ────────────────────────────────────────────── */}
@@ -284,5 +368,57 @@ const styles = StyleSheet.create({
     fontFamily: fonts.sans_semibold,
     fontSize: 15,
     color: '#FFFFFF',
+  },
+
+  // ── Sección genérica ──────────────────────────────────────────────────────
+  /**
+   * Contenedor de cada bloque de filtros (Recámaras, Extras, etc.).
+   * marginBottom separa secciones entre sí.
+   */
+  section: {
+    marginBottom: spacing.s_4,
+  },
+  /**
+   * Título de sección: overline uppercase (caption), gris medio.
+   * Mismo estilo que FilterTabs.label pero como encabezado de grupo.
+   */
+  section_title: {
+    fontFamily: fonts.sans_semibold,
+    fontSize: 12,
+    lineHeight: 16,
+    letterSpacing: 1.6,
+    textTransform: 'uppercase' as const,
+    color: colors.gray_2,
+    marginBottom: spacing.s_12,
+  },
+  /**
+   * Línea hairline entre secciones (Recámaras / Extras).
+   * marginBottom recrea el spacing.s_20 de separación visual.
+   */
+  section_sep: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.silver,
+    marginBottom: spacing.s_20,
+    marginTop: spacing.s_16,
+  },
+
+  // ── ToggleRow ─────────────────────────────────────────────────────────────
+  /**
+   * Fila label + Switch. borderBottomWidth actúa de separador entre filas
+   * dentro de la misma sección.
+   */
+  toggle_row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.s_12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.paper_3,
+  },
+  toggle_label: {
+    fontFamily: fonts.sans,
+    fontSize: 15,
+    lineHeight: 22,
+    color: colors.ink,
   },
 });
