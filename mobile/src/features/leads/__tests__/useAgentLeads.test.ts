@@ -372,6 +372,23 @@ describe('useAgentLeads', () => {
     expect(result.current.loading).toBe(false);
   });
 
+  // ── (EC-embed) Desambiguación de la FK users ─────────────────────────────
+  //
+  // Regresión: `leads` tiene DOS FKs a `users` (agent_id y user_id). Un embed
+  // `users(...)` sin desambiguar hace que PostgREST devuelva en runtime
+  // "Could not embed because more than one relationship was found for 'leads'
+  // and 'users'". El embed DEBE nombrar la FK del buscador (leads.user_id):
+  // `users!leads_user_id_fkey(...)`. Los mocks no atrapan esto → lock explícito.
+
+  it('(EC-embed) el select desambigua la FK del buscador con users!leads_user_id_fkey', async () => {
+    await renderHook(() => useAgentLeads());
+
+    const select_arg = mock_supabase_holder.client._mock_select.mock.calls[0]?.[0] as string;
+    expect(select_arg).toContain('users!leads_user_id_fkey(');
+    // y NO el embed ambiguo `users(` (que rompería en runtime)
+    expect(select_arg).not.toMatch(/[ ,]users\(/);
+  });
+
   // ── (EC-2) Lead sin propiedad de origen ──────────────────────────────────
   //
   // Regla: lead_origin_properties puede estar vacío (LEFT JOIN). En ese caso,
