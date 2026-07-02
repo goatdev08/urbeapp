@@ -129,10 +129,23 @@ function transform_raw_to_agent_lead(raw: RawLead): AgentLead {
 // ---------------------------------------------------------------------------
 
 /**
- * Carga los leads del agente autenticado. RLS filtra por agent_id = auth.uid().
+ * Carga los leads del agente autenticado, o de un agente específico si se
+ * pasa `agentId` (caso owner: ver los leads de cualquier agente de su agencia).
+ *
+ * Semántica AGREGADO / RLS-driven (subtarea 28.3):
+ *   - agentId es string → añade .eq('agent_id', agentId) a la query.
+ *   - agentId es null/undefined (default) → sin filtro explícito; RLS decide
+ *     (agente normal ve solo los suyos, owner ve todos los de su agencia).
+ *
  * Expone refetch() para re-disparar la query (p.ej. tras cambiar estado de un lead).
+ *
+ * STUB (subtarea 28.3, fase RED): la firma ya acepta `agentId` para que los
+ * tests nuevos compilen, pero el filtro `.eq('agent_id', …)` y la dep en el
+ * useEffect aún NO están implementados — eso es GREEN.
  */
-export function useAgentLeads(): UseAgentLeadsState {
+export function useAgentLeads(agentId?: string | null): UseAgentLeadsState {
+  // ponytail: agentId aún no se usa — implementación real en GREEN (28.3).
+  void agentId;
   // Consumimos useAuth para alinear el patrón del repo (contexto de sesión activa).
   // El filtro real de agent_id lo hace RLS — no necesitamos el id aquí.
   useAuth();

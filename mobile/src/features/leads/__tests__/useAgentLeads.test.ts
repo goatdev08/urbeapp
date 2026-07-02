@@ -24,7 +24,7 @@
  *   - `@/features/auth/context` (useAuth): provee el usuario agente autenticado.
  *   - La cadena de query es: from('leads').select(...).is(...).order(...) → Promise.
  *
- * EDGE CASES CUBIERTOS (10 casos):
+ * EDGE CASES CUBIERTOS (10 casos originales + 4 de la subtarea 28.3):
  *
  * ### Happy path
  * - (EC-1) mapea_lead_completo_a_AgentLead
@@ -43,6 +43,18 @@
  * - (EC-8) estado_loading_inicial_true
  * - (EC-9) estado_loading_false_con_leads_tras_resolver
  * - (EC-10) error_cliente_expone_error_leads_vacio
+ *
+ * ### Subtarea 28.3 — filtro por agentId (semántica AGREGADO, RLS-driven)
+ * - (EC-nuevo-1) agentId_string_agrega_filtro_eq_agent_id
+ * - (EC-nuevo-2) agentId_null_o_ausente_no_agrega_filtro_eq_agent_id
+ * - (EC-nuevo-3) cambiar_agentId_entre_renders_redispara_fetch_con_nuevo_agente
+ * - (EC-nuevo-4) transformacion_raw_a_agent_lead_no_cambia_con_filtro_por_agentId
+ *
+ * ORDEN DE ENCADENAMIENTO ASUMIDO PARA EL GREEN (documentado aquí para que la
+ * implementación lo respete):
+ *   from('leads').select(<embeds>).eq('agent_id', agentId)?.is('deleted_at', null).order(...)
+ *   — .eq() se inserta SOLO si agentId es string; si es null/undefined se omite
+ *   y la cadena queda igual que hoy: select().is().order().
  */
 
 import { renderHook, act } from '@testing-library/react-native';
@@ -64,7 +76,7 @@ jest.mock('@/features/auth/context', () => ({
 //   actual de mock_supabase_holder.client, incluso después de que beforeEach
 //   lo reemplace con un mock nuevo para cada test.
 //
-// Cadena de query esperada:
+// Cadena de query esperada (sin agentId — comportamiento histórico, EC-1..10):
 //   supabase.from('leads')
 //     .select(<embeds>)          ← selects con joins embedded de users, user_preferences,
 //                                   lead_origin_properties, properties, property_videos
@@ -72,6 +84,17 @@ jest.mock('@/features/auth/context', () => ({
 //     .order('updated_at', { ascending: false })  ← EC-6: más reciente primero
 //
 // El agente_id NO se filtra explícitamente aquí (RLS lo hace, migración 0008).
+//
+// Cadena con agentId (subtarea 28.3, EC-nuevo-1..4):
+//   supabase.from('leads')
+//     .select(<embeds>)
+//     .eq('agent_id', agentId)   ← SOLO si agentId es string (no null/undefined)
+//     .is('deleted_at', null)
+//     .order('updated_at', { ascending: false })
+//
+// El mock de .select() retorna un objeto con AMBOS `is` y `eq` para soportar
+// las dos cadenas (con y sin filtro). `.eq()` a su vez retorna `{ is }` para
+// que la cadena pueda seguir con `.is().order()` tras el filtro.
 // ---------------------------------------------------------------------------
 
 /** Holder mutable — beforeEach lo reemplaza con el mock apropiado por test. */
@@ -267,8 +290,10 @@ function make_supabase_mock_leads(opts: {
   const mock_order = jest.fn().mockResolvedValue(query_result);
   // .is('deleted_at', null) → retorna { order }
   const mock_is = jest.fn().mockReturnValue({ order: mock_order });
-  // .select(...) → retorna { is }
-  const mock_select = jest.fn().mockReturnValue({ is: mock_is });
+  // .eq('agent_id', id) → retorna { is } (subtarea 28.3 — solo si agentId es string)
+  const mock_eq = jest.fn().mockReturnValue({ is: mock_is });
+  // .select(...) → retorna { is, eq } — soporta ambas cadenas (con y sin filtro)
+  const mock_select = jest.fn().mockReturnValue({ is: mock_is, eq: mock_eq });
   // from('leads') → retorna { select }
   const mock_from = jest.fn().mockReturnValue({ select: mock_select });
 
@@ -277,6 +302,7 @@ function make_supabase_mock_leads(opts: {
     // Expuestos para aserciones directas
     _mock_from: mock_from,
     _mock_select: mock_select,
+    _mock_eq: mock_eq,
     _mock_is: mock_is,
     _mock_order: mock_order,
   };
@@ -539,6 +565,128 @@ describe('useAgentLeads', () => {
     expect(result.current.leads).toEqual([]);
     // loading resuelto
     expect(result.current.loading).toBe(false);
+  });
+
+  // ── (EC-nuevo-1) agentId string → agrega filtro .eq('agent_id', …) ──────
+  //
+  // Subtarea 28.3: cuando se pasa un agentId concreto (caso owner viendo los
+  // leads de un agente específico de su agencia), la query debe encadenar
+  // .eq('agent_id', agentId) además de is/order.
+
+  it('(EC-nuevo-1) agentId_string_agrega_filtro_eq_agent_id: useAgentLeads("agent-123") encadena .eq("agent_id", "agent-123") en la query', async () => {
+    const mock_client = make_supabase_mock_leads({
+      query_result: { data: [RAW_LEAD_COMPLETO], error: null },
+    });
+    mock_supabase_holder.client = mock_client;
+
+    await renderHook(() => useAgentLeads('agent-123'));
+
+    expect(mock_client._mock_eq).toHaveBeenCalledWith('agent_id', 'agent-123');
+  });
+
+  // ── (EC-nuevo-2) agentId null/ausente → NO agrega filtro .eq ────────────
+  //
+  // Semántica AGREGADO / RLS-driven: sin agentId explícito (null o ausente),
+  // NO se llama .eq('agent_id', …) — el filtro lo hace RLS (owner ve todos
+  // los leads de su agencia con "Todos los agentes"; agente normal ve solo
+  // los suyos, idéntico al comportamiento histórico EC-1..10).
+
+  it('(EC-nuevo-2) agentId_null_o_ausente_no_agrega_filtro_eq_agent_id: useAgentLeads(null) y useAgentLeads() no llaman .eq("agent_id", …) — RLS decide', async () => {
+    const mock_client_null = make_supabase_mock_leads();
+    mock_supabase_holder.client = mock_client_null;
+
+    await renderHook(() => useAgentLeads(null));
+
+    expect(mock_client_null._mock_eq).not.toHaveBeenCalled();
+
+    const mock_client_sin_arg = make_supabase_mock_leads();
+    mock_supabase_holder.client = mock_client_sin_arg;
+
+    await renderHook(() => useAgentLeads());
+
+    expect(mock_client_sin_arg._mock_eq).not.toHaveBeenCalled();
+  });
+
+  // ── (EC-nuevo-3) cambiar agentId entre renders redispara el fetch ───────
+  //
+  // agentId debe estar en las deps del useEffect: al re-renderizar el hook
+  // con un agentId distinto (p.ej. el owner cambia de agente seleccionado en
+  // el filtro del CRM), la query se vuelve a disparar y refleja los leads
+  // del nuevo agente.
+
+  it('(EC-nuevo-3) cambiar_agentId_entre_renders_redispara_fetch_con_nuevo_agente: rerender con agentId distinto vuelve a llamar la query y actualiza leads con los del nuevo agente', async () => {
+    const RAW_LEAD_AGENTE_A: RawLeadRow = {
+      ...RAW_LEAD_COMPLETO,
+      id: 'lead-uuid-agente-a',
+      agent_id: 'agent-aaa',
+    };
+    const RAW_LEAD_AGENTE_B: RawLeadRow = {
+      ...RAW_LEAD_COMPLETO,
+      id: 'lead-uuid-agente-b',
+      agent_id: 'agent-bbb',
+      users: {
+        phone: '+52 55 0000 1111',
+        user_preferences: [{ full_name: 'Otro Agente Leads', profile_photo_url: null }],
+      },
+      lead_origin_properties: [],
+    };
+
+    const mock_client_a = make_supabase_mock_leads({
+      query_result: { data: [RAW_LEAD_AGENTE_A], error: null },
+    });
+    mock_supabase_holder.client = mock_client_a;
+
+    const { result, rerender } = await renderHook(
+      ({ agentId }: { agentId: string }) => useAgentLeads(agentId),
+      { initialProps: { agentId: 'agent-aaa' } }
+    );
+
+    expect(result.current.leads).toHaveLength(1);
+    expect(result.current.leads[0]?.id).toBe('lead-uuid-agente-a');
+    expect(mock_client_a._mock_eq).toHaveBeenCalledWith('agent_id', 'agent-aaa');
+
+    // Reemplaza el cliente mockeado con los datos del nuevo agente antes del rerender.
+    const mock_client_b = make_supabase_mock_leads({
+      query_result: { data: [RAW_LEAD_AGENTE_B], error: null },
+    });
+    mock_supabase_holder.client = mock_client_b;
+
+    await act(async () => {
+      rerender({ agentId: 'agent-bbb' });
+    });
+
+    // El rerender con agentId distinto debe haber vuelto a llamar from('leads')
+    // sobre el NUEVO cliente mockeado — prueba de que el fetch se re-disparó.
+    expect(mock_client_b._mock_from).toHaveBeenCalledWith('leads');
+    expect(mock_client_b._mock_eq).toHaveBeenCalledWith('agent_id', 'agent-bbb');
+    expect(result.current.leads).toHaveLength(1);
+    expect(result.current.leads[0]?.id).toBe('lead-uuid-agente-b');
+  });
+
+  // ── (EC-nuevo-4) transformación raw→AgentLead no cambia con el filtro ───
+  //
+  // Smoke: la transformación de datos (phone, full_name, origin_*) sigue
+  // intacta cuando se filtra por agentId — el filtro solo afecta la cláusula
+  // WHERE, no el mapeo de la fila resultante.
+
+  it('(EC-nuevo-4) transformacion_raw_a_agent_lead_no_cambia_con_filtro_por_agentId: useAgentLeads("agent-123") sigue mapeando phone/full_name/origin igual que sin filtro', async () => {
+    mock_supabase_holder.client = make_supabase_mock_leads({
+      query_result: { data: [RAW_LEAD_COMPLETO], error: null },
+    });
+
+    const { result } = await renderHook(() => useAgentLeads('agent-123'));
+
+    expect(result.current.leads).toHaveLength(1);
+    const lead = result.current.leads[0] as AgentLead;
+
+    expect(lead.phone).toBe('+52 55 1234 5678');
+    expect(lead.full_name).toBe('María García López');
+    expect(lead.profile_photo_url).toBe(
+      'https://storage.supabase.co/profile-photos/maria.jpg'
+    );
+    expect(lead.origin_property_id).toBe(TEST_PROPERTY_ID);
+    expect(lead.origin_property_address).toBe('Av. Insurgentes Sur 1602, Col. Florida, CDMX');
+    expect(result.current.error).toBeNull();
   });
 
 });
