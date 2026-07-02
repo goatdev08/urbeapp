@@ -34,7 +34,7 @@ esac
 
 # Los archivos de test (y rollbacks) siempre se permiten.
 case "$FILE_PATH" in
-  *.test.ts|*.spec.ts|*.test.js|*.spec.js) exit 0 ;;
+  *.test.ts|*.spec.ts|*.test.tsx|*.spec.tsx|*.test.js|*.spec.js|*.test.jsx|*.spec.jsx) exit 0 ;;
   */supabase/tests/*|*/rollbacks/*) exit 0 ;;
 esac
 
