@@ -70,3 +70,20 @@ export interface AgentLead {
   /** Thumbnail del primer video de la propiedad de origen. Null si no hay origin o sin video. */
   origin_property_thumbnail_url: string | null;
 }
+
+/**
+ * Agent — miembro agente de una agencia, para el selector del CRM del owner (#28.2).
+ *
+ * Fuentes de datos (schema migración 0003 + 0015):
+ *   - `agency_members`: user_id, member_role='agent', status='active'.
+ *   - `user_preferences` (via users.id → user_preferences.user_id): full_name,
+ *     profile_photo_url — columnas de migración 0015, ausentes en users.
+ *
+ * full_name / profile_photo_url son nullable: un agente sin onboarding puede no
+ * tener fila en user_preferences.
+ */
+export interface Agent {
+  id: string;
+  full_name: string | null;
+  profile_photo_url: string | null;
+}
