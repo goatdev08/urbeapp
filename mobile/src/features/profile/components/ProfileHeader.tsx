@@ -9,7 +9,8 @@
 import React, { useState } from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
 
-import { colors, radii, spacing, type_scale } from '@/theme/theme';
+import { colors, radii, shadows, spacing, type_scale } from '@/theme/theme';
+import { IsotipoMark } from '@/components/IsotipoMark';
 import type { AgentProfile } from '../types';
 import type { AgentStats } from '../hooks/useAgentStats';
 import { ProfessionalStats } from './ProfessionalStats';
@@ -41,6 +42,9 @@ function format_member_since(iso_date: string): string {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const AVATAR_SIZE = 96;
+// Badge de isotipo (esquina inferior-derecha del avatar_ring, solo con foto real).
+const ISOTIPO_BADGE_SIZE = 28;
+const ISOTIPO_BADGE_OFFSET = -8; // ~10px hacia afuera del borde del avatar_ring
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Componente
@@ -66,17 +70,27 @@ export function ProfileHeader({ profile, stats, loading = false }: ProfileHeader
   return (
     <View style={styles.container}>
       {/* ── Avatar ─────────────────────────────────────────────────── */}
-      <View style={styles.avatar_ring}>
-        {show_photo ? (
-          <Image
-            source={{ uri: profile_photo_url! }}
-            style={styles.avatar_img}
-            onError={() => set_img_error(true)}
-            accessibilityLabel={`Foto de perfil de ${display_name}`}
-          />
-        ) : (
-          <View style={styles.avatar_placeholder}>
-            <Text style={styles.avatar_initials}>{initials}</Text>
+      {/* avatar_wrapper (sin overflow:hidden) para que el badge de isotipo,
+          absolute en su esquina, no se recorte junto con la foto. */}
+      <View style={styles.avatar_wrapper}>
+        <View style={styles.avatar_ring}>
+          {show_photo ? (
+            <Image
+              source={{ uri: profile_photo_url! }}
+              style={styles.avatar_img}
+              onError={() => set_img_error(true)}
+              accessibilityLabel={`Foto de perfil de ${display_name}`}
+            />
+          ) : (
+            <View style={styles.avatar_placeholder}>
+              <Text style={styles.avatar_initials}>{initials}</Text>
+            </View>
+          )}
+        </View>
+        {/* Badge de isotipo: solo con foto real, no en el fallback de iniciales. */}
+        {show_photo && (
+          <View style={styles.isotipo_badge}>
+            <IsotipoMark size={13} color={colors.paper} />
           </View>
         )}
       </View>
@@ -124,6 +138,11 @@ const styles = StyleSheet.create({
   },
 
   // ── Avatar ──────────────────────────────────────────────────────────────
+  avatar_wrapper: {
+    width: AVATAR_SIZE,
+    height: AVATAR_SIZE,
+    marginBottom: spacing.s_16,
+  },
   avatar_ring: {
     width: AVATAR_SIZE,
     height: AVATAR_SIZE,
@@ -131,7 +150,18 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.silver,
     overflow: 'hidden',
-    marginBottom: spacing.s_16,
+  },
+  isotipo_badge: {
+    position: 'absolute',
+    right: ISOTIPO_BADGE_OFFSET,
+    bottom: ISOTIPO_BADGE_OFFSET,
+    width: ISOTIPO_BADGE_SIZE,
+    height: ISOTIPO_BADGE_SIZE,
+    borderRadius: ISOTIPO_BADGE_SIZE / 2,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadows.sm,
   },
   avatar_img: {
     width: AVATAR_SIZE,
