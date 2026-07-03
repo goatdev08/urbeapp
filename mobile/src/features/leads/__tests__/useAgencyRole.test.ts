@@ -45,6 +45,13 @@
 import { renderHook } from '@testing-library/react-native';
 
 // ---------------------------------------------------------------------------
+// Imports DESPUÉS de registrar mocks
+// ---------------------------------------------------------------------------
+
+import { useAuth } from '@/features/auth/context';
+import { useAgencyRole } from '../hooks/useAgencyRole';
+
+// ---------------------------------------------------------------------------
 // Mock de useAuth — declara ANTES de cualquier import del SUT.
 // El usuario autenticado tiene id TEST_USER_ID.
 // ---------------------------------------------------------------------------
@@ -75,13 +82,6 @@ jest.mock('@/lib/supabase/client', () => ({
     return mock_supabase_holder.client;
   },
 }));
-
-// ---------------------------------------------------------------------------
-// Imports DESPUÉS de registrar mocks
-// ---------------------------------------------------------------------------
-
-import { useAuth } from '@/features/auth/context';
-import { useAgencyRole } from '../hooks/useAgencyRole';
 
 // ---------------------------------------------------------------------------
 // Constantes de test
@@ -156,7 +156,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mock_supabase_holder.client = make_supabase_mock_agency_role();
   mock_use_auth.mockReturnValue({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     user: { id: TEST_USER_ID } as any,
     session: null,
     isLoading: false,

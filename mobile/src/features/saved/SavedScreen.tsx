@@ -54,6 +54,7 @@ export function SavedScreen(): React.JSX.Element {
   useEffect(() => {
     if (hidden_ids.size === 0) return;
     const server_ids = new Set(properties.map(p => p.id));
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- resincroniza hidden_ids (quitado optimista) con la lista del servidor tras refetch.
     set_hidden_ids(prev => {
       const next = new Set(prev);
       let changed = false;

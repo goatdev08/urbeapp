@@ -135,7 +135,7 @@ export function PropertyInfoHeader({ data }: PropertyInfoHeaderProps): React.JSX
               {index > 0 && <View style={styles.spec_separator} />}
               <View style={styles.spec_item}>
                 <Ionicons
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                   
                   name={spec.icon as any}
                   size={16}
                   color={colors.gray_2}

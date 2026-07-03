@@ -28,7 +28,6 @@ import {
 // Tokens (alineados con step2 — paleta clara/gestión)
 // ---------------------------------------------------------------------------
 
-const COLOR_BG = '#FAFAF8';
 const COLOR_TEXT_PRIMARY = '#1A1A1A';
 const COLOR_TEXT_SECONDARY = '#6B7280';
 const COLOR_BORDER = '#E5E7EB';
@@ -52,7 +51,7 @@ interface PlacePrediction {
 }
 
 interface AutocompleteResponse {
-  suggestions?: Array<{ placePrediction: PlacePrediction }>;
+  suggestions?: { placePrediction: PlacePrediction }[];
 }
 
 // ---------------------------------------------------------------------------

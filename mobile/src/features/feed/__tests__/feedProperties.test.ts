@@ -71,7 +71,7 @@ type QueryRow = {
   created_at: string;
   // status es opcional: la query embebida puede incluirlo para que la impl
   // pueda reconciliar por video_id (y filtrar por status si lo necesita).
-  property_videos: Array<{ id: string; storage_path: string; position: number; status?: string }>;
+  property_videos: { id: string; storage_path: string; position: number; status?: string }[];
 };
 
 type MintedVideo = {

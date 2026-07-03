@@ -38,6 +38,18 @@ import React from 'react';
 import { renderHook, act } from '@testing-library/react-native';
 
 // ---------------------------------------------------------------------------
+// Wrapper con PublishFormProvider
+// ---------------------------------------------------------------------------
+
+import { PublishFormProvider, usePublishForm } from '../store/PublishFormContext';
+
+// ---------------------------------------------------------------------------
+// SUT
+// ---------------------------------------------------------------------------
+
+import { usePublish } from '../hooks/usePublish';
+
+// ---------------------------------------------------------------------------
 // Constantes de test
 // ---------------------------------------------------------------------------
 
@@ -114,21 +126,9 @@ function make_mock_supabase_edit(opts: {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Wrapper con PublishFormProvider
-// ---------------------------------------------------------------------------
-
-import { PublishFormProvider, usePublishForm } from '../store/PublishFormContext';
-
 const wrapper = ({ children }: { children: React.ReactNode }) => (
   <PublishFormProvider>{children}</PublishFormProvider>
 );
-
-// ---------------------------------------------------------------------------
-// SUT
-// ---------------------------------------------------------------------------
-
-import { usePublish } from '../hooks/usePublish';
 
 // ---------------------------------------------------------------------------
 // Helper: setup para edit mode
@@ -215,10 +215,6 @@ describe('usePublish — edit mode (17.8)', () => {
       await result.current.sut.publish();
     });
 
-    // En create mode, from() puede ser llamado pero NO con 'properties' + update
-    const properties_update_calls = mock_supabase._mock_from.mock.calls.filter(
-      (call: unknown[]) => call[0] === 'properties'
-    );
     // No debe haber ninguna llamada from('properties') seguida de update en create mode
     expect(mock_supabase._mock_update).not.toHaveBeenCalled();
   });

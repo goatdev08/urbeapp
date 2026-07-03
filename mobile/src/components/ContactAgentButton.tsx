@@ -113,9 +113,9 @@ export function ContactAgentButton({
         // FunctionsHttpError expone context como el Response crudo (body no consumido).
         // Documentado en @supabase/functions-js v2.108.x:
         //   const errorMessage = await error.context.json()
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+         
         const body = await ef_error.context?.json?.();
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+         
         code = (body as { error?: { code?: string } })?.error?.code;
       } catch {
         // FunctionsFetchError (red error) — no tiene body JSON; usa mensaje genérico.

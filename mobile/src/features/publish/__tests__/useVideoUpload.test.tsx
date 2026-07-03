@@ -50,6 +50,18 @@ import React from 'react';
 import { renderHook, act } from '@testing-library/react-native';
 
 // ---------------------------------------------------------------------------
+// Wrapper con PublishFormProvider
+// ---------------------------------------------------------------------------
+
+import { PublishFormProvider, usePublishForm } from '../store/PublishFormContext';
+
+// ---------------------------------------------------------------------------
+// SUT — importado DESPUÉS de los imports de contexto
+// ---------------------------------------------------------------------------
+
+import { useVideoUpload } from '../hooks/useVideoUpload';
+
+// ---------------------------------------------------------------------------
 // Constantes de test
 // ---------------------------------------------------------------------------
 
@@ -109,21 +121,9 @@ function make_uuid_gen(fixed = TEST_VIDEO_ID): jest.Mock<() => string> {
   return jest.fn().mockReturnValue(fixed);
 }
 
-// ---------------------------------------------------------------------------
-// Wrapper con PublishFormProvider
-// ---------------------------------------------------------------------------
-
-import { PublishFormProvider, usePublishForm } from '../store/PublishFormContext';
-
 const wrapper = ({ children }: { children: React.ReactNode }) => (
   <PublishFormProvider>{children}</PublishFormProvider>
 );
-
-// ---------------------------------------------------------------------------
-// SUT — importado DESPUÉS de los imports de contexto
-// ---------------------------------------------------------------------------
-
-import { useVideoUpload } from '../hooks/useVideoUpload';
 
 // ---------------------------------------------------------------------------
 // Tests

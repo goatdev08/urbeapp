@@ -31,7 +31,7 @@ export interface UseLikePropertyOpts {
   property_video_id: string;
   property_id: string;
   initialLiked?: boolean;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   supabase?: any;
 }
 
@@ -56,7 +56,7 @@ export function useLikeProperty({
 
   // Resolución lazy del cliente — idéntico a usePropertyActions.ts.
   // Evita que el module-level eval de client.ts (que lanza sin env vars) rompa los tests.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const get_client = (): any => {
     if (supabase_prop !== undefined) return supabase_prop;
     // eslint-disable-next-line @typescript-eslint/no-require-imports

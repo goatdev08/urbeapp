@@ -39,6 +39,14 @@ import { renderHook, act } from '@testing-library/react-native';
 import type { Session, AuthChangeEvent } from '@supabase/supabase-js';
 import type { UserProfile } from '../context';
 
+// Importamos el mock YA resuelto para poder redefinir implementaciones en cada test
+import { supabase } from '@/lib/supabase/client';
+
+// ---------------------------------------------------------------------------
+// Importamos el SUT DESPUÉS del mock
+// ---------------------------------------------------------------------------
+import { AuthProvider, useAuth } from '../context';
+
 // ---------------------------------------------------------------------------
 // Mock de supabase — con jest.fn() DENTRO del factory para evitar hoisting
 // ---------------------------------------------------------------------------
@@ -54,16 +62,8 @@ jest.mock('@/lib/supabase/client', () => ({
   },
 }));
 
-// Importamos el mock YA resuelto para poder redefinir implementaciones en cada test
-import { supabase } from '@/lib/supabase/client';
-
 const mock_auth = supabase.auth as jest.Mocked<typeof supabase.auth>;
 const mock_from = supabase.from as jest.MockedFunction<typeof supabase.from>;
-
-// ---------------------------------------------------------------------------
-// Importamos el SUT DESPUÉS del mock
-// ---------------------------------------------------------------------------
-import { AuthProvider, useAuth } from '../context';
 
 // ---------------------------------------------------------------------------
 // Factories

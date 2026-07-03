@@ -138,6 +138,7 @@ export default function AdminAgencyListScreen(): React.ReactElement {
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount: dispara la carga async (load_agencies maneja su propio loading/error).
     void load_agencies();
   }, [load_agencies]);
 

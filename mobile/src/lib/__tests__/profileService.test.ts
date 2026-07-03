@@ -21,6 +21,12 @@
 // ---------------------------------------------------------------------------
 
 // Mocks internos; se instancian dentro del factory para que jest.fn() exista.
+// ---------------------------------------------------------------------------
+// Imports DESPUÉS de registrar mocks
+// ---------------------------------------------------------------------------
+
+import { saveProfile } from '../profileService';
+
 const mock_upload = jest.fn();
 const mock_get_public_url = jest.fn();
 const mock_upsert = jest.fn();
@@ -37,12 +43,6 @@ jest.mock('@/lib/supabase/client', () => ({
     from: mock_from_db,
   },
 }));
-
-// ---------------------------------------------------------------------------
-// Imports DESPUÉS de registrar mocks
-// ---------------------------------------------------------------------------
-
-import { saveProfile } from '../profileService';
 
 // ---------------------------------------------------------------------------
 // Helpers de fábrica

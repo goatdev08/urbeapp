@@ -31,7 +31,7 @@ import { get_property_payload } from '../validation';
 
 // ponytail: import lazy — el cliente real solo se carga si no se inyecta uno externo.
 // Los tests siempre inyectan su propio mock.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 function get_default_supabase(): any {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   return (require('@/lib/supabase/client') as { supabase: unknown }).supabase;
@@ -44,7 +44,7 @@ function get_default_supabase(): any {
 export type PublishStatus = 'idle' | 'submitting' | 'success' | 'error';
 
 export interface UsePublishDeps {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   supabase?: any;
   /** true cuando el wizard opera sobre una propiedad existente (modo edición) */
   editMode?: boolean;
@@ -180,7 +180,7 @@ export function usePublish(deps?: UsePublishDeps): UsePublishResult {
         e instanceof Error ? e.message : 'Error de red al publicar';
       // NO reset.
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [supabase_client, state, reset, edit_mode, property_id_edit]);
 
   // Objeto con getters sobre refs — estable mientras publish no cambie.
@@ -199,7 +199,7 @@ export function usePublish(deps?: UsePublishDeps): UsePublishResult {
         return property_id_ref.current;
       },
     }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
     [publish],
   );
 }

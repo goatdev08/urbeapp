@@ -95,7 +95,9 @@ jest.mock('react-native-reanimated', () => {
  * ponytail: solo patch de un export writable + afterEach. Sin tocar internos.
  */
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
+// ponytail: sin eslint-disable aquí — @typescript-eslint/no-require-imports no
+// aplica a jest.setup.js (fuera del tsconfig del proyecto TS), la directiva
+// quedaba huérfana y ESLint la reportaba como error ("rule not found").
 const _rntl_act_module = require('@testing-library/react-native/dist/act');
 const _original_act_fn = _rntl_act_module.act;
 

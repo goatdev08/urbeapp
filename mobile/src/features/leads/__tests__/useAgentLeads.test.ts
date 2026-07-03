@@ -68,6 +68,14 @@
 import { renderHook, act } from '@testing-library/react-native';
 
 // ---------------------------------------------------------------------------
+// Imports DESPUÉS de registrar mocks
+// ---------------------------------------------------------------------------
+
+import { useAuth } from '@/features/auth/context';
+import { useAgentLeads } from '../hooks/useAgentLeads';
+import type { AgentLead } from '../types';
+
+// ---------------------------------------------------------------------------
 // Mock de useAuth — declara ANTES de cualquier import del SUT.
 // El agente autenticado tiene id TEST_AGENT_ID.
 // ---------------------------------------------------------------------------
@@ -117,14 +125,6 @@ jest.mock('@/lib/supabase/client', () => ({
     return mock_supabase_holder.client;
   },
 }));
-
-// ---------------------------------------------------------------------------
-// Imports DESPUÉS de registrar mocks
-// ---------------------------------------------------------------------------
-
-import { useAuth } from '@/features/auth/context';
-import { useAgentLeads } from '../hooks/useAgentLeads';
-import type { AgentLead } from '../types';
 
 // ---------------------------------------------------------------------------
 // Constantes de test
@@ -347,7 +347,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mock_supabase_holder.client = make_supabase_mock_leads();
   mock_use_auth.mockReturnValue({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     user: { id: TEST_AGENT_ID } as any,
     session: null,
     isLoading: false,

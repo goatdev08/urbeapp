@@ -27,9 +27,8 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { VideoView, useVideoPlayer } from 'expo-video';
-import { useRouter } from 'expo-router';
+import { useRouter , useLocalSearchParams } from 'expo-router';
 
-import { useLocalSearchParams } from 'expo-router';
 
 import { usePublishForm } from '@/features/publish/store/PublishFormContext';
 import { useVideoUpload, type UploadStatus } from '@/features/publish/hooks/useVideoUpload';

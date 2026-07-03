@@ -41,6 +41,12 @@
 import { renderHook, act } from '@testing-library/react-native';
 
 // ---------------------------------------------------------------------------
+// Import del SUT — DESPUÉS de todos los jest.mock()
+// ---------------------------------------------------------------------------
+
+import { useAgentProfile } from '../hooks/useAgentProfile';
+
+// ---------------------------------------------------------------------------
 // Mock de useFocusEffect (expo-router) — declarado ANTES de cualquier import.
 //
 // Estrategia:
@@ -64,9 +70,9 @@ jest.mock('expo-router', () => ({
     // Imita commit-once: el useEffect solo corre cuando `callback` cambia de
     // identidad (es decir, cuando agent_id cambia). En un foco real, React
     // Navigation llama el callback directamente; aquí lo modelamos con useEffect.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+     
     const React = require('react');
-    // eslint-disable-next-line react-hooks/rules-of-hooks
+     
     React.useEffect(() => {
       callback();
     }, [callback]);
@@ -159,12 +165,6 @@ function make_supabase_mock(opts: {
     _mock_eq_prefs: mock_eq_prefs,
   };
 }
-
-// ---------------------------------------------------------------------------
-// Import del SUT — DESPUÉS de todos los jest.mock()
-// ---------------------------------------------------------------------------
-
-import { useAgentProfile } from '../hooks/useAgentProfile';
 
 // ---------------------------------------------------------------------------
 // Setup / teardown

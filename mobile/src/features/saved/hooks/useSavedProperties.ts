@@ -59,14 +59,14 @@ export interface UseSavedPropertiesReturn {
  *
  * @param deps - Inyección de dependencias (supabase) para tests.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 export function useSavedProperties(deps?: { supabase?: any }): UseSavedPropertiesReturn {
   const { user } = useAuth();
 
   // ponytail: lazy require para el cliente por defecto — evita que el throw por
   // env vars ausentes (EXPO_PUBLIC_SUPABASE_URL) rompa el módulo en tests que no
   // necesitan el cliente real. Patrón idéntico a usePropertyActions.ts.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const get_client = (): any => {
     if (deps?.supabase) return deps.supabase;
     // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -145,6 +145,7 @@ export function useSavedProperties(deps?: { supabase?: any }): UseSavedPropertie
 
   // Carga inicial y re-fetch cuando user o client cambian.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount: dispara la carga async (fetch_saves maneja su propio loading/error).
     void fetch_saves();
   }, [fetch_saves]);
 

@@ -45,6 +45,14 @@ import React from 'react';
 import { render, fireEvent } from '@testing-library/react-native';
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Imports DESPUÉS de registrar mocks
+// ─────────────────────────────────────────────────────────────────────────────
+
+import { useLikeProperty } from '@/features/feed/hooks/useLikeProperty';
+import { useSaveProperty } from '@/features/feed/hooks/useSaveProperty';
+import { ActionButtons } from '../ActionButtons';
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Mocks de módulos — ANTES de cualquier import del SUT
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -55,14 +63,6 @@ jest.mock('@/features/feed/hooks/useLikeProperty', () => ({
 jest.mock('@/features/feed/hooks/useSaveProperty', () => ({
   useSaveProperty: jest.fn(),
 }));
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Imports DESPUÉS de registrar mocks
-// ─────────────────────────────────────────────────────────────────────────────
-
-import { useLikeProperty } from '@/features/feed/hooks/useLikeProperty';
-import { useSaveProperty } from '@/features/feed/hooks/useSaveProperty';
-import { ActionButtons } from '../ActionButtons';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constantes de test

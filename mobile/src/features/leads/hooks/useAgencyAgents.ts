@@ -102,6 +102,7 @@ export function useAgencyAgents(
     let ignore = false;
 
     if (!enabled || agencyId == null) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- guard "disabled/sin agencyId" del efecto de carga; resetea estado, no deriva UI.
       set_agents([]);
       set_error(null);
       set_loading(false);

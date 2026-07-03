@@ -46,6 +46,13 @@
 import { renderHook } from '@testing-library/react-native';
 
 // ---------------------------------------------------------------------------
+// Imports DESPUÉS de registrar mocks
+// ---------------------------------------------------------------------------
+
+import { useAgencyAgents } from '../hooks/useAgencyAgents';
+import type { Agent } from '../types';
+
+// ---------------------------------------------------------------------------
 // Mock del cliente Supabase — patrón mock_supabase_holder con getter.
 //
 // Cadena de query esperada:
@@ -66,13 +73,6 @@ jest.mock('@/lib/supabase/client', () => ({
     return mock_supabase_holder.client;
   },
 }));
-
-// ---------------------------------------------------------------------------
-// Imports DESPUÉS de registrar mocks
-// ---------------------------------------------------------------------------
-
-import { useAgencyAgents } from '../hooks/useAgencyAgents';
-import type { Agent } from '../types';
 
 // ---------------------------------------------------------------------------
 // Constantes de test

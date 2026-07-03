@@ -53,6 +53,12 @@
 import { renderHook, act } from '@testing-library/react-native';
 
 // ---------------------------------------------------------------------------
+// Import del SUT — DESPUÉS del jest.mock()
+// ---------------------------------------------------------------------------
+
+import { useAgentStats } from '../hooks/useAgentStats';
+
+// ---------------------------------------------------------------------------
 // Mock del cliente Supabase — cadena builder encadenable por tabla.
 // ---------------------------------------------------------------------------
 
@@ -81,10 +87,10 @@ function make_supabase_mock(config: TableMockConfig = {}) {
 
   const calls: {
     from: string[];
-    eq: Array<[string, unknown]>;
-    in: Array<[string, unknown]>;
-    is: Array<[string, unknown]>;
-    select: Array<[string, unknown]>;
+    eq: [string, unknown][];
+    in: [string, unknown][];
+    is: [string, unknown][];
+    select: [string, unknown][];
   } = { from: [], eq: [], in: [], is: [], select: [] };
 
   function make_chain(table: string, result_for_leads_all: CountResult, result_for_leads_closed: CountResult, result_for_properties: CountResult) {
@@ -141,12 +147,6 @@ jest.mock('@/lib/supabase/client', () => ({
     return mock_supabase_holder.client;
   },
 }));
-
-// ---------------------------------------------------------------------------
-// Import del SUT — DESPUÉS del jest.mock()
-// ---------------------------------------------------------------------------
-
-import { useAgentStats } from '../hooks/useAgentStats';
 
 const TEST_AGENT_ID = 'agente-uuid-test-stats-001';
 

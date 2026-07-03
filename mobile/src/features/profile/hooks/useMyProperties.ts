@@ -66,6 +66,7 @@ export function useMyProperties(): UseMyPropertiesState {
 
   useEffect(() => {
     if (!user?.id) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- guard "sin usuario" del efecto de carga; resetea estado, no deriva UI.
       set_state({ loading: false, error: null, data: null });
       return;
     }

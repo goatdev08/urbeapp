@@ -80,12 +80,12 @@ type QueryRow = {
   users: { id: string; phone: string | null } | null;
   /** Embed via properties_agency_id_fkey (nullable FK → puede ser null). */
   agencies: { id: string; name: string; logo_url: string | null } | null;
-  property_videos: Array<{
+  property_videos: {
     id: string;
     storage_path: string | null;
     position: number;
     deleted_at: string | null;
-  }>;
+  }[];
 };
 
 // ---------------------------------------------------------------------------
@@ -220,6 +220,7 @@ export function usePropertyDetail(id: string): UsePropertyDetailResult {
   }, [id]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount: dispara la carga async (load_property maneja su propio loading/error).
     void load_property();
   }, [load_property]);
 

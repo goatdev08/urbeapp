@@ -30,7 +30,7 @@ export interface FilterStorageDeps {
 
 /** ponytail: lazy-require del módulo nativo — evita romper tests que inyectan storage. */
 function default_storage(): KeyValueStorage {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   return (require('@react-native-async-storage/async-storage') as any).default;
 }
 

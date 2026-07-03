@@ -92,7 +92,7 @@ export function useEditProfile(deps?: UseEditProfileDeps): UseEditProfileReturn 
     // Resolución de deps: inyectados en tests, reales en producción.
     // Lazy require del cliente para que los mocks de jest.mock intercepten después
     // de que los jest.fn() estén asignados (mismo patrón que profileService.ts).
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const client = (deps?.supabase ??
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       (require('@/lib/supabase/client') as typeof import('@/lib/supabase/client')).supabase
@@ -131,7 +131,7 @@ export function useEditProfile(deps?: UseEditProfileDeps): UseEditProfileReturn 
     // al valor REAL de este guardado, sin depender de la variable destructurada
     // del render anterior (que es un snapshot obsoleto cuando la closure se cerró).
     return { ok: errors.length === 0, error: error_ref.current };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [user?.id, deps?.supabase, deps?.saveProfileFn]);
 
   // El objeto retornado usa getters para que isSaving y error sean siempre
@@ -145,6 +145,6 @@ export function useEditProfile(deps?: UseEditProfileDeps): UseEditProfileReturn 
       get error() { return error_ref.current; },
     };
     return result;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [save]);
 }

@@ -87,6 +87,7 @@ export function LeadExpandedView({
 
   // Reset cuando cambia el lead (el modal abre un lead distinto)
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- resincroniza el input local (note) con lead cuando cambia lead.id.
     set_note(lead.internal_notes ?? '');
   }, [lead.id]);
 

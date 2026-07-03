@@ -75,7 +75,7 @@ function StatsRow({ count_active, count_paused }: { count_active: number; count_
 export default function MyListingsScreen() {
   const router = useRouter();
   // 17.2: hook real; renderItem=null hasta 17.3 (ListingCard)
-  const { loading: _loading, error: _error, data, refetch } = useMyProperties();
+  const { data, refetch } = useMyProperties();
   const listings: ListingItem[] = data ?? [];
 
   // Acciones de mutación (17.7). isWorking (#25): true mientras una mutación está

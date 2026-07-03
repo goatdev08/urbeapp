@@ -39,19 +39,19 @@
 import { renderHook, act } from '@testing-library/react-native';
 
 // ---------------------------------------------------------------------------
+// Imports DESPUÉS de registrar mocks
+// ---------------------------------------------------------------------------
+
+import { useAuth } from '@/features/auth/context';
+import { useSaveProperty } from '../hooks/useSaveProperty';
+
+// ---------------------------------------------------------------------------
 // Mock de useAuth — debe declararse ANTES de cualquier import del SUT
 // ---------------------------------------------------------------------------
 
 jest.mock('@/features/auth/context', () => ({
   useAuth: jest.fn(),
 }));
-
-// ---------------------------------------------------------------------------
-// Imports DESPUÉS de registrar mocks
-// ---------------------------------------------------------------------------
-
-import { useAuth } from '@/features/auth/context';
-import { useSaveProperty } from '../hooks/useSaveProperty';
 
 // ---------------------------------------------------------------------------
 // Constantes de test
@@ -142,7 +142,7 @@ function make_mock_supabase_save(opts: {
 beforeEach(() => {
   jest.clearAllMocks();
   mock_use_auth.mockReturnValue({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     user: { id: TEST_USER_ID } as any,
     session: null,
     isLoading: false,

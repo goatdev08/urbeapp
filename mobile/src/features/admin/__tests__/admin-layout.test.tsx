@@ -28,6 +28,11 @@ import { render, act, cleanup } from '@testing-library/react-native';
 import type { Session } from '@supabase/supabase-js';
 
 // ---------------------------------------------------------------------------
+// SUT — importado DESPUÉS de los mocks
+// ---------------------------------------------------------------------------
+import AdminLayout from '../admin-layout';
+
+// ---------------------------------------------------------------------------
 // Mocks — declarados ANTES de importar el SUT
 // ---------------------------------------------------------------------------
 
@@ -71,11 +76,6 @@ jest.mock('expo-router', () => {
     Stack: () => <View testID="stack-content" />,
   };
 });
-
-// ---------------------------------------------------------------------------
-// SUT — importado DESPUÉS de los mocks
-// ---------------------------------------------------------------------------
-import AdminLayout from '../admin-layout';
 
 // ---------------------------------------------------------------------------
 // Factories

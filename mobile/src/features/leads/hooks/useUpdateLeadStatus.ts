@@ -63,7 +63,7 @@ export function useUpdateLeadStatus(deps?: UseUpdateLeadStatusDeps): UseUpdateLe
   const [, force_update] = useReducer((n: number) => n + 1, 0);
 
   // Resolución del cliente Supabase — lazy para que jest.mock intercepte.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const get_client = (): any => {
     if (deps?.supabase) return deps.supabase;
     // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -153,6 +153,6 @@ export function useUpdateLeadStatus(deps?: UseUpdateLeadStatusDeps): UseUpdateLe
       },
     };
     return r;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [update_status]);
 }

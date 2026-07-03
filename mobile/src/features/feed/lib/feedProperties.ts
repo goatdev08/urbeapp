@@ -22,7 +22,7 @@ import type { FeedPropertyWithUrl } from '../types';
 
 // ponytail: sin explicit any en la interfaz pública — solo en los internos inevitables
 export interface FeedPropertiesDeps {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   supabase: any;
 }
 
@@ -43,7 +43,7 @@ type QueryRow = {
   owner_user_id: string;
   agency_id: string | null;
   created_at: string;
-  property_videos: Array<{ id: string; storage_path: string; position: number }>;
+  property_videos: { id: string; storage_path: string; position: number }[];
 };
 
 export async function fetchFeedProperties(
@@ -52,7 +52,7 @@ export async function fetchFeedProperties(
   filters?: FilterState,
 ): Promise<{ data: FeedPropertyWithUrl[]; nextCursor: string | null }> {
   // ponytail: lazy-require del cliente real; nunca se evalúa en tests (deps siempre inyectado)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const client: any = deps?.supabase ?? (require('@/lib/supabase/client') as any).supabase;
 
   // Construye la query base

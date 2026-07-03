@@ -29,7 +29,7 @@ import { useAuth } from '@/features/auth/context';
 export interface UseSavePropertyOpts {
   property_id: string;
   initialSaved?: boolean;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   supabase?: any;
 }
 
@@ -51,7 +51,7 @@ export function useSaveProperty({
   const [is_saved, set_is_saved] = useState(initialSaved);
 
   // Resolución lazy del cliente — evita module-level eval en tests sin env vars.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const get_client = (): any => {
     if (supabase_prop !== undefined) return supabase_prop;
     // eslint-disable-next-line @typescript-eslint/no-require-imports

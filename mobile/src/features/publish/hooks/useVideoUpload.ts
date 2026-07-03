@@ -55,7 +55,7 @@ export interface UseVideoUploadDeps {
    * ponytail: tipado como `() => any` para aceptar jest.Mock sin forzar downcast en tests.
    *   En prod siempre devuelve string; en tests el mock también devuelve string en runtime.
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   uuid?: (...args: any[]) => any;
 }
 
@@ -143,7 +143,7 @@ export function useVideoUpload(deps?: UseVideoUploadDeps): UseVideoUploadResult 
       status_ref.current = 'success';
       progress_ref.current = 1;
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
     [supabase_client, uuid_fn, update],
   );
 
@@ -166,7 +166,7 @@ export function useVideoUpload(deps?: UseVideoUploadDeps): UseVideoUploadResult 
         return error_ref.current;
       },
     }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
     [upload],
   );
 }
