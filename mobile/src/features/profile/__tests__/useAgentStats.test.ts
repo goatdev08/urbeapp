@@ -7,28 +7,30 @@
  *   useAgentStats(agent_id: string): { loading: boolean; stats: AgentStats | null }
  *   AgentStats = { publications: number; leads: number; closed: number }
  *
- * QUERIES ESPERADAS (Promise.all, count exact + head:true, sin traer filas):
+ * QUERIES ESPERADAS (Promise.all, count exact + head:true, sin traer filas).
+ * Orden REAL de supabase-js: .select() con las opciones de count va PRIMERO,
+ * los filtros (.eq/.in/.is) van DESPUÉS (mismo patrón que usePropertiesGrid):
  *   1. publications = properties
+ *        .select('id', { count: 'exact', head: true })
  *        .eq('owner_user_id', agent_id)
  *        .in('status', ['active', 'paused'])
  *        .is('deleted_at', null)
- *        .select('id', { count: 'exact', head: true })
  *   2. leads = leads
+ *        .select('id', { count: 'exact', head: true })
  *        .eq('agent_id', agent_id)
  *        .is('deleted_at', null)
- *        .select('id', { count: 'exact', head: true })
  *   3. closed = leads
+ *        .select('id', { count: 'exact', head: true })
  *        .eq('agent_id', agent_id)
  *        .in('status', ['closed_won', 'closed_lost'])
  *        .is('deleted_at', null)
- *        .select('id', { count: 'exact', head: true })
  *
  * PATRÓN DE MOCK: igual que useAgentProfile.test.tsx — holder mutable
  * `mock_supabase_holder` con getter en @/lib/supabase/client (nombre con
  * prefijo "mock" requerido por Jest para referenciar dentro del factory).
- * Cadena builder encadenable: cada método (.eq/.in/.is/.select) devuelve el
- * mismo objeto encadenable, y el último eslabón resuelve la promesa con
- * { count, error }.
+ * Cadena builder encadenable: .select() devuelve el objeto encadenable,
+ * .eq/.in() encadenan, y .is('deleted_at', null) — última llamada en las 3
+ * queries — resuelve la promesa con { count, error } (awaitable).
  *
  * EDGE CASES CUBIERTOS (5 casos):
  *
@@ -90,6 +92,13 @@ function make_supabase_mock(config: TableMockConfig = {}) {
 
     const chain: Record<string, unknown> = {};
 
+    // Orden real de supabase-js: .select() primero (encadenable), filtros
+    // después. Las 3 queries del SUT terminan siempre en .is('deleted_at',
+    // null) — por eso .is() es el eslabón que resuelve (awaitable).
+    chain.select = jest.fn((col: string, opts: unknown) => {
+      calls.select.push([col, opts]);
+      return chain;
+    });
     chain.eq = jest.fn((col: string, val: unknown) => {
       calls.eq.push([col, val]);
       return chain;
@@ -101,10 +110,6 @@ function make_supabase_mock(config: TableMockConfig = {}) {
     });
     chain.is = jest.fn((col: string, val: unknown) => {
       calls.is.push([col, val]);
-      return chain;
-    });
-    chain.select = jest.fn((col: string, opts: unknown) => {
-      calls.select.push([col, opts]);
       // Resuelve según tabla + si vio .in() (distingue leads-totales de leads-cerrados)
       if (table === 'properties') return Promise.resolve(result_for_properties);
       // table === 'leads'
@@ -165,10 +170,10 @@ describe('useAgentStats', () => {
     mock_supabase_holder.client = {
       from: jest.fn().mockImplementation(() => {
         const chain: Record<string, unknown> = {};
+        chain.select = jest.fn().mockReturnValue(chain);
         chain.eq = jest.fn().mockReturnValue(chain);
         chain.in = jest.fn().mockReturnValue(chain);
-        chain.is = jest.fn().mockReturnValue(chain);
-        chain.select = jest.fn().mockReturnValue(pending);
+        chain.is = jest.fn().mockReturnValue(pending);
         return chain;
       }),
     } as unknown as ReturnType<typeof make_supabase_mock>;
@@ -258,10 +263,10 @@ describe('useAgentStats', () => {
     const slow_client = {
       from: jest.fn().mockImplementation(() => {
         const chain: Record<string, unknown> = {};
+        chain.select = jest.fn().mockReturnValue(chain);
         chain.eq = jest.fn().mockReturnValue(chain);
         chain.in = jest.fn().mockReturnValue(chain);
-        chain.is = jest.fn().mockReturnValue(chain);
-        chain.select = jest.fn().mockReturnValue(pending);
+        chain.is = jest.fn().mockReturnValue(pending);
         return chain;
       }),
     };
