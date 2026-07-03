@@ -11,6 +11,8 @@ import { Image, StyleSheet, Text, View } from 'react-native';
 
 import { colors, radii, spacing, type_scale } from '@/theme/theme';
 import type { AgentProfile } from '../types';
+import type { AgentStats } from '../hooks/useAgentStats';
+import { ProfessionalStats } from './ProfessionalStats';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -46,9 +48,13 @@ const AVATAR_SIZE = 96;
 
 interface ProfileHeaderProps {
   profile: AgentProfile;
+  /** Counts de publicaciones/leads/cerrados (useAgentStats). Omitidos → no se renderiza el sheet. */
+  stats?: AgentStats | null;
+  /** true mientras useAgentStats resuelve los counts. */
+  loading?: boolean;
 }
 
-export function ProfileHeader({ profile }: ProfileHeaderProps) {
+export function ProfileHeader({ profile, stats, loading = false }: ProfileHeaderProps) {
   const { full_name, profile_photo_url, bio, member_since, agency_name } = profile;
 
   const [img_error, set_img_error] = useState(false);
@@ -98,6 +104,9 @@ export function ProfileHeader({ profile }: ProfileHeaderProps) {
           {bio}
         </Text>
       )}
+
+      {/* ── Estadísticas profesionales (publicaciones/leads/cerrados) ── */}
+      <ProfessionalStats stats={stats ?? null} loading={loading} />
     </View>
   );
 }
