@@ -39,6 +39,7 @@ import { open_whatsapp } from '../../property-detail/utils/whatsapp';
 import { ALL_LEAD_STATUSES, get_status_meta } from '../lead_status_meta';
 import type { AgentLead, LeadStatus } from '../types';
 import { useUpdateLeadStatus } from '../hooks/useUpdateLeadStatus';
+import { useUpdateLeadNote } from '../hooks/useUpdateLeadNote';
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -81,6 +82,11 @@ export function LeadExpandedView({
   readOnly = false,
 }: LeadExpandedViewProps): React.JSX.Element {
   const { update_status, is_updating, error } = useUpdateLeadStatus({ onSuccess });
+  const {
+    update_note,
+    is_updating: is_saving_note,
+    error: note_error,
+  } = useUpdateLeadNote({ onSuccess });
 
   // ── Nota interna ─────────────────────────────────────────────────────────────
   const [note, set_note] = useState(lead.internal_notes ?? '');
@@ -98,6 +104,16 @@ export function LeadExpandedView({
     // EC-8: note omitido del body si vacío (el hook controla el spread condicional)
     const trimmed = note.trim();
     await update_status(lead.id, new_status, trimmed.length > 0 ? trimmed : undefined);
+  }
+
+  // Botón "Guardar nota" — camino ADICIONAL al envío de nota vía cambio de
+  // estado (arriba); no lo reemplaza (retrocompat #15).
+  const note_has_changes = note.trim() !== (lead.internal_notes ?? '');
+
+  async function handle_save_note(): Promise<void> {
+    if (readOnly) return;
+    if (is_saving_note || is_updating) return;
+    await update_note(lead.id, note.trim());
   }
 
   const display_name = lead.full_name ?? 'Usuario sin nombre';
@@ -268,10 +284,39 @@ export function LeadExpandedView({
           placeholderTextColor={colors.gray_1}
           multiline
           numberOfLines={3}
-          editable={!readOnly && !is_updating}
+          editable={!readOnly && !is_saving_note && !is_updating}
           textAlignVertical="top"
           accessibilityLabel="Notas internas del lead"
         />
+
+        {/* Botón "Guardar nota" — visible solo si hay cambios sin guardar;
+            oculto en readOnly (owner viendo lead ajeno, consistente con #28) */}
+        {!readOnly && note_has_changes && (
+          <View style={styles.save_note_row}>
+            <Pressable
+              onPress={() => { void handle_save_note(); }}
+              disabled={is_saving_note || is_updating}
+              style={({ pressed }) => [
+                styles.save_note_btn,
+                (is_saving_note || is_updating) && styles.save_note_btn_disabled,
+                pressed && !(is_saving_note || is_updating) && styles.action_btn_pressed,
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Guardar nota"
+            >
+              <Text style={styles.save_note_btn_text}>
+                {is_saving_note ? 'Guardando…' : 'Guardar nota'}
+              </Text>
+            </Pressable>
+          </View>
+        )}
+
+        {/* Error inline de la nota — separado del error de status */}
+        {note_error !== null && (
+          <View style={styles.error_row}>
+            <Text style={styles.error_text}>{note_error}</Text>
+          </View>
+        )}
 
         {/* ── Acciones: Ver propiedad + WhatsApp ─────────────────────────────── */}
         <View style={styles.action_row}>
@@ -545,6 +590,28 @@ const styles = StyleSheet.create({
   notes_input_readonly: {
     backgroundColor: colors.paper_2,
     color: colors.gray_2,
+  },
+
+  // ── Botón "Guardar nota" ──────────────────────────────────────────────────────
+  save_note_row: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    paddingHorizontal: spacing.s_16,
+    marginBottom: spacing.s_12,
+  },
+  save_note_btn: {
+    backgroundColor: colors.primary,
+    borderRadius: radii.r_pill,
+    paddingVertical: spacing.s_8,
+    paddingHorizontal: spacing.s_16,
+  },
+  save_note_btn_disabled: {
+    opacity: 0.5,
+  },
+  save_note_btn_text: {
+    fontFamily: fonts.sans_semibold,
+    fontSize: 14,
+    color: '#FFFFFF',
   },
 
   // ── Fila de acciones ─────────────────────────────────────────────────────────

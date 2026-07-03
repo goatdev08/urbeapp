@@ -121,8 +121,22 @@ _rntl_act_module.act = function act_scope_drain_patch(callback) {
   };
 };
 
+// React registra actScopeDepth (contador de anidamiento) internamente por
+// module — cada act() sin resolver hace `actScopeDepth++` al entrar y solo
+// lo restaura (`actScopeDepth = prevActScopeDepth`) cuando SU .then() se
+// invoca. Si un test dispara VARIOS act() sin await consecutivos (p.ej.
+// doble-submit: dos llamadas síncronas antes de resolver cualquiera), cada
+// uno queda "abierto" anidado dentro del anterior. Para restaurar el
+// contador correctamente hay que resolverlos en orden LIFO (el más reciente
+// primero) — es la única secuencia que reproduce el des-anidamiento real de
+// React. Drenar en orden FIFO dejaba actScopeDepth atascado en un valor >0,
+// y el siguiente test (su renderHook inicial) fallaba con
+// result.current === null.
+const _react_internals = require('react')
+  .__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
+
 afterEach(async () => {
-  const batch = _tracked_acts.splice(0);
+  const batch = _tracked_acts.splice(0).reverse();
   for (const item of batch) {
     // Solo drenamos los que NUNCA fueron awaited (was_thenned === false).
     // Re-drenar un thenable ya resuelto causa "overlapping act()" en popActScope.
@@ -135,5 +149,13 @@ afterEach(async () => {
         }
       });
     }
+  }
+
+  // Red de seguridad: si algo quedó pendiente en actQueue (p.ej. un pop que
+  // no pudo asentarse por completo), lo descartamos — pertenece al árbol de
+  // fibers de ESTE test (ya terminado) y reusarlo en el siguiente causaría
+  // el mismo síntoma (result.current === null).
+  if (_react_internals.actQueue !== null) {
+    _react_internals.actQueue = null;
   }
 });
