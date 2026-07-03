@@ -29,6 +29,7 @@ import { PrimaryButton } from '@/components/PrimaryButton';
 import { colors, spacing, type_scale } from '@/theme/theme';
 import { useAuth } from '@/features/auth/context';
 import { useAgentProfile } from './hooks/useAgentProfile';
+import { useAgentStats } from './hooks/useAgentStats';
 import { ProfileHeader } from './components/ProfileHeader';
 import { PropertiesGrid } from './components/PropertiesGrid';
 
@@ -51,6 +52,7 @@ export function ProfileScreen({ agent_id, is_own_profile }: ProfileScreenProps) 
   const router = useRouter();
   const { signOut } = useAuth();
   const { loading, error, data } = useAgentProfile(agent_id);
+  const { loading: stats_loading, stats } = useAgentStats(agent_id);
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
@@ -113,7 +115,7 @@ export function ProfileScreen({ agent_id, is_own_profile }: ProfileScreenProps) 
       showsVerticalScrollIndicator={false}
     >
       {/* Cabecera del agente */}
-      <ProfileHeader profile={data} />
+      <ProfileHeader profile={data} stats={stats} loading={stats_loading} />
 
       {/* Botones de acción — solo en perfil propio */}
       {is_own_profile && (
