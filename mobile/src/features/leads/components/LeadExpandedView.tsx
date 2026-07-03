@@ -369,7 +369,7 @@ const styles = StyleSheet.create({
   },
 
   sheet: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     borderTopLeftRadius: radii.r_24,
     borderTopRightRadius: radii.r_24,
     maxHeight: SHEET_MAX_HEIGHT,
@@ -611,7 +611,7 @@ const styles = StyleSheet.create({
   save_note_btn_text: {
     fontFamily: fonts.sans_semibold,
     fontSize: 14,
-    color: '#FFFFFF',
+    color: colors.on_primary,
   },
 
   // ── Fila de acciones ─────────────────────────────────────────────────────────
@@ -646,6 +646,6 @@ const styles = StyleSheet.create({
   action_btn_text_light: {
     fontFamily: fonts.sans_semibold,
     fontSize: 14,
-    color: '#FFFFFF',
+    color: colors.on_primary,
   },
 });

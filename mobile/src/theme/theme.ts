@@ -19,6 +19,10 @@ export const colors = {
   primary_tint: '#DEE9DF',
   primary_deep: '#2F5A34',
 
+  // Contraste / superficies blancas
+  on_primary:   '#FFFFFF', // texto/iconos sobre primary
+  surface:      '#FFFFFF', // superficie blanca de modal/card
+
   // Acento (arcilla / marrón cálido)
   accent:       '#9A7150',
   accent_soft:  '#C2A07C',
