@@ -1,2 +1,4 @@
+allowBuilds:
+  unrs-resolver: true
 minimumReleaseAgeExclude:
   - '@testing-library/react-native@14.0.1'
