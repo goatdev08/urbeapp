@@ -3,7 +3,7 @@ tipo: concepto
 dominio: arquitectura
 estado: vivo
 fuentes: [docs/lineamientos-desarrollo.md, supabase/README.md]
-codigo: [supabase/migrations/0008_rls_helpers_and_policies.sql, supabase/migrations/0010_security_perf_hardening.sql, supabase/migrations/0014_service_role_grants.sql]
+codigo: [supabase/migrations/0008_rls_helpers_and_policies.sql, supabase/migrations/0010_security_perf_hardening.sql, supabase/migrations/0014_service_role_grants.sql, supabase/migrations/20260702000001_rls_lead_searcher_identity.sql]
 actualizado: 2026-06-24
 ---
 
@@ -14,7 +14,7 @@ actualizado: 2026-06-24
 ## Patrón (migraciones 0008 → 0010)
 - RLS habilitado en las **20 tablas**, ~**65 políticas** (SELECT/INSERT/UPDATE/DELETE).
 - **0008**: 10 helpers en schema `public`. **0010**: los mueve a schema **`private`** (no expuesto por PostgREST) y los reescribe con `(select auth.uid())` para evitar el *init-plan* recursivo; además blinda triggers (search_path fijo) y agrega 11 índices FK.
-- **10 helpers** (`private.*`, SECURITY DEFINER STABLE): `current_user_role`, `is_admin`, `manages_agency`, `is_agency_owner_of`, `current_user_agency_id`, `owns_property`, `can_manage_property`, `property_is_public`, `can_view_lead`, `can_edit_lead`.
+- **11 helpers** (`private.*`, SECURITY DEFINER STABLE): `current_user_role`, `is_admin`, `manages_agency`, `is_agency_owner_of`, `current_user_agency_id`, `owns_property`, `can_manage_property`, `property_is_public`, `can_view_lead`, `can_edit_lead`, y **`can_view_user_as_lead_searcher`** (#30, migración `20260702000001`, `set search_path=public`): permite al agente dueño de un lead activo (o al owner de su agencia) leer la fila `public.users` del **buscador** — se añade como cláusula OR a `users_select`. Fix del "Usuario sin nombre" en el CRM sin denormalizar. Ver [[crm-leads]].
 
 ## Reglas clave
 - 🔒 **Grants column-level** bloquean auto-escalación: el cliente no puede cambiar `users.role`, `agencies.status`, `is_verified_agent`, ni el contenido de `notifications`.

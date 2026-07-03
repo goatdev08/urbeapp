@@ -5,14 +5,17 @@
  *
  * SUT: useAgentLeads() → { leads: AgentLead[], loading: boolean, error: string | null, refetch: () => void }
  *
- * Contrato (schema migraciones 0001 + 0006 + 0015):
- *   - Consulta tabla `leads` con embedded selects (usuarios + preferencias + origin).
+ * Contrato (schema migraciones 0001 + 0006 + 0015 + subtarea 30.3):
+ *   - Consulta tabla `leads` con embedded selects (usuarios + origin).
  *   - Filtra: deleted_at IS NULL. RLS (migración 0008) filtra agent_id = auth.uid().
  *   - Ordena: updated_at DESC.
- *   - Datos del buscador:
- *     · phone de `users` (via leads.user_id FK, para WhatsApp #15.5).
- *     · full_name y profile_photo_url de `user_preferences` (migración 0015;
- *       corrección del tarea #14: viene de user_preferences, NO de users).
+ *   - Datos del buscador — TODOS desde `users` (subtarea 30.3; antes full_name/
+ *     profile_photo_url venían de `user_preferences`, pero el agente NO puede
+ *     leer el user_preferences del buscador vía RLS — solo su propia fila):
+ *     · phone de `users.phone` (via leads.user_id FK, para WhatsApp #15.5).
+ *     · full_name = build_full_name(users.first_name, users.last_name)
+ *       (mismo patrón que useAgencyAgents — join con espacio, null si ambos vacíos).
+ *     · profile_photo_url = users.avatar_url.
  *   - Propiedad de origen: `lead_origin_properties` (LEFT JOIN) → `properties`
  *     → thumbnail de `property_videos`. Nullable si el lead no tiene origin.
  *   - Estado inicial: loading=true antes de resolver.
@@ -24,14 +27,14 @@
  *   - `@/features/auth/context` (useAuth): provee el usuario agente autenticado.
  *   - La cadena de query es: from('leads').select(...).is(...).order(...) → Promise.
  *
- * EDGE CASES CUBIERTOS (10 casos originales + 4 de la subtarea 28.3):
+ * EDGE CASES CUBIERTOS (10 casos originales + 4 de la subtarea 28.3 + 3 de la 30.3):
  *
  * ### Happy path
  * - (EC-1) mapea_lead_completo_a_AgentLead
  *
  * ### Edge cases del PRD / schema (§CRM migración 0006)
  * - (EC-2) lead_sin_origin_property_campos_origin_nulos_sin_crash
- * - (EC-3) user_preferences_null_full_name_photo_nulos_sin_crash
+ * - (EC-3) nombre_ambos_null_en_users_full_name_photo_nulos_sin_crash
  *
  * ### Ramas de reglas no obvias
  * - (EC-4) phone_null_en_usuarios_no_rompe
@@ -49,6 +52,11 @@
  * - (EC-nuevo-2) agentId_null_o_ausente_no_agrega_filtro_eq_agent_id
  * - (EC-nuevo-3) cambiar_agentId_entre_renders_redispara_fetch_con_nuevo_agente
  * - (EC-nuevo-4) transformacion_raw_a_agent_lead_no_cambia_con_filtro_por_agentId
+ *
+ * ### Subtarea 30.3 — identidad del buscador desde `users` (build_full_name + avatar_url)
+ * - (EC-30_3-1) solo_first_name_last_name_null_full_name_es_solo_el_first_name
+ * - (EC-30_3-2) avatar_url_null_profile_photo_url_null_con_nombre_presente
+ * - (EC-30_3-3) select_lee_first_name_last_name_avatar_url_de_users_no_user_preferences
  *
  * ORDEN DE ENCADENAMIENTO ASUMIDO PARA EL GREEN (documentado aquí para que la
  * implementación lo respete):
@@ -78,8 +86,9 @@ jest.mock('@/features/auth/context', () => ({
 //
 // Cadena de query esperada (sin agentId — comportamiento histórico, EC-1..10):
 //   supabase.from('leads')
-//     .select(<embeds>)          ← selects con joins embedded de users, user_preferences,
-//                                   lead_origin_properties, properties, property_videos
+//     .select(<embeds>)          ← selects con joins embedded de users (first_name,
+//                                   last_name, avatar_url), lead_origin_properties,
+//                                   properties, property_videos
 //     .is('deleted_at', null)    ← EC-5: filtra leads no borrados
 //     .order('updated_at', { ascending: false })  ← EC-6: más reciente primero
 //
@@ -135,14 +144,14 @@ const mock_use_auth = useAuth as jest.MockedFunction<typeof useAuth>;
 // ---------------------------------------------------------------------------
 // Datos de prueba — shape de la respuesta raw de Supabase con embedded selects
 //
-// La query usa embedded selects de PostgREST/supabase-js:
-//   leads → users!leads_user_id_fkey(phone, user_preferences(full_name, profile_photo_url))
+// La query usa embedded selects de PostgREST/supabase-js (subtarea 30.3 —
+// identidad del buscador YA NO viene de user_preferences, sino de users
+// directamente, mismo patrón que useAgencyAgents):
+//   leads → users!leads_user_id_fkey(phone, first_name, last_name, avatar_url)
 //         → lead_origin_properties(property_id, properties(address, property_videos(thumbnail_url, position)))
 //
 // Relaciones:
 //   - users: many-to-one (leads.user_id → users.id) → objeto simple
-//   - user_preferences: one-to-many desde users.id → array (PostgREST retorna array
-//     incluso para relaciones de facto 1:1 como user_preferences con unique user_id)
 //   - lead_origin_properties: one-to-many desde leads.id → array (LEFT JOIN)
 //   - properties: many-to-one desde lead_origin_properties.property_id → objeto
 //   - property_videos: one-to-many desde properties.id → array
@@ -152,15 +161,10 @@ const mock_use_auth = useAuth as jest.MockedFunction<typeof useAuth>;
 // Interface explícita para el shape raw de Supabase (campos nullable correctos)
 //
 // Se define ANTES de RAW_LEAD_COMPLETO para poder anotar el fixture con ella.
-// Esto evita que TypeScript infiera phone/profile_photo_url como `string`
-// (no nullable) a partir de los valores literales de RAW_LEAD_COMPLETO,
+// Esto evita que TypeScript infiera phone/first_name/last_name/avatar_url como
+// `string` (no nullable) a partir de los valores literales de RAW_LEAD_COMPLETO,
 // lo que causaba TS2322 en RAW_LEAD_SIN_ORIGIN y RAW_LEAD_SIN_PHONE.
 // ---------------------------------------------------------------------------
-
-interface RawLeadUserPrefs {
-  full_name: string | null;
-  profile_photo_url: string | null;
-}
 
 interface RawLeadPropertyVideo {
   thumbnail_url: string | null;
@@ -188,12 +192,14 @@ interface RawLeadRow {
   deleted_at: string | null;
   users: {
     phone: string | null;
-    user_preferences: RawLeadUserPrefs[];
+    first_name: string | null;
+    last_name: string | null;
+    avatar_url: string | null;
   };
   lead_origin_properties: RawLeadOriginProperties[];
 }
 
-/** Lead con todos los datos disponibles: phone, prefs, propiedad de origen con thumbnail. */
+/** Lead con todos los datos disponibles: phone, nombre completo, propiedad de origen con thumbnail. */
 const RAW_LEAD_COMPLETO: RawLeadRow = {
   id: TEST_LEAD_ID,
   user_id: TEST_USER_ID,
@@ -205,16 +211,13 @@ const RAW_LEAD_COMPLETO: RawLeadRow = {
   updated_at: '2026-06-28T14:30:00Z',
   created_at: '2026-06-01T10:00:00Z',
   deleted_at: null,
-  // Embedded: users (many-to-one vía leads.user_id FK)
+  // Embedded: users (many-to-one vía leads.user_id FK) — subtarea 30.3:
+  // full_name/profile_photo_url YA NO vienen de user_preferences.
   users: {
     phone: '+52 55 1234 5678',
-    // Embedded: user_preferences (one-to-many desde users.id; migración 0015)
-    user_preferences: [
-      {
-        full_name: 'María García López',
-        profile_photo_url: 'https://storage.supabase.co/profile-photos/maria.jpg',
-      },
-    ],
+    first_name: 'María',
+    last_name: 'García López',
+    avatar_url: 'https://storage.supabase.co/profile-photos/maria.jpg',
   },
   // Embedded: lead_origin_properties (one-to-many vía lead_origin_properties.lead_id)
   lead_origin_properties: [
@@ -241,20 +244,22 @@ const RAW_LEAD_SIN_ORIGIN = {
   id: 'lead-uuid-002-sin-origin',
   users: {
     phone: '+52 55 9876 5432',
-    user_preferences: [
-      { full_name: 'Pedro López Reyes', profile_photo_url: null },
-    ],
+    first_name: 'Pedro',
+    last_name: 'López Reyes',
+    avatar_url: null,
   },
   lead_origin_properties: [], // ← sin propiedad de origen → origin_* debe ser null
 };
 
-/** Lead de usuario sin onboarding (user_preferences vacío → full_name/photo null). */
-const RAW_LEAD_SIN_PREFS = {
+/** Lead de buscador sin nombre en users (first_name/last_name null) → full_name/photo null. */
+const RAW_LEAD_SIN_NOMBRE = {
   ...RAW_LEAD_COMPLETO,
-  id: 'lead-uuid-003-sin-prefs',
+  id: 'lead-uuid-003-sin-nombre',
   users: {
     phone: '+52 55 5555 0000',
-    user_preferences: [], // ← sin preferencias → full_name/photo null
+    first_name: null, // ← sin first_name ni last_name → full_name = null
+    last_name: null,
+    avatar_url: null,
   },
   lead_origin_properties: [],
 };
@@ -265,9 +270,35 @@ const RAW_LEAD_SIN_PHONE = {
   id: 'lead-uuid-004-sin-phone',
   users: {
     phone: null, // ← sin phone → AgentLead.phone = null
-    user_preferences: [
-      { full_name: 'Ana Martínez', profile_photo_url: null },
-    ],
+    first_name: 'Ana',
+    last_name: 'Martínez',
+    avatar_url: null,
+  },
+  lead_origin_properties: [],
+};
+
+/** Lead de buscador con SOLO first_name (last_name null) → full_name = solo el first_name. */
+const RAW_LEAD_SOLO_FIRST_NAME = {
+  ...RAW_LEAD_COMPLETO,
+  id: 'lead-uuid-005-solo-first-name',
+  users: {
+    phone: '+52 55 1111 2222',
+    first_name: 'Sofia',
+    last_name: null, // ← sin apellido → full_name = 'Sofia' (sin espacio colgante)
+    avatar_url: null,
+  },
+  lead_origin_properties: [],
+};
+
+/** Lead de buscador con nombre completo pero SIN avatar_url → profile_photo_url = null. */
+const RAW_LEAD_AVATAR_NULL = {
+  ...RAW_LEAD_COMPLETO,
+  id: 'lead-uuid-006-avatar-null',
+  users: {
+    phone: '+52 55 3333 4444',
+    first_name: 'Carlos',
+    last_name: 'Zamudio',
+    avatar_url: null, // ← sin foto de perfil → profile_photo_url = null
   },
   lead_origin_properties: [],
 };
@@ -333,7 +364,7 @@ describe('useAgentLeads', () => {
 
   // ── (EC-1) Happy path — mapeo completo de raw a AgentLead ────────────────
 
-  it('(EC-1) mapea_lead_completo_a_AgentLead: raw con users.phone, user_preferences[0] y lead_origin_properties[0] → AgentLead con todos los campos correctos', async () => {
+  it('(EC-1) mapea_lead_completo_a_AgentLead: raw con users.phone/first_name/last_name/avatar_url y lead_origin_properties[0] → AgentLead con todos los campos correctos', async () => {
     mock_supabase_holder.client = make_supabase_mock_leads({
       query_result: { data: [RAW_LEAD_COMPLETO], error: null },
     });
@@ -354,7 +385,8 @@ describe('useAgentLeads', () => {
     // Usuario interesado — phone de users
     expect(lead.phone).toBe('+52 55 1234 5678');
 
-    // Usuario interesado — full_name y profile_photo_url de user_preferences (migración 0015)
+    // Usuario interesado — full_name (build_full_name) y profile_photo_url desde
+    // `users` directamente (subtarea 30.3 — ya NO desde user_preferences)
     expect(lead.full_name).toBe('María García López');
     expect(lead.profile_photo_url).toBe(
       'https://storage.supabase.co/profile-photos/maria.jpg'
@@ -389,6 +421,22 @@ describe('useAgentLeads', () => {
     expect(select_arg).not.toMatch(/[ ,]users\(/);
   });
 
+  // ── (EC-30_3-3) El select lee first_name/last_name/avatar_url de users ──
+  //
+  // Subtarea 30.3: el embed de users debe pedir first_name, last_name y
+  // avatar_url (patrón useAgencyAgents) y ya NO debe embeber user_preferences
+  // — el agente no puede leer el user_preferences ajeno del buscador vía RLS.
+
+  it('(EC-30_3-3) select_lee_first_name_last_name_avatar_url_de_users_no_user_preferences: el embed de users pide first_name/last_name/avatar_url y no anida user_preferences(', async () => {
+    await renderHook(() => useAgentLeads());
+
+    const select_arg = mock_supabase_holder.client._mock_select.mock.calls[0]?.[0] as string;
+    expect(select_arg).toContain('first_name');
+    expect(select_arg).toContain('last_name');
+    expect(select_arg).toContain('avatar_url');
+    expect(select_arg).not.toContain('user_preferences(');
+  });
+
   // ── (EC-2) Lead sin propiedad de origen ──────────────────────────────────
   //
   // Regla: lead_origin_properties puede estar vacío (LEFT JOIN). En ese caso,
@@ -419,14 +467,15 @@ describe('useAgentLeads', () => {
     expect(result.current.error).toBeNull();
   });
 
-  // ── (EC-3) Usuario sin user_preferences (sin onboarding) ─────────────────
+  // ── (EC-3) Buscador sin nombre en users (first_name/last_name null) ─────
   //
-  // Regla: user_preferences puede no existir (array vacío desde PostgREST).
-  // full_name y profile_photo_url deben ser null, sin crash.
+  // Regla (subtarea 30.3): first_name/last_name de `users` pueden ser null
+  // (usuario que no completó su perfil). build_full_name debe devolver null
+  // cuando ambos están vacíos, sin crash. avatar_url null → profile_photo_url null.
 
-  it('(EC-3) user_preferences_null_full_name_photo_nulos_sin_crash: lead con users.user_preferences:[] → full_name=null y profile_photo_url=null, sin crash', async () => {
+  it('(EC-3) nombre_ambos_null_en_users_full_name_photo_nulos_sin_crash: lead con users.first_name/last_name/avatar_url null → full_name=null y profile_photo_url=null, sin crash', async () => {
     mock_supabase_holder.client = make_supabase_mock_leads({
-      query_result: { data: [RAW_LEAD_SIN_PREFS], error: null },
+      query_result: { data: [RAW_LEAD_SIN_NOMBRE], error: null },
     });
 
     const { result } = await renderHook(() => useAgentLeads());
@@ -435,13 +484,57 @@ describe('useAgentLeads', () => {
 
     const lead = result.current.leads[0] as AgentLead;
 
-    // Sin user_preferences → full_name y profile_photo_url son null
+    // Sin first_name/last_name → full_name y profile_photo_url son null
     expect(lead.full_name).toBeNull();
     expect(lead.profile_photo_url).toBeNull();
 
     // El phone sigue siendo accesible desde users.phone
     expect(lead.phone).toBe('+52 55 5555 0000');
 
+    expect(result.current.error).toBeNull();
+  });
+
+  // ── (EC-30_3-1) Buscador con SOLO first_name (last_name null) ───────────
+  //
+  // Regla (mismo patrón que useAgencyAgents.build_full_name): si solo hay
+  // first_name, full_name debe ser exactamente ese first_name — sin espacio
+  // colgante ni literal 'null' concatenado.
+
+  it('(EC-30_3-1) solo_first_name_last_name_null_full_name_es_solo_el_first_name: lead con users.last_name=null → full_name es exactamente el first_name, sin espacio colgante', async () => {
+    mock_supabase_holder.client = make_supabase_mock_leads({
+      query_result: { data: [RAW_LEAD_SOLO_FIRST_NAME], error: null },
+    });
+
+    const { result } = await renderHook(() => useAgentLeads());
+
+    expect(result.current.leads).toHaveLength(1);
+
+    const lead = result.current.leads[0] as AgentLead;
+
+    expect(lead.full_name).toBe('Sofia');
+    expect(lead.phone).toBe('+52 55 1111 2222');
+    expect(result.current.error).toBeNull();
+  });
+
+  // ── (EC-30_3-2) Buscador con nombre completo pero sin avatar_url ────────
+  //
+  // Regla: avatar_url null es independiente de full_name — un buscador puede
+  // tener nombre completo y no tener foto de perfil. profile_photo_url debe
+  // ser null sin afectar full_name.
+
+  it('(EC-30_3-2) avatar_url_null_profile_photo_url_null_con_nombre_presente: lead con users.avatar_url=null y first_name/last_name presentes → profile_photo_url=null pero full_name sigue mapeado', async () => {
+    mock_supabase_holder.client = make_supabase_mock_leads({
+      query_result: { data: [RAW_LEAD_AVATAR_NULL], error: null },
+    });
+
+    const { result } = await renderHook(() => useAgentLeads());
+
+    expect(result.current.leads).toHaveLength(1);
+
+    const lead = result.current.leads[0] as AgentLead;
+
+    expect(lead.full_name).toBe('Carlos Zamudio');
+    expect(lead.profile_photo_url).toBeNull();
     expect(result.current.error).toBeNull();
   });
 
@@ -643,7 +736,9 @@ describe('useAgentLeads', () => {
       agent_id: 'agent-bbb',
       users: {
         phone: '+52 55 0000 1111',
-        user_preferences: [{ full_name: 'Otro Agente Leads', profile_photo_url: null }],
+        first_name: 'Otro',
+        last_name: 'Buscador Leads',
+        avatar_url: null,
       },
       lead_origin_properties: [],
     };
