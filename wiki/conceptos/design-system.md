@@ -66,7 +66,7 @@ Registradas para decidir si se alinean ahora o se difieren (candidatas a #22 o t
 
 ## `theme.ts` (sembrado #16)
 Fuente única de tokens, **plana** (sin theming engine). 6 grupos, todos snake_case:
-- **`colors`** — 20 tokens EXACTOS del kit 003: `primary` `#5A8A5E` (Salvia) + soft/tint/deep, `accent` `#9A7150` (Arcilla) + soft/tint/deep, `ink_feed` `#17140F`, `ink` `#1E1A15`, `paper` `#F6F2EB` + paper_2/3, `gray_1/2/3`, `silver` + silver_dk, `whatsapp`.
+- **`colors`** — 20 tokens EXACTOS del kit 003: `primary` `#5A8A5E` (Salvia) + soft/tint/deep, `accent` `#9A7150` (Arcilla) + soft/tint/deep, `ink_feed` `#17140F`, `ink` `#1E1A15`, `paper` `#F6F2EB` + paper_2/3, `gray_1/2/3`, `silver` + silver_dk, `whatsapp`. **+2 semánticos (#33):** `on_primary` `#FFFFFF` (texto/iconos sobre primary) y `surface` `#FFFFFF` (superficie blanca de modal/card) — saldan la deuda de theming que el guardian marcó en #29 (3 `#FFFFFF` hardcodeados en `LeadExpandedView`). ⚠️ `LeadCard`/`AgentSelector` aún hardcodean `#FFFFFF` (`surface` listo para que lo adopten en una auditoría futura).
 - **`radii`** — r_4…r_24 + r_pill (999).
 - **`shadows`** — sm/md/lg/primary (objetos RN `shadowColor/Offset/Opacity/Radius/elevation`, traducidos de los box-shadow CSS del kit; `primary` = glow verde).
 - **`fonts`** — `display: SpaceGrotesk_600SemiBold` + `sans: HankenGrotesk_400/500/600/700`.
