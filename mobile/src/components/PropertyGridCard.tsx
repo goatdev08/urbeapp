@@ -8,21 +8,22 @@
  *   - Card: Pressable con sombra (outer) + View con overflow:hidden (inner/clip).
  *     Dos capas necesarias en RN para tener shadow visible + borderRadius clip.
  *   - Media: aspect-ratio 4/5. Image si hay thumbnail_url; placeholder café sólido
- *     con ícono ▷ si no (ponytail: Text porque react-native-svg no está instalado).
+ *     con el isotipo de firma (IsotipoMark) tenue si no (#32).
  *   - Badge operación (arriba-izq): Renta (primary) / Venta (accent) / Renta-Venta (accent).
  *   - Badge Pausada (junto a op-badge si status==='paused'): pill glass claro.
  *   - Overlay de atenuación cuando pausada: rgba oscuro sobre el media.
  *   - Body: título (property_type label), zona (address), precio héroe con tick Salvia.
  *
- * ponytail: sin react-native-svg; íconos como Text unicode. Sin BlurView en el
- * pause-badge (rgba 92% es suficiente para el demo). Placeholder de miniatura =
- * color sólido (sin expo-linear-gradient, que exigiría módulo nativo en el dev build).
+ * ponytail: sin BlurView en el pause-badge (rgba 92% basta para el demo).
+ * Placeholder de miniatura = color sólido (sin expo-linear-gradient, que exigiría
+ * módulo nativo) + IsotipoMark (primitivas RN, sin react-native-svg → sin rebuild).
  */
 
 import React from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { colors, fonts, radii, shadows } from '@/theme/theme';
+import { IsotipoMark } from '@/components/IsotipoMark';
 import type { GridProperty } from '@/features/profile/types';
 
 // ─── Mapas de labels ──────────────────────────────────────────────────────────
@@ -98,8 +99,10 @@ export function PropertyGridCard({ item, onPress, onLongPress }: PropertyGridCar
                para no exigir módulo nativo (el dev build no lo incluye); un tono plano
                basta como fondo de la miniatura ausente. */
             <View style={[StyleSheet.absoluteFill, styles.placeholder_gradient]}>
-              {/* ponytail: ícono de video como Text '▷' — react-native-svg no instalado */}
-              <Text style={styles.placeholder_icon}>▷</Text>
+              {/* Isotipo de firma como placeholder de miniatura ausente (#32). */}
+              <View style={styles.placeholder_icon}>
+                <IsotipoMark size={34} color={colors.gray_2} />
+              </View>
             </View>
           )}
 
@@ -193,9 +196,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.paper_2,
   },
   placeholder_icon: {
-    fontSize: 34,
-    color: colors.gray_2,
-    opacity: 0.55,
+    opacity: 0.55, // isotipo tenue, no intrusivo
   },
   paused_overlay: {
     ...StyleSheet.absoluteFill,
