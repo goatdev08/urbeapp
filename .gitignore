@@ -70,3 +70,6 @@ dev-debug.log
 # Task files
 # tasks.json
 # tasks/ 
+
+# Sentinel transitorio del ciclo TDD (tdd-guard) — nunca versionar
+.taskmaster/.current-red
