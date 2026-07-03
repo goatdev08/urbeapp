@@ -14,7 +14,7 @@
  *   se deriva de FlashListProps para no depender de sub-paths internos.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
 import { useFocusEffect } from 'expo-router'; // SDK 56: useFocusEffect en expo-router, NO en @react-navigation/native
 import type { FlashListProps, ViewToken } from '@shopify/flash-list';
@@ -69,31 +69,36 @@ export function useFeedActiveIndex(): UseFeedActiveIndexResult {
     }, []),
   );
 
-  // ── Señal 1: viewability — ref estable (FlashList v2 lanza si cambia) ─────
+  // ── Señal 1: viewability — array estable (FlashList v2 lanza si cambia) ───
   // set_active_index (de useState) es estable por contrato de React, por lo
-  // que capturarlo en la inicialización del ref es seguro.
-  const pairs_ref = useRef<FeedViewabilityPairs>([
-    {
-      viewabilityConfig: {
-        itemVisiblePercentThreshold: 70,
-        minimumViewTime: 100,
+  // que capturarlo en la inicialización del useMemo (deps []) es seguro.
+  // ponytail: useMemo en vez de useRef.current — misma referencia estable
+  // entre renders, sin leer un ref durante el render (react-hooks/refs).
+  const pairs = useMemo<FeedViewabilityPairs>(
+    () => [
+      {
+        viewabilityConfig: {
+          itemVisiblePercentThreshold: 70,
+          minimumViewTime: 100,
+        },
+        onViewableItemsChanged: ({
+          viewableItems,
+        }: {
+          viewableItems: ViewToken<FeedPropertyWithUrl>[];
+        }) => {
+          const most_visible = viewableItems[0];
+          if (
+            most_visible !== undefined &&
+            most_visible.index !== null &&
+            most_visible.index !== undefined
+          ) {
+            set_active_index(most_visible.index);
+          }
+        },
       },
-      onViewableItemsChanged: ({
-        viewableItems,
-      }: {
-        viewableItems: ViewToken<FeedPropertyWithUrl>[];
-      }) => {
-        const most_visible = viewableItems[0];
-        if (
-          most_visible !== undefined &&
-          most_visible.index !== null &&
-          most_visible.index !== undefined
-        ) {
-          set_active_index(most_visible.index);
-        }
-      },
-    },
-  ]);
+    ],
+    [],
+  );
 
   // ── Helper compuesto ───────────────────────────────────────────────────────
   const isItemActive = useCallback(
@@ -102,7 +107,7 @@ export function useFeedActiveIndex(): UseFeedActiveIndexResult {
   );
 
   return {
-    viewabilityConfigCallbackPairs: pairs_ref.current,
+    viewabilityConfigCallbackPairs: pairs,
     isItemActive,
   };
 }

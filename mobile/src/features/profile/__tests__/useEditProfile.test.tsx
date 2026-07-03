@@ -56,20 +56,20 @@
 import { renderHook, act } from '@testing-library/react-native';
 
 // ---------------------------------------------------------------------------
-// Mock de useAuth — no necesita AuthProvider real; userId viene del mock
-// ---------------------------------------------------------------------------
-
-jest.mock('@/features/auth/context', () => ({
-  useAuth: jest.fn(),
-}));
-
-// ---------------------------------------------------------------------------
 // Imports DESPUÉS de registrar mocks
 // ---------------------------------------------------------------------------
 
 import { useAuth } from '@/features/auth/context';
 import { useEditProfile } from '../hooks/useEditProfile';
 import type { SaveProfileParams, SaveProfileResult } from '@/lib/profileService';
+
+// ---------------------------------------------------------------------------
+// Mock de useAuth — no necesita AuthProvider real; userId viene del mock
+// ---------------------------------------------------------------------------
+
+jest.mock('@/features/auth/context', () => ({
+  useAuth: jest.fn(),
+}));
 
 // ---------------------------------------------------------------------------
 // Constantes de test
@@ -148,7 +148,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   // useAuth devuelve siempre el mismo usuario de prueba
   mock_use_auth.mockReturnValue({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     user: { id: TEST_USER_ID } as any,
     session: null,
     isLoading: false,

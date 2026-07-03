@@ -27,7 +27,7 @@ export interface UseMapPropertiesState {
 }
 
 export function useMapProperties(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   supabase?: any,
   filters?: FilterState,
 ): UseMapPropertiesState {
@@ -51,6 +51,7 @@ export function useMapProperties(
   }, [filters]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount: dispara la carga async (fetch_data maneja su propio loading/error).
     void fetch_data();
   }, [fetch_data]);
 

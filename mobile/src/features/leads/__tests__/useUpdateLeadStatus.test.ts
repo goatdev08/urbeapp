@@ -53,6 +53,14 @@
 import { renderHook, act } from '@testing-library/react-native';
 
 // ---------------------------------------------------------------------------
+// Imports DESPUÉS de registrar mocks
+// ---------------------------------------------------------------------------
+
+import { useAuth } from '@/features/auth/context';
+import { useUpdateLeadStatus } from '../hooks/useUpdateLeadStatus';
+import type { ActionResult } from '../hooks/useUpdateLeadStatus';
+
+// ---------------------------------------------------------------------------
 // Mock de useAuth — declara ANTES de cualquier import del SUT.
 // El agente autenticado tiene id TEST_AGENT_ID.
 // ---------------------------------------------------------------------------
@@ -60,14 +68,6 @@ import { renderHook, act } from '@testing-library/react-native';
 jest.mock('@/features/auth/context', () => ({
   useAuth: jest.fn(),
 }));
-
-// ---------------------------------------------------------------------------
-// Imports DESPUÉS de registrar mocks
-// ---------------------------------------------------------------------------
-
-import { useAuth } from '@/features/auth/context';
-import { useUpdateLeadStatus } from '../hooks/useUpdateLeadStatus';
-import type { ActionResult } from '../hooks/useUpdateLeadStatus';
 
 // ---------------------------------------------------------------------------
 // Constantes de test
@@ -120,7 +120,7 @@ function make_mock_supabase(opts: {
 beforeEach(() => {
   jest.clearAllMocks();
   mock_use_auth.mockReturnValue({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     user: { id: TEST_AGENT_ID } as any,
     session: null,
     isLoading: false,
@@ -294,7 +294,7 @@ describe('useUpdateLeadStatus', () => {
       body: Record<string, unknown>;
     };
     // note debe estar ausente del body, no solo undefined
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+     
     expect(Object.prototype.hasOwnProperty.call(call_body.body, 'note')).toBe(false);
   });
 

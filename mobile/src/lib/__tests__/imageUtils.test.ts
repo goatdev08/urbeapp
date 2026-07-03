@@ -17,6 +17,12 @@
 // Mocks — jest.fn() DENTRO del factory (evita problemas de hoisting con babel-jest)
 // ---------------------------------------------------------------------------
 
+// Importar módulos DESPUÉS de registrar los mocks
+import * as ImageManipulator from 'expo-image-manipulator';
+import * as FileSystem from 'expo-file-system';
+
+import { processProfileImage, AVATAR_MAX_PX, MAX_SIZE_BYTES, QUALITY_STEPS } from '../imageUtils';
+
 jest.mock('expo-image-manipulator', () => ({
   manipulateAsync: jest.fn(),
   SaveFormat: { JPEG: 'jpeg', PNG: 'png', WEBP: 'webp' },
@@ -25,12 +31,6 @@ jest.mock('expo-image-manipulator', () => ({
 jest.mock('expo-file-system', () => ({
   getInfoAsync: jest.fn(),
 }));
-
-// Importar módulos DESPUÉS de registrar los mocks
-import * as ImageManipulator from 'expo-image-manipulator';
-import * as FileSystem from 'expo-file-system';
-
-import { processProfileImage, AVATAR_MAX_PX, MAX_SIZE_BYTES, QUALITY_STEPS } from '../imageUtils';
 
 // ---------------------------------------------------------------------------
 // Referencias tipadas a los mocks
@@ -152,7 +152,7 @@ describe('processProfileImage', () => {
     // Segundo argumento de manipulateAsync es el array de acciones
     const call_args = mock_manipulate_async.mock.calls[0];
     expect(call_args).toBeDefined();
-    const actions = call_args![1] as Array<{ resize: { width: number } }>;
+    const actions = call_args![1] as { resize: { width: number } }[];
     expect(actions).toHaveLength(1);
     expect(actions[0]).toEqual({ resize: { width: AVATAR_MAX_PX } });
     expect(AVATAR_MAX_PX).toBe(512);

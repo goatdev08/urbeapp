@@ -37,6 +37,11 @@ import React from 'react';
 import { render, fireEvent, cleanup, act } from '@testing-library/react-native';
 
 // ---------------------------------------------------------------------------
+// SUT — importado DESPUÉS de los mocks
+// ---------------------------------------------------------------------------
+import LoginScreen from '../../../../app/login';
+
+// ---------------------------------------------------------------------------
 // Mock de useAuth — ANTES de importar el SUT
 // ---------------------------------------------------------------------------
 
@@ -81,11 +86,6 @@ jest.mock('react-native-safe-area-context', () => {
     useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
   };
 });
-
-// ---------------------------------------------------------------------------
-// SUT — importado DESPUÉS de los mocks
-// ---------------------------------------------------------------------------
-import LoginScreen from '../../../../app/login';
 
 // ---------------------------------------------------------------------------
 // Constantes

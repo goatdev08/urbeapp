@@ -33,6 +33,18 @@ import React from 'react';
 import { renderHook, act } from '@testing-library/react-native';
 
 // ---------------------------------------------------------------------------
+// Wrapper con PublishFormProvider (el hook puede necesitar el contexto)
+// ---------------------------------------------------------------------------
+
+import { PublishFormProvider } from '../store/PublishFormContext';
+
+// ---------------------------------------------------------------------------
+// SUT
+// ---------------------------------------------------------------------------
+
+import { useLoadProperty } from '../hooks/useLoadProperty';
+
+// ---------------------------------------------------------------------------
 // Constantes de test
 // ---------------------------------------------------------------------------
 
@@ -116,21 +128,9 @@ function make_mock_supabase_load(opts: {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Wrapper con PublishFormProvider (el hook puede necesitar el contexto)
-// ---------------------------------------------------------------------------
-
-import { PublishFormProvider } from '../store/PublishFormContext';
-
 const wrapper = ({ children }: { children: React.ReactNode }) => (
   <PublishFormProvider>{children}</PublishFormProvider>
 );
-
-// ---------------------------------------------------------------------------
-// SUT
-// ---------------------------------------------------------------------------
-
-import { useLoadProperty } from '../hooks/useLoadProperty';
 
 // ---------------------------------------------------------------------------
 // Tests

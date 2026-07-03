@@ -20,9 +20,9 @@ import { parse_location } from '@/features/property-detail/utils/parseLocation';
 
 import type { MapProperty } from '../types';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 export interface MapPropertiesDeps {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   supabase: any;
 }
 
@@ -42,7 +42,7 @@ export async function fetchMapProperties(
   filters?: FilterState,
 ): Promise<MapProperty[]> {
   // ponytail: lazy-require del cliente real; nunca se evalúa en tests (deps siempre inyectado)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const client: any = deps?.supabase ?? (require('@/lib/supabase/client') as any).supabase;
 
   let query = client

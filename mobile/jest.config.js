@@ -1,5 +1,6 @@
 'use strict';
 
+/* global __dirname */
 const path = require('path');
 
 /** @type {import('jest-expo').Config} */

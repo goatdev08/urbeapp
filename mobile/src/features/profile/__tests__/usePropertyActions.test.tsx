@@ -58,20 +58,20 @@
 import { renderHook, act } from '@testing-library/react-native';
 
 // ---------------------------------------------------------------------------
-// Mock de useAuth — userId viene del mock, no de un AuthProvider real
-// ---------------------------------------------------------------------------
-
-jest.mock('@/features/auth/context', () => ({
-  useAuth: jest.fn(),
-}));
-
-// ---------------------------------------------------------------------------
 // Imports DESPUÉS de registrar mocks
 // ---------------------------------------------------------------------------
 
 import { useAuth } from '@/features/auth/context';
 import { usePropertyActions } from '../hooks/usePropertyActions';
 import type { ClosedReason } from '../hooks/usePropertyActions';
+
+// ---------------------------------------------------------------------------
+// Mock de useAuth — userId viene del mock, no de un AuthProvider real
+// ---------------------------------------------------------------------------
+
+jest.mock('@/features/auth/context', () => ({
+  useAuth: jest.fn(),
+}));
 
 // ---------------------------------------------------------------------------
 // Constantes de test
@@ -135,7 +135,7 @@ function make_mock_supabase(opts: {
 beforeEach(() => {
   jest.clearAllMocks();
   mock_use_auth.mockReturnValue({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     user: { id: TEST_USER_ID } as any,
     session: null,
     isLoading: false,
@@ -250,7 +250,7 @@ describe('usePropertyActions', () => {
 
     let action_result: { ok: boolean; error: string | null } | undefined;
     await act(async () => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       action_result = await result.current.closeProperty({
         property_id: TEST_PROPERTY_ID,
         closed_reason: undefined as never,

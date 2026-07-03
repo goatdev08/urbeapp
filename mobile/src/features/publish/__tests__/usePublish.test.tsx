@@ -45,6 +45,18 @@ import React from 'react';
 import { renderHook, act } from '@testing-library/react-native';
 
 // ---------------------------------------------------------------------------
+// Wrapper con PublishFormProvider
+// ---------------------------------------------------------------------------
+
+import { PublishFormProvider, usePublishForm } from '../store/PublishFormContext';
+
+// ---------------------------------------------------------------------------
+// SUT
+// ---------------------------------------------------------------------------
+
+import { usePublish } from '../hooks/usePublish';
+
+// ---------------------------------------------------------------------------
 // Constantes de test
 // ---------------------------------------------------------------------------
 
@@ -84,21 +96,9 @@ function make_mock_supabase(opts: {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Wrapper con PublishFormProvider
-// ---------------------------------------------------------------------------
-
-import { PublishFormProvider, usePublishForm } from '../store/PublishFormContext';
-
 const wrapper = ({ children }: { children: React.ReactNode }) => (
   <PublishFormProvider>{children}</PublishFormProvider>
 );
-
-// ---------------------------------------------------------------------------
-// SUT
-// ---------------------------------------------------------------------------
-
-import { usePublish } from '../hooks/usePublish';
 
 // ---------------------------------------------------------------------------
 // Helper: rellena el form con datos válidos dentro de un act() previo

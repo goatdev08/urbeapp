@@ -31,12 +31,12 @@ export interface UseLoadPropertyResult {
 }
 
 export interface UseLoadPropertyDeps {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   supabase?: any;
 }
 
 // ponytail: lazy-load del cliente real solo en prod; tests inyectan su propio mock.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 function get_default_supabase(): any {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   return (require('@/lib/supabase/client') as { supabase: unknown }).supabase;
@@ -60,6 +60,7 @@ export function useLoadProperty(
   useEffect(() => {
     if (property_id === null) {
       // Sin ID: estado limpio, sin query
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- guard "sin ID" del efecto de carga; resetea estado, no deriva UI.
       set_loading(false);
       set_form_state(null);
       set_error(null);
@@ -69,7 +70,7 @@ export function useLoadProperty(
     let cancelled = false;
     set_loading(true);
 
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+     
     (async () => {
       const { data, error: db_error } = (await supabase_client
         .from('properties')
@@ -92,7 +93,7 @@ export function useLoadProperty(
         )
         .eq('id', property_id)
         .single()) as {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         data: Record<string, any> | null;
         error: { message: string; code?: string } | null;
       };
@@ -114,7 +115,7 @@ export function useLoadProperty(
       }
 
       // Mapeo DB → PublishFormState — incluye el primer video si existe
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const videos: any[] = Array.isArray(data.property_videos) ? data.property_videos : [];
       const first_video = videos[0] ?? null;
 

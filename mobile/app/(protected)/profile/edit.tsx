@@ -31,8 +31,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Stack } from 'expo-router';
-import { useRouter } from 'expo-router';
+import { Stack , useRouter } from 'expo-router';
 
 import { supabase } from '@/lib/supabase/client';
 import { useAuth } from '@/features/auth/context';
@@ -111,6 +110,7 @@ export default function EditProfileScreen() {
 
     const user_id = session?.user?.id;
     if (!user_id) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- guard "sin sesión" del efecto de carga inicial; resetea estado local, no deriva UI.
       set_prefs_loading(false);
       return;
     }

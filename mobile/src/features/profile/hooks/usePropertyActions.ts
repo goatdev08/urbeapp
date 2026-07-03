@@ -61,7 +61,7 @@ export interface UsePropertyActionsReturn {
    */
   closeProperty(params: {
     property_id: string;
-    // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents
+     
     closed_reason: ClosedReason | null | undefined; // explícito para que el guard sea testeable
   }): Promise<ActionResult>;
 
@@ -103,7 +103,7 @@ export function usePropertyActions(deps?: UsePropertyActionsDeps): UsePropertyAc
   const [, force_update] = useReducer((n: number) => n + 1, 0);
 
   // Resolución del cliente Supabase — lazy para que jest.mock intercepte.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const get_client = (): any => {
     if (deps?.supabase) return deps.supabase;
     // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -183,7 +183,7 @@ export function usePropertyActions(deps?: UsePropertyActionsDeps): UsePropertyAc
   const closeProperty = useCallback(
     (params: {
       property_id: string;
-      // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents
+       
       closed_reason: ClosedReason | null | undefined;
     }): Promise<ActionResult> => {
       // Guard en cliente — INVARIANTE PRD: closed_reason es OBLIGATORIO.
@@ -275,6 +275,6 @@ export function usePropertyActions(deps?: UsePropertyActionsDeps): UsePropertyAc
       },
     };
     return r;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [changeStatus, closeProperty, pauseProperty, unpauseProperty, deleteProperty]);
 }

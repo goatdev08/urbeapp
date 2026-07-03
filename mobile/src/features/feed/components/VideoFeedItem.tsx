@@ -142,6 +142,7 @@ function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedIte
   useEffect(() => {
     if (isActive) {
       player.play();
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- sincroniza el override manual de pausa con isActive (ver comentario arriba).
       set_is_paused(false);
     } else {
       player.pause();

@@ -241,7 +241,7 @@ describe('EC-A11: undefined_como_error_no_lanza', () => {
 // ---------------------------------------------------------------------------
 
 describe('EC-A12: mensaje_nunca_vacio', () => {
-  const casos: Array<{ nombre: string; error: unknown }> = [
+  const casos: { nombre: string; error: unknown }[] = [
     {
       nombre: 'invalid_credentials',
       error: make_auth_error('Invalid login credentials', 'invalid_credentials'),

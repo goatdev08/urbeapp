@@ -24,9 +24,9 @@
  * para evitar que el top-level de client.ts (que lanza sin env vars) rompa los tests.
  */
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 export interface ZonesDeps {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   supabase: any;
 }
 
@@ -40,7 +40,7 @@ type QueryRow = {
  */
 export async function fetch_distinct_zones(deps?: ZonesDeps): Promise<string[]> {
   // ponytail: lazy-require del cliente real; nunca se evalúa en tests (deps siempre inyectado)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const client: any = deps?.supabase ?? (require('@/lib/supabase/client') as any).supabase;
 
   const { data: rows, error } = (await client

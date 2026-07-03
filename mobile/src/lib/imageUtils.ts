@@ -110,6 +110,6 @@ export async function processProfileImage(uri: string): Promise<ProcessedImage> 
   // Todos los pasos agotados y ninguno cumplió ≤ 1 MB.
   // Retornamos el último (quality 0.4, máxima compresión disponible).
   // En la práctica esto no ocurre para avatares 512×512 px.
-  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+   
   return last_result!;
 }

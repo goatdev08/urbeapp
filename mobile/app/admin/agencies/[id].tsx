@@ -239,6 +239,7 @@ export default function AgencyDetailScreen(): React.ReactElement {
   }, [id]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount: dispara la carga async (load_data maneja su propio loading/error).
     void load_data();
     return () => {
       if (copy_timeout_ref.current !== null) {

@@ -144,6 +144,7 @@ export function FilterSheet({ visible, onClose }: FilterSheetProps): React.JSX.E
 
   useEffect(() => {
     if (visible) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- resincroniza el texto local con el Context solo al abrir el sheet (ver comentario abajo).
       set_price_min_text(price_min !== null ? String(price_min) : '');
       set_price_max_text(price_max !== null ? String(price_max) : '');
     }

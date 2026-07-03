@@ -44,10 +44,6 @@
 // Mock de useAuth — ANTES de cualquier import del SUT
 // ---------------------------------------------------------------------------
 
-jest.mock('@/features/auth/context', () => ({
-  useAuth: jest.fn(),
-}));
-
 // ---------------------------------------------------------------------------
 // Imports DESPUÉS de registrar mocks
 // ---------------------------------------------------------------------------
@@ -55,6 +51,10 @@ jest.mock('@/features/auth/context', () => ({
 import { renderHook, act } from '@testing-library/react-native';
 import { useAuth } from '@/features/auth/context';
 import { useSavedProperties } from '../useSavedProperties';
+
+jest.mock('@/features/auth/context', () => ({
+  useAuth: jest.fn(),
+}));
 
 // ---------------------------------------------------------------------------
 // Constantes de test
@@ -149,7 +149,7 @@ function make_supabase_mock(opts: {
 beforeEach(() => {
   jest.clearAllMocks();
   mock_use_auth.mockReturnValue({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     user: { id: TEST_USER_ID } as any,
     session: null,
     isLoading: false,
@@ -297,7 +297,7 @@ describe('useSavedProperties', () => {
       { properties: PROPERTY_ROW_2 },
     ];
     const mock = make_supabase_mock({
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       query_result: { data: rows_con_null as any, error: null },
     });
     const { result } = await renderHook(() =>
