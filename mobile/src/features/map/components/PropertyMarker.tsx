@@ -2,9 +2,9 @@
  * PropertyMarker.tsx — marcador de propiedad individual para el mapa global (#11.4).
  *
  * Diseño: pin tipo gota/teardrop (cuadrado con borderTopLeft/Right/BottomLeft grandes
- * y borderBottomRight=0, rotado -45deg); dentro, ícono play (Ionicons) contra-rotado
- * +45deg para quedar vertical. Debajo del pin, un price tag tipo pill con el precio
- * compacto (format_compact_price).
+ * y borderBottomRight=0, rotado -45deg); dentro, el isotipo de firma (IsotipoMark)
+ * contra-rotado +45deg para quedar vertical. Debajo del pin, un price tag tipo pill
+ * con el precio compacto (format_compact_price).
  *
  * Color por operación:
  *   rent         → colors.primary (salvia #5A8A5E)
@@ -13,16 +13,16 @@
  * Performance: tracksViewChanges={false} — evita re-renders en cada frame del mapa
  * cuando hay muchos marcadores. Activar a true solo si el contenido cambia tras mount.
  *
- * ponytail: isotipo real (SVG) = trabajo futuro (#19); por ahora se aproxima con el
- *   glyph "play" de Ionicons ya instalado. Ver comentario ponytail abajo.
+ * ponytail: IsotipoMark usa primitivas RN puras (sin react-native-svg → sin rebuild
+ *   del dev build). Migrar a SVG solo si se necesita fidelidad vectorial fina (#32).
  */
 
 import React, { useCallback } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { Marker } from 'react-native-maps';
 
 import { colors, fonts, radii, shadows } from '@/theme/theme';
+import { IsotipoMark } from '@/components/IsotipoMark';
 import type { MapProperty } from '../types';
 import { format_compact_price } from '../lib/formatPrice';
 
@@ -77,17 +77,9 @@ export function PropertyMarker({ property, onPress }: PropertyMarkerProps) {
             style={styles.pin_touch}
           >
             <View style={[styles.pin_inner]}>
-              {/*
-               * ponytail: ícono play (Ionicons) aproxima el isotipo de Urbea.
-               * El isotipo SVG real se integrará en la tarea #19.
-               * contra-rotación +45deg anula la rotación del contenedor padre (-45deg).
-               */}
-              <Ionicons
-                name="play"
-                size={14}
-                color="#fff"
-                style={styles.play_icon}
-              />
+              {/* Isotipo de firma dentro del pin (#32). La contra-rotación +45deg
+                  del pin_inner anula la rotación -45deg del pin_outer → queda vertical. */}
+              <IsotipoMark size={14} color="#fff" />
             </View>
           </TouchableOpacity>
         </View>
@@ -155,11 +147,6 @@ const styles = StyleSheet.create({
     transform: [{ rotate: '45deg' }],
     justifyContent: 'center',
     alignItems: 'center',
-  },
-
-  /** Pequeño offset visual para que el play se vea centrado dentro del rombo. */
-  play_icon: {
-    marginLeft: 2, // el glyph "play" de Ionicons tiene padding óptico a la izquierda
   },
 
   /**
