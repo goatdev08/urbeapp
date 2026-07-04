@@ -1,0 +1,37 @@
+# helpers/launch.yaml — arranque limpio del dev build hasta la pantalla de login.
+# - Bundle vía 10.0.2.2:8081 (host visto desde el emulador): NO depende de
+#   `adb reverse`, que se cae a media suite.
+# - Tras clearState el dev client muestra su developer menu de forma no
+#   determinista: intro ("Continue"), sheet principal directo, o nada.
+#   Se maneja condicional; siempre que el sheet esté, se apaga la burbuja
+#   "Tools button" (se encima al botón de filtros del feed y roba sus taps).
+appId: com.urbea.app
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "Development Build"
+    timeout: 30000
+- openLink: "urbea://expo-development-client/?url=http%3A%2F%2F10.0.2.2%3A8081"
+- extendedWaitUntil:
+    visible: ".*developer menu.*"
+    timeout: 90000
+    optional: true
+- runFlow:
+    when:
+      visible: "Continue"
+    commands:
+      - tapOn: "Continue"
+- extendedWaitUntil:
+    visible: "Tools button"
+    timeout: 15000
+    optional: true
+- runFlow:
+    when:
+      visible: "Tools button"
+    commands:
+      - tapOn: "Tools button"
+      - back
+- extendedWaitUntil:
+    visible: "Inicia sesión para continuar"
+    timeout: 60000

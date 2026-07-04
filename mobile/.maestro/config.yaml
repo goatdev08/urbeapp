@@ -1,0 +1,3 @@
+# Workspace Maestro — solo los flujos top-level son suites (helpers/ son subflows).
+flows:
+  - "*.yaml"

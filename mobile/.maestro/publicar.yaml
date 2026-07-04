@@ -1,0 +1,87 @@
+# publicar.yaml — wizard completo (3 pasos) con mp4 corto pre-cargado en la
+# galería (lo hace run-e2e.sh con adb push) → assert en Mis publicaciones.
+# Cuenta: agente2 (2 publicaciones previas → "Todas (3)" al terminar).
+# La dirección se escribe manual (sin sugerencias de Places) y el pin se pone
+# tocando el MapPicker.
+appId: com.urbea.app
+name: "publicar — wizard 3 pasos"
+---
+- runFlow:
+    file: helpers/login.yaml
+    env:
+      EMAIL: "agente2.oeste@urbea.demo"
+
+# Paso 1: operación + tipo
+- tapOn: "Publicar propiedad"
+- extendedWaitUntil:
+    visible: "¿Qué vas a publicar?"
+    timeout: 20000
+- tapOn: "Renta"
+- tapOn: "Departamento"
+- tapOn: "Siguiente"
+
+# Paso 2: detalles
+- extendedWaitUntil:
+    visible: "Detalles de la propiedad"
+    timeout: 20000
+# Sin hideKeyboard en este wizard: si el teclado ya se cerró manda BACK y
+# regresa al paso anterior. No hace falta cerrarlo: el scroll funciona con
+# teclado abierto y tocar el siguiente input cambia el foco directo.
+- tapOn: "Precio en pesos mexicanos"
+- inputText: "14500"
+- scrollUntilVisible:
+    element: "Descripción de la propiedad"
+    direction: DOWN
+- tapOn: "Descripción de la propiedad"
+- inputText: "Departamento E2E Maestro, prueba automatizada."
+- scrollUntilVisible:
+    element: "Dirección de la propiedad"
+    direction: DOWN
+- tapOn: "Dirección de la propiedad"
+- inputText: "Av. La Paz 1500, Col. Americana, Guadalajara"
+# Pin en el MapPicker (tap al centro del MapView por testID)
+- scrollUntilVisible:
+    element:
+      id: "map-picker"
+    direction: DOWN
+- tapOn:
+    id: "map-picker"
+- scrollUntilVisible:
+    element: "Siguiente"
+    direction: DOWN
+- tapOn: "Siguiente"
+
+# Paso 3: video de la galería (pre-cargado por run-e2e.sh)
+- extendedWaitUntil:
+    visible: "Video de la propiedad"
+    timeout: 20000
+- tapOn: "Seleccionar video de la galería"
+# Photo picker del sistema: elegir el primer video (ancla = duración del
+# thumbnail; run-e2e.sh empuja urbea-e2e.mp4 de 00:52 a DCIM/Camera).
+# Gotcha: el picker sincroniza perezoso — si sale vacío:
+#   adb shell am force-stop com.google.android.providers.media.module
+- extendedWaitUntil:
+    visible: "Videos"
+    timeout: 20000
+- tapOn: "00:52"
+- extendedWaitUntil:
+    visible: "Video subido correctamente"
+    timeout: 120000
+- tapOn: "Publicar"
+- extendedWaitUntil:
+    visible: "¡Publicada!"
+    timeout: 60000
+- tapOn: "Aceptar"
+
+# Verificar en Mis publicaciones
+- extendedWaitUntil:
+    visible: "Dar like"
+    timeout: 30000
+- tapOn: "Perfil"
+- extendedWaitUntil:
+    visible: "Mis publicaciones"
+    timeout: 20000
+- tapOn: "Mis publicaciones"
+- extendedWaitUntil:
+    visible: "Todas (3)"
+    timeout: 20000

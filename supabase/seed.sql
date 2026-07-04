@@ -360,5 +360,39 @@ begin
   update public.properties set like_count = 1                                       where id = prop0A;
   -- prop03, prop04, prop09 quedan en like_count=0, save_count=0, contact_count=0 (default) ✓
 
-  raise notice 'seed.sql: datos demo creados (3 inmobiliarias, 10 propiedades, 11 usuarios, 3 leads).';
+  -- ────────────────────────────────────────────────────────────────────────────
+  -- 13. Phones de agentes/owners — la migración 20260630000001 corre ANTES del
+  --     seed (db reset: migraciones → seed), así que estos usuarios nacen con
+  --     phone NULL y el CTA de WhatsApp no renderiza. Mismo criterio que la
+  --     migración: solo role='agent' con phone NULL.
+  -- ────────────────────────────────────────────────────────────────────────────
+  update public.users set phone = '+523312345678'
+  where role = 'agent' and phone is null;
+
+  -- ────────────────────────────────────────────────────────────────────────────
+  -- 14. created_at escalonado — el feed ordena por created_at desc y las 10
+  --     propiedades comparten el now() de la transacción (orden no determinista,
+  --     rompe los flujos Maestro). prop0A = la más nueva (1ª del feed) … prop01
+  --     la más vieja.
+  -- ────────────────────────────────────────────────────────────────────────────
+  update public.properties set created_at = now() - interval '10 hours' where id = prop01;
+  update public.properties set created_at = now() - interval '9 hours'  where id = prop02;
+  update public.properties set created_at = now() - interval '8 hours'  where id = prop03;
+  update public.properties set created_at = now() - interval '7 hours'  where id = prop04;
+  update public.properties set created_at = now() - interval '6 hours'  where id = prop05;
+  update public.properties set created_at = now() - interval '5 hours'  where id = prop06;
+  update public.properties set created_at = now() - interval '4 hours'  where id = prop07;
+  update public.properties set created_at = now() - interval '3 hours'  where id = prop08;
+  update public.properties set created_at = now() - interval '2 hours'  where id = prop09;
+  update public.properties set created_at = now() - interval '1 hour'   where id = prop0A;
+
+  -- ────────────────────────────────────────────────────────────────────────────
+  -- 15. Código de invitación E2E — plano: DEMO2026 (mismo que el remoto).
+  --     token = sha256_hex('DEMO2026'); usos ilimitados, sin expiración (GDL Premium).
+  --     Lo consumen las suites Maestro (mobile/.maestro/registro.yaml).
+  -- ────────────────────────────────────────────────────────────────────────────
+  insert into public.agency_invitation_tokens (agency_id, token, max_uses, created_by_user_id) values
+    (agency1, '4aa05c62bc51969c5466a0bd884105fa76e806b034362effd5439368446aacba', null, owner1);
+
+  raise notice 'seed.sql: datos demo creados (3 inmobiliarias, 10 propiedades, 11 usuarios, 3 leads, código DEMO2026).';
 end $$;

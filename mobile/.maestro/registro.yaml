@@ -1,0 +1,54 @@
+# registro.yaml — canje de código → registro 2 fases → onboarding → feed.
+# Código del seed local: DEMO2026 (usos ilimitados, Inmobiliaria GDL Premium).
+# ⚠️ Re-corridas requieren `supabase db reset` (el email e2e queda registrado).
+appId: com.urbea.app
+name: "registro — invitación, alta y onboarding"
+---
+- runFlow: helpers/launch.yaml
+
+# La pantalla de login no enlaza el registro — se entra por deep link
+- openLink: "urbea://register"
+- extendedWaitUntil:
+    visible: "Crea tu cuenta de agente"
+    timeout: 30000
+
+# Fase 1: canje del código → preview de la agencia
+- tapOn:
+    id: "register-code"
+- inputText: "DEMO2026"
+# hideKeyboard es flaky en esta pantalla — tap en texto estático cierra el teclado
+- tapOn: "Crea tu cuenta de agente"
+- tapOn: "Validar código"
+- extendedWaitUntil:
+    visible: "Inmobiliaria GDL Premium"
+    timeout: 30000
+
+# Fase 2: datos del agente
+- tapOn:
+    id: "register-first-name"
+- inputText: "Emilia"
+- tapOn:
+    id: "register-last-name"
+- inputText: "Prueba"
+- tapOn:
+    id: "register-email"
+- inputText: "e2e.agente@urbea.demo"
+- tapOn:
+    id: "register-password"
+- inputText: "urbea2026e2e"
+- tapOn: "Crea tu cuenta de agente"
+- tapOn: "Crear cuenta"
+
+# Auto-login → onboarding
+- extendedWaitUntil:
+    visible: "BIENVENIDO A URBEA"
+    timeout: 60000
+- tapOn: "Tu nombre y apellido"
+- inputText: "Emilia Prueba"
+- tapOn: "BIENVENIDO A URBEA"
+- tapOn: "Continuar"
+
+# Aterriza en el feed
+- extendedWaitUntil:
+    visible: "Guardados"
+    timeout: 45000

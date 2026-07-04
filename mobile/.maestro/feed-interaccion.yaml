@@ -1,0 +1,67 @@
+# feed-interaccion.yaml — swipe, doble-tap like, guardar, verificar en Guardados,
+# long-press quitar. Cuenta: buscador4 (sin likes/saves en el seed → estado limpio).
+# 1er item del feed = prop0A (casa renta $45,000 — created_at más nuevo del seed).
+appId: com.urbea.app
+name: "feed — like, save, guardados"
+---
+- runFlow:
+    file: helpers/login.yaml
+    env:
+      EMAIL: "buscador4@urbea.demo"
+
+# Overlay del primer item visible
+- extendedWaitUntil:
+    visible: "Dar like"
+    timeout: 45000
+
+# Doble-tap sobre el video = like
+- doubleTapOn:
+    point: "50%,40%"
+- extendedWaitUntil:
+    visible: "Quitar like"
+    timeout: 15000
+# Settle: el detector de gestos del video mantiene una ventana de doble-tap;
+# un tap inmediato en el rail se pierde (reproducible sin esta espera)
+- extendedWaitUntil:
+    visible: "texto-inexistente-settle"
+    timeout: 3000
+    optional: true
+
+# Guardar con el botón del rail
+- tapOn: "Guardar propiedad"
+- extendedWaitUntil:
+    visible: "Quitar de guardados"
+    timeout: 5000
+    optional: true
+# Reintento si el primer tap se perdió en la ventana de gestos
+- runFlow:
+    when:
+      notVisible: "Quitar de guardados"
+    commands:
+      - tapOn: "Guardar propiedad"
+- extendedWaitUntil:
+    visible: "Quitar de guardados"
+    timeout: 15000
+
+# Swipe al siguiente item — overlay nuevo con like disponible
+- swipe:
+    direction: UP
+- extendedWaitUntil:
+    visible: "Dar like"
+    timeout: 20000
+
+# Verificar en Guardados (prop0A renta $45,000)
+- tapOn: "Guardados"
+- extendedWaitUntil:
+    visible: "/mes"
+    timeout: 20000
+
+# Long-press → Alert → quitar
+- longPressOn: "/mes"
+- extendedWaitUntil:
+    visible: "¿Quitar esta propiedad de tus guardados?"
+    timeout: 15000
+- tapOn: "Quitar"
+- extendedWaitUntil:
+    visible: "Aún no tienes propiedades guardadas"
+    timeout: 20000

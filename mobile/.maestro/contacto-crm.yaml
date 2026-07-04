@@ -1,0 +1,116 @@
+# contacto-crm.yaml — detalle → CTA WhatsApp → assert del Alert (NO del deep link)
+# → login del agente dueño → lead visible en CRM → cambiar estado → nota.
+# buscador4 (Fernando, sin leads en seed) contacta prop09 (terreno, único con
+# filtro Tipo=Terreno) de agente4 (Diego Ramírez, agencia Providencia).
+appId: com.urbea.app
+name: "contacto → lead en CRM"
+---
+- runFlow:
+    file: helpers/login.yaml
+    env:
+      EMAIL: "buscador4@urbea.demo"
+
+# Filtrar el feed a la única propiedad tipo Terreno (prop09, de agente4)
+- tapOn: "Abrir filtros"
+- extendedWaitUntil:
+    visible: "Filtros"
+    timeout: 15000
+- tapOn: "Terreno"
+- tapOn: "Aplicar"
+- extendedWaitUntil:
+    visible: "Calle Independencia 1200, Tlaquepaque"
+    timeout: 30000
+
+# Abrir el detalle
+- tapOn: "Ver detalle de la propiedad"
+- extendedWaitUntil:
+    visible: "Contactar por WhatsApp"
+    timeout: 30000
+
+# CTA → EF contact-agent → el deep link abre Chrome (sin WhatsApp en el
+# emulador, fallback wa.me) → volver a la app SIN reiniciarla; el Alert de
+# confirmación espera ahí
+- tapOn: "Contactar por WhatsApp"
+- extendedWaitUntil:
+    visible: "settle-inexistente"
+    timeout: 5000
+    optional: true
+- launchApp:
+    stopApp: false
+# El Alert se pierde si la activity estaba en background cuando se disparó
+# (carrera con Chrome) → opcional; la verificación fuerte es el lead en el CRM
+- extendedWaitUntil:
+    visible: "✓ Contacto enviado"
+    timeout: 10000
+    optional: true
+- runFlow:
+    when:
+      visible: "✓ Contacto enviado"
+    commands:
+      - tapOn: "OK"
+
+# Logout del buscador
+- back
+- tapOn: "Perfil"
+- extendedWaitUntil:
+    visible: "Cerrar sesión"
+    timeout: 20000
+- tapOn: "Cerrar sesión"
+- extendedWaitUntil:
+    visible: "¿Estás seguro de que quieres cerrar sesión?"
+    timeout: 15000
+- tapOn:
+    text: "Cerrar sesión"
+    index: 1
+- extendedWaitUntil:
+    visible: "Inicia sesión para continuar"
+    timeout: 30000
+
+# Login del agente dueño (agente4) → CRM → lead de Fernando visible
+- tapOn:
+    id: "login-email"
+- inputText: "agente4.providencia@urbea.demo"
+- tapOn:
+    id: "login-password"
+- inputText: "urbea2026"
+- tapOn: "Inicia sesión para continuar"
+- tapOn: "Iniciar sesión"
+- extendedWaitUntil:
+    visible: "Guardados"
+    timeout: 45000
+- tapOn: "CRM"
+- extendedWaitUntil:
+    visible: "Buscar por nombre..."
+    timeout: 20000
+- tapOn: "Buscar por nombre..."
+- inputText: "Fernando"
+# sin hideKeyboard: aquí cae en KEYCODE_BACK y saca del tab CRM; el filtro es
+# client-side inmediato y el card queda por encima del teclado
+- extendedWaitUntil:
+    visible: "Fernando Castillo Núñez"
+    timeout: 20000
+
+# Abrir el lead → cambiar estado Nuevo → Contactado.
+# El modal se CIERRA solo al aplicar el cambio → verificar el badge en la lista.
+- tapOn: "Fernando Castillo Núñez"
+- extendedWaitUntil:
+    visible: "Cambiar estado"
+    timeout: 20000
+- tapOn: "Contactado"
+- extendedWaitUntil:
+    visible: "Contactado"
+    timeout: 30000
+
+# Reabrir el lead → nota interna sin cambiar estado
+- tapOn: "Fernando Castillo Núñez"
+- extendedWaitUntil:
+    visible: "Notas internas"
+    timeout: 20000
+- tapOn: "Añadir nota…"
+- inputText: "Nota E2E Maestro"
+# cerrar teclado con tap en texto estático (hideKeyboard manda BACK aquí)
+- tapOn: "Notas internas"
+- tapOn: "Guardar nota"
+- extendedWaitUntil:
+    notVisible: "Guardar nota"
+    timeout: 30000
