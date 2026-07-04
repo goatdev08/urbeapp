@@ -8,9 +8,8 @@
  * { error: { code, message } } con status 4xx/5xx → supabase-js los entrega como
  * FunctionsHttpError, cuyo cuerpo parseamos para recuperar el `code`.
  */
-import { FunctionsHttpError } from '@supabase/supabase-js';
-
 import { supabase } from '@/lib/supabase/client';
+import { extract_error_code } from '@/lib/supabase/edge-errors';
 
 export interface ValidateOk {
   ok: true;
@@ -37,20 +36,6 @@ export interface RedeemInput {
   lastName: string;
   email: string;
   password: string;
-}
-
-/** Extrae el error_code del cuerpo de un FunctionsHttpError (best-effort). */
-async function extract_error_code(error: unknown): Promise<string | undefined> {
-  if (error instanceof FunctionsHttpError) {
-    try {
-      const body = await error.context.json();
-      const code = body?.error?.code;
-      return typeof code === 'string' ? code : undefined;
-    } catch {
-      return undefined;
-    }
-  }
-  return undefined;
 }
 
 export async function validate_invitation(
