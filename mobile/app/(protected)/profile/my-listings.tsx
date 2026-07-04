@@ -185,7 +185,7 @@ export default function MyListingsScreen() {
           <PropertyListItem
             item={item}
             on_press={() => {
-              // ponytail: navegación a detalle/editar — se implementa en subtarea posterior
+              router.push(`/property/${item.id}`);
             }}
             on_menu_press={() => set_menu_item(item)}
           />
