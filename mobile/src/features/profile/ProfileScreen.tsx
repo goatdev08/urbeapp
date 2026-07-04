@@ -28,6 +28,7 @@ import { useRouter } from 'expo-router';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { colors, spacing, type_scale } from '@/theme/theme';
 import { useAuth } from '@/features/auth/context';
+import { useAgencyRole } from '@/features/leads/hooks/useAgencyRole';
 import { useAgentProfile } from './hooks/useAgentProfile';
 import { useAgentStats } from './hooks/useAgentStats';
 import { ProfileHeader } from './components/ProfileHeader';
@@ -53,6 +54,8 @@ export function ProfileScreen({ agent_id, is_own_profile }: ProfileScreenProps) 
   const { signOut } = useAuth();
   const { loading, error, data } = useAgentProfile(agent_id);
   const { loading: stats_loading, stats } = useAgentStats(agent_id);
+  // Owner de agencia → botón "Invitar agentes" (tarea #34)
+  const { isOwner } = useAgencyRole();
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
@@ -62,6 +65,10 @@ export function ProfileScreen({ agent_id, is_own_profile }: ProfileScreenProps) 
 
   function handle_my_listings() {
     router.push('/profile/my-listings');
+  }
+
+  function handle_invite_agents() {
+    router.push('/agency/invitations');
   }
 
   async function handle_sign_out() {
@@ -126,6 +133,14 @@ export function ProfileScreen({ agent_id, is_own_profile }: ProfileScreenProps) 
             surface="light"
             onPress={handle_my_listings}
           />
+          {isOwner && (
+            <PrimaryButton
+              label="Invitar agentes"
+              variant="ghost"
+              surface="light"
+              onPress={handle_invite_agents}
+            />
+          )}
           <PrimaryButton
             label="Editar perfil"
             variant="ghost"
