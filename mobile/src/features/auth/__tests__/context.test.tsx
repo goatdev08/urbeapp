@@ -320,6 +320,34 @@ describe('EC-6: signIn_delega_en_signInWithPassword', () => {
 });
 
 // ===========================================================================
+// EC-6b: signIn propaga el error de signInWithPassword (supabase-js v2 NO
+// lanza — devuelve { error }; si signIn lo traga, login.tsx navega a '/' con
+// credenciales malas, el guard rebota a /login y el usuario nunca ve el error.
+// Bug encontrado por la suite E2E Maestro, 2026-07-04).
+// ===========================================================================
+describe('EC-6b: signIn_lanza_cuando_signInWithPassword_devuelve_error', () => {
+  it('signIn rechaza con el error cuando las credenciales son inválidas', async () => {
+    mock_auth.getSession.mockResolvedValue({ data: { session: null }, error: null } as Awaited<ReturnType<typeof mock_auth.getSession>>);
+    const invalid_credentials = Object.assign(new Error('Invalid login credentials'), {
+      name: 'AuthApiError',
+      status: 400,
+    });
+    mock_auth.signInWithPassword.mockResolvedValue({
+      data: { user: null, session: null },
+      error: invalid_credentials,
+    } as unknown as Awaited<ReturnType<typeof mock_auth.signInWithPassword>>);
+
+    const { result } = await renderHook(() => useAuth(), { wrapper });
+
+    await act(async () => {
+      await expect(
+        result.current.signIn('agente@urbea.mx', 'password-mala'),
+      ).rejects.toBe(invalid_credentials);
+    });
+  });
+});
+
+// ===========================================================================
 // EC-7: signOut delega en supabase.auth.signOut
 // ===========================================================================
 describe('EC-7: signOut_delega_en_supabase_signOut', () => {

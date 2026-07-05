@@ -1,11 +1,19 @@
 ---
 tipo: estado
-actualizado: 2026-06-30
+actualizado: 2026-07-03
 ---
 
 # Estado actual
 
 > Narrativa de "dónde estamos hoy". El **qué sigue / qué está hecho** vive en **Taskmaster** (`task-master list`), no aquí.
+
+## Hoy (2026-07-04)
+
+- **E2E Maestro (subtarea 20.5, done):** suite completa en `mobile/.maestro/` (6 flujos del plan §6 de la auditoría) **6/6 verde en 7m54s** contra el stack local sembrado — runner `bash mobile/.maestro/run-e2e.sh`. La E2E cazó y corrigió **3 bugs reales**: `signIn` tragaba el error de credenciales (fix TDD, test EC-6b), FAB de publicar visible a buscadores y encimado al botón Guardar (gate por rol; overlap de agentes → **#39**), y onboarding inalcanzable (register → `replace('/onboarding')`). `mobile/.env.local` quedó apuntando al **LOCAL** (para volver al remoto: descomentar bloque REMOTO + Metro `-c`). Gates: tsc 0 · lint 0 err · jest 479/479. Tarea #20 sigue in-progress (restan 20.1–20.4, 20.6+). Gotchas Maestro durables en [[mapa-codebase]] §E2E.
+
+## Hoy (2026-07-03)
+
+- **Pre-#20 ejecutado (tareas #34–#38, tras la auditoría — ver `.taskmaster/docs/auditoria-pre-tarea-20.md`):** (a) **#35** tap de my-listings → detalle (PR #9). (b) **#34 invitaciones del owner** (PR #10): EF `create-invitation` (TDD 24 tests; la agencia se deriva del JWT — cero IDOR; plano una-sola-vez) + `useCreateInvitation` + pantalla `(protected)/agency/invitations.tsx` gateada por `useAgencyRole().isOwner` + botón "Invitar agentes" en el perfil; helper `extract_error_code` extraído a `src/lib/supabase/edge-errors.ts`. (c) **#37 remoto sembrado**: 12 usuarios (owners/agentes/buscadores + **`admin@urbea.demo`**), 3 agencias, 10 propiedades con video `ready` en Storage, código de invitación **`DEMO2026`**; verificado E2E por API (password grant, mint-video-url → video HTTP 200, validate-invitation). **`mobile/.env.local` apunta ahora al REMOTO.** (d) **#36 en review**: las 2 env keys de Google son LA MISMA key → hay que dividirla antes de restringir (receta §9 del doc de auditoría; requiere consola GCP del usuario). (e) **#38 en review**: pase manual del checklist listo (`pnpm emu`). ⏳ **Pendiente aprobación del usuario:** deploy al remoto de `create-invitation`, `admin-create-agency` y `update-property-status`. Suites: Deno 427, jest 478, tsc/lint verdes. Ver [[mapa-codebase]], [[inmobiliarias-y-agentes]].
 
 ## Hoy (2026-07-02)
 

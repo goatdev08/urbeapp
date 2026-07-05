@@ -122,6 +122,7 @@ export function MapPicker({ lat, lng, onLocationChange }: MapPickerProps) {
     <MapErrorBoundary>
       <View style={styles.container}>
         <MapView
+          testID="map-picker"
           style={styles.map}
           initialRegion={initial_region}
           onPress={handle_coordinate}

@@ -26,6 +26,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, spacing } from '@/theme/theme';
+import { useAuth } from '@/features/auth/context';
 import { useFilters } from '../search/filterStore';
 import { FilterSheet } from '../search/components/FilterSheet';
 
@@ -41,6 +42,7 @@ const key_extractor = (item: FeedPropertyWithUrl): string => item.id;
 export function FeedScreen() {
   const { height } = useWindowDimensions();
   const router = useRouter();
+  const { user } = useAuth();
   const insets = useSafeAreaInsets();
   const { viewabilityConfigCallbackPairs, isItemActive } = useFeedActiveIndex();
   const { filters, active_filter_count } = useFilters();
@@ -151,14 +153,17 @@ export function FeedScreen() {
 
       {/* ponytail: botón flotante temporal — único acceso al wizard de publicación
           del #8 mientras el feed no tenga overlay CTA definitivo. Retirar en 9.6
-          o cuando exista el CTA de overlay. */}
-      <TouchableOpacity
-        style={styles.publish_btn}
-        onPress={() => router.push('/publish/step1')}
-        accessibilityLabel="Publicar propiedad"
-      >
-        <Text style={styles.publish_btn_text}>+</Text>
-      </TouchableOpacity>
+          o cuando exista el CTA de overlay. Solo agentes: un buscador no puede
+          publicar y el FAB tapaba su botón de guardar (hallazgo E2E 2026-07-04). */}
+      {user?.role === 'agent' && (
+        <TouchableOpacity
+          style={styles.publish_btn}
+          onPress={() => router.push('/publish/step1')}
+          accessibilityLabel="Publicar propiedad"
+        >
+          <Text style={styles.publish_btn_text}>+</Text>
+        </TouchableOpacity>
+      )}
 
       {/*
        * Botón de filtros — top-right flotante sobre el feed oscuro.

@@ -187,6 +187,7 @@ export default function LoginScreen() {
           {/* Formulario */}
           <View style={styles.form}>
             <FormField
+              testID="login-email"
               label="Correo electrónico"
               value={email}
               onChangeText={handle_email_change}
@@ -203,6 +204,7 @@ export default function LoginScreen() {
             />
 
             <FormField
+              testID="login-password"
               label="Contraseña"
               value={password}
               onChangeText={handle_password_change}

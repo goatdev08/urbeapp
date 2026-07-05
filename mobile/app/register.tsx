@@ -133,7 +133,10 @@ export default function RegisterScreen() {
       // Auto-login: reusamos las credenciales recién creadas. El listener
       // onAuthStateChange del AuthProvider captura la sesión y redirige.
       await signIn(values.email.trim(), values.password);
-      router.replace('/');
+      // El agente recién dado de alta configura su perfil ANTES de entrar al
+      // feed (la pantalla navega a /(protected) al terminar). Sin esta ruta el
+      // onboarding era inalcanzable (hallazgo E2E 2026-07-04).
+      router.replace('/onboarding');
     } catch (err) {
       set_general_error(map_network_error(err));
     } finally {
@@ -172,6 +175,7 @@ export default function RegisterScreen() {
 
           <View style={styles.form}>
             <FormField
+              testID="register-code"
               label="Código de invitación"
               value={code}
               onChangeText={(t) => {
@@ -217,6 +221,7 @@ export default function RegisterScreen() {
                 </View>
 
                 <FormField
+                  testID="register-first-name"
                   label="Nombre"
                   value={first_name}
                   onChangeText={(t) => {
@@ -230,6 +235,7 @@ export default function RegisterScreen() {
                   editable={!is_submitting}
                 />
                 <FormField
+                  testID="register-last-name"
                   label="Apellido"
                   value={last_name}
                   onChangeText={(t) => {
@@ -243,6 +249,7 @@ export default function RegisterScreen() {
                   editable={!is_submitting}
                 />
                 <FormField
+                  testID="register-email"
                   label="Correo electrónico"
                   value={email}
                   onChangeText={(t) => {
@@ -259,6 +266,7 @@ export default function RegisterScreen() {
                   editable={!is_submitting}
                 />
                 <FormField
+                  testID="register-password"
                   label="Contraseña"
                   value={password}
                   onChangeText={(t) => {

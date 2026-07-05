@@ -114,7 +114,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signIn = async (email: string, password: string): Promise<void> => {
-    await supabase.auth.signInWithPassword({ email, password });
+    // supabase-js v2 NO lanza en credenciales inválidas — devuelve { error }.
+    // Sin este throw, login.tsx cree que el login tuvo éxito y navega a '/'.
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) {
+      throw error;
+    }
   };
 
   const signOut = async (): Promise<void> => {

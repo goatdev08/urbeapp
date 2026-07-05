@@ -1,0 +1,27 @@
+# helpers/login.yaml — subflow: arranque limpio + login con la cuenta ${EMAIL}.
+# Password universal del seed: urbea2026. Termina con el tab bar visible.
+# El retry cubre la carrera de arranque de RN (inputs controlados que aún no
+# procesan eventos justo tras cargar el bundle → el texto no aterriza).
+appId: com.urbea.app
+---
+- runFlow: launch.yaml
+- waitForAnimationToEnd:
+    timeout: 5000
+- retry:
+    maxRetries: 3
+    commands:
+      - tapOn:
+          id: "login-email"
+      - eraseText
+      - inputText: ${EMAIL}
+      - assertVisible: ${EMAIL}
+- tapOn:
+    id: "login-password"
+- inputText: "urbea2026"
+# hideKeyboard manda BACK si el teclado ya se cerró (flaky en secuencia) —
+# tap en el subtítulo estático cierra el teclado sin efectos
+- tapOn: "Inicia sesión para continuar"
+- tapOn: "Iniciar sesión"
+- extendedWaitUntil:
+    visible: "Guardados"
+    timeout: 45000

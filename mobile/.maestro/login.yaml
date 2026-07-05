@@ -1,0 +1,51 @@
+# login.yaml — feliz + password mala (error ES) + sesión persistente.
+# Prerrequisito: Supabase local con seed (supabase db reset) + Metro corriendo
+# (pnpm emu) + dev build instalado en el emulador. Ver §6 de auditoria-pre-tarea-20.
+appId: com.urbea.app
+name: "login — feliz, error y sesión persistente"
+---
+- runFlow: helpers/launch.yaml
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# 1) Password mala → error en español
+- retry:
+    maxRetries: 3
+    commands:
+      - tapOn:
+          id: "login-email"
+      - eraseText
+      - inputText: "buscador1@urbea.demo"
+      - assertVisible: "buscador1@urbea.demo"
+- tapOn:
+    id: "login-password"
+- inputText: "password-mala"
+- tapOn: "Inicia sesión para continuar"
+- tapOn: "Iniciar sesión"
+- extendedWaitUntil:
+    visible: "Correo o contraseña incorrectos."
+    timeout: 20000
+
+# 2) Corrige el password → entra al feed (tab bar visible)
+- tapOn:
+    id: "login-password"
+- eraseText
+- inputText: "urbea2026"
+- tapOn: "Inicia sesión para continuar"
+- tapOn: "Iniciar sesión"
+- extendedWaitUntil:
+    visible: "Guardados"
+    timeout: 45000
+
+# 3) Sesión persiste al reabrir (sin clearState → sin dev menu, pero hay que
+# esperar el home del dev client antes del deep link)
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible: "Development Build"
+    timeout: 30000
+- openLink: "urbea://expo-development-client/?url=http%3A%2F%2F10.0.2.2%3A8081"
+- extendedWaitUntil:
+    visible: "Guardados"
+    timeout: 90000
+- assertNotVisible: "Inicia sesión para continuar"
