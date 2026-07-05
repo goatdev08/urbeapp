@@ -20,7 +20,7 @@ import Animated, {
   withTiming,
   withSpring,
 } from 'react-native-reanimated';
-import { Ionicons } from '@expo/vector-icons';
+import { Heart } from 'phosphor-react-native';
 
 import { colors } from '@/theme/theme';
 
@@ -96,10 +96,10 @@ export function LikeButton({
       accessibilityRole="button"
     >
       <Animated.View style={[styles.icon_wrap, animated_style]}>
-        <Ionicons
-          name={active ? 'heart' : 'heart-outline'}
+        <Heart
           size={size}
           color={icon_color}
+          weight={active ? 'fill' : 'bold'}
         />
       </Animated.View>
       {count !== undefined && (

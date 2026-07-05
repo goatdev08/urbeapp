@@ -2,9 +2,9 @@
 tipo: concepto
 dominio: ui
 estado: vivo
-fuentes: [urbea-identidad-visual.html, "Urbea Prototipo (standalone).html", .taskmaster/docs/exploraciones/003-reconciliacion-y-kit.md, .taskmaster/docs/exploraciones/026-layout-system-extraction.md]
-codigo: [mobile/src/theme/theme.ts, mobile/app/_layout.tsx, mobile/src/components/PropertyGridCard.tsx, mobile/src/components/PrimaryButton.tsx]
-actualizado: 2026-06-28
+fuentes: [urbea-identidad-visual.html, urbea-logo-final.html, "Urbea Prototipo (standalone).html", .taskmaster/docs/exploraciones/003-reconciliacion-y-kit.md, .taskmaster/docs/exploraciones/026-layout-system-extraction.md, .taskmaster/docs/exploraciones/028-iconografia-phosphor-logo-app-icon.md]
+codigo: [mobile/src/theme/theme.ts, mobile/app/_layout.tsx, mobile/src/components/PropertyGridCard.tsx, mobile/src/components/PrimaryButton.tsx, mobile/src/components/IsotipoMark.tsx, mobile/src/components/UrbeaLockup.tsx, mobile/app/login.tsx, mobile/app/(protected)/(tabs)/_layout.tsx]
+actualizado: 2026-07-05
 ---
 
 # Design system
@@ -49,8 +49,8 @@ Doc completo: `.taskmaster/docs/exploraciones/026-layout-system-extraction.md`. 
 | 13 | Panel admin | #7 | ✅ |
 
 ### Elementos de firma aún NO portados a RN (pendientes, los pedirá el mockup)
-- **Isotipo "U + play"** como motivo recurrente — botón de play del feed, anillo de avatar (con badge), pin de mapa, loader, estado vacío, ícono de app. Hoy **no existe** en RN (requiere `react-native-svg`, no instalado). Es la pieza que "cose" la marca; planear su componente `<IsotipoMark>` cuando lo toque la primera pantalla que lo use (feed #9 / mapa).
-- **Set de iconos a medida** (trazo fino 24×24, sprite del HTML) — hoy suplido con Text/emoji (ponytail). Migrar a `react-native-svg` cuando entre.
+- ~~**Isotipo** no existe en RN~~ → **RESUELTO (#43.4)**: `IsotipoMark` es react-native-svg con la geometría del logo final; ver sección "Logo final + iconografía".
+- ~~**Set de iconos a medida** con Text/emoji~~ → **RESUELTO (#43.1)**: toda la app usa `phosphor-react-native` bold.
 - **Precio-héroe editorial + hairlines de plata en specs** — ya en `PropertyGridCard`; replicar en detalle/feed.
 - **Embudo de leads de firma** (barra segmentada Arcilla→Salvia, 7 estados) — para [[crm-leads]].
 
@@ -61,6 +61,16 @@ Registradas para decidir si se alinean ahora o se difieren (candidatas a #22 o t
 - **Grid del perfil:** el mockup #10 usa una `gcell` simple 3:4 (thumb+precio+play); **#16 shipea la `PropertyGridCard` rica 4:5** (badges/zona/precio-héroe) aprobada aparte por el cliente vía preview HTML. Divergencia **intencional** (la card rica fue aprobada); el mockup queda como variante compacta alterna.
 - Botón **Editar** (top-right) — stub en #16 → [[perfil-agente]] / tarea **#22**.
 
+## ⭐ Logo final + iconografía (#43, vivo, 2026-07-05)
+Superó las premisas "sin react-native-svg" de #32/#11 (el cliente aprobó instalarlo).
+- **Logo final canónico = `urbea-logo-final.html` (raíz).** Símbolo NUEVO (reemplaza el "U + play" del `#iso` de identidad): **U/pin cuya pata derecha sube y remata en flecha ↑ + dos puntos (la Ü)**, trazo monolínea 19u round (viewBox 240). Paleta EXCLUSIVA del logo: **verde `#1A5E44` + carnita `#EEE4D0`**, wordmark **"URBEA"** en **Outfit** 600 tracking .24em. ⚠️ Alcance acotado (decisión cliente): el verde/carnita del logo vive **solo en el icono de app + el login**; el resto de la app sigue con Salvia `#5A8A5E`.
+- **`react-native-svg` + `phosphor-react-native` instalados** (rebuild nativo del dev-client, #43.1) — desbloquea el isotipo vectorial y toda la iconografía.
+- **`IsotipoMark.tsx`** (#43.4): migrado de primitivas RN → **react-native-svg** con los paths exactos del logo final; interfaz `{size?,color?}` intacta (3 consumers: PropertyMarker/PropertyGridCard/ProfileHeader).
+- **`UrbeaLockup.tsx`** (#43.2, nuevo): lockup del logo (mark + "URBEA" Outfit) `{size?,color?,direction:'row'|'column'}` — `column` = hero vertical (lo usa el login). Reusa IsotipoMark.
+- **Iconografía Phosphor bold** (#43.1): TODA la app migró de `@expo/vector-icons` (Ionicons) a **`phosphor-react-native`** (variante bold, `weight="fill"` en estados activos) en 15 archivos + tab bar (HouseLine/Bookmarks/MapPin/Ranking/UserCircle). `@expo/vector-icons` removido.
+- **Icono de app** (#43.3): `assets/icon.png` (iOS, verde full-bleed + símbolo carnita) + adaptive Android (`android-icon-foreground/background.png`, sin monochrome), `app.config.js` backgroundColor `#1A5E44`. Assets rasterizados de SVG con **`qlmanage`** (Quick Look de macOS) + `sips` — resuelve el bloqueo SVG→PNG histórico (#32) sin instalar convertidor.
+- **`theme.ts`**: +`brand` tokens (green/green_deep/carnita/carnita_2/ink, ADITIVO) + `fonts.logo = Outfit_600SemiBold`.
+
 ## Gate de branding
 **Levantado** (cliente, 2026-06-26). Antes en pausa por CLAUDE.md §8 / tarea #19. Método: bajo demanda por pantalla, diseñar antes de implementar escalado por complejidad (simple → mini-spec; firma → preview HTML aprobable → portar a RN). El `theme.ts` **crece orgánicamente**: la primera pantalla lo siembra, no se diseña por adelantado.
 
@@ -69,7 +79,8 @@ Fuente única de tokens, **plana** (sin theming engine). 6 grupos, todos snake_c
 - **`colors`** — 20 tokens EXACTOS del kit 003: `primary` `#5A8A5E` (Salvia) + soft/tint/deep, `accent` `#9A7150` (Arcilla) + soft/tint/deep, `ink_feed` `#17140F`, `ink` `#1E1A15`, `paper` `#F6F2EB` + paper_2/3, `gray_1/2/3`, `silver` + silver_dk, `whatsapp`. **+2 semánticos (#33):** `on_primary` `#FFFFFF` (texto/iconos sobre primary) y `surface` `#FFFFFF` (superficie blanca de modal/card) — saldan la deuda de theming que el guardian marcó en #29 (3 `#FFFFFF` hardcodeados en `LeadExpandedView`). ⚠️ `LeadCard`/`AgentSelector` aún hardcodean `#FFFFFF` (`surface` listo para que lo adopten en una auditoría futura).
 - **`radii`** — r_4…r_24 + r_pill (999).
 - **`shadows`** — sm/md/lg/primary (objetos RN `shadowColor/Offset/Opacity/Radius/elevation`, traducidos de los box-shadow CSS del kit; `primary` = glow verde).
-- **`fonts`** — `display: SpaceGrotesk_600SemiBold` + `sans: HankenGrotesk_400/500/600/700`.
+- **`fonts`** — `display: SpaceGrotesk_600SemiBold` + `sans: HankenGrotesk_400/500/600/700` + **`logo: Outfit_600SemiBold` (#43, solo wordmark del logo final)**.
+- **`brand`** (#43) — paleta EXCLUSIVA del logo final (`green #1A5E44`/`green_deep`/`carnita #EEE4D0`/`carnita_2`/`ink`), ADITIVA (no toca `colors` Salvia); alcance: icono de app + login.
 - **`type_scale`** — display 44 / h1 28 / price 34 / body 16 / caption 12 (caption uppercase, letterSpacing ~1.6; display/h1 letterSpacing negativo en px absolutos).
 - **`spacing`** — base-4 (s_4…s_40), incl. `s_20`/`s_40` añadidos del prototipo (#26); el kit no la define explícita.
 - **`layout`** (#26) — `screen_inset: 20` (inset horizontal de página), `grid_gutter: 14`, `grid_cols: 2`. Estructura de pantalla extraída del prototipo de layout (ver ↓).
@@ -83,7 +94,7 @@ Fuente única de tokens, **plana** (sin theming engine). 6 grupos, todos snake_c
 - **`PrimaryButton.tsx`** (#6, **predata theme.ts**) — CTA liquid-glass; hardcodea Salvia `#5A8A5E` (coincide con el token; refactor a theme.ts pendiente, bajo prioridad).
 
 ## Navegación (introducida en #16.1)
-**Tabs navigator** `mobile/app/(protected)/(tabs)/_layout.tsx` (expo-router `Tabs`): tabs **Inicio** (`index.tsx`, el feed placeholder, URL `/`) + **Perfil** (`profile.tsx`, URL `/profile`). `admin/` y `publish/` siguen como Stack fuera de tabs. Íconos emoji inline (ponytail: @expo/vector-icons no instalado). Los grupos `(tabs)` son transparentes a la URL → `router.replace('/')` post-login/publish sigue resolviendo al feed.
+**Tabs navigator** `mobile/app/(protected)/(tabs)/_layout.tsx` (expo-router `Tabs`): Inicio/Guardados/Mapa/CRM(solo agente)/Perfil. `admin/` y `publish/` siguen como Stack fuera de tabs. **Íconos Phosphor bold (#43)**: HouseLine/Bookmarks/MapPin/Ranking/UserCircle, `weight="fill"` en la tab activa (antes emojis inline). Los grupos `(tabs)` son transparentes a la URL → `router.replace('/')` post-login/publish sigue resolviendo al feed.
 
 ## Relacionados
 [[perfil-agente]] · [[feed-vertical-video]] · [[propiedades-y-video]]

@@ -18,7 +18,7 @@
 
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Bathtub, Bed, type Icon, Ruler } from 'phosphor-react-native';
 
 import { colors, fonts, radii, spacing, type_scale } from '@/theme/theme';
 import type { PropertyDetail } from '../types';
@@ -85,11 +85,11 @@ export function PropertyInfoHeader({ data }: PropertyInfoHeaderProps): React.JSX
   const show_per_mes = op_str === 'rent' || op_str === 'both';
 
   // Specs null-safe — se incluyen solo los campos con valor numérico.
-  type SpecItem = { icon: string; label: string };
+  type SpecItem = { icon: Icon; label: string };
   const specs: SpecItem[] = [];
-  if (bedrooms      !== null) specs.push({ icon: 'bed-outline',    label: `${bedrooms} rec.` });
-  if (bathrooms     !== null) specs.push({ icon: 'water-outline',  label: `${bathrooms} baños` });
-  if (square_meters !== null) specs.push({ icon: 'resize-outline', label: `${square_meters} m²` });
+  if (bedrooms      !== null) specs.push({ icon: Bed,     label: `${bedrooms} rec.` });
+  if (bathrooms     !== null) specs.push({ icon: Bathtub, label: `${bathrooms} baños` });
+  if (square_meters !== null) specs.push({ icon: Ruler,   label: `${square_meters} m²` });
 
   return (
     <View style={styles.container}>
@@ -129,21 +129,19 @@ export function PropertyInfoHeader({ data }: PropertyInfoHeaderProps): React.JSX
       {/* ── Fila de specs con hairlines de plata ──────────────────────────── */}
       {specs.length > 0 && (
         <View style={styles.specs_row}>
-          {specs.map((spec, index) => (
-            <React.Fragment key={spec.icon}>
-              {/* Hairline vertical de plata entre specs (mockup #5) */}
-              {index > 0 && <View style={styles.spec_separator} />}
-              <View style={styles.spec_item}>
-                <Ionicons
-                   
-                  name={spec.icon as any}
-                  size={16}
-                  color={colors.gray_2}
-                />
-                <Text style={styles.spec_text}>{spec.label}</Text>
-              </View>
-            </React.Fragment>
-          ))}
+          {specs.map((spec, index) => {
+            const SpecIcon = spec.icon;
+            return (
+              <React.Fragment key={spec.label}>
+                {/* Hairline vertical de plata entre specs (mockup #5) */}
+                {index > 0 && <View style={styles.spec_separator} />}
+                <View style={styles.spec_item}>
+                  <SpecIcon size={16} color={colors.gray_2} weight="bold" />
+                  <Text style={styles.spec_text}>{spec.label}</Text>
+                </View>
+              </React.Fragment>
+            );
+          })}
         </View>
       )}
 

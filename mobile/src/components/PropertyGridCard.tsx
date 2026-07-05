@@ -16,7 +16,7 @@
  *
  * ponytail: sin BlurView en el pause-badge (rgba 92% basta para el demo).
  * Placeholder de miniatura = color sólido (sin expo-linear-gradient, que exigiría
- * módulo nativo) + IsotipoMark (primitivas RN, sin react-native-svg → sin rebuild).
+ * módulo nativo) + IsotipoMark (isotipo vectorial react-native-svg desde #43.4).
  */
 
 import React from 'react';

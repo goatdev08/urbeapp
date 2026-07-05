@@ -22,10 +22,10 @@ import {
 } from 'react-native';
 import { FlashList, type ListRenderItemInfo } from '@shopify/flash-list';
 import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { Plus, SlidersHorizontal } from 'phosphor-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { colors, spacing } from '@/theme/theme';
+import { colors, shadows, spacing } from '@/theme/theme';
 import { useAuth } from '@/features/auth/context';
 import { useFilters } from '../search/filterStore';
 import { FilterSheet } from '../search/components/FilterSheet';
@@ -154,14 +154,15 @@ export function FeedScreen() {
       {/* ponytail: botón flotante temporal — único acceso al wizard de publicación
           del #8 mientras el feed no tenga overlay CTA definitivo. Retirar en 9.6
           o cuando exista el CTA de overlay. Solo agentes: un buscador no puede
-          publicar y el FAB tapaba su botón de guardar (hallazgo E2E 2026-07-04). */}
-      {user?.role === 'agent' && (
+          publicar y el FAB tapaba su botón de guardar (hallazgo E2E 2026-07-04).
+          Admin también puede publicar (el gate del buscador se mantiene). */}
+      {(user?.role === 'agent' || user?.role === 'admin') && (
         <TouchableOpacity
           style={styles.publish_btn}
           onPress={() => router.push('/publish/step1')}
           accessibilityLabel="Publicar propiedad"
         >
-          <Text style={styles.publish_btn_text}>+</Text>
+          <Plus size={28} color="#FFFFFF" weight="bold" />
         </TouchableOpacity>
       )}
 
@@ -178,7 +179,7 @@ export function FeedScreen() {
         accessibilityLabel="Abrir filtros"
         accessibilityRole="button"
       >
-        <Ionicons name="options-outline" size={20} color={colors.gray_1} />
+        <SlidersHorizontal size={20} color={colors.gray_1} weight="bold" />
         {active_filter_count > 0 && (
           <View style={styles.filter_badge}>
             <Text style={styles.filter_badge_text}>{active_filter_count}</Text>
@@ -227,18 +228,14 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 32,
     right: 20,
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  publish_btn_text: {
-    color: '#FFFFFF',
-    fontSize: 28,
-    lineHeight: 32,
-    fontWeight: '400',
+    // Sombra para que el círculo resalte sobre el video del feed.
+    ...shadows.md,
   },
   /**
    * Botón de filtros — píldora circular sobre el feed oscuro.

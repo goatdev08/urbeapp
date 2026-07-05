@@ -11,6 +11,10 @@ import {
   HankenGrotesk_700Bold,
   useFonts as useHankenGrotesk,
 } from '@expo-google-fonts/hanken-grotesk';
+import {
+  Outfit_600SemiBold,
+  useFonts as useOutfit,
+} from '@expo-google-fonts/outfit';
 
 import { AuthProvider } from '@/features/auth/context';
 
@@ -22,10 +26,12 @@ export default function RootLayout() {
     HankenGrotesk_600SemiBold,
     HankenGrotesk_700Bold,
   });
+  // Outfit: solo para el wordmark del logo final (#43.2) — login/branding.
+  const [outfit_loaded] = useOutfit({ Outfit_600SemiBold });
 
-  // Espera a que ambas familias carguen antes de montar la app.
+  // Espera a que las tres familias carguen antes de montar la app.
   // ponytail: null simple (sin splash-screen) — suficiente para la demo.
-  if (!sg_loaded || !hg_loaded) return null;
+  if (!sg_loaded || !hg_loaded || !outfit_loaded) return null;
 
   return (
     // GestureHandlerRootView requerido por react-native-gesture-handler (flex:1 preserva el layout)

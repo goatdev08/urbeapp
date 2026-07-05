@@ -13,7 +13,7 @@
 
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { PawPrint } from 'phosphor-react-native';
 
 import { colors, fonts, radii, spacing } from '@/theme/theme';
 import type { PropertyDetail } from '../types';
@@ -105,11 +105,7 @@ export function AmenityChips({
       {chips.map(chip => (
         <View key={chip.key} style={styles.chip}>
           {chip.with_paw === true && (
-            <Ionicons
-              name="paw-outline"
-              size={13}
-              color={colors.gray_2}
-            />
+            <PawPrint size={13} color={colors.gray_2} weight="bold" />
           )}
           <Text style={styles.chip_text}>{chip.label}</Text>
         </View>

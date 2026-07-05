@@ -13,8 +13,7 @@
  * Performance: tracksViewChanges={false} — evita re-renders en cada frame del mapa
  * cuando hay muchos marcadores. Activar a true solo si el contenido cambia tras mount.
  *
- * ponytail: IsotipoMark usa primitivas RN puras (sin react-native-svg → sin rebuild
- *   del dev build). Migrar a SVG solo si se necesita fidelidad vectorial fina (#32).
+ * IsotipoMark: isotipo vectorial (react-native-svg) desde #43.4 — paths exactos del kit.
  */
 
 import React, { useCallback } from 'react';

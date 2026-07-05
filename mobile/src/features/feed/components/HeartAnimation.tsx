@@ -19,7 +19,7 @@ import Animated, {
   withDelay,
   Easing,
 } from 'react-native-reanimated';
-import { Ionicons } from '@expo/vector-icons';
+import { Heart } from 'phosphor-react-native';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tipos
@@ -80,7 +80,7 @@ export function HeartAnimation({ trigger }: HeartAnimationProps) {
 
   return (
     <Animated.View style={[styles.container, animated_style]} pointerEvents="none">
-      <Ionicons name="heart" size={80} color="rgba(255,255,255,0.92)" />
+      <Heart size={80} color="rgba(255,255,255,0.92)" weight="fill" />
     </Animated.View>
   );
 }

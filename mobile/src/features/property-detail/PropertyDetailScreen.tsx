@@ -36,7 +36,7 @@ import {
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import { CaretLeft, HouseLine, MapPin } from 'phosphor-react-native';
 
 import { colors, fonts, layout, spacing } from '@/theme/theme';
 import { ContactAgentButton } from '@/components/ContactAgentButton';
@@ -76,7 +76,7 @@ export function PropertyDetailScreen(): React.JSX.Element {
   if (error !== null || data === null) {
     return (
       <View style={styles.state_container}>
-        <Ionicons name="home-outline" size={48} color={colors.gray_1} style={{ marginBottom: 16 }} />
+        <HouseLine size={48} color={colors.gray_1} weight="bold" style={{ marginBottom: 16 }} />
         <Text style={styles.error_title}>
           {error !== null ? 'No se pudo cargar la propiedad' : 'Propiedad no encontrada'}
         </Text>
@@ -118,7 +118,7 @@ export function PropertyDetailScreen(): React.JSX.Element {
           accessibilityRole="button"
           accessibilityLabel="Volver"
         >
-          <Ionicons name="chevron-back" size={22} color="#FFFFFF" />
+          <CaretLeft size={22} color="#FFFFFF" weight="bold" />
         </Pressable>
 
         {/* Rail de acciones (like / save) — derecha, alineado al fondo del hero */}
@@ -146,7 +146,7 @@ export function PropertyDetailScreen(): React.JSX.Element {
 
           {/* Dirección completa con icono de ubicación */}
           <View style={styles.address_row}>
-            <Ionicons name="location-outline" size={16} color={colors.primary} />
+            <MapPin size={16} color={colors.primary} weight="bold" />
             <Text style={styles.address_text}>{data.address}</Text>
           </View>
 

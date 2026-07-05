@@ -19,7 +19,7 @@ import Animated, {
   withTiming,
   withSpring,
 } from 'react-native-reanimated';
-import { Ionicons } from '@expo/vector-icons';
+import { BookmarkSimple } from 'phosphor-react-native';
 
 import { colors } from '@/theme/theme';
 
@@ -81,10 +81,10 @@ export function SaveButton({
       accessibilityRole="button"
     >
       <Animated.View style={[styles.icon_wrap, animated_style]}>
-        <Ionicons
-          name={active ? 'bookmark' : 'bookmark-outline'}
+        <BookmarkSimple
           size={size}
           color={icon_color}
+          weight={active ? 'fill' : 'bold'}
         />
       </Animated.View>
     </Pressable>

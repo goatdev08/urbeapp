@@ -16,7 +16,7 @@
  */
 import React, { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { WhatsappLogo } from 'phosphor-react-native';
 
 import { supabase } from '@/lib/supabase/client';
 import { colors, fonts, spacing } from '@/theme/theme';
@@ -141,7 +141,7 @@ export function ContactAgentButton({
         surface="light"
         loading={loading}
         disabled={disabled}
-        icon={<Ionicons name="logo-whatsapp" size={20} color="#FFFFFF" />}
+        icon={<WhatsappLogo size={20} color="#FFFFFF" weight="bold" />}
         onPress={() => { void handle_contact_press(); }}
         accessibilityLabel={`Contactar a ${agentName} por WhatsApp`}
       />

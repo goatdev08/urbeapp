@@ -21,7 +21,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
+import { Bathtub, Bed, BookmarkSimple, Heart, type Icon } from 'phosphor-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, fonts, spacing } from '@/theme/theme';
@@ -99,13 +99,13 @@ export function PropertyOverlay({
         pointerEvents="box-none"
       >
         <ActionButton
-          iconName={isLiked ? 'heart' : 'heart-outline'}
+          icon={Heart}
           active={isLiked}
           onPress={onLike}
           accessibilityLabel={isLiked ? 'Quitar like' : 'Dar like'}
         />
         <ActionButton
-          iconName={isSaved ? 'bookmark' : 'bookmark-outline'}
+          icon={BookmarkSimple}
           active={isSaved}
           onPress={onSave}
           accessibilityLabel={isSaved ? 'Quitar de guardados' : 'Guardar propiedad'}
@@ -150,22 +150,12 @@ export function PropertyOverlay({
 
           {/* Specs: recámaras y baños con íconos */}
           <View style={styles.specs_row} pointerEvents="none">
-            <Ionicons
-              name="bed-outline"
-              size={14}
-              color={SPEC_COLOR}
-            />
+            <Bed size={14} color={SPEC_COLOR} weight="bold" />
             <Text style={styles.spec_text}>{property.bedrooms}</Text>
 
             <View style={styles.spec_divider} />
 
-            {/* ponytail: water-outline como proxy de baño; ícono SVG custom (Urbea)
-                diferido — no hay ícon de bañera en Ionicons que encaje con el kit. */}
-            <Ionicons
-              name="water-outline"
-              size={14}
-              color={SPEC_COLOR}
-            />
+            <Bathtub size={14} color={SPEC_COLOR} weight="bold" />
             <Text style={styles.spec_text}>{property.bathrooms}</Text>
           </View>
         </Pressable>
@@ -180,14 +170,14 @@ export function PropertyOverlay({
 // ─────────────────────────────────────────────────────────────────────────────
 
 type ActionButtonProps = {
-  iconName: React.ComponentProps<typeof Ionicons>['name'];
+  icon: Icon;
   active: boolean;
   onPress: () => void;
   accessibilityLabel: string;
 };
 
 function ActionButton({
-  iconName,
+  icon: IconCmp,
   active,
   onPress,
   accessibilityLabel,
@@ -199,11 +189,11 @@ function ActionButton({
       accessibilityLabel={accessibilityLabel}
       accessibilityRole="button"
     >
-      <Ionicons
-        name={iconName}
+      <IconCmp
         size={22}
         // ponytail: active = accent_soft (arcilla claro, #C2A07C) — del mockup .fbtn.on
         color={active ? colors.accent_soft : '#FFFFFF'}
+        weight={active ? 'fill' : 'bold'}
       />
     </Pressable>
   );

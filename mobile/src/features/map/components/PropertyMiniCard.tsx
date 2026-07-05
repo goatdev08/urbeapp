@@ -21,7 +21,7 @@ import {
   View,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
-import { Ionicons } from '@expo/vector-icons';
+import { Bathtub, Bed, CaretRight, Play } from 'phosphor-react-native';
 
 import { colors, fonts, radii, shadows, spacing } from '@/theme/theme';
 import type { MapProperty } from '@/features/map/types';
@@ -91,7 +91,7 @@ export function PropertyMiniCard({ property, onPress }: PropertyMiniCardProps) {
         {/* Thumb placeholder cuadrado */}
         <View style={styles.thumb}>
           {/* ponytail: ícono play como placeholder; sin imagen real en la data del mapa. */}
-          <Ionicons name="play" size={22} color={colors.primary} />
+          <Play size={22} color={colors.primary} weight="fill" />
         </View>
 
         {/* Bloque de texto: tipo, dirección, precio, specs */}
@@ -112,13 +112,13 @@ export function PropertyMiniCard({ property, onPress }: PropertyMiniCardProps) {
             <View style={styles.specs_row}>
               {has_bedrooms && (
                 <View style={styles.spec_item}>
-                  <Ionicons name="bed-outline" size={12} color={colors.gray_2} />
+                  <Bed size={12} color={colors.gray_2} weight="bold" />
                   <Text style={styles.spec_text}>{property.bedrooms}</Text>
                 </View>
               )}
               {has_bathrooms && (
                 <View style={styles.spec_item}>
-                  <Ionicons name="water-outline" size={12} color={colors.gray_2} />
+                  <Bathtub size={12} color={colors.gray_2} weight="bold" />
                   <Text style={styles.spec_text}>{property.bathrooms}</Text>
                 </View>
               )}
@@ -127,7 +127,7 @@ export function PropertyMiniCard({ property, onPress }: PropertyMiniCardProps) {
         </View>
 
         {/* Chevron derecha */}
-        <Ionicons name="chevron-forward" size={20} color={colors.gray_2} />
+        <CaretRight size={20} color={colors.gray_2} weight="bold" />
       </View>
     </TouchableOpacity>
   );
