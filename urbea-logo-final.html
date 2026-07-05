@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Urbea · Logo final</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --green:#1a5e44;
+    --green-deep:#123a2c;
+    --carnita:#eee4d0;
+    --carnita-2:#e6d9bf;
+    --ink:#1c2620;
+    --line:#ddd0b6;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Outfit',sans-serif;background:#f6f1e6;color:var(--ink);-webkit-font-smoothing:antialiased;padding:0 18px 80px}
+  .wrap{max-width:960px;margin:0 auto}
+
+  .hero{
+    background:var(--carnita);border-radius:24px;margin-top:32px;
+    padding:64px 24px 56px;display:flex;flex-direction:column;align-items:center;gap:22px;
+    border:1px solid var(--line);
+  }
+  .hero .mark{width:140px;height:140px;color:var(--green)}
+  .word{font-size:46px;font-weight:600;letter-spacing:.24em;color:var(--green);padding-left:.24em;line-height:1}
+  .tagline{font-size:12px;letter-spacing:.34em;text-transform:uppercase;color:var(--green);font-weight:500;opacity:.85}
+
+  h2{font-size:13px;letter-spacing:.28em;text-transform:uppercase;color:var(--green);font-weight:600;margin:46px 0 18px}
+
+  .row{display:grid;grid-template-columns:1fr;gap:18px}
+  @media(min-width:680px){.row.three{grid-template-columns:1fr 1fr 1fr}.row.two{grid-template-columns:1fr 1fr}}
+
+  .box{border:1px solid var(--line);border-radius:16px;overflow:hidden;background:#fff}
+  .box .canvas{aspect-ratio:1/1;display:flex;align-items:center;justify-content:center}
+  .box .label{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#6b7166;padding:12px 16px;border-top:1px solid var(--line);font-weight:500}
+
+  .c-carnita{background:var(--carnita);color:var(--green)}
+  .c-green{background:var(--green);color:var(--carnita)}
+  .c-white{background:#fff;color:var(--green)}
+  .c-mono{background:#fff;color:#1c2620}
+  .box .mark{width:55%;height:55%}
+
+  .appicon{width:64%;height:64%}
+
+  /* horizontal lockup */
+  .lock-h{display:flex;align-items:center;gap:18px;justify-content:center;padding:34px}
+  .lock-h .mark{width:64px;height:64px}
+  .lock-h .word{font-size:34px}
+
+  .specs{background:#fff;border:1px solid var(--line);border-radius:16px;padding:24px;font-weight:300;font-size:14px;line-height:1.7;color:#4f574e}
+  .specs b{color:var(--ink);font-weight:600}
+  .swatches{display:flex;gap:14px;margin-top:16px;flex-wrap:wrap}
+  .sw{display:flex;align-items:center;gap:9px;font-size:12.5px;color:#4f574e}
+  .chip{width:26px;height:26px;border-radius:7px;border:1px solid rgba(0,0,0,.08)}
+  code{background:var(--carnita);padding:2px 7px;border-radius:5px;font-size:12.5px;color:var(--green-deep)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- HERO -->
+  <div class="hero">
+    <svg class="mark" viewBox="0 0 240 240" fill="none" stroke="currentColor" stroke-width="19" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M84 108 L84 138 A29 29 0 0 0 142 138 L142 72"/>
+      <path d="M123 90 L142 70 L161 90"/>
+      <circle cx="100" cy="52" r="8.5" fill="currentColor" stroke="none"/>
+      <circle cx="126" cy="52" r="8.5" fill="currentColor" stroke="none"/>
+    </svg>
+    <div class="word">URBEA</div>
+    <div class="tagline">Encuentra tu lugar</div>
+  </div>
+
+  <!-- VERSIONES DE COLOR -->
+  <h2>Versiones de color</h2>
+  <div class="row three">
+    <div class="box">
+      <div class="canvas c-carnita">
+        <svg class="mark" viewBox="0 0 240 240" fill="none" stroke="currentColor" stroke-width="19" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M84 108 L84 138 A29 29 0 0 0 142 138 L142 72"/><path d="M123 90 L142 70 L161 90"/>
+          <circle cx="100" cy="52" r="8.5" fill="currentColor" stroke="none"/><circle cx="126" cy="52" r="8.5" fill="currentColor" stroke="none"/>
+        </svg>
+      </div>
+      <div class="label">Principal · verde sobre carnita</div>
+    </div>
+    <div class="box">
+      <div class="canvas c-green">
+        <svg class="mark" viewBox="0 0 240 240" fill="none" stroke="currentColor" stroke-width="19" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M84 108 L84 138 A29 29 0 0 0 142 138 L142 72"/><path d="M123 90 L142 70 L161 90"/>
+          <circle cx="100" cy="52" r="8.5" fill="currentColor" stroke="none"/><circle cx="126" cy="52" r="8.5" fill="currentColor" stroke="none"/>
+        </svg>
+      </div>
+      <div class="label">Invertido · carnita sobre verde</div>
+    </div>
+    <div class="box">
+      <div class="canvas c-mono">
+        <svg class="mark" viewBox="0 0 240 240" fill="none" stroke="currentColor" stroke-width="19" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M84 108 L84 138 A29 29 0 0 0 142 138 L142 72"/><path d="M123 90 L142 70 L161 90"/>
+          <circle cx="100" cy="52" r="8.5" fill="currentColor" stroke="none"/><circle cx="126" cy="52" r="8.5" fill="currentColor" stroke="none"/>
+        </svg>
+      </div>
+      <div class="label">Monocromático · negro</div>
+    </div>
+  </div>
+
+  <!-- LOCKUPS -->
+  <h2>Composiciones</h2>
+  <div class="row two">
+    <div class="box">
+      <div class="canvas c-carnita" style="aspect-ratio:16/10">
+        <div class="lock-h">
+          <svg class="mark" viewBox="0 0 240 240" fill="none" stroke="currentColor" stroke-width="19" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M84 108 L84 138 A29 29 0 0 0 142 138 L142 72"/><path d="M123 90 L142 70 L161 90"/>
+            <circle cx="100" cy="52" r="8.5" fill="currentColor" stroke="none"/><circle cx="126" cy="52" r="8.5" fill="currentColor" stroke="none"/>
+          </svg>
+          <div class="word" style="color:var(--green)">URBEA</div>
+        </div>
+      </div>
+      <div class="label">Lockup horizontal</div>
+    </div>
+    <div class="box">
+      <div class="canvas c-carnita" style="aspect-ratio:16/10">
+        <svg class="appicon" viewBox="0 0 240 240">
+          <rect width="240" height="240" rx="54" fill="#1a5e44"/>
+          <g transform="translate(120 122) scale(0.74) translate(-122 -106)">
+            <g fill="none" stroke="#eee4d0" stroke-width="19" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M84 108 L84 138 A29 29 0 0 0 142 138 L142 72"/><path d="M123 90 L142 70 L161 90"/>
+            </g>
+            <circle cx="100" cy="52" r="8.5" fill="#eee4d0"/><circle cx="126" cy="52" r="8.5" fill="#eee4d0"/>
+          </g>
+        </svg>
+      </div>
+      <div class="label">Ícono de app</div>
+    </div>
+  </div>
+
+  <!-- SPECS -->
+  <h2>Especificaciones</h2>
+  <div class="specs">
+    <b>Símbolo:</b> trazo monolínea de grosor uniforme (19 u sobre lienzo de 240), remates redondos. Base redondeada que evoca un pin de mapa; pata derecha que se eleva y termina en flecha del mismo grosor; dos puntos (Ü) que dan el guiño amigable.<br><br>
+    <b>Tipografía:</b> Outfit — geométrica, limpia y cálida. Wordmark en mayúsculas con tracking de <code>.24em</code>. Tagline con tracking de <code>.34em</code>.<br><br>
+    <b>Paleta:</b>
+    <div class="swatches">
+      <div class="sw"><span class="chip" style="background:#1a5e44"></span>Verde Urbea · <code>#1A5E44</code></div>
+      <div class="sw"><span class="chip" style="background:#eee4d0"></span>Carnita · <code>#EEE4D0</code></div>
+      <div class="sw"><span class="chip" style="background:#123a2c"></span>Verde profundo · <code>#123A2C</code></div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

@@ -3,22 +3,27 @@
  * Expo Router SDK 56: el grupo (tabs) es transparente a la URL,
  * por lo que `/` sigue resolviendo a (protected)/(tabs)/index.
  *
- * Tabs: Inicio + CRM (solo agentes) + Perfil (propio).
+ * Tabs: Inicio + Guardados + Mapa + CRM (solo agentes) + Perfil (propio).
  * admin/ y publish/ siguen siendo rutas Stack fuera de tabs.
  *
- * ponytail: íconos inline como Text; @expo/vector-icons no está instalado.
- * Reemplazar con Ionicons cuando se añada al build nativo (tarea de branding #19).
+ * Íconos: Phosphor bold (fill en la tab activa) — sistema único de la app (#43).
  *
  * CRM tab: href=null oculta el tab de la barra para no-agentes.
  * La ruta crm.tsx añade un Redirect como segunda capa de seguridad.
  */
 import { Tabs } from 'expo-router';
-import { Text } from 'react-native';
+import { Bookmarks, HouseLine, type Icon, MapPin, Ranking, UserCircle } from 'phosphor-react-native';
+import type { ColorValue } from 'react-native';
 
 import { useAuth } from '@/features/auth/context';
 
-function tab_icon(label: string) {
-  return <Text style={{ fontSize: 20 }}>{label}</Text>;
+// weight=fill en la tab activa, bold en las inactivas (convención #43).
+// color llega como ColorValue de React Navigation; los tints de la barra son
+// siempre hex strings, así que se estrecha a string para el prop de phosphor.
+function tab_icon(IconCmp: Icon) {
+  return function render({ focused, color, size }: { focused: boolean; color: ColorValue; size: number }) {
+    return <IconCmp size={size} color={color as string} weight={focused ? 'fill' : 'bold'} />;
+  };
 }
 
 export default function TabsLayout() {
@@ -38,39 +43,27 @@ export default function TabsLayout() {
     >
       <Tabs.Screen
         name="index"
-        options={{
-          title: 'Inicio',
-          tabBarIcon: ({ focused }) => tab_icon(focused ? '🏠' : '🏠'),
-        }}
+        options={{ title: 'Inicio', tabBarIcon: tab_icon(HouseLine) }}
       />
       <Tabs.Screen
         name="saved"
-        options={{
-          title: 'Guardados',
-          tabBarIcon: ({ focused }) => tab_icon(focused ? '🔖' : '🔖'),
-        }}
+        options={{ title: 'Guardados', tabBarIcon: tab_icon(Bookmarks) }}
       />
       <Tabs.Screen
         name="map"
-        options={{
-          title: 'Mapa',
-          tabBarIcon: ({ focused }) => tab_icon(focused ? '🗺️' : '🗺️'),
-        }}
+        options={{ title: 'Mapa', tabBarIcon: tab_icon(MapPin) }}
       />
       <Tabs.Screen
         name="crm"
         options={{
           title: 'CRM',
           ...(is_agent ? {} : { href: null }),
-          tabBarIcon: ({ focused }) => tab_icon(focused ? '📋' : '📋'),
+          tabBarIcon: tab_icon(Ranking),
         }}
       />
       <Tabs.Screen
         name="profile"
-        options={{
-          title: 'Perfil',
-          tabBarIcon: ({ focused }) => tab_icon(focused ? '👤' : '👤'),
-        }}
+        options={{ title: 'Perfil', tabBarIcon: tab_icon(UserCircle) }}
       />
     </Tabs>
   );

@@ -1,6 +1,10 @@
 # Bitácora del proyecto
 
-Append-only. Prefijo: `## [2026-07-03] feat | Pre-#20: invitaciones owner (#34), fixes y remoto sembrado (#35, #37)
+Append-only. Prefijo: `## [2026-07-04] ingest | Documentación de cuentas demo (LOCAL/REMOTO) y arranque manual del emulador Android
+
+Nueva página [[entornos-y-cuentas]]: catálogo de las 11 cuentas del seed LOCAL (`supabase/seed.sql`, sin admin) vs las cuentas del REMOTO `urbea-app` (mismo set + `admin@urbea.demo` + las 2 cuentas históricas `@urbea.app`), cómo swapear `mobile/.env.local` entre entornos, y el código de invitación `DEMO2026` en ambos. `comandos.md` ganó la sección "Emulador Android" con el desglose manual paso a paso (env vars, `emulator -avd urbea`, `adb reverse`, deep link) detrás de `pnpm emu`. Sin cambios de código de app.
+
+## [2026-07-03] feat | Pre-#20: invitaciones owner (#34), fixes y remoto sembrado (#35, #37)
 
 - **#35** (PR #9): tap de my-listings → `/property/[id]` (era el stub más visible).
 - **#34** (PR #10): EF `create-invitation` (TDD 24 tests; agencia derivada del JWT, plano una-sola-vez) + `useCreateInvitation` + pantalla `(protected)/agency/invitations.tsx` gateada por `isOwner` + botón "Invitar agentes" en perfil. Extraído `extract_error_code` a `src/lib/supabase/edge-errors.ts`. Suites: Deno 427, jest 478.
@@ -203,3 +207,8 @@ El repo nunca se había lint-eado (solo `tsc`). #24 instala ESLint con **preset 
 
 ## [2026-07-04] tarea | 20.5 E2E Maestro — suite completa 6/6 verde + 3 bugs reales corregidos
 Suite Maestro en `mobile/.maestro/` (6 flujos §6 de la auditoría pre-#20) contra **Supabase local sembrado** (determinista): login, botonera, feed-interacción, registro, contacto→CRM, publicar. **Corrida integral 6/6 en 7m54s** vía `run-e2e.sh`. La E2E encontró **3 bugs reales**: (1) **`signIn` tragaba el error** de `signInWithPassword` (supabase-js v2 devuelve `{error}`, no lanza) → con password mala navegaba a `/` y el guard remontaba el form vacío sin mostrar error; fix TDD (test EC-6b) + throw. (2) **FAB de publicar visible para buscadores y encimado al botón Guardar** del rail → gate `role==='agent'` (overlap para agentes → tarea #39). (3) **Onboarding inalcanzable** — nadie enrutaba a `/onboarding`; register.tsx ahora hace `replace('/onboarding')` tras el auto-login. Infra: maestro CLI (formula `mobile-dev-inc/tap/maestro`, NO el cask `maestro`), seed extendido (token `DEMO2026` sha256, phones de agentes — la migración de phones corre ANTES del seed —, `created_at` escalonado para feed determinista), testIDs (`login-*`, `register-*`, `map-picker`). Gates: tsc 0 · lint 0 err · jest **479/479** · suites Deno intactas. Gotchas Maestro durables en [[mapa-codebase]] §E2E.
+
+## [2026-07-04] explore | aprobado tarea 43 — Iconografía Phosphor (bold) + logo login (re-skin) + icono de app (revierte "sin react-native-svg" de #32)
+
+## [2026-07-05] feat | #43 iconografía Phosphor + logo final (icono de app + login)
+Migró TODA la iconografía de `@expo/vector-icons` (Ionicons) a **`phosphor-react-native`** bold (fill en estados activos), 15 archivos + tab bar. Instalados `react-native-svg` + `phosphor-react-native` (rebuild nativo del dev-client) — **revierte la premisa "sin react-native-svg" de #32/#11** (cliente aprobó). Logo final canónico = **`urbea-logo-final.html`** (símbolo nuevo U/pin+flecha↑+Ü; verde #1A5E44 + carnita #EEE4D0; wordmark "URBEA" en Outfit): `IsotipoMark` migrado a SVG con esa geometría; nuevo `UrbeaLockup` (row/column); login re-skineado (hero vertical carnita + botón verde, subtítulo Outfit); icono de app regenerado (verde + símbolo carnita, iOS+adaptive Android) — assets SVG→PNG vía **`qlmanage`** de macOS (resuelve el bloqueo de #32). `theme.ts`: +`brand` tokens + `fonts.logo`=Outfit (ADITIVO, verde/carnita solo en icono+login). Extra: FAB de publicar (+) habilitado también para admin + sombra. Verificado: tsc/lint/jest 479 + smoke on-device (feed Phosphor + login), 2 gates de marca aprobados por cliente. → [[design-system]]

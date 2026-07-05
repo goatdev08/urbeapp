@@ -52,6 +52,22 @@ export const colors = {
 } as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
+// MARCA — LOGO FINAL (urbea-logo-final.html)
+//
+// Paleta EXCLUSIVA del logo (icono de app + login), distinta del verde Salvia
+// del sistema de gestión. Aditiva: NO reemplaza `colors`. Alcance acotado a las
+// superficies de logo (#43, decisión del cliente 2026-07-05: "solo icono + login").
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const brand = {
+  green:      '#1A5E44', // verde Urbea del logo
+  green_deep: '#123A2C',
+  carnita:    '#EEE4D0',
+  carnita_2:  '#E6D9BF',
+  ink:        '#1C2620', // tinta del logo
+} as const;
+
+// ─────────────────────────────────────────────────────────────────────────────
 // RADIOS
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -118,6 +134,7 @@ export const fonts = {
   sans:    'HankenGrotesk_400Regular',        // Cuerpo
   sans_semibold: 'HankenGrotesk_600SemiBold', // Cuerpo semi-bold
   sans_bold:     'HankenGrotesk_700Bold',     // Cuerpo bold
+  logo:    'Outfit_600SemiBold',              // Wordmark del logo final (#43.2)
 } as const;
 
 /** Type scale del kit 003.

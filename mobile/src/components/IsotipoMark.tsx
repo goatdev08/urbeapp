@@ -1,23 +1,16 @@
 /**
- * IsotipoMark — isotipo de firma de Urbea (U + play), geometría tomada del
- * symbol `#iso` en `urbea-identidad-visual.html` (viewBox 0 0 24 24).
+ * IsotipoMark — isotipo de firma de Urbea, geometría tomada del logo final
+ * `urbea-logo-final.html` (viewBox 0 0 240 240): pin/U cuya pata derecha se
+ * eleva y remata en flecha hacia arriba, coronada por dos puntos (la Ü).
+ * Trazo monolínea de grosor uniforme (19u) con remates redondos.
  *
- * Reusable a futuro en: map pins, loaders/spinners, empty states, overlays
- * de "play" sobre miniaturas de video del feed.
+ * Reusable en: map pins, loaders/spinners, empty states, badges.
  *
- * ponytail: v1 implementada con primitivas RN puras (Views + bordes — la
- * técnica clásica "bucket shape" para la U y "triángulo de bordes" para el
- * play). CERO assets, cero dependencias nativas, cero rebuild del dev
- * client. Se eligió así (en vez del PNG @2x/@3x + <Image tintColor>
- * planeado originalmente) porque esta máquina no tiene un convertidor
- * SVG→PNG a mano y `react-native-svg` exigiría un rebuild nativo del dev
- * build — ambos bloqueaban la subtarea sin aportar fidelidad que el uso
- * actual (badge pequeño) necesite. Techo conocido: migrar a
- * `react-native-svg` cuando ≥2 consumers requieran fidelidad vectorial
- * fina (curvas exactas en vez de aproximación por radios de borde).
+ * react-native-svg con paths EXACTOS del logo final (#43). El color aplica al
+ * trazo y a los dos puntos → un solo param, los consumers lo controlan.
  */
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
+import Svg, { Circle, G, Path } from 'react-native-svg';
 
 import { colors } from '@/theme/theme';
 
@@ -26,74 +19,18 @@ interface IsotipoMarkProps {
   color?: string;
 }
 
-// Proporciones derivadas del viewBox 0 0 24 24 de #iso:
-//   U: dos barras verticales (stroke-width 2.1) en x=6 y x=18, de y=4.2 a
-//      y=12.4, cerradas por un semicírculo de radio 6 (fondo en y=18.4).
-//   Play: triángulo (10.4,9.1)-(14.7,11.6)-(10.4,14.1) → ancho 4.3, alto 5.
-const U_WIDTH_RATIO = 12 / 24;
-const U_HEIGHT_RATIO = 14.2 / 24; // (18.4 - 4.2) / 24
-const STROKE_RATIO = 2.1 / 24;
-const PLAY_WIDTH_RATIO = 4.3 / 24;
-const PLAY_HEIGHT_RATIO = 5 / 24;
-
 export function IsotipoMark({ size = 24, color = colors.primary }: IsotipoMarkProps) {
-  const u_width = size * U_WIDTH_RATIO;
-  const u_height = size * U_HEIGHT_RATIO;
-  const stroke = size * STROKE_RATIO;
-  const play_width = size * PLAY_WIDTH_RATIO;
-  const play_height = size * PLAY_HEIGHT_RATIO;
-
   return (
-    <View style={{ width: size, height: size }}>
-      {/* La "U": bucket-shape vía bordes — sin borde superior; radios
-          inferiores grandes (= mitad del ancho) cierran el semicírculo. */}
-      <View
-        style={[
-          styles.u_shape,
-          {
-            width: u_width,
-            height: u_height,
-            left: (size - u_width) / 2,
-            top: (size - u_height) / 2,
-            borderLeftWidth: stroke,
-            borderRightWidth: stroke,
-            borderBottomWidth: stroke,
-            borderColor: color,
-            borderBottomLeftRadius: u_width / 2,
-            borderBottomRightRadius: u_width / 2,
-          },
-        ]}
-      />
-      {/* El "play": triángulo vía bordes (izquierdo con color, top/bottom
-          transparentes) apuntando a la derecha, centrado en el isotipo. */}
-      <View
-        style={[
-          styles.play_triangle,
-          {
-            left: (size - play_width) / 2,
-            top: (size - play_height) / 2,
-            borderTopWidth: play_height / 2,
-            borderBottomWidth: play_height / 2,
-            borderLeftWidth: play_width,
-            borderLeftColor: color,
-          },
-        ]}
-      />
-    </View>
+    <Svg width={size} height={size} viewBox="0 0 240 240">
+      <G fill="none" stroke={color} strokeWidth={19} strokeLinecap="round" strokeLinejoin="round">
+        {/* U/pin: pata izquierda corta, base redondeada, pata derecha alta. */}
+        <Path d="M84 108 L84 138 A29 29 0 0 0 142 138 L142 72" />
+        {/* Flecha hacia arriba en la punta de la pata derecha. */}
+        <Path d="M123 90 L142 70 L161 90" />
+      </G>
+      {/* Los dos puntos de la Ü (guiño amigable). */}
+      <Circle cx={100} cy={52} r={8.5} fill={color} />
+      <Circle cx={126} cy={52} r={8.5} fill={color} />
+    </Svg>
   );
 }
-
-const styles = StyleSheet.create({
-  u_shape: {
-    position: 'absolute',
-    borderTopWidth: 0,
-  },
-  play_triangle: {
-    position: 'absolute',
-    width: 0,
-    height: 0,
-    borderRightWidth: 0,
-    borderTopColor: 'transparent',
-    borderBottomColor: 'transparent',
-  },
-});

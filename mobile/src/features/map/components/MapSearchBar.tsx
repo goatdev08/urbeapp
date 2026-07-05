@@ -17,7 +17,7 @@
 import React from 'react';
 import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { BlurView } from 'expo-blur';
-import { Ionicons } from '@expo/vector-icons';
+import { MagnifyingGlass, SlidersHorizontal } from 'phosphor-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, fonts, radii, shadows, spacing } from '@/theme/theme';
@@ -63,7 +63,7 @@ export function MapSearchBar({
 
       {/* ── Fila de contenido ─────────────────────────────────────────────── */}
       <View style={styles.row}>
-        <Ionicons name="search" size={18} color={colors.gray_2} />
+        <MagnifyingGlass size={18} color={colors.gray_2} weight="bold" />
 
         <TextInput
           style={styles.input}
@@ -90,7 +90,7 @@ export function MapSearchBar({
           accessibilityRole="button"
           style={styles.filter_icon_wrap}
         >
-          <Ionicons name="options-outline" size={20} color={colors.gray_2} />
+          <SlidersHorizontal size={20} color={colors.gray_2} weight="bold" />
           {active_filter_count > 0 && (
             <View style={styles.filter_badge}>
               <Text style={styles.filter_badge_text}>{active_filter_count}</Text>

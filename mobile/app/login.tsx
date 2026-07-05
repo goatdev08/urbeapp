@@ -35,6 +35,8 @@ import {
   validate_login_form,
   type LoginFormErrors,
 } from '@/features/auth/validation';
+import { UrbeaLockup } from '@/components/UrbeaLockup';
+import { brand, colors, fonts } from '@/theme/theme';
 
 // ---------------------------------------------------------------------------
 // Pantalla
@@ -178,9 +180,10 @@ export default function LoginScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {/* Branding mínimo neutro — diseño visual en pausa hasta tarea #19 */}
+          {/* Lockup del logo final (#43.2) — hero vertical: mark verde grande
+              + wordmark URBEA debajo, centrado. */}
           <View style={styles.header}>
-            <Text style={styles.brand}>Urbea</Text>
+            <UrbeaLockup size={95} direction="column" />
             <Text style={styles.subtitle}>Inicia sesión para continuar</Text>
           </View>
 
@@ -269,7 +272,7 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: brand.carnita, // carnita del logo final (#43.2)
   },
   flex: {
     flex: 1,
@@ -283,44 +286,40 @@ const styles = StyleSheet.create({
   header: {
     marginBottom: 40,
     alignItems: 'center',
-  },
-  brand: {
-    fontSize: 32,
-    fontWeight: '700',
-    color: '#111827',
-    letterSpacing: -0.5,
-    marginBottom: 8,
+    gap: 16,
   },
   subtitle: {
+    fontFamily: fonts.logo, // misma fuente que el wordmark URBEA (Outfit)
     fontSize: 15,
-    color: '#6B7280',
+    color: brand.green_deep,
+    letterSpacing: 0.3,
   },
   form: {
     width: '100%',
   },
   toggle_text: {
+    fontFamily: fonts.sans_semibold,
     fontSize: 13,
-    color: '#6B7280',
-    fontWeight: '500',
+    color: colors.gray_2,
   },
   submit_button: {
     marginTop: 8,
-    backgroundColor: '#111827',
-    borderRadius: 10,
+    backgroundColor: brand.green, // verde del logo final
+    borderRadius: 12,
     paddingVertical: 15,
     alignItems: 'center',
     justifyContent: 'center',
   },
   submit_button_disabled: {
-    backgroundColor: '#D1D5DB',
+    backgroundColor: brand.carnita_2,
   },
   submit_text: {
+    fontFamily: fonts.sans_semibold,
     fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
+    color: brand.carnita,
   },
   submit_text_disabled: {
-    color: '#9CA3AF',
+    color: colors.gray_2,
   },
   submit_loading_row: {
     flexDirection: 'row',
@@ -332,16 +331,17 @@ const styles = StyleSheet.create({
   },
   error_banner: {
     marginBottom: 12,
-    backgroundColor: '#FEF2F2',
+    backgroundColor: colors.accent_tint,
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderWidth: 1,
-    borderColor: '#FECACA',
+    borderColor: colors.danger,
   },
   error_banner_text: {
+    fontFamily: fonts.sans,
     fontSize: 14,
-    color: '#DC2626',
+    color: colors.danger,
     textAlign: 'center',
   },
 });

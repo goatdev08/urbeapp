@@ -13,17 +13,18 @@ module.exports = ({ config }) => ({
   ios: {
     supportsTablet: true,
     bundleIdentifier: 'com.urbea.app',
-    config: {
-      googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY ?? '',
-    },
+    // Sin googleMapsApiKey: react-native-maps 1.27 ya no publica el pod de
+    // Google Maps para iOS (el podspec react-native-google-maps no existe y
+    // rompe `pod install`). En iOS el MapView usa Apple Maps (provider default).
   },
   android: {
     package: 'com.urbea.app',
     adaptiveIcon: {
       foregroundImage: './assets/android-icon-foreground.png',
       backgroundImage: './assets/android-icon-background.png',
-      monochromeImage: './assets/android-icon-monochrome.png',
-      backgroundColor: '#E6F4FE',
+      // Sin monochromeImage: la capa themed-icon (Android 13+) del símbolo se leía
+      // mal al tintarse; se usa el adaptive normal (foreground carnita + bg verde).
+      backgroundColor: '#1A5E44', // verde del logo — fallback del adaptive icon (#43.3)
     },
     predictiveBackGestureEnabled: false,
     config: {

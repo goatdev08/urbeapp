@@ -12,7 +12,7 @@
  */
 import React, { useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { WhatsappLogo } from 'phosphor-react-native';
 
 import { colors, fonts, radii, shadows, spacing } from '@/theme/theme';
 import type { AgentInfo, AgencyInfo } from '../types';
@@ -102,7 +102,7 @@ export function AgentCard({ agent, agency, address }: AgentCardProps) {
           accessibilityLabel={`Contactar a ${display_name} por WhatsApp`}
           hitSlop={8}
         >
-          <Ionicons name="logo-whatsapp" size={28} color={colors.whatsapp} />
+          <WhatsappLogo size={28} color={colors.whatsapp} weight="bold" />
         </Pressable>
       )}
 

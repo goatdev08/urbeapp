@@ -34,7 +34,7 @@ import {
   TouchableWithoutFeedback,
   View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { X } from 'phosphor-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, fonts, radii, spacing } from '@/theme/theme';
@@ -203,7 +203,7 @@ export function FilterSheet({ visible, onClose }: FilterSheetProps): React.JSX.E
             accessibilityLabel="Cerrar filtros"
             accessibilityRole="button"
           >
-            <Ionicons name="close" size={22} color={colors.ink} />
+            <X size={22} color={colors.ink} weight="bold" />
           </TouchableOpacity>
         </View>
 

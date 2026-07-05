@@ -17,7 +17,7 @@ import React, { memo, useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View, Text, useWindowDimensions } from 'react-native';
 import { useVideoPlayer, VideoView, type VideoPlayerStatus } from 'expo-video';
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
-import { Ionicons } from '@expo/vector-icons';
+import { Play } from 'phosphor-react-native';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 
@@ -187,7 +187,7 @@ function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedIte
             pointerEvents none → el tap para reanudar lo captura el GestureDetector. */}
         {is_paused && (
           <View style={styles.pause_overlay} pointerEvents="none">
-            <Ionicons name="play" size={72} color="rgba(255,255,255,0.85)" />
+            <Play size={72} color="rgba(255,255,255,0.85)" weight="fill" />
           </View>
         )}
 
