@@ -82,6 +82,14 @@ name: "contacto → lead en CRM"
 - extendedWaitUntil:
     visible: "Buscar por nombre..."
     timeout: 20000
+# El CRM carga los leads tras montar y re-renderiza → esperar a que el lead ya
+# esté en la lista antes de tocar el buscador (evita la carrera tap/re-render
+# que dejaba "Buscar por nombre..." momentáneamente no-encontrable al tocarlo).
+- extendedWaitUntil:
+    visible: "Fernando Castillo Núñez"
+    timeout: 20000
+- waitForAnimationToEnd:
+    timeout: 5000
 - tapOn: "Buscar por nombre..."
 - inputText: "Fernando"
 # sin hideKeyboard: aquí cae en KEYCODE_BACK y saca del tab CRM; el filtro es

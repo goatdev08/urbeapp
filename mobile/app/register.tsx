@@ -9,7 +9,10 @@
  * Subtarea 5.8: auto-login tras el canje (useAuth().signIn) + manejo de errores.
  *
  * Patrón de refs sincrónicas (stale closures en RNTL) tomado de login.tsx.
- * Branding mínimo neutro — diseño visual en pausa hasta tarea #19.
+ * Branding: espejo del login (#20.13) — fondo carnita + UrbeaLockup + botón verde
+ * + fuentes de marca (tokens theme.ts). El gate de branding #19 quedó cancelado y
+ * el visual está levantado (CLAUDE.md §8), así que esta pantalla pre-auth comparte
+ * el lenguaje visual del login.
  */
 import React, { useRef, useState } from 'react';
 import {
@@ -41,6 +44,8 @@ import {
   validate_invitation_code,
   validate_register_form,
 } from '@/features/registration/validation';
+import { UrbeaLockup } from '@/components/UrbeaLockup';
+import { brand, colors, fonts } from '@/theme/theme';
 
 export default function RegisterScreen() {
   const { signIn, session, isLoading } = useAuth();
@@ -168,8 +173,9 @@ export default function RegisterScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
+          {/* Lockup del logo final — mismo hero vertical que el login (#20.13). */}
           <View style={styles.header}>
-            <Text style={styles.brand}>Urbea</Text>
+            <UrbeaLockup size={95} direction="column" />
             <Text style={styles.subtitle}>Crea tu cuenta de agente</Text>
           </View>
 
@@ -328,50 +334,59 @@ export default function RegisterScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#FFFFFF' },
+  safe: { flex: 1, backgroundColor: brand.carnita },
   flex: { flex: 1 },
   scroll: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 24, paddingVertical: 40 },
-  header: { marginBottom: 32, alignItems: 'center' },
-  brand: { fontSize: 32, fontWeight: '700', color: '#111827', letterSpacing: -0.5, marginBottom: 8 },
-  subtitle: { fontSize: 15, color: '#6B7280' },
+  header: { marginBottom: 40, alignItems: 'center', gap: 16 },
+  subtitle: {
+    fontFamily: fonts.logo,
+    fontSize: 15,
+    color: brand.green_deep,
+    letterSpacing: 0.3,
+  },
   form: { width: '100%' },
-  toggle_text: { fontSize: 13, color: '#6B7280', fontWeight: '500' },
+  toggle_text: { fontFamily: fonts.sans_semibold, fontSize: 13, color: colors.gray_2 },
   agency_banner: {
     marginBottom: 16,
-    backgroundColor: '#F0FDF4',
-    borderRadius: 8,
+    backgroundColor: colors.primary_tint,
+    borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderWidth: 1,
-    borderColor: '#BBF7D0',
+    borderColor: brand.green,
   },
-  agency_label: { fontSize: 12, color: '#16A34A', fontWeight: '500', marginBottom: 2 },
-  agency_name: { fontSize: 16, color: '#111827', fontWeight: '600' },
+  agency_label: {
+    fontFamily: fonts.sans_semibold,
+    fontSize: 12,
+    color: brand.green,
+    marginBottom: 2,
+  },
+  agency_name: { fontFamily: fonts.sans_bold, fontSize: 16, color: colors.ink },
   submit_button: {
     marginTop: 8,
-    backgroundColor: '#111827',
-    borderRadius: 10,
+    backgroundColor: brand.green,
+    borderRadius: 12,
     paddingVertical: 15,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  submit_button_disabled: { backgroundColor: '#D1D5DB' },
-  submit_text: { fontSize: 16, fontWeight: '600', color: '#FFFFFF' },
-  submit_text_disabled: { color: '#9CA3AF' },
+  submit_button_disabled: { backgroundColor: brand.carnita_2 },
+  submit_text: { fontFamily: fonts.sans_semibold, fontSize: 16, color: brand.carnita },
+  submit_text_disabled: { color: colors.gray_2 },
   submit_loading_row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
   submit_loading_label: { marginLeft: 8 },
   error_banner: {
     marginTop: 4,
     marginBottom: 12,
-    backgroundColor: '#FEF2F2',
+    backgroundColor: colors.accent_tint,
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderWidth: 1,
-    borderColor: '#FECACA',
+    borderColor: colors.danger,
   },
-  error_banner_text: { fontSize: 14, color: '#DC2626', textAlign: 'center' },
-  login_link_row: { flexDirection: 'row', justifyContent: 'center', marginTop: 24 },
-  login_link_text: { fontSize: 14, color: '#6B7280' },
-  login_link: { fontSize: 14, color: '#111827', fontWeight: '600' },
+  error_banner_text: { fontFamily: fonts.sans, fontSize: 14, color: colors.danger, textAlign: 'center' },
+  login_link_row: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 24 },
+  login_link_text: { fontFamily: fonts.sans, fontSize: 14, color: colors.gray_3 },
+  login_link: { fontFamily: fonts.sans_semibold, fontSize: 14, color: brand.green },
 });

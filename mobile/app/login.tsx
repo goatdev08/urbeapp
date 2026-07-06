@@ -25,7 +25,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Redirect, useRouter } from 'expo-router';
+import { Link, Redirect, useRouter } from 'expo-router';
 
 import { useAuth } from '@/features/auth/context';
 import { map_auth_error } from '@/features/auth/auth-errors';
@@ -258,6 +258,15 @@ export default function LoginScreen() {
                 </Text>
               )}
             </Pressable>
+
+            {/* Acceso al registro de agente por código de invitación (#20.13):
+                sin este enlace la pantalla de código era inalcanzable desde el login. */}
+            <View style={styles.register_link_row}>
+              <Text style={styles.register_link_text}>¿Tienes un código de invitación? </Text>
+              <Link href="/register" style={styles.register_link} accessibilityRole="link">
+                Regístrate
+              </Link>
+            </View>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -343,5 +352,21 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.danger,
     textAlign: 'center',
+  },
+  register_link_row: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 24,
+  },
+  register_link_text: {
+    fontFamily: fonts.sans,
+    fontSize: 14,
+    color: colors.gray_3,
+  },
+  register_link: {
+    fontFamily: fonts.sans_semibold,
+    fontSize: 14,
+    color: brand.green,
   },
 });

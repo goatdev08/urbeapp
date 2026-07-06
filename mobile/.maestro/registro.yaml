@@ -1,13 +1,14 @@
 # registro.yaml — canje de código → registro 2 fases → onboarding → feed.
-# Código del seed local: DEMO2026 (usos ilimitados, Inmobiliaria GDL Premium).
-# ⚠️ Re-corridas requieren `supabase db reset` (el email e2e queda registrado).
+# Código del seed (local y remoto): DEMO2026 (Inmobiliaria GDL Premium).
+# ⚠️ Re-corridas requieren limpiar el email e2e (local: `supabase db reset`;
+#    remoto: borrar e2e.agente@urbea.demo de auth.users).
 appId: com.urbea.app
 name: "registro — invitación, alta y onboarding"
 ---
 - runFlow: helpers/launch.yaml
 
-# La pantalla de login no enlaza el registro — se entra por deep link
-- openLink: "urbea://register"
+# Entrada por el enlace del login — #20.13 lo hizo accesible ("Regístrate").
+- tapOn: "Regístrate"
 - extendedWaitUntil:
     visible: "Crea tu cuenta de agente"
     timeout: 30000
@@ -37,6 +38,13 @@ name: "registro — invitación, alta y onboarding"
     id: "register-password"
 - inputText: "urbea2026e2e"
 - tapOn: "Crea tu cuenta de agente"
+# El header con el lockup es alto; en la fase 2 (5 campos) el CTA queda bajo el
+# fold → scroll hasta el botón antes de tocarlo (refleja el scroll del usuario real).
+- scrollUntilVisible:
+    element:
+      text: "Crear cuenta"
+    direction: DOWN
+    timeout: 15000
 - tapOn: "Crear cuenta"
 
 # Auto-login → onboarding
