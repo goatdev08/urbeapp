@@ -1,11 +1,14 @@
 /**
- * SUT stub — fase RED (subtarea 41.2)
- * Lógica PURA de decisión de la siguiente acción de permiso de ubicación.
- * NO llama a expo-location; recibe un status plano y decide.
+ * permissionDecision.ts — Lógica PURA de decisión de permiso de ubicación (subtarea 41.2).
  *
- * STUB MÍNIMO: implementación real pendiente (fase GREEN). Este stub
- * devuelve siempre 'granted' a propósito para que EC-3 y EC-4 fallen
- * por aserción (no por import/tipo).
+ * Decide la siguiente acción a partir de un status plano ({ granted, canAskAgain }),
+ * SIN llamar a expo-location. El LocationProvider / LocationWall despachan la acción;
+ * este módulo solo decide (testeable sin el módulo nativo, inputs planos).
+ *
+ * Reglas:
+ *   - granted                    → 'granted'       (proceder; canAskAgain irrelevante)
+ *   - !granted && canAskAgain    → 'request'       (mostrar diálogo de permiso del SO)
+ *   - !granted && !canAskAgain   → 'open_settings' (SO bloqueó; abrir Ajustes)
  */
 
 export type PermissionAction = 'granted' | 'request' | 'open_settings';
@@ -15,6 +18,12 @@ export interface PermissionStatus {
   canAskAgain: boolean;
 }
 
-export function decide_permission_action(_status: PermissionStatus): PermissionAction {
-  return 'granted';
+export function decide_permission_action(status: PermissionStatus): PermissionAction {
+  if (status.granted) {
+    return 'granted';
+  }
+  if (status.canAskAgain) {
+    return 'request';
+  }
+  return 'open_settings';
 }
