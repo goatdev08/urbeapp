@@ -3060,10 +3060,11 @@
             "title": "LocationWall — muro bloqueante funcional (variantes permission_denied / gps_off) con tokens theme.ts",
             "description": "",
             "details": "<info added on 2026-07-06T19:32:26.348Z>\nI'll analyze the codebase to understand the current implementation of the location feature and theme system before generating the subtask update.Now let me check existing components and patterns for screens:Based on the codebase analysis, I'll generate the subtask update:\n\nPLAN for subtask 41.4: LocationWall functional blocking screen with two variants permission_denied and gps_off. Component approach: functional presentational screen NO signature illustrated screen NO branding gate 19 confirmed by client. Two variants: variant=permission_denied with title Permiso de ubicación and button Activar ubicación, variant=gps_off with title Ubicación desactivada body copy Activa el servicio de ubicación and button Ir a Ajustes. PrimaryButton surface=light plus theme.ts tokens: colors.paper background F6F2EB, type_scale.h1 plus colors.ink for title 1E1A15, type_scale.body plus colors.gray_3 for body 6B6256, spacing s_16 s_20 s_32. Handle press logic: gps_off calls Linking.openSettings directly, permission_denied calls Location.getForegroundPermissionsAsync then decide_permission_action helper returns request or settings string, if request call requestForegroundPermissionsAsync else openSettings. CRITICAL import missing in task snippet: add import * as Location from expo-location. Agent mobile. Skills urbea-expo. Criticality NO-crítica presentational screen verification tsc lint smoke. Footprint new file mobile/src/features/location/LocationWall.tsx. Dependencies 41.2 LocationPermissionGate logic and 41.3 LocationProvider useLocation hook. Layout pattern: SafeAreaView flex 1 paper background, vertical stack centered with spacing s_32 between title body button, screen inset layout.screen_inset 20 horizontal padding, title type_scale.h1 28px lineHeight 32 letterSpacing minus 0.3 fontFamily SpaceGrotesk_600SemiBold color ink, body type_scale.body 16px lineHeight 24 fontFamily HankenGrotesk_400Regular color gray_3, PrimaryButton height 54 pill radius 999. Reference existing pattern from OnboardingScreen.tsx: KeyboardAvoidingView Platform.OS conditional, ScrollView wrapper for safe area scrolling, surface light paper F6F2EB, similar vertical spacing hierarchy. expo-location installed in package.json confirmed no need to install, react-native Linking from core no install needed.\n</info added on 2026-07-06T19:32:26.348Z>",
-            "status": "pending",
+            "status": "in-progress",
             "dependencies": [],
             "parentTaskId": 41,
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-07-06T19:58:21.994Z"
           },
           {
             "id": 5,
@@ -3096,7 +3097,7 @@
             "parentId": "undefined"
           }
         ],
-        "updatedAt": "2026-07-06T19:54:31.725Z"
+        "updatedAt": "2026-07-06T19:58:21.994Z"
       },
       {
         "id": "42",
@@ -3216,7 +3217,7 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-07-06T19:54:31.725Z",
+      "lastModified": "2026-07-06T19:58:21.994Z",
       "taskCount": 46,
       "completedCount": 35,
       "tags": [
