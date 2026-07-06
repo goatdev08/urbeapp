@@ -22,6 +22,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { BookmarkSimple } from 'phosphor-react-native';
 
 import { colors, spacing, type_scale } from '@/theme/theme';
 import type { GridProperty } from '@/features/profile/types';
@@ -123,9 +124,11 @@ export function SavedScreen(): React.JSX.Element {
         // prop is_own_profile=false y añadimos texto debajo del ícono vía
         // un wrapper. Alternativa simple: EmptyState custom inline.
         <View style={styles.empty_wrapper}>
-          <Text style={styles.empty_icon} importantForAccessibility="no">
-            🔖
-          </Text>
+          {/* Icono Phosphor bookmark outline — distinto al del tab (Bookmarks
+              bold/fill); tono apagado como ilustración de fondo del empty state. */}
+          <View style={styles.empty_icon} importantForAccessibility="no">
+            <BookmarkSimple size={56} color={colors.gray_2} weight="regular" />
+          </View>
           <Text style={styles.empty_title}>Aún no tienes propiedades guardadas</Text>
           <Text style={styles.empty_subtitle}>
             Guarda propiedades desde el feed para verlas aquí.
@@ -194,9 +197,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: H_PAD,
   },
   empty_icon: {
-    fontSize: 48,
     marginBottom: spacing.s_16,
-    opacity: 0.55,
+    opacity: 0.7,
   },
   empty_title: {
     ...type_scale.h1,

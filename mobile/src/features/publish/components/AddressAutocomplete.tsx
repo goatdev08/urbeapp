@@ -60,6 +60,8 @@ interface AutocompleteResponse {
 
 const PLACES_AUTOCOMPLETE_URL =
   'https://places.googleapis.com/v1/places:autocomplete';
+/** Place Details (New) — GET .../places/{placeId} con FieldMask `location`. */
+const PLACES_DETAILS_URL = 'https://places.googleapis.com/v1/places';
 const DEBOUNCE_MS = 300;
 const MAX_SUGGESTIONS = 5;
 
@@ -72,6 +74,12 @@ export interface AddressAutocompleteProps {
   onSelect: (address: string) => void;
   /** Invocado cada vez que el texto cambia (aunque no haya sugerencia seleccionada) */
   onChangeText?: (text: string) => void;
+  /**
+   * Invocado al seleccionar una sugerencia y resolver sus coordenadas exactas
+   * (Place Details). Permite mover el pin del mapa a la dirección elegida.
+   * No se invoca si la resolución de coords falla (degrada al pin manual).
+   */
+  onPlaceSelected?: (address: string, lat: number, lng: number) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -82,6 +90,7 @@ export function AddressAutocomplete({
   value,
   onSelect,
   onChangeText,
+  onPlaceSelected,
 }: AddressAutocompleteProps) {
   const api_key = process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY ?? '';
   const has_key = api_key.length > 0;
@@ -172,8 +181,35 @@ export function AddressAutocomplete({
       const address = prediction.text.text;
       onSelect(address);
       set_suggestions([]);
+
+      // Resuelve las coordenadas exactas de la dirección (Place Details New)
+      // para mover el pin del mapa. Si falla, degrada al pin manual: no lanza.
+      if (!has_key || !onPlaceSelected) return;
+      void (async () => {
+        try {
+          const res = await fetch(
+            `${PLACES_DETAILS_URL}/${prediction.placeId}`,
+            {
+              method: 'GET',
+              headers: {
+                'X-Goog-Api-Key': api_key,
+                'X-Goog-FieldMask': 'location',
+              },
+            },
+          );
+          if (!res.ok) return;
+          const data: { location?: { latitude: number; longitude: number } } =
+            await res.json();
+          const loc = data.location;
+          if (loc && Number.isFinite(loc.latitude) && Number.isFinite(loc.longitude)) {
+            onPlaceSelected(address, loc.latitude, loc.longitude);
+          }
+        } catch {
+          if (__DEV__) console.warn('[AddressAutocomplete] place details error');
+        }
+      })();
     },
-    [onSelect],
+    [onSelect, onPlaceSelected, has_key, api_key],
   );
 
   // ── Render ─────────────────────────────────────────────────────────────────

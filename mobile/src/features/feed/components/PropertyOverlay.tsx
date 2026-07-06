@@ -21,7 +21,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Bathtub, Bed, BookmarkSimple, Heart, type Icon } from 'phosphor-react-native';
+import { Bathtub, Bed, BookmarkSimple, Heart, type Icon, ShareNetwork, WhatsappLogo } from 'phosphor-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, fonts, spacing } from '@/theme/theme';
@@ -53,6 +53,10 @@ export type PropertyOverlayProps = {
   onAgentPress: () => void;
   /** Tap sobre el bloque de info (dirección/precio) → abre el detalle. */
   onPropertyPress: () => void;
+  /** Contacto WhatsApp directo desde el feed. null si el agente no tiene teléfono. */
+  onWhatsApp: (() => void) | null;
+  /** Compartir la propiedad como link al video. */
+  onShare: () => void;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -67,6 +71,8 @@ export function PropertyOverlay({
   onSave,
   onAgentPress,
   onPropertyPress,
+  onWhatsApp,
+  onShare,
 }: PropertyOverlayProps) {
   const insets = useSafeAreaInsets();
 
@@ -109,6 +115,27 @@ export function PropertyOverlay({
           active={isSaved}
           onPress={onSave}
           accessibilityLabel={isSaved ? 'Quitar de guardados' : 'Guardar propiedad'}
+        />
+
+        {/* WhatsApp directo — visible solo si el agente tiene teléfono.
+            Verde de marca WhatsApp para reconocimiento inmediato. */}
+        {onWhatsApp && (
+          <Pressable
+            onPress={onWhatsApp}
+            style={styles.whatsapp_btn}
+            accessibilityRole="button"
+            accessibilityLabel="Contactar por WhatsApp"
+          >
+            <WhatsappLogo size={24} color="#FFFFFF" weight="fill" />
+          </Pressable>
+        )}
+
+        {/* Compartir — link al video, glass neutro como like/guardar. */}
+        <ActionButton
+          icon={ShareNetwork}
+          active={false}
+          onPress={onShare}
+          accessibilityLabel="Compartir propiedad"
         />
       </View>
 
@@ -238,6 +265,15 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(23,20,15,0.36)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  whatsapp_btn: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    // Verde WhatsApp sólido — CTA de contacto reconocible en el rail.
+    backgroundColor: '#25D366',
     alignItems: 'center',
     justifyContent: 'center',
   },

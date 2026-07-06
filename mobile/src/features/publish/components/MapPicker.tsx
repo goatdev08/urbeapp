@@ -13,7 +13,7 @@
  *
  * ponytail: MapView estándar de react-native-maps — sin wrappers ni dependencias extra.
  */
-import React, { Component } from 'react';
+import React, { Component, useEffect, useRef } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
 
@@ -100,6 +100,23 @@ class MapErrorBoundary extends Component<
 
 export function MapPicker({ lat, lng, onLocationChange }: MapPickerProps) {
   const has_location = lat !== null && lng !== null;
+  const map_ref = useRef<MapView>(null);
+
+  // Recentra el mapa cuando las coords cambian desde fuera (p. ej. al elegir una
+  // dirección del autocomplete) o al fijar el pin manualmente. initialRegion solo
+  // aplica al primer montaje, así que sin esto el pin quedaría fuera de vista.
+  useEffect(() => {
+    if (lat === null || lng === null) return;
+    map_ref.current?.animateToRegion(
+      {
+        latitude: lat,
+        longitude: lng,
+        latitudeDelta: SELECTED_DELTA,
+        longitudeDelta: SELECTED_DELTA,
+      },
+      350,
+    );
+  }, [lat, lng]);
 
   // Región inicial: si ya hay coords (p.ej. de una sesión previa), centrar ahí;
   // si no, mostrar CDMX. initialRegion solo aplica al primer montaje.
@@ -122,6 +139,7 @@ export function MapPicker({ lat, lng, onLocationChange }: MapPickerProps) {
     <MapErrorBoundary>
       <View style={styles.container}>
         <MapView
+          ref={map_ref}
           testID="map-picker"
           style={styles.map}
           initialRegion={initial_region}

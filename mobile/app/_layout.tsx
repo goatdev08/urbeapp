@@ -38,7 +38,17 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <AuthProvider>
-          <Stack screenOptions={{ headerShown: false }} />
+          {/* gestureEnabled + fullScreenGestureEnabled: swipe-back en iOS desde
+              cualquier punto de la pantalla (no solo el borde) → volver al feed
+              desde la carta de detalle con un gesto natural. Native-stack ignora
+              fullScreenGestureEnabled en Android (no-op seguro). */}
+          <Stack
+            screenOptions={{
+              headerShown: false,
+              gestureEnabled: true,
+              fullScreenGestureEnabled: true,
+            }}
+          />
         </AuthProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

@@ -4,6 +4,21 @@ Append-only. Prefijo: `## [2026-07-04] ingest | Documentación de cuentas demo (
 
 Nueva página [[entornos-y-cuentas]]: catálogo de las 11 cuentas del seed LOCAL (`supabase/seed.sql`, sin admin) vs las cuentas del REMOTO `urbea-app` (mismo set + `admin@urbea.demo` + las 2 cuentas históricas `@urbea.app`), cómo swapear `mobile/.env.local` entre entornos, y el código de invitación `DEMO2026` en ambos. `comandos.md` ganó la sección "Emulador Android" con el desglose manual paso a paso (env vars, `emulator -avd urbea`, `adb reverse`, deep link) detrás de `pnpm emu`. Sin cambios de código de app.
 
+## [2026-07-06] tarea | Sesión flash pre-entrega: 9 mejoras de demo (feed, publicación, perfil, ubicación) — vivo
+
+Bundle rápido de UX contra el REMOTO (`.env.local` ya apunta a `urbea-app`; requiere **dev build fresco** — la iteración anterior en device no traía el FAB "+" ni estos cambios). Sin TDD (flash, aprobado). tsc 0, lint 0 err. **Rama:** flash sobre `tarea/20-…` (sin commitear aún).
+- **P1 botón "+":** ya existía y cableado (`FeedScreen.tsx` FAB Phosphor → `/publish/step1`, agentes/admin). No era código faltante sino build viejo. Sin cambios.
+- **P2 icono de Guardados vacío:** emoji `🔖` → Phosphor `BookmarkSimple` outline (distinto al `Bookmarks` del tab). `SavedScreen.tsx`.
+- **P3 WhatsApp en el feed:** botón `WhatsappLogo` en el rail del `PropertyOverlay` → `open_whatsapp` directo (sin lead CRM). Requirió teléfono del agente en la query: `feedProperties.ts` embebe `users!properties_owner_user_id_fkey(phone)` → `FeedProperty.agent_phone`.
+- **P4 ubicación:** `LocationProvider`/`LocationWall` ya correctos (permiso/GPS on-off + `AppState 'active'→refresh()` detecta cambios de Ajustes). Verificado, sin cambios.
+- **P5 compartir:** `src/lib/shareProperty.ts` (`share_property`, Share nativo del signed_url del mp4 → abre video sin cuenta). Botón `ShareNetwork` en el rail. ⚠️ TTL = 3600s de mint-video-url (link durable de 7d = subir el expires_in de la EF, diferido).
+- **P6 dirección→pin preciso:** `AddressAutocomplete` gana `onPlaceSelected` (Place Details New, FieldMask `location` → lat/lng); `MapPicker` recentra con `animateToRegion` al cambiar coords; step2 hace `update({address,lat,lng})`.
+- **P7 portadas de video:** `expo-video-thumbnails` (nuevo, ~56.0.3) → `src/features/publish/lib/videoThumbnail.ts` (`generate_and_store_thumbnail`: frame medio → sube a bucket **público** `profile-photos` `{uid}/thumb_{video_id}.jpg` → UPDATE `property_videos.thumbnail_url` vía RLS `videos_update`; fail-soft). Cableado post-publish en step3 (captura video_id/uri/duración antes del `reset()`). Consumo: feed (`VideoFeedItem` póster mientras `player_status==='loading'`; `feedProperties` selecciona `thumbnail_url`) + grids (perfil/guardados ya lo leían). Sin migración/RPC/EF.
+- **P8 perfil 3 botones→menú:** `ProfileMenu.tsx` (bottom-sheet nativo) + botón "⋯" flotante en `ProfileScreen`; opciones Mis publicaciones/Invitar agentes(owner)/Editar perfil/Cerrar sesión.
+- **P9 gestos iOS:** root `Stack` con `gestureEnabled`+`fullScreenGestureEnabled` (swipe-back a pantalla completa desde el detalle).
+
+**Pendiente de entrega:** dev build fresco (módulos nativos nuevos: expo-video-thumbnails) + decisión de git (commit en esta rama vs. rama limpia). Ingest a `mapa-codebase` diferido.
+
 ## [2026-07-03] feat | Pre-#20: invitaciones owner (#34), fixes y remoto sembrado (#35, #37)
 
 - **#35** (PR #9): tap de my-listings → `/property/[id]` (era el stub más visible).
