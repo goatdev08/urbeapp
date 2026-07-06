@@ -48,6 +48,13 @@ module.exports = ({ config }) => ({
       cameraPermission: 'Urbea necesita acceso a la cámara para tomar tu foto de perfil.',
       microphonePermission: false,
     }],
+    // Ubicación foreground (#41 Fase B): permiso "when in use". iOS declara
+    // NSLocationWhenInUseUsageDescription con este string; Android agrega
+    // ACCESS_FINE_LOCATION + ACCESS_COARSE_LOCATION automáticamente. Módulo
+    // nativo → requiere un nuevo development build (no Expo Go).
+    ['expo-location', {
+      locationWhenInUsePermission: 'Urbea necesita acceso a tu ubicación para mostrarte propiedades cercanas.',
+    }],
   ],
   extra: {
     eas: {
