@@ -5,10 +5,22 @@
 #   determinista: intro ("Continue"), sheet principal directo, o nada.
 #   Se maneja condicional; siempre que el sheet esté, se apaga la burbuja
 #   "Tools button" (se encima al botón de filtros del feed y roba sus taps).
+# - Ubicación (#41 Fase B): el gate bloqueante de (protected)/_layout.tsx muestra
+#   LocationWall en vez del contenido si no hay ubicación real. Para que las suites
+#   pasen el gate: (1) launchApp concede el permiso foreground (permissions.location=allow)
+#   pese a clearState, y (2) setLocation fija una coord mock en GDL para que
+#   getCurrentPositionAsync resuelva (sin fix, colgaría en el emulador) → status='granted'.
 appId: com.urbea.app
 ---
 - launchApp:
     clearState: true
+    permissions:
+      location: allow
+# Coord mock GDL centro — el emulador no tiene fix propio; sin esto
+# getCurrentPositionAsync no resolvería y el muro no desaparecería.
+- setLocation:
+    latitude: 20.6597
+    longitude: -103.3496
 - extendedWaitUntil:
     visible: "Development Build"
     timeout: 30000

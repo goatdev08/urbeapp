@@ -3070,11 +3070,12 @@
             "id": 5,
             "title": "Montar LocationProvider + gate en (protected)/_layout.tsx tras el auth gate",
             "description": "",
-            "details": "<info added on 2026-07-06T19:33:04.065Z>\nI'll analyze the codebase to understand the current implementation and structure before generating the subtask update.Based on my codebase analysis, I can now generate the appropriate subtask update text:\n\nMount LocationProvider alongside FilterProvider inside mobile/app/(protected)/_layout.tsx (21 lines, current: FilterProvider wraps ProtectedLayout). Refactor to nest LocationProvider + FilterProvider at same level, then render internal component ProtectedLayoutWithLocation that consumes useLocation hook and conditionally renders: if status=permission_denied → <LocationWall variant=\"permission_denied\"/>, if status=gps_off → <LocationWall variant=\"gps_off\"/>, if loading|granted → <ProtectedLayout/> (Slot). Gate sequence: auth gate (ProtectedLayout) fires first, then location gate, then content. Single uniform flow for all roles (searcher/agent/owner/admin). NO criticality: wiring layout logic only; business logic lives in subtasks 41.2 (permissionDecision.ts) and 41.3 (LocationProvider.tsx). File footprint: mobile/app/(protected)/_layout.tsx matches exactly (21 lines, thin wrapper delegating to ProtectedLayout + FilterProvider). Plan applies cleanly over existing structure. Depends on 41.3 (LocationProvider + useLocation hook) and 41.4 (LocationWall component with theme.ts tokens). Uses: FilterProvider from mobile/src/features/search/filterStore.tsx, ProtectedLayout from mobile/src/features/auth/protected-layout.tsx, LocationProvider + useLocation from mobile/src/features/location (built in 41.3), LocationWall from mobile/src/features/location/LocationWall.tsx (built in 41.4). Agent: urbea-expo. Skills: urbea-expo.\n</info added on 2026-07-06T19:33:04.065Z>",
-            "status": "pending",
+            "details": "<info added on 2026-07-06T19:33:04.065Z>\nI'll analyze the codebase to understand the current implementation and structure before generating the subtask update.Based on my codebase analysis, I can now generate the appropriate subtask update text:\n\nMount LocationProvider alongside FilterProvider inside mobile/app/(protected)/_layout.tsx (21 lines, current: FilterProvider wraps ProtectedLayout). Refactor to nest LocationProvider + FilterProvider at same level, then render internal component ProtectedLayoutWithLocation that consumes useLocation hook and conditionally renders: if status=permission_denied → <LocationWall variant=\"permission_denied\"/>, if status=gps_off → <LocationWall variant=\"gps_off\"/>, if loading|granted → <ProtectedLayout/> (Slot). Gate sequence: auth gate (ProtectedLayout) fires first, then location gate, then content. Single uniform flow for all roles (searcher/agent/owner/admin). NO criticality: wiring layout logic only; business logic lives in subtasks 41.2 (permissionDecision.ts) and 41.3 (LocationProvider.tsx). File footprint: mobile/app/(protected)/_layout.tsx matches exactly (21 lines, thin wrapper delegating to ProtectedLayout + FilterProvider). Plan applies cleanly over existing structure. Depends on 41.3 (LocationProvider + useLocation hook) and 41.4 (LocationWall component with theme.ts tokens). Uses: FilterProvider from mobile/src/features/search/filterStore.tsx, ProtectedLayout from mobile/src/features/auth/protected-layout.tsx, LocationProvider + useLocation from mobile/src/features/location (built in 41.3), LocationWall from mobile/src/features/location/LocationWall.tsx (built in 41.4). Agent: urbea-expo. Skills: urbea-expo.\n</info added on 2026-07-06T19:33:04.065Z>\n<info added on 2026-07-06T20:01:53.763Z>\nBased on the user request, this is the new information to append:\n\nDONE. File: mobile/app/(protected)/_layout.tsx. LocationProvider mounted INSIDE FilterProvider (same level) + internal component ProtectedLayoutWithLocation consuming useLocation: status='permission_denied' renders LocationWall variant permission_denied; 'gps_off' renders LocationWall variant gps_off; 'loading'|'granted' renders ProtectedLayout (Slot). Gate sequence: auth→location→content. Provider mounted ONCE for entire (protected) tree → coordinates cached for entire session (confirms guardian note from 41.3, no remount per screen). Uniform flow for all roles (searcher/agent/owner/admin), no branching. Verification: pnpm tsc --noEmit exit 0, pnpm lint clean, location test suite 30/30 green (no regressions). Visual smoke test of wall/gate → deferred to 41.6.\n</info added on 2026-07-06T20:01:53.763Z>",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 41,
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-07-06T20:02:00.511Z"
           },
           {
             "id": 6,
@@ -3091,13 +3092,14 @@
             "title": "Mantener suite E2E Maestro verde: otorgar permiso de ubicación + setLocation(GDL) en helper launch",
             "description": "",
             "details": "<info added on 2026-07-06T19:35:23.702Z>\nBased on my analysis of the codebase, I can now provide the comprehensive plan for subtask 41.7:\n\nPLAN (ORDER 7): Mantener suite E2E Maestro verde: otorgar permiso de ubicación + setLocation(GDL) en helper launch.\n\nDECISION: Keep E2E green WITHIN task 41 (the gate introduced by 41.5 must be maintained by 41).\n\nAPPROACH: The blocking LocationWall would break all 6 Maestro flows (login.yaml, registro.yaml, feed-interaccion.yaml, contacto-crm.yaml, publicar.yaml, botonera.yaml) because they all expect \"Guardados\" tab bar after login but would now see the LocationWall blocking screen first.\n\nSOLUTION:\n1. Pre-grant location permission + set fixed GDL location BEFORE each flow in mobile/.maestro/helpers/launch.yaml\n2. Add to launchApp command: permissions: { location: \"allow\" } (Maestro native permission granting)\n3. Add setLocation command after launchApp with GDL coords: latitude: 20.6597, longitude: -103.3496 (same as GDL_REGION in mobile/src/features/map/constants.ts)\n4. Ensure emulator GPS service is active (Android AVD setting, documented in run-e2e.sh prerequisites)\n\nFILES TO MODIFY:\n- mobile/.maestro/helpers/launch.yaml: Add permissions:{location:allow} to launchApp and setLocation command\n- mobile/.maestro/config.yaml: May need update if workspace-level location config required (verify)\n- mobile/.maestro/run-e2e.sh: Add documentation about GPS service requirement for Android emulator\n\nEXISTING FLOWS AFFECTED (all 6 depend on helpers/launch.yaml via helpers/login.yaml):\n- login.yaml:7 runFlow helpers/launch.yaml (via helpers/login.yaml)\n- registro.yaml:7 runFlow helpers/launch.yaml\n- feed-interaccion.yaml:8 runFlow helpers/login.yaml\n- contacto-crm.yaml:9 runFlow helpers/login.yaml\n- publicar.yaml:10 runFlow helpers/login.yaml\n- botonera.yaml:7 runFlow helpers/login.yaml\n\nVERIFICATION: Run full suite with run-e2e.sh (bash mobile/.maestro/run-e2e.sh) and confirm 6/6 green.\n\nAGENT: mobile\nSKILLS: urbea-testing, urbea-expo\nCRITICALITY: NON-critical (test configuration only, does not touch production code)\nFOOTPRINT: mobile/.maestro/helpers/launch.yaml (primary), mobile/.maestro/run-e2e.sh (docs only)\nDEPENDENCY: 41.5 (location gate mounted in protected layout)\n</info added on 2026-07-06T19:35:23.702Z>",
-            "status": "pending",
+            "status": "in-progress",
             "dependencies": [],
             "parentTaskId": 41,
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-07-06T20:03:13.243Z"
           }
         ],
-        "updatedAt": "2026-07-06T20:00:08.825Z"
+        "updatedAt": "2026-07-06T20:03:13.243Z"
       },
       {
         "id": "42",
@@ -3217,7 +3219,7 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-07-06T20:00:08.825Z",
+      "lastModified": "2026-07-06T20:03:13.243Z",
       "taskCount": 46,
       "completedCount": 35,
       "tags": [
