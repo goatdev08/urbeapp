@@ -36,6 +36,20 @@ fi
 # 3. Metro accesible desde el emulador
 adb reverse tcp:8081 tcp:8081 >/dev/null
 
+# 3.5 Preflight Edge Functions — NO las arranca este script (prereq manual, doc
+#     wiki/codebase/entornos-y-cuentas.md), pero avisa fuerte si no responden:
+#     sin ellas registro/publicar/contacto fallan con "error inesperado" (5/6 rojo)
+#     y la causa es invisible en el output de Maestro. 503 = kong sin functions serve.
+fn_code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+  http://127.0.0.1:54321/functions/v1/redeem-invitation \
+  -H "Content-Type: application/json" -d '{}' 2>/dev/null || echo "000")
+if [ "$fn_code" = "503" ] || [ "$fn_code" = "000" ]; then
+  echo "⚠️  Edge Functions NO responden (HTTP $fn_code). registro/publicar/contacto fallarán."
+  echo "    Arráncalas en otra terminal:  supabase functions serve --import-map supabase/functions/deno.json"
+  echo "    (Ctrl-C para abortar, o Enter para seguir con las flows que no las necesitan)"
+  read -r _
+fi
+
 # 4. Suite (o un flujo específico)
 if [ $# -ge 1 ]; then
   maestro test "${MAESTRO_DIR}/$1"
