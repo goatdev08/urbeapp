@@ -259,10 +259,10 @@ export default function LoginScreen() {
               )}
             </Pressable>
 
-            {/* Acceso al registro de agente por código de invitación (#20.13):
-                sin este enlace la pantalla de código era inalcanzable desde el login. */}
+            {/* CTA de registro — /register abre el registro libre por default;
+                el flujo de agente con código vive como modo secundario ahí. */}
             <View style={styles.register_link_row}>
-              <Text style={styles.register_link_text}>¿Tienes un código de invitación? </Text>
+              <Text style={styles.register_link_text}>¿No tienes cuenta? </Text>
               <Link href="/register" style={styles.register_link} accessibilityRole="link">
                 Regístrate
               </Link>

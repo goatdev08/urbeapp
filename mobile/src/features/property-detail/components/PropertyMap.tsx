@@ -14,6 +14,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
 
 import { colors, radii, spacing } from '@/theme/theme';
+import { MapPinIcon } from '@/components/MapPinIcon';
 import { parse_location } from '../utils/parseLocation';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -92,8 +93,12 @@ export function PropertyMap({ location }: PropertyMapProps): React.JSX.Element |
         >
           <Marker
             coordinate={{ latitude: coords.lat, longitude: coords.lng }}
-            pinColor={colors.primary}
-          />
+            anchor={{ x: 0.5, y: 1 }}
+            centerOffset={{ x: 0, y: -19 }}
+          >
+            {/* Pin canónico Phosphor — mismo icono que el mapa global y el picker */}
+            <MapPinIcon size={38} />
+          </Marker>
         </MapView>
       </View>
     </MapErrorBoundary>

@@ -9,6 +9,11 @@ name: "registro — invitación, alta y onboarding"
 
 # Entrada por el enlace del login — #20.13 lo hizo accesible ("Regístrate").
 - tapOn: "Regístrate"
+# El registro abre en modo libre (cuenta normal) — cambiar al flujo de agente.
+- extendedWaitUntil:
+    visible: "Regístrate como agente"
+    timeout: 30000
+- tapOn: "Regístrate como agente"
 - extendedWaitUntil:
     visible: "Crea tu cuenta de agente"
     timeout: 30000

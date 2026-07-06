@@ -4,6 +4,15 @@ Append-only. Prefijo: `## [2026-07-04] ingest | Documentación de cuentas demo (
 
 Nueva página [[entornos-y-cuentas]]: catálogo de las 11 cuentas del seed LOCAL (`supabase/seed.sql`, sin admin) vs las cuentas del REMOTO `urbea-app` (mismo set + `admin@urbea.demo` + las 2 cuentas históricas `@urbea.app`), cómo swapear `mobile/.env.local` entre entornos, y el código de invitación `DEMO2026` en ambos. `comandos.md` ganó la sección "Emulador Android" con el desglose manual paso a paso (env vars, `emulator -avd urbea`, `adb reverse`, deep link) detrás de `pnpm emu`. Sin cambios de código de app.
 
+## [2026-07-06] tarea | Flash ronda 2: registro libre sin código + pins de mapa unificados (Phosphor MapPin)
+
+Segunda ronda de la sesión flash (entrega Android hoy; probadores: 1 iOS pendiente de Apple Developer, 1 Android).
+- **Registro libre (rol `user`):** el backend YA lo soportaba (trigger `handle_new_user` → `public.users` con `role='user'`); faltaba la UI. `signUp(email, password, first_name?)` nuevo en `AuthContext` (`supabase.auth.signUp` + metadata). `app/register.tsx` ahora tiene 2 modos: `'user'` default (nombre opcional + correo + contraseña + confirmar, mín 6) y `'agent'` (flujo original por código, intacto) con links para alternar. CTA del login: "¿No tienes cuenta? Regístrate" (ya no menciona código). E2E `registro.yaml` gana un tap "Regístrate como agente".
+- ⚠️ **Config remota cambiada (aprobado por Abraham):** `mailer_autoconfirm=true` en `urbea-app` vía Management API — sin esto el signup NO devolvía sesión (pedía confirmar correo). Verificado con curl (signup → access_token directo); usuarios de prueba borrados. Revertir en dashboard → Auth cuando la demo cierre si se quiere confirmación real.
+- **Pins unificados:** nuevo `mobile/src/components/MapPinIcon.tsx` (Phosphor `MapPin` weight=fill) = pin canónico de los 3 mapas. `PropertyMarker` (mapa global) pierde el teardrop+isotipo+price pill (el precio vive en la mini-card al tocar el pin); conserva color por operación (renta salvia / venta arcilla) y `tracksViewChanges=false`. `MapPicker` (publicar) y `PropertyMap` (detalle) dejan el pin nativo por el mismo icono.
+- **Mapas centrados en el usuario:** `MapScreen` y `MapPicker` arrancan en `useLocation().coords` (permiso garantizado por LocationWall #41) con fallback GDL/CDMX; el mapa global además muestra `showsUserLocation` + botón de mi ubicación.
+- **Fix preexistente:** `login-submit.test.tsx` fallaba desde `c81746c` (mock de expo-router sin `Link`/`Redirect`) — mock completado. Suite completa 44/44, 495 tests, tsc 0, lint 0 err.
+
 ## [2026-07-06] tarea | Sesión flash pre-entrega: 9 mejoras de demo (feed, publicación, perfil, ubicación) — vivo
 
 Bundle rápido de UX contra el REMOTO (`.env.local` ya apunta a `urbea-app`; requiere **dev build fresco** — la iteración anterior en device no traía el FAB "+" ni estos cambios). Sin TDD (flash, aprobado). tsc 0, lint 0 err. **Rama:** flash sobre `tarea/20-…` (sin commitear aún).

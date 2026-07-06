@@ -17,6 +17,9 @@ import React, { Component, useEffect, useRef } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
 
+import { MapPinIcon } from '@/components/MapPinIcon';
+import { useLocation } from '@/features/location/LocationProvider';
+
 // ---------------------------------------------------------------------------
 // Tokens (alineados con step2 — paleta clara/gestión)
 // ---------------------------------------------------------------------------
@@ -25,7 +28,6 @@ const COLOR_BORDER = '#E5E7EB';
 const COLOR_TEXT_SECONDARY = '#6B7280';
 const COLOR_HINT = '#9CA3AF';
 const COLOR_MAP_FALLBACK_BG = '#F3F4F6';
-const COLOR_ACCENT = '#5A8A5E'; // SALVIA
 
 // ---------------------------------------------------------------------------
 // Constantes
@@ -101,6 +103,9 @@ class MapErrorBoundary extends Component<
 export function MapPicker({ lat, lng, onLocationChange }: MapPickerProps) {
   const has_location = lat !== null && lng !== null;
   const map_ref = useRef<MapView>(null);
+  // Ubicación real del usuario (LocationProvider, permiso obligatorio #41) —
+  // centra el arranque del mapa en su ciudad en vez de CDMX hardcodeada.
+  const { coords: user_coords } = useLocation();
 
   // Recentra el mapa cuando las coords cambian desde fuera (p. ej. al elegir una
   // dirección del autocomplete) o al fijar el pin manualmente. initialRegion solo
@@ -118,8 +123,8 @@ export function MapPicker({ lat, lng, onLocationChange }: MapPickerProps) {
     );
   }, [lat, lng]);
 
-  // Región inicial: si ya hay coords (p.ej. de una sesión previa), centrar ahí;
-  // si no, mostrar CDMX. initialRegion solo aplica al primer montaje.
+  // Región inicial: coords ya elegidas > ubicación del usuario > CDMX.
+  // initialRegion solo aplica al primer montaje.
   const initial_region = has_location
     ? {
         latitude: lat,
@@ -127,7 +132,14 @@ export function MapPicker({ lat, lng, onLocationChange }: MapPickerProps) {
         latitudeDelta: SELECTED_DELTA,
         longitudeDelta: SELECTED_DELTA,
       }
-    : CDMX_REGION;
+    : user_coords !== null
+      ? {
+          latitude: user_coords.latitude,
+          longitude: user_coords.longitude,
+          latitudeDelta: CDMX_REGION.latitudeDelta,
+          longitudeDelta: CDMX_REGION.longitudeDelta,
+        }
+      : CDMX_REGION;
 
   // Handler compartido — fijar coords cuando el usuario toca el mapa.
   const handle_coordinate = (e: CoordinateEvent) => {
@@ -154,8 +166,12 @@ export function MapPicker({ lat, lng, onLocationChange }: MapPickerProps) {
               coordinate={{ latitude: lat, longitude: lng }}
               draggable
               onDragEnd={handle_coordinate}
-              pinColor={COLOR_ACCENT}
-            />
+              anchor={{ x: 0.5, y: 1 }}
+              centerOffset={{ x: 0, y: -19 }}
+            >
+              {/* Pin canónico Phosphor — mismo icono que el mapa global y el detalle */}
+              <MapPinIcon size={38} />
+            </Marker>
           )}
         </MapView>
 
