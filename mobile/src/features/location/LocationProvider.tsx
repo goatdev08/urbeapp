@@ -83,19 +83,31 @@ export function LocationProvider({ children }: { children: React.ReactNode }): R
         return;
       }
 
-      const services_enabled = await Location.hasServicesEnabledAsync();
-      if (!is_mounted.current) return;
+      try {
+        const services_enabled = await Location.hasServicesEnabledAsync();
+        if (!is_mounted.current) return;
 
-      if (!services_enabled) {
+        if (!services_enabled) {
+          set_status('gps_off');
+          set_coords(null);
+          return;
+        }
+
+        const next_coords = await fetch_current_coords();
+        if (!is_mounted.current) return;
+        set_status('granted');
+        set_coords(next_coords);
+      } catch {
+        // hasServicesEnabledAsync / getCurrentPositionAsync pueden LANZAR
+        // ("Current location is unavailable") cuando el SO no tiene un fix
+        // disponible aunque los servicios reporten "on" — típico en emulador
+        // sin coord fijada o en arranque en frío. NO crashear (era un rechazo
+        // de promesa sin capturar): caer al muro bloqueante gps_off; el usuario
+        // reintenta con refresh() o corrige en Ajustes.
+        if (!is_mounted.current) return;
         set_status('gps_off');
         set_coords(null);
-        return;
       }
-
-      const next_coords = await fetch_current_coords();
-      if (!is_mounted.current) return;
-      set_status('granted');
-      set_coords(next_coords);
     },
     [],
   );
@@ -104,9 +116,17 @@ export function LocationProvider({ children }: { children: React.ReactNode }): R
     is_mounted.current = true;
 
     const initialize = async () => {
-      const permission = await Location.getForegroundPermissionsAsync();
-      if (!is_mounted.current) return;
-      await evaluate_from_permission(permission);
+      try {
+        const permission = await Location.getForegroundPermissionsAsync();
+        if (!is_mounted.current) return;
+        await evaluate_from_permission(permission);
+      } catch {
+        // getForegroundPermissionsAsync no debería lanzar, pero si lo hace no
+        // dejamos un rechazo sin capturar: estado bloqueante seguro.
+        if (!is_mounted.current) return;
+        set_status('gps_off');
+        set_coords(null);
+      }
     };
 
     initialize();
@@ -117,18 +137,32 @@ export function LocationProvider({ children }: { children: React.ReactNode }): R
   }, [evaluate_from_permission]);
 
   const request = useCallback(async (): Promise<void> => {
-    const permission = await Location.requestForegroundPermissionsAsync();
-    if (!is_mounted.current) return;
-    await evaluate_from_permission(permission);
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (!is_mounted.current) return;
+      await evaluate_from_permission(permission);
+    } catch {
+      // Si el diálogo de permiso falla, no dejamos rechazo sin capturar:
+      // sin confirmación de concesión, tratamos como permiso negado.
+      if (!is_mounted.current) return;
+      set_status('permission_denied');
+      set_coords(null);
+    }
   }, [evaluate_from_permission]);
 
   const refresh = useCallback(async (): Promise<void> => {
     // Re-fetch explícito SIN re-pedir permiso: relee el permiso actual (para
     // detectar si el usuario apagó el GPS o revocó el permiso desde Ajustes)
     // pero nunca dispara el diálogo del SO.
-    const permission = await Location.getForegroundPermissionsAsync();
-    if (!is_mounted.current) return;
-    await evaluate_from_permission(permission);
+    try {
+      const permission = await Location.getForegroundPermissionsAsync();
+      if (!is_mounted.current) return;
+      await evaluate_from_permission(permission);
+    } catch {
+      if (!is_mounted.current) return;
+      set_status('gps_off');
+      set_coords(null);
+    }
   }, [evaluate_from_permission]);
 
   const value: LocationContextValue = { status, coords, request, refresh };

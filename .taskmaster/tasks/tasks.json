@@ -3082,10 +3082,11 @@
             "title": "Nuevo dev build (módulo nativo) + smoke test del flujo de permiso/GPS",
             "description": "",
             "details": "<info added on 2026-07-06T19:34:20.084Z>\nBased on the user request for subtask 41.6, analyzing the codebase structure and context:Now I'll analyze the test strategy mentioned in the user request:Let me get the test strategy for task 41 specifically:Now I have all the context I need to generate the subtask update. Based on the user request, task context, and codebase analysis:\n\nPLAN (ORDEN 6, DECISIÓN USUARIO=build+smoke AHORA Android). Approach tras código verde (tsc+lint): construir NUEVO dev build local porque expo-location es módulo nativo y el dev build actual del emulador NO lo tiene. Two build paths considered: pnpm emu uses existing dev-client.apk installed on urbea AVD via eas build:run --latest from task #16, BUT that apk does not include expo-location native module added in subtask 41.1. Must rebuild using eas build --profile development --platform android --local (reference: mobile/eas.json development profile lines 7-10, commands from wiki/codebase/comandos.md table at lines 23-32). Installation: new .apk lands in mobile/ directory, install via eas build:run --path <filename> or manual adb install -r <filename>, replaces urbea AVD app package com.urbea.app. Alternative manual method from android_emulator_mac_setup memory: adb install -r new-build.apk, adb reverse tcp:8081 tcp:8081, adb shell am start urbea://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081. SMOKE TEST 8-step sequence from task 41 testStrategy exploration 027 §Verificación lines 127-131: fresh install → muro permission_denied Activar ubicación appears; tap button → native permission dialog; deny+don't-ask → taps reopens Settings (Linking.openSettings via decide_permission_action); grant permission in Settings → if device GPS on muro disappears status=granted, if GPS off variante gps_off Activa la ubicación displayed (distinguishing 3 states); reopen app → coords cached no re-request (session persistence). iOS simulator verification OPTIONAL (user decisión, only Android required). Agent: mobile. Skills: urbea-expo. Criticidad: NO-crítica build+smoke (deterministic path rule §5: infra/scaffolding, no logic paths). Footprint: infra (new apk artifact, no code files). Dependencies: 41.1 (expo-location installed), 41.2 (permissionDecision.ts), 41.3 (LocationProvider), 41.4 (LocationWall), 41.5 (gate mounted) ALL done before this subtask. Verification command: cd mobile && pnpm tsc --noEmit && pnpm lint green, then build + 8-step smoke manual sequence on Android emulator urbea AVD (Pixel 7 API 35 arm64 from comandos.md lines 54-69).\n</info added on 2026-07-06T19:34:20.084Z>",
-            "status": "pending",
+            "status": "in-progress",
             "dependencies": [],
             "parentTaskId": 41,
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-07-06T20:13:42.120Z"
           },
           {
             "id": 7,
@@ -3099,7 +3100,7 @@
             "updatedAt": "2026-07-06T20:03:13.243Z"
           }
         ],
-        "updatedAt": "2026-07-06T20:03:13.243Z"
+        "updatedAt": "2026-07-06T20:13:42.120Z"
       },
       {
         "id": "42",
@@ -3219,7 +3220,7 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-07-06T20:03:13.243Z",
+      "lastModified": "2026-07-06T20:13:42.120Z",
       "taskCount": 46,
       "completedCount": 35,
       "tags": [

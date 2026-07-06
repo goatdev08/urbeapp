@@ -32,6 +32,11 @@
  *
  * ### Guard
  * - EC-7: useLocation() fuera de LocationProvider lanza un error claro.
+ *
+ * ### Fix de robustez (bug cazado en smoke 41.6)
+ * - EC-8: permiso concedido + servicios "on" pero getCurrentPositionAsync LANZA
+ *         ("Current location is unavailable", típico en emulador sin fix) → status='gps_off',
+ *         coords null, SIN rechazo de promesa sin capturar (no crashea la app).
  */
 
 import React from 'react';
@@ -225,5 +230,42 @@ describe('EC-7: useLocation_fuera_de_provider_lanza_error', () => {
     expect((caught_error as Error).message).toMatch(/LocationProvider|location.*context|fuera.*provider/i);
 
     console_error_spy.mockRestore();
+  });
+});
+
+// ===========================================================================
+// EC-8: getCurrentPositionAsync LANZA → 'gps_off' sin crash (fix smoke 41.6)
+// ===========================================================================
+describe('EC-8: getCurrentPosition_lanza_cae_a_gps_off_sin_crash', () => {
+  it('granted + servicios on pero getCurrentPositionAsync rechaza → status=gps_off, coords=null', async () => {
+    mock_get_foreground.mockResolvedValue({ granted: true, canAskAgain: true });
+    mock_has_services.mockResolvedValue(true);
+    mock_get_current_position.mockRejectedValue(
+      new Error('Current location is unavailable. Make sure that location services are enabled'),
+    );
+
+    const { result } = await renderHook(() => useLocation(), { wrapper });
+
+    await waitFor(() => expect(result.current.status).toBe('gps_off'));
+    expect(result.current.coords).toBeNull();
+  });
+
+  it('tras el fallo, refresh() con getCurrentPositionAsync ya disponible recupera a granted', async () => {
+    mock_get_foreground.mockResolvedValue({ granted: true, canAskAgain: true });
+    mock_has_services.mockResolvedValue(true);
+    mock_get_current_position.mockRejectedValue(new Error('Current location is unavailable'));
+
+    const { result } = await renderHook(() => useLocation(), { wrapper });
+    await waitFor(() => expect(result.current.status).toBe('gps_off'));
+
+    // El SO ya tiene un fix: refresh() debe recuperar sin re-pedir permiso.
+    mock_get_current_position.mockResolvedValue(make_position(20.6597, -103.3496));
+    await act(async () => {
+      await result.current.refresh();
+    });
+
+    await waitFor(() => expect(result.current.status).toBe('granted'));
+    expect(result.current.coords).toEqual({ latitude: 20.6597, longitude: -103.3496 });
+    expect(mock_request_foreground).not.toHaveBeenCalled();
   });
 });
