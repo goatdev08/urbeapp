@@ -25,7 +25,8 @@ Catálogo de todas las páginas. Actualizar en cada *ingest*.
 ## Codebase (puente conocimiento↔código)
 - [[mapa-codebase]] — concepto/dominio → archivos exactos
 - [[db-schema-map]] — cada tabla → migración → concepto
-- [[comandos]] — referencia de comandos (dev, EAS, verificación, Taskmaster)
+- [[comandos]] — referencia de comandos (dev, EAS, verificación, Taskmaster, emulador Android)
+- [[entornos-y-cuentas]] — cuentas demo LOCAL vs REMOTO y cómo cambiar de entorno
 
 ## Conceptos
 - [[feed-vertical-video]] · [[propiedades-y-video]] · [[busqueda-y-filtros]] · [[mapa-y-ubicacion]]

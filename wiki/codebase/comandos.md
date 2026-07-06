@@ -1,6 +1,6 @@
 ---
 tipo: codebase
-actualizado: 2026-06-23
+actualizado: 2026-07-04
 ---
 
 # Comandos — Urbea
@@ -50,6 +50,23 @@ Perfiles definidos en `mobile/eas.json`: `development` · `preview` · `producti
 | `task-master update-subtask --id=<id>.<n> --prompt="…"` | Bitácora de lo hecho en una subtarea. |
 
 Flujo de planeación/ejecución: `/tm-explore` → `/tm-plan <id>` → `/tm-tarea <id>`.
+
+## 📱 Emulador Android (Mac, sin builds nuevos)
+
+Arranque diario recomendado: **`cd mobile && pnpm emu`** (script `mobile/scripts/emu.sh`, ver abajo qué hace paso a paso). Útil conocer el detalle manual para diagnosticar si el script falla.
+
+| Paso | Comando |
+|------|---------|
+| 0. Variables de entorno (una vez por terminal) | `export JAVA_HOME=/opt/homebrew/opt/openjdk@17`<br>`export ANDROID_SDK_ROOT=/opt/homebrew/share/android-commandlinetools`<br>`export ANDROID_HOME=$ANDROID_SDK_ROOT`<br>`export PATH="$JAVA_HOME/bin:$ANDROID_SDK_ROOT/platform-tools:$ANDROID_SDK_ROOT/emulator:$PATH"` |
+| 1. Arrancar el AVD (si no hay uno corriendo) | `emulator -avd urbea -gpu auto &` → esperar con `adb wait-for-device` y `adb shell getprop sys.boot_completed` hasta que devuelva `1` |
+| 2. Mapear el puerto de Metro | `adb reverse tcp:8081 tcp:8081` (localhost del emulador → Metro; inmune a cambios de Wi-Fi/IP) |
+| 3. Abrir el dev-client apuntado a Metro | `adb shell am start -a android.intent.action.VIEW -d "urbea://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081"` |
+| 4. Levantar Metro | `cd mobile && pnpm expo start --dev-client` |
+
+- AVD registrado: **`urbea`** (Pixel 7, API 35, `system-images;android-35;google_apis;arm64-v8a` — arm64 porque la Mac es Apple Silicon).
+- El `.apk` del dev-client (package `com.urbea.app`, scheme `urbea`) se instala **una vez** vía `eas build:run --platform android --latest`; solo hace falta reinstalarlo si cambian módulos nativos (ver tabla de EAS arriba).
+- No hay simulador iOS configurado todavía — solo Android.
+- Detalle de la instalación del SDK (homebrew casks, `sdkmanager`) en la memoria de sesión `android_emulator_mac_setup`; cuentas para probar login en [[entornos-y-cuentas]].
 
 ## 🔧 Gotchas (aprendidos en tarea #1)
 
