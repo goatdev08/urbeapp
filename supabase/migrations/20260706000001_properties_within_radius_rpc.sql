@@ -57,7 +57,12 @@ $$;
 comment on function public.properties_within_radius(double precision, double precision, double precision) is
   'Propiedades activas y no borradas dentro de un radio (metros) de un punto (lat, lng), ordenadas por distancia ascendente. Devuelve solo {id, distance_m}; el cliente resuelve el resto de columnas y filtros adicionales. Llamado por el feed/mapa como usuario authenticated.';
 
--- Grant explícito para el cliente autenticado (feed/mapa lo llaman directamente, no vía
--- Edge Function con service_role). Es idempotente (grant repetible).
+-- Defense-in-depth (lineamientos: RLS/seguridad NO está sujeta a minimalismo): el feed y el
+-- mapa que consumen este RPC viven detrás del auth wall (gate B1, exploración 027) → SOLO los
+-- llama un usuario `authenticated`. `anon` no tiene caso de uso legítimo, así que se revoca el
+-- EXECUTE que Postgres otorga a PUBLIC por defecto (advisor 0028 anon_security_definer) y se
+-- concede explícito solo a `authenticated`. Idempotente (revoke/grant repetibles).
+revoke execute on function public.properties_within_radius(double precision, double precision, double precision)
+  from public, anon;
 grant execute on function public.properties_within_radius(double precision, double precision, double precision)
   to authenticated;
