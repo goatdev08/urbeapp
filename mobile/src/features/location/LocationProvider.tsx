@@ -19,6 +19,7 @@
  * de pantalla ni en cada render.
  */
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { AppState } from 'react-native';
 import * as Location from 'expo-location';
 
 import { decide_permission_action } from './lib/permissionDecision';
@@ -164,6 +165,19 @@ export function LocationProvider({ children }: { children: React.ReactNode }): R
       set_coords(null);
     }
   }, [evaluate_from_permission]);
+
+  // Re-evalúa al volver la app al foreground: si el usuario concedió el permiso
+  // o encendió el GPS en Ajustes del SO y regresó, el muro debe desaparecer solo
+  // (y viceversa) — sin este listener el estado se quedaría "pegado" al del mount.
+  // refresh() relee permiso + servicios SIN disparar el diálogo del SO.
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (next_state) => {
+      if (next_state === 'active') {
+        void refresh();
+      }
+    });
+    return () => subscription.remove();
+  }, [refresh]);
 
   const value: LocationContextValue = { status, coords, request, refresh };
 

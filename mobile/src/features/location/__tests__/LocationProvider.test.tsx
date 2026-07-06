@@ -40,6 +40,7 @@
  */
 
 import React from 'react';
+import { AppState, type AppStateStatus } from 'react-native';
 import { renderHook, waitFor, act } from '@testing-library/react-native';
 import * as Location from 'expo-location';
 
@@ -267,5 +268,71 @@ describe('EC-8: getCurrentPosition_lanza_cae_a_gps_off_sin_crash', () => {
     await waitFor(() => expect(result.current.status).toBe('granted'));
     expect(result.current.coords).toEqual({ latitude: 20.6597, longitude: -103.3496 });
     expect(mock_request_foreground).not.toHaveBeenCalled();
+  });
+});
+
+// ===========================================================================
+// EC-9: re-evaluación al volver la app al foreground (AppState 'active')
+// Bug reportado en smoke: tras activar ubicación en Ajustes y volver, el muro
+// se quedaba pegado. El listener de AppState debe re-evaluar en 'active'.
+// ===========================================================================
+describe('EC-9: appstate_active_reevalua_el_estado', () => {
+  it("de 'permission_denied' pasa a 'granted' cuando el usuario concede en Ajustes y vuelve (evento 'active')", async () => {
+    let captured_handler: ((s: AppStateStatus) => void) | undefined;
+    const add_spy = jest.spyOn(AppState, 'addEventListener').mockImplementation(((
+      _event: string,
+      handler: (s: AppStateStatus) => void,
+    ) => {
+      captured_handler = handler;
+      return { remove: jest.fn() };
+    }) as unknown as typeof AppState.addEventListener);
+
+    mock_get_foreground.mockResolvedValue({ granted: false, canAskAgain: true });
+
+    const { result } = await renderHook(() => useLocation(), { wrapper });
+    await waitFor(() => expect(result.current.status).toBe('permission_denied'));
+
+    // El usuario concede el permiso + GPS en Ajustes del SO y regresa a la app.
+    mock_get_foreground.mockResolvedValue({ granted: true, canAskAgain: true });
+    mock_has_services.mockResolvedValue(true);
+    mock_get_current_position.mockResolvedValue(make_position(20.6597, -103.3496));
+
+    await act(async () => {
+      captured_handler?.('active');
+    });
+
+    await waitFor(() => expect(result.current.status).toBe('granted'));
+    expect(result.current.coords).toEqual({ latitude: 20.6597, longitude: -103.3496 });
+    // Re-evalúa SIN volver a pedir permiso (usa getForegroundPermissionsAsync).
+    expect(mock_request_foreground).not.toHaveBeenCalled();
+
+    add_spy.mockRestore();
+  });
+
+  it("un evento 'background' NO re-evalúa (solo 'active')", async () => {
+    let captured_handler: ((s: AppStateStatus) => void) | undefined;
+    const add_spy = jest.spyOn(AppState, 'addEventListener').mockImplementation(((
+      _event: string,
+      handler: (s: AppStateStatus) => void,
+    ) => {
+      captured_handler = handler;
+      return { remove: jest.fn() };
+    }) as unknown as typeof AppState.addEventListener);
+
+    mock_get_foreground.mockResolvedValue({ granted: true, canAskAgain: true });
+    mock_has_services.mockResolvedValue(true);
+    mock_get_current_position.mockResolvedValue(make_position());
+
+    const { result } = await renderHook(() => useLocation(), { wrapper });
+    await waitFor(() => expect(result.current.status).toBe('granted'));
+
+    const foreground_calls_before = mock_get_foreground.mock.calls.length;
+    await act(async () => {
+      captured_handler?.('background');
+    });
+    // 'background' no dispara refresh → no relee el permiso.
+    expect(mock_get_foreground.mock.calls.length).toBe(foreground_calls_before);
+
+    add_spy.mockRestore();
   });
 });
