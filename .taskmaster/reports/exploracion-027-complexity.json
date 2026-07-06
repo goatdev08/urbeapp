@@ -1,0 +1,37 @@
+{
+	"meta": {
+		"generatedAt": "2026-07-04T22:36:17.812Z",
+		"tasksAnalyzed": 3,
+		"totalTasks": 42,
+		"analysisCount": 3,
+		"thresholdScore": 5,
+		"projectName": "Task Master",
+		"usedResearch": false
+	},
+	"complexityAnalysis": [
+		{
+			"taskId": 40,
+			"taskTitle": "PostGIS RPC for proximity-based feed and map (Phase A - Backend - CRITICAL TDD)",
+			"complexityScore": 5,
+			"recommendedSubtasks": 4,
+			"expansionPrompt": "Create PostgreSQL RPC function `properties_within_radius(p_lat, p_lng, p_radius_m)` that uses PostGIS ST_DWithin and ST_Distance to return only {id, distance_m} ordered by distance. Follow the exact pattern from migration 20260625000001_publish_property_rpc.sql (security definer, set search_path = public,extensions). Break down into: (1) Create migration file with RPC function (CRITICAL TDD - coordinate order lng/lat gotcha), (2) Create rollback file, (3) Write pgTAP tests covering function exists, is SECURITY DEFINER, includes/excludes points by radius, distance_m ordering, status='active' filter, deleted_at IS NULL filter, coordinate order correctness, idempotency, rollback verification (CRITICAL TDD), (4) Run tests and verify GREEN. Reuses existing GiST index properties_location_gix from migration 0005.",
+			"reasoning": "Medium complexity (5/10). Follows well-established pattern from publish_property_atomic RPC. The migration/RPC itself is straightforward SQL with clear examples to follow. Critical path due to supabase/migrations/** but the pattern is proven (8 existing pgTAP tests, 20 migrations). Main risk is coordinate order gotcha (lng,lat not lat,lng) which is explicitly documented. No new schema/enum, just one RPC function. Test coverage is comprehensive but follows existing pgTAP patterns."
+		},
+		{
+			"taskId": 41,
+			"taskTitle": "Proximity-based location (Phase B - MIXED): client permission + location provider",
+			"complexityScore": 7,
+			"recommendedSubtasks": 7,
+			"expansionPrompt": "Install expo-location with PNPM and implement location permission infrastructure. Break down into: (1) Install expo-location and declare permissions in app.config.js following expo-image-picker plugin pattern (LIGHT), (2) Create permissionDecision.ts pure logic module with decide_permission_action(status) -> 'granted'|'request'|'open_settings' (CRITICAL TDD - write RED tests first for 4 edge cases), (3) Implement GREEN phase for permissionDecision (CRITICAL), (4) Create LocationProvider and useLocation hook following filterStore.tsx/AuthContext patterns with three-state model: permission_denied/gps_off/granted (LIGHT), (5) Create LocationWall blocking screen with functional finish using theme.ts tokens and PrimaryButton, include GPS-off variant (LIGHT), (6) Mount LocationProvider and gate in (protected)/_layout.tsx after auth gate, uniform for all roles (LIGHT), (7) Trigger new development build for expo-location native module and smoke test permission flow on emulator (LIGHT). Requires NEW dev build.",
+			"reasoning": "Moderate-high complexity (7/10). Mixed criticality: permissionDecision.ts is CRITICAL TDD (mobile/**/lib/**) requiring RED->GREEN->guardian cycle, but represents only ~40 lines of pure logic with 4 test cases. The LocationProvider/LocationWall/gate wiring is LIGHT verification (tsc+lint+smoke). The three-state permission model (permission_denied vs gps_off vs granted) adds nuance. Native module means new dev build coordination. Follows established patterns (FilterProvider, AuthContext) but introduces new Expo API (expo-location). Functional finish confirmed means no branding gate complexity. Main risk is the three-state model and platform-specific permission behaviors, but smoke testing covers this."
+		},
+		{
+			"taskId": 42,
+			"taskTitle": "Proximity-based feed/map integration (Phase C - MIXED): wire proximity + filters",
+			"complexityScore": 8,
+			"recommendedSubtasks": 10,
+			"expansionPrompt": "Integrate proximity-based queries with existing feed/map using RPC from task 40 and useLocation from task 41, following A1 lean approach. Break down into: (1) Add radius_m to FilterState with default 5000m in filterQuery.ts EMPTY_FILTERS (ensure it does NOT go through build_filter_query logic) (LIGHT), (2) Extend feedProperties.ts to call RPC properties_within_radius, extract ids+distance_m, apply .in('id', ids) + build_filter_query INTACT, implement radius expansion fallback loop, client re-sort by distance_map - CRITICAL as this is lib/** code, (3) REDESIGN pagination from created_at cursor to distance/offset-based cursor - this affects 5 existing tests (EC-5,6,7,8 and EC-F13) that must be rewritten (CRITICAL), (4) Write new tests for RPC integration, distance re-sort, radius expansion, radius_m NOT in build_filter_query (CRITICAL), (5) Extend mapProperties.ts similarly to call RPC but without pagination changes (CRITICAL lib/**), (6) Update MapScreen.tsx to use useLocation coords for initialRegion with GDL_REGION fallback, no 'you are here' marker (LIGHT), (7) Add radius control to FilterSheet.tsx reusing existing sheet design (LIGHT), (8) Update constants.ts comment (LIGHT), (9) Run guardian verification on both feedProperties and mapProperties (CRITICAL), (10) Smoke test E2E: feed ordered by distance, filters+proximity combined, radius expansion works, map centered on real location (LIGHT). Depends on tasks 40 AND 41.",
+			"reasoning": "High complexity (8/10). This is the most complex of the three tasks due to pagination redesign required for distance-based ordering. The current feedProperties.ts uses .lt('created_at', cursor) which is fundamentally incompatible with ORDER BY distance_m - this requires redesigning the cursor mechanism AND rewriting 5 existing tests that assume created_at cursors (EC-5 through EC-8, EC-F13 documented in exploration line 168-169). The risk assessment explicitly calls this out as the 'RIESGO CLAVE'. Additionally, there are 27 existing filterQuery tests that MUST stay green (proof of A1 no-drift), plus new tests for RPC integration, distance re-sort, and radius expansion fallback. Two CRITICAL lib/** files to modify (feedProperties.ts and mapProperties.ts). The A1 'lean' approach means double round-trip (RPC then PostgREST query) plus client-side re-sort, and the radius expansion fallback adds progressive retry logic. Integration dependencies on both tasks 40 and 41. However, patterns are well-established and the approach is clearly documented in the exploration."
+		}
+	]
+}
