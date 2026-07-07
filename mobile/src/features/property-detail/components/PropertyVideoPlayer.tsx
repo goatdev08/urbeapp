@@ -14,6 +14,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { Image } from 'expo-image';
 import { useVideoPlayer, VideoView, type VideoPlayerStatus } from 'expo-video';
 
 import { colors, radii, spacing, type_scale } from '@/theme/theme';
@@ -95,6 +96,15 @@ export function PropertyVideoPlayer({ videos }: PropertyVideoPlayerProps) {
   // ── Reproductor ────────────────────────────────────────────────────────────
   return (
     <View style={styles.container}>
+      {/* Poster real (thumbnail del video) detrás del VideoView — el hero deja
+          de ser un rectángulo oscuro mientras carga (pulido flash 2026-07-06). */}
+      {primary_video?.thumbnail_url && (
+        <Image
+          source={{ uri: primary_video.thumbnail_url }}
+          style={StyleSheet.absoluteFill}
+          contentFit="cover"
+        />
+      )}
       <VideoView
         player={player}
         style={StyleSheet.absoluteFill}

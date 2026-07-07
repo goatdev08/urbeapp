@@ -14,7 +14,8 @@
  */
 
 import React, { memo, useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Image, StyleSheet, View, Text, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, StyleSheet, View, Text, useWindowDimensions } from 'react-native';
+import { Image } from 'expo-image';
 import { useVideoPlayer, VideoView, type VideoPlayerStatus } from 'expo-video';
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import { Play } from 'phosphor-react-native';
@@ -199,14 +200,17 @@ function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedIte
   return (
     <GestureDetector gesture={tap_gesture}>
       <View style={[styles.container, { width, height }]}>
-        {/* Portada (P7): frame medio del video servido como URL pública. Se pinta
-            detrás del VideoView mientras el player carga; el video la cubre al
-            arrancar. Sin thumbnail → fondo oscuro sólido del container (fallback). */}
-        {property.video.thumbnail_url && player_status === 'loading' && (
+        {/* Portada (P7): frame medio del video servido como URL pública. Vive
+            SIEMPRE detrás del VideoView (antes solo en status 'loading', lo que
+            dejaba un flash oscuro en 'idle' y entre swipes); el video la cubre
+            en cuanto pinta su primer frame. expo-image la cachea en disco, así
+            que el swipe de regreso es instantáneo. Sin thumbnail → fondo oscuro
+            sólido del container (fallback). */}
+        {property.video.thumbnail_url && (
           <Image
             source={{ uri: property.video.thumbnail_url }}
             style={styles.poster}
-            resizeMode="cover"
+            contentFit="cover"
           />
         )}
         <VideoView

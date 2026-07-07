@@ -50,7 +50,9 @@ name: "feed — like, save, guardados"
     visible: "Dar like"
     timeout: 20000
 
-# Verificar en Guardados (prop0A renta $45,000)
+# Verificar en Guardados (Perfil → menú ⋯ → Guardados; prop0A renta $45,000)
+- tapOn: "Perfil"
+- tapOn: "Abrir menú de perfil"
 - tapOn: "Guardados"
 - extendedWaitUntil:
     visible: "/mes"
@@ -63,5 +65,5 @@ name: "feed — like, save, guardados"
     timeout: 15000
 - tapOn: "Quitar"
 - extendedWaitUntil:
-    visible: "Aún no tienes propiedades guardadas"
+    visible: "Aún no tienes guardados"
     timeout: 20000

@@ -11,7 +11,8 @@
  * extraer a shared utils si aparece un 3er consumidor). Sin registro CRM — #11.
  */
 import React, { useState } from 'react';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image } from 'expo-image';
 import { WhatsappLogo } from 'phosphor-react-native';
 
 import { colors, fonts, radii, shadows, spacing } from '@/theme/theme';
@@ -68,6 +69,7 @@ export function AgentCard({ agent, agency, address }: AgentCardProps) {
           <Image
             source={{ uri: agent.profile_photo_url! }}
             style={styles.avatar_img}
+            transition={150}
             onError={() => set_img_error(true)}
             accessibilityLabel={`Foto de perfil de ${display_name}`}
           />

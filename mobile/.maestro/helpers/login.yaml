@@ -23,5 +23,5 @@ appId: com.urbea.app
 - tapOn: "Inicia sesión para continuar"
 - tapOn: "Iniciar sesión"
 - extendedWaitUntil:
-    visible: "Guardados"
+    visible: "Perfil"
     timeout: 45000

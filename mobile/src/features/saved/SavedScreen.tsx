@@ -15,8 +15,8 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   FlatList,
+  LayoutAnimation,
   RefreshControl,
   StyleSheet,
   Text,
@@ -25,6 +25,8 @@ import {
 import { BookmarkSimple } from 'phosphor-react-native';
 
 import { colors, spacing, type_scale } from '@/theme/theme';
+import { GridSkeleton } from '@/components/GridSkeleton';
+import { EmptyState } from '@/features/profile/components/EmptyState';
 import type { GridProperty } from '@/features/profile/types';
 import { SavedGridItem } from './components/SavedGridItem';
 import { useSavedProperties } from './hooks/useSavedProperties';
@@ -79,8 +81,10 @@ export function SavedScreen(): React.JSX.Element {
     set_is_refreshing(false);
   }, [refetch]);
 
-  /** Oculta el item inmediatamente (optimista). */
+  /** Oculta el item inmediatamente (optimista), con transición de layout
+   *  para que la grilla se reacomode suave en vez de saltar. */
   const handle_removed = useCallback((id: string) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     set_hidden_ids(prev => new Set([...prev, id]));
   }, []);
 
@@ -89,13 +93,9 @@ export function SavedScreen(): React.JSX.Element {
     void refetch();
   }, [refetch]);
 
-  // ── Loading inicial ───────────────────────────────────────────────────────
+  // ── Loading inicial: grilla fantasma (sin salto de layout al llegar data) ──
   if (loading && displayed_properties.length === 0) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
-    );
+    return <GridSkeleton />;
   }
 
   // ── Error ─────────────────────────────────────────────────────────────────
@@ -118,21 +118,12 @@ export function SavedScreen(): React.JSX.Element {
       ItemSeparatorComponent={GridRowSeparator}
       ListHeaderComponent={<View style={styles.list_header} />}
       ListEmptyComponent={
-        // ponytail: EmptyState del perfil — texto diferente para "Guardados".
-        // is_own_profile=false → copy neutro; sobreescribimos con children si
-        // el copy difiere demasiado del perfil. Aquí usamos EmptyState con
-        // prop is_own_profile=false y añadimos texto debajo del ícono vía
-        // un wrapper. Alternativa simple: EmptyState custom inline.
         <View style={styles.empty_wrapper}>
-          {/* Icono Phosphor bookmark outline — distinto al del tab (Bookmarks
-              bold/fill); tono apagado como ilustración de fondo del empty state. */}
-          <View style={styles.empty_icon} importantForAccessibility="no">
-            <BookmarkSimple size={56} color={colors.gray_2} weight="regular" />
-          </View>
-          <Text style={styles.empty_title}>Aún no tienes propiedades guardadas</Text>
-          <Text style={styles.empty_subtitle}>
-            Guarda propiedades desde el feed para verlas aquí.
-          </Text>
+          <EmptyState
+            icon={BookmarkSimple}
+            message="Aún no tienes guardados"
+            subtitle="Guarda propiedades desde el feed para verlas aquí."
+          />
         </View>
       }
       refreshControl={
@@ -191,24 +182,6 @@ const styles = StyleSheet.create({
   // ── Empty state ────────────────────────────────────────────────────────────
   empty_wrapper: {
     flex: 1,
-    alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: spacing.s_32,
-    paddingHorizontal: H_PAD,
-  },
-  empty_icon: {
-    marginBottom: spacing.s_16,
-    opacity: 0.7,
-  },
-  empty_title: {
-    ...type_scale.h1,
-    color: colors.ink,
-    textAlign: 'center',
-    marginBottom: spacing.s_8,
-  },
-  empty_subtitle: {
-    ...type_scale.body,
-    color: colors.gray_2,
-    textAlign: 'center',
   },
 });

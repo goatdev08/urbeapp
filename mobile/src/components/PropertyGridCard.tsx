@@ -20,7 +20,10 @@
  */
 
 import React from 'react';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+// expo-image: cache en disco + fade-in — sin re-descarga al scrollear ni "pop"
+// al llegar la miniatura (pulido flash 2026-07-06).
+import { Image } from 'expo-image';
 
 import { colors, fonts, radii, shadows } from '@/theme/theme';
 import { IsotipoMark } from '@/components/IsotipoMark';
@@ -63,7 +66,9 @@ function format_price(n: number): string {
 
 // ─── Componente ───────────────────────────────────────────────────────────────
 
-export function PropertyGridCard({ item, onPress, onLongPress }: PropertyGridCardProps): React.JSX.Element {
+// React.memo: en grillas con RefreshControl/quitado optimista, cada setState del
+// padre re-renderizaba todas las celdas; con memo solo re-renderiza la que cambia.
+export const PropertyGridCard = React.memo(function PropertyGridCard({ item, onPress, onLongPress }: PropertyGridCardProps): React.JSX.Element {
   const { price, operation_type, property_type, status, address, thumbnail_url } = item;
 
   const is_paused    = status === 'paused';
@@ -92,7 +97,8 @@ export function PropertyGridCard({ item, onPress, onLongPress }: PropertyGridCar
             <Image
               source={{ uri: thumbnail_url }}
               style={StyleSheet.absoluteFill}
-              resizeMode="cover"
+              contentFit="cover"
+              transition={200}
             />
           ) : (
             /* ponytail: placeholder café sólido (paper_2) — sin expo-linear-gradient
@@ -159,7 +165,7 @@ export function PropertyGridCard({ item, onPress, onLongPress }: PropertyGridCar
       </View>
     </Pressable>
   );
-}
+});
 
 // ─── Estilos ──────────────────────────────────────────────────────────────────
 

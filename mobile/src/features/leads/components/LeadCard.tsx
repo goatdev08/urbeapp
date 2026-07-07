@@ -11,7 +11,9 @@
  */
 
 import React from 'react';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+// expo-image: cache en disco + fade-in (pulido flash 2026-07-06).
+import { Image } from 'expo-image';
 
 import { colors, fonts, radii, shadows, spacing } from '@/theme/theme';
 import { get_status_meta } from '../lead_status_meta';
@@ -58,7 +60,9 @@ export interface LeadCardProps {
 
 // ─── Componente ───────────────────────────────────────────────────────────────
 
-export function LeadCard({ lead, onPress }: LeadCardProps): React.JSX.Element {
+// React.memo: la lista del CRM filtra client-side; sin memo cada cambio de
+// filtro/búsqueda re-renderizaba todas las cards.
+export const LeadCard = React.memo(function LeadCard({ lead, onPress }: LeadCardProps): React.JSX.Element {
   const {
     full_name,
     profile_photo_url,
@@ -89,7 +93,8 @@ export function LeadCard({ lead, onPress }: LeadCardProps): React.JSX.Element {
           <Image
             source={{ uri: profile_photo_url }}
             style={StyleSheet.absoluteFill}
-            resizeMode="cover"
+            contentFit="cover"
+            transition={200}
           />
         ) : (
           /* ponytail: inicial como Text — sin avatar lib externa */
@@ -136,7 +141,8 @@ export function LeadCard({ lead, onPress }: LeadCardProps): React.JSX.Element {
           <Image
             source={{ uri: origin_property_thumbnail_url }}
             style={StyleSheet.absoluteFill}
-            resizeMode="cover"
+            contentFit="cover"
+            transition={200}
           />
         ) : (
           /* ponytail: placeholder paper_2 sólido — sin expo-linear-gradient */
@@ -148,7 +154,7 @@ export function LeadCard({ lead, onPress }: LeadCardProps): React.JSX.Element {
 
     </Pressable>
   );
-}
+});
 
 // ─── Estilos ──────────────────────────────────────────────────────────────────
 

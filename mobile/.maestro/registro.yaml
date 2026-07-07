@@ -63,5 +63,5 @@ name: "registro — invitación, alta y onboarding"
 
 # Aterriza en el feed
 - extendedWaitUntil:
-    visible: "Guardados"
+    visible: "Perfil"
     timeout: 45000

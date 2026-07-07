@@ -20,7 +20,8 @@
  */
 
 import React from 'react';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image } from 'expo-image';
 
 import { colors, fonts, radii, shadows, spacing } from '@/theme/theme';
 import type { MyProperty } from '@/features/profile/types';
@@ -98,7 +99,9 @@ export interface PropertyListItemProps {
 
 // ─── Componente ──────────────────────────────────────────────────────────────
 
-export function PropertyListItem({
+// React.memo: la lista de "Mis publicaciones" refresca y filtra en el padre;
+// sin memo cada setState re-renderizaba todas las filas.
+export const PropertyListItem = React.memo(function PropertyListItem({
   item,
   on_press,
   on_menu_press,
@@ -145,7 +148,8 @@ export function PropertyListItem({
           <Image
             source={{ uri: thumbnail_url }}
             style={StyleSheet.absoluteFill}
-            resizeMode="cover"
+            contentFit="cover"
+            transition={200}
           />
         ) : (
           /* ponytail: placeholder sólido paper_2 + ícono unicode — sin módulo nativo */
@@ -209,7 +213,7 @@ export function PropertyListItem({
 
     </Pressable>
   );
-}
+});
 
 // ─── Estilos ─────────────────────────────────────────────────────────────────
 

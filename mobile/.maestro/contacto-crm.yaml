@@ -76,9 +76,9 @@ name: "contacto → lead en CRM"
 - tapOn: "Inicia sesión para continuar"
 - tapOn: "Iniciar sesión"
 - extendedWaitUntil:
-    visible: "Guardados"
+    visible: "Perfil"
     timeout: 45000
-- tapOn: "CRM"
+- tapOn: "Leads"
 - extendedWaitUntil:
     visible: "Buscar por nombre..."
     timeout: 20000

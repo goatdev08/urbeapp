@@ -12,7 +12,8 @@
  */
 
 import React from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image } from 'expo-image';
 
 import { colors, fonts, radii, spacing } from '@/theme/theme';
 import type { Agent } from '../types';
@@ -83,7 +84,8 @@ export function AgentSelector({
                 <Image
                   source={{ uri: agent.profile_photo_url }}
                   style={StyleSheet.absoluteFill}
-                  resizeMode="cover"
+                  contentFit="cover"
+                  transition={200}
                 />
               ) : (
                 <View style={[StyleSheet.absoluteFill, styles.avatar_placeholder]}>

@@ -13,12 +13,12 @@
 import React from 'react';
 import {
   Alert,
-  Image,
   Pressable,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { Image } from 'expo-image';
 
 import { useImagePicker } from '../hooks/useImagePicker';
 

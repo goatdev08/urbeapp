@@ -26,6 +26,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
+  Bookmarks,
   DotsThreeVertical,
   PencilSimple,
   SignOut,
@@ -106,7 +107,9 @@ export function ProfileScreen({ agent_id, is_own_profile }: ProfileScreenProps) 
 
   // Items del menú "⋯" — orden: navegación primero, cerrar sesión al final.
   // "Invitar agentes" solo para owners de agencia (#34).
+  // "Guardados" vive aquí desde que salió de la tab bar (composición del mockup).
   const menu_items: ProfileMenuItem[] = [
+    { key: 'saved', label: 'Guardados', icon: Bookmarks, onPress: () => router.push('/saved') },
     { key: 'listings', label: 'Mis publicaciones', icon: Storefront, onPress: handle_my_listings },
     ...(isOwner
       ? [{ key: 'invite', label: 'Invitar agentes', icon: UserPlus, onPress: handle_invite_agents }]

@@ -34,7 +34,7 @@ name: "login — feliz, error y sesión persistente"
 - tapOn: "Inicia sesión para continuar"
 - tapOn: "Iniciar sesión"
 - extendedWaitUntil:
-    visible: "Guardados"
+    visible: "Perfil"
     timeout: 45000
 
 # 3) Sesión persiste al reabrir (sin clearState → sin dev menu, pero hay que
@@ -46,6 +46,6 @@ name: "login — feliz, error y sesión persistente"
     timeout: 30000
 - openLink: "urbea://expo-development-client/?url=http%3A%2F%2F10.0.2.2%3A8081"
 - extendedWaitUntil:
-    visible: "Guardados"
+    visible: "Perfil"
     timeout: 90000
 - assertNotVisible: "Inicia sesión para continuar"

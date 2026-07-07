@@ -9,7 +9,7 @@
  *   onPressProperty — callback con el property_id al tocar una celda.
  *
  * Estados:
- *   loading → ActivityIndicator centrado.
+ *   loading → GridSkeleton (grilla fantasma).
  *   error   → texto discreto con el mensaje.
  *   vacío   → FlatList vacío; ListEmptyComponent lo maneja 16.6.
  *
@@ -19,13 +19,13 @@
 
 import React from 'react';
 import {
-  ActivityIndicator,
   FlatList,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 
+import { GridSkeleton } from '@/components/GridSkeleton';
 import { PropertyGridCard } from '@/components/PropertyGridCard';
 import { colors, spacing, type_scale } from '@/theme/theme';
 import { usePropertiesGrid } from '../hooks/usePropertiesGrid';
@@ -64,11 +64,8 @@ export function PropertiesGrid({
   const { loading, error, data } = usePropertiesGrid(owner_user_id);
 
   if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
-    );
+    // Grilla fantasma en lugar de spinner: sin salto de layout al llegar data.
+    return <GridSkeleton />;
   }
 
   if (error) {

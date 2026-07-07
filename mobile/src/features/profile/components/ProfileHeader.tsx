@@ -7,7 +7,8 @@
  * Sembrado en subtarea #16.3 — primera pantalla con identidad visual Urbea.
  */
 import React, { useState } from 'react';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
+import { Image } from 'expo-image';
 
 import { colors, radii, shadows, spacing, type_scale } from '@/theme/theme';
 import { IsotipoMark } from '@/components/IsotipoMark';
@@ -78,6 +79,7 @@ export function ProfileHeader({ profile, stats, loading = false }: ProfileHeader
             <Image
               source={{ uri: profile_photo_url! }}
               style={styles.avatar_img}
+              transition={150}
               onError={() => set_img_error(true)}
               accessibilityLabel={`Foto de perfil de ${display_name}`}
             />
