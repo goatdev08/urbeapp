@@ -7,6 +7,13 @@ actualizado: 2026-07-03
 
 > Narrativa de "dónde estamos hoy". El **qué sigue / qué está hecho** vive en **Taskmaster** (`task-master list`), no aquí.
 
+## Hoy (2026-07-07)
+
+- **Rush de demo-readiness (fuera de protocolo, PR #16 pendiente de merge):** 3 fixes verificados EN VIVO en dev-client. (1) **Tab bar simétrica** — el `[+]` quedaba descentrado para buscadores (4 slots); ahora el 4º slot comparte Leads(agente)/Guardados(no-agente) → 5 slots, `[+]` centrado en todos los roles. (2) **LocationWall guiado** — antes solo abría Ajustes sin guiar; ahora 3 modos (pedir permiso / pasos a Ajustes / encender GPS inline Android) + "Ya la activé — Reintentar". (3) **`eas.json`** environments (preview→preview). Gates tsc/lint/495 verdes. Rama `tarea/fix-tabbar-muro-eas`.
+- **🔑 Resuelto el misterio "los cambios no se ven":** el emulador/device tenía un **APK release** (JS embebido, nunca conecta a Metro → Fast Refresh inútil) + firma incompatible con dev-client. Fix: `adb uninstall` + `expo run:android` (dev-client). **Regla:** dev-client para iterar, release solo para entregar. Ver [[dev_client_vs_release_apk]].
+- **Remoto `urbea-app` VACIADO (autorizado) y re-sembrado mínimo:** el seed de #37 se borró; ahora solo `admin@urbea.demo` + cuenta del usuario + **3 cuentas demo** (`owner@`/`agente@`/`buscador@urbea.demo`, `urbea2026`), SIN propiedades/videos. Teardown reversible en `supabase/scripts/teardown-demo-minimal.sql` (correr antes de entregar vacío). Ver [[demo_account_credentials]].
+- **Pendiente deploy:** merge PR #16 → crear 4 EAS env vars (`preview`) → `eas build --profile preview` (Android APK) + **iOS TestFlight** (primera vez, Apple Developer Program listo) → teardown antes de entregar.
+
 ## Hoy (2026-07-04)
 
 - **E2E Maestro (subtarea 20.5, done):** suite completa en `mobile/.maestro/` (6 flujos del plan §6 de la auditoría) **6/6 verde en 7m54s** contra el stack local sembrado — runner `bash mobile/.maestro/run-e2e.sh`. La E2E cazó y corrigió **3 bugs reales**: `signIn` tragaba el error de credenciales (fix TDD, test EC-6b), FAB de publicar visible a buscadores y encimado al botón Guardar (gate por rol; overlap de agentes → **#39**), y onboarding inalcanzable (register → `replace('/onboarding')`). `mobile/.env.local` quedó apuntando al **LOCAL** (para volver al remoto: descomentar bloque REMOTO + Metro `-c`). Gates: tsc 0 · lint 0 err · jest 479/479. Tarea #20 sigue in-progress (restan 20.1–20.4, 20.6+). Gotchas Maestro durables en [[mapa-codebase]] §E2E.
