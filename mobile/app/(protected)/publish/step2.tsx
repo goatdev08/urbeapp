@@ -44,7 +44,7 @@ const COLOR_TEXT_SECONDARY = '#6B7280';
 const COLOR_BORDER = '#E5E7EB';
 const COLOR_INPUT_BG = '#FFFFFF';
 const COLOR_HINT = '#9CA3AF';
-const COLOR_ACCENT = '#5A8A5E'; // SALVIA
+const COLOR_ACCENT = '#1A5E44'; // SALVIA
 const COLOR_ERROR = '#DC2626';
 
 // ---------------------------------------------------------------------------

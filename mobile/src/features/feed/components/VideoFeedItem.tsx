@@ -70,6 +70,22 @@ function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedIte
     property_id: property.id,
   });
 
+  // Like desde el rail — mismo feedback que el doble-tap: corazón grande +
+  // haptic cuando ENCIENDE el like (al quitarlo, solo el cambio de icono).
+  const handle_rail_like = useCallback(() => {
+    if (!isLiked) {
+      set_heart_trigger((t) => t + 1);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    toggleLike();
+  }, [isLiked, toggleLike]);
+
+  // Guardar — haptic sutil de confirmación al alternar.
+  const handle_save = useCallback(() => {
+    Haptics.selectionAsync();
+    toggleSave();
+  }, [toggleSave]);
+
   // ponytail: navegación al perfil del agente diferida — sin ruta feed→perfil en 9.6.
   const handle_agent_press = useCallback(() => undefined, []);
 
@@ -225,8 +241,8 @@ function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedIte
           property={property}
           isLiked={isLiked}
           isSaved={isSaved}
-          onLike={toggleLike}
-          onSave={toggleSave}
+          onLike={handle_rail_like}
+          onSave={handle_save}
           onAgentPress={handle_agent_press}
           onPropertyPress={handle_property_press}
           onWhatsApp={handle_whatsapp}

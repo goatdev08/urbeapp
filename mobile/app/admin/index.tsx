@@ -55,7 +55,7 @@ function format_status(status: AgencyRow['status']): string {
 function status_color(status: AgencyRow['status']): string {
   switch (status) {
     case 'active':
-      return '#5A8A5E';   // salvia
+      return '#1A5E44';   // salvia
     case 'approved':
       return '#4A90D9';   // azul
     case 'pending_approval':
@@ -238,7 +238,7 @@ const COLOR_BG = '#FAFAF8';         // fondo papel claro (mismo que onboarding)
 const COLOR_BORDER = '#E5E7EB';     // borde sutil
 const COLOR_TEXT_PRIMARY = '#1A1A1A';
 const COLOR_TEXT_SECONDARY = '#6B7280';
-const COLOR_SALVIA = '#5A8A5E';
+const COLOR_SALVIA = '#1A5E44';
 
 const styles = StyleSheet.create({
   container: {

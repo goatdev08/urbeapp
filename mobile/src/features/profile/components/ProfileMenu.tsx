@@ -56,7 +56,8 @@ export function ProfileMenu({ visible, onClose, items }: ProfileMenuProps) {
             return (
               <Pressable
                 key={item.key}
-                style={styles.row}
+                style={({ pressed }) => [styles.row, pressed && styles.row_pressed]}
+                android_ripple={{ color: colors.paper_3 }}
                 accessibilityRole="button"
                 accessibilityLabel={item.label}
                 onPress={() => {
@@ -101,6 +102,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.s_16,
     paddingVertical: spacing.s_16,
+  },
+  /** Feedback al presionar una fila del menú. */
+  row_pressed: {
+    backgroundColor: colors.paper_2,
   },
   row_label: {
     ...type_scale.body,

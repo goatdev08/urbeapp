@@ -11,7 +11,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 // Tokens locales (alineados al paleta de step1/step2)
 // ---------------------------------------------------------------------------
 
-const COLOR_SALVIA = '#5A8A5E';
+const COLOR_SALVIA = '#1A5E44';
 const COLOR_TEXT_PRIMARY = '#1A1A1A';
 const COLOR_TEXT_SECONDARY = '#6B7280';
 const COLOR_BORDER = '#E5E7EB';

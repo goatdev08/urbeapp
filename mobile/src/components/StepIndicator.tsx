@@ -12,7 +12,7 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
-const COLOR_SALVIA = '#5A8A5E';
+const COLOR_SALVIA = '#1A5E44';
 const COLOR_INACTIVE = '#D1D5DB';
 const COLOR_LABEL = '#6B7280';
 

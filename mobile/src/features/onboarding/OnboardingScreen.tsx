@@ -41,7 +41,7 @@ import { supabase } from '@/lib/supabase/client';
 // ---------------------------------------------------------------------------
 
 const COLOR_BG_PAPER = '#F6F2EB';
-const COLOR_SALVIA = '#5A8A5E';
+const COLOR_SALVIA = '#1A5E44';
 const COLOR_TEXT_HEADING = '#1A1A1A';
 const COLOR_TEXT_BODY = '#4A4A4A';
 const COLOR_TEXT_MUTED = '#6B7280';

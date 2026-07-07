@@ -13,11 +13,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const colors = {
-  // Primario (verde salvia)
-  primary:      '#5A8A5E',
-  primary_soft: '#86B089',
-  primary_tint: '#DEE9DF',
-  primary_deep: '#2F5A34',
+  // Primario — verde Urbea del logo (flash 2026-07-06: el acento de TODA la
+  // interfaz es el verde del logo, no la salvia del kit; cohesión con la marca).
+  primary:      '#1A5E44',
+  primary_soft: '#5E9379',
+  primary_tint: '#DCE8E1',
+  primary_deep: '#123A2C',
 
   // Contraste / superficies blancas
   on_primary:   '#FFFFFF', // texto/iconos sobre primary
@@ -115,7 +116,7 @@ export const shadows = {
     elevation: 8,
   },
   primary: {
-    shadowColor: '#5A8A5E',
+    shadowColor: '#1A5E44',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.50,
     shadowRadius: 14,

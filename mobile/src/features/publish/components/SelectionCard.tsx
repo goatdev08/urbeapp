@@ -13,7 +13,7 @@ import { Pressable, StyleSheet, Text } from 'react-native';
 // Tokens de diseño (alineados con el resto de la app)
 // ---------------------------------------------------------------------------
 
-const COLOR_SALVIA = '#5A8A5E';
+const COLOR_SALVIA = '#1A5E44';
 const COLOR_BORDER_INACTIVE = '#E5E7EB';
 const COLOR_BG_SELECTED = 'rgba(90, 138, 94, 0.08)';
 const COLOR_TEXT_PRIMARY = '#1A1A1A';

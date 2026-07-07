@@ -122,7 +122,7 @@ export function PropertyOverlay({
         {onWhatsApp && (
           <Pressable
             onPress={onWhatsApp}
-            style={styles.whatsapp_btn}
+            style={({ pressed }) => [styles.whatsapp_btn, pressed && styles.btn_pressed]}
             accessibilityRole="button"
             accessibilityLabel="Contactar por WhatsApp"
           >
@@ -212,14 +212,15 @@ function ActionButton({
   return (
     <Pressable
       onPress={onPress}
-      style={styles.action_btn}
+      // Feedback táctil: encoge al presionar (fluidez percibida, flash 2026-07-06)
+      style={({ pressed }) => [styles.action_btn, pressed && styles.btn_pressed]}
       accessibilityLabel={accessibilityLabel}
       accessibilityRole="button"
     >
       <IconCmp
         size={22}
-        // ponytail: active = accent_soft (arcilla claro, #C2A07C) — del mockup .fbtn.on
-        color={active ? colors.accent_soft : '#FFFFFF'}
+        // Activo = verde claro de marca (cohesión con el acento verde del logo)
+        color={active ? colors.primary_soft : '#FFFFFF'}
         weight={active ? 'fill' : 'bold'}
       />
     </Pressable>
@@ -276,6 +277,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#25D366',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  /** Estado presionado de los botones del rail — encoge + atenúa. */
+  btn_pressed: {
+    transform: [{ scale: 0.88 }],
+    opacity: 0.85,
   },
 
   // Info inferior izquierda
