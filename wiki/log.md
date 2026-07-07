@@ -4,6 +4,14 @@ Append-only. Prefijo: `## [2026-07-04] ingest | Documentación de cuentas demo (
 
 Nueva página [[entornos-y-cuentas]]: catálogo de las 11 cuentas del seed LOCAL (`supabase/seed.sql`, sin admin) vs las cuentas del REMOTO `urbea-app` (mismo set + `admin@urbea.demo` + las 2 cuentas históricas `@urbea.app`), cómo swapear `mobile/.env.local` entre entornos, y el código de invitación `DEMO2026` en ambos. `comandos.md` ganó la sección "Emulador Android" con el desglose manual paso a paso (env vars, `emulator -avd urbea`, `adb reverse`, deep link) detrás de `pnpm emu`. Sin cambios de código de app.
 
+## [2026-07-06] tarea | Flash ronda 3: acento verde de marca + microinteracciones + todo registro publica + OTA operativo
+
+- **Acento global = verde Urbea del logo `#1A5E44`:** `colors.primary` (familia completa + sombra) en `theme.ts` + 12 archivos con salvia `#5A8A5E` hardcodeada migrados. Like/guardar activos ahora en verde de marca (era arcilla `accent_soft`). Pins del mapa todos idénticos en verde (el "pin café" era el color-por-operación de venta; eliminado).
+- **Microinteracciones (guiadas por skill ui-ux-pro-max):** like del rail dispara el corazón grande + haptic light (antes solo doble-tap); haptic selection al guardar; pressed scale/opacity en rail + WhatsApp; filas del ProfileMenu con pressed + `android_ripple`.
+- **Todo registro puede publicar:** migración `20260707000001_signup_default_agent` (+ rollback) — `handle_new_user` crea perfiles `role='agent'`; aplicada al remoto (aprobado). El FAB "+", la RLS `properties_insert` y la EF `publish-property` ya exigían agent → cero cambios en esas capas. Cuentas de HOY con role user quedaron sin migrar (UPDATE retroactivo bloqueado por permisos; registrarse de nuevo).
+- **EAS Update operativo:** primer OTA publicado al canal `preview` (runtime 1.0.0, update group `52f19103`). ⚠️ Gotcha: `eas update` truena el bundler bajo pnpm ("transformFile undefined"); workaround = `npx expo export --output-dir dist --experimental-bundle --dump-sourcemap --dump-assetmap --platform=android --clear` y luego `eas update --skip-bundler`.
+- Infra de la entrega: env vars de `.env.local` en el env store de EAS (preview/production, aprobado); APK preview compilado en la nube (build `a67a41c0`); `mailer_autoconfirm=true` en el remoto. Suite 495/495, tsc 0.
+
 ## [2026-07-06] tarea | Flash ronda 2: registro libre sin código + pins de mapa unificados (Phosphor MapPin)
 
 Segunda ronda de la sesión flash (entrega Android hoy; probadores: 1 iOS pendiente de Apple Developer, 1 Android).
