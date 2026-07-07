@@ -64,16 +64,24 @@ jest.mock('@/features/auth/context', () => ({
 
 const mock_router_replace = jest.fn();
 
-jest.mock('expo-router', () => ({
-  useRouter: () => ({
-    replace: mock_router_replace,
-    push: jest.fn(),
-    back: jest.fn(),
-  }),
-  Stack: {
-    Screen: () => null,
-  },
-}));
+jest.mock('expo-router', () => {
+  const { Text } = require('react-native');
+  const React = require('react');
+  return {
+    useRouter: () => ({
+      replace: mock_router_replace,
+      push: jest.fn(),
+      back: jest.fn(),
+    }),
+    Stack: {
+      Screen: () => null,
+    },
+    // El login usa <Link> (CTA de registro, #20.13) y <Redirect> (rebote con sesión).
+    Link: ({ children }: { children: React.ReactNode }) =>
+      React.createElement(Text, null, children),
+    Redirect: () => null,
+  };
+});
 
 // ---------------------------------------------------------------------------
 // Mock de react-native-safe-area-context — SafeAreaView nativo

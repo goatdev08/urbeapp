@@ -44,7 +44,7 @@ const COLOR_TEXT_SECONDARY = '#6B7280';
 const COLOR_BORDER = '#E5E7EB';
 const COLOR_INPUT_BG = '#FFFFFF';
 const COLOR_HINT = '#9CA3AF';
-const COLOR_ACCENT = '#5A8A5E'; // SALVIA
+const COLOR_ACCENT = '#1A5E44'; // SALVIA
 const COLOR_ERROR = '#DC2626';
 
 // ---------------------------------------------------------------------------
@@ -226,9 +226,10 @@ export default function Step2Screen() {
           <AddressAutocomplete
             value={state.address}
             onSelect={(address) => update({ address })}
+            onPlaceSelected={(address, lat, lng) => update({ address, lat, lng })}
           />
           <Text style={styles.field_hint}>
-            Escribe y selecciona de las sugerencias, o ingresa la dirección completa.
+            Escribe y selecciona de las sugerencias para fijar el pin, o ajústalo tocando el mapa.
           </Text>
 
           {/* ── 8.5: map picker ───────────────────────────────────────────

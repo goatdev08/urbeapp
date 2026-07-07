@@ -23,6 +23,7 @@ import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
+  LayoutAnimation,
   Pressable,
   RefreshControl,
   SafeAreaView,
@@ -31,6 +32,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { MagnifyingGlass, Tray } from 'phosphor-react-native';
 
 import { FilterTabs } from '@/components/FilterTabs';
 import { useAuth } from '@/features/auth/context';
@@ -194,7 +196,11 @@ export function CRMScreen(): React.ReactElement {
           <FilterTabs<CrmFilter>
             tabs={CRM_TABS}
             value={filter}
-            onChange={set_filter}
+            onChange={(next) => {
+              // Transición suave al reacomodar la lista filtrada.
+              LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+              set_filter(next);
+            }}
           />
         </View>
 
@@ -214,12 +220,12 @@ export function CRMScreen(): React.ReactElement {
               ? <EmptyState
                   message="Aún no tienes leads"
                   subtitle="Los leads aparecen cuando un usuario contacta sobre una propiedad."
-                  icon="📋"
+                  icon={Tray}
                 />
               : <EmptyState
                   message="Sin resultados"
                   subtitle="Prueba con otro filtro o búsqueda."
-                  icon="🔍"
+                  icon={MagnifyingGlass}
                 />
           }
           refreshControl={

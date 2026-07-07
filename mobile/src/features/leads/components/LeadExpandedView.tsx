@@ -18,7 +18,6 @@
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -30,6 +29,7 @@ import {
   TouchableWithoutFeedback,
   View,
 } from 'react-native';
+import { Image } from 'expo-image';
 
 import { router } from 'expo-router';
 
@@ -153,7 +153,8 @@ export function LeadExpandedView({
               <Image
                 source={{ uri: lead.profile_photo_url }}
                 style={StyleSheet.absoluteFill}
-                resizeMode="cover"
+                contentFit="cover"
+                transition={200}
               />
             ) : (
               <View style={[StyleSheet.absoluteFill, styles.avatar_placeholder]}>

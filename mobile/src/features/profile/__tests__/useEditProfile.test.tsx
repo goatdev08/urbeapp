@@ -153,6 +153,7 @@ beforeEach(() => {
     session: null,
     isLoading: false,
     signIn: jest.fn(),
+    signUp: jest.fn(),
     signOut: jest.fn(),
   });
 });

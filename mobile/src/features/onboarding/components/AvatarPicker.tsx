@@ -13,12 +13,12 @@
 import React from 'react';
 import {
   Alert,
-  Image,
   Pressable,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { Image } from 'expo-image';
 
 import { useImagePicker } from '../hooks/useImagePicker';
 
@@ -47,7 +47,7 @@ interface AvatarPickerProps {
 // ---------------------------------------------------------------------------
 
 const AVATAR_SIZE = 100;
-const COLOR_SALVIA = '#5A8A5E';
+const COLOR_SALVIA = '#1A5E44';
 const BG_PAPER = '#F6F2EB';
 
 // ---------------------------------------------------------------------------

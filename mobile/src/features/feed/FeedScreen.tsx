@@ -22,11 +22,11 @@ import {
 } from 'react-native';
 import { FlashList, type ListRenderItemInfo } from '@shopify/flash-list';
 import { useRouter } from 'expo-router';
-import { Plus, SlidersHorizontal } from 'phosphor-react-native';
+import { SlidersHorizontal, VideoCamera } from 'phosphor-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { colors, shadows, spacing } from '@/theme/theme';
-import { useAuth } from '@/features/auth/context';
+import { colors, spacing } from '@/theme/theme';
+import { EmptyState } from '@/features/profile/components/EmptyState';
 import { useFilters } from '../search/filterStore';
 import { FilterSheet } from '../search/components/FilterSheet';
 
@@ -42,7 +42,6 @@ const key_extractor = (item: FeedPropertyWithUrl): string => item.id;
 export function FeedScreen() {
   const { height } = useWindowDimensions();
   const router = useRouter();
-  const { user } = useAuth();
   const insets = useSafeAreaInsets();
   const { viewabilityConfigCallbackPairs, isItemActive } = useFeedActiveIndex();
   const { filters, active_filter_count } = useFilters();
@@ -95,11 +94,19 @@ export function FeedScreen() {
     );
   }
 
-  // Sin propiedades tras carga exitosa.
+  // Sin propiedades tras carga exitosa — primera impresión con BD vacía:
+  // empty state de marca con CTA directo al wizard de publicación.
   if (!isLoading && data.length === 0) {
     return (
       <View style={[styles.root, styles.state_root]}>
-        <Text style={styles.state_text}>Aún no hay propiedades</Text>
+        <EmptyState
+          dark
+          icon={VideoCamera}
+          message="Aún no hay propiedades"
+          subtitle="Sé el primero en publicar un video."
+          cta_label="Publicar propiedad"
+          onPressCta={() => router.push('/publish/step1')}
+        />
       </View>
     );
   }
@@ -134,7 +141,9 @@ export function FeedScreen() {
         decelerationRate="fast"
         showsVerticalScrollIndicator={false}
         bounces={false}
-        drawDistance={height}
+        // 1.5 pantallas de colchón: el video entrante bufferea antes de aparecer
+        // (SDK56 no expone prefetch explícito; costo en memoria aceptable en demo).
+        drawDistance={height * 1.5}
         viewabilityConfigCallbackPairs={viewabilityConfigCallbackPairs}
         // Pull-to-refresh: resetea cursor y recarga desde el inicio.
         // refreshing solo true durante un refresh (ya hay datos en pantalla).
@@ -151,20 +160,9 @@ export function FeedScreen() {
         onEndReachedThreshold={0.3}
       />
 
-      {/* ponytail: botón flotante temporal — único acceso al wizard de publicación
-          del #8 mientras el feed no tenga overlay CTA definitivo. Retirar en 9.6
-          o cuando exista el CTA de overlay. Solo agentes: un buscador no puede
-          publicar y el FAB tapaba su botón de guardar (hallazgo E2E 2026-07-04).
-          Admin también puede publicar (el gate del buscador se mantiene). */}
-      {(user?.role === 'agent' || user?.role === 'admin') && (
-        <TouchableOpacity
-          style={styles.publish_btn}
-          onPress={() => router.push('/publish/step1')}
-          accessibilityLabel="Publicar propiedad"
-        >
-          <Plus size={28} color="#FFFFFF" weight="bold" />
-        </TouchableOpacity>
-      )}
+      {/* El acceso a publicar vive en el botón central de la tab bar
+          (PublishTabButton en (tabs)/_layout) — el FAB flotante que tapaba el
+          rail de acciones se retiró en el pulido flash 2026-07-06. */}
 
       {/*
        * Botón de filtros — top-right flotante sobre el feed oscuro.
@@ -223,19 +221,6 @@ const styles = StyleSheet.create({
   retry_text: {
     color: colors.gray_1,
     fontSize: 15,
-  },
-  publish_btn: {
-    position: 'absolute',
-    bottom: 32,
-    right: 20,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    // Sombra para que el círculo resalte sobre el video del feed.
-    ...shadows.md,
   },
   /**
    * Botón de filtros — píldora circular sobre el feed oscuro.

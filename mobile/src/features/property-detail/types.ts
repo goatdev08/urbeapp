@@ -37,6 +37,8 @@ export type PropertyVideoDetail = {
   position: number;
   /** storage_path puede ser null en la DB (video aún processing). */
   storage_path: string | null;
+  /** Portada del video (frame medio, URL pública) — poster del hero de detalle. */
+  thumbnail_url: string | null;
   /**
    * signed_url: presente solo tras llamar a mint-video-url EF.
    * En la demo el storage_path directo está roto (#21), por eso se usa el minter.

@@ -20,6 +20,7 @@ import MapView, { Region } from 'react-native-maps';
 import { useRouter } from 'expo-router';
 
 import { colors, spacing } from '@/theme/theme';
+import { useLocation } from '@/features/location/LocationProvider';
 import { useFilters } from '../search/filterStore';
 import { GDL_REGION } from './constants';
 import { useMapProperties } from './hooks/useMapProperties';
@@ -77,7 +78,20 @@ function MapContent(): React.JSX.Element {
 
   const { filters, active_filter_count } = useFilters();
   const { data, loading, error } = useMapProperties(undefined, filters);
-  const [region, set_region] = useState<Region>(GDL_REGION);
+  // Ubicación real (LocationProvider, permiso obligatorio #41): centra el mapa
+  // en la ciudad del usuario en vez de GDL fija. Fallback: GDL_REGION.
+  const { coords: user_coords } = useLocation();
+  const [initial_region] = useState<Region>(() =>
+    user_coords !== null
+      ? {
+          latitude: user_coords.latitude,
+          longitude: user_coords.longitude,
+          latitudeDelta: GDL_REGION.latitudeDelta,
+          longitudeDelta: GDL_REGION.longitudeDelta,
+        }
+      : GDL_REGION,
+  );
+  const [region, set_region] = useState<Region>(initial_region);
   const [selected, set_selected] = useState<MapProperty | null>(null);
   const [query, set_query] = useState('');
   const [filter_visible, set_filter_visible] = useState(false);
@@ -123,9 +137,11 @@ function MapContent(): React.JSX.Element {
       <MapView
         ref={map_ref}
         style={styles.map}
-        initialRegion={GDL_REGION}
+        initialRegion={initial_region}
         onRegionChangeComplete={set_region}
         onPress={() => set_selected(null)}
+        showsUserLocation
+        showsMyLocationButton
       >
         {clustered.map((item) => {
           if (item.type === 'point') {

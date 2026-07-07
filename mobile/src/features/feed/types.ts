@@ -13,6 +13,8 @@ export type FeedPropertyVideo = {
   id: string;
   storage_path: string;
   position: number;
+  /** Portada del video (frame medio) servida como URL pública. null si no hay. */
+  thumbnail_url: string | null;
 };
 
 export type FeedProperty = {
@@ -24,6 +26,8 @@ export type FeedProperty = {
   owner_user_id: string;
   agency_id: string | null;
   created_at: string;
+  /** Teléfono del agente (users.phone) para el botón WhatsApp del feed. null si no hay. */
+  agent_phone: string | null;
   video: FeedPropertyVideo;
 };
 

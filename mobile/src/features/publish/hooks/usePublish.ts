@@ -86,6 +86,9 @@ export function usePublish(deps?: UsePublishDeps): UsePublishResult {
 
       // Payload con campos editables de la tabla 'properties'.
       // NO incluye: owner_user_id (inmutable), video_id/storage_path (en property_videos).
+      // La tabla NO tiene columnas lat/lng: la ubicación vive en `location`
+      // geography(Point,4326). PostgREST acepta EWKT como input — mismo punto
+      // que construye ST_Point(lng, lat) en el RPC de creación (x=lng, y=lat).
       const edit_payload = {
         operation_type: state.operation_type,
         property_type: state.property_type,
@@ -94,8 +97,9 @@ export function usePublish(deps?: UsePublishDeps): UsePublishResult {
         bathrooms: state.bathrooms,
         square_meters: state.square_meters,
         address: state.address,
-        lat: state.lat,
-        lng: state.lng,
+        ...(state.lat !== null && state.lng !== null
+          ? { location: `SRID=4326;POINT(${state.lng} ${state.lat})` }
+          : {}),
         pet_friendly: state.pet_friendly,
         allows_no_guarantor: state.allows_no_guarantor,
         student_friendly: state.student_friendly,

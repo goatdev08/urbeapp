@@ -14,24 +14,34 @@
  *
  * Subtarea 16.6.
  */
-import React from 'react';
+import React, { useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import {
+  Bookmarks,
+  DotsThreeVertical,
+  PencilSimple,
+  SignOut,
+  Storefront,
+  UserPlus,
+} from 'phosphor-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { PrimaryButton } from '@/components/PrimaryButton';
 import { colors, spacing, type_scale } from '@/theme/theme';
 import { useAuth } from '@/features/auth/context';
 import { useAgencyRole } from '@/features/leads/hooks/useAgencyRole';
 import { useAgentProfile } from './hooks/useAgentProfile';
 import { useAgentStats } from './hooks/useAgentStats';
 import { ProfileHeader } from './components/ProfileHeader';
+import { ProfileMenu, type ProfileMenuItem } from './components/ProfileMenu';
 import { PropertiesGrid } from './components/PropertiesGrid';
 
 // ---------------------------------------------------------------------------
@@ -51,11 +61,13 @@ export interface ProfileScreenProps {
 
 export function ProfileScreen({ agent_id, is_own_profile }: ProfileScreenProps) {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { signOut } = useAuth();
   const { loading, error, data } = useAgentProfile(agent_id);
   const { loading: stats_loading, stats } = useAgentStats(agent_id);
-  // Owner de agencia → botón "Invitar agentes" (tarea #34)
+  // Owner de agencia → opción "Invitar agentes" en el menú (tarea #34)
   const { isOwner } = useAgencyRole();
+  const [menu_visible, set_menu_visible] = useState(false);
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
@@ -93,6 +105,25 @@ export function ProfileScreen({ agent_id, is_own_profile }: ProfileScreenProps) 
     router.push(`/property/${property_id}`);
   }
 
+  // Items del menú "⋯" — orden: navegación primero, cerrar sesión al final.
+  // "Invitar agentes" solo para owners de agencia (#34).
+  // "Guardados" vive aquí desde que salió de la tab bar (composición del mockup).
+  const menu_items: ProfileMenuItem[] = [
+    { key: 'saved', label: 'Guardados', icon: Bookmarks, onPress: () => router.push('/saved') },
+    { key: 'listings', label: 'Mis publicaciones', icon: Storefront, onPress: handle_my_listings },
+    ...(isOwner
+      ? [{ key: 'invite', label: 'Invitar agentes', icon: UserPlus, onPress: handle_invite_agents }]
+      : []),
+    { key: 'edit', label: 'Editar perfil', icon: PencilSimple, onPress: handle_edit_profile },
+    {
+      key: 'signout',
+      label: 'Cerrar sesión',
+      icon: SignOut,
+      destructive: true,
+      onPress: () => { void handle_sign_out(); },
+    },
+  ];
+
   // ── Estados de carga / error ───────────────────────────────────────────────
 
   if (loading) {
@@ -116,56 +147,49 @@ export function ProfileScreen({ agent_id, is_own_profile }: ProfileScreenProps) 
   // ── Render principal ───────────────────────────────────────────────────────
 
   return (
-    <ScrollView
-      style={styles.scroll}
-      contentContainerStyle={styles.scroll_content}
-      showsVerticalScrollIndicator={false}
-    >
-      {/* Cabecera del agente */}
-      <ProfileHeader profile={data} stats={stats} loading={stats_loading} />
-
-      {/* Botones de acción — solo en perfil propio */}
+    <View style={styles.scroll}>
+      {/* Botón "⋯" flotante arriba-derecha — abre el menú de acciones.
+          Solo en perfil propio (las acciones son del dueño de la cuenta). */}
       {is_own_profile && (
-        <View style={styles.actions}>
-          <PrimaryButton
-            label="Mis publicaciones"
-            variant="ghost"
-            surface="light"
-            onPress={handle_my_listings}
-          />
-          {isOwner && (
-            <PrimaryButton
-              label="Invitar agentes"
-              variant="ghost"
-              surface="light"
-              onPress={handle_invite_agents}
-            />
-          )}
-          <PrimaryButton
-            label="Editar perfil"
-            variant="ghost"
-            surface="light"
-            onPress={handle_edit_profile}
-          />
-          <PrimaryButton
-            label="Cerrar sesión"
-            variant="ghost"
-            surface="light"
-            onPress={() => { void handle_sign_out(); }}
-          />
-        </View>
+        <Pressable
+          style={[styles.menu_btn, { top: insets.top + spacing.s_8 }]}
+          onPress={() => set_menu_visible(true)}
+          accessibilityRole="button"
+          accessibilityLabel="Abrir menú de perfil"
+          hitSlop={8}
+        >
+          <DotsThreeVertical size={24} color={colors.ink} weight="bold" />
+        </Pressable>
       )}
 
-      {/* Separador visual entre header/acciones y la grilla */}
-      <View style={styles.divider} />
+      <ScrollView
+        style={styles.scroll_inner}
+        contentContainerStyle={styles.scroll_content}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Cabecera del agente */}
+        <ProfileHeader profile={data} stats={stats} loading={stats_loading} />
 
-      {/* Grilla de propiedades */}
-      <PropertiesGrid
-        owner_user_id={agent_id}
-        is_own_profile={is_own_profile}
-        onPressProperty={handle_press_property}
-      />
-    </ScrollView>
+        {/* Separador visual entre header y la grilla */}
+        <View style={styles.divider} />
+
+        {/* Grilla de propiedades */}
+        <PropertiesGrid
+          owner_user_id={agent_id}
+          is_own_profile={is_own_profile}
+          onPressProperty={handle_press_property}
+        />
+      </ScrollView>
+
+      {/* Menú de acciones del perfil (bottom-sheet) */}
+      {is_own_profile && (
+        <ProfileMenu
+          visible={menu_visible}
+          onClose={() => set_menu_visible(false)}
+          items={menu_items}
+        />
+      )}
+    </View>
   );
 }
 
@@ -177,6 +201,9 @@ const styles = StyleSheet.create({
   scroll: {
     flex: 1,
     backgroundColor: colors.paper,
+  },
+  scroll_inner: {
+    flex: 1,
   },
   scroll_content: {
     flexGrow: 1,
@@ -195,10 +222,16 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
-  actions: {
-    paddingHorizontal: spacing.s_24,
-    paddingBottom: spacing.s_16,
-    gap: spacing.s_12,
+  menu_btn: {
+    position: 'absolute',
+    right: spacing.s_16,
+    zIndex: 10,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.paper_2,
   },
 
   divider: {

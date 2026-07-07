@@ -1,15 +1,16 @@
 /**
- * Pantalla de registro de agente — ruta /register (Expo Router).
+ * Pantalla de registro — ruta /register (Expo Router).
  *
- * Subtarea 5.7: UI en 2 fases.
- *   Fase 1: el agente ingresa el código de invitación → se valida contra
- *           validate-invitation y se muestra el nombre de la inmobiliaria.
- *   Fase 2: con el código validado, ingresa nombre/apellido/correo/contraseña →
- *           redeem-invitation crea la cuenta y la liga a la inmobiliaria.
- * Subtarea 5.8: auto-login tras el canje (useAuth().signIn) + manejo de errores.
+ * Dos modos en una pantalla:
+ *   'user'  (default) — registro libre: nombre + correo + contraseña (+confirmar).
+ *           supabase.auth.signUp → trigger handle_new_user crea el perfil con
+ *           role='user'. Con autoconfirm activo la sesión entra directa y el
+ *           listener del AuthProvider redirige (Redirect de abajo).
+ *   'agent' — registro de agente por código de invitación (flujo original 5.7/5.8):
+ *           validate-invitation → datos → redeem-invitation → auto-login → onboarding.
  *
  * Patrón de refs sincrónicas (stale closures en RNTL) tomado de login.tsx.
- * Branding mínimo neutro — diseño visual en pausa hasta tarea #19.
+ * Branding: espejo del login (#20.13) — fondo carnita + UrbeaLockup + botón verde.
  */
 import React, { useRef, useState } from 'react';
 import {
@@ -26,7 +27,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Link, Redirect, useRouter } from 'expo-router';
 
 import { useAuth } from '@/features/auth/context';
+import { map_auth_error } from '@/features/auth/auth-errors';
 import { FormField } from '@/features/auth/components/form-field';
+import {
+  validate_email,
+  validate_password,
+  type FieldError,
+} from '@/features/auth/validation';
 import {
   redeem_invitation,
   validate_invitation,
@@ -41,12 +48,37 @@ import {
   validate_invitation_code,
   validate_register_form,
 } from '@/features/registration/validation';
+import { UrbeaLockup } from '@/components/UrbeaLockup';
+import { brand, colors, fonts } from '@/theme/theme';
+
+type RegisterMode = 'user' | 'agent';
+
+/** Errores del formulario de registro libre. */
+interface UserFormErrors {
+  email?: FieldError;
+  password?: FieldError;
+  confirm?: FieldError;
+}
 
 export default function RegisterScreen() {
-  const { signIn, session, isLoading } = useAuth();
+  const { signIn, signUp, session, isLoading } = useAuth();
   const router = useRouter();
 
-  // Estado del formulario
+  // Modo del flujo: registro libre (default) o agente por código.
+  const [mode, set_mode] = useState<RegisterMode>('user');
+
+  // ── Estado del registro libre ('user') ──────────────────────────────────────
+  const [u_name, set_u_name] = useState('');
+  const [u_email, set_u_email] = useState('');
+  const [u_password, set_u_password] = useState('');
+  const [u_confirm, set_u_confirm] = useState('');
+  const [u_errors, set_u_errors] = useState<UserFormErrors>({});
+  const u_name_ref = useRef('');
+  const u_email_ref = useRef('');
+  const u_password_ref = useRef('');
+  const u_confirm_ref = useRef('');
+
+  // ── Estado del registro de agente ('agent') ─────────────────────────────────
   const [code, set_code] = useState('');
   const [first_name, set_first_name] = useState('');
   const [last_name, set_last_name] = useState('');
@@ -54,7 +86,7 @@ export default function RegisterScreen() {
   const [password, set_password] = useState('');
   const [show_password, set_show_password] = useState(false);
 
-  // Fase del flujo: 'code' (validar código) → 'details' (datos + canje)
+  // Fase del flujo agente: 'code' (validar código) → 'details' (datos + canje)
   const [agency_name, set_agency_name] = useState<string | null>(null);
   const [errors, set_errors] = useState<RegisterFormErrors>({});
   const [is_validating, set_is_validating] = useState(false);
@@ -75,7 +107,54 @@ export default function RegisterScreen() {
 
   const code_validated = agency_name !== null;
 
-  // ── Fase 1: validar el código de invitación ────────────────────────────────
+  // ── Registro libre: validar + signUp ────────────────────────────────────────
+  const validate_user_form = (): UserFormErrors => {
+    const next: UserFormErrors = {};
+    const email_error = validate_email(u_email_ref.current);
+    if (email_error !== undefined) next.email = email_error;
+    const password_error = validate_password(u_password_ref.current);
+    if (password_error !== undefined) next.password = password_error;
+    if (u_confirm_ref.current !== u_password_ref.current) {
+      next.confirm = { message: 'Las contraseñas no coinciden' };
+    }
+    return next;
+  };
+
+  const handle_user_submit = async () => {
+    if (is_submitting) return;
+
+    const form_errors = validate_user_form();
+    set_u_errors(form_errors);
+    if (form_errors.email || form_errors.password || form_errors.confirm) return;
+
+    set_general_error(null);
+    set_is_submitting(true);
+    try {
+      await signUp(
+        u_email_ref.current.trim(),
+        u_password_ref.current,
+        u_name_ref.current.trim() || undefined,
+      );
+      // La sesión llega por onAuthStateChange; el Redirect de arriba (o este
+      // replace) lleva a la home. El usuario libre no pasa por onboarding.
+      router.replace('/');
+    } catch (err) {
+      // Caso más común: correo ya registrado → mensaje accionable.
+      const err_code =
+        typeof err === 'object' && err !== null
+          ? (err as { code?: string }).code
+          : undefined;
+      if (err_code === 'user_already_exists') {
+        set_general_error('Ya existe una cuenta con este correo. Inicia sesión.');
+      } else {
+        set_general_error(map_auth_error(err));
+      }
+    } finally {
+      set_is_submitting(false);
+    }
+  };
+
+  // ── Agente Fase 1: validar el código de invitación ──────────────────────────
   const handle_validate_code = async () => {
     if (is_validating) return;
 
@@ -107,7 +186,7 @@ export default function RegisterScreen() {
     }
   };
 
-  // ── Fase 2: canjear + auto-login ────────────────────────────────────────────
+  // ── Agente Fase 2: canjear + auto-login ─────────────────────────────────────
   const handle_submit = async () => {
     if (is_submitting) return;
 
@@ -144,6 +223,13 @@ export default function RegisterScreen() {
     }
   };
 
+  // Cambiar de modo limpia el error general (los estados de campo se conservan
+  // por si el usuario regresa; no interfieren entre modos).
+  const switch_mode = (next: RegisterMode) => {
+    set_general_error(null);
+    set_mode(next);
+  };
+
   const toggle_password_label = show_password ? 'Ocultar' : 'Mostrar';
   const password_toggle = (
     <Pressable
@@ -154,6 +240,12 @@ export default function RegisterScreen() {
     >
       <Text style={styles.toggle_text}>{toggle_password_label}</Text>
     </Pressable>
+  );
+
+  const error_banner = general_error !== null && (
+    <View style={styles.error_banner} accessibilityRole="alert" accessibilityLiveRegion="assertive">
+      <Text style={styles.error_banner_text}>{general_error}</Text>
+    </View>
   );
 
   return (
@@ -168,134 +260,86 @@ export default function RegisterScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
+          {/* Lockup del logo final — mismo hero vertical que el login (#20.13). */}
           <View style={styles.header}>
-            <Text style={styles.brand}>Urbea</Text>
-            <Text style={styles.subtitle}>Crea tu cuenta de agente</Text>
+            <UrbeaLockup size={95} direction="column" />
+            <Text style={styles.subtitle}>
+              {mode === 'user' ? 'Crea tu cuenta' : 'Crea tu cuenta de agente'}
+            </Text>
           </View>
 
-          <View style={styles.form}>
-            <FormField
-              testID="register-code"
-              label="Código de invitación"
-              value={code}
-              onChangeText={(t) => {
-                code_ref.current = t;
-                set_code(t);
-              }}
-              autoCapitalize="characters"
-              autoCorrect={false}
-              placeholder="Código que te dio tu inmobiliaria"
-              returnKeyType={code_validated ? 'next' : 'done'}
-              onSubmitEditing={code_validated ? undefined : handle_validate_code}
-              error={errors.invitationCode?.message}
-              editable={!code_validated && !is_validating}
-            />
+          {/* ══ Modo 'user' — registro libre ══════════════════════════════════ */}
+          {mode === 'user' && (
+            <View style={styles.form}>
+              <FormField
+                testID="signup-name"
+                label="Nombre"
+                value={u_name}
+                onChangeText={(t) => {
+                  u_name_ref.current = t;
+                  set_u_name(t);
+                }}
+                autoCapitalize="words"
+                textContentType="givenName"
+                placeholder="Tu nombre"
+                editable={!is_submitting}
+              />
+              <FormField
+                testID="signup-email"
+                label="Correo electrónico"
+                value={u_email}
+                onChangeText={(t) => {
+                  u_email_ref.current = t;
+                  set_u_email(t);
+                }}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoComplete="email"
+                textContentType="emailAddress"
+                placeholder="tu@correo.com"
+                error={u_errors.email?.message}
+                editable={!is_submitting}
+              />
+              <FormField
+                testID="signup-password"
+                label="Contraseña"
+                value={u_password}
+                onChangeText={(t) => {
+                  u_password_ref.current = t;
+                  set_u_password(t);
+                }}
+                secureTextEntry={!show_password}
+                autoComplete="new-password"
+                textContentType="newPassword"
+                placeholder="Mínimo 6 caracteres"
+                error={u_errors.password?.message}
+                editable={!is_submitting}
+                right_addon={password_toggle}
+              />
+              <FormField
+                testID="signup-confirm"
+                label="Confirmar contraseña"
+                value={u_confirm}
+                onChangeText={(t) => {
+                  u_confirm_ref.current = t;
+                  set_u_confirm(t);
+                }}
+                secureTextEntry={!show_password}
+                autoComplete="new-password"
+                textContentType="newPassword"
+                placeholder="Repite tu contraseña"
+                returnKeyType="done"
+                onSubmitEditing={handle_user_submit}
+                error={u_errors.confirm?.message}
+                editable={!is_submitting}
+              />
 
-            {!code_validated && (
-              <Pressable
-                style={[styles.submit_button, is_validating && styles.submit_button_disabled]}
-                onPress={handle_validate_code}
-                disabled={is_validating}
-                accessibilityRole="button"
-                accessibilityLabel="Validar código"
-              >
-                {is_validating ? (
-                  <View style={styles.submit_loading_row}>
-                    <ActivityIndicator testID="validate-spinner" size="small" color="#9CA3AF" />
-                    <Text style={[styles.submit_text, styles.submit_text_disabled, styles.submit_loading_label]}>
-                      Validando…
-                    </Text>
-                  </View>
-                ) : (
-                  <Text style={styles.submit_text}>Validar código</Text>
-                )}
-              </Pressable>
-            )}
+              {error_banner}
 
-            {/* Fase 2: aparece cuando el código es válido */}
-            {code_validated && (
-              <>
-                <View style={styles.agency_banner} accessibilityRole="summary">
-                  <Text style={styles.agency_label}>Inmobiliaria</Text>
-                  <Text style={styles.agency_name}>{agency_name}</Text>
-                </View>
-
-                <FormField
-                  testID="register-first-name"
-                  label="Nombre"
-                  value={first_name}
-                  onChangeText={(t) => {
-                    first_ref.current = t;
-                    set_first_name(t);
-                  }}
-                  autoCapitalize="words"
-                  textContentType="givenName"
-                  placeholder="Tu nombre"
-                  error={errors.firstName?.message}
-                  editable={!is_submitting}
-                />
-                <FormField
-                  testID="register-last-name"
-                  label="Apellido"
-                  value={last_name}
-                  onChangeText={(t) => {
-                    last_ref.current = t;
-                    set_last_name(t);
-                  }}
-                  autoCapitalize="words"
-                  textContentType="familyName"
-                  placeholder="Tu apellido"
-                  error={errors.lastName?.message}
-                  editable={!is_submitting}
-                />
-                <FormField
-                  testID="register-email"
-                  label="Correo electrónico"
-                  value={email}
-                  onChangeText={(t) => {
-                    email_ref.current = t;
-                    set_email(t);
-                  }}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  autoComplete="email"
-                  textContentType="emailAddress"
-                  placeholder="tu@correo.com"
-                  error={errors.email?.message}
-                  editable={!is_submitting}
-                />
-                <FormField
-                  testID="register-password"
-                  label="Contraseña"
-                  value={password}
-                  onChangeText={(t) => {
-                    password_ref.current = t;
-                    set_password(t);
-                  }}
-                  secureTextEntry={!show_password}
-                  autoComplete="new-password"
-                  textContentType="newPassword"
-                  placeholder="Mínimo 8 caracteres"
-                  returnKeyType="done"
-                  onSubmitEditing={handle_submit}
-                  error={errors.password?.message}
-                  editable={!is_submitting}
-                  right_addon={password_toggle}
-                />
-              </>
-            )}
-
-            {general_error !== null && (
-              <View style={styles.error_banner} accessibilityRole="alert" accessibilityLiveRegion="assertive">
-                <Text style={styles.error_banner_text}>{general_error}</Text>
-              </View>
-            )}
-
-            {code_validated && (
               <Pressable
                 style={[styles.submit_button, is_submitting && styles.submit_button_disabled]}
-                onPress={handle_submit}
+                onPress={handle_user_submit}
                 disabled={is_submitting}
                 accessibilityRole="button"
                 accessibilityLabel="Crear cuenta"
@@ -303,7 +347,7 @@ export default function RegisterScreen() {
               >
                 {is_submitting ? (
                   <View style={styles.submit_loading_row}>
-                    <ActivityIndicator testID="submit-spinner" size="small" color="#9CA3AF" />
+                    <ActivityIndicator testID="signup-spinner" size="small" color="#9CA3AF" />
                     <Text style={[styles.submit_text, styles.submit_text_disabled, styles.submit_loading_label]}>
                       Creando cuenta…
                     </Text>
@@ -312,14 +356,171 @@ export default function RegisterScreen() {
                   <Text style={styles.submit_text}>Crear cuenta</Text>
                 )}
               </Pressable>
-            )}
 
-            <View style={styles.login_link_row}>
-              <Text style={styles.login_link_text}>¿Ya tienes cuenta? </Text>
-              <Link href="/login" style={styles.login_link}>
-                Inicia sesión
-              </Link>
+              {/* Acceso al flujo de agente por código de invitación */}
+              <View style={styles.switch_link_row}>
+                <Text style={styles.switch_link_text}>¿Tienes un código de invitación? </Text>
+                <Pressable onPress={() => switch_mode('agent')} accessibilityRole="button" hitSlop={8}>
+                  <Text style={styles.switch_link}>Regístrate como agente</Text>
+                </Pressable>
+              </View>
             </View>
+          )}
+
+          {/* ══ Modo 'agent' — código de invitación (flujo original) ═════════ */}
+          {mode === 'agent' && (
+            <View style={styles.form}>
+              <FormField
+                testID="register-code"
+                label="Código de invitación"
+                value={code}
+                onChangeText={(t) => {
+                  code_ref.current = t;
+                  set_code(t);
+                }}
+                autoCapitalize="characters"
+                autoCorrect={false}
+                placeholder="Código que te dio tu inmobiliaria"
+                returnKeyType={code_validated ? 'next' : 'done'}
+                onSubmitEditing={code_validated ? undefined : handle_validate_code}
+                error={errors.invitationCode?.message}
+                editable={!code_validated && !is_validating}
+              />
+
+              {!code_validated && (
+                <Pressable
+                  style={[styles.submit_button, is_validating && styles.submit_button_disabled]}
+                  onPress={handle_validate_code}
+                  disabled={is_validating}
+                  accessibilityRole="button"
+                  accessibilityLabel="Validar código"
+                >
+                  {is_validating ? (
+                    <View style={styles.submit_loading_row}>
+                      <ActivityIndicator testID="validate-spinner" size="small" color="#9CA3AF" />
+                      <Text style={[styles.submit_text, styles.submit_text_disabled, styles.submit_loading_label]}>
+                        Validando…
+                      </Text>
+                    </View>
+                  ) : (
+                    <Text style={styles.submit_text}>Validar código</Text>
+                  )}
+                </Pressable>
+              )}
+
+              {/* Fase 2: aparece cuando el código es válido */}
+              {code_validated && (
+                <>
+                  <View style={styles.agency_banner} accessibilityRole="summary">
+                    <Text style={styles.agency_label}>Inmobiliaria</Text>
+                    <Text style={styles.agency_name}>{agency_name}</Text>
+                  </View>
+
+                  <FormField
+                    testID="register-first-name"
+                    label="Nombre"
+                    value={first_name}
+                    onChangeText={(t) => {
+                      first_ref.current = t;
+                      set_first_name(t);
+                    }}
+                    autoCapitalize="words"
+                    textContentType="givenName"
+                    placeholder="Tu nombre"
+                    error={errors.firstName?.message}
+                    editable={!is_submitting}
+                  />
+                  <FormField
+                    testID="register-last-name"
+                    label="Apellido"
+                    value={last_name}
+                    onChangeText={(t) => {
+                      last_ref.current = t;
+                      set_last_name(t);
+                    }}
+                    autoCapitalize="words"
+                    textContentType="familyName"
+                    placeholder="Tu apellido"
+                    error={errors.lastName?.message}
+                    editable={!is_submitting}
+                  />
+                  <FormField
+                    testID="register-email"
+                    label="Correo electrónico"
+                    value={email}
+                    onChangeText={(t) => {
+                      email_ref.current = t;
+                      set_email(t);
+                    }}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    autoComplete="email"
+                    textContentType="emailAddress"
+                    placeholder="tu@correo.com"
+                    error={errors.email?.message}
+                    editable={!is_submitting}
+                  />
+                  <FormField
+                    testID="register-password"
+                    label="Contraseña"
+                    value={password}
+                    onChangeText={(t) => {
+                      password_ref.current = t;
+                      set_password(t);
+                    }}
+                    secureTextEntry={!show_password}
+                    autoComplete="new-password"
+                    textContentType="newPassword"
+                    placeholder="Mínimo 8 caracteres"
+                    returnKeyType="done"
+                    onSubmitEditing={handle_submit}
+                    error={errors.password?.message}
+                    editable={!is_submitting}
+                    right_addon={password_toggle}
+                  />
+                </>
+              )}
+
+              {error_banner}
+
+              {code_validated && (
+                <Pressable
+                  style={[styles.submit_button, is_submitting && styles.submit_button_disabled]}
+                  onPress={handle_submit}
+                  disabled={is_submitting}
+                  accessibilityRole="button"
+                  accessibilityLabel="Crear cuenta"
+                  accessibilityState={{ busy: is_submitting }}
+                >
+                  {is_submitting ? (
+                    <View style={styles.submit_loading_row}>
+                      <ActivityIndicator testID="submit-spinner" size="small" color="#9CA3AF" />
+                      <Text style={[styles.submit_text, styles.submit_text_disabled, styles.submit_loading_label]}>
+                        Creando cuenta…
+                      </Text>
+                    </View>
+                  ) : (
+                    <Text style={styles.submit_text}>Crear cuenta</Text>
+                  )}
+                </Pressable>
+              )}
+
+              {/* Regreso al registro libre */}
+              <View style={styles.switch_link_row}>
+                <Text style={styles.switch_link_text}>¿No tienes código? </Text>
+                <Pressable onPress={() => switch_mode('user')} accessibilityRole="button" hitSlop={8}>
+                  <Text style={styles.switch_link}>Crea una cuenta normal</Text>
+                </Pressable>
+              </View>
+            </View>
+          )}
+
+          <View style={styles.login_link_row}>
+            <Text style={styles.login_link_text}>¿Ya tienes cuenta? </Text>
+            <Link href="/login" style={styles.login_link}>
+              Inicia sesión
+            </Link>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -328,50 +529,62 @@ export default function RegisterScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#FFFFFF' },
+  safe: { flex: 1, backgroundColor: brand.carnita },
   flex: { flex: 1 },
   scroll: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 24, paddingVertical: 40 },
-  header: { marginBottom: 32, alignItems: 'center' },
-  brand: { fontSize: 32, fontWeight: '700', color: '#111827', letterSpacing: -0.5, marginBottom: 8 },
-  subtitle: { fontSize: 15, color: '#6B7280' },
+  header: { marginBottom: 40, alignItems: 'center', gap: 16 },
+  subtitle: {
+    fontFamily: fonts.logo,
+    fontSize: 15,
+    color: brand.green_deep,
+    letterSpacing: 0.3,
+  },
   form: { width: '100%' },
-  toggle_text: { fontSize: 13, color: '#6B7280', fontWeight: '500' },
+  toggle_text: { fontFamily: fonts.sans_semibold, fontSize: 13, color: colors.gray_2 },
   agency_banner: {
     marginBottom: 16,
-    backgroundColor: '#F0FDF4',
-    borderRadius: 8,
+    backgroundColor: colors.primary_tint,
+    borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderWidth: 1,
-    borderColor: '#BBF7D0',
+    borderColor: brand.green,
   },
-  agency_label: { fontSize: 12, color: '#16A34A', fontWeight: '500', marginBottom: 2 },
-  agency_name: { fontSize: 16, color: '#111827', fontWeight: '600' },
+  agency_label: {
+    fontFamily: fonts.sans_semibold,
+    fontSize: 12,
+    color: brand.green,
+    marginBottom: 2,
+  },
+  agency_name: { fontFamily: fonts.sans_bold, fontSize: 16, color: colors.ink },
   submit_button: {
     marginTop: 8,
-    backgroundColor: '#111827',
-    borderRadius: 10,
+    backgroundColor: brand.green,
+    borderRadius: 12,
     paddingVertical: 15,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  submit_button_disabled: { backgroundColor: '#D1D5DB' },
-  submit_text: { fontSize: 16, fontWeight: '600', color: '#FFFFFF' },
-  submit_text_disabled: { color: '#9CA3AF' },
+  submit_button_disabled: { backgroundColor: brand.carnita_2 },
+  submit_text: { fontFamily: fonts.sans_semibold, fontSize: 16, color: brand.carnita },
+  submit_text_disabled: { color: colors.gray_2 },
   submit_loading_row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
   submit_loading_label: { marginLeft: 8 },
   error_banner: {
     marginTop: 4,
     marginBottom: 12,
-    backgroundColor: '#FEF2F2',
+    backgroundColor: colors.accent_tint,
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderWidth: 1,
-    borderColor: '#FECACA',
+    borderColor: colors.danger,
   },
-  error_banner_text: { fontSize: 14, color: '#DC2626', textAlign: 'center' },
-  login_link_row: { flexDirection: 'row', justifyContent: 'center', marginTop: 24 },
-  login_link_text: { fontSize: 14, color: '#6B7280' },
-  login_link: { fontSize: 14, color: '#111827', fontWeight: '600' },
+  error_banner_text: { fontFamily: fonts.sans, fontSize: 14, color: colors.danger, textAlign: 'center' },
+  switch_link_row: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 24 },
+  switch_link_text: { fontFamily: fonts.sans, fontSize: 14, color: colors.gray_3 },
+  switch_link: { fontFamily: fonts.sans_semibold, fontSize: 14, color: brand.green },
+  login_link_row: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 12 },
+  login_link_text: { fontFamily: fonts.sans, fontSize: 14, color: colors.gray_3 },
+  login_link: { fontFamily: fonts.sans_semibold, fontSize: 14, color: brand.green },
 });

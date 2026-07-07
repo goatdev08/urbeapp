@@ -33,6 +33,7 @@ import { useRouter , useLocalSearchParams } from 'expo-router';
 import { usePublishForm } from '@/features/publish/store/PublishFormContext';
 import { useVideoUpload, type UploadStatus } from '@/features/publish/hooks/useVideoUpload';
 import { usePublish } from '@/features/publish/hooks/usePublish';
+import { generate_and_store_thumbnail } from '@/features/publish/lib/videoThumbnail';
 import { PrimaryButton } from '@/components/PrimaryButton';
 
 // ---------------------------------------------------------------------------
@@ -43,7 +44,7 @@ const COLOR_BG = '#FAFAF8';
 const COLOR_TEXT_PRIMARY = '#1A1A1A';
 const COLOR_TEXT_SECONDARY = '#6B7280';
 const COLOR_BORDER = '#E5E7EB';
-const COLOR_ACCENT = '#5A8A5E'; // SALVIA
+const COLOR_ACCENT = '#1A5E44'; // SALVIA
 const COLOR_ERROR = '#DC2626';
 const COLOR_SUCCESS = '#16A34A';
 const COLOR_PICKER_BG = '#F3F4F6';
@@ -58,7 +59,7 @@ export default function Step3Screen() {
   const property_id = params.propertyId ?? null;
   const is_edit_mode = property_id !== null;
 
-  const { update } = usePublishForm();
+  const { state, update } = usePublishForm();
   const hook = useVideoUpload();
   // Edit mode: UPDATE directo sin EF; create mode: invoca EF (sin cambios).
   const publish_hook = usePublish({
@@ -131,6 +132,12 @@ export default function Step3Screen() {
 
   const handle_publish = useCallback(async () => {
     // 8.10: submit a publish-property
+    // Captura video_id/URI/duración ANTES de publicar: en create mode el éxito
+    // dispara reset() y limpia el form → se perderían para la portada.
+    const cap_video_id = state.video_id;
+    const cap_local_uri = state.video_local_uri;
+    const cap_duration = video_player.duration ?? null;
+
     set_publish_status('submitting');
     set_publish_error(null);
 
@@ -143,6 +150,11 @@ export default function Step3Screen() {
     set_publish_error(final_error);
 
     if (final_status === 'success') {
+      // Portada (P7): frame medio → bucket público → property_videos.thumbnail_url.
+      // Solo create mode con video nuevo; fire-and-forget fail-soft (no bloquea).
+      if (!is_edit_mode && cap_video_id && cap_local_uri) {
+        void generate_and_store_thumbnail(cap_video_id, cap_local_uri, cap_duration);
+      }
       Alert.alert('¡Publicada!', 'Tu propiedad ya está disponible en el feed.', [
         {
           text: 'Aceptar',
@@ -151,7 +163,7 @@ export default function Step3Screen() {
         },
       ]);
     }
-  }, [publish_hook, router]);
+  }, [publish_hook, router, state.video_id, state.video_local_uri, video_player, is_edit_mode]);
 
   // ── Derivados de estado ────────────────────────────────────────────────────
 

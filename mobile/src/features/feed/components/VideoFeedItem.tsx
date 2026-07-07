@@ -15,6 +15,7 @@
 
 import React, { memo, useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View, Text, useWindowDimensions } from 'react-native';
+import { Image } from 'expo-image';
 import { useVideoPlayer, VideoView, type VideoPlayerStatus } from 'expo-video';
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import { Play } from 'phosphor-react-native';
@@ -25,6 +26,8 @@ import { PropertyOverlay } from './PropertyOverlay';
 import { HeartAnimation } from './HeartAnimation';
 import { useLikeProperty } from '../hooks/useLikeProperty';
 import { useSaveProperty } from '../hooks/useSaveProperty';
+import { open_whatsapp } from '@/features/property-detail/utils/whatsapp';
+import { share_property } from '@/lib/shareProperty';
 
 import { colors, type_scale } from '@/theme/theme';
 import type { FeedPropertyWithUrl } from '../types';
@@ -68,6 +71,22 @@ function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedIte
     property_id: property.id,
   });
 
+  // Like desde el rail — mismo feedback que el doble-tap: corazón grande +
+  // haptic cuando ENCIENDE el like (al quitarlo, solo el cambio de icono).
+  const handle_rail_like = useCallback(() => {
+    if (!isLiked) {
+      set_heart_trigger((t) => t + 1);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    toggleLike();
+  }, [isLiked, toggleLike]);
+
+  // Guardar — haptic sutil de confirmación al alternar.
+  const handle_save = useCallback(() => {
+    Haptics.selectionAsync();
+    toggleSave();
+  }, [toggleSave]);
+
   // ponytail: navegación al perfil del agente diferida — sin ruta feed→perfil en 9.6.
   const handle_agent_press = useCallback(() => undefined, []);
 
@@ -75,6 +94,22 @@ function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedIte
   const handle_property_press = useCallback(() => {
     router.push(`/property/${property.id}`);
   }, [property.id]);
+
+  // WhatsApp directo desde el feed — solo si el agente tiene teléfono.
+  // ponytail: contacto rápido sin lead CRM (como AgentCard del detalle); el
+  // registro de lead vive en el CTA del detalle (contact-agent EF).
+  const handle_whatsapp = property.agent_phone
+    ? () => open_whatsapp(property.agent_phone, property.address)
+    : null;
+
+  // Compartir link al video (Share nativo) — funciona sin cuenta en Urbea.
+  const handle_share = useCallback(() => {
+    void share_property({
+      signedUrl: property.signed_url,
+      address: property.address,
+      price: property.price,
+    });
+  }, [property.signed_url, property.address, property.price]);
 
   // ── Video player ──────────────────────────────────────────────────────────
   const player = useVideoPlayer(property.signed_url, (p) => {
@@ -165,8 +200,19 @@ function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedIte
   return (
     <GestureDetector gesture={tap_gesture}>
       <View style={[styles.container, { width, height }]}>
-        {/* ponytail: backgroundColor del container = poster oscuro sólido mientras
-            carga el video (sin transcoding → sin thumbnail real en la demo). */}
+        {/* Portada (P7): frame medio del video servido como URL pública. Vive
+            SIEMPRE detrás del VideoView (antes solo en status 'loading', lo que
+            dejaba un flash oscuro en 'idle' y entre swipes); el video la cubre
+            en cuanto pinta su primer frame. expo-image la cachea en disco, así
+            que el swipe de regreso es instantáneo. Sin thumbnail → fondo oscuro
+            sólido del container (fallback). */}
+        {property.video.thumbnail_url && (
+          <Image
+            source={{ uri: property.video.thumbnail_url }}
+            style={styles.poster}
+            contentFit="cover"
+          />
+        )}
         <VideoView
           player={player}
           style={styles.video}
@@ -199,10 +245,12 @@ function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedIte
           property={property}
           isLiked={isLiked}
           isSaved={isSaved}
-          onLike={toggleLike}
-          onSave={toggleSave}
+          onLike={handle_rail_like}
+          onSave={handle_save}
           onAgentPress={handle_agent_press}
           onPropertyPress={handle_property_press}
+          onWhatsApp={handle_whatsapp}
+          onShare={handle_share}
         />
       </View>
     </GestureDetector>
@@ -223,6 +271,13 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   video: {
+    position: 'absolute' as const,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  poster: {
     position: 'absolute' as const,
     top: 0,
     left: 0,

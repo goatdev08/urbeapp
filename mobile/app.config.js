@@ -5,7 +5,9 @@ module.exports = ({ config }) => ({
   name: 'Urbea',
   slug: 'urbea',
   owner: 'deabratech',
-  version: '1.0.0',
+  // 1.0.1: expo-image + expo-splash-screen (módulos nativos) → nuevo runtime
+  // OTA; los builds 1.0.0 ya no reciben updates (instalar el APK nuevo).
+  version: '1.0.1',
   orientation: 'portrait',
   scheme: 'urbea',
   userInterfaceStyle: 'automatic',
@@ -36,9 +38,30 @@ module.exports = ({ config }) => ({
   web: {
     favicon: './assets/favicon.png',
   },
+  // EAS Update (OTA): cambios de JS/assets llegan sin recompilar — `eas update
+  // --channel preview`. runtimeVersion por appVersion: solo builds con la misma
+  // `version` de arriba reciben el update (un módulo nativo nuevo → subir version
+  // y recompilar). checkAutomatically ON_LOAD: el update se descarga al abrir y
+  // se aplica al siguiente arranque.
+  updates: {
+    url: 'https://u.expo.dev/85c7157a-818c-43fd-a78f-9766c2bc6f6f',
+    checkAutomatically: 'ON_LOAD',
+  },
+  runtimeVersion: {
+    policy: 'appVersion',
+  },
   plugins: [
     'expo-dev-client',
     'expo-router',
+    // Splash de marca: isotipo carnita sobre el verde del logo (misma cara que
+    // el ícono de app) — elimina el flash blanco del arranque. El JS lo suelta
+    // con hideAsync() cuando las fuentes cargaron (app/_layout.tsx).
+    ['expo-splash-screen', {
+      image: './assets/android-icon-foreground.png',
+      imageWidth: 220,
+      resizeMode: 'contain',
+      backgroundColor: '#1A5E44',
+    }],
     ['expo-video', {
       supportsBackgroundPlayback: false,
       supportsPictureInPicture: false,

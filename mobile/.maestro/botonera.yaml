@@ -8,11 +8,14 @@ name: "botonera — smoke de navegación"
     env:
       EMAIL: "agente1.gdl@urbea.demo"
 
-# Guardados (agente1 no tiene saves en el seed → empty state)
+# Guardados vive en Perfil → menú ⋯ (agente1 sin saves → empty state)
+- tapOn: "Perfil"
+- tapOn: "Abrir menú de perfil"
 - tapOn: "Guardados"
 - extendedWaitUntil:
-    visible: "Aún no tienes propiedades guardadas"
+    visible: "Aún no tienes guardados"
     timeout: 20000
+- back
 
 # Mapa
 - tapOn: "Mapa"
@@ -21,7 +24,7 @@ name: "botonera — smoke de navegación"
     timeout: 30000
 
 # CRM (solo agentes)
-- tapOn: "CRM"
+- tapOn: "Leads"
 - extendedWaitUntil:
     visible: "Tus leads de contacto"
     timeout: 20000
@@ -41,7 +44,7 @@ name: "botonera — smoke de navegación"
 - back
 
 # Feed: sheet de filtros abre y cierra
-- tapOn: "Inicio"
+- tapOn: "Feed"
 - tapOn: "Abrir filtros"
 - extendedWaitUntil:
     visible: "Filtros"

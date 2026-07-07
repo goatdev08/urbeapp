@@ -43,7 +43,10 @@ type QueryRow = {
   owner_user_id: string;
   agency_id: string | null;
   created_at: string;
-  property_videos: { id: string; storage_path: string; position: number }[];
+  // Embed to-one del dueño para el teléfono. PostgREST puede devolver objeto o
+  // array de un elemento según la relación; se normaliza al leer.
+  users?: { phone: string | null } | { phone: string | null }[] | null;
+  property_videos: { id: string; storage_path: string; position: number; thumbnail_url: string | null }[];
 };
 
 export async function fetchFeedProperties(
@@ -60,7 +63,8 @@ export async function fetchFeedProperties(
     .from('properties')
     .select(
       `id, price, address, bedrooms, bathrooms, owner_user_id, agency_id, created_at,
-       property_videos(id, storage_path, position)`,
+       users!properties_owner_user_id_fkey(phone),
+       property_videos(id, storage_path, position, thumbnail_url)`,
     )
     .eq('status', 'active')
     .is('deleted_at', null);
@@ -112,6 +116,10 @@ export async function fetchFeedProperties(
     // ponytail: fail-closed — si el video_id de la EF no matchea ningún embebido, omitir
     if (!video_entry) continue;
 
+    // Normaliza el embed to-one (objeto o array de 1) → teléfono del agente o null.
+    const owner = Array.isArray(row.users) ? row.users[0] : row.users;
+    const agent_phone = owner?.phone ?? null;
+
     data.push({
       id: row.id,
       price: row.price,
@@ -121,10 +129,12 @@ export async function fetchFeedProperties(
       owner_user_id: row.owner_user_id,
       agency_id: row.agency_id,
       created_at: row.created_at,
+      agent_phone,
       video: {
         id: video_entry.id,
         storage_path: video_entry.storage_path,
         position: video_entry.position,
+        thumbnail_url: video_entry.thumbnail_url ?? null,
       },
       signed_url: localizeSignedUrl(minted.signed_url),
       video_id: minted.video_id,

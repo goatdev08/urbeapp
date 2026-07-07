@@ -14,7 +14,7 @@
  * ponytail: debounce manual con useRef — sin lodash; fetch nativo sin librerías extra.
  *   Max 5 sugerencias, sin place details (lat/lng lo refina 8.5).
  */
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   StyleSheet,
@@ -31,7 +31,7 @@ import {
 const COLOR_TEXT_PRIMARY = '#1A1A1A';
 const COLOR_TEXT_SECONDARY = '#6B7280';
 const COLOR_BORDER = '#E5E7EB';
-const COLOR_BORDER_FOCUS = '#5A8A5E'; // SALVIA
+const COLOR_BORDER_FOCUS = '#1A5E44'; // SALVIA
 const COLOR_INPUT_BG = '#FFFFFF';
 const COLOR_HINT = '#9CA3AF';
 const COLOR_SUGGESTION_BG = '#FFFFFF';
@@ -60,6 +60,13 @@ interface AutocompleteResponse {
 
 const PLACES_AUTOCOMPLETE_URL =
   'https://places.googleapis.com/v1/places:autocomplete';
+/** Place Details (New) — GET .../places/{placeId} con FieldMask `location`. */
+const PLACES_DETAILS_URL = 'https://places.googleapis.com/v1/places';
+/** Text Search (New) — geocodifica direcciones escritas a mano (sin sugerencia). */
+const PLACES_SEARCH_TEXT_URL =
+  'https://places.googleapis.com/v1/places:searchText';
+/** Mínimo de caracteres para intentar geocodificar texto libre en el blur. */
+const MIN_GEOCODE_LEN = 8;
 const DEBOUNCE_MS = 300;
 const MAX_SUGGESTIONS = 5;
 
@@ -72,6 +79,12 @@ export interface AddressAutocompleteProps {
   onSelect: (address: string) => void;
   /** Invocado cada vez que el texto cambia (aunque no haya sugerencia seleccionada) */
   onChangeText?: (text: string) => void;
+  /**
+   * Invocado al seleccionar una sugerencia y resolver sus coordenadas exactas
+   * (Place Details). Permite mover el pin del mapa a la dirección elegida.
+   * No se invoca si la resolución de coords falla (degrada al pin manual).
+   */
+  onPlaceSelected?: (address: string, lat: number, lng: number) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -82,6 +95,7 @@ export function AddressAutocomplete({
   value,
   onSelect,
   onChangeText,
+  onPlaceSelected,
 }: AddressAutocompleteProps) {
   const api_key = process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY ?? '';
   const has_key = api_key.length > 0;
@@ -92,6 +106,15 @@ export function AddressAutocomplete({
   const debounce_ref = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Prevents stale responses from overwriting newer ones
   const request_id_ref = useRef(0);
+  // Último texto cuyas coords ya se resolvieron (sugerencia o geocode de blur) —
+  // evita re-geocodificar el mismo texto y pisar un ajuste manual del pin.
+  const resolved_text_ref = useRef<string | null>(null);
+  // Valor más reciente del input — el geocode de blur corre con delay y debe leer
+  // el texto final (p. ej. tras seleccionar una sugerencia), no el del closure.
+  const value_ref = useRef(value);
+  useEffect(() => {
+    value_ref.current = value;
+  });
 
   // ── Fetch autocomplete suggestions ────────────────────────────────────────
 
@@ -172,8 +195,74 @@ export function AddressAutocomplete({
       const address = prediction.text.text;
       onSelect(address);
       set_suggestions([]);
+
+      // Resuelve las coordenadas exactas de la dirección (Place Details New)
+      // para mover el pin del mapa. Si falla, degrada al pin manual: no lanza.
+      if (!has_key || !onPlaceSelected) return;
+      void (async () => {
+        try {
+          const res = await fetch(
+            `${PLACES_DETAILS_URL}/${prediction.placeId}`,
+            {
+              method: 'GET',
+              headers: {
+                'X-Goog-Api-Key': api_key,
+                'X-Goog-FieldMask': 'location',
+              },
+            },
+          );
+          if (!res.ok) return;
+          const data: { location?: { latitude: number; longitude: number } } =
+            await res.json();
+          const loc = data.location;
+          if (loc && Number.isFinite(loc.latitude) && Number.isFinite(loc.longitude)) {
+            resolved_text_ref.current = address;
+            onPlaceSelected(address, loc.latitude, loc.longitude);
+          }
+        } catch {
+          if (__DEV__) console.warn('[AddressAutocomplete] place details error');
+        }
+      })();
     },
-    [onSelect],
+    [onSelect, onPlaceSelected, has_key, api_key],
+  );
+
+  // ── Geocode de respaldo (blur) ─────────────────────────────────────────────
+  // Cubre la dirección ESCRITA A MANO sin tocar sugerencia: sin esto, el pin
+  // queda donde el usuario toque el mapa (default CDMX) aunque la dirección
+  // diga otra ciudad — bug real observado en producción. La dirección manda;
+  // el pin se puede refinar tocando/arrastrando después (el mismo texto no se
+  // re-geocodifica gracias a resolved_text_ref).
+  const geocode_typed_address = useCallback(
+    async (text: string) => {
+      const query = text.trim();
+      if (!has_key || !onPlaceSelected) return;
+      if (query.length < MIN_GEOCODE_LEN) return;
+      if (query === resolved_text_ref.current) return;
+
+      try {
+        const res = await fetch(PLACES_SEARCH_TEXT_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Goog-Api-Key': api_key,
+            'X-Goog-FieldMask': 'places.location',
+          },
+          body: JSON.stringify({ textQuery: query, regionCode: 'MX' }),
+        });
+        if (!res.ok) return;
+        const data: { places?: { location?: { latitude: number; longitude: number } }[] } =
+          await res.json();
+        const loc = data.places?.[0]?.location;
+        if (loc && Number.isFinite(loc.latitude) && Number.isFinite(loc.longitude)) {
+          resolved_text_ref.current = query;
+          onPlaceSelected(query, loc.latitude, loc.longitude);
+        }
+      } catch {
+        if (__DEV__) console.warn('[AddressAutocomplete] geocode error');
+      }
+    },
+    [has_key, api_key, onPlaceSelected],
   );
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -198,6 +287,11 @@ export function AddressAutocomplete({
           onBlur={() => {
             // Pequeño delay para que handle_suggestion_press procese antes del blur
             setTimeout(() => set_focused(false), 150);
+            // Geocode de respaldo para texto escrito a mano — corre después de que
+            // una posible selección de sugerencia haya actualizado el form.
+            setTimeout(() => {
+              void geocode_typed_address(value_ref.current);
+            }, 300);
           }}
           placeholder="Ej. Colonia Del Valle, Ciudad de México"
           placeholderTextColor={COLOR_HINT}

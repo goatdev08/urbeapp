@@ -21,7 +21,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Bathtub, Bed, BookmarkSimple, Heart, type Icon } from 'phosphor-react-native';
+import { Bathtub, Bed, BookmarkSimple, Heart, type Icon, ShareNetwork, WhatsappLogo } from 'phosphor-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, fonts, spacing } from '@/theme/theme';
@@ -53,6 +53,10 @@ export type PropertyOverlayProps = {
   onAgentPress: () => void;
   /** Tap sobre el bloque de info (dirección/precio) → abre el detalle. */
   onPropertyPress: () => void;
+  /** Contacto WhatsApp directo desde el feed. null si el agente no tiene teléfono. */
+  onWhatsApp: (() => void) | null;
+  /** Compartir la propiedad como link al video. */
+  onShare: () => void;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -67,6 +71,8 @@ export function PropertyOverlay({
   onSave,
   onAgentPress,
   onPropertyPress,
+  onWhatsApp,
+  onShare,
 }: PropertyOverlayProps) {
   const insets = useSafeAreaInsets();
 
@@ -109,6 +115,27 @@ export function PropertyOverlay({
           active={isSaved}
           onPress={onSave}
           accessibilityLabel={isSaved ? 'Quitar de guardados' : 'Guardar propiedad'}
+        />
+
+        {/* WhatsApp directo — visible solo si el agente tiene teléfono.
+            Verde de marca WhatsApp para reconocimiento inmediato. */}
+        {onWhatsApp && (
+          <Pressable
+            onPress={onWhatsApp}
+            style={({ pressed }) => [styles.whatsapp_btn, pressed && styles.btn_pressed]}
+            accessibilityRole="button"
+            accessibilityLabel="Contactar por WhatsApp"
+          >
+            <WhatsappLogo size={24} color="#FFFFFF" weight="fill" />
+          </Pressable>
+        )}
+
+        {/* Compartir — link al video, glass neutro como like/guardar. */}
+        <ActionButton
+          icon={ShareNetwork}
+          active={false}
+          onPress={onShare}
+          accessibilityLabel="Compartir propiedad"
         />
       </View>
 
@@ -185,14 +212,15 @@ function ActionButton({
   return (
     <Pressable
       onPress={onPress}
-      style={styles.action_btn}
+      // Feedback táctil: encoge al presionar (fluidez percibida, flash 2026-07-06)
+      style={({ pressed }) => [styles.action_btn, pressed && styles.btn_pressed]}
       accessibilityLabel={accessibilityLabel}
       accessibilityRole="button"
     >
       <IconCmp
         size={22}
-        // ponytail: active = accent_soft (arcilla claro, #C2A07C) — del mockup .fbtn.on
-        color={active ? colors.accent_soft : '#FFFFFF'}
+        // Activo = verde claro de marca (cohesión con el acento verde del logo)
+        color={active ? colors.primary_soft : '#FFFFFF'}
         weight={active ? 'fill' : 'bold'}
       />
     </Pressable>
@@ -240,6 +268,20 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.2)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  whatsapp_btn: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    // Verde WhatsApp sólido — CTA de contacto reconocible en el rail.
+    backgroundColor: '#25D366',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  /** Estado presionado de los botones del rail — encoge + atenúa. */
+  btn_pressed: {
+    transform: [{ scale: 0.88 }],
+    opacity: 0.85,
   },
 
   // Info inferior izquierda

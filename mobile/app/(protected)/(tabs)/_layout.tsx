@@ -3,18 +3,28 @@
  * Expo Router SDK 56: el grupo (tabs) es transparente a la URL,
  * por lo que `/` sigue resolviendo a (protected)/(tabs)/index.
  *
- * Tabs: Inicio + Guardados + Mapa + CRM (solo agentes) + Perfil (propio).
- * admin/ y publish/ siguen siendo rutas Stack fuera de tabs.
+ * Composición canónica del mockup (urbea-identidad-visual.html, .tabbar):
+ * Feed · Mapa · [+] · Leads(CRM) · Perfil. Guardados sale de la barra
+ * (href:null) y se abre desde el menú del perfil.
+ *
+ * El botón central [+] (tab-fab del mockup: 48×48, radio 16, verde primario,
+ * sobresale −16px con borde del fondo) no es una pantalla: empuja el wizard
+ * de publicación. La ruta dummy publish.tsx existe solo para reservar el slot.
+ *
+ * La barra tiene dos variantes (mockup líneas 374-383): oscura translúcida
+ * sobre el feed inmersivo, clara sobre el resto. Se aplica por pantalla vía
+ * tabBarStyle/tints; el FAB detecta la variante con useSegments.
  *
  * Íconos: Phosphor bold (fill en la tab activa) — sistema único de la app (#43).
  *
  * CRM tab: href=null oculta el tab de la barra para no-agentes.
  * La ruta crm.tsx añade un Redirect como segunda capa de seguridad.
  */
-import { Tabs } from 'expo-router';
-import { Bookmarks, HouseLine, type Icon, MapPin, Ranking, UserCircle } from 'phosphor-react-native';
-import type { ColorValue } from 'react-native';
+import { Tabs, useRouter, useSegments } from 'expo-router';
+import { HouseLine, type Icon, MapPin, Plus, Ranking, UserCircle } from 'phosphor-react-native';
+import { Pressable, StyleSheet, View, type ColorValue, type ViewStyle } from 'react-native';
 
+import { colors, shadows } from '@/theme/theme';
 import { useAuth } from '@/features/auth/context';
 
 // weight=fill en la tab activa, bold en las inactivas (convención #43).
@@ -24,6 +34,60 @@ function tab_icon(IconCmp: Icon) {
   return function render({ focused, color, size }: { focused: boolean; color: ColorValue; size: number }) {
     return <IconCmp size={size} color={color as string} weight={focused ? 'fill' : 'bold'} />;
   };
+}
+
+// Variantes de barra según el mockup: el feed es inmersivo oscuro, el resto claro.
+const bar_dark: ViewStyle = {
+  backgroundColor: 'rgba(18,15,11,0.94)',
+  borderTopColor: 'rgba(255,255,255,0.08)',
+};
+const bar_light: ViewStyle = {
+  backgroundColor: colors.paper,
+  borderTopColor: colors.paper_3,
+};
+
+/** Opciones de barra por pantalla — variante oscura (feed) o clara (gestión). */
+const dark_bar_options = {
+  tabBarStyle: bar_dark,
+  tabBarActiveTintColor: colors.primary_soft,
+  tabBarInactiveTintColor: colors.silver_dk,
+} as const;
+const light_bar_options = {
+  tabBarStyle: bar_light,
+  tabBarActiveTintColor: colors.primary,
+  tabBarInactiveTintColor: colors.gray_2,
+} as const;
+
+/**
+ * Botón central de publicar — tab-fab del mockup. No navega a la ruta dummy:
+ * empuja el wizard de publicación encima de las tabs.
+ * El borde imita el "notch" del mockup: toma el color del fondo de la barra
+ * activa (ink_feed sobre el feed, paper en gestión), detectado con useSegments.
+ */
+function PublishTabButton() {
+  const router = useRouter();
+  const segments = useSegments();
+  // En el feed (ruta index) el último segmento es el propio grupo '(tabs)'.
+  const on_feed = segments[segments.length - 1] === '(tabs)';
+
+  return (
+    // Wrapper flex:1 — ocupa el slot completo de la barra (tabBarButton
+    // reemplaza al botón default, que traía flex:1).
+    <View style={styles.fab_slot}>
+      <Pressable
+        style={({ pressed }) => [
+          styles.fab,
+          { borderColor: on_feed ? colors.ink_feed : colors.paper },
+          pressed && styles.fab_pressed,
+        ]}
+        onPress={() => router.push('/publish/step1')}
+        accessibilityRole="button"
+        accessibilityLabel="Publicar propiedad"
+      >
+        <Plus size={25} color={colors.on_primary} weight="bold" />
+      </Pressable>
+    </View>
+  );
 }
 
 export default function TabsLayout() {
@@ -37,26 +101,31 @@ export default function TabsLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: '#1a1a1a',
-        tabBarInactiveTintColor: '#999',
+        // Congela las pantallas fuera de foco (react-native-screens):
+        // el MapView y el CRM no re-renderizan mientras no se ven.
+        freezeOnBlur: true,
+        ...light_bar_options,
       }}
     >
       <Tabs.Screen
         name="index"
-        options={{ title: 'Inicio', tabBarIcon: tab_icon(HouseLine) }}
-      />
-      <Tabs.Screen
-        name="saved"
-        options={{ title: 'Guardados', tabBarIcon: tab_icon(Bookmarks) }}
+        options={{ title: 'Feed', tabBarIcon: tab_icon(HouseLine), ...dark_bar_options }}
       />
       <Tabs.Screen
         name="map"
         options={{ title: 'Mapa', tabBarIcon: tab_icon(MapPin) }}
       />
       <Tabs.Screen
+        name="publish"
+        options={{
+          title: '',
+          tabBarButton: PublishTabButton,
+        }}
+      />
+      <Tabs.Screen
         name="crm"
         options={{
-          title: 'CRM',
+          title: 'Leads',
           ...(is_agent ? {} : { href: null }),
           tabBarIcon: tab_icon(Ranking),
         }}
@@ -65,6 +134,31 @@ export default function TabsLayout() {
         name="profile"
         options={{ title: 'Perfil', tabBarIcon: tab_icon(UserCircle) }}
       />
+      {/* Guardados: ruta viva sin tab (mockup) — se abre desde el menú del perfil. */}
+      <Tabs.Screen name="saved" options={{ href: null }} />
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  fab_slot: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  // tab-fab del mockup: 48×48, radio 16, sobresale −16px, borde 3px del fondo.
+  fab: {
+    marginTop: -16,
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    borderWidth: 3,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadows.primary,
+  },
+  fab_pressed: {
+    transform: [{ scale: 0.92 }],
+    opacity: 0.9,
+  },
+});

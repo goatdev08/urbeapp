@@ -36,7 +36,7 @@ import { BlurView } from 'expo-blur';
 // ---------------------------------------------------------------------------
 
 /** Color de marca primario — SALVIA. */
-const COLOR_SALVIA = '#5A8A5E';
+const COLOR_SALVIA = '#1A5E44';
 
 /** Opacidad del overlay tintado en superficie CLARA (onboarding/gestión). */
 const OVERLAY_OPACITY_LIGHT = 0.82;

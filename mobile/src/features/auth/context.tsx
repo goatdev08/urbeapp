@@ -4,7 +4,7 @@
  *
  * Contrato expuesto:
  *   AuthProvider  — envuelve la app con el contexto de auth.
- *   useAuth()     — { session, user, isLoading, signIn, signOut }
+ *   useAuth()     — { session, user, isLoading, signIn, signUp, signOut }
  */
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
@@ -23,6 +23,7 @@ export interface AuthContextValue {
   user: UserProfile | null;
   isLoading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
+  signUp: (email: string, password: string, first_name?: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -122,6 +123,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // Registro libre (rol 'user' por default vía trigger handle_new_user).
+  // Con autoconfirm activo en el proyecto, signUp devuelve sesión directa y el
+  // listener onAuthStateChange de arriba carga el perfil — no hace falta signIn.
+  const signUp = async (
+    email: string,
+    password: string,
+    first_name?: string,
+  ): Promise<void> => {
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      ...(first_name ? { options: { data: { first_name } } } : {}),
+    });
+    if (error) {
+      throw error;
+    }
+  };
+
   const signOut = async (): Promise<void> => {
     await supabase.auth.signOut();
   };
@@ -131,6 +150,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     user,
     isLoading,
     signIn,
+    signUp,
     signOut,
   };
 

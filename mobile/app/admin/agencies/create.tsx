@@ -449,7 +449,7 @@ const COLOR_BG = '#FAFAF8';
 const COLOR_BORDER = '#E5E7EB';
 const COLOR_TEXT_PRIMARY = '#1A1A1A';
 const COLOR_TEXT_SECONDARY = '#6B7280';
-const COLOR_SALVIA = '#5A8A5E';
+const COLOR_SALVIA = '#1A5E44';
 
 const styles = StyleSheet.create({
   flex: {

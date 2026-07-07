@@ -85,6 +85,7 @@ type QueryRow = {
     storage_path: string | null;
     position: number;
     deleted_at: string | null;
+    thumbnail_url: string | null;
   }[];
 };
 
@@ -114,7 +115,7 @@ export function usePropertyDetail(id: string): UsePropertyDetailResult {
            amenities, location, owner_user_id, agency_id,
            users!properties_owner_user_id_fkey(id, phone),
            agencies!properties_agency_id_fkey(id, name, logo_url),
-           property_videos(id, storage_path, position, deleted_at)`,
+           property_videos(id, storage_path, position, deleted_at, thumbnail_url)`,
         )
         .eq('id', id)
         .eq('status', 'active')
@@ -171,6 +172,7 @@ export function usePropertyDetail(id: string): UsePropertyDetailResult {
           id: v.id,
           position: v.position,
           storage_path: v.storage_path,
+          thumbnail_url: v.thumbnail_url,
         };
         // Asigna signed_url al video que coincide con el minted por la EF
         if (minted !== undefined && minted.video_id === v.id) {
