@@ -4,8 +4,11 @@
  * por lo que `/` sigue resolviendo a (protected)/(tabs)/index.
  *
  * Composición canónica del mockup (urbea-identidad-visual.html, .tabbar):
- * Feed · Mapa · [+] · Leads(CRM) · Perfil. Guardados sale de la barra
- * (href:null) y se abre desde el menú del perfil.
+ * Feed · Mapa · [+] · Leads(CRM) · Perfil. Para mantener 5 slots simétricos
+ * (y el [+] centrado en posición 3/5) en TODOS los roles, el 4º slot se
+ * comparte: Leads para agentes, Guardados para no-agentes. El rol que no lo usa
+ * en la barra lo abre desde el menú del perfil (href:null). Con 4 slots el [+]
+ * quedaba corrido a la derecha — este es el fix.
  *
  * El botón central [+] (tab-fab del mockup: 48×48, radio 16, verde primario,
  * sobresale −16px con borde del fondo) no es una pantalla: empuja el wizard
@@ -21,7 +24,7 @@
  * La ruta crm.tsx añade un Redirect como segunda capa de seguridad.
  */
 import { Tabs, useRouter, useSegments } from 'expo-router';
-import { HouseLine, type Icon, MapPin, Plus, Ranking, UserCircle } from 'phosphor-react-native';
+import { BookmarkSimple, HouseLine, type Icon, MapPin, Plus, Ranking, UserCircle } from 'phosphor-react-native';
 import { Pressable, StyleSheet, View, type ColorValue, type ViewStyle } from 'react-native';
 
 import { colors, shadows } from '@/theme/theme';
@@ -130,12 +133,22 @@ export default function TabsLayout() {
           tabBarIcon: tab_icon(Ranking),
         }}
       />
+      {/* Guardados ocupa el 4º slot SOLO para no-agentes — el mismo lugar donde
+          el agente ve Leads. Así ambos roles tienen 5 slots simétricos y el [+]
+          queda centrado (posición 3/5). Para agentes sale de la barra
+          (href:null) y se abre desde el menú del perfil (mockup p12). */}
+      <Tabs.Screen
+        name="saved"
+        options={{
+          title: 'Guardados',
+          ...(is_agent ? { href: null } : {}),
+          tabBarIcon: tab_icon(BookmarkSimple),
+        }}
+      />
       <Tabs.Screen
         name="profile"
         options={{ title: 'Perfil', tabBarIcon: tab_icon(UserCircle) }}
       />
-      {/* Guardados: ruta viva sin tab (mockup) — se abre desde el menú del perfil. */}
-      <Tabs.Screen name="saved" options={{ href: null }} />
     </Tabs>
   );
 }
