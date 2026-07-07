@@ -17,6 +17,8 @@
 
 import { useState, useEffect } from 'react';
 
+import { parse_location } from '@/features/property-detail/utils/parseLocation';
+
 import type { PublishFormState } from '../store/types';
 
 // ---------------------------------------------------------------------------
@@ -80,8 +82,7 @@ export function useLoadProperty(
            property_type,
            price,
            address,
-           lat,
-           lng,
+           location,
            bedrooms,
            bathrooms,
            square_meters,
@@ -119,13 +120,19 @@ export function useLoadProperty(
       const videos: any[] = Array.isArray(data.property_videos) ? data.property_videos : [];
       const first_video = videos[0] ?? null;
 
+      // location geography → { lat, lng } (la tabla no tiene columnas lat/lng).
+      // PostgREST emite EWKB hex; parse_location también acepta WKT.
+      const coords = parse_location(
+        typeof data.location === 'string' ? data.location : null,
+      );
+
       const mapped: Partial<PublishFormState> = {
         operation_type: data.operation_type,
         property_type: data.property_type,
         price: data.price,
         address: data.address,
-        lat: data.lat,
-        lng: data.lng,
+        lat: coords?.lat ?? null,
+        lng: coords?.lng ?? null,
         bedrooms: data.bedrooms,
         bathrooms: data.bathrooms,
         square_meters: data.square_meters,

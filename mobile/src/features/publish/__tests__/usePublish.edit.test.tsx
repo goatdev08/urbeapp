@@ -253,8 +253,12 @@ describe('usePublish — edit mode (17.8)', () => {
     expect(update_payload.property_type).toBe(VALID_FORM_EDIT_NO_VIDEO.property_type);
     expect(update_payload.price).toBe(VALID_FORM_EDIT_NO_VIDEO.price);
     expect(update_payload.address).toBe(VALID_FORM_EDIT_NO_VIDEO.address);
-    expect(update_payload.lat).toBe(VALID_FORM_EDIT_NO_VIDEO.lat);
-    expect(update_payload.lng).toBe(VALID_FORM_EDIT_NO_VIDEO.lng);
+    // Ubicación: columna geography `location` en EWKT (no existen columnas lat/lng)
+    expect(update_payload.location).toBe(
+      `SRID=4326;POINT(${VALID_FORM_EDIT_NO_VIDEO.lng} ${VALID_FORM_EDIT_NO_VIDEO.lat})`,
+    );
+    expect(update_payload.lat).toBeUndefined();
+    expect(update_payload.lng).toBeUndefined();
     expect(update_payload.pet_friendly).toBe(VALID_FORM_EDIT_NO_VIDEO.pet_friendly);
     expect(update_payload.allows_no_guarantor).toBe(VALID_FORM_EDIT_NO_VIDEO.allows_no_guarantor);
     expect(update_payload.student_friendly).toBe(VALID_FORM_EDIT_NO_VIDEO.student_friendly);

@@ -63,8 +63,9 @@ function make_db_property(overrides: Record<string, unknown> = {}) {
     property_type: 'departamento' as const,
     price: 15000,
     address: 'Av. Reforma 100, Col. Juárez, CDMX',
-    lat: 19.4269,
-    lng: -99.1673,
+    // La tabla NO tiene columnas lat/lng: la ubicación llega como geography.
+    // parse_location acepta WKT además del EWKB hex que emite PostgREST.
+    location: 'POINT(-99.1673 19.4269)',
     bedrooms: 2,
     bathrooms: 1,
     square_meters: 65,
