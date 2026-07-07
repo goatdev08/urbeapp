@@ -25,6 +25,7 @@
     "expo-location": "~56.0.19",
     "expo-router": "~56.2.11",
     "expo-status-bar": "~56.0.4",
+    "expo-updates": "~56.0.21",
     "expo-video": "~56.1.4",
     "expo-video-thumbnails": "~56.0.3",
     "phosphor-react-native": "^3.0.6",

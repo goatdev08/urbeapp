@@ -36,6 +36,18 @@ module.exports = ({ config }) => ({
   web: {
     favicon: './assets/favicon.png',
   },
+  // EAS Update (OTA): cambios de JS/assets llegan sin recompilar — `eas update
+  // --channel preview`. runtimeVersion por appVersion: solo builds con la misma
+  // `version` de arriba reciben el update (un módulo nativo nuevo → subir version
+  // y recompilar). checkAutomatically ON_LOAD: el update se descarga al abrir y
+  // se aplica al siguiente arranque.
+  updates: {
+    url: 'https://u.expo.dev/85c7157a-818c-43fd-a78f-9766c2bc6f6f',
+    checkAutomatically: 'ON_LOAD',
+  },
+  runtimeVersion: {
+    policy: 'appVersion',
+  },
   plugins: [
     'expo-dev-client',
     'expo-router',
