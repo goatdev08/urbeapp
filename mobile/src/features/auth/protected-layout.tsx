@@ -5,15 +5,23 @@
  * Contrato:
  *   - isLoading=true                  → <ActivityIndicator testID="loading-indicator" />
  *   - isLoading=false, session=null   → <Redirect href="/login" />
- *   - isLoading=false, session=<obj>  → <Slot /> (contenido protegido)
+ *   - isLoading=false, session=<obj>  → <Stack /> (contenido protegido)
  *
  * isLoading tiene prioridad sobre el estado de session para evitar
  * race conditions (EC-PL5): si todavía estamos validando la sesión,
  * no redirigimos ni mostramos contenido protegido prematuramente.
+ *
+ * El contenido protegido es un <Stack> (no <Slot>) para que las rutas
+ * empujadas del grupo (property/[id], profile/[id], publish, agency,
+ * my-listings, edit) sean pantallas de stack reales: habilita swipe-back
+ * en iOS y el botón físico de atrás en Android en TODA la app tras login.
+ * Sin esto, un <Slot> intercambia contenido sin historial navegable y la
+ * navegación hacia atrás por gesto queda muerta. headerShown:false porque
+ * cada pantalla trae su propio header con identidad Urbea (BackButton).
  */
 import React from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
-import { Redirect, Slot } from 'expo-router';
+import { Redirect, Stack } from 'expo-router';
 
 import { useAuth } from '@/features/auth/context';
 
@@ -34,8 +42,17 @@ export default function ProtectedLayout(): React.ReactElement {
     return <Redirect href="/login" />;
   }
 
-  // Sesión activa — renderiza el contenido protegido
-  return <Slot />;
+  // Sesión activa — renderiza el contenido protegido como Stack navegable.
+  return (
+    <Stack
+      screenOptions={{
+        headerShown: false,
+        gestureEnabled: true,
+        fullScreenGestureEnabled: true,
+        animation: 'slide_from_right',
+      }}
+    />
+  );
 }
 
 const styles = StyleSheet.create({

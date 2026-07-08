@@ -158,6 +158,8 @@ export default function MyListingsScreen() {
       {/* Header Stack — mismo estilo que edit.tsx para consistencia */}
       <Stack.Screen
         options={{
+          headerShown: true, // el Stack de (protected) trae headerShown:false por defecto
+          headerBackButtonDisplayMode: 'minimal', // solo chevron, sin "(tabs)"
           title: 'Mis publicaciones',
           headerStyle: { backgroundColor: colors.paper },
           headerTintColor: colors.primary,

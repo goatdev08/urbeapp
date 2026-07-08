@@ -135,7 +135,10 @@ const styles = StyleSheet.create({
   container: {
     backgroundColor: colors.paper,
     paddingHorizontal: spacing.s_24,
-    paddingVertical: spacing.s_32,
+    // El inset superior (notch/Dynamic Island) lo aplica ProfileScreen en el
+    // contentContainer del ScrollView; aquí solo el respiro visual bajo el inset.
+    paddingTop: spacing.s_16,
+    paddingBottom: spacing.s_32,
     alignItems: 'center',
   },
 

@@ -102,6 +102,8 @@ export default function AgencyInvitationsScreen() {
     <>
       <Stack.Screen
         options={{
+          headerShown: true, // el Stack de (protected) trae headerShown:false por defecto
+          headerBackButtonDisplayMode: 'minimal', // solo chevron, sin "(tabs)"
           title: 'Invitar agentes',
           headerStyle: { backgroundColor: colors.paper },
           headerTintColor: colors.primary,

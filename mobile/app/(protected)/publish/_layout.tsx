@@ -20,11 +20,14 @@
  */
 import React, { useEffect } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { Stack, useSegments, useLocalSearchParams } from 'expo-router';
+import { Stack, useSegments, useLocalSearchParams, useRouter, useNavigation } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { PublishFormProvider, usePublishForm } from '@/features/publish/store/PublishFormContext';
 import { useLoadProperty } from '@/features/publish/hooks/useLoadProperty';
 import { StepIndicator } from '@/components/StepIndicator';
+import { BackButton } from '@/components/BackButton';
+import { spacing } from '@/theme/theme';
 
 // ---------------------------------------------------------------------------
 // Mapa segmento → número de paso
@@ -41,12 +44,40 @@ const STEP_MAP: Record<string, number> = {
 // ---------------------------------------------------------------------------
 
 function WizardHeader() {
+  const insets = useSafeAreaInsets();
+  const router = useRouter();
+  const navigation = useNavigation();
   const segments = useSegments();
   // segments ej.: ['(protected)', 'publish', 'step1']
   const last_segment = segments[segments.length - 1] ?? '';
   const current_step = STEP_MAP[last_segment] ?? 1;
 
-  return <StepIndicator current={current_step} total={3} />;
+  // En step2/3 → back normal (paso anterior dentro del stack anidado de publish).
+  // En step1 → el stack anidado NO burbujea el back al padre, así que popeamos
+  // explícitamente el Stack de (protected) para salir del wizard hacia el feed.
+  function handle_back() {
+    if (current_step > 1) {
+      router.back();
+      return;
+    }
+    const parent = navigation.getParent();
+    if (parent?.canGoBack()) parent.goBack();
+    else if (router.canGoBack()) router.back();
+  }
+
+  // Header persistente sobre los 3 pasos, con paddingTop del notch para que no
+  // lo tape la Dynamic Island.
+  return (
+    <View style={[styles.wizard_header, { paddingTop: insets.top + spacing.s_8 }]}>
+      <BackButton onPress={handle_back} />
+      <View style={styles.wizard_indicator}>
+        <StepIndicator current={current_step} total={3} />
+      </View>
+      {/* Spacer del ancho del BackButton (40) para que el indicador quede
+          centrado respecto a la pantalla, no respecto al espacio a la derecha. */}
+      <View style={styles.wizard_spacer} />
+    </View>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -96,5 +127,18 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+  },
+  wizard_header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.s_12,
+    paddingHorizontal: spacing.s_16,
+    paddingBottom: spacing.s_8,
+  },
+  wizard_indicator: {
+    flex: 1,
+  },
+  wizard_spacer: {
+    width: 40, // gemelo del BackButton (40x40) → centra el StepIndicator
   },
 });
