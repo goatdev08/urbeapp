@@ -36,6 +36,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, spacing, type_scale } from '@/theme/theme';
+import { BackButton } from '@/components/BackButton';
 import { useAuth } from '@/features/auth/context';
 import { useAgencyRole } from '@/features/leads/hooks/useAgencyRole';
 import { useAgentProfile } from './hooks/useAgentProfile';
@@ -148,6 +149,10 @@ export function ProfileScreen({ agent_id, is_own_profile }: ProfileScreenProps) 
 
   return (
     <View style={styles.scroll}>
+      {/* Perfil ajeno (ruta empujada /profile/[id]) → botón atrás flotante.
+          En el perfil propio (tab) no hay atrás; ahí va el menú "⋯". */}
+      {!is_own_profile && <BackButton floating />}
+
       {/* Botón "⋯" flotante arriba-derecha — abre el menú de acciones.
           Solo en perfil propio (las acciones son del dueño de la cuenta). */}
       {is_own_profile && (
@@ -164,7 +169,7 @@ export function ProfileScreen({ agent_id, is_own_profile }: ProfileScreenProps) 
 
       <ScrollView
         style={styles.scroll_inner}
-        contentContainerStyle={styles.scroll_content}
+        contentContainerStyle={[styles.scroll_content, { paddingTop: insets.top }]}
         showsVerticalScrollIndicator={false}
       >
         {/* Cabecera del agente */}

@@ -179,6 +179,8 @@ export default function EditProfileScreen() {
       {/* Header nativo: título centrado + link Cancelar a la derecha */}
       <Stack.Screen
         options={{
+          headerShown: true, // el Stack de (protected) trae headerShown:false por defecto
+          headerBackButtonDisplayMode: 'minimal', // solo chevron, sin "(tabs)"
           title: 'Editar perfil',
           headerStyle: { backgroundColor: colors.paper },
           headerTintColor: colors.primary,

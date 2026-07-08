@@ -26,7 +26,7 @@
  *
  * ### Boundary / no-crash
  * - EC-PL6: estado inicial (isLoading=true, session=null) → loading-indicator en árbol.
- * - EC-PL7: estado autenticado completo (isLoading=false, session=<Session>) → slot-content en árbol.
+ * - EC-PL7: estado autenticado completo (isLoading=false, session=<Session>) → stack-content en árbol.
  */
 
 import React from 'react';
@@ -76,7 +76,7 @@ jest.mock('expo-router', () => {
         </View>
       );
     },
-    Slot: () => <View testID="slot-content" />,
+    Slot: () => <View testID="stack-content" />,
     Stack: () => <View testID="stack-content" />,
   };
 });
@@ -128,7 +128,7 @@ afterEach(() => {
 // ===========================================================================
 
 describe('EC-PL1: autenticado_resuelto_renderiza_slot', () => {
-  it('isLoading=false, session válida → renderiza slot-content; NO renderiza redirect; NO loading', async () => {
+  it('isLoading=false, session válida → renderiza stack-content; NO renderiza redirect; NO loading', async () => {
     mock_use_auth_state.isLoading = false;
     mock_use_auth_state.session = make_session();
 
@@ -136,7 +136,7 @@ describe('EC-PL1: autenticado_resuelto_renderiza_slot', () => {
     await act(async () => { q = await render(<ProtectedLayout />); });
 
     // Debe renderizar el contenido protegido (Slot)
-    expect(q.getByTestId('slot-content')).toBeTruthy();
+    expect(q.getByTestId('stack-content')).toBeTruthy();
 
     // NO debe renderizar el componente Redirect
     expect(q.queryByTestId('redirect-component')).toBeNull();
@@ -165,7 +165,7 @@ describe('EC-PL2: cargando_sin_sesion_muestra_indicador', () => {
     expect(q.queryByTestId('redirect-component')).toBeNull();
 
     // NO debe renderizar el contenido protegido
-    expect(q.queryByTestId('slot-content')).toBeNull();
+    expect(q.queryByTestId('stack-content')).toBeNull();
   });
 });
 
@@ -191,7 +191,7 @@ describe('EC-PL3: sin_sesion_resuelta_redirige_a_login', () => {
     expect(captured_redirect_href).toBe('/login');
 
     // NO debe renderizar el contenido protegido
-    expect(q.queryByTestId('slot-content')).toBeNull();
+    expect(q.queryByTestId('stack-content')).toBeNull();
 
     // NO debe renderizar indicador de carga
     expect(q.queryByTestId('loading-indicator')).toBeNull();
@@ -213,7 +213,7 @@ describe('EC-PL4: transicion_null_a_sesion_deja_de_redirigir', () => {
 
     // Estado 1: debe mostrar Redirect
     expect(q.getByTestId('redirect-component')).toBeTruthy();
-    expect(q.queryByTestId('slot-content')).toBeNull();
+    expect(q.queryByTestId('stack-content')).toBeNull();
 
     // Transición: el usuario se autentica → useAuth ahora retorna session
     mock_use_auth_state.session = make_session('uid-post-login');
@@ -226,7 +226,7 @@ describe('EC-PL4: transicion_null_a_sesion_deja_de_redirigir', () => {
     expect(q.queryByTestId('redirect-component')).toBeNull();
 
     // Estado 2: Slot debe haberse renderizado
-    expect(q.getByTestId('slot-content')).toBeTruthy();
+    expect(q.getByTestId('stack-content')).toBeTruthy();
   });
 });
 
@@ -247,7 +247,7 @@ describe('EC-PL5: cargando_con_sesion_existente_no_renderiza_prematuramente', ()
     expect(q.getByTestId('loading-indicator')).toBeTruthy();
 
     // NO debe renderizar el contenido protegido prematuramente
-    expect(q.queryByTestId('slot-content')).toBeNull();
+    expect(q.queryByTestId('stack-content')).toBeNull();
 
     // NO debe redirigir (no sabemos el estado final aún)
     expect(q.queryByTestId('redirect-component')).toBeNull();
@@ -274,11 +274,11 @@ describe('EC-PL6: estado_inicial_muestra_loading_indicator', () => {
 });
 
 // ===========================================================================
-// EC-PL7: Boundary — estado autenticado completo → slot-content presente
+// EC-PL7: Boundary — estado autenticado completo → stack-content presente
 // ===========================================================================
 
 describe('EC-PL7: estado_autenticado_completo_muestra_slot', () => {
-  it('isLoading=false, session=<Session completo> → slot-content en árbol', async () => {
+  it('isLoading=false, session=<Session completo> → stack-content en árbol', async () => {
     mock_use_auth_state.isLoading = false;
     mock_use_auth_state.session = make_session('uid-complete');
 
@@ -288,6 +288,6 @@ describe('EC-PL7: estado_autenticado_completo_muestra_slot', () => {
     await act(async () => { q = await render(<ProtectedLayout />); });
 
     // Aserción fuerte: debe existir el contenido protegido
-    expect(q.getByTestId('slot-content')).toBeTruthy();
+    expect(q.getByTestId('stack-content')).toBeTruthy();
   });
 });
