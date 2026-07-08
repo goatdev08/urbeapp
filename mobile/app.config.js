@@ -15,6 +15,11 @@ module.exports = ({ config }) => ({
   ios: {
     supportsTablet: true,
     bundleIdentifier: 'com.urbea.app',
+    infoPlist: {
+      // Urbea solo usa HTTPS estándar (Supabase, Google APIs) → cifrado exento.
+      // Declararlo salta el prompt de "export compliance" en cada build de TestFlight.
+      ITSAppUsesNonExemptEncryption: false,
+    },
     // Sin googleMapsApiKey: react-native-maps 1.27 ya no publica el pod de
     // Google Maps para iOS (el podspec react-native-google-maps no existe y
     // rompe `pod install`). En iOS el MapView usa Apple Maps (provider default).
