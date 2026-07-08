@@ -1,3 +1,7 @@
+# pnpm v10+/11 lee sus ajustes desde AQUÍ, no del .npmrc (breaking change).
+# node-linker=hoisted del .npmrc quedó muerto → Metro y eas-cli no resolvían
+# deps transitivas (p.ej. expo-modules-autolinking) desde la raíz del proyecto.
+nodeLinker: hoisted
 allowBuilds:
   unrs-resolver: true
 minimumReleaseAgeExclude:
