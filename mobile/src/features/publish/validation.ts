@@ -82,7 +82,7 @@ export function validate_step3(state: PublishFormState): ValidationResult {
 
 // ---------------------------------------------------------------------------
 // validate_video_size — el video no debe exceder el límite del bucket de Storage.
-// ponytail: stub RED — implementación real pendiente (subtarea 49.2 fase GREEN).
+// Debe coincidir con el límite del bucket de Storage (migración 20260710000001).
 // ---------------------------------------------------------------------------
 
 export const MAX_VIDEO_SIZE_BYTES = 524288000;
@@ -93,9 +93,19 @@ export interface VideoSizeValidationResult {
   size_mb: number;
 }
 
-export function validate_video_size(_size_bytes: number): VideoSizeValidationResult {
-  // ponytail: stub deliberado — todo pasa como válido hasta la fase GREEN.
-  return { valid: true, error: null, size_mb: 0 };
+export function validate_video_size(size_bytes: number): VideoSizeValidationResult {
+  const size_mb = Math.round(size_bytes / (1024 * 1024));
+  const max_mb = Math.round(MAX_VIDEO_SIZE_BYTES / (1024 * 1024));
+
+  if (size_bytes > MAX_VIDEO_SIZE_BYTES) {
+    return {
+      valid: false,
+      error: `El video pesa ${size_mb} MB y supera el máximo de ${max_mb} MB. Elige uno más corto o de menor resolución.`,
+      size_mb,
+    };
+  }
+
+  return { valid: true, error: null, size_mb };
 }
 
 export function get_property_payload(state: PublishFormState): PublishFormPayload {
