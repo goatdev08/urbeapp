@@ -52,6 +52,15 @@
  *   NO se llama a storage.upload.
  * - (EC-17) procede_video_bajo_500MB: archivo de 100 MB → SÍ se llama a storage.upload,
  *   status='success' (regresión — puede pasar ya hoy).
+ *
+ * ### Resiliencia a errores OOM/red (subtarea 49.4) — try/catch alrededor de
+ * fetch().arrayBuffer() + storage.upload + update, mensaje amigable fijo
+ * - (EC-18) fetch_rechaza_maneja_sin_crash: fetch(local_uri) rechaza (p.ej. OOM leyendo
+ *   el archivo) → status='error', error='Error al subir el video. Intenta de nuevo con
+ *   un archivo más pequeño.' (HOY: sin try/catch, la promesa de upload() rechaza y el
+ *   estado queda en 'uploading'/error null).
+ * - (EC-19) storage_upload_rechaza_maneja_sin_crash: storage.upload rechaza (p.ej. falla
+ *   de red) → status='error', mismo mensaje amigable fijo (HOY: sin try/catch, falla igual).
  */
 
 import React from 'react';
@@ -563,5 +572,89 @@ describe('useVideoUpload - validación de tamaño', () => {
 
     expect(mock_supabase._mock_upload).toHaveBeenCalledTimes(1);
     expect(result.current.status).toBe('success');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Resiliencia a errores OOM/red — subtarea 49.4 (try/catch + mensaje amigable)
+// ---------------------------------------------------------------------------
+
+describe('useVideoUpload - resiliencia a errores (OOM/red)', () => {
+  const real_fetch = globalThis.fetch;
+  const FRIENDLY_ERROR = 'Error al subir el video. Intenta de nuevo con un archivo más pequeño.';
+
+  beforeEach(() => {
+    // Tamaño pequeño por defecto — pasa la validación de tamaño (49.3) y llega
+    // al fetch/upload real.
+    mock_get_info.mockResolvedValue({
+      exists: true,
+      size: 50 * 1024 * 1024,
+      uri: TEST_LOCAL_URI,
+      isDirectory: false,
+    } as never);
+  });
+
+  afterEach(() => {
+    globalThis.fetch = real_fetch;
+  });
+
+  it('(EC-18) fetch_rechaza_maneja_sin_crash: fetch(local_uri) rechaza → status=error, mensaje amigable fijo', async () => {
+    globalThis.fetch = jest.fn().mockRejectedValue(new Error('Out of memory')) as unknown as typeof fetch;
+
+    const mock_supabase = make_mock_supabase({});
+    const { result } = await renderHook(
+      () => useVideoUpload({ supabase: mock_supabase as never, uuid: make_uuid_gen() }),
+      { wrapper }
+    );
+
+    await act(async () => {
+      // El .catch es solo defensa del test para el estado RED de hoy (sin
+      // try/catch en el hook, la promesa de upload() rechaza). En GREEN el
+      // hook nunca deja escapar la excepción y este catch nunca se ejecuta.
+      await result.current.upload(TEST_LOCAL_URI).catch(() => {});
+    });
+
+    expect(result.current.status).toBe('error');
+    expect(result.current.error).toContain('Error al subir');
+    expect(result.current.error).toBe(FRIENDLY_ERROR);
+  });
+
+  it('(EC-19) storage_upload_rechaza_maneja_sin_crash: storage.upload rechaza → status=error, mensaje amigable fijo', async () => {
+    globalThis.fetch = jest.fn().mockResolvedValue({
+      arrayBuffer: async () => new ArrayBuffer(8),
+    }) as unknown as typeof fetch;
+
+    const mock_upload = jest.fn().mockRejectedValue(new Error('network fail'));
+    const mock_supabase = {
+      auth: {
+        getSession: jest.fn().mockResolvedValue({
+          data: {
+            session: {
+              user: { id: TEST_USER_ID },
+              access_token: 'tok',
+              refresh_token: 'ref',
+              token_type: 'bearer',
+              expires_in: 3600,
+              expires_at: 9999999,
+            },
+          },
+          error: null,
+        }),
+      },
+      storage: { from: jest.fn().mockReturnValue({ upload: mock_upload }) },
+    };
+
+    const { result } = await renderHook(
+      () => useVideoUpload({ supabase: mock_supabase as never, uuid: make_uuid_gen() }),
+      { wrapper }
+    );
+
+    await act(async () => {
+      await result.current.upload(TEST_LOCAL_URI).catch(() => {});
+    });
+
+    expect(result.current.status).toBe('error');
+    expect(result.current.error).toContain('Error al subir');
+    expect(result.current.error).toBe(FRIENDLY_ERROR);
   });
 });
