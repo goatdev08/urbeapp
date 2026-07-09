@@ -80,6 +80,34 @@ export function validate_step3(state: PublishFormState): ValidationResult {
 // Precondición: los 3 pasos ya validaron (lanza si hay campos nulos obligatorios).
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// validate_video_size — el video no debe exceder el límite del bucket de Storage.
+// Debe coincidir con el límite del bucket de Storage (migración 20260710000001).
+// ---------------------------------------------------------------------------
+
+export const MAX_VIDEO_SIZE_BYTES = 524288000;
+
+export interface VideoSizeValidationResult {
+  valid: boolean;
+  error: string | null;
+  size_mb: number;
+}
+
+export function validate_video_size(size_bytes: number): VideoSizeValidationResult {
+  const size_mb = Math.round(size_bytes / (1024 * 1024));
+  const max_mb = Math.round(MAX_VIDEO_SIZE_BYTES / (1024 * 1024));
+
+  if (size_bytes > MAX_VIDEO_SIZE_BYTES) {
+    return {
+      valid: false,
+      error: `El video pesa ${size_mb} MB y supera el máximo de ${max_mb} MB. Elige uno más corto o de menor resolución.`,
+      size_mb,
+    };
+  }
+
+  return { valid: true, error: null, size_mb };
+}
+
 export function get_property_payload(state: PublishFormState): PublishFormPayload {
   if (
     !state.operation_type ||

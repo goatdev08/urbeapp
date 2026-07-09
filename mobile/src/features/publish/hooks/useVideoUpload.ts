@@ -27,8 +27,10 @@
 
 import { useRef, useCallback, useMemo } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { getInfoAsync } from 'expo-file-system';
 
 import { usePublishForm } from '../store/PublishFormContext';
+import { validate_video_size } from '../validation';
 
 // ponytail: import lazy — el cliente real solo se carga cuando no se inyecta
 // uno externo (los tests siempre inyectan su propio mock).
@@ -102,6 +104,21 @@ export function useVideoUpload(deps?: UseVideoUploadDeps): UseVideoUploadResult 
       error_ref.current = null;
       progress_ref.current = 0;
 
+      // Validación de tamaño pre-upload — evita OOM en Hermes con videos grandes
+      // y da un error legible antes de intentar la subida.
+      const file_info = await getInfoAsync(local_uri);
+      if (!file_info.exists) {
+        status_ref.current = 'error';
+        error_ref.current = 'El archivo de video no existe';
+        return;
+      }
+      const size_validation = validate_video_size(file_info.size);
+      if (!size_validation.valid) {
+        status_ref.current = 'error';
+        error_ref.current = size_validation.error;
+        return;
+      }
+
       // Obtener sesión — user_id es el primer segmento del path (invariante RLS)
       const {
         data: { session },
@@ -117,31 +134,42 @@ export function useVideoUpload(deps?: UseVideoUploadDeps): UseVideoUploadResult 
       const video_id = uuid_fn();
       const storage_path = `${user_id}/${video_id}.mp4`;
 
-      // Leer el archivo local como ArrayBuffer — mismo patrón probado que la
-      // subida de foto de perfil (profileService): fetch() en RN/Expo entiende
-      // los file:// URIs de expo-image-picker. Pasar el URI como string subía
-      // 92 bytes (el texto del path), no el video. ponytail: para videos grandes,
-      // migrar a createSignedUploadUrl + FileSystem.uploadAsync (streaming nativo).
-      const file_body = await (await fetch(local_uri)).arrayBuffer();
+      try {
+        // Leer el archivo local como ArrayBuffer — mismo patrón probado que la
+        // subida de foto de perfil (profileService): fetch() en RN/Expo entiende
+        // los file:// URIs de expo-image-picker. Pasar el URI como string subía
+        // 92 bytes (el texto del path), no el video. ponytail: para videos grandes,
+        // migrar a createSignedUploadUrl + FileSystem.uploadAsync (streaming nativo)
+        // — hoy arrayBuffer() carga todo el archivo en RAM.
+        const file_body = await (await fetch(local_uri)).arrayBuffer();
 
-      const { error: upload_error } = await supabase_client.storage
-        .from('property-videos')
-        .upload(storage_path, file_body, {
-          contentType: 'video/mp4',
-          upsert: false,
-        });
+        const { error: upload_error } = await supabase_client.storage
+          .from('property-videos')
+          .upload(storage_path, file_body, {
+            contentType: 'video/mp4',
+            upsert: false,
+          });
 
-      if (upload_error) {
+        if (upload_error) {
+          status_ref.current = 'error';
+          error_ref.current = upload_error.message;
+          // NO escribir al form en error (EC-9)
+          return;
+        }
+
+        // Éxito — escribir al form (EC-2) y actualizar estado
+        update({ video_id, storage_path });
+        status_ref.current = 'success';
+        progress_ref.current = 1;
+      } catch (err) {
+        // Captura OOM (Hermes), errores de red o cualquier fallo no manejado
+        // en fetch/arrayBuffer/upload. Mensaje amigable fijo: no exponemos el
+        // error técnico al owner.
+        console.warn('[useVideoUpload] upload failed:', err);
         status_ref.current = 'error';
-        error_ref.current = upload_error.message;
-        // NO escribir al form en error (EC-9)
-        return;
+        error_ref.current =
+          'Error al subir el video. Intenta de nuevo con un archivo más pequeño.';
       }
-
-      // Éxito — escribir al form (EC-2) y actualizar estado
-      update({ video_id, storage_path });
-      status_ref.current = 'success';
-      progress_ref.current = 1;
     },
      
     [supabase_client, uuid_fn, update],

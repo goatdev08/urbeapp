@@ -44,10 +44,36 @@
  * - (EC-12) estado_uploading_durante_subida: mientras upload pendiente, status='uploading'.
  * - (EC-13) estado_success_tras_upload_exitoso: tras upload OK, status='success'.
  * - (EC-14) estado_error_tras_upload_fallido: tras upload con error Supabase, status='error'.
+ *
+ * ### Validación de tamaño (subtarea 49.3) — usa getInfoAsync + validate_video_size
+ * - (EC-15) rechaza_video_mayor_a_500MB: archivo de 600 MB → status='error', mensaje con
+ *   '600 MB' y '500 MB', NO se llama a storage.upload.
+ * - (EC-16) archivo_no_existe: getInfoAsync exists:false → status='error', error no null,
+ *   NO se llama a storage.upload.
+ * - (EC-17) procede_video_bajo_500MB: archivo de 100 MB → SÍ se llama a storage.upload,
+ *   status='success' (regresión — puede pasar ya hoy).
+ *
+ * ### Resiliencia a errores OOM/red (subtarea 49.4) — try/catch alrededor de
+ * fetch().arrayBuffer() + storage.upload + update, mensaje amigable fijo
+ * - (EC-18) fetch_rechaza_maneja_sin_crash: fetch(local_uri) rechaza (p.ej. OOM leyendo
+ *   el archivo) → status='error', error='Error al subir el video. Intenta de nuevo con
+ *   un archivo más pequeño.' (HOY: sin try/catch, la promesa de upload() rechaza y el
+ *   estado queda en 'uploading'/error null).
+ * - (EC-19) storage_upload_rechaza_maneja_sin_crash: storage.upload rechaza (p.ej. falla
+ *   de red) → status='error', mismo mensaje amigable fijo (HOY: sin try/catch, falla igual).
  */
 
 import React from 'react';
 import { renderHook, act } from '@testing-library/react-native';
+import * as FileSystem from 'expo-file-system';
+
+jest.mock('expo-file-system', () => ({
+  getInfoAsync: jest.fn(),
+}));
+
+const mock_get_info = FileSystem.getInfoAsync as jest.MockedFunction<
+  typeof FileSystem.getInfoAsync
+>;
 
 // ---------------------------------------------------------------------------
 // Wrapper con PublishFormProvider
@@ -138,6 +164,15 @@ describe('useVideoUpload', () => {
     globalThis.fetch = jest.fn().mockResolvedValue({
       arrayBuffer: async () => new ArrayBuffer(8),
     }) as unknown as typeof fetch;
+    // Tamaño pequeño por defecto (50 MB) — mantiene los tests EC-1..EC-14 sin
+    // cambios; cada test de EC-15/EC-16/EC-17 sobreescribe con mockResolvedValue
+    // propio antes de llamar a upload().
+    mock_get_info.mockResolvedValue({
+      exists: true,
+      size: 50 * 1024 * 1024,
+      uri: TEST_LOCAL_URI,
+      isDirectory: false,
+    } as never);
   });
   afterEach(() => {
     globalThis.fetch = real_fetch;
@@ -457,5 +492,169 @@ describe('useVideoUpload', () => {
     });
 
     expect(result.current.status).toBe('error');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Validación de tamaño — subtarea 49.3 (getInfoAsync + validate_video_size)
+// ---------------------------------------------------------------------------
+
+describe('useVideoUpload - validación de tamaño', () => {
+  const real_fetch = globalThis.fetch;
+  beforeEach(() => {
+    globalThis.fetch = jest.fn().mockResolvedValue({
+      arrayBuffer: async () => new ArrayBuffer(8),
+    }) as unknown as typeof fetch;
+  });
+  afterEach(() => {
+    globalThis.fetch = real_fetch;
+  });
+
+  it('(EC-15) rechaza_video_mayor_a_500MB: video de 600 MB no sube, error con "600 MB" y "500 MB"', async () => {
+    mock_get_info.mockResolvedValue({
+      exists: true,
+      size: 600 * 1024 * 1024,
+      uri: TEST_LOCAL_URI,
+      isDirectory: false,
+    } as never);
+
+    const mock_supabase = make_mock_supabase({});
+    const { result } = await renderHook(
+      () => useVideoUpload({ supabase: mock_supabase as never, uuid: make_uuid_gen() }),
+      { wrapper }
+    );
+
+    await act(async () => {
+      await result.current.upload(TEST_LOCAL_URI);
+    });
+
+    expect(result.current.status).toBe('error');
+    expect(result.current.error).toMatch('600 MB');
+    expect(result.current.error).toMatch('500 MB');
+    expect(mock_supabase._mock_upload).not.toHaveBeenCalled();
+  });
+
+  it('(EC-16) archivo_no_existe: getInfoAsync exists=false no sube, error no null', async () => {
+    mock_get_info.mockResolvedValue({ exists: false } as never);
+
+    const mock_supabase = make_mock_supabase({});
+    const { result } = await renderHook(
+      () => useVideoUpload({ supabase: mock_supabase as never, uuid: make_uuid_gen() }),
+      { wrapper }
+    );
+
+    await act(async () => {
+      await result.current.upload(TEST_LOCAL_URI);
+    });
+
+    expect(result.current.status).toBe('error');
+    expect(result.current.error).not.toBeNull();
+    expect(mock_supabase._mock_upload).not.toHaveBeenCalled();
+  });
+
+  it('(EC-17) procede_video_bajo_500MB: video de 100 MB sí sube, status=success', async () => {
+    mock_get_info.mockResolvedValue({
+      exists: true,
+      size: 100 * 1024 * 1024,
+      uri: TEST_LOCAL_URI,
+      isDirectory: false,
+    } as never);
+
+    const mock_supabase = make_mock_supabase({});
+    const { result } = await renderHook(
+      () => useVideoUpload({ supabase: mock_supabase as never, uuid: make_uuid_gen() }),
+      { wrapper }
+    );
+
+    await act(async () => {
+      await result.current.upload(TEST_LOCAL_URI);
+    });
+
+    expect(mock_supabase._mock_upload).toHaveBeenCalledTimes(1);
+    expect(result.current.status).toBe('success');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Resiliencia a errores OOM/red — subtarea 49.4 (try/catch + mensaje amigable)
+// ---------------------------------------------------------------------------
+
+describe('useVideoUpload - resiliencia a errores (OOM/red)', () => {
+  const real_fetch = globalThis.fetch;
+  const FRIENDLY_ERROR = 'Error al subir el video. Intenta de nuevo con un archivo más pequeño.';
+
+  beforeEach(() => {
+    // Tamaño pequeño por defecto — pasa la validación de tamaño (49.3) y llega
+    // al fetch/upload real.
+    mock_get_info.mockResolvedValue({
+      exists: true,
+      size: 50 * 1024 * 1024,
+      uri: TEST_LOCAL_URI,
+      isDirectory: false,
+    } as never);
+  });
+
+  afterEach(() => {
+    globalThis.fetch = real_fetch;
+  });
+
+  it('(EC-18) fetch_rechaza_maneja_sin_crash: fetch(local_uri) rechaza → status=error, mensaje amigable fijo', async () => {
+    globalThis.fetch = jest.fn().mockRejectedValue(new Error('Out of memory')) as unknown as typeof fetch;
+
+    const mock_supabase = make_mock_supabase({});
+    const { result } = await renderHook(
+      () => useVideoUpload({ supabase: mock_supabase as never, uuid: make_uuid_gen() }),
+      { wrapper }
+    );
+
+    await act(async () => {
+      // El .catch es solo defensa del test para el estado RED de hoy (sin
+      // try/catch en el hook, la promesa de upload() rechaza). En GREEN el
+      // hook nunca deja escapar la excepción y este catch nunca se ejecuta.
+      await result.current.upload(TEST_LOCAL_URI).catch(() => {});
+    });
+
+    expect(result.current.status).toBe('error');
+    expect(result.current.error).toContain('Error al subir');
+    expect(result.current.error).toBe(FRIENDLY_ERROR);
+  });
+
+  it('(EC-19) storage_upload_rechaza_maneja_sin_crash: storage.upload rechaza → status=error, mensaje amigable fijo', async () => {
+    globalThis.fetch = jest.fn().mockResolvedValue({
+      arrayBuffer: async () => new ArrayBuffer(8),
+    }) as unknown as typeof fetch;
+
+    const mock_upload = jest.fn().mockRejectedValue(new Error('network fail'));
+    const mock_supabase = {
+      auth: {
+        getSession: jest.fn().mockResolvedValue({
+          data: {
+            session: {
+              user: { id: TEST_USER_ID },
+              access_token: 'tok',
+              refresh_token: 'ref',
+              token_type: 'bearer',
+              expires_in: 3600,
+              expires_at: 9999999,
+            },
+          },
+          error: null,
+        }),
+      },
+      storage: { from: jest.fn().mockReturnValue({ upload: mock_upload }) },
+    };
+
+    const { result } = await renderHook(
+      () => useVideoUpload({ supabase: mock_supabase as never, uuid: make_uuid_gen() }),
+      { wrapper }
+    );
+
+    await act(async () => {
+      await result.current.upload(TEST_LOCAL_URI).catch(() => {});
+    });
+
+    expect(result.current.status).toBe('error');
+    expect(result.current.error).toContain('Error al subir');
+    expect(result.current.error).toBe(FRIENDLY_ERROR);
   });
 });
