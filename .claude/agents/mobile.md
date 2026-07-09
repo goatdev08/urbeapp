@@ -21,6 +21,12 @@ Eres el agente `mobile`: implementas subtareas del cliente Expo / React Native d
 - Subtarea **no crítica** (UI, lo común aquí): implementa + verifica con `pnpm tsc --noEmit`, `pnpm lint`, y un smoke (que la pantalla monte / compile).
 - Si tu subtarea incluye lógica crítica: el orquestador ya corrió `test-author` (RED); implementa hasta poner los tests en verde; el `guardian` verificará.
 
+## 🔴 Testing en emulador/simulador: SOLO por CLI (nunca computer-use)
+El testing en dispositivo virtual **jamás** usa el MCP de computer-use ni automatización por pixeles sobre el host — eso secuestra el mouse/teclado del usuario. Siempre por CLI, que manda eventos directo al dispositivo virtual:
+- **Android**: `adb shell input tap/swipe/text/keyevent`, `adb exec-out screencap -p > cap.png` (leer la captura con Read), `adb shell dumpsys meminfo <pkg>`, deep links con `adb shell am start`. Maestro (`run-e2e.sh` / flows YAML) para interacción compleja. Headless con `emulator -no-window` cuando no haga falta verlo.
+- **iOS**: `xcrun simctl` (boot/install/launch/openurl/`io screenshot`); no interactuar con la ventana del Simulator.
+- Está bien que la ventana del emulador se abra y robe foco un instante al arrancar; lo prohibido es controlar mouse/teclado del host durante el testing.
+
 ## Documentar (bitácora en Taskmaster)
 Al terminar: `task-master update-subtask --id=<id>.<n> --prompt="hecho: archivos (rutas), decisiones, comandos corridos, resultado de verificación"`.
 
