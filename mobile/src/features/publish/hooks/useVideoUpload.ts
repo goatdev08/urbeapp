@@ -27,8 +27,10 @@
 
 import { useRef, useCallback, useMemo } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { getInfoAsync } from 'expo-file-system';
 
 import { usePublishForm } from '../store/PublishFormContext';
+import { validate_video_size } from '../validation';
 
 // ponytail: import lazy — el cliente real solo se carga cuando no se inyecta
 // uno externo (los tests siempre inyectan su propio mock).
@@ -101,6 +103,21 @@ export function useVideoUpload(deps?: UseVideoUploadDeps): UseVideoUploadResult 
       status_ref.current = 'uploading';
       error_ref.current = null;
       progress_ref.current = 0;
+
+      // Validación de tamaño pre-upload — evita OOM en Hermes con videos grandes
+      // y da un error legible antes de intentar la subida.
+      const file_info = await getInfoAsync(local_uri);
+      if (!file_info.exists) {
+        status_ref.current = 'error';
+        error_ref.current = 'El archivo de video no existe';
+        return;
+      }
+      const size_validation = validate_video_size(file_info.size);
+      if (!size_validation.valid) {
+        status_ref.current = 'error';
+        error_ref.current = size_validation.error;
+        return;
+      }
 
       // Obtener sesión — user_id es el primer segmento del path (invariante RLS)
       const {
