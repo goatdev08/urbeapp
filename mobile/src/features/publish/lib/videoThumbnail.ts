@@ -11,8 +11,13 @@
  *
  * fail-soft: la portada es opcional; ningún fallo aquí bloquea la publicación.
  * Sin selección manual de frame (decisión: frame medio automático).
+ *
+ * Migración 52.4 — streaming vía signed URL (mismo patrón que useVideoUpload
+ * post-52.1 y profileService post-52.4): ya no lee el thumbnail completo con
+ * fetch().arrayBuffer() — sube con File(uri).createUploadTask(...).uploadAsync().
  */
 import * as VideoThumbnails from 'expo-video-thumbnails';
+import { File, UploadType } from 'expo-file-system';
 
 import { supabase } from '@/lib/supabase/client';
 
@@ -48,15 +53,24 @@ export async function generate_and_store_thumbnail(
       quality: 0.7,
     });
 
-    // fetch() entiende los file:// URIs en Expo → ArrayBuffer (mismo patrón que el
-    // upload de video/foto de perfil; pasar el URI subiría el texto del path).
-    const body = await (await fetch(thumb_uri)).arrayBuffer();
     const path = `${user_id}/thumb_${video_id}.jpg`;
 
-    const { error: up_error } = await supabase.storage
+    // Streaming: signed upload URL + File.createUploadTask — sin cargar el
+    // archivo completo en RAM (elimina el fetch().arrayBuffer() previo).
+    const { data: signed_data, error: signed_error } = await supabase.storage
       .from(THUMB_BUCKET)
-      .upload(path, body, { contentType: 'image/jpeg', upsert: true });
-    if (up_error) return;
+      .createSignedUploadUrl(path, { upsert: true });
+    if (signed_error || !signed_data?.signedUrl) return;
+
+    const file = new File(thumb_uri);
+    const task = file.createUploadTask(signed_data.signedUrl, {
+      httpMethod: 'PUT',
+      uploadType: UploadType.BINARY_CONTENT,
+      headers: { 'Content-Type': 'image/jpeg' },
+    });
+
+    const { status } = await task.uploadAsync();
+    if (status < 200 || status >= 300) return;
 
     const { data: pub } = supabase.storage.from(THUMB_BUCKET).getPublicUrl(path);
     const public_url = pub?.publicUrl;

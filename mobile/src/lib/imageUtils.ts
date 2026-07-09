@@ -16,9 +16,13 @@
  *   - resize solo especifica `width: 512`; el manipulador preserva la proporción
  *     si no se especifica height, lo que es correcto para avatares cuadrados
  *     pre-recortados por el picker.
+ *
+ * Migración 52.4 — API File v56: `getInfoAsync` (legacy) lanza en runtime en
+ * SDK 56. Se mide con `new File(uri).exists` / `.size` — getters síncronos,
+ * sin I/O extra.
  */
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
-import { getInfoAsync } from 'expo-file-system';
+import { File } from 'expo-file-system';
 
 // ---------------------------------------------------------------------------
 // Constantes
@@ -86,13 +90,13 @@ export async function processProfileImage(uri: string): Promise<ProcessedImage> 
       },
     );
 
-    const info = await getInfoAsync(manipulated.uri);
+    const file = new File(manipulated.uri);
 
-    if (!info.exists) {
+    if (!file.exists) {
       throw new Error(`imageUtils: el archivo manipulado no existe: ${manipulated.uri}`);
     }
 
-    const size = info.size;
+    const size = file.size;
     last_result = {
       uri: manipulated.uri,
       width: manipulated.width,
