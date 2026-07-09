@@ -80,6 +80,24 @@ export function validate_step3(state: PublishFormState): ValidationResult {
 // Precondición: los 3 pasos ya validaron (lanza si hay campos nulos obligatorios).
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// validate_video_size — el video no debe exceder el límite del bucket de Storage.
+// ponytail: stub RED — implementación real pendiente (subtarea 49.2 fase GREEN).
+// ---------------------------------------------------------------------------
+
+export const MAX_VIDEO_SIZE_BYTES = 524288000;
+
+export interface VideoSizeValidationResult {
+  valid: boolean;
+  error: string | null;
+  size_mb: number;
+}
+
+export function validate_video_size(_size_bytes: number): VideoSizeValidationResult {
+  // ponytail: stub deliberado — todo pasa como válido hasta la fase GREEN.
+  return { valid: true, error: null, size_mb: 0 };
+}
+
 export function get_property_payload(state: PublishFormState): PublishFormPayload {
   if (
     !state.operation_type ||
