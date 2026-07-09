@@ -27,10 +27,14 @@
 
 import { useRef, useCallback, useMemo } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { getInfoAsync } from 'expo-file-system';
+import { File, UploadType } from 'expo-file-system';
 
 import { usePublishForm } from '../store/PublishFormContext';
 import { validate_video_size } from '../validation';
+
+// Mensaje neutro fijo para cualquier falla de red/subida (no expone detalle técnico
+// ni sugiere "archivo más pequeño" — el límite de tamaño ya se valida antes).
+const UPLOAD_ERROR_MESSAGE = 'Error al subir el video. Verifica tu conexión e intenta de nuevo.';
 
 // ponytail: import lazy — el cliente real solo se carga cuando no se inyecta
 // uno externo (los tests siempre inyectan su propio mock).
@@ -104,15 +108,16 @@ export function useVideoUpload(deps?: UseVideoUploadDeps): UseVideoUploadResult 
       error_ref.current = null;
       progress_ref.current = 0;
 
-      // Validación de tamaño pre-upload — evita OOM en Hermes con videos grandes
-      // y da un error legible antes de intentar la subida.
-      const file_info = await getInfoAsync(local_uri);
-      if (!file_info.exists) {
+      // Validación de tamaño pre-upload — SÍNCRONA vía la API nueva de File (v56):
+      // .exists / .size son getters síncronos, sin I/O extra. Evita OOM y da un
+      // error legible antes de intentar la subida.
+      const file = new File(local_uri);
+      if (!file.exists) {
         status_ref.current = 'error';
         error_ref.current = 'El archivo de video no existe';
         return;
       }
-      const size_validation = validate_video_size(file_info.size);
+      const size_validation = validate_video_size(file.size);
       if (!size_validation.valid) {
         status_ref.current = 'error';
         error_ref.current = size_validation.error;
@@ -134,25 +139,43 @@ export function useVideoUpload(deps?: UseVideoUploadDeps): UseVideoUploadResult 
       const video_id = uuid_fn();
       const storage_path = `${user_id}/${video_id}.mp4`;
 
+      // Paso 1 — signed upload URL. Error devuelto (no throw) → mensaje del
+      // error (o fallback neutro); excepción (red caída) → mensaje neutro fijo.
+      let signed_url: string;
       try {
-        // Leer el archivo local como ArrayBuffer — mismo patrón probado que la
-        // subida de foto de perfil (profileService): fetch() en RN/Expo entiende
-        // los file:// URIs de expo-image-picker. Pasar el URI como string subía
-        // 92 bytes (el texto del path), no el video. ponytail: para videos grandes,
-        // migrar a createSignedUploadUrl + FileSystem.uploadAsync (streaming nativo)
-        // — hoy arrayBuffer() carga todo el archivo en RAM.
-        const file_body = await (await fetch(local_uri)).arrayBuffer();
-
-        const { error: upload_error } = await supabase_client.storage
+        const { data: signed_data, error: signed_error } = await supabase_client.storage
           .from('property-videos')
-          .upload(storage_path, file_body, {
-            contentType: 'video/mp4',
-            upsert: false,
-          });
+          .createSignedUploadUrl(storage_path);
 
-        if (upload_error) {
+        if (signed_error || !signed_data?.signedUrl) {
           status_ref.current = 'error';
-          error_ref.current = upload_error.message;
+          error_ref.current = signed_error?.message ?? UPLOAD_ERROR_MESSAGE;
+          return;
+        }
+        signed_url = signed_data.signedUrl;
+      } catch (err) {
+        console.warn('[useVideoUpload] createSignedUploadUrl failed:', err);
+        status_ref.current = 'error';
+        error_ref.current = UPLOAD_ERROR_MESSAGE;
+        return;
+      }
+
+      // Paso 2/3 — subida por streaming (sin cargar el archivo completo en RAM).
+      try {
+        const task = file.createUploadTask(signed_url, {
+          httpMethod: 'PUT',
+          uploadType: UploadType.BINARY_CONTENT,
+          headers: { 'Content-Type': 'video/mp4' },
+          onProgress: ({ bytesSent, totalBytes }) => {
+            progress_ref.current = totalBytes > 0 ? Math.min(bytesSent / totalBytes, 0.99) : 0;
+          },
+        });
+
+        const { status } = await task.uploadAsync();
+
+        if (status < 200 || status >= 300) {
+          status_ref.current = 'error';
+          error_ref.current = UPLOAD_ERROR_MESSAGE;
           // NO escribir al form en error (EC-9)
           return;
         }
@@ -162,13 +185,11 @@ export function useVideoUpload(deps?: UseVideoUploadDeps): UseVideoUploadResult 
         status_ref.current = 'success';
         progress_ref.current = 1;
       } catch (err) {
-        // Captura OOM (Hermes), errores de red o cualquier fallo no manejado
-        // en fetch/arrayBuffer/upload. Mensaje amigable fijo: no exponemos el
-        // error técnico al owner.
+        // Captura errores de red o cualquier fallo no manejado del upload task.
+        // Mensaje amigable fijo: no exponemos el error técnico al owner.
         console.warn('[useVideoUpload] upload failed:', err);
         status_ref.current = 'error';
-        error_ref.current =
-          'Error al subir el video. Intenta de nuevo con un archivo más pequeño.';
+        error_ref.current = UPLOAD_ERROR_MESSAGE;
       }
     },
      
