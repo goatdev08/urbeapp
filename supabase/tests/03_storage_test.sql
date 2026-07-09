@@ -25,11 +25,11 @@ select is(
   'bucket property-videos: es privado (public = false)'
 );
 
--- 3) El límite de tamaño es exactamente 100 MB (104857600 bytes).
+-- 3) El límite de tamaño es exactamente 500 MB (524288000 bytes).
 select is(
   (select file_size_limit from storage.buckets where id = 'property-videos'),
-  104857600::bigint,
-  'bucket property-videos: file_size_limit = 104857600 (100 MB exactos)'
+  524288000::bigint,
+  'bucket property-videos: file_size_limit = 524288000 (500 MB exactos)'
 );
 
 -- 4a) allowed_mime_types contiene los 3 tipos esperados.
