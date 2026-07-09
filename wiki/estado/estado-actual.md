@@ -1,11 +1,16 @@
 ---
 tipo: estado
-actualizado: 2026-07-08
+actualizado: 2026-07-09
 ---
 
 # Estado actual
 
 > Narrativa de "dónde estamos hoy". El **qué sigue / qué está hecho** vive en **Taskmaster** (`task-master list`), no aquí.
+
+## Hoy (2026-07-09)
+
+- **✅ #48 — teléfonos REALES de los owners demo (fix de dato, sin build).** Ramos y Vlad (owners de "Tu Casa con Vlad") tenían el placeholder `+523312345678`; el CTA "Contactar por WhatsApp" abría un número que no recibe mensajes. Migración idempotente `20260709000001_set_demo_owner_phones` (2 `UPDATE` con guarda `IS DISTINCT FROM`, solo `public.users.phone`, NO toca `auth.users`) → Ramos `+523315637152`, Vlad `+523335785799`. Verificada en local (forward/idempotencia/rollback en txn) y **desplegada a `urbea-app`** vía `apply_migration` (detección read-only previa: blast radius = 2 filas; post: 0 colaterales). Implementa P1 de la exploración 029. Pendiente: smoke manual en device (login Ramos/Vlad → CTA abre el número real). Ver [[crm-leads]].
+- **⏸️ #47 DEFERIDA** — capturar teléfono en el flujo de registro/onboarding queda fuera de alcance (decisión de Abraham, exploración 029 "Tarea C"). El hueco de producto queda anotado como causa raíz; se reabre si vuelve a doler. El problema secundario de nombre "Agente" genérico → **#51**.
 
 ## Hoy (2026-07-08)
 
