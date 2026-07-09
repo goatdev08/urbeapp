@@ -1,0 +1,29 @@
+{
+	"meta": {
+		"generatedAt": "2026-07-08T04:30:05.002Z",
+		"tasksAnalyzed": 2,
+		"totalTasks": 49,
+		"analysisCount": 2,
+		"thresholdScore": 5,
+		"projectName": "Task Master",
+		"usedResearch": false
+	},
+	"complexityAnalysis": [
+		{
+			"taskId": 48,
+			"taskTitle": "Update demo owner phone numbers via idempotent migration",
+			"complexityScore": 2,
+			"recommendedSubtasks": 3,
+			"expansionPrompt": "Break down this task into:\n1. Create idempotent SQL migration file with IS DISTINCT FROM guards for two owner accounts (Ramos +523315637152, Vlad +523335785799)\n2. Create rollback SQL file that reverts phone numbers to previous placeholder value\n3. Deploy migration to remote urbea-app via apply_migration tool and verify with smoke test (WhatsApp contact flow)\n\nNo pgTAP tests required per path rule (data seeding, not business logic). No app rebuild needed (data-only change). Follow pattern from 20260630000001_seed_demo_agent_phone.sql.",
+			"reasoning": "This is a straightforward data migration task with low complexity. The migration pattern already exists in the codebase (20260630000001), the target UUIDs and phone numbers are confirmed, and public.users.phone has no constraints or triggers that complicate the change. Idempotency is simple with IS DISTINCT FROM. The only risk is ensuring the migration uses apply_migration (not db push) per documented deployment pattern. Complexity is 2/10 because it requires careful attention to idempotency and rollback patterns, but the implementation is mechanical. Recommended 3 subtasks: (1) migration file, (2) rollback file, (3) deploy + smoke test."
+		},
+		{
+			"taskId": 49,
+			"taskTitle": "Fix publish wizard crash on large video upload and raise bucket limit to 500 MB",
+			"complexityScore": 6,
+			"recommendedSubtasks": 6,
+			"expansionPrompt": "Break down this task into:\n1. Create idempotent migration to increase storage.buckets.file_size_limit from 100MB to 500MB (524288000 bytes) with rollback, update pgTAP test assertion in 03_storage_test.sql\n2. Add pure validation function validate_video_size(bytes) in mobile/src/features/publish/validation.ts with MAX_VIDEO_SIZE_BYTES constant (TDD CRITICAL - write failing tests first)\n3. Integrate pre-upload size check in useVideoUpload.ts using expo-file-system getInfoAsync before fetch/arrayBuffer (TDD CRITICAL - write failing tests first including OOM scenario)\n4. Wrap upload block in try/catch to handle OOM and network errors gracefully (TDD CRITICAL - test error handling)\n5. Deploy migration via apply_migration, run pgTAP suite\n6. Smoke test on device with >500MB video (rejection message) and 100-500MB video (success)\n\nCritical TDD paths: hooks/** (useVideoUpload.ts) and **/validation* (validation.ts). Guardian must pass. Requires dev build or EAS update.",
+			"reasoning": "This task has moderate complexity (6/10) due to multiple interconnected changes across database, validation logic, and upload handling. Critical TDD requirements add overhead - must write failing tests first for validation.ts and useVideoUpload.ts per CLAUDE.md path rules. The core challenge is understanding the OOM crash root cause (fetch().arrayBuffer() loads entire video into JS memory) and implementing three defensive layers: (a) bucket limit increase, (b) pre-upload validation, (c) try/catch error handling. Complexity factors: (1) Must maintain constant synchronization between bucket limit and client validation (524288000 bytes), (2) expo-file-system integration requires careful async handling, (3) Guardian verification adds test design complexity, (4) Requires dev build which lengthens feedback loop. The existing useVideoUpload.ts uses refs-only state pattern (no useState) to avoid RNTL contamination, which must be preserved. Recommended 6 subtasks to separate migration work, pure validation TDD, hook integration TDD, and deployment/verification phases."
+		}
+	]
+}

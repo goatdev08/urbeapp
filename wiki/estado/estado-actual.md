@@ -1,14 +1,23 @@
 ---
 tipo: estado
-actualizado: 2026-07-03
+actualizado: 2026-07-08
 ---
 
 # Estado actual
 
 > Narrativa de "dónde estamos hoy". El **qué sigue / qué está hecho** vive en **Taskmaster** (`task-master list`), no aquí.
 
+## Hoy (2026-07-08)
+
+- **✅ #50 — revertido el default de rol en registro libre a `user` (buscador).** El flash de demo había forzado `handle_new_user` a crear TODO registro como `agent` (migración `20260707000001`); #50 lo revierte (`20260708000001_signup_default_buscador`, delega al default `'user'` de la columna). Registro libre → buscador; agente SOLO por invitación (`redeem_invitation_atomic`). TDD estricto (pgTAP `10_*`, guardian PASS), **desplegado a `urbea-app`** vía `apply_migration` + limpieza de **1 cuenta** mal-roleada (`an.landeros.ro@gmail.com`), Ramos/Vlad intactos. Copy de `register.tsx` ya correcto. **Bloquea a #47** (captura de teléfono → solo en flujo de agente). Ver [[roles-y-permisos]].
+- **🚀 iOS en TestFlight (build de feedback COMPLETO en las 2 plataformas).** El binario iOS está subido a App Store Connect (**App ID `6788608353`**); falta solo que el usuario espere el procesado de Apple y agregue el tester interno. Android = APK `preview` fresco desde `main` con todos los fixes. El login interactivo de Apple se destrabó **al cambiar el usuario su contraseña de Apple ID** (la ruta de API Key `.p8` se abandonó). Ver [[estrategia-releases]].
+- **2 fixes de infra de build (a `main` vía PR):** (a) **PR #17** — `ITSAppUsesNonExemptEncryption:false` en `app.config.js` (cifrado exento → salta el cuestionario de export compliance por build de TestFlight). (b) **PR #18** — 🔑 el build iOS fallaba con *"Cannot find 'expo-modules-autolinking'"*: **pnpm v10+/11 ya no lee `node-linker` del `.npmrc`** (breaking change) → movido a `mobile/pnpm-workspace.yaml` (`nodeLinker: hoisted`); requiere reinstalar node_modules en árbol nuevo. Verificado con `expo config --type introspect`.
+- **Fixes UI que shipearon en PR #16** (no narrados antes): `StepIndicator` del wizard **centrado** (spacer gemelo del BackButton), **notch ya no tapa** la foto en Editar perfil / Mis publicaciones / Invitar agentes (`headerShown:true`), swipe-back iOS + atrás Android app-wide, `.gitignore` de seeds local-only.
+- ⚠️ **Regla durable:** correr comandos **EAS siempre desde `mobile/`** (desde la raíz se crea un proyecto EAS falso). Iconos idénticos verificados en ambas plataformas.
+
 ## Hoy (2026-07-07)
 
+- **Exploración 029 aprobada → tareas #48/#49 (fixes de feedback de demo):** dos pendientes del cliente sobre el build de feedback. **#48** — el owner "Vlad" (`vladimiryeh@gmail.com`) y Ramos (`s.ramos2308@gmail.com`) tienen teléfono placeholder `+523312345678`; el cliente confirmó números reales (`+523315637152`/`+523335785799`) → migración idempotente + rollback, solo dato (`public.users.phone`, sin build). **#49** — el wizard de publicación **crashea** (OOM) al subir video >100 MB porque `useVideoUpload.ts` carga el archivo completo en memoria sin `try/catch`; fix = subir el bucket a 500 MB + validación pre-upload (`expo-file-system`) + manejo de error robusto (TDD crítico, requiere build). **Análisis de complejidad corrido** contra el codebase real: #48 = 2/10 (3 subtareas), #49 = 6/10 (6 subtareas). **Ninguna se implementó aún** — ambas `pending`, siguiente paso es `/tm-plan`. Ver [[propiedades-y-video]].
 - **Rush de demo-readiness (fuera de protocolo, PR #16 pendiente de merge):** 3 fixes verificados EN VIVO en dev-client. (1) **Tab bar simétrica** — el `[+]` quedaba descentrado para buscadores (4 slots); ahora el 4º slot comparte Leads(agente)/Guardados(no-agente) → 5 slots, `[+]` centrado en todos los roles. (2) **LocationWall guiado** — antes solo abría Ajustes sin guiar; ahora 3 modos (pedir permiso / pasos a Ajustes / encender GPS inline Android) + "Ya la activé — Reintentar". (3) **`eas.json`** environments (preview→preview). Gates tsc/lint/495 verdes. Rama `tarea/fix-tabbar-muro-eas`.
 - **🔑 Resuelto el misterio "los cambios no se ven":** el emulador/device tenía un **APK release** (JS embebido, nunca conecta a Metro → Fast Refresh inútil) + firma incompatible con dev-client. Fix: `adb uninstall` + `expo run:android` (dev-client). **Regla:** dev-client para iterar, release solo para entregar. Ver [[dev_client_vs_release_apk]].
 - **Remoto `urbea-app` VACIADO (autorizado) y re-sembrado mínimo:** el seed de #37 se borró; ahora solo `admin@urbea.demo` + cuenta del usuario + **3 cuentas demo** (`owner@`/`agente@`/`buscador@urbea.demo`, `urbea2026`), SIN propiedades/videos. Teardown reversible en `supabase/scripts/teardown-demo-minimal.sql` (correr antes de entregar vacío). Ver [[demo_account_credentials]].
@@ -59,5 +68,5 @@ actualizado: 2026-07-03
 - Publicación (#8): upload **"Opción C"** (cliente genera `video_id` y sube **antes** de la EF → propiedad solo se crea si el upload tuvo éxito, sin huérfanos) sobre RPC atómica. ⚠️ El path de 2 segmentos rompe la RLS SELECT pública del video → **RESUELTO en #21** (EF `mint-video-url` minta signed URLs vía `service_role`; desplegada y verificada E2E el 28-jun), mismo patrón que la futura migración a **Cloudflare R2**. Ver gotcha en [[propiedades-y-video]].
 
 ## Pendiente inmediato (detalle en Taskmaster)
-- **Next:** `task-master next` (siguiente tarea del backlog).
+- **Next:** `task-master next` (siguiente tarea del backlog) — candidatas recién aprobadas: **#48** (teléfono owner, XS) y **#49** (crash video/límite 500 MB, S). Ambas con análisis de complejidad hecho, faltan `/tm-plan` + ejecución.
 - **Branding (#19): gate LEVANTADO** (2026-06-26). Referencia visual canónica = `urbea-identidad-visual.html` (raíz): mockups de las ~13 pantallas de la demo; cada pantalla = techo de alcance de su tarea. Ver [[design-system]].
