@@ -179,9 +179,16 @@ function make_mock_supabase(opts: { query_result?: QueryResult; rpc_result?: Rpc
     // si query_result.data es null, para que el flujo SIGA llegando a PostgREST
     // y el error de la query pueda observarse — ver EC-7). Esto evita tocar el
     // cuerpo de los 10 tests EC-1..EC-10 preexistentes (espejo de feed #42.2).
+    // ponytail: la derivación cubre null Y [] — un query_result.data vacío
+    // (EC-8/EC-9, ambos data:[]) NO debe traducirse en una RPC vacía: eso
+    // dispararía la expansión de radio (ver EC-MAP-2b) y el SUT regresaría
+    // SIN tocar PostgREST, rompiendo EC-9 (que exige from() llamado). Solo
+    // un array NO vacío de query_result.data produce ids reales derivados;
+    // en cualquier otro caso (null o []) se usa el placeholder para que el
+    // flujo SIEMPRE llegue a construir + await la query de PostgREST.
     rpc_result = {
       data:
-        query_result.data === null
+        query_result.data === null || query_result.data.length === 0
           ? [{ id: 'rpc-placeholder-id', distance_m: 1 }]
           : query_result.data.map((r) => ({ id: r.id, distance_m: 1 })),
       error: null,
