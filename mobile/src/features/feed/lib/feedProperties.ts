@@ -2,19 +2,22 @@
  * feedProperties.ts — capa de datos del feed vertical.
  *
  * fetchFeedProperties(cursor?, deps?, filters?):
- *   - `filters.radius_m === null` (#58.3) → SALTA la RPC por completo: query
- *     plana a PostgREST (status/deleted_at + build_filter_query) con
- *     paginación OFFSET vía `.range()`. Sin distance_m, sin re-sort — el
- *     orden es el que devuelve PostgREST.
- *   - `filters.radius_m` numérico (o filters ausente) → path de proximidad
- *     #42.2 (approach A1), INALTERADO: llama SIEMPRE la RPC
- *     properties_within_radius ANTES de PostgREST, devuelve {id, distance_m}[]
- *     ordenado por distancia ASC. Radio = filters.radius_m ?? 5000; si la RPC
- *     devuelve vacío, expande ×2 hasta 3 reintentos (5000→10000→20000→40000);
- *     agotado → data:[] sin tocar PostgREST. Paginación OFFSET sobre los ids
- *     de la RPC (no created_at cursor): page_ids = ids.slice(offset, offset+10)
- *     → .in('id', page_ids). Re-sort cliente por distance_m ASC tras el merge
- *     (PostgREST no garantiza el orden de .in()).
+ *   - La carga contextual (orden por cercanía) aplica SIEMPRE (#62, supersede
+ *     el path plano de #58.3): TODO radio pasa por la RPC
+ *     properties_within_radius ANTES de PostgREST, que devuelve
+ *     {id, distance_m}[] ordenado por distancia ASC.
+ *   - `filters.radius_m === null` ("Sin límite") → RPC con UNLIMITED_RADIUS_M
+ *     (> media circunferencia terrestre = cubre todo el planeta): quita el
+ *     TOPE de distancia pero conserva el orden por proximidad. Sin expansión
+ *     ×2 (inútil con radio infinito: vacío = no hay propiedades).
+ *   - `filters.radius_m` numérico (o filters ausente → default 5000) → path
+ *     #42.2 (approach A1) INALTERADO: si la RPC devuelve vacío, expande ×2
+ *     hasta 3 reintentos (5000→10000→20000→40000); agotado → data:[] sin
+ *     tocar PostgREST.
+ *   - Paginación OFFSET sobre los ids de la RPC (no created_at cursor):
+ *     page_ids = ids.slice(offset, offset+10) → .in('id', page_ids). Re-sort
+ *     cliente por distance_m ASC tras el merge (PostgREST no garantiza el
+ *     orden de .in()).
  *   - Ambos paths: aplica FilterState (#12.7) además de los filtros base,
  *     invoca mint-video-url EF para signed URLs, merge fail-closed (propiedades
  *     sin URL se omiten).
@@ -48,6 +51,13 @@ const PAGE_SIZE = 10;
 const DEFAULT_RADIUS_M = 5000;
 const MAX_EXPANSION_ATTEMPTS = 3;
 const RADIUS_MULTIPLIER = 2;
+
+/**
+ * Radio "Sin límite" (#62): > media circunferencia terrestre (~20,015 km) →
+ * ST_DWithin matchea todas las propiedades del planeta y la RPC las devuelve
+ * ordenadas por distancia. Exportado para que los tests fijen el contrato.
+ */
+export const UNLIMITED_RADIUS_M = 21_000_000;
 
 type MintedVideo = {
   property_id: string;
@@ -151,51 +161,26 @@ export async function fetchFeedProperties(
 
   const offset = cursor ? parseInt(cursor, 10) : 0;
 
-  // #58.3: radius_m===null explícito → path plano PRE-#42, sin RPC ni
-  // proximidad. `undefined` (sin filtro) sigue cayendo al path de proximidad
-  // con DEFAULT_RADIUS_M (comportamiento previo para llamadas sin filtros).
-  if (filters?.radius_m === null) {
-    let query = client
-      .from('properties')
-      .select(FEED_SELECT)
-      .eq('status', 'active')
-      .is('deleted_at', null);
-
-    // Filtros de usuario (#12.7) — ADEMÁS de los filtros base, nunca en su lugar.
-    query = build_filter_query(query, filters ?? EMPTY_FILTERS);
-    query = query.range(offset, offset + PAGE_SIZE - 1);
-
-    const { data: rows, error } = (await query) as {
-      data: QueryRow[] | null;
-      error: { message: string } | null;
-    };
-
-    if (error) throw new Error(error.message);
-
-    const page_rows = rows ?? [];
-    const data = await mint_and_build_feed_data(client, page_rows);
-
-    // Página llena (PAGE_SIZE filas) → asume más adelante; corta/vacía → última
-    // página. ponytail: sin .count(), se pagina hasta topar página no llena
-    // (demo scale, igual criterio que #56).
-    const nextCursor = page_rows.length === PAGE_SIZE ? String(offset + PAGE_SIZE) : null;
-
-    return { data, nextCursor };
-  }
-
   // ponytail: fallback centro de Guadalajara (demo cerrada opera ahí, #11)
   // cuando aún no hay coords reales del usuario — reusa GDL_REGION del mapa
   // en vez de redefinir la constante.
   const coords = deps?.coords ?? { latitude: GDL_REGION.latitude, longitude: GDL_REGION.longitude };
 
-  const base_radius = filters?.radius_m ?? DEFAULT_RADIUS_M;
+  // #62: null explícito = "Sin límite" → radio que cubre el planeta (la
+  // cercanía sigue mandando el orden). ⚠️ El `=== null` va ANTES del `??`:
+  // `??` trataría null como ausente y lo mandaría al default de 5 km.
+  // `undefined` (sin filtros) sí cae a DEFAULT_RADIUS_M.
+  const is_unlimited = filters?.radius_m === null;
+  const base_radius = is_unlimited ? UNLIMITED_RADIUS_M : (filters?.radius_m ?? DEFAULT_RADIUS_M);
 
   // RPC de proximidad SIEMPRE antes de PostgREST (#42.2, approach A1). Si
   // devuelve vacío, expande el radio ×2 hasta MAX_EXPANSION_ATTEMPTS
-  // reintentos (5000→10000→20000→40000). Error de la RPC → lanza sin reintentar.
+  // reintentos (5000→10000→20000→40000) — salvo con radio ilimitado (#62):
+  // vacío ahí significa que no hay propiedades, expandir es inútil.
+  // Error de la RPC → lanza sin reintentar.
   let radius = base_radius;
   let rpc_rows: RpcRow[] = [];
-  let attempts = 0;
+  let attempts = is_unlimited ? MAX_EXPANSION_ATTEMPTS : 0;
 
   while (true) {
     const rpc_result = (await client.rpc('properties_within_radius', {
