@@ -2,13 +2,22 @@
  * Tests fase RED — fetchMapProperties
  * Archivo SUT: mobile/src/features/map/lib/mapProperties.ts
  * Subtarea Taskmaster: 11.2 — Fetch active properties and convert PostGIS geography to lat/lng
+ * REDISEÑO (#42.3 — RPC de proximidad, approach A1 lean, espejo de #42.2 en el feed):
  *
- * SUT: fetchMapProperties(deps?) → Promise<MapProperty[]>
+ * SUT: fetchMapProperties(deps?, filters?) → Promise<MapProperty[]>
  *
  * Contrato:
- *   - Query a Supabase: properties WHERE status='active' AND deleted_at IS NULL.
- *     SELECT id, price, address, property_type, operation_type, bedrooms, bathrooms, location.
- *     SIN paginación (el mapa muestra todas las propiedades activas).
+ *   - `radius = filters.radius_m ?? 5000`. Llama SIEMPRE
+ *     `client.rpc('properties_within_radius', { p_lat, p_lng, p_radius_m: radius })`
+ *     ANTES de tocar PostgREST. `p_lat/p_lng` vienen de `deps.coords` (fallback
+ *     GDL si se omite — no cubierto aquí, es responsabilidad de la impl GREEN).
+ *   - Expansión de radio: si la RPC devuelve `[]`, reintenta ×2 hasta
+ *     MAX_ATTEMPTS=3 (radios 5000→10000→20000→40000). Si los 4 intentos
+ *     devuelven vacío → `[]` SIN tocar PostgREST.
+ *   - RPC con error → lanza inmediatamente (sin reintentar).
+ *   - Query: `.in('id', ids)` con TODOS los ids de la RPC (SIN slice — el mapa
+ *     NO pagina) + `.eq('status','active')` + `.is('deleted_at', null)` +
+ *     `build_filter_query(query, filters)` intacto (`radius_m` jamás al builder).
  *   - Por cada row, convierte location (geography PostGIS) a {lat,lng} via parse_location
  *     importado de @/features/property-detail/utils/parseLocation (NO reimplementado).
  *   - INVARIANTE CRÍTICA fail-closed: filas con location null o no parseable se OMITEN.
@@ -16,9 +25,17 @@
  *   - Orden correcto: lng=X (primer número del POINT), lat=Y (segundo número).
  *     POINT(lng lat) — una inversión es un bug silencioso que pone el marcador en lugar erróneo.
  *   - operation_type es passthrough exacto: 'rent' | 'sale' | 'both'.
+ *   - SIN re-sort: los markers no tienen orden (a diferencia del feed).
  *   - Query error → lanza Error(message). Data vacío → devuelve [].
  *
- * EDGE CASES CUBIERTOS (10 casos):
+ * PATRÓN DE MOCK (espejo de feedProperties.test.ts #42.2):
+ *   - `supabase.rpc('properties_within_radius', {...})` → resuelve a
+ *     `{ data: {id,distance_m}[] | null, error }`. Por default, `make_mock_supabase`
+ *     DERIVA los ids de la RPC a partir de `query_result.data` (o un id placeholder
+ *     si `query_result.data` es null) para que los 10 tests EC-1..EC-10 heredados
+ *     no necesiten tocar su cuerpo — solo el arnés cambió.
+ *
+ * EDGE CASES CUBIERTOS (14 casos):
  *
  * ### Happy path
  * - (EC-1) happy_path_dos_rows_validas_devuelve_dos_map_properties
@@ -41,7 +58,16 @@
  *
  * ### Filtros de query
  * - (EC-9) query_filtra_status_active_y_deleted_at_null
+ *
+ * ### RPC de proximidad, expansión de radio, sin slice/paginación (#42.3 — NUEVOS)
+ * - (EC-MAP-1) rpc_recibe_coords_de_deps_y_radius_m_de_filters_query_recibe_in_con_todos_los_ids_sin_slice
+ * - (EC-MAP-2) expansion_de_radio_5000_a_10000_cuando_rpc_devuelve_vacio_en_primer_intento
+ * - (EC-MAP-2b) expansion_agotada_4_intentos_devuelve_vacio_sin_tocar_postgrest
+ * - (EC-MAP-3) rpc_devuelve_error_lanza_excepcion_sin_reintentar
  */
+
+import { EMPTY_FILTERS } from '@/features/search/lib/filterQuery';
+import type { FilterState } from '@/features/search/types';
 
 import { fetchMapProperties } from '../lib/mapProperties';
 import type { MapProperty } from '../types';
@@ -114,6 +140,7 @@ function make_query_builder(result: QueryResult) {
     is: jest.Mock;
     order: jest.Mock;
     limit: jest.Mock;
+    in: jest.Mock;
     then: (
       onFulfilled: (v: QueryResult) => unknown,
       onRejected?: (e: unknown) => unknown,
@@ -124,11 +151,12 @@ function make_query_builder(result: QueryResult) {
     is: jest.fn(),
     order: jest.fn(),
     limit: jest.fn(),
+    in: jest.fn(),
     then: (onFulfilled, onRejected) => Promise.resolve(result).then(onFulfilled, onRejected),
   };
 
   // Cada método encadenable devuelve el propio builder.
-  for (const method of ['select', 'eq', 'is', 'order', 'limit'] as const) {
+  for (const method of ['select', 'eq', 'is', 'order', 'limit', 'in'] as const) {
     builder[method].mockReturnValue(builder);
   }
 
@@ -139,16 +167,37 @@ function make_query_builder(result: QueryResult) {
 // Mock del cliente Supabase completo
 // ---------------------------------------------------------------------------
 
-function make_mock_supabase(opts: { query_result?: QueryResult } = {}) {
+/** Fila cruda que devuelve la RPC properties_within_radius (#42.3). */
+type RpcRow = { id: string; distance_m: number };
+type RpcResult = { data: RpcRow[] | null; error: { message: string } | null };
+
+function make_mock_supabase(opts: { query_result?: QueryResult; rpc_result?: RpcResult } = {}) {
   const { query_result = { data: [], error: null } } = opts;
+  const {
+    // ponytail: default DERIVADO — si no se pasa rpc_result explícito, la RPC
+    // "encuentra" exactamente los ids de query_result.data (o un id placeholder
+    // si query_result.data es null, para que el flujo SIGA llegando a PostgREST
+    // y el error de la query pueda observarse — ver EC-7). Esto evita tocar el
+    // cuerpo de los 10 tests EC-1..EC-10 preexistentes (espejo de feed #42.2).
+    rpc_result = {
+      data:
+        query_result.data === null
+          ? [{ id: 'rpc-placeholder-id', distance_m: 1 }]
+          : query_result.data.map((r) => ({ id: r.id, distance_m: 1 })),
+      error: null,
+    },
+  } = opts;
 
   const query_builder = make_query_builder(query_result);
   const mock_from = jest.fn().mockReturnValue(query_builder);
+  const mock_rpc = jest.fn().mockResolvedValue(rpc_result);
 
   return {
     from: mock_from,
+    rpc: mock_rpc,
     // Expuestos para aserciones directas
     _mock_from: mock_from,
+    _mock_rpc: mock_rpc,
     _query_builder: query_builder,
   };
 }
@@ -352,6 +401,91 @@ describe('fetchMapProperties', () => {
     // Tolerancia 1e-4 para doubles derivados de EWKB
     expect(Math.abs(item.lat - 19.4326)).toBeLessThan(1e-4);
     expect(Math.abs(item.lng - (-99.1332))).toBeLessThan(1e-4);
+  });
+
+  // ── (EC-MAP-1) RPC recibe coords/radius; query recibe .in con TODOS los ids sin slice ──
+
+  it('(EC-MAP-1) rpc_recibe_coords_de_deps_y_radius_m_de_filters_query_recibe_in_con_todos_los_ids_sin_slice: deps.coords + filters.radius_m=20000 → RPC recibe p_lat/p_lng/p_radius_m exactos; query builder recibe .in("id", TODOS los ids de la RPC, sin slice)', async () => {
+    const coords = { latitude: 20.6597, longitude: -103.3496 };
+    const rows: QueryRow[] = [
+      make_row({ id: 'prop-1' }),
+      make_row({ id: 'prop-2' }),
+      make_row({ id: 'prop-3' }),
+    ];
+    const rpc_ids = rows.map((r) => ({ id: r.id, distance_m: 1 }));
+    const filters: FilterState = { ...EMPTY_FILTERS, radius_m: 20000 };
+    const mock_supabase = make_mock_supabase({
+      query_result: { data: rows, error: null },
+      rpc_result: { data: rpc_ids, error: null },
+    });
+
+    await fetchMapProperties({ supabase: mock_supabase, coords }, filters);
+
+    expect(mock_supabase._mock_rpc).toHaveBeenCalledWith('properties_within_radius', {
+      p_lat: coords.latitude,
+      p_lng: coords.longitude,
+      p_radius_m: 20000,
+    });
+    expect(mock_supabase._query_builder.in).toHaveBeenCalledWith(
+      'id',
+      rpc_ids.map((r) => r.id),
+    );
+  });
+
+  // ── (EC-MAP-2) Expansión de radio: 5000 vacío → 10000 encuentra props ───────
+
+  it('(EC-MAP-2) expansion_de_radio_5000_a_10000_cuando_rpc_devuelve_vacio_en_primer_intento: RPC vacía a 5000m → segundo intento con p_radius_m=10000 encuentra 2 props → resultado no vacío; ambas llamadas a la RPC reciben los argumentos correctos', async () => {
+    const rows: QueryRow[] = [make_row({ id: 'prop-a' }), make_row({ id: 'prop-b' })];
+    const rpc_ids = rows.map((r) => ({ id: r.id, distance_m: 1 }));
+    const coords = { latitude: 20.6597, longitude: -103.3496 };
+    const mock_supabase = make_mock_supabase({ query_result: { data: rows, error: null } });
+    mock_supabase._mock_rpc
+      .mockReset()
+      .mockResolvedValueOnce({ data: [], error: null })
+      .mockResolvedValueOnce({ data: rpc_ids, error: null });
+
+    const result = await fetchMapProperties({ supabase: mock_supabase, coords });
+
+    expect(result.length).toBeGreaterThan(0);
+    expect(mock_supabase._mock_rpc).toHaveBeenNthCalledWith(1, 'properties_within_radius', {
+      p_lat: coords.latitude,
+      p_lng: coords.longitude,
+      p_radius_m: 5000,
+    });
+    expect(mock_supabase._mock_rpc).toHaveBeenNthCalledWith(2, 'properties_within_radius', {
+      p_lat: coords.latitude,
+      p_lng: coords.longitude,
+      p_radius_m: 10000,
+    });
+  });
+
+  // ── (EC-MAP-2b) Expansión agotada (4 intentos) → vacío, sin tocar PostgREST ──
+
+  it('(EC-MAP-2b) expansion_agotada_4_intentos_devuelve_vacio_sin_tocar_postgrest: RPC vacía en los 4 intentos (5000/10000/20000/40000) → [] y PostgREST NUNCA consultado', async () => {
+    const mock_supabase = make_mock_supabase({ query_result: { data: [], error: null } });
+    mock_supabase._mock_rpc.mockReset().mockResolvedValue({ data: [], error: null });
+
+    const result = await fetchMapProperties({ supabase: mock_supabase });
+
+    expect(result).toEqual([]);
+    expect(mock_supabase._mock_rpc).toHaveBeenCalledTimes(4);
+    const radii = mock_supabase._mock_rpc.mock.calls.map(
+      (call: unknown[]) => (call[1] as { p_radius_m: number }).p_radius_m,
+    );
+    expect(radii).toEqual([5000, 10000, 20000, 40000]);
+    expect(mock_supabase._mock_from).not.toHaveBeenCalled();
+  });
+
+  // ── (EC-MAP-3) Error de RPC → lanza, sin reintentar ──────────────────────
+
+  it('(EC-MAP-3) rpc_devuelve_error_lanza_excepcion_sin_reintentar: RPC responde {data:null, error:{message}} → fetchMapProperties lanza y la RPC se llamó exactamente 1 vez (solo data vacía dispara expansión, no el error)', async () => {
+    const mock_supabase = make_mock_supabase({
+      rpc_result: { data: null, error: { message: 'PostGIS function timeout' } },
+    });
+
+    await expect(fetchMapProperties({ supabase: mock_supabase })).rejects.toThrow();
+
+    expect(mock_supabase._mock_rpc).toHaveBeenCalledTimes(1);
   });
 
 });

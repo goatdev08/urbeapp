@@ -20,10 +20,16 @@ import { parse_location } from '@/features/property-detail/utils/parseLocation';
 
 import type { MapProperty } from '../types';
 
- 
+
 export interface MapPropertiesDeps {
-   
+
   supabase: any;
+  /**
+   * Coords del usuario para la RPC de proximidad (#42.3). Si se omite, la
+   * implementación GREEN usará el centro de Guadalajara como fallback.
+   * RED: solo tipo — sin lógica todavía.
+   */
+  coords?: { latitude: number; longitude: number };
 }
 
 type QueryRow = {
