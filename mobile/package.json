@@ -59,6 +59,7 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "emu": "bash scripts/emu.sh",
+    "ota": "bash scripts/ota.sh",
     "lint": "eslint ."
   },
   "private": true

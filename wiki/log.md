@@ -301,3 +301,5 @@ Cierra de raíz el OOM de #49 y su deuda `ponytail:`. **6 subtareas, 4 críticas
 ## [2026-07-09] explore | aprobado tarea 56 — Feature: "Buscar en esta zona" (viewport → feed + marcadores, depende de #42)
 
 ## [2026-07-09] tarea | #53 Fix: editar publicación duplica la property — edit_mode/property_id ahora viajan por PublishFormContext (no URL param); step3 lee del contexto; picker de video oculto en edición; reset al salir. Sin migraciones. TDD 5 EC-CTX-* + guardian PASS (67/67 publish).
+
+## [2026-07-09] tarea | #54 Fix: filtros accesibles en el feed vacío — FeedScreen refactorizado a un solo return; botón filtros + FilterSheet hoisted (visibles en empty state, ocultos en skeleton/error); empty state ramificado por active_filter_count (filtered-empty "Limpiar filtros"→clear_filters vs BD-vacía). 100% UI, sin backend. No crítica (tsc+lint verdes).
