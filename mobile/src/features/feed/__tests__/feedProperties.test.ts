@@ -2,32 +2,47 @@
  * Tests fase RED — fetchFeedProperties
  * Archivo SUT: mobile/src/features/feed/lib/feedProperties.ts
  * Subtarea Taskmaster: 9.5 — capa de datos del feed
+ * REDISEÑO (#42.2 — RPC de proximidad, approach A1 lean):
  *
- * SUT: fetchFeedProperties(cursor?, deps?) →
+ * SUT: fetchFeedProperties(cursor?, deps?, filters?) →
  *        Promise<{ data: FeedPropertyWithUrl[]; nextCursor: string | null }>
  *
- * Contrato:
- *   - Query a Supabase: properties WHERE status='active' AND deleted_at IS NULL
- *     con nested select property_videos(id, storage_path, position)
- *     filtrando property_videos.status='ready' AND deleted_at IS NULL,
- *     ORDER BY created_at DESC, LIMIT 10. Si cursor → añade .lt('created_at', cursor).
- *   - Extrae property_ids → invoca mint-video-url EF → { videos: MintedVideo[] }.
+ * Contrato NUEVO (#42.2):
+ *   - `radius = filters.radius_m ?? 5000`. Llama SIEMPRE
+ *     `client.rpc('properties_within_radius', { p_lat, p_lng, p_radius_m: radius })`
+ *     ANTES de tocar PostgREST. `p_lat/p_lng` vienen de `deps.coords` (fallback
+ *     GDL si se omite — no cubierto aquí, es responsabilidad de la impl GREEN).
+ *   - Expansión de radio: si la RPC devuelve `[]`, reintenta ×2 hasta
+ *     MAX_ATTEMPTS=3 (radios 5000→10000→20000→40000). Si los 4 intentos
+ *     devuelven vacío → `{ data: [], nextCursor: null }` SIN tocar PostgREST.
+ *   - RPC con error → lanza inmediatamente (sin reintentar).
+ *   - Paginación OFFSET sobre los ids de la RPC (YA NO created_at cursor):
+ *     `offset = cursor ? parseInt(cursor) : 0`; `page_ids = ids.slice(offset, offset+10)`;
+ *     query `.in('id', page_ids)` + `.eq('status','active')` + `.is('deleted_at', null)`
+ *     + `build_filter_query(query, filters)` intacto. `nextCursor` se calcula
+ *     sobre `ids.length` (universo de la RPC), no sobre las filas devueltas.
+ *   - Extrae property_ids de las filas → invoca mint-video-url EF → { videos: MintedVideo[] }.
  *   - Merge fail-closed: props sin signed_url se OMITEN (nunca items sin URL).
- *   - nextCursor: created_at del último item de la QUERY (no del merge), null si <10.
- *   - Query error → lanza. EF error → lanza (fail-closed).
- *   - Query vacía → data:[], nextCursor:null; NO invoca la EF.
+ *   - Re-sort cliente: el resultado final se ordena por distance_m (de la RPC)
+ *     ASC, sin importar el orden en que PostgREST devuelva las filas.
+ *   - Query error (PostgREST) → lanza. EF error → lanza (fail-closed).
  *
  * PATRÓN DE MOCK:
  *   - DI via deps.supabase (igual que usePropertyActions/usePublish).
  *   - Query builder encadenable thenable → resuelve a { data, error }.
  *   - functions.invoke → resuelve a { data: { videos: MintedVideo[] }, error }.
+ *   - supabase.rpc('properties_within_radius', {...}) → resuelve a
+ *     { data: {id,distance_m}[] | null, error }. Por default, `make_mock_supabase`
+ *     DERIVA los ids de la RPC a partir de `query_result.data` (o un id placeholder
+ *     si `query_result.data` es null) para que los 15 tests EC-1..EC-15 heredados
+ *     no necesiten tocar su cuerpo — solo el arnés cambió.
  *
  * EF RESPONSE SHAPE (verificado en handler.ts línea 62):
  *   json_response({ videos }, 200)  →  { videos: MintedVideo[] }
  *   MintedVideo = { property_id, video_id, signed_url }
  *   La key es 'videos', NO 'results'.
  *
- * EDGE CASES CUBIERTOS (13 casos):
+ * EDGE CASES CUBIERTOS (20 casos):
  *
  * ### Happy path
  * - (EC-1) happy_path_n_propiedades_devuelve_feed_con_signed_url
@@ -37,11 +52,11 @@
  * - (EC-3) ef_devuelve_array_vacio_data_vacio_sin_throw
  * - (EC-4) query_vacia_no_invoca_ef_y_devuelve_vacios
  *
- * ### Cursor / paginación
- * - (EC-5) cursor_aplica_filtro_lt_created_at
- * - (EC-6) sin_cursor_no_aplica_filtro_lt
- * - (EC-7) next_cursor_exactamente_10_items_devuelve_ultimo_created_at
- * - (EC-8) next_cursor_menos_de_10_items_es_null
+ * ### Cursor / paginación — REDISEÑADOS a offset sobre ids de la RPC (#42.2)
+ * - (EC-5) cursor_offset_aplica_slice_de_ids_rpc_y_filtro_in_id
+ * - (EC-6) sin_cursor_offset_cero_pagina_primeros_10_ids
+ * - (EC-7) next_cursor_offset_mas_10_menor_a_total_ids_rpc
+ * - (EC-8) next_cursor_null_cuando_offset_mas_10_no_menor_a_total_ids_rpc
  *
  * ### Error / boundary
  * - (EC-9) error_query_supabase_lanza_error
@@ -51,7 +66,21 @@
  * - (EC-11) signed_url_mergeado_correctamente_por_property_id
  * - (EC-12) invoke_recibe_property_ids_del_resultado_query
  * - (EC-13) invoke_recibe_nombre_mint_video_url
+ *
+ * ### Múltiples videos / fail-closed por video_id
+ * - (EC-14) video_reconciliado_con_video_id_ef_no_primer_elemento_array
+ * - (EC-15) propiedad_omitida_cuando_video_id_ef_no_matchea_ningun_video_embebido
+ *
+ * ### RPC de proximidad, expansión de radio, re-sort (#42.2 — NUEVOS)
+ * - (EC-16) resultado_ordenado_por_distancia_asc_segun_distance_map_no_orden_de_postgrest
+ * - (EC-17) expansion_de_radio_5000_a_10000_cuando_rpc_devuelve_vacio_en_primer_intento
+ * - (EC-17b) expansion_agotada_4_intentos_devuelve_vacio_sin_tocar_postgrest
+ * - (EC-18) filters_radius_m_20000_viaja_a_rpc_como_p_radius_m
+ * - (EC-19) rpc_devuelve_error_lanza_excepcion_sin_reintentar
  */
+
+import { EMPTY_FILTERS } from '@/features/search/lib/filterQuery';
+import type { FilterState } from '@/features/search/types';
 
 import { fetchFeedProperties } from '../lib/feedProperties';
 import type { FeedPropertyWithUrl } from '../types';
@@ -161,6 +190,7 @@ function make_query_builder(result: QueryResult) {
     order: jest.Mock;
     limit: jest.Mock;
     lt: jest.Mock;
+    in: jest.Mock;
     then: (
       onFulfilled: (v: QueryResult) => unknown,
       onRejected?: (e: unknown) => unknown,
@@ -172,11 +202,12 @@ function make_query_builder(result: QueryResult) {
     order: jest.fn(),
     limit: jest.fn(),
     lt: jest.fn(),
+    in: jest.fn(),
     then: (onFulfilled, onRejected) => Promise.resolve(result).then(onFulfilled, onRejected),
   };
 
   // Cada método encadenable devuelve el propio builder.
-  for (const method of ['select', 'eq', 'is', 'order', 'limit', 'lt'] as const) {
+  for (const method of ['select', 'eq', 'is', 'order', 'limit', 'lt', 'in'] as const) {
     builder[method].mockReturnValue(builder);
   }
 
@@ -192,13 +223,30 @@ type InvokeResult = {
   error: { message: string } | null;
 };
 
+/** Fila cruda que devuelve la RPC properties_within_radius (#42.2). */
+type RpcRow = { id: string; distance_m: number };
+type RpcResult = { data: RpcRow[] | null; error: { message: string } | null };
+
 function make_mock_supabase(opts: {
   query_result?: QueryResult;
   invoke_result?: InvokeResult;
+  rpc_result?: RpcResult;
 } = {}) {
   const {
     query_result = { data: [], error: null },
     invoke_result = { data: { videos: [] }, error: null },
+    // ponytail: default DERIVADO — si no se pasa rpc_result explícito, la RPC
+    // "encuentra" exactamente los ids de query_result.data (o un id placeholder
+    // si query_result.data es null, para que el flujo SIGA llegando a PostgREST
+    // y el error de la query pueda observarse — ver EC-9). Esto evita tocar el
+    // cuerpo de los 15 tests EC-1..EC-15 preexistentes.
+    rpc_result = {
+      data:
+        query_result.data === null
+          ? [{ id: 'rpc-placeholder-id', distance_m: 1 }]
+          : query_result.data.map((r) => ({ id: r.id, distance_m: 1 })),
+      error: null,
+    },
   } = opts;
 
   const query_builder = make_query_builder(query_result);
@@ -207,12 +255,16 @@ function make_mock_supabase(opts: {
   const mock_invoke = jest.fn().mockResolvedValue(invoke_result);
   const mock_functions = { invoke: mock_invoke };
 
+  const mock_rpc = jest.fn().mockResolvedValue(rpc_result);
+
   return {
     from: mock_from,
     functions: mock_functions,
+    rpc: mock_rpc,
     // Expuestos para aserciones directas
     _mock_from: mock_from,
     _mock_invoke: mock_invoke,
+    _mock_rpc: mock_rpc,
     _query_builder: query_builder,
   };
 }
@@ -300,55 +352,74 @@ describe('fetchFeedProperties', () => {
     expect(mock_supabase._mock_invoke).not.toHaveBeenCalled();
   });
 
-  // ── (EC-5) Cursor aplica filtro .lt('created_at', cursor) ────────────────
+  // ── (EC-5) Cursor = offset sobre ids de la RPC → .in('id', slice) ────────
 
-  it('(EC-5) cursor_aplica_filtro_lt_created_at: cuando cursor se pasa → query builder recibe .lt("created_at", cursor) con el valor exacto', async () => {
-    const cursor = '2026-06-20T10:00:00Z';
+  it('(EC-5) cursor_offset_aplica_slice_de_ids_rpc_y_filtro_in_id: cursor="10" (offset) → page_ids = ids.slice(10,20) → query builder recibe .in("id", page_ids) con el slice exacto', async () => {
+    const rows = make_query_rows(15);
+    const rpc_ids = rows.map((r, i) => ({ id: r.id, distance_m: i }));
+    const page_rows = rows.slice(10, 15); // solo quedan 5 tras el offset 10 (universo de 15)
+    const page_ids = page_rows.map((r) => r.id);
     const mock_supabase = make_mock_supabase({
-      query_result: { data: [], error: null },
+      query_result: { data: page_rows, error: null },
+      rpc_result: { data: rpc_ids, error: null },
     });
 
-    await fetchFeedProperties(cursor, { supabase: mock_supabase });
+    await fetchFeedProperties('10', { supabase: mock_supabase });
 
-    expect(mock_supabase._query_builder.lt).toHaveBeenCalledWith('created_at', cursor);
+    expect(mock_supabase._query_builder.in).toHaveBeenCalledWith('id', page_ids);
   });
 
-  // ── (EC-6) Sin cursor → .lt NO llamado ───────────────────────────────────
+  // ── (EC-6) Sin cursor → offset=0 → primeros 10 ids de la RPC ─────────────
 
-  it('(EC-6) sin_cursor_no_aplica_filtro_lt: sin cursor → .lt NO fue llamado en el query builder', async () => {
+  it('(EC-6) sin_cursor_offset_cero_pagina_primeros_10_ids: sin cursor → offset=0 → .in("id", ids.slice(0,10)) con los primeros 10 ids de la RPC', async () => {
+    const rows = make_query_rows(15);
+    const rpc_ids = rows.map((r, i) => ({ id: r.id, distance_m: i }));
+    const page_rows = rows.slice(0, 10);
+    const page_ids = page_rows.map((r) => r.id);
     const mock_supabase = make_mock_supabase({
-      query_result: { data: [], error: null },
+      query_result: { data: page_rows, error: null },
+      rpc_result: { data: rpc_ids, error: null },
     });
 
     await fetchFeedProperties(undefined, { supabase: mock_supabase });
 
-    expect(mock_supabase._query_builder.lt).not.toHaveBeenCalled();
+    expect(mock_supabase._query_builder.in).toHaveBeenCalledWith('id', page_ids);
   });
 
-  // ── (EC-7) nextCursor: exactamente 10 items → created_at del décimo ──────
+  // ── (EC-7) nextCursor: offset+10 < total de ids de la RPC ─────────────────
 
-  it('(EC-7) next_cursor_exactamente_10_items_devuelve_ultimo_created_at: 10 items en query → nextCursor === created_at del 10º item', async () => {
-    const rows = make_query_rows(10);
-    const videos = make_minted_videos(10);
-    const expected_cursor = rows[9]!.created_at; // décimo item (índice 9)
+  it('(EC-7) next_cursor_offset_mas_10_menor_a_total_ids_rpc: RPC devuelve 15 ids → sin cursor, offset(0)+10=10 < 15 → nextCursor === "10"', async () => {
+    const rows = make_query_rows(15);
+    const rpc_ids = rows.map((r, i) => ({ id: r.id, distance_m: i }));
+    const page_rows = rows.slice(0, 10);
+    const videos = make_minted_videos(15).slice(0, 10);
     const mock_supabase = make_mock_supabase({
-      query_result: { data: rows, error: null },
+      query_result: { data: page_rows, error: null },
       invoke_result: { data: { videos }, error: null },
+      rpc_result: { data: rpc_ids, error: null },
     });
 
     const result = await fetchFeedProperties(undefined, { supabase: mock_supabase });
 
-    expect(result.nextCursor).toBe(expected_cursor);
+    expect(result.nextCursor).toBe('10');
   });
 
-  // ── (EC-8) nextCursor: menos de 10 items → null ───────────────────────────
+  // ── (EC-8) nextCursor: offset+10 NO menor a total de ids de la RPC → null ─
+  // Boundary EXACTO (offset+10 === total, no "menos de 10 filas") a propósito:
+  // con 7 ids totales, el código VIEJO (basado en rows.length===PAGE_SIZE)
+  // también da null por casualidad (7 !== 10), lo cual NO demuestra RED real.
+  // Con exactamente 10 ids en el universo de la RPC, el código viejo SÍ
+  // devuelve un nextCursor no-nulo (rows.length===10 → created_at del 10º),
+  // mientras que el contrato nuevo exige null (offset(0)+10=10 no es < 10).
 
-  it('(EC-8) next_cursor_menos_de_10_items_es_null: 7 items en query → nextCursor === null', async () => {
-    const rows = make_query_rows(7);
-    const videos = make_minted_videos(7);
+  it('(EC-8) next_cursor_null_cuando_offset_mas_10_no_menor_a_total_ids_rpc: RPC devuelve EXACTAMENTE 10 ids (boundary) → offset(0)+10=10 no es menor a 10 → nextCursor === null', async () => {
+    const rows = make_query_rows(10);
+    const rpc_ids = rows.map((r, i) => ({ id: r.id, distance_m: i }));
+    const videos = make_minted_videos(10);
     const mock_supabase = make_mock_supabase({
       query_result: { data: rows, error: null },
       invoke_result: { data: { videos }, error: null },
+      rpc_result: { data: rpc_ids, error: null },
     });
 
     const result = await fetchFeedProperties(undefined, { supabase: mock_supabase });
@@ -531,6 +602,119 @@ describe('fetchFeedProperties', () => {
     expect(result.data).toHaveLength(0);
     const ids = result.data.map((item: FeedPropertyWithUrl) => item.id);
     expect(ids).not.toContain('prop-huerfana');
+  });
+
+  // ── (EC-16) Re-sort cliente por distance_m, no por orden de PostgREST ────
+
+  it('(EC-16) resultado_ordenado_por_distancia_asc_segun_distance_map_no_orden_de_postgrest: RPC devuelve 3 ids con distance_m 300/100/200 → resultado final ordenado ASC por distancia (100,200,300) sin importar el orden de las filas de PostgREST', async () => {
+    const row1 = make_query_row(1);
+    const row2 = make_query_row(2);
+    const row3 = make_query_row(3);
+    // Postgrest devuelve las filas en un orden que NO coincide con la distancia
+    // (simula que .in() no preserva el orden de los ids solicitados).
+    const shuffled_rows = [row3, row1, row2];
+    const videos = [make_minted_video(1), make_minted_video(2), make_minted_video(3)];
+    const rpc_result = {
+      data: [
+        { id: 'prop-id-3', distance_m: 300 },
+        { id: 'prop-id-1', distance_m: 100 },
+        { id: 'prop-id-2', distance_m: 200 },
+      ],
+      error: null,
+    };
+    const mock_supabase = make_mock_supabase({
+      query_result: { data: shuffled_rows, error: null },
+      invoke_result: { data: { videos }, error: null },
+      rpc_result,
+    });
+
+    const result = await fetchFeedProperties(undefined, { supabase: mock_supabase });
+
+    expect(result.data.map((item: FeedPropertyWithUrl) => item.id)).toEqual([
+      'prop-id-1',
+      'prop-id-2',
+      'prop-id-3',
+    ]);
+  });
+
+  // ── (EC-17) Expansión de radio: 5000 vacío → 10000 encuentra props ───────
+
+  it('(EC-17) expansion_de_radio_5000_a_10000_cuando_rpc_devuelve_vacio_en_primer_intento: RPC vacía a 5000m → segundo intento con p_radius_m=10000 encuentra 2 props → data no vacío; ambas llamadas a la RPC reciben los argumentos correctos', async () => {
+    const rows = make_query_rows(2);
+    const videos = make_minted_videos(2);
+    const rpc_ids = rows.map((r, i) => ({ id: r.id, distance_m: i }));
+    const coords = { latitude: 20.6597, longitude: -103.3496 };
+    const mock_supabase = make_mock_supabase({
+      query_result: { data: rows, error: null },
+      invoke_result: { data: { videos }, error: null },
+    });
+    mock_supabase._mock_rpc
+      .mockReset()
+      .mockResolvedValueOnce({ data: [], error: null })
+      .mockResolvedValueOnce({ data: rpc_ids, error: null });
+
+    const result = await fetchFeedProperties(undefined, { supabase: mock_supabase, coords });
+
+    expect(result.data.length).toBeGreaterThan(0);
+    expect(mock_supabase._mock_rpc).toHaveBeenNthCalledWith(1, 'properties_within_radius', {
+      p_lat: coords.latitude,
+      p_lng: coords.longitude,
+      p_radius_m: 5000,
+    });
+    expect(mock_supabase._mock_rpc).toHaveBeenNthCalledWith(2, 'properties_within_radius', {
+      p_lat: coords.latitude,
+      p_lng: coords.longitude,
+      p_radius_m: 10000,
+    });
+  });
+
+  // ── (EC-17b) Expansión agotada (4 intentos) → vacío, sin tocar PostgREST ──
+
+  it('(EC-17b) expansion_agotada_4_intentos_devuelve_vacio_sin_tocar_postgrest: RPC vacía en los 4 intentos (5000/10000/20000/40000) → {data:[], nextCursor:null} y PostgREST NUNCA consultado', async () => {
+    const mock_supabase = make_mock_supabase({
+      query_result: { data: [], error: null },
+    });
+    mock_supabase._mock_rpc.mockReset().mockResolvedValue({ data: [], error: null });
+
+    const result = await fetchFeedProperties(undefined, { supabase: mock_supabase });
+
+    expect(result).toEqual({ data: [], nextCursor: null });
+    expect(mock_supabase._mock_rpc).toHaveBeenCalledTimes(4);
+    const radii = mock_supabase._mock_rpc.mock.calls.map(
+      (call: unknown[]) => (call[1] as { p_radius_m: number }).p_radius_m,
+    );
+    expect(radii).toEqual([5000, 10000, 20000, 40000]);
+    expect(mock_supabase._mock_from).not.toHaveBeenCalled();
+  });
+
+  // ── (EC-18) filters.radius_m viaja a la RPC como p_radius_m ──────────────
+
+  it('(EC-18) filters_radius_m_20000_viaja_a_rpc_como_p_radius_m: filters.radius_m=20000 → RPC recibe p_radius_m:20000 (no el default 5000)', async () => {
+    const mock_supabase = make_mock_supabase({
+      rpc_result: { data: [{ id: 'prop-id-1', distance_m: 1 }], error: null },
+    });
+    const filters: FilterState = { ...EMPTY_FILTERS, radius_m: 20000 };
+
+    await fetchFeedProperties(undefined, { supabase: mock_supabase }, filters);
+
+    expect(mock_supabase._mock_rpc).toHaveBeenCalledWith(
+      'properties_within_radius',
+      expect.objectContaining({ p_radius_m: 20000 }),
+    );
+  });
+
+  // ── (EC-19) Error de RPC → lanza, sin reintentar ──────────────────────────
+
+  it('(EC-19) rpc_devuelve_error_lanza_excepcion_sin_reintentar: RPC responde {data:null, error:{message}} → fetchFeedProperties lanza y la RPC se llamó exactamente 1 vez (solo data vacía dispara expansión, no el error)', async () => {
+    const mock_supabase = make_mock_supabase({
+      rpc_result: { data: null, error: { message: 'PostGIS function timeout' } },
+    });
+
+    await expect(
+      fetchFeedProperties(undefined, { supabase: mock_supabase }),
+    ).rejects.toThrow();
+
+    expect(mock_supabase._mock_rpc).toHaveBeenCalledTimes(1);
   });
 
 });

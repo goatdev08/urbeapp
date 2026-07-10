@@ -22,8 +22,14 @@ import type { FeedPropertyWithUrl } from '../types';
 
 // ponytail: sin explicit any en la interfaz pública — solo en los internos inevitables
 export interface FeedPropertiesDeps {
-   
+
   supabase: any;
+  /**
+   * Coords del usuario para la RPC de proximidad (#42.2). Si se omite, la
+   * implementación GREEN usa el centro de Guadalajara como fallback.
+   * RED: solo tipo — sin lógica todavía.
+   */
+  coords?: { latitude: number; longitude: number };
 }
 
 const PAGE_SIZE = 10;
