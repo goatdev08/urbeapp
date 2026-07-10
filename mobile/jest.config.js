@@ -6,6 +6,12 @@ const path = require('path');
 /** @type {import('jest-expo').Config} */
 module.exports = {
   preset: 'jest-expo',
+  // Mock oficial de react-native-gesture-handler (RNGestureHandlerModule nativo
+  // no existe bajo Jest) — necesario desde #58.2: RadiusSelector usará
+  // GestureDetector/Gesture para el slider continuo (drag). setupFiles (no
+  // setupFilesAfterEnv) porque debe correr ANTES del registro de mocks del
+  // framework, tal como recomienda la doc oficial del paquete.
+  setupFiles: ['react-native-gesture-handler/jestSetup'],
   setupFilesAfterEnv: ['./jest.setup.js'],
   // En pnpm hoisted el path real de node_modules es:
   //   node_modules/.pnpm/<pkg@ver>/node_modules/<pkg>/...
