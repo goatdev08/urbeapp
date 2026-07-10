@@ -164,9 +164,10 @@ export function FeedScreen() {
             decelerationRate="fast"
             showsVerticalScrollIndicator={false}
             bounces={false}
-            // 1.5 pantallas de colchón: el video entrante bufferea antes de aparecer
-            // (SDK56 no expone prefetch explícito; costo en memoria aceptable en demo).
-            drawDistance={height * 1.5}
+            // 1 pantalla de colchón (fix #57, anti-OOM Android): menos players
+            // ExoPlayer vivos. Trade-off aceptado: en swipes muy rápidos el póster
+            // puede verse un instante más mientras el video entrante bufferea.
+            drawDistance={height}
             viewabilityConfigCallbackPairs={viewabilityConfigCallbackPairs}
             // Pull-to-refresh: resetea cursor y recarga desde el inicio.
             // refreshing solo true durante un refresh (ya hay datos en pantalla).

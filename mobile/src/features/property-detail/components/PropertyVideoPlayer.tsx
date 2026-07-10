@@ -64,6 +64,11 @@ export function PropertyVideoPlayer({ videos }: PropertyVideoPlayerProps) {
   const player = useVideoPlayer(video_url, (p) => {
     p.loop = true;
     p.muted = true; // ponytail: autoplay muted; sin solicitar permiso de audio al montar
+    // Fix #57: tope de buffer anti-OOM — ver rationale en VideoFeedItem.tsx
+    p.bufferOptions = {
+      preferredForwardBufferDuration: 10,
+      maxBufferBytes: 25 * 1024 * 1024,
+    };
   });
 
   // Seguimiento de estado y detección de error de carga.

@@ -115,6 +115,17 @@ function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedIte
   const player = useVideoPlayer(property.signed_url, (p) => {
     p.loop = true;
     p.muted = false;
+    // ponytail: fix #57 — tope al buffer de ExoPlayer para evitar OOM en el
+    // heap Android de 192MB con video crudo de demo (sin transcodificar).
+    // preferredForwardBufferDuration baja el lookahead del default Android
+    // de 20s a 10s; maxBufferBytes es Android-only (iOS lo ignora) y limita
+    // 25MB por player (~100MB para los ~4 players vivos en drawDistance),
+    // dejando margen al resto del heap. Techo conocido: la solución de
+    // fondo es Cloudflare Stream/HLS en beta.
+    p.bufferOptions = {
+      preferredForwardBufferDuration: 10,
+      maxBufferBytes: 25 * 1024 * 1024,
+    };
   });
 
   // Tap simple → alterna play/pausa del video activo.
