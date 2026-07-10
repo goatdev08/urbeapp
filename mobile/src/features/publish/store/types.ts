@@ -47,6 +47,10 @@ export interface PublishFormState {
   video_id: string | null;       // UUID generado en cliente antes de subir
   storage_path: string | null;   // ruta en Supabase Storage tras upload
   video_local_uri: string | null; // URI local para preview antes de subir
+
+  // Modo edición — propagado desde publish/_layout, inmune a pérdida de URL param
+  edit_mode: boolean;            // true si se edita una property existente (UPDATE, no EF)
+  property_id: string | null;    // id de la property a actualizar en modo edición
 }
 
 // ---------------------------------------------------------------------------
@@ -92,4 +96,6 @@ export const INITIAL_PUBLISH_FORM_STATE: PublishFormState = {
   video_id: null,
   storage_path: null,
   video_local_uri: null,
+  edit_mode: false,
+  property_id: null,
 };
