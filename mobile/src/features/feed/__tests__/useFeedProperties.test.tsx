@@ -34,6 +34,9 @@
  *
  * ### Boundary / error
  * - (EC-4) desmontar_limpia_la_suscripcion_unsubscribe_invocado
+ *
+ * ### Coords → deps (#42.2 — arnés nuevo, NO debilita EC-1..EC-4)
+ * - (EC-5) coords_de_uselocation_fluyen_a_deps_de_fetchfeedproperties
  */
 
 import { renderHook, act } from '@testing-library/react-native';
@@ -45,6 +48,21 @@ import { renderHook, act } from '@testing-library/react-native';
 jest.mock('../lib/feedProperties', () => ({
   fetchFeedProperties: jest.fn(),
 }));
+
+// ponytail: harness-only (#42.2) — useFeedProperties ahora consume useLocation()
+// para pasar coords a fetchFeedProperties. Default: sin coords (gate en
+// 'loading'), como en la mayoría de sesiones reales al montar. EC-5 override
+// con mockReturnValueOnce para verificar el flujo cuando sí hay coords.
+const mock_use_location = jest.fn().mockReturnValue({ coords: null, status: 'loading' });
+jest.mock('@/features/location/LocationProvider', () => ({
+  useLocation: () => mock_use_location(),
+}));
+
+// ponytail: harness-only (#42.2) — build_deps hace require('@/lib/supabase/client')
+// lazy solo cuando hay coords; el top-level real lanza sin env vars (ver
+// feedProperties.ts). Stub inerte: ningún test de este archivo assert sobre
+// el valor de supabase, solo sobre coords.
+jest.mock('@/lib/supabase/client', () => ({ supabase: {} }));
 
 // ---------------------------------------------------------------------------
 // Imports DESPUÉS de registrar mocks
@@ -218,5 +236,20 @@ describe('useFeedProperties — suscripción a onPropertyDeleted (55.2)', () => 
     expect(wrapped_unsubscribe).toHaveBeenCalledTimes(1);
 
     on_property_deleted_spy.mockRestore();
+  });
+
+  // ── (EC-5) coords de useLocation fluyen a deps de fetchFeedProperties ────
+
+  it('(EC-5) coords_de_uselocation_fluyen_a_deps_de_fetchfeedproperties: useLocation devuelve coords reales → loadInitial llama fetchFeedProperties con deps.coords === esas coords', async () => {
+    const coords = { latitude: 20.6597, longitude: -103.3496 };
+    mock_use_location.mockReturnValueOnce({ coords, status: 'granted' });
+
+    await render_loaded_hook();
+
+    expect(mock_fetch_feed_properties).toHaveBeenCalledWith(
+      undefined,
+      expect.objectContaining({ coords }),
+      undefined,
+    );
   });
 });

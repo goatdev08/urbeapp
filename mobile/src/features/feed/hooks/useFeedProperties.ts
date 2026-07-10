@@ -9,16 +9,25 @@
  * identidad y el efecto de FeedScreen que depende de loadInitial se vuelve a
  * disparar — refetch automático al aplicar/limpiar filtros, sin plumbing extra.
  *
+ * Coords (#42.2): useLocation().coords fluye a fetchFeedProperties vía deps
+ * para la RPC de proximidad. Mientras coords sea null (gate de ubicación en
+ * 'loading', ver (protected)/_layout.tsx) se pasa deps=undefined y el lib usa
+ * su propio fallback GDL + lazy-require del cliente real. Igual que `filters`,
+ * coords entra a las deps de loadInitial/loadMore → cuando la coord real llega
+ * (cambia de null a objeto), loadInitial cambia de identidad y el efecto de
+ * FeedScreen dispara el refetch automáticamente.
+ *
  * ponytail: sin estado extra — loading único para initial y loadMore;
  * techo conocido: sin abort controller (el feed es efímero, sin race visible).
  */
 
 import { useState, useCallback, useEffect } from 'react';
 
+import { useLocation } from '@/features/location/LocationProvider';
 import type { FilterState } from '@/features/search/types';
 import { onPropertyDeleted } from '@/lib/propertyEvents';
 
-import { fetchFeedProperties } from '../lib/feedProperties';
+import { fetchFeedProperties, type FeedPropertiesDeps } from '../lib/feedProperties';
 import type { FeedPropertyWithUrl } from '../types';
 
 export interface UseFeedPropertiesState {
@@ -35,6 +44,7 @@ export interface UseFeedPropertiesState {
 }
 
 export function useFeedProperties(filters?: FilterState): UseFeedPropertiesState {
+  const { coords } = useLocation();
   const [data, set_data] = useState<FeedPropertyWithUrl[]>([]);
   // ponytail: arranca en true — FeedScreen siempre llama loadInitial en mount;
   // esto evita un frame de "empty state" antes de que useEffect dispare.
@@ -42,11 +52,21 @@ export function useFeedProperties(filters?: FilterState): UseFeedPropertiesState
   const [error, set_error] = useState<string | null>(null);
   const [nextCursor, set_next_cursor] = useState<string | null>(null);
 
+  // ponytail: deps solo se arma cuando ya hay coords reales; sin ellas se pasa
+  // undefined y fetchFeedProperties usa su propio lazy-require del singleton
+  // + fallback GDL (evita importar '@/lib/supabase/client' en top-level aquí,
+  // que lanza sin env vars — mismo motivo que en feedProperties.ts).
+  const build_deps = useCallback((): FeedPropertiesDeps | undefined => {
+    if (!coords) return undefined;
+    const { supabase } = require('@/lib/supabase/client') as { supabase: unknown };
+    return { supabase, coords };
+  }, [coords]);
+
   const load_initial = useCallback(async () => {
     set_is_loading(true);
     set_error(null);
     try {
-      const result = await fetchFeedProperties(undefined, undefined, filters);
+      const result = await fetchFeedProperties(undefined, build_deps(), filters);
       set_data(result.data);
       set_next_cursor(result.nextCursor);
     } catch (e) {
@@ -54,14 +74,14 @@ export function useFeedProperties(filters?: FilterState): UseFeedPropertiesState
     } finally {
       set_is_loading(false);
     }
-  }, [filters]);
+  }, [filters, build_deps]);
 
   const load_more = useCallback(async () => {
     if (!nextCursor || isLoading) return;
     set_is_loading(true);
     set_error(null);
     try {
-      const result = await fetchFeedProperties(nextCursor, undefined, filters);
+      const result = await fetchFeedProperties(nextCursor, build_deps(), filters);
       set_data((prev) => [...prev, ...result.data]);
       set_next_cursor(result.nextCursor);
     } catch (e) {
@@ -69,7 +89,7 @@ export function useFeedProperties(filters?: FilterState): UseFeedPropertiesState
     } finally {
       set_is_loading(false);
     }
-  }, [nextCursor, isLoading, filters]);
+  }, [nextCursor, isLoading, filters, build_deps]);
 
   useEffect(
     () => onPropertyDeleted((id) => set_data((prev) => prev.filter((p) => p.id !== id))),
