@@ -35,6 +35,9 @@ import { validate_video_size } from '../validation';
 // Mensaje neutro fijo para cualquier falla de red/subida (no expone detalle técnico
 // ni sugiere "archivo más pequeño" — el límite de tamaño ya se valida antes).
 const UPLOAD_ERROR_MESSAGE = 'Error al subir el video. Verifica tu conexión e intenta de nuevo.';
+// 413 Payload Too Large — el servidor rechazó el archivo por tamaño (límite del bucket).
+const UPLOAD_ERROR_MESSAGE_413 =
+  'El video supera el tamaño máximo permitido por el servidor. Intenta con un video más ligero.';
 
 // ponytail: import lazy — el cliente real solo se carga cuando no se inyecta
 // uno externo (los tests siempre inyectan su propio mock).
@@ -175,7 +178,7 @@ export function useVideoUpload(deps?: UseVideoUploadDeps): UseVideoUploadResult 
 
         if (status < 200 || status >= 300) {
           status_ref.current = 'error';
-          error_ref.current = UPLOAD_ERROR_MESSAGE;
+          error_ref.current = status === 413 ? UPLOAD_ERROR_MESSAGE_413 : UPLOAD_ERROR_MESSAGE;
           // NO escribir al form en error (EC-9)
           return;
         }
