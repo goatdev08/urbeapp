@@ -14,7 +14,7 @@
  * ponytail: useMemo en clustered — evita re-clusterizar en cada render;
  *   solo recalcula cuando data o region cambian.
  */
-import React, { Component, useMemo, useRef, useState } from 'react';
+import React, { Component, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import MapView, { Region } from 'react-native-maps';
 import { useRouter } from 'expo-router';
@@ -95,6 +95,30 @@ function MapContent(): React.JSX.Element {
   const [selected, set_selected] = useState<MapProperty | null>(null);
   const [query, set_query] = useState('');
   const [filter_visible, set_filter_visible] = useState(false);
+
+  /*
+   * coords_used_ref: arranca en true si ya montamos con coords reales (nada que
+   * animar). Si montamos con el fallback GDL (coords aún null), arranca en
+   * false y el effect de abajo recentra UNA sola vez cuando las coords lleguen
+   * tarde — el gate de (protected)/_layout.tsx deja pasar el estado `loading`,
+   * así que MapScreen puede montar antes de que useLocation() resuelva.
+   */
+  const coords_used_ref = useRef(user_coords !== null);
+
+  useEffect(() => {
+    if (user_coords !== null && !coords_used_ref.current && map_ref.current) {
+      map_ref.current.animateToRegion(
+        {
+          latitude: user_coords.latitude,
+          longitude: user_coords.longitude,
+          latitudeDelta: GDL_REGION.latitudeDelta,
+          longitudeDelta: GDL_REGION.longitudeDelta,
+        },
+        300,
+      );
+      coords_used_ref.current = true;
+    }
+  }, [user_coords]);
 
   /*
    * ponytail: filtro cliente sin geocoding ni nueva dependencia — cubre el scope #11.7.
