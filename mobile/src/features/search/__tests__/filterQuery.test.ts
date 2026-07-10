@@ -79,6 +79,18 @@
  * ### get_active_filter_count
  * - (EC-23) empty_filters_cuenta_cero
  * - (EC-24) conteo_multiple_precio_cuenta_uno_aunque_min_y_max_esten_set
+ *
+ * ### radius_m (#42.1 — footprint tarea #42, approach A1 lean)
+ * - (EC-25) empty_filters_radius_m_default_5000_metros
+ * - (EC-26) radius_m_nunca_viaja_a_build_filter_query_invariante_a1
+ *
+ * Nota sobre EC-26 (regresión, no "RED puro"): protege el invariante A1 de que
+ * `radius_m` es SOLO parámetro de la futura RPC `properties_within_radius` y
+ * NUNCA debe traducirse a una llamada del query builder (el GREEN de #42.1 no
+ * toca `build_filter_query`). Por diseño esta aserción ya es verdadera hoy
+ * (el builder ignora cualquier campo que no reconoce) — es un candado que debe
+ * seguir en verde durante y después del GREEN; si alguna vez se pone en rojo,
+ * significa que alguien agregó lógica de radio al builder, lo cual rompe A1.
  */
 
 import { build_filter_query, get_active_filter_count, EMPTY_FILTERS } from '../lib/filterQuery';
@@ -426,8 +438,48 @@ describe('get_active_filter_count', () => {
       pet_friendly: true,
       allows_no_guarantor: true,
       student_friendly: true,
+      radius_m: 5000,
     };
 
     expect(get_active_filter_count(filters)).toBe(8);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// radius_m (#42.1) — EMPTY_FILTERS default + invariante A1
+// ---------------------------------------------------------------------------
+
+describe('EMPTY_FILTERS — radius_m (42.1)', () => {
+  it('(EC-25) empty_filters_radius_m_default_5000_metros: EMPTY_FILTERS.radius_m === 5000 (default 5 km, #42 approach A1)', () => {
+    expect(EMPTY_FILTERS.radius_m).toBe(5000);
+  });
+});
+
+describe('build_filter_query — invariante A1: radius_m nunca viaja al builder (42.1)', () => {
+  it('(EC-26) radius_m_nunca_viaja_a_build_filter_query_invariante_a1: un FilterState con radius_m=20000 produce EXACTAMENTE las mismas llamadas al builder que el mismo FilterState sin radius_m (radius_m es SOLO parámetro de properties_within_radius, jamás del builder)', () => {
+    const builder_sin_radius = make_fake_query_builder();
+    const builder_con_radius = make_fake_query_builder();
+
+    const filtros_base = make_filters({
+      operation_types: ['rent'],
+      property_types: ['house'],
+      price_min: 5000,
+      price_max: 20000,
+      zone: 'Roma Norte',
+      bedrooms_min: 1,
+      pet_friendly: true,
+    });
+
+    build_filter_query(builder_sin_radius, filtros_base);
+    build_filter_query(builder_con_radius, { ...filtros_base, radius_m: 20000 });
+
+    expect(builder_con_radius.calls).toEqual(builder_sin_radius.calls);
+    // Ninguna llamada del builder debe referirse a radio/distancia.
+    const radius_calls = builder_con_radius.calls.filter(
+      (c) =>
+        typeof c.args[0] === 'string' &&
+        (c.args[0].includes('radius') || c.args[0].includes('distance')),
+    );
+    expect(radius_calls).toEqual([]);
   });
 });

@@ -23,4 +23,12 @@ export interface FilterState {
   pet_friendly: boolean;
   allows_no_guarantor: boolean;
   student_friendly: boolean;
+  /**
+   * Radio de búsqueda en metros para la RPC `properties_within_radius` (#42, approach A1).
+   * Default 5000 (5 km) en EMPTY_FILTERS.
+   *
+   * 🔒 Invariante A1 (#42): radius_m es SOLO parámetro de la RPC de proximidad;
+   * NUNCA debe viajar por `build_filter_query` (ver EC-26 en filterQuery.test.ts).
+   */
+  radius_m: number;
 }

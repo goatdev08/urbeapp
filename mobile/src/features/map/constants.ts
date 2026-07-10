@@ -2,8 +2,10 @@
  * constants.ts — constantes compartidas del mapa global (#11).
  *
  * Centrado por defecto: Guadalajara (la demo cerrada de 3 semanas opera ahí).
- * Decisión del grilling #11: sin expo-location — el mapa siempre abre en GDL;
- * "centrar en mi ubicación" queda como trabajo futuro.
+ * GDL_REGION es el FALLBACK mientras no hay coords reales: MapScreen usa
+ * useLocation().coords cuando está disponible y recentra al llegar tarde
+ * (tarea #42 / exploración 027); si el permiso de ubicación no se concede o
+ * las coords nunca llegan, el mapa se queda en GDL.
  */
 
 /** Región inicial del mapa global: Guadalajara, zoom de ciudad (~10 km). */

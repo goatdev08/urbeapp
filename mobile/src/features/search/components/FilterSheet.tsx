@@ -42,6 +42,7 @@ import { useFilters } from '../filterStore';
 import { parse_price, validate_price_form } from '../validation';
 import { BedroomsSelector } from './BedroomsSelector';
 import { FilterChipGroup } from './FilterChipGroup';
+import { RadiusSelector } from './RadiusSelector';
 import { ZoneAutocomplete } from './ZoneAutocomplete';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -131,6 +132,7 @@ export function FilterSheet({ visible, onClose }: FilterSheetProps): React.JSX.E
     price_max,
     zone,
     bedrooms_min: bedrooms,
+    radius_m,
     pet_friendly,
     allows_no_guarantor,
     student_friendly,
@@ -320,6 +322,20 @@ export function FilterSheet({ visible, onClose }: FilterSheetProps): React.JSX.E
           <View style={styles.section}>
             <Text style={styles.section_title}>Zona o colonia</Text>
             <ZoneAutocomplete value={zone} onChange={(v) => set_filter('zone', v)} />
+          </View>
+
+          <View style={styles.section_sep} />
+
+          {/* ── 42.1 — Radio de búsqueda ──────────────────────────────────── */}
+          {/*
+           * Presets fijos en metros (5/10/20/50 km) para la RPC
+           * `properties_within_radius` (#42, approach A1). NUNCA viaja por
+           * build_filter_query (invariante A1) — solo se persiste en el
+           * FilterContext y se lee al llamar esa RPC.
+           */}
+          <View style={styles.section}>
+            <Text style={styles.section_title}>Radio de búsqueda</Text>
+            <RadiusSelector value={radius_m} onChange={(v) => set_filter('radius_m', v)} />
           </View>
 
           <View style={styles.section_sep} />

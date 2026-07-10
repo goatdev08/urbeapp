@@ -21,6 +21,7 @@ export const EMPTY_FILTERS: FilterState = {
   pet_friendly: false,
   allows_no_guarantor: false,
   student_friendly: false,
+  radius_m: 5000,
 };
 
 /** Forma mínima del query builder de supabase-js que este módulo necesita. */
