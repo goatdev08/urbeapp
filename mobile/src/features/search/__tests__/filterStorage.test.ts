@@ -129,6 +129,7 @@ describe('filterStorage — persistencia del FilterState (12.7)', () => {
       pet_friendly: true,
       allows_no_guarantor: true,
       student_friendly: true,
+      radius_m: 5000,
     };
 
     await save_filters(filters, { storage });

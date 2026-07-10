@@ -438,6 +438,7 @@ describe('get_active_filter_count', () => {
       pet_friendly: true,
       allows_no_guarantor: true,
       student_friendly: true,
+      radius_m: 5000,
     };
 
     expect(get_active_filter_count(filters)).toBe(8);

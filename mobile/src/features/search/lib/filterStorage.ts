@@ -53,7 +53,10 @@ export async function load_filters(deps?: FilterStorageDeps): Promise<FilterStat
     const parsed: unknown = JSON.parse(raw);
     if (!is_plain_object(parsed)) return EMPTY_FILTERS;
 
-    return parsed as unknown as FilterState;
+    // Merge sobre EMPTY_FILTERS: un FilterState persistido ANTES de que se
+    // agregara un campo nuevo (p.ej. radius_m, #42.1) no lo trae en el JSON
+    // guardado; el merge lo hidrata con su default en vez de dejarlo undefined.
+    return { ...EMPTY_FILTERS, ...(parsed as Partial<FilterState>) };
   } catch {
     return EMPTY_FILTERS;
   }
