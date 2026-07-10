@@ -32,6 +32,21 @@ Solo se necesita un build nuevo cuando cambian **dependencias nativas** o la con
 
 Perfiles definidos en `mobile/eas.json`: `development` · `preview` · `production`.
 
+## 📡 OTA a testers (EAS Update — solo JS/UI)
+
+Para cambios de **solo JS/UI** (sin módulo nativo nuevo), no se recompila: se publica un OTA que los testers reciben al reabrir la app.
+
+| Comando | Para qué |
+|---------|----------|
+| `cd mobile && pnpm ota "<mensaje>"` | Publica OTA a **ambos** canales: `production`(iOS) + `preview`(Android). Default `all`. |
+| `pnpm ota "<mensaje>" android` | Solo `preview`/Android. |
+| `pnpm ota "<mensaje>" ios` | Solo `production`/iOS. |
+
+- ⚠️ **NO uses `eas update` directo**: bajo pnpm su bundler truena (`TypeError transformFile`). El script `mobile/scripts/ota.sh` lo sortea (`expo export` + `eas update --skip-bundler`, con `npx -y eas-cli@latest`).
+- Correr **desde `main` ya mergeado** (el OTA sube el working dir; el script avisa si no estás en main).
+- Runtime actual `1.0.1`. **Módulo nativo nuevo NO viaja por OTA** → subir `version` + rebuild.
+- Detalle: [[estrategia-releases]] · memoria [[eas_update_pnpm_gotcha]].
+
 ## ✅ Verificación (antes de cerrar una subtarea)
 
 | Comando | Para qué |

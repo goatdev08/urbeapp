@@ -17,9 +17,11 @@ Cómo enviar cambios a clientes/beta testers (Android + iOS) **sin recompilar ca
 - `runtimeVersion.policy: 'appVersion'` (hoy `1.0.1`). Canales en `eas.json`: **`preview`** (Android APK de feedback) y **`production`** (iOS/TestFlight).
 
 ## Regla OTA vs rebuild
-Solo el **código nativo** obliga a recompilar. El resto va por OTA (`eas update`), llega al reabrir la app, en segundos, sin tienda.
+Solo el **código nativo** obliga a recompilar. El resto va por OTA, llega al reabrir la app, en segundos, sin tienda.
 
-| Va por **OTA** (`eas update --channel <canal>`) | Exige **REBUILD** (`eas build` + reinstalar / `eas submit`) |
+> ⚙️ **En este repo el OTA se dispara con `cd mobile && pnpm ota "<mensaje>" [android|ios|all]`** (script `mobile/scripts/ota.sh`), **no** con `eas update` directo: bajo pnpm el bundler de `eas update` truena (`TypeError transformFile`), así que el script separa `expo export` + `eas update --skip-bundler` y usa `npx -y eas-cli@latest`. Correr **desde `main` mergeado**. Detalle del gotcha en [[eas_update_pnpm_gotcha]].
+
+| Va por **OTA** (`pnpm ota …` → `eas update --skip-bundler`) | Exige **REBUILD** (`eas build` + reinstalar / `eas submit`) |
 |---|---|
 | Pantallas, textos, estilos, layout | Instalar librería con módulo nativo nuevo |
 | Lógica JS/RN, hooks, validaciones | Cambiar permisos, íconos, splash, versión de SDK |
@@ -35,7 +37,7 @@ Con apps viejas y nuevas conviviendo contra la MISMA base:
 - Esto es lo que hace que **demo → beta → final** sea aditivo y no un rewrite. Ver [[brechas-demo-vs-prd]].
 
 ## Flujo de la beta
-1. Cambio de UI/lógica → `eas update --channel preview` → testers Android lo reciben al reabrir.
+1. Cambio de UI/lógica → merge a `main` → `cd mobile && pnpm ota "<mensaje>"` (publica a `preview`/Android **y** `production`/iOS) → testers lo reciben al reabrir.
 2. Cambio nativo → `eas build --profile preview --platform android` (APK) / `--profile production --platform ios` (TestFlight) → reinstalar.
 3. iOS TestFlight: `eas submit` sube a App Store Connect → agregar tester → aceptar invitación.
 
