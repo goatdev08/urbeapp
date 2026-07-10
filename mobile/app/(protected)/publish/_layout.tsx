@@ -18,7 +18,7 @@
  *   2. WizardHeader        — StepIndicator persistente que lee la ruta activa.
  *   3. Stack               — navegación nativa entre pasos, sin header nativo.
  */
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Stack, useSegments, useLocalSearchParams, useRouter, useNavigation } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -89,13 +89,44 @@ function WizardHeader() {
 function FormPrefiller({ property_id }: { property_id: string }) {
   const { update } = usePublishForm();
   const { formState, loading } = useLoadProperty(property_id);
+  // ponytail: ref (no state) — es solo un guard, no debe provocar re-render.
+  const prefilled = useRef(false);
 
+  // Activa el modo edición en el contexto de inmediato. Al leerse en step3 desde
+  // el contexto (no de la URL), sobrevive a la navegación step1→step2→step3.
   useEffect(() => {
-    if (formState && !loading) {
+    update({ edit_mode: true, property_id });
+  }, [property_id, update]);
+
+  // Pre-llena el form UNA sola vez: si formState cambia de identidad o el usuario
+  // vuelve a step1, no re-prellenamos para no pisar sus ediciones. update() hace
+  // merge, así que edit_mode/property_id (seteados arriba) se conservan.
+  useEffect(() => {
+    if (formState && !loading && !prefilled.current) {
       update(formState);
+      prefilled.current = true;
     }
   }, [formState, loading, update]);
 
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// CleanupOnUnmount — resetea el form al salir del wizard (incluye edit_mode y
+// property_id). ponytail: red de seguridad. Hoy el Provider vive dentro de este
+// _layout y se desmonta al salir (reentrar = estado INITIAL nuevo), así que el
+// reset es defensivo; queda como guard explícito contra la clase de bug #53
+// (que edit_mode se filtre a un alta nueva) si el Provider se izara a un layout
+// superior para compartir estado entre pasos. Techo: solo cubre desmontaje real.
+// ---------------------------------------------------------------------------
+
+function CleanupOnUnmount() {
+  const { reset } = usePublishForm();
+  useEffect(() => {
+    return () => {
+      reset();
+    };
+  }, [reset]);
   return null;
 }
 
@@ -110,6 +141,9 @@ export default function PublishWizardLayout() {
   return (
     <PublishFormProvider>
       <View style={styles.root}>
+        {/* Resetea el form al salir del wizard (edit_mode/property_id incluidos) */}
+        <CleanupOnUnmount />
+
         {/* Pre-llena el form en edit mode (sin render visible) */}
         {property_id !== null && <FormPrefiller property_id={property_id} />}
 

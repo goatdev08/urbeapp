@@ -32,6 +32,18 @@
  *
  * ### Edit mode — error
  * - (EC-16) edit_mode_error_update_expone_error
+ *
+ * ### Propagación edit_mode/property_id vía PublishFormContext (53.1, RED)
+ * SUT ampliado: PublishFormContext.tsx / types.ts — opción A de la exploración
+ * `.taskmaster/docs/exploraciones/031-bug-edicion-publicacion-duplica.md`.
+ * `edit_mode`/`property_id` AÚN NO EXISTEN en `PublishFormState` — estos casos
+ * fallan HOY por aserción (valor `undefined` en vez de `false`/`null`, o el
+ * publish() cae en create mode por falta de propagación), no por error de import.
+ * - (EC-CTX-1) context_expone_edit_mode_y_property_id_en_default
+ * - (EC-CTX-2) update_setea_edit_mode_true_y_property_id
+ * - (EC-CTX-3) edit_mode_y_property_id_persisten_tras_update_de_otros_campos
+ * - (EC-CTX-4) edit_mode_desde_contexto_dirige_publish_a_update_no_ef
+ * - (EC-CTX-5) reset_limpia_edit_mode_y_property_id
  */
 
 import React from 'react';
@@ -42,6 +54,7 @@ import { renderHook, act } from '@testing-library/react-native';
 // ---------------------------------------------------------------------------
 
 import { PublishFormProvider, usePublishForm } from '../store/PublishFormContext';
+import type { PublishFormState } from '../store/types';
 
 // ---------------------------------------------------------------------------
 // SUT
@@ -354,5 +367,143 @@ describe('usePublish — edit mode (17.8)', () => {
     expect(result.current.sut.error).not.toBeNull();
     expect(result.current.sut.error).toMatch(/row-level security|rls|policy/i);
     expect(result.current.sut.property_id).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — propagación edit_mode/property_id vía PublishFormContext (53.1, RED)
+// ---------------------------------------------------------------------------
+
+/**
+ * Extensión local de tipo — SOLO para estos tests. `edit_mode`/`property_id`
+ * aún no existen en `PublishFormState` (types.ts); ese es precisamente el
+ * hueco que hace fallar los EC-CTX-* de hoy. No se toca el tipo de producción
+ * en fase RED (eso ocurre en la fase GREEN de subtareas siguientes).
+ */
+type PublishFormStateWithEditCtx = PublishFormState & {
+  edit_mode: boolean;
+  property_id: string | null;
+};
+
+describe('PublishFormContext — edit_mode/property_id propagation (53.1, RED)', () => {
+  it('(EC-CTX-1) context_expone_edit_mode_y_property_id_en_default: el estado expone edit_mode:boolean y property_id:string|null con default false/null', async () => {
+    const { result } = await renderHook(() => usePublishForm(), { wrapper });
+
+    const state = result.current.state as PublishFormStateWithEditCtx;
+
+    expect(state.edit_mode).toBe(false);
+    expect(state.property_id).toBeNull();
+  });
+
+  it('(EC-CTX-2) update_setea_edit_mode_true_y_property_id: tras update({edit_mode:true, property_id}), el estado refleja ambos valores', async () => {
+    const { result } = await renderHook(() => usePublishForm(), { wrapper });
+
+    // Precondición: arranca en default — ya falla HOY porque el campo no
+    // existe en PublishFormState (undefined !== false).
+    expect((result.current.state as PublishFormStateWithEditCtx).edit_mode).toBe(false);
+
+    await act(async () => {
+      result.current.update(
+        { edit_mode: true, property_id: TEST_PROPERTY_ID } as Partial<PublishFormStateWithEditCtx>,
+      );
+    });
+
+    const state = result.current.state as PublishFormStateWithEditCtx;
+    expect(state.edit_mode).toBe(true);
+    expect(state.property_id).toBe(TEST_PROPERTY_ID);
+  });
+
+  it('(EC-CTX-3) edit_mode_y_property_id_persisten_tras_update_de_otros_campos: cambiar precio/descripción no resetea edit_mode ni property_id', async () => {
+    const { result } = await renderHook(() => usePublishForm(), { wrapper });
+
+    // Precondición: arranca en default — ya falla HOY (RED).
+    expect((result.current.state as PublishFormStateWithEditCtx).property_id).toBeNull();
+
+    await act(async () => {
+      result.current.update(
+        { edit_mode: true, property_id: TEST_PROPERTY_ID } as Partial<PublishFormStateWithEditCtx>,
+      );
+    });
+
+    await act(async () => {
+      result.current.update({ price: 3_000_000, description: 'Casa remodelada, nueva descripción' });
+    });
+
+    const state = result.current.state as PublishFormStateWithEditCtx;
+    expect(state.edit_mode).toBe(true);
+    expect(state.property_id).toBe(TEST_PROPERTY_ID);
+    // Confirma que sí se aplicó el update de otros campos (no quedó "congelado")
+    expect(state.price).toBe(3_000_000);
+    expect(state.description).toBe('Casa remodelada, nueva descripción');
+  });
+
+  it('(EC-CTX-4) edit_mode_desde_contexto_dirige_publish_a_update_no_ef: cuando editMode/propertyId provienen de context.state (propagados vía update, no de un literal fijo), publish() hace UPDATE directo, NO invoca la EF, y el payload no incluye campos de video', async () => {
+    const mock_supabase = make_mock_supabase_edit({});
+
+    const { result } = await renderHook(
+      () => {
+        const form = usePublishForm();
+        const ctx_state = form.state as PublishFormStateWithEditCtx;
+        return {
+          form,
+          sut: usePublish({
+            supabase: mock_supabase,
+            // Contrato esperado (Opción A, exploración 031): editMode/propertyId
+            // se derivan del contexto propagado desde el _layout — NO de un
+            // literal fijo ni de useLocalSearchParams en step3.
+            editMode: ctx_state.edit_mode,
+            propertyId: ctx_state.property_id,
+          }),
+        };
+      },
+      { wrapper },
+    );
+
+    // Precondición: antes de propagar, edit_mode arranca en default (false).
+    // Ya falla HOY porque el campo no existe en PublishFormState
+    // (undefined !== false) — RED antes de tocar update().
+    expect((result.current.form.state as PublishFormStateWithEditCtx).edit_mode).toBe(false);
+
+    await act(async () => {
+      result.current.form.update(
+        {
+          edit_mode: true,
+          property_id: TEST_PROPERTY_ID,
+          ...VALID_FORM_EDIT_NO_VIDEO,
+        } as Partial<PublishFormStateWithEditCtx>,
+      );
+    });
+
+    await act(async () => {
+      await result.current.sut.publish();
+    });
+
+    // La EF NO debe invocarse en modo edición.
+    expect(mock_supabase._mock_invoke).not.toHaveBeenCalled();
+
+    // El UPDATE directo debe haberse llamado (contrato objetivo tras GREEN).
+    expect(mock_supabase._mock_update).toHaveBeenCalledTimes(1);
+
+    const [update_payload] = mock_supabase._mock_update.mock.calls[0] as [Record<string, unknown>];
+    expect(update_payload.video_id).toBeUndefined();
+    expect(update_payload.storage_path).toBeUndefined();
+  });
+
+  it('(EC-CTX-5) reset_limpia_edit_mode_y_property_id: tras editar y llamar reset(), edit_mode vuelve a false y property_id a null', async () => {
+    const { result } = await renderHook(() => usePublishForm(), { wrapper });
+
+    await act(async () => {
+      result.current.update(
+        { edit_mode: true, property_id: TEST_PROPERTY_ID } as Partial<PublishFormStateWithEditCtx>,
+      );
+    });
+
+    await act(async () => {
+      result.current.reset();
+    });
+
+    const state = result.current.state as PublishFormStateWithEditCtx;
+    expect(state.edit_mode).toBe(false);
+    expect(state.property_id).toBeNull();
   });
 });

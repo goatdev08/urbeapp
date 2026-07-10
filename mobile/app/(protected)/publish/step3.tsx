@@ -27,7 +27,7 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { VideoView, useVideoPlayer } from 'expo-video';
-import { useRouter , useLocalSearchParams } from 'expo-router';
+import { useRouter } from 'expo-router';
 
 
 import { usePublishForm } from '@/features/publish/store/PublishFormContext';
@@ -55,11 +55,13 @@ const COLOR_PICKER_BG = '#F3F4F6';
 
 export default function Step3Screen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ propertyId?: string }>();
-  const property_id = params.propertyId ?? null;
-  const is_edit_mode = property_id !== null;
 
   const { state, update } = usePublishForm();
+  // Edit mode se resuelve del CONTEXTO (propagado una vez en _layout), NO de la
+  // URL: sobrevive a la navegación step1→step2→step3, así que step3 ya no cae en
+  // create mode por pérdida del param → fin de la duplicación (#53).
+  const is_edit_mode = state.edit_mode;
+  const property_id = state.property_id;
   const hook = useVideoUpload();
   // Edit mode: UPDATE directo sin EF; create mode: invoca EF (sin cambios).
   const publish_hook = usePublish({
@@ -183,7 +185,9 @@ export default function Step3Screen() {
       <View style={styles.header}>
         <Text style={styles.page_title}>Video de la propiedad</Text>
         <Text style={styles.page_subtitle}>
-          Sube un video vertical para mostrar la propiedad.
+          {is_edit_mode
+            ? 'El video no se puede cambiar en modo edición.'
+            : 'Sube un video vertical para mostrar la propiedad.'}
         </Text>
       </View>
 
@@ -196,6 +200,16 @@ export default function Step3Screen() {
             nativeControls
             contentFit="contain"
           />
+        ) : is_edit_mode ? (
+          // Edit mode v1: el video no es reemplazable. Placeholder informativo
+          // (sin picker) para no generar uploads huérfanos en Storage.
+          <View style={styles.picker_placeholder}>
+            <Text style={styles.picker_icon}>▶</Text>
+            <Text style={styles.picker_text}>Video actual</Text>
+            <Text style={styles.picker_hint}>
+              El video no se puede cambiar en modo edición
+            </Text>
+          </View>
         ) : (
           // Área tocable para abrir el picker
           <TouchableOpacity
@@ -213,8 +227,8 @@ export default function Step3Screen() {
         )}
       </View>
 
-      {/* ── Botón de cambiar video (si ya hay uno) ───────────────────── */}
-      {has_video && (
+      {/* ── Botón de cambiar video (solo create mode; en edit no es reemplazable) ─ */}
+      {has_video && !is_edit_mode && (
         <TouchableOpacity
           style={styles.change_video_btn}
           onPress={handle_pick_video}
