@@ -483,3 +483,86 @@ describe('build_filter_query — invariante A1: radius_m nunca viaja al builder 
     expect(radius_calls).toEqual([]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// radius_m nullable (#58.1) — EMPTY_FILTERS default → null ("sin límite")
+// ---------------------------------------------------------------------------
+//
+// Cambio de producto (2026-07-10, subtarea 58.1): FilterState.radius_m pasa
+// de `number` (default 5000 en EMPTY_FILTERS) a `number | null` (default
+// `null` = SIN filtro de proximidad, "sin límite"; el radio se vuelve
+// refinamiento opt-in). Invariante A1 (#42, ver EC-26 arriba) se PRESERVA:
+// radius_m NUNCA entra a build_filter_query, sea null o numérico.
+// get_active_filter_count tampoco lo cuenta (decisión de producto: el radio
+// no es un "filtro activo" visible en el badge del FilterSheet).
+//
+// ⚠️ Nota sobre EC-25 (arriba, #42.1): asume el default viejo
+// (`EMPTY_FILTERS.radius_m === 5000`) y quedará en ROJO cuando el GREEN de
+// esta subtarea cambie el default a `null`. Se actualiza en GREEN — no se
+// toca aquí (regla test-author: no se debilitan tests existentes en RED).
+//
+// EDGE CASES NUEVOS (58.1):
+// - (EC-27) empty_filters_radius_m_default_null_58_1 — RED real por
+//   aserción: falla contra el SUT actual (EMPTY_FILTERS.radius_m === 5000),
+//   pasará en GREEN cuando el default cambie a null.
+// - (EC-28) filter_state_acepta_radius_m_null_58_1 — type-level: el literal
+//   `{ ...EMPTY_FILTERS, radius_m: null }` solo compila bajo
+//   `pnpm tsc --noEmit` DESPUÉS del cambio de tipo (hoy `radius_m: number`
+//   rechaza null → tsc en rojo); en runtime (jest, sin type-check) no lanza.
+// - (EC-29) filter_state_sigue_aceptando_radius_m_numerico_58_1 —
+//   regresión: `number` sigue siendo válido en la unión `number | null`.
+// - (EC-30) build_filter_query_ignora_radius_m_null_invariante_a1_58_1 —
+//   candado de regresión (invariante A1 ya verdadera hoy vía "el builder
+//   ignora campos que no reconoce"; debe seguir verdadera con radius_m=null).
+// - (EC-31) get_active_filter_count_no_cuenta_radius_m_ni_null_ni_numero_58_1
+//   — candado de regresión: decisión de producto, el radio NO es "filtro
+//   activo" para el badge, ni con null ni con número.
+
+describe('EMPTY_FILTERS — radius_m default null "sin límite" (58.1)', () => {
+  it('(EC-27) empty_filters_radius_m_default_null_58_1: EMPTY_FILTERS.radius_m === null (nuevo default "sin límite", #58.1 — reemplaza el default 5000 de EC-25/#42.1)', () => {
+    expect(EMPTY_FILTERS.radius_m).toBeNull();
+  });
+});
+
+describe('FilterState — radius_m acepta number | null (58.1)', () => {
+  it('(EC-28) filter_state_acepta_radius_m_null_58_1: un FilterState con radius_m=null tipa y no lanza en runtime (null = sin filtro de proximidad)', () => {
+    const filters: FilterState = { ...EMPTY_FILTERS, radius_m: null };
+
+    expect(filters.radius_m).toBeNull();
+  });
+
+  it('(EC-29) filter_state_sigue_aceptando_radius_m_numerico_58_1: un FilterState con radius_m=5000 sigue tipando y no lanza (number sigue siendo válido en la unión number | null)', () => {
+    const filters: FilterState = { ...EMPTY_FILTERS, radius_m: 5000 };
+
+    expect(filters.radius_m).toBe(5000);
+  });
+});
+
+describe('build_filter_query — invariante A1 se preserva con radius_m nullable (58.1)', () => {
+  it('(EC-30) build_filter_query_ignora_radius_m_null_invariante_a1_58_1: un FilterState con radius_m=null produce EXACTAMENTE las mismas llamadas al builder que el mismo FilterState sin override de radius_m (radius_m=null NUNCA viaja al builder)', () => {
+    const builder_sin_override = make_fake_query_builder();
+    const builder_con_radius_null = make_fake_query_builder();
+
+    const filtros_base = make_filters({
+      operation_types: ['sale'],
+      property_types: ['apartment'],
+      zone: 'Del Valle',
+      pet_friendly: true,
+    });
+
+    build_filter_query(builder_sin_override, filtros_base);
+    build_filter_query(builder_con_radius_null, { ...filtros_base, radius_m: null });
+
+    expect(builder_con_radius_null.calls).toEqual(builder_sin_override.calls);
+  });
+});
+
+describe('get_active_filter_count — radius_m NO cuenta como filtro activo (58.1)', () => {
+  it('(EC-31) get_active_filter_count_no_cuenta_radius_m_ni_null_ni_numero_58_1: con el resto de filtros en EMPTY, radius_m=null cuenta 0 y radius_m=20000 también cuenta 0 (decisión de producto: el radio no es un "filtro activo" del badge)', () => {
+    const filtros_radius_null = make_filters({ radius_m: null });
+    const filtros_radius_numero = make_filters({ radius_m: 20000 });
+
+    expect(get_active_filter_count(filtros_radius_null)).toBe(0);
+    expect(get_active_filter_count(filtros_radius_numero)).toBe(0);
+  });
+});
