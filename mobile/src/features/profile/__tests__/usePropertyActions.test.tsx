@@ -53,6 +53,10 @@
  * - (EC-20) isWorking_true_durante_accion
  * - (EC-21) isWorking_false_tras_exito
  * - (EC-22) isWorking_false_tras_error
+ *
+ * ### Señal compartida de mutación (subtarea 55.1)
+ * - (EC-23) delete_exitoso_emite_property_deleted_una_vez_con_el_id
+ * - (EC-24) delete_con_error_no_emite_property_deleted
  */
 
 import { renderHook, act } from '@testing-library/react-native';
@@ -62,6 +66,7 @@ import { renderHook, act } from '@testing-library/react-native';
 // ---------------------------------------------------------------------------
 
 import { useAuth } from '@/features/auth/context';
+import { emitPropertyDeleted } from '@/lib/propertyEvents';
 import { usePropertyActions } from '../hooks/usePropertyActions';
 import type { ClosedReason } from '../hooks/usePropertyActions';
 
@@ -71,6 +76,16 @@ import type { ClosedReason } from '../hooks/usePropertyActions';
 
 jest.mock('@/features/auth/context', () => ({
   useAuth: jest.fn(),
+}));
+
+// ---------------------------------------------------------------------------
+// Mock de propertyEvents — espía la emisión de la señal compartida (55.1)
+// sin ejecutar el pub/sub real.
+// ---------------------------------------------------------------------------
+
+jest.mock('@/lib/propertyEvents', () => ({
+  emitPropertyDeleted: jest.fn(),
+  onPropertyDeleted: jest.fn(() => jest.fn()),
 }));
 
 // ---------------------------------------------------------------------------
@@ -86,6 +101,9 @@ const TEST_CLOSED_REASON: ClosedReason = 'rented';
 // ---------------------------------------------------------------------------
 
 const mock_use_auth = useAuth as jest.MockedFunction<typeof useAuth>;
+const mock_emit_property_deleted = emitPropertyDeleted as jest.MockedFunction<
+  typeof emitPropertyDeleted
+>;
 
 // ---------------------------------------------------------------------------
 // Factories de mock
@@ -595,6 +613,39 @@ describe('usePropertyActions', () => {
     });
 
     expect(result.current.isWorking).toBe(false);
+  });
+
+  // ── (EC-23) Señal compartida — delete exitoso emite property_deleted ────
+
+  it('(EC-23) delete_exitoso_emite_property_deleted_una_vez_con_el_id: deleteProperty exitoso llama a emitPropertyDeleted exactamente una vez con el property_id', async () => {
+    const mock_supabase = make_mock_supabase();
+    const { result } = await renderHook(() =>
+      usePropertyActions({ supabase: mock_supabase as never })
+    );
+
+    await act(async () => {
+      await result.current.deleteProperty({ property_id: TEST_PROPERTY_ID });
+    });
+
+    expect(mock_emit_property_deleted).toHaveBeenCalledTimes(1);
+    expect(mock_emit_property_deleted).toHaveBeenCalledWith(TEST_PROPERTY_ID);
+  });
+
+  // ── (EC-24) Señal compartida — delete con error NO emite ─────────────────
+
+  it('(EC-24) delete_con_error_no_emite_property_deleted: si el soft-delete de Supabase devuelve error, emitPropertyDeleted NO se invoca', async () => {
+    const mock_supabase = make_mock_supabase({
+      delete_result: { error: { message: 'RLS policy violation: no es el dueño de la propiedad' } },
+    });
+    const { result } = await renderHook(() =>
+      usePropertyActions({ supabase: mock_supabase as never })
+    );
+
+    await act(async () => {
+      await result.current.deleteProperty({ property_id: TEST_PROPERTY_ID });
+    });
+
+    expect(mock_emit_property_deleted).not.toHaveBeenCalled();
   });
 
 });

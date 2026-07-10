@@ -28,6 +28,7 @@
 import { useRef, useReducer, useCallback, useMemo } from 'react';
 
 import { useAuth } from '@/features/auth/context';
+import { emitPropertyDeleted } from '@/lib/propertyEvents';
 
 // ---------------------------------------------------------------------------
 // Tipos públicos
@@ -250,6 +251,7 @@ export function usePropertyActions(deps?: UsePropertyActionsDeps): UsePropertyAc
           if (error) {
             return { ok: false as const, error: error.message ?? 'Error al eliminar la propiedad' };
           }
+          emitPropertyDeleted(params.property_id);
           return { ok: true as const, error: null };
         });
       });

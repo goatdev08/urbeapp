@@ -13,9 +13,10 @@
  * techo conocido: sin abort controller (el feed es efímero, sin race visible).
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 
 import type { FilterState } from '@/features/search/types';
+import { onPropertyDeleted } from '@/lib/propertyEvents';
 
 import { fetchFeedProperties } from '../lib/feedProperties';
 import type { FeedPropertyWithUrl } from '../types';
@@ -69,6 +70,11 @@ export function useFeedProperties(filters?: FilterState): UseFeedPropertiesState
       set_is_loading(false);
     }
   }, [nextCursor, isLoading, filters]);
+
+  useEffect(
+    () => onPropertyDeleted((id) => set_data((prev) => prev.filter((p) => p.id !== id))),
+    [],
+  );
 
   return {
     data,

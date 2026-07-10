@@ -1,0 +1,21 @@
+{
+	"meta": {
+		"generatedAt": "2026-07-10T02:49:01.379Z",
+		"tasksAnalyzed": 1,
+		"totalTasks": 56,
+		"analysisCount": 1,
+		"thresholdScore": 5,
+		"projectName": "Task Master",
+		"usedResearch": false
+	},
+	"complexityAnalysis": [
+		{
+			"taskId": 55,
+			"taskTitle": "Fix: Eliminar publicación no refresca la UI (grid del perfil, feed y guardados) hasta reiniciar la app",
+			"complexityScore": 4,
+			"recommendedSubtasks": 4,
+			"expansionPrompt": "Break down the task into the following subtasks: (1) Add refetch exposure to usePropertiesGrid hook with TDD (RED → GREEN → Guardian) following the useMyProperties pattern with tick state; (2) Add useFocusEffect to ProfileScreen following the useAgentProfile pattern with first-focus guard; (3) Add useFocusEffect to FeedScreen with same pattern; (4) Add useFocusEffect to SavedScreen with same pattern. Ensure each subtask includes clear acceptance criteria based on the detailed implementation approach and test strategy already provided in the task details.",
+			"reasoning": "This task has LOW-MODERATE complexity (4/10) because: (1) The implementation pattern is already well-established in the codebase (useAgentProfile uses useFocusEffect, useMyProperties exposes refetch via tick state); (2) The root cause is clearly identified and the solution is straightforward - add refetch exposure to one hook and add useFocusEffect to three screens; (3) Only ONE file requires TDD (usePropertiesGrid.ts in hooks/ footprint) while the other three are screen components requiring light verification only; (4) Existing test patterns can be directly copied from useAgentProfile.test.tsx and feedProperties.test.ts; (5) The task documentation is exceptionally thorough with exact code snippets and line numbers; (6) No new dependencies, no migrations, no RLS changes; (7) However, it touches 4 different files across 3 features (profile, feed, saved) requiring careful coordination and testing across multiple UI surfaces. The actual code changes are minimal (~30 lines total), but verification requires smoke testing on 3 different screens to ensure no regressions."
+		}
+	]
+}

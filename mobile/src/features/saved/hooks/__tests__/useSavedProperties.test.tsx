@@ -38,6 +38,40 @@
  * - (EC-6)  loading_false_al_terminar_carga
  * - (EC-7)  error_query_expone_error_string_properties_vacias_loading_false
  * - (EC-8)  refetch_vuelve_a_ejecutar_query
+ *
+ * ---------------------------------------------------------------------------
+ * EXTENSIÓN — Subtarea 55.2: suscripción a onPropertyDeleted
+ * ---------------------------------------------------------------------------
+ *
+ * OBJETIVO DEL RED (55.2):
+ *   HOY useSavedProperties NO se suscribe a onPropertyDeleted
+ *   (mobile/src/lib/propertyEvents.ts, subtarea 55.1, ya implementada y real).
+ *   Los tests del bloque "suscripción a onPropertyDeleted" fallan por ASERCIÓN:
+ *   el id "borrado" emitido con emitPropertyDeleted sigue presente en
+ *   `properties` porque el hook no tiene el useEffect de suscripción todavía.
+ *
+ * GREEN esperado (NO implementado aquí):
+ *   useEffect(() => onPropertyDeleted((id) =>
+ *     set_properties(prev => prev.filter(p => p.id !== id))
+ *   ), [])
+ *
+ * '@/lib/propertyEvents' NUNCA se mockea (punto de integración real): el test
+ * emite con emitPropertyDeleted(id) real y verifica que el hook, suscrito vía
+ * onPropertyDeleted real, quita el id. EC-4-55.2 (cleanup en unmount) usa
+ * jest.spyOn sobre onPropertyDeleted con mockImplementation que DELEGA a la
+ * implementación real y envuelve el unsubscribe devuelto en un jest.fn.
+ *
+ * EDGE CASES CUBIERTOS (4 casos, EC-1-55.2..EC-4-55.2):
+ *
+ * ### Happy path
+ * - (EC-1-55.2) id_borrado_desaparece_de_properties_tras_emitPropertyDeleted
+ *
+ * ### Edge cases del plan (55.2)
+ * - (EC-2-55.2) otros_items_conservan_identidad_y_thumbnail
+ * - (EC-3-55.2) emitir_id_inexistente_no_afecta_los_items_restantes
+ *
+ * ### Boundary / error
+ * - (EC-4-55.2) desmontar_limpia_la_suscripcion_unsubscribe_invocado
  */
 
 // ---------------------------------------------------------------------------
@@ -51,6 +85,9 @@
 import { renderHook, act } from '@testing-library/react-native';
 import { useAuth } from '@/features/auth/context';
 import { useSavedProperties } from '../useSavedProperties';
+
+import * as property_events from '@/lib/propertyEvents';
+import { emitPropertyDeleted } from '@/lib/propertyEvents';
 
 jest.mock('@/features/auth/context', () => ({
   useAuth: jest.fn(),
@@ -392,4 +429,161 @@ describe('useSavedProperties', () => {
     expect(result.current.error).toBeNull();
   });
 
+});
+
+// ---------------------------------------------------------------------------
+// EXTENSIÓN — Subtarea 55.2: suscripción a onPropertyDeleted
+// ---------------------------------------------------------------------------
+
+const SAVE_PROPERTY_ROW_A: PropertyEmbed = {
+  id: 'guardada-55-uuid-aaa',
+  price: 8500,
+  operation_type: 'rent',
+  property_type: 'apartment',
+  status: 'active',
+  address: 'Av. de las Rosas 10, GDL',
+  property_videos: [{ thumbnail_url: 'https://cdn.urbea.app/thumb-55-aaa.jpg', position: 0 }],
+};
+
+const SAVE_PROPERTY_ROW_B: PropertyEmbed = {
+  id: 'guardada-55-uuid-bbb',
+  price: 9200,
+  operation_type: 'rent',
+  property_type: 'apartment',
+  status: 'active',
+  address: 'Av. de las Rosas 20, GDL',
+  property_videos: [{ thumbnail_url: 'https://cdn.urbea.app/thumb-55-bbb.jpg', position: 0 }],
+};
+
+const SAVE_PROPERTY_ROW_C: PropertyEmbed = {
+  id: 'guardada-55-uuid-ccc',
+  price: 7100,
+  operation_type: 'rent',
+  property_type: 'apartment',
+  status: 'active',
+  address: 'Av. de las Rosas 30, GDL',
+  property_videos: [{ thumbnail_url: 'https://cdn.urbea.app/thumb-55-ccc.jpg', position: 0 }],
+};
+
+async function render_loaded_saved_properties_hook() {
+  const mock = make_supabase_mock({
+    query_result: {
+      data: [
+        { properties: SAVE_PROPERTY_ROW_A },
+        { properties: SAVE_PROPERTY_ROW_B },
+        { properties: SAVE_PROPERTY_ROW_C },
+      ],
+      error: null,
+    },
+  });
+  const rendered = await renderHook(() => useSavedProperties({ supabase: mock }));
+  return rendered;
+}
+
+describe('useSavedProperties — suscripción a onPropertyDeleted (55.2)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mock_use_auth.mockReturnValue({
+
+      user: { id: TEST_USER_ID } as any,
+      session: null,
+      isLoading: false,
+      signIn: jest.fn(),
+      signUp: jest.fn(),
+      signOut: jest.fn(),
+    });
+  });
+
+  // ── (EC-1-55.2) Happy path — el id borrado desaparece de properties ──────
+
+  it('(EC-1-55.2) id_borrado_desaparece_de_properties_tras_emitPropertyDeleted: tras emitPropertyDeleted(idB), properties ya no contiene idB y su longitud baja de 3 a 2', async () => {
+    const { result } = await render_loaded_saved_properties_hook();
+    expect(result.current.properties.map((p) => p.id)).toEqual([
+      SAVE_PROPERTY_ROW_A.id,
+      SAVE_PROPERTY_ROW_B.id,
+      SAVE_PROPERTY_ROW_C.id,
+    ]);
+
+    await act(async () => {
+      emitPropertyDeleted(SAVE_PROPERTY_ROW_B.id);
+    });
+
+    expect(result.current.properties).toHaveLength(2);
+    expect(result.current.properties.map((p) => p.id)).not.toContain(SAVE_PROPERTY_ROW_B.id);
+  });
+
+  // ── (EC-2-55.2) Los demás items conservan identidad y thumbnail ──────────
+
+  it('(EC-2-55.2) otros_items_conservan_identidad_y_thumbnail: al borrar idB, los objetos idA/idC restantes mantienen su misma referencia y thumbnail_url', async () => {
+    const { result } = await render_loaded_saved_properties_hook();
+    const item_a_before = result.current.properties.find((p) => p.id === SAVE_PROPERTY_ROW_A.id);
+    const item_c_before = result.current.properties.find((p) => p.id === SAVE_PROPERTY_ROW_C.id);
+    expect(item_a_before).toBeDefined();
+    expect(item_c_before).toBeDefined();
+
+    await act(async () => {
+      emitPropertyDeleted(SAVE_PROPERTY_ROW_B.id);
+    });
+
+    // La eliminación debe haber ocurrido de verdad (si no, la comparación de
+    // identidad de abajo pasaría trivialmente sin que el hook haya hecho nada).
+    expect(result.current.properties).toHaveLength(2);
+
+    const item_a_after = result.current.properties.find((p) => p.id === SAVE_PROPERTY_ROW_A.id);
+    const item_c_after = result.current.properties.find((p) => p.id === SAVE_PROPERTY_ROW_C.id);
+
+    expect(item_a_after).toBe(item_a_before);
+    expect(item_c_after).toBe(item_c_before);
+    expect(item_a_after?.thumbnail_url).toBe(SAVE_PROPERTY_ROW_A.property_videos[0]!.thumbnail_url);
+    expect(item_c_after?.thumbnail_url).toBe(SAVE_PROPERTY_ROW_C.property_videos[0]!.thumbnail_url);
+  });
+
+  // ── (EC-3-55.2) Emitir un id inexistente no afecta los items restantes ───
+
+  it('(EC-3-55.2) emitir_id_inexistente_no_afecta_los_items_restantes: tras borrar idB (2 items quedan), emitir un id que no existe en guardados no cambia el conteo ni los ids restantes', async () => {
+    const { result } = await render_loaded_saved_properties_hook();
+
+    await act(async () => {
+      emitPropertyDeleted(SAVE_PROPERTY_ROW_B.id);
+    });
+    // Confirma que el mecanismo de borrado real está activo antes del no-op.
+    expect(result.current.properties).toHaveLength(2);
+
+    await act(async () => {
+      emitPropertyDeleted('guardada-55-uuid-que-no-existe');
+    });
+
+    expect(result.current.properties).toHaveLength(2);
+    expect(result.current.properties.map((p) => p.id)).toEqual([
+      SAVE_PROPERTY_ROW_A.id,
+      SAVE_PROPERTY_ROW_C.id,
+    ]);
+  });
+
+  // ── (EC-4-55.2) Desmontar limpia la suscripción ───────────────────────────
+
+  it('(EC-4-55.2) desmontar_limpia_la_suscripcion_unsubscribe_invocado: el hook se suscribe una vez al montar y llama la función de unsubscribe devuelta al desmontar', async () => {
+    const real_on_property_deleted = property_events.onPropertyDeleted;
+    const on_property_deleted_spy = jest
+      .spyOn(property_events, 'onPropertyDeleted')
+      .mockImplementation((listener: (property_id: string) => void) => {
+        const real_unsubscribe = real_on_property_deleted(listener);
+        return jest.fn(real_unsubscribe);
+      });
+
+    const { unmount } = await render_loaded_saved_properties_hook();
+
+    // El hook debe haberse suscrito exactamente una vez al montar.
+    expect(on_property_deleted_spy).toHaveBeenCalledTimes(1);
+
+    const wrapped_unsubscribe = on_property_deleted_spy.mock.results[0]!.value as jest.Mock;
+
+    await act(async () => {
+      unmount();
+    });
+
+    expect(wrapped_unsubscribe).toHaveBeenCalledTimes(1);
+
+    on_property_deleted_spy.mockRestore();
+  });
 });

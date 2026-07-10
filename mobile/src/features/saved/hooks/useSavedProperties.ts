@@ -21,6 +21,7 @@
 import { useState, useEffect, useCallback } from 'react';
 
 import { useAuth } from '@/features/auth/context';
+import { onPropertyDeleted } from '@/lib/propertyEvents';
 import type { GridProperty } from '@/features/profile/types';
 
 // ---------------------------------------------------------------------------
@@ -153,6 +154,11 @@ export function useSavedProperties(deps?: { supabase?: any }): UseSavedPropertie
   const refetch = useCallback(async (): Promise<void> => {
     await fetch_saves();
   }, [fetch_saves]);
+
+  useEffect(
+    () => onPropertyDeleted((id) => set_properties((prev) => prev.filter((p) => p.id !== id))),
+    [],
+  );
 
   return { properties, loading, error, refetch };
 }

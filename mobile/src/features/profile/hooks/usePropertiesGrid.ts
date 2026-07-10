@@ -26,6 +26,7 @@
 import { useState, useEffect } from 'react';
 
 import { supabase } from '@/lib/supabase/client';
+import { onPropertyDeleted } from '@/lib/propertyEvents';
 import type { GridProperty } from '../types';
 
 // ---------------------------------------------------------------------------
@@ -127,6 +128,14 @@ export function usePropertiesGrid(owner_user_id: string): UsePropertiesGridState
       ignore = true;
     };
   }, [owner_user_id]);
+
+  useEffect(
+    () =>
+      onPropertyDeleted((id) =>
+        set_state((s) => (s.data ? { ...s, data: s.data.filter((p) => p.id !== id) } : s)),
+      ),
+    [],
+  );
 
   return state;
 }
