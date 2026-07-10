@@ -741,3 +741,60 @@ describe('useVideoUpload - resiliencia a errores (red)', () => {
     expect(result.current.error).toBe(FRIENDLY_ERROR_NEUTRAL);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Subtarea 52.6 — Mensaje específico para 413 (límite del servidor)
+// ---------------------------------------------------------------------------
+
+describe('useVideoUpload - error 413 (límite del servidor)', () => {
+  const FRIENDLY_ERROR_413 =
+    'El video supera el tamaño máximo permitido por el servidor. Intenta con un video más ligero.';
+
+  beforeEach(() => {
+    MockFile.mockImplementation(() => make_mock_file({}) as never);
+  });
+
+  it('(T9) status_413_mensaje_especifico_limite_servidor: uploadAsync status=413 → mensaje EXACTO de límite de servidor, form NO actualizado, progress no llega a 1', async () => {
+    const upload_task = make_mock_upload_task({ status: 413 });
+    const file_instance = make_mock_file({ upload_task });
+    MockFile.mockImplementation(() => file_instance as never);
+    const mock_supabase = make_mock_supabase({});
+
+    const { result } = await renderHook(
+      () => ({
+        sut: useVideoUpload({ supabase: mock_supabase as never, uuid: make_uuid_gen() }),
+        form: usePublishForm(),
+      }),
+      { wrapper },
+    );
+
+    await act(async () => {
+      await result.current.sut.upload(TEST_LOCAL_URI);
+    });
+
+    expect(result.current.sut.status).toBe('error');
+    expect(result.current.sut.error).toBe(FRIENDLY_ERROR_413);
+    expect(result.current.sut.progress).not.toBe(1);
+    expect(result.current.form.state.video_id).toBeNull();
+    expect(result.current.form.state.storage_path).toBeNull();
+  });
+
+  it('(T10) status_413_no_menciona_conexion: el mensaje de 413 NO es el neutro genérico de conexión', async () => {
+    const upload_task = make_mock_upload_task({ status: 413 });
+    const file_instance = make_mock_file({ upload_task });
+    MockFile.mockImplementation(() => file_instance as never);
+    const mock_supabase = make_mock_supabase({});
+
+    const { result } = await renderHook(
+      () => useVideoUpload({ supabase: mock_supabase as never, uuid: make_uuid_gen() }),
+      { wrapper },
+    );
+
+    await act(async () => {
+      await result.current.upload(TEST_LOCAL_URI);
+    });
+
+    expect(result.current.error).not.toBe(FRIENDLY_ERROR_NEUTRAL);
+    expect(result.current.error).not.toMatch(/conexión/i);
+  });
+});
