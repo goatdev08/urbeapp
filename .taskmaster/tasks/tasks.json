@@ -3987,10 +3987,11 @@
             "dependencies": [
               1
             ],
-            "details": "Edit mobile/src/features/property-detail/components/PropertyVideoPlayer.tsx at line 64-67 and mobile/app/(protected)/publish/step3.tsx at line 84-86. Add the same player.bufferOptions configuration (preferredForwardBufferDuration: 10, maxBufferBytes: 25 * 1024 * 1024) to both useVideoPlayer callbacks. These players are single-instance (not in lists), so memory impact is lower, but consistency prevents future issues if users navigate detail→feed rapidly or preview videos during publishing. Use identical ponytail comment format referencing task #57.\n<info added on 2026-07-10T17:49:30.655Z>\nPLAN: Replicate the bufferOptions from 57.1 (10s forward buffer / 25MB cap) to the remaining two useVideoPlayer instances: PropertyVideoPlayer.tsx (~line 64) and publish/step3.tsx (~line 84). Apply identical configuration (preferredForwardBufferDuration: 10, maxBufferBytes: 25 * 1024 * 1024) with corrected ponytail comment noting that Android's default is 20s forward buffer, not 50s. These are single-instance players (detail screen hero and publish preview), so memory impact is lower than the feed, but consistency prevents future issues if users navigate rapidly between feed and detail or preview videos during publishing. Agent=mobile, skills=urbea-expo, criticality=non-critical (verification: pnpm tsc --noEmit + pnpm lint + smoke test), depends on 57.1 completion.\n</info added on 2026-07-10T17:49:30.655Z>",
-            "status": "pending",
+            "details": "Edit mobile/src/features/property-detail/components/PropertyVideoPlayer.tsx at line 64-67 and mobile/app/(protected)/publish/step3.tsx at line 84-86. Add the same player.bufferOptions configuration (preferredForwardBufferDuration: 10, maxBufferBytes: 25 * 1024 * 1024) to both useVideoPlayer callbacks. These players are single-instance (not in lists), so memory impact is lower, but consistency prevents future issues if users navigate detail→feed rapidly or preview videos during publishing. Use identical ponytail comment format referencing task #57.\n<info added on 2026-07-10T17:49:30.655Z>\nPLAN: Replicate the bufferOptions from 57.1 (10s forward buffer / 25MB cap) to the remaining two useVideoPlayer instances: PropertyVideoPlayer.tsx (~line 64) and publish/step3.tsx (~line 84). Apply identical configuration (preferredForwardBufferDuration: 10, maxBufferBytes: 25 * 1024 * 1024) with corrected ponytail comment noting that Android's default is 20s forward buffer, not 50s. These are single-instance players (detail screen hero and publish preview), so memory impact is lower than the feed, but consistency prevents future issues if users navigate rapidly between feed and detail or preview videos during publishing. Agent=mobile, skills=urbea-expo, criticality=non-critical (verification: pnpm tsc --noEmit + pnpm lint + smoke test), depends on 57.1 completion.\n</info added on 2026-07-10T17:49:30.655Z>\n<info added on 2026-07-10T18:06:58.703Z>\nDONE: Applied bufferOptions (preferredForwardBufferDuration: 10, maxBufferBytes: 25*1024*1024) to the 2 remaining useVideoPlayer instances, replicating the 57.1 pattern from VideoFeedItem.tsx. Files modified: mobile/src/features/property-detail/components/PropertyVideoPlayer.tsx (inside useVideoPlayer callback, after p.muted=true) and mobile/app/(protected)/publish/step3.tsx (inside useVideoPlayer callback, after player.loop=true). Added single-line comment in both: 'Fix #57: tope de buffer anti-OOM — ver rationale en VideoFeedItem.tsx' (no duplicated explanation per orchestrator guidance). No other changes to those files. Verification: pnpm tsc --noEmit (exit 0, no errors) and pnpm lint (exit 0, 0 errors / 27 pre-existing unrelated warnings). No commits yet.\n</info added on 2026-07-10T18:06:58.703Z>",
+            "status": "done",
             "testStrategy": "Navigate to property detail screen and verify hero video plays without OOM. Open publish wizard step3, select a video, and confirm preview player works correctly. Run adb shell dumpsys meminfo during both scenarios to verify heap usage remains controlled. Test rapid navigation between feed→detail→feed to ensure no memory accumulation.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-07-10T18:07:05.368Z"
           },
           {
             "id": 3,
@@ -4029,7 +4030,7 @@
             "parentId": "undefined"
           }
         ],
-        "updatedAt": "2026-07-10T18:05:10.497Z"
+        "updatedAt": "2026-07-10T18:07:05.368Z"
       },
       {
         "id": "58",
@@ -4048,7 +4049,7 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-07-10T18:05:10.497Z",
+      "lastModified": "2026-07-10T18:07:05.368Z",
       "taskCount": 58,
       "completedCount": 45,
       "tags": [

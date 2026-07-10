@@ -83,6 +83,11 @@ export default function Step3Screen() {
   // ponytail: nativeControls=true → expo-video maneja play/pause, sin boilerplate.
   const video_player = useVideoPlayer(local_uri, (player) => {
     player.loop = true;
+    // Fix #57: tope de buffer anti-OOM — ver rationale en VideoFeedItem.tsx
+    player.bufferOptions = {
+      preferredForwardBufferDuration: 10,
+      maxBufferBytes: 25 * 1024 * 1024,
+    };
   });
 
   // Auto-play cuando cambia la URI (setup solo corre al montar).
