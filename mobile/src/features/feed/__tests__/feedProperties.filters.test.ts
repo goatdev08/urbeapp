@@ -97,13 +97,16 @@ type MockBuilder = {
   in: jest.Mock;
   gte: jest.Mock;
   lte: jest.Mock;
+  // #58.3: EMPTY_FILTERS.radius_m es null por default (#58.1) → algunos tests
+  // de este archivo ahora ejercitan el path plano, que pagina con .range().
+  range: jest.Mock;
   then: (
     onFulfilled: (v: QueryResult) => unknown,
     onRejected?: (e: unknown) => unknown,
   ) => Promise<unknown>;
 };
 
-const CHAINABLE_METHODS = ['select', 'eq', 'is', 'order', 'limit', 'lt', 'in', 'gte', 'lte'] as const;
+const CHAINABLE_METHODS = ['select', 'eq', 'is', 'order', 'limit', 'lt', 'in', 'gte', 'lte', 'range'] as const;
 
 function make_query_builder(result: QueryResult): MockBuilder {
   const builder = {
@@ -116,6 +119,7 @@ function make_query_builder(result: QueryResult): MockBuilder {
     in: jest.fn(),
     gte: jest.fn(),
     lte: jest.fn(),
+    range: jest.fn(),
     then: (onFulfilled: (v: QueryResult) => unknown, onRejected?: (e: unknown) => unknown) =>
       Promise.resolve(result).then(onFulfilled, onRejected),
   } as MockBuilder;
@@ -296,14 +300,21 @@ describe('fetchFeedProperties — integración de FilterState (12.7)', () => {
   });
 
   // ── (EC-F12) Backward-compat: EMPTY_FILTERS explícito ────────────────────
+  // ACTUALIZADO (#58.1 + #58.3): EMPTY_FILTERS.radius_m ahora es `null` por
+  // default (#58.1, radio sin límite) — pasar EMPTY_FILTERS explícito YA NO
+  // es equivalente a omitir `filters` (ese caso sigue en EC-F11, `filters`
+  // undefined → DEFAULT_RADIUS_M). EMPTY_FILTERS explícito ejercita a propósito
+  // el path plano (#58.3): sin RPC, sin `.in('id', ...)` de paginación, pagina
+  // con `.range()`.
 
-  it('(EC-F12) backward_compat_empty_filters_explicito_solo_in_de_paginacion: fetchFeedProperties(cursor, deps, EMPTY_FILTERS) → mismo comportamiento que sin filtros: único .in es el de paginación por id (1 llamada); 0 llamadas de filtro', async () => {
+  it('(EC-F12) empty_filters_explicito_radius_null_activa_path_plano_sin_rpc: fetchFeedProperties(cursor, deps, EMPTY_FILTERS) → radius_m=null (default) → NO invoca client.rpc; pagina con .range(0,9); 0 llamadas de filtro', async () => {
     const mock_supabase = make_mock_supabase();
 
     await fetchFeedProperties(undefined, { supabase: mock_supabase }, EMPTY_FILTERS);
 
-    expect(mock_supabase._query_builder.in).toHaveBeenCalledTimes(1);
-    expect(mock_supabase._query_builder.in).toHaveBeenCalledWith('id', expect.any(Array));
+    expect(mock_supabase._mock_rpc).not.toHaveBeenCalled();
+    expect(mock_supabase._query_builder.range).toHaveBeenCalledWith(0, 9);
+    expect(mock_supabase._query_builder.in).not.toHaveBeenCalled();
     expect(mock_supabase._query_builder.gte).not.toHaveBeenCalled();
     expect(mock_supabase._query_builder.lte).not.toHaveBeenCalled();
     expect(mock_supabase._query_builder.eq).toHaveBeenCalledTimes(1);
@@ -314,6 +325,10 @@ describe('fetchFeedProperties — integración de FilterState (12.7)', () => {
   // REDISEÑADO (#42.2): cursor ya NO es created_at, es offset numérico sobre
   // los ids de la RPC. cursor="10" + filters.price_min=5000 → .in('id',
   // ids.slice(10,20)) Y .gte('price', 5000) AMBOS aplicados.
+  // radius_m EXPLÍCITO no-null (#58.3): este test verifica la interacción
+  // cursor+filtro dentro del path de proximidad — el path plano (radius_m
+  // null) ya tiene su propia cobertura de paginación en
+  // feedProperties.radius-null.test.ts (EC-FEED-NULL-2a/2b).
 
   it('(EC-F13) cursor_offset_y_filtros_combinados_no_se_pisan_entre_si: cursor="10" (offset) Y filters.price_min=5000 → .in("id", ids.slice(10,20)) Y .gte("price", 5000) AMBOS llamados', async () => {
     const rpc_ids = Array.from({ length: 20 }, (_, i) => ({
@@ -326,7 +341,7 @@ describe('fetchFeedProperties — integración de FilterState (12.7)', () => {
       { data: rpc_ids, error: null },
     );
     const cursor = '10';
-    const filters = make_filters({ price_min: 5000 });
+    const filters = make_filters({ price_min: 5000, radius_m: 5000 });
 
     await fetchFeedProperties(cursor, { supabase: mock_supabase }, filters);
 

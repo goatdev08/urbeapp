@@ -2,17 +2,20 @@
  * mapProperties.ts — capa de datos del mapa global (#11.2).
  *
  * fetchMapProperties(deps?, filters?):
- *   - Llama SIEMPRE la RPC properties_within_radius ANTES de PostgREST (#42.3,
- *     approach A1, espejo de feedProperties #42.2): devuelve {id, distance_m}[].
- *     Radio = filters.radius_m ?? 5000; si la RPC devuelve vacío, expande
- *     ×2 hasta 3 reintentos (5000→10000→20000→40000); agotado → [] sin
- *     tocar PostgREST.
- *   - Query: `.in('id', ids)` con TODOS los ids de la RPC (sin slice — el
- *     mapa no pagina) + status/deleted_at + build_filter_query (#12.7).
- *   - Convierte geography PostGIS → { lat, lng } via parse_location.
- *   - Fail-closed: filas con location null o no parseable se OMITEN.
- *   - Sin paginación ni re-sort — el mapa muestra todas las propiedades
- *     dentro del radio, sin orden por distancia.
+ *   - `filters.radius_m === null` (#58.3) → SALTA la RPC por completo: query
+ *     plana (status/deleted_at + build_filter_query), SIN `.in('id', ...)` —
+ *     trae TODAS las propiedades activas que matcheen los filtros de usuario.
+ *   - `filters.radius_m` numérico (o filters ausente) → path de proximidad
+ *     #42.3, INALTERADO: llama SIEMPRE la RPC properties_within_radius ANTES
+ *     de PostgREST (approach A1, espejo de feedProperties #42.2): devuelve
+ *     {id, distance_m}[]. Radio = filters.radius_m ?? 5000; si la RPC devuelve
+ *     vacío, expande ×2 hasta 3 reintentos (5000→10000→20000→40000); agotado
+ *     → [] sin tocar PostgREST. Query: `.in('id', ids)` con TODOS los ids de
+ *     la RPC (sin slice — el mapa no pagina) + status/deleted_at +
+ *     build_filter_query (#12.7).
+ *   - Ambos paths: convierte geography PostGIS → { lat, lng } via
+ *     parse_location; fail-closed: filas con location null o no parseable se
+ *     OMITEN; sin paginación ni re-sort por distancia.
  *
  * ponytail: DI opcional via deps.supabase; prod usa lazy-require del singleton
  * para evitar que el top-level de client.ts (que lanza sin env vars) rompa los tests.
@@ -62,6 +65,34 @@ type QueryRow = {
   location: string | null;
 };
 
+const MAP_SELECT = 'id, price, address, property_type, operation_type, bedrooms, bathrooms, location';
+
+/**
+ * Convierte filas crudas de PostgREST → MapProperty[], fail-closed sobre
+ * location. Compartido por el path plano (radius_m=null) y el de proximidad
+ * (#58.3, ponytail: reusa en vez de duplicar el loop de parseo).
+ */
+function build_map_result(rows: QueryRow[]): MapProperty[] {
+  const result: MapProperty[] = [];
+  for (const row of rows) {
+    const coords = parse_location(row.location);
+    if (!coords) continue;
+
+    result.push({
+      id: row.id,
+      price: row.price,
+      lat: coords.lat,
+      lng: coords.lng,
+      operation_type: row.operation_type,
+      property_type: row.property_type,
+      bedrooms: row.bedrooms,
+      bathrooms: row.bathrooms,
+      address: row.address,
+    });
+  }
+  return result;
+}
+
 export async function fetchMapProperties(
   deps?: MapPropertiesDeps,
   filters?: FilterState,
@@ -69,6 +100,33 @@ export async function fetchMapProperties(
   // ponytail: lazy-require del cliente real; nunca se evalúa en tests (deps siempre inyectado)
 
   const client: any = deps?.supabase ?? (require('@/lib/supabase/client') as any).supabase;
+
+  // #58.3: radius_m===null explícito → path plano PRE-#42, sin RPC ni
+  // proximidad. `undefined` (sin filtro) sigue cayendo al path de proximidad
+  // con DEFAULT_RADIUS_M (comportamiento previo para llamadas sin filtros).
+  if (filters?.radius_m === null) {
+    let query = client
+      .from('properties')
+      .select(MAP_SELECT)
+      .eq('status', 'active')
+      .is('deleted_at', null);
+
+    // Filtros de usuario (#12.7) — ADEMÁS de los filtros base, nunca en su lugar.
+    // ponytail: sin .in('id', ...) — el path plano trae TODAS las activas que
+    // matcheen filtros (puede ser una lista grande a escala demo; aceptable
+    // per Phase C del PRD).
+    query = build_filter_query(query, filters ?? EMPTY_FILTERS);
+
+    const { data: rows, error } = (await query) as {
+      data: QueryRow[] | null;
+      error: { message: string } | null;
+    };
+
+    if (error) throw new Error(error.message);
+    if (!rows || rows.length === 0) return [];
+
+    return build_map_result(rows);
+  }
 
   // ponytail: fallback centro de Guadalajara (demo cerrada opera ahí, #11)
   // cuando aún no hay coords reales del usuario.
@@ -108,7 +166,7 @@ export async function fetchMapProperties(
   // mapa no pagina) + filtros base.
   let query = client
     .from('properties')
-    .select('id, price, address, property_type, operation_type, bedrooms, bathrooms, location')
+    .select(MAP_SELECT)
     .in('id', rpc_ids)
     .eq('status', 'active')
     .is('deleted_at', null);
@@ -125,24 +183,5 @@ export async function fetchMapProperties(
   if (error) throw new Error(error.message);
   if (!rows || rows.length === 0) return [];
 
-  // Fail-closed: omit rows with null or non-parseable location
-  const result: MapProperty[] = [];
-  for (const row of rows) {
-    const coords = parse_location(row.location);
-    if (!coords) continue;
-
-    result.push({
-      id: row.id,
-      price: row.price,
-      lat: coords.lat,
-      lng: coords.lng,
-      operation_type: row.operation_type,
-      property_type: row.property_type,
-      bedrooms: row.bedrooms,
-      bathrooms: row.bathrooms,
-      address: row.address,
-    });
-  }
-
-  return result;
+  return build_map_result(rows);
 }
