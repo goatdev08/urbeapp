@@ -450,8 +450,12 @@ describe('get_active_filter_count', () => {
 // ---------------------------------------------------------------------------
 
 describe('EMPTY_FILTERS — radius_m (42.1)', () => {
-  it('(EC-25) empty_filters_radius_m_default_5000_metros: EMPTY_FILTERS.radius_m === 5000 (default 5 km, #42 approach A1)', () => {
-    expect(EMPTY_FILTERS.radius_m).toBe(5000);
+  // Actualizado en GREEN de #58.1: el default cambió de 5000 a null
+  // ("sin límite" — ver bloque EC-27/58.1 más abajo, que es la fuente de
+  // verdad del nuevo default). Se mantiene este test (no se borra) como
+  // candado adicional, ajustado a la aserción vigente.
+  it('(EC-25) empty_filters_radius_m_default_null_metros: EMPTY_FILTERS.radius_m === null (default "sin límite", #58.1 — reemplaza el default 5000 de #42.1)', () => {
+    expect(EMPTY_FILTERS.radius_m).toBeNull();
   });
 });
 

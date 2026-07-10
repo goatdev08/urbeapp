@@ -29,13 +29,20 @@ const RADIUS_OPTIONS: { label: string; value: number }[] = [
   { label: '50 km', value: 50000 },
 ];
 
+/** Default cuando value=null ("sin límite", #58.1) — mismo valor que EMPTY_FILTERS previo a #58.1. */
+const DEFAULT_RADIUS_M = 5000;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Props
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface RadiusSelectorProps {
-  /** Valor actual en metros (FilterContext.filters.radius_m). */
-  value: number;
+  /**
+   * Valor actual en metros (FilterContext.filters.radius_m).
+   * null = "sin límite" (#58.1); se coalesce a 5 km para resaltar un pill
+   * mientras el toggle opt-in (#58.2) no define el estado "sin radio" en UI.
+   */
+  value: number | null;
   /** Callback al seleccionar un preset (siempre en metros). */
   onChange: (v: number) => void;
 }
@@ -45,10 +52,11 @@ export interface RadiusSelectorProps {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function RadiusSelector({ value, onChange }: RadiusSelectorProps): React.JSX.Element {
+  const active_value = value ?? DEFAULT_RADIUS_M;
   return (
     <View style={styles.row}>
       {RADIUS_OPTIONS.map((opt) => {
-        const is_active = opt.value === value;
+        const is_active = opt.value === active_value;
         return (
           <Pressable
             key={opt.value}
