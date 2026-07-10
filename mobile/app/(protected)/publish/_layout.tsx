@@ -112,6 +112,25 @@ function FormPrefiller({ property_id }: { property_id: string }) {
 }
 
 // ---------------------------------------------------------------------------
+// CleanupOnUnmount — resetea el form al salir del wizard (incluye edit_mode y
+// property_id). ponytail: red de seguridad. Hoy el Provider vive dentro de este
+// _layout y se desmonta al salir (reentrar = estado INITIAL nuevo), así que el
+// reset es defensivo; queda como guard explícito contra la clase de bug #53
+// (que edit_mode se filtre a un alta nueva) si el Provider se izara a un layout
+// superior para compartir estado entre pasos. Techo: solo cubre desmontaje real.
+// ---------------------------------------------------------------------------
+
+function CleanupOnUnmount() {
+  const { reset } = usePublishForm();
+  useEffect(() => {
+    return () => {
+      reset();
+    };
+  }, [reset]);
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // PublishWizardLayout
 // ---------------------------------------------------------------------------
 
@@ -122,6 +141,9 @@ export default function PublishWizardLayout() {
   return (
     <PublishFormProvider>
       <View style={styles.root}>
+        {/* Resetea el form al salir del wizard (edit_mode/property_id incluidos) */}
+        <CleanupOnUnmount />
+
         {/* Pre-llena el form en edit mode (sin render visible) */}
         {property_id !== null && <FormPrefiller property_id={property_id} />}
 
