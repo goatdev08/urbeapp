@@ -22,7 +22,7 @@ import {
 } from 'react-native';
 import { FlashList, type ListRenderItemInfo } from '@shopify/flash-list';
 import { useRouter } from 'expo-router';
-import { SlidersHorizontal, VideoCamera } from 'phosphor-react-native';
+import { MagnifyingGlass, SlidersHorizontal, VideoCamera } from 'phosphor-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, spacing } from '@/theme/theme';
@@ -44,7 +44,7 @@ export function FeedScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { viewabilityConfigCallbackPairs, isItemActive } = useFeedActiveIndex();
-  const { filters, active_filter_count } = useFilters();
+  const { filters, active_filter_count, clear_filters } = useFilters();
   const { data, isLoading, error, loadInitial, refetch, loadMore } = useFeedProperties(filters);
   const [filter_visible, set_filter_visible] = useState(false);
 
@@ -105,18 +105,33 @@ export function FeedScreen() {
         </View>
       )}
 
-      {/* Sin propiedades tras carga exitosa — primera impresión con BD vacía:
-          empty state de marca con CTA directo al wizard de publicación. */}
+      {/* Sin resultados: se ramifica por active_filter_count.
+          - filtered-empty (hay filtros activos): CTA limpia filtros; el cambio
+            de identidad de `filters` re-dispara loadInitial (useEffect de
+            useFeedProperties) — no hace falta un refetch manual aquí.
+          - BD-vacía (sin filtros): primera impresión, CTA al wizard de
+            publicación (comportamiento previo, sin cambios). */}
       {is_empty && (
         <View style={styles.state_root}>
-          <EmptyState
-            dark
-            icon={VideoCamera}
-            message="Aún no hay propiedades"
-            subtitle="Sé el primero en publicar un video."
-            cta_label="Publicar propiedad"
-            onPressCta={() => router.push('/publish/step1')}
-          />
+          {active_filter_count > 0 ? (
+            <EmptyState
+              dark
+              icon={MagnifyingGlass}
+              message="No hay propiedades con estos filtros"
+              subtitle="Intenta cambiar o limpiar los filtros."
+              cta_label="Limpiar filtros"
+              onPressCta={clear_filters}
+            />
+          ) : (
+            <EmptyState
+              dark
+              icon={VideoCamera}
+              message="Aún no hay propiedades"
+              subtitle="Sé el primero en publicar un video."
+              cta_label="Publicar propiedad"
+              onPressCta={() => router.push('/publish/step1')}
+            />
+          )}
         </View>
       )}
 
