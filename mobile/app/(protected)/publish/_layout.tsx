@@ -18,7 +18,7 @@
  *   2. WizardHeader        — StepIndicator persistente que lee la ruta activa.
  *   3. Stack               — navegación nativa entre pasos, sin header nativo.
  */
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Stack, useSegments, useLocalSearchParams, useRouter, useNavigation } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -89,10 +89,22 @@ function WizardHeader() {
 function FormPrefiller({ property_id }: { property_id: string }) {
   const { update } = usePublishForm();
   const { formState, loading } = useLoadProperty(property_id);
+  // ponytail: ref (no state) — es solo un guard, no debe provocar re-render.
+  const prefilled = useRef(false);
 
+  // Activa el modo edición en el contexto de inmediato. Al leerse en step3 desde
+  // el contexto (no de la URL), sobrevive a la navegación step1→step2→step3.
   useEffect(() => {
-    if (formState && !loading) {
+    update({ edit_mode: true, property_id });
+  }, [property_id, update]);
+
+  // Pre-llena el form UNA sola vez: si formState cambia de identidad o el usuario
+  // vuelve a step1, no re-prellenamos para no pisar sus ediciones. update() hace
+  // merge, así que edit_mode/property_id (seteados arriba) se conservan.
+  useEffect(() => {
+    if (formState && !loading && !prefilled.current) {
       update(formState);
+      prefilled.current = true;
     }
   }, [formState, loading, update]);
 
