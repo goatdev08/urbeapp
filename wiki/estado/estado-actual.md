@@ -1,11 +1,15 @@
 ---
 tipo: estado
-actualizado: 2026-07-09
+actualizado: 2026-07-10
 ---
 
 # Estado actual
 
 > Narrativa de "dónde estamos hoy". El **qué sigue / qué está hecho** vive en **Taskmaster** (`task-master list`), no aquí.
+
+## Hoy (2026-07-10)
+
+- **✅ #42 — feed/mapa por cercanía (Fase C, CIERRA el épico 40→41→42 de exploración 027).** El approach A1 quedó cableado E2E: feed y mapa llaman la RPC `properties_within_radius` (coords reales de `useLocation()` por DI, fallback GDL mientras cargan, refetch al llegar; `p_radius_m = filters.radius_m`), expanden el radio ×2 hasta 3 reintentos si no hay resultados, y traen las filas con `.in('id', ids)` + `build_filter_query` **intacto** (candados de regresión: `radius_m` jamás entra al builder). El feed **re-paginó de cursor `created_at` a offset sobre los ids de la RPC** (decisión de Abraham; páginas cortas post-filtro aceptadas en demo) y re-ordena por distancia; el mapa ni pagina ni re-ordena. UI: `RadiusSelector` (5/10/20/50 km, default 5) en el FilterSheet; MapScreen se recentra (`animateToRegion`, una vez) cuando las coords llegan después del mount. 3 subtareas críticas TDD+guardian PASS, suite **563/563**, tsc/lint verdes. ⚠️ **Punto azul del mapa se mantiene** (027 decía quitarlo) — preguntar al cliente en la próxima demo. Smoke visual en simulador quedó pendiente de tap manual (simctl no tiene touch). **Desbloquea #56** (buscar en esta zona), ya planeada. Ver [[mapa-y-ubicacion]], [[busqueda-y-filtros]].
 
 ## Hoy (2026-07-09)
 
