@@ -4,7 +4,7 @@ dominio: producto
 estado: vivo
 fuentes: [docs/PRD.md §9, docs/PRD-MVP-demo.md, .taskmaster (tarea #9)]
 codigo: [supabase/migrations/20260604000006_engagement_crm.sql, supabase/migrations/20260701000001_engagement_count_triggers.sql, supabase/functions/mint-video-url/, mobile/src/features/feed/, mobile/src/features/saved/, mobile/src/components/LikeButton.tsx, mobile/src/components/SaveButton.tsx]
-actualizado: 2026-07-02
+actualizado: 2026-07-10
 ---
 
 # Feed vertical de video
@@ -34,6 +34,7 @@ actualizado: 2026-07-02
 - `likes` (`user_id`, `property_video_id`, único). Videos de [[propiedades-y-video]] (`status='ready'`).
 - 🔑 **URLs de reproducción:** el bucket `property-videos` es privado y la RLS SELECT pública está rota por el path 2-seg (#8). El feed NO lee el video directo: tras su query de propiedades, llama la EF **`mint-video-url`** (#21, vivo) con el batch de `property_ids` → recibe `{property_id,video_id,signed_url}` (signed URLs `service_role`, exp **1h**). Solo propiedades `active` con video `ready`. ⚠️ URLs expiran a la hora → si la sesión es larga, re-mintar. Ver [[propiedades-y-video]].
 - ⚠️ **Lo más delicado del front:** reproducción fluida al swipe → precargar el siguiente, pausar/liberar los fuera de pantalla; lista paginada (FlashList) + `expo-video`. Requiere **dev build** ([[0005-demo-cerrada-3-semanas]]).
+- 🔒 **Memoria Android / OOM (tarea #57, fix vivo por OTA 2026-07-10):** el heap Java de Android está capado a **192 MB** (sin `largeHeap`); cada `useVideoPlayer` crea un ExoPlayer cuyo buffer por default es ilimitado en bytes (`maxBufferBytes: 0` = decide el player) y bufferea **video crudo sin transcodificar** (demo, Supabase Storage) vía okhttp → con ~4 players vivos los segmentos okio llenaban el heap y crasheaba en scroll normal (el stack okhttp del crash es la *víctima*, no la causa). Fix en los **3** `useVideoPlayer` de la app (`VideoFeedItem`, `PropertyVideoPlayer`, preview `step3`): `bufferOptions = { preferredForwardBufferDuration: 10, maxBufferBytes: 25MB }` + `drawDistance` del feed a 1 pantalla (~3 players). ⚠️ Gotcha: el default Android de `preferredForwardBufferDuration` es **20 s** (el tipo instalado lo documenta), no ~50 s. `largeHeap` se **descartó** (ocultaría la causa + exige rebuild nativo). Verificado: 25 swipes → heap plano 107–117 MB. Si reaparece en devices con poca RAM → reabrir 57.5. Solución de fondo: Cloudflare Stream/HLS en beta ([[estrategia-releases]]). Trade-off aceptado: posible spinner breve en redes lentas y póster un instante más en swipes rápidos.
 
 ## Detalle exhaustivo
 - `docs/PRD.md` §9 (feed, radio, anti-clustering) · migración `0006` (`likes`) · [[db-schema-map]]
