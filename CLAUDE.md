@@ -28,6 +28,7 @@ Decisiones de fondo: `wiki/decisiones/0003` (vault), `0004` (Taskmaster), `0006`
 - App: React Native + **Expo development build** (`expo-dev-client`), **Expo Router**, **TypeScript strict**.
 - Backend: **Supabase remoto** (`urbea-app`). Migraciones idempotentes + rollback + tests pgTAP. Video → **Supabase Storage** (demo).
 - Arquitectura: lógica de negocio en **Edge Functions**; **RLS** = 2ª capa; triggers solo atómicos. Ver `wiki/conceptos/rls-seguridad.md` y `docs/lineamientos-desarrollo.md`.
+- 🔴 **Testing en emulador/simulador: SIEMPRE por CLI, NUNCA computer-use** (controlar mouse/teclado del host secuestra la computadora del usuario). Android: `adb shell input …`, `adb exec-out screencap -p` (leer la captura), `adb shell dumpsys meminfo`, Maestro (`run-e2e.sh`); headless `emulator -no-window` cuando aplique. iOS: `xcrun simctl` (boot/install/launch/openurl/`io screenshot`). Que la ventana robe foco un instante al abrir es aceptable; controlar el host durante el testing, no. Aplica a TODOS los agentes.
 - **Git/GitHub: `gh` CLI** (instalado). Una tarea = una rama `tarea/<id>-<slug>` desde `origin/main` fresco → PR → `gh pr merge --squash --delete-branch`. Detalle en §5 paso 7. Remoto: `goatdev08/urbeapp`. Autenticar una vez con `! gh auth login` si `gh auth status` falla.
 
 ## 4. Taskmaster — SIEMPRE por CLI (NUNCA MCP)

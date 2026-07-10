@@ -73,15 +73,16 @@ name: "publicar — wizard 3 pasos"
     timeout: 60000
 - tapOn: "Aceptar"
 
-# Verificar en Mis publicaciones
+# Verificar en el perfil (rediseño: las publicaciones se muestran inline con
+# contador "N PUBLICACIONES"; ya no existe la entrada "Mis publicaciones")
 - extendedWaitUntil:
     visible: "Dar like"
     timeout: 30000
 - tapOn: "Perfil"
 - extendedWaitUntil:
-    visible: "Mis publicaciones"
+    visible: "PUBLICACIONES"
     timeout: 20000
-- tapOn: "Mis publicaciones"
+# La publicación nueva del flow (Renta $14,500/mes) aparece como tarjeta
 - extendedWaitUntil:
-    visible: "Todas (3)"
+    visible: "14,500"
     timeout: 20000

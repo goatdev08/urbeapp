@@ -1,79 +1,102 @@
 /**
  * Tests fase RED — useVideoUpload hook (mobile/src/features/publish/hooks/useVideoUpload.ts)
- * Subtarea Taskmaster: 8.8 — Build Step 3 with video upload and preview
+ * Subtarea Taskmaster: 52.1 — Reescribir useVideoUpload a subida por streaming (API nueva File v56)
  *
  * SUT: useVideoUpload(deps?: { supabase?, uuid? }): { upload, status, progress, error }
  *
- * Contrato (Opción C del orquestador):
+ * Contrato (streaming, API nueva expo-file-system v56):
  *   - Recibe cliente Supabase y generador de UUID como deps inyectables.
  *   - Obtiene user_id de supabase.auth.getSession().
  *   - Genera video_id con uuid() ANTES de subir.
- *   - Sube a bucket 'property-videos' con path '{user_id}/{video_id}.mp4'.
- *   - Al éxito llama update({ video_id, storage_path }) del PublishFormContext.
- *   - En error: expone mensaje, NO escribe al form.
+ *   - Validación de tamaño SÍNCRONA: `new File(local_uri)` → `.exists` / `.size`
+ *     (verificado en node_modules/expo-file-system/build/File.d.ts +
+ *     internal/NativeFileSystem.types.d.ts — getters síncronos, NO getInfoAsync).
+ *   - Sube por streaming (sin cargar el archivo completo en RAM):
+ *       1. `supabase.storage.from('property-videos').createSignedUploadUrl(storage_path)`
+ *          → `{ data: { signedUrl, path, token }, error }`.
+ *       2. `file.createUploadTask(signedUrl, { httpMethod: 'PUT',
+ *          uploadType: UploadType.BINARY_CONTENT, headers: {'Content-Type':'video/mp4'},
+ *          onProgress }) : UploadTask` (verificado en build/NetworkTasks.d.ts + File.d.ts).
+ *       3. `task.uploadAsync()` → `{ status, body, headers }`; 2xx = éxito.
+ *   - Progreso real vía onProgress({bytesSent, totalBytes}) → progress_ref, cap ≤0.99
+ *     hasta el éxito (evita saltos 0→1 sin datos reales; guard división por 0).
+ *   - Al éxito llama update({ video_id, storage_path }) del PublishFormContext, progress=1.
+ *   - En error (createSignedUploadUrl falla, status no-2xx, o excepción/red): expone
+ *     mensaje NEUTRO fijo 'Error al subir el video. Verifica tu conexión e intenta de
+ *     nuevo.' (SIN 'archivo más pequeño' — el límite de tamaño ya se validó antes),
+ *     NO escribe al form, NO llama createUploadTask si el error fue en el paso 1.
  *
  * NOTA API: @testing-library/react-native v14 — renderHook es ASYNC y debe ser
  * `await`ed. Patrón: `const { result } = await renderHook(...)`.
- * Ver implementación en dist/render-hook.js — `render()` (inner) es async y
- * result.current se setea vía useEffect tras el await.
  *
  * EDGE CASES CUBIERTOS:
  *
  * ### Happy path
- * - (EC-1) happy_path_upload_exitoso: llama upload con path correcto y escribe al context.
- * - (EC-2) update_escribe_video_id_y_storage_path: form state recibe video_id y storage_path exactos.
- *
- * ### Edge cases del PRD / contrato Opción-C
- * - (EC-3) path_primer_segmento_es_user_id: invariante RLS — foldername[1] === auth.uid().
+ * - (T1) exito_streaming_signed_url_y_upload_task: createSignedUploadUrl con
+ *   path {user_id}/{video_id}.mp4, createUploadTask con signedUrl + opciones
+ *   correctas (PUT, BINARY_CONTENT, Content-Type video/mp4), status final
+ *   'success', progress=1, form actualizado con video_id + storage_path.
+ * - (EC-3) path_primer_segmento_es_user_id: invariante RLS — primer segmento
+ *   del storage_path pasado a createSignedUploadUrl === auth.uid().
  * - (EC-4) path_termina_en_mp4: extensión .mp4 fija (decisión para demo).
  * - (EC-5) bucket_es_property_videos: storage.from() recibe exactamente 'property-videos'.
  * - (EC-6) video_id_proviene_del_generador_inyectado: video_id === valor del uuid() inyectado.
  *
- * ### Sin video seleccionado
- * - (EC-7) sin_local_uri_no_llama_upload: local_uri null → sin upload, sin escritura al form.
+ * ### Sin video seleccionado / sin sesión
+ * - (EC-7) sin_local_uri_no_llama_signed_url: local_uri null → sin createSignedUploadUrl,
+ *   sin escritura al form, status=error.
+ * - (EC-8) sin_sesion_no_sube: getSession sin user → sin createSignedUploadUrl, error claro,
+ *   sin escritura al form.
  *
- * ### Sin sesión / sin user_id
- * - (EC-8) sin_sesion_no_sube: getSession sin user → sin upload, error claro, sin escritura al form.
+ * ### Error del paso 1 — createSignedUploadUrl
+ * - (T2) signed_url_falla_no_sube_ni_actualiza_form: createSignedUploadUrl con error →
+ *   status='error', mensaje del error, form NO actualizado, createUploadTask NO llamado.
  *
- * ### Error del storage
- * - (EC-9) error_storage_no_escribe_al_form: upload error → video_id/storage_path siguen null en form.
- * - (EC-10) error_storage_expone_mensaje: el error del hook contiene info del error de storage.
+ * ### Error del paso 2/3 — upload no-2xx
+ * - (T3) status_500_mensaje_neutro_sin_archivo_mas_pequeno: uploadAsync status=500 →
+ *   status='error', mensaje EXACTO 'Error al subir el video. Verifica tu conexión e
+ *   intenta de nuevo.', SIN 'archivo más pequeño'.
  *
- * ### Progreso (state machine)
+ * ### Progreso (state machine + progreso real)
  * - (EC-11) estado_inicial_es_idle: al montar: status='idle', progress=0, error=null.
- * - (EC-12) estado_uploading_durante_subida: mientras upload pendiente, status='uploading'.
- * - (EC-13) estado_success_tras_upload_exitoso: tras upload OK, status='success'.
- * - (EC-14) estado_error_tras_upload_fallido: tras upload con error Supabase, status='error'.
+ * - (EC-12) estado_uploading_durante_subida: mientras uploadAsync está pendiente, status='uploading'.
+ * - (T4) progreso_incremental_real_via_onProgress: onProgress({bytesSent:25e6,totalBytes:100e6})
+ *   → progress≈0.25; luego {75e6,100e6} → progress≈0.75 (incremental, no salto directo a 1).
+ * - (T5) totalBytes_cero_progreso_no_es_NaN: onProgress con totalBytes=0 → progress no-NaN (0).
  *
- * ### Validación de tamaño (subtarea 49.3) — usa getInfoAsync + validate_video_size
- * - (EC-15) rechaza_video_mayor_a_500MB: archivo de 600 MB → status='error', mensaje con
- *   '600 MB' y '500 MB', NO se llama a storage.upload.
- * - (EC-16) archivo_no_existe: getInfoAsync exists:false → status='error', error no null,
- *   NO se llama a storage.upload.
- * - (EC-17) procede_video_bajo_500MB: archivo de 100 MB → SÍ se llama a storage.upload,
- *   status='success' (regresión — puede pasar ya hoy).
+ * ### Validación de tamaño (SÍNCRONA vía File — boundary exacto del bucket 500 MB)
+ * - (T6) rechaza_524288001_bytes_antes_de_signed_url: file.size=524288001 → status='error'
+ *   ANTES de llamar createSignedUploadUrl (no se llama).
+ * - (T7) procede_a_signed_url_con_524288000_bytes_exactos: file.size=524288000 (límite exacto)
+ *   → SÍ procede a createSignedUploadUrl, status='success'.
+ * - (T8) archivo_no_existe_rechaza_antes_de_signed_url: file.exists=false → status='error',
+ *   createSignedUploadUrl NO llamado.
  *
- * ### Resiliencia a errores OOM/red (subtarea 49.4) — try/catch alrededor de
- * fetch().arrayBuffer() + storage.upload + update, mensaje amigable fijo
- * - (EC-18) fetch_rechaza_maneja_sin_crash: fetch(local_uri) rechaza (p.ej. OOM leyendo
- *   el archivo) → status='error', error='Error al subir el video. Intenta de nuevo con
- *   un archivo más pequeño.' (HOY: sin try/catch, la promesa de upload() rechaza y el
- *   estado queda en 'uploading'/error null).
- * - (EC-19) storage_upload_rechaza_maneja_sin_crash: storage.upload rechaza (p.ej. falla
- *   de red) → status='error', mismo mensaje amigable fijo (HOY: sin try/catch, falla igual).
+ * ### Resiliencia a errores de red — mensaje neutro fijo, sin crash
+ * - (R1) uploadAsync_rechaza_mensaje_neutro_sin_crash: uploadAsync() rechaza (red/AbortError)
+ *   → status='error', mensaje NEUTRO fijo (sin 'archivo más pequeño').
+ * - (R2) status_503_mensaje_neutro: uploadAsync status=503 → mismo mensaje neutro fijo.
+ * - (R3) signed_url_rechaza_mensaje_neutro_sin_crash: createSignedUploadUrl() rechaza
+ *   (falla de red antes de subir) → status='error', mensaje neutro, sin crash.
  */
 
 import React from 'react';
 import { renderHook, act } from '@testing-library/react-native';
 import * as FileSystem from 'expo-file-system';
 
+// ---------------------------------------------------------------------------
+// Mock de 'expo-file-system' — API NUEVA v56 (clase File, NO getInfoAsync legacy).
+// Verificado en node_modules/expo-file-system/build/File.d.ts +
+// internal/NativeFileSystem.types.d.ts: `new File(uri)` expone `.exists` y
+// `.size` como getters SÍNCRONOS, y `.createUploadTask(url, options): UploadTask`.
+// ---------------------------------------------------------------------------
+
 jest.mock('expo-file-system', () => ({
-  getInfoAsync: jest.fn(),
+  File: jest.fn(),
+  UploadType: { BINARY_CONTENT: 0, MULTIPART: 1 },
 }));
 
-const mock_get_info = FileSystem.getInfoAsync as jest.MockedFunction<
-  typeof FileSystem.getInfoAsync
->;
+const MockFile = FileSystem.File as unknown as jest.Mock;
 
 // ---------------------------------------------------------------------------
 // Wrapper con PublishFormProvider
@@ -95,6 +118,43 @@ const TEST_USER_ID = 'usuario-test-uuid-123';
 const TEST_VIDEO_ID = 'video-uuid-fijo-para-tests';
 const TEST_LOCAL_URI = 'file:///data/user/0/com.urbea/cache/video.mp4';
 const EXPECTED_STORAGE_PATH = `${TEST_USER_ID}/${TEST_VIDEO_ID}.mp4`;
+const SIGNED_URL = `https://proyecto.supabase.co/storage/v1/object/upload/sign/property-videos/${EXPECTED_STORAGE_PATH}?token=tok-firmado-abc`;
+const FRIENDLY_ERROR_NEUTRAL = 'Error al subir el video. Verifica tu conexión e intenta de nuevo.';
+const MAX_VIDEO_SIZE_BYTES = 524288000; // 500 MB — límite del bucket (migración 20260710000001)
+
+type MockUploadTaskResult = { status: number; body?: string; headers?: Record<string, string> };
+
+interface MockUploadTask {
+  uploadAsync: jest.Mock<Promise<MockUploadTaskResult>, []>;
+}
+
+interface MockFileInstance {
+  exists: boolean;
+  size: number;
+  createUploadTask: jest.Mock;
+  _upload_task: MockUploadTask;
+}
+
+// ---------------------------------------------------------------------------
+// Factory de mock del File nativo (API v56)
+// ---------------------------------------------------------------------------
+
+function make_mock_upload_task(result: MockUploadTaskResult = { status: 200 }): MockUploadTask {
+  return {
+    uploadAsync: jest.fn().mockResolvedValue({ status: result.status, body: '', headers: {} }),
+  };
+}
+
+function make_mock_file(opts: {
+  exists?: boolean;
+  size?: number;
+  upload_task?: MockUploadTask;
+}): MockFileInstance {
+  const { exists = true, size = 50 * 1024 * 1024 } = opts;
+  const upload_task = opts.upload_task ?? make_mock_upload_task();
+  const create_upload_task = jest.fn().mockReturnValue(upload_task);
+  return { exists, size, createUploadTask: create_upload_task, _upload_task: upload_task };
+}
 
 // ---------------------------------------------------------------------------
 // Factories de mock para el cliente Supabase inyectado
@@ -102,15 +162,20 @@ const EXPECTED_STORAGE_PATH = `${TEST_USER_ID}/${TEST_VIDEO_ID}.mp4`;
 
 function make_mock_supabase(opts: {
   user_id?: string | null;
-  upload_result?: { data: unknown; error: unknown };
+  signed_result?: { data: unknown; error: unknown };
 }) {
   const {
     user_id = TEST_USER_ID,
-    upload_result = { data: { path: EXPECTED_STORAGE_PATH }, error: null },
+    signed_result = {
+      data: { signedUrl: SIGNED_URL, path: EXPECTED_STORAGE_PATH, token: 'tok-firmado-abc' },
+      error: null,
+    },
   } = opts;
 
-  const mock_upload = jest.fn().mockResolvedValue(upload_result);
-  const mock_storage_from = jest.fn().mockReturnValue({ upload: mock_upload });
+  const mock_create_signed_upload_url = jest.fn().mockResolvedValue(signed_result);
+  const mock_storage_from = jest
+    .fn()
+    .mockReturnValue({ createSignedUploadUrl: mock_create_signed_upload_url });
 
   const mock_get_session = jest.fn().mockResolvedValue({
     data: {
@@ -133,7 +198,7 @@ function make_mock_supabase(opts: {
     auth: { getSession: mock_get_session },
     storage: { from: mock_storage_from },
     // Expuestos para aserciones
-    _mock_upload: mock_upload,
+    _mock_create_signed_upload_url: mock_create_signed_upload_url,
     _mock_storage_from: mock_storage_from,
     _mock_get_session: mock_get_session,
   };
@@ -151,40 +216,30 @@ const wrapper = ({ children }: { children: React.ReactNode }) => (
   <PublishFormProvider>{children}</PublishFormProvider>
 );
 
+// Helper: deja que las promesas ya-resueltas (getSession, createSignedUploadUrl)
+// avancen antes de inspeccionar createUploadTask / capturar onProgress.
+async function flush_microtasks(times = 3): Promise<void> {
+  for (let i = 0; i < times; i += 1) {
+    await Promise.resolve();
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 describe('useVideoUpload', () => {
-  // El hook lee el archivo con fetch(local_uri).arrayBuffer() (igual que la
-  // subida de foto de perfil). Mockeamos fetch para que devuelva bytes; el body
-  // no afecta las aserciones (el mock de storage.upload lo ignora).
-  const real_fetch = globalThis.fetch;
   beforeEach(() => {
-    globalThis.fetch = jest.fn().mockResolvedValue({
-      arrayBuffer: async () => new ArrayBuffer(8),
-    }) as unknown as typeof fetch;
-    // Tamaño pequeño por defecto (50 MB) — mantiene los tests EC-1..EC-14 sin
-    // cambios; cada test de EC-15/EC-16/EC-17 sobreescribe con mockResolvedValue
-    // propio antes de llamar a upload().
-    mock_get_info.mockResolvedValue({
-      exists: true,
-      size: 50 * 1024 * 1024,
-      uri: TEST_LOCAL_URI,
-      isDirectory: false,
-    } as never);
-  });
-  afterEach(() => {
-    globalThis.fetch = real_fetch;
+    MockFile.mockImplementation(() => make_mock_file({}) as never);
   });
 
-  // ── (EC-11) Estado inicial ──────────────────────────────────────────────────
+  // ── (EC-11) Estado inicial ──────────────────────────────────────────────
 
   it('(EC-11) estado_inicial_es_idle: al montar, status=idle, progress=0, error=null', async () => {
     const mock_supabase = make_mock_supabase({});
     const { result } = await renderHook(
       () => useVideoUpload({ supabase: mock_supabase as never, uuid: make_uuid_gen() }),
-      { wrapper }
+      { wrapper },
     );
 
     expect(result.current.status).toBe('idle');
@@ -192,85 +247,84 @@ describe('useVideoUpload', () => {
     expect(result.current.error).toBeNull();
   });
 
-  // ── (EC-1) Happy path — upload exitoso ────────────────────────────────────
+  // ── (T1) Happy path — streaming completo ─────────────────────────────────
 
-  it('(EC-1) happy_path_upload_exitoso: sube el video y escribe al context', async () => {
+  it('(T1) exito_streaming_signed_url_y_upload_task: sube por signed URL + upload task y escribe al context', async () => {
+    const file_instance = make_mock_file({});
+    MockFile.mockImplementation(() => file_instance as never);
     const mock_supabase = make_mock_supabase({});
-    const { result } = await renderHook(
-      () => useVideoUpload({ supabase: mock_supabase as never, uuid: make_uuid_gen() }),
-      { wrapper }
-    );
 
-    await act(async () => {
-      await result.current.upload(TEST_LOCAL_URI);
-    });
-
-    expect(mock_supabase._mock_storage_from).toHaveBeenCalledWith('property-videos');
-    expect(mock_supabase._mock_upload).toHaveBeenCalledTimes(1);
-    expect(result.current.status).toBe('success');
-  });
-
-  // ── (EC-2) update escribe video_id y storage_path ─────────────────────────
-
-  it('(EC-2) update_escribe_video_id_y_storage_path: el form recibe video_id y storage_path tras éxito', async () => {
-    const mock_supabase = make_mock_supabase({});
-    const uuid_gen = make_uuid_gen();
-
-    // Hook doble: SUT + lector del form en el mismo tree
     const { result } = await renderHook(
       () => ({
-        sut: useVideoUpload({ supabase: mock_supabase as never, uuid: uuid_gen }),
+        sut: useVideoUpload({ supabase: mock_supabase as never, uuid: make_uuid_gen() }),
         form: usePublishForm(),
       }),
-      { wrapper }
+      { wrapper },
     );
 
     await act(async () => {
       await result.current.sut.upload(TEST_LOCAL_URI);
     });
 
+    expect(mock_supabase._mock_storage_from).toHaveBeenCalledWith('property-videos');
+    expect(mock_supabase._mock_create_signed_upload_url).toHaveBeenCalledWith(
+      EXPECTED_STORAGE_PATH,
+    );
+    expect(file_instance.createUploadTask).toHaveBeenCalledTimes(1);
+
+    const [signed_url_arg, options_arg] = file_instance.createUploadTask.mock.calls[0] as [
+      string,
+      Record<string, unknown>,
+    ];
+    expect(signed_url_arg).toBe(SIGNED_URL);
+    expect(options_arg).toMatchObject({
+      httpMethod: 'PUT',
+      uploadType: FileSystem.UploadType.BINARY_CONTENT,
+      headers: { 'Content-Type': 'video/mp4' },
+    });
+
+    expect(file_instance._upload_task.uploadAsync).toHaveBeenCalledTimes(1);
+    expect(result.current.sut.status).toBe('success');
+    expect(result.current.sut.progress).toBe(1);
     expect(result.current.form.state.video_id).toBe(TEST_VIDEO_ID);
     expect(result.current.form.state.storage_path).toBe(EXPECTED_STORAGE_PATH);
   });
 
   // ── (EC-3) Primer segmento del path = user_id (RLS invariant) ─────────────
 
-  it('(EC-3) path_primer_segmento_es_user_id: el primer segmento del path de upload es el user_id de sesión', async () => {
+  it('(EC-3) path_primer_segmento_es_user_id: el primer segmento del storage_path es el user_id de sesión', async () => {
     const custom_user_id = 'uid-rls-test-456';
-    const mock_supabase = make_mock_supabase({
-      user_id: custom_user_id,
-      upload_result: { data: { path: `${custom_user_id}/${TEST_VIDEO_ID}.mp4` }, error: null },
-    });
+    const mock_supabase = make_mock_supabase({ user_id: custom_user_id });
 
     const { result } = await renderHook(
       () => useVideoUpload({ supabase: mock_supabase as never, uuid: make_uuid_gen() }),
-      { wrapper }
+      { wrapper },
     );
 
     await act(async () => {
       await result.current.upload(TEST_LOCAL_URI);
     });
 
-    const upload_call = mock_supabase._mock_upload.mock.calls[0] as [string, ...unknown[]];
-    const first_segment = upload_call[0].split('/')[0];
+    const call_args = mock_supabase._mock_create_signed_upload_url.mock.calls[0] as [string];
+    const first_segment = call_args[0].split('/')[0];
     expect(first_segment).toBe(custom_user_id);
   });
 
   // ── (EC-4) Path termina en .mp4 ───────────────────────────────────────────
 
-  it('(EC-4) path_termina_en_mp4: el path del objeto en storage termina en .mp4', async () => {
+  it('(EC-4) path_termina_en_mp4: el storage_path pasado a createSignedUploadUrl termina en .mp4', async () => {
     const mock_supabase = make_mock_supabase({});
     const { result } = await renderHook(
       () => useVideoUpload({ supabase: mock_supabase as never, uuid: make_uuid_gen() }),
-      { wrapper }
+      { wrapper },
     );
 
     await act(async () => {
       await result.current.upload(TEST_LOCAL_URI);
     });
 
-    const upload_call = mock_supabase._mock_upload.mock.calls[0] as [string, ...unknown[]];
-    expect(upload_call[0]).toMatch(/\.mp4$/);
+    const call_args = mock_supabase._mock_create_signed_upload_url.mock.calls[0] as [string];
+    expect(call_args[0]).toMatch(/\.mp4$/);
   });
 
   // ── (EC-5) Bucket es 'property-videos' ────────────────────────────────────
@@ -279,7 +333,7 @@ describe('useVideoUpload', () => {
     const mock_supabase = make_mock_supabase({});
     const { result } = await renderHook(
       () => useVideoUpload({ supabase: mock_supabase as never, uuid: make_uuid_gen() }),
-      { wrapper }
+      { wrapper },
     );
 
     await act(async () => {
@@ -295,9 +349,7 @@ describe('useVideoUpload', () => {
 
   it('(EC-6) video_id_proviene_del_generador_inyectado: el video_id en el form es el valor devuelto por uuid()', async () => {
     const DETERMINISTIC_UUID = 'deterministic-uuid-para-ec6';
-    const mock_supabase = make_mock_supabase({
-      upload_result: { data: { path: `${TEST_USER_ID}/${DETERMINISTIC_UUID}.mp4` }, error: null },
-    });
+    const mock_supabase = make_mock_supabase({});
     const uuid_gen = make_uuid_gen(DETERMINISTIC_UUID);
 
     const { result } = await renderHook(
@@ -305,22 +357,20 @@ describe('useVideoUpload', () => {
         sut: useVideoUpload({ supabase: mock_supabase as never, uuid: uuid_gen }),
         form: usePublishForm(),
       }),
-      { wrapper }
+      { wrapper },
     );
 
     await act(async () => {
       await result.current.sut.upload(TEST_LOCAL_URI);
     });
 
-    // El generador fue invocado exactamente una vez
     expect(uuid_gen).toHaveBeenCalledTimes(1);
-    // El video_id en el form es el valor que devolvió el generador
     expect(result.current.form.state.video_id).toBe(DETERMINISTIC_UUID);
   });
 
   // ── (EC-7) Sin local_uri → no sube, no escribe al form ────────────────────
 
-  it('(EC-7) sin_local_uri_no_llama_upload: local_uri null → sin llamada a upload, sin escritura al form, status=error', async () => {
+  it('(EC-7) sin_local_uri_no_llama_signed_url: local_uri null → sin createSignedUploadUrl, sin escritura al form, status=error', async () => {
     const mock_supabase = make_mock_supabase({});
 
     const { result } = await renderHook(
@@ -328,14 +378,14 @@ describe('useVideoUpload', () => {
         sut: useVideoUpload({ supabase: mock_supabase as never, uuid: make_uuid_gen() }),
         form: usePublishForm(),
       }),
-      { wrapper }
+      { wrapper },
     );
 
     await act(async () => {
       await result.current.sut.upload(null);
     });
 
-    expect(mock_supabase._mock_upload).not.toHaveBeenCalled();
+    expect(mock_supabase._mock_create_signed_upload_url).not.toHaveBeenCalled();
     expect(result.current.form.state.video_id).toBeNull();
     expect(result.current.form.state.storage_path).toBeNull();
     expect(result.current.sut.status).toBe('error');
@@ -343,7 +393,7 @@ describe('useVideoUpload', () => {
 
   // ── (EC-8) Sin sesión → no sube, error claro, no escribe al form ──────────
 
-  it('(EC-8) sin_sesion_no_sube: getSession devuelve null → sin upload, error claro, sin escritura al form', async () => {
+  it('(EC-8) sin_sesion_no_sube: getSession devuelve null → sin createSignedUploadUrl, error claro, sin escritura al form', async () => {
     const mock_supabase = make_mock_supabase({ user_id: null });
 
     const { result } = await renderHook(
@@ -351,25 +401,27 @@ describe('useVideoUpload', () => {
         sut: useVideoUpload({ supabase: mock_supabase as never, uuid: make_uuid_gen() }),
         form: usePublishForm(),
       }),
-      { wrapper }
+      { wrapper },
     );
 
     await act(async () => {
       await result.current.sut.upload(TEST_LOCAL_URI);
     });
 
-    expect(mock_supabase._mock_upload).not.toHaveBeenCalled();
+    expect(mock_supabase._mock_create_signed_upload_url).not.toHaveBeenCalled();
     expect(result.current.form.state.video_id).toBeNull();
     expect(result.current.form.state.storage_path).toBeNull();
     expect(result.current.sut.status).toBe('error');
     expect(result.current.sut.error).not.toBeNull();
   });
 
-  // ── (EC-9) Error de storage → no escribe al form ──────────────────────────
+  // ── (T2) createSignedUploadUrl falla → no sube, no escribe al form ────────
 
-  it('(EC-9) error_storage_no_escribe_al_form: error en upload → video_id y storage_path siguen null en form', async () => {
+  it('(T2) signed_url_falla_no_sube_ni_actualiza_form: createSignedUploadUrl con error → status=error, form NO actualizado, createUploadTask NO llamado', async () => {
+    const file_instance = make_mock_file({});
+    MockFile.mockImplementation(() => file_instance as never);
     const mock_supabase = make_mock_supabase({
-      upload_result: { data: null, error: { message: 'Storage error: bucket access denied' } },
+      signed_result: { data: null, error: { message: 'permiso denegado para signed url' } },
     });
 
     const { result } = await renderHook(
@@ -377,151 +429,202 @@ describe('useVideoUpload', () => {
         sut: useVideoUpload({ supabase: mock_supabase as never, uuid: make_uuid_gen() }),
         form: usePublishForm(),
       }),
-      { wrapper }
+      { wrapper },
     );
 
     await act(async () => {
       await result.current.sut.upload(TEST_LOCAL_URI);
     });
 
+    expect(mock_supabase._mock_create_signed_upload_url).toHaveBeenCalledTimes(1);
+    expect(file_instance.createUploadTask).not.toHaveBeenCalled();
+    expect(result.current.sut.status).toBe('error');
+    expect(result.current.sut.error).not.toBeNull();
     expect(result.current.form.state.video_id).toBeNull();
     expect(result.current.form.state.storage_path).toBeNull();
-    expect(result.current.sut.status).toBe('error');
   });
 
-  // ── (EC-10) Error de storage expone mensaje ────────────────────────────────
+  // ── (T3) uploadAsync status 500 → mensaje neutro, sin 'archivo más pequeño' ─
 
-  it('(EC-10) error_storage_expone_mensaje: el campo error del hook contiene información del error de storage', async () => {
-    const mock_supabase = make_mock_supabase({
-      upload_result: {
-        data: null,
-        error: { message: 'Storage error: bucket access denied' },
-      },
-    });
+  it("(T3) status_500_mensaje_neutro_sin_archivo_mas_pequeno: uploadAsync status=500 → error neutro EXACTO, sin 'archivo más pequeño'", async () => {
+    const upload_task = make_mock_upload_task({ status: 500 });
+    const file_instance = make_mock_file({ upload_task });
+    MockFile.mockImplementation(() => file_instance as never);
+    const mock_supabase = make_mock_supabase({});
 
     const { result } = await renderHook(
-      () => useVideoUpload({ supabase: mock_supabase as never, uuid: make_uuid_gen() }),
-      { wrapper }
+      () => ({
+        sut: useVideoUpload({ supabase: mock_supabase as never, uuid: make_uuid_gen() }),
+        form: usePublishForm(),
+      }),
+      { wrapper },
     );
 
     await act(async () => {
-      await result.current.upload(TEST_LOCAL_URI);
+      await result.current.sut.upload(TEST_LOCAL_URI);
     });
 
-    expect(result.current.error).not.toBeNull();
-    expect(result.current.error).toMatch(/storage|bucket|denied/i);
+    expect(result.current.sut.status).toBe('error');
+    expect(result.current.sut.error).toBe(FRIENDLY_ERROR_NEUTRAL);
+    expect(result.current.sut.error).not.toMatch(/archivo más pequeño/i);
+    expect(result.current.form.state.video_id).toBeNull();
+    expect(result.current.form.state.storage_path).toBeNull();
   });
 
-  // ── (EC-12) Status 'uploading' mientras la Promise está pendiente ──────────
+  // ── (EC-12) Status 'uploading' mientras uploadAsync está pendiente ─────────
 
-  it('(EC-12) estado_uploading_durante_subida: status=uploading mientras el upload está en curso', async () => {
-    let resolve_upload!: (v: { data: unknown; error: null }) => void;
-    const pending_upload = new Promise<{ data: unknown; error: null }>((res) => {
+  it("(EC-12) estado_uploading_durante_subida: status=uploading mientras uploadAsync no resuelve", async () => {
+    let resolve_upload!: (v: MockUploadTaskResult) => void;
+    const pending = new Promise<MockUploadTaskResult>((res) => {
       resolve_upload = res;
     });
-
-    const mock_upload = jest.fn().mockReturnValue(pending_upload);
-    const mock_supabase = {
-      auth: {
-        getSession: jest.fn().mockResolvedValue({
-          data: {
-            session: {
-              user: { id: TEST_USER_ID },
-              access_token: 'tok',
-              refresh_token: 'ref',
-              token_type: 'bearer',
-              expires_in: 3600,
-              expires_at: 9999999,
-            },
-          },
-          error: null,
-        }),
-      },
-      storage: { from: jest.fn().mockReturnValue({ upload: mock_upload }) },
-    };
+    const upload_task: MockUploadTask = { uploadAsync: jest.fn().mockReturnValue(pending) };
+    const file_instance = make_mock_file({ upload_task });
+    MockFile.mockImplementation(() => file_instance as never);
+    const mock_supabase = make_mock_supabase({});
 
     const { result } = await renderHook(
       () => useVideoUpload({ supabase: mock_supabase as never, uuid: make_uuid_gen() }),
-      { wrapper }
+      { wrapper },
     );
 
-    // Inicia el upload pero NO awaita — la Promise queda pendiente
     act(() => {
       void result.current.upload(TEST_LOCAL_URI);
     });
 
-    // Debe estar en 'uploading' mientras la Promise de storage no resuelve
+    // Deja avanzar getSession + createSignedUploadUrl (resueltos) hasta llegar
+    // a uploadAsync, que queda pendiente.
+    await act(async () => {
+      await flush_microtasks();
+    });
+
     expect(result.current.status).toBe('uploading');
 
     // Limpieza: resolvemos para no dejar Promises colgadas
     await act(async () => {
-      resolve_upload({ data: { path: EXPECTED_STORAGE_PATH }, error: null });
+      resolve_upload({ status: 200 });
     });
   });
 
-  // ── (EC-13) Status 'success' tras upload exitoso ───────────────────────────
+  // ── (T4) Progreso incremental real vía onProgress ─────────────────────────
 
-  it('(EC-13) estado_success_tras_upload_exitoso: tras upload exitoso, status=success', async () => {
+  it('(T4) progreso_incremental_real_via_onProgress: onProgress actualiza progress de forma incremental (0.25, luego 0.75)', async () => {
+    let captured_on_progress: ((d: { bytesSent: number; totalBytes: number }) => void) | undefined;
+    let resolve_upload!: (v: MockUploadTaskResult) => void;
+    const pending = new Promise<MockUploadTaskResult>((res) => {
+      resolve_upload = res;
+    });
+    const create_upload_task = jest.fn().mockImplementation((_url: string, options: {
+      onProgress?: (d: { bytesSent: number; totalBytes: number }) => void;
+    }) => {
+      captured_on_progress = options.onProgress;
+      return { uploadAsync: jest.fn().mockReturnValue(pending) };
+    });
+    const file_instance: MockFileInstance = {
+      exists: true,
+      size: 50 * 1024 * 1024,
+      createUploadTask: create_upload_task,
+      _upload_task: { uploadAsync: jest.fn().mockReturnValue(pending) },
+    };
+    MockFile.mockImplementation(() => file_instance as never);
     const mock_supabase = make_mock_supabase({});
+
     const { result } = await renderHook(
       () => useVideoUpload({ supabase: mock_supabase as never, uuid: make_uuid_gen() }),
-      { wrapper }
+      { wrapper },
     );
 
-    await act(async () => {
-      await result.current.upload(TEST_LOCAL_URI);
+    act(() => {
+      void result.current.upload(TEST_LOCAL_URI);
     });
 
-    expect(result.current.status).toBe('success');
+    await act(async () => {
+      await flush_microtasks();
+    });
+
+    expect(captured_on_progress).toBeDefined();
+
+    act(() => {
+      captured_on_progress!({ bytesSent: 25e6, totalBytes: 100e6 });
+    });
+    expect(result.current.progress).toBeCloseTo(0.25, 2);
+
+    act(() => {
+      captured_on_progress!({ bytesSent: 75e6, totalBytes: 100e6 });
+    });
+    expect(result.current.progress).toBeCloseTo(0.75, 2);
+    // Cap ≤0.99 antes de la resolución final — nunca reporta 1 vía onProgress solo.
+    expect(result.current.progress).toBeLessThan(1);
+
+    await act(async () => {
+      resolve_upload({ status: 200 });
+    });
+
+    expect(result.current.progress).toBe(1);
   });
 
-  // ── (EC-14) Status 'error' tras upload fallido ────────────────────────────
+  // ── (T5) totalBytes=0 → progress no-NaN ───────────────────────────────────
 
-  it('(EC-14) estado_error_tras_upload_fallido: tras upload con error Supabase, status=error', async () => {
-    const mock_supabase = make_mock_supabase({
-      upload_result: { data: null, error: { message: 'Request failed with status code 403' } },
+  it('(T5) totalBytes_cero_progreso_no_es_NaN: onProgress con totalBytes=0 no produce NaN', async () => {
+    let captured_on_progress: ((d: { bytesSent: number; totalBytes: number }) => void) | undefined;
+    let resolve_upload!: (v: MockUploadTaskResult) => void;
+    const pending = new Promise<MockUploadTaskResult>((res) => {
+      resolve_upload = res;
     });
+    const create_upload_task = jest.fn().mockImplementation((_url: string, options: {
+      onProgress?: (d: { bytesSent: number; totalBytes: number }) => void;
+    }) => {
+      captured_on_progress = options.onProgress;
+      return { uploadAsync: jest.fn().mockReturnValue(pending) };
+    });
+    const file_instance: MockFileInstance = {
+      exists: true,
+      size: 50 * 1024 * 1024,
+      createUploadTask: create_upload_task,
+      _upload_task: { uploadAsync: jest.fn().mockReturnValue(pending) },
+    };
+    MockFile.mockImplementation(() => file_instance as never);
+    const mock_supabase = make_mock_supabase({});
 
     const { result } = await renderHook(
       () => useVideoUpload({ supabase: mock_supabase as never, uuid: make_uuid_gen() }),
-      { wrapper }
+      { wrapper },
     );
 
-    await act(async () => {
-      await result.current.upload(TEST_LOCAL_URI);
+    act(() => {
+      void result.current.upload(TEST_LOCAL_URI);
     });
 
-    expect(result.current.status).toBe('error');
+    await act(async () => {
+      await flush_microtasks();
+    });
+
+    act(() => {
+      captured_on_progress!({ bytesSent: 0, totalBytes: 0 });
+    });
+
+    expect(Number.isNaN(result.current.progress)).toBe(false);
+    expect(result.current.progress).toBe(0);
+
+    await act(async () => {
+      resolve_upload({ status: 200 });
+    });
   });
 });
 
 // ---------------------------------------------------------------------------
-// Validación de tamaño — subtarea 49.3 (getInfoAsync + validate_video_size)
+// Validación de tamaño — SÍNCRONA vía File (API v56), boundary exacto 500 MB
 // ---------------------------------------------------------------------------
 
-describe('useVideoUpload - validación de tamaño', () => {
-  const real_fetch = globalThis.fetch;
-  beforeEach(() => {
-    globalThis.fetch = jest.fn().mockResolvedValue({
-      arrayBuffer: async () => new ArrayBuffer(8),
-    }) as unknown as typeof fetch;
-  });
-  afterEach(() => {
-    globalThis.fetch = real_fetch;
-  });
-
-  it('(EC-15) rechaza_video_mayor_a_500MB: video de 600 MB no sube, error con "600 MB" y "500 MB"', async () => {
-    mock_get_info.mockResolvedValue({
-      exists: true,
-      size: 600 * 1024 * 1024,
-      uri: TEST_LOCAL_URI,
-      isDirectory: false,
-    } as never);
+describe('useVideoUpload - validación de tamaño (File síncrono)', () => {
+  it('(T6) rechaza_524288001_bytes_antes_de_signed_url: file.size = MAX+1 → error ANTES de createSignedUploadUrl', async () => {
+    const file_instance = make_mock_file({ size: MAX_VIDEO_SIZE_BYTES + 1 });
+    MockFile.mockImplementation(() => file_instance as never);
 
     const mock_supabase = make_mock_supabase({});
     const { result } = await renderHook(
       () => useVideoUpload({ supabase: mock_supabase as never, uuid: make_uuid_gen() }),
-      { wrapper }
+      { wrapper },
     );
 
     await act(async () => {
@@ -529,18 +632,36 @@ describe('useVideoUpload - validación de tamaño', () => {
     });
 
     expect(result.current.status).toBe('error');
-    expect(result.current.error).toMatch('600 MB');
-    expect(result.current.error).toMatch('500 MB');
-    expect(mock_supabase._mock_upload).not.toHaveBeenCalled();
+    expect(mock_supabase._mock_create_signed_upload_url).not.toHaveBeenCalled();
+    expect(file_instance.createUploadTask).not.toHaveBeenCalled();
   });
 
-  it('(EC-16) archivo_no_existe: getInfoAsync exists=false no sube, error no null', async () => {
-    mock_get_info.mockResolvedValue({ exists: false } as never);
+  it('(T7) procede_a_signed_url_con_524288000_bytes_exactos: file.size = MAX exacto → SÍ procede, status=success', async () => {
+    const file_instance = make_mock_file({ size: MAX_VIDEO_SIZE_BYTES });
+    MockFile.mockImplementation(() => file_instance as never);
 
     const mock_supabase = make_mock_supabase({});
     const { result } = await renderHook(
       () => useVideoUpload({ supabase: mock_supabase as never, uuid: make_uuid_gen() }),
-      { wrapper }
+      { wrapper },
+    );
+
+    await act(async () => {
+      await result.current.upload(TEST_LOCAL_URI);
+    });
+
+    expect(mock_supabase._mock_create_signed_upload_url).toHaveBeenCalledTimes(1);
+    expect(result.current.status).toBe('success');
+  });
+
+  it('(T8) archivo_no_existe_rechaza_antes_de_signed_url: file.exists=false → error, createSignedUploadUrl NO llamado', async () => {
+    const file_instance = make_mock_file({ exists: false });
+    MockFile.mockImplementation(() => file_instance as never);
+
+    const mock_supabase = make_mock_supabase({});
+    const { result } = await renderHook(
+      () => useVideoUpload({ supabase: mock_supabase as never, uuid: make_uuid_gen() }),
+      { wrapper },
     );
 
     await act(async () => {
@@ -549,112 +670,131 @@ describe('useVideoUpload - validación de tamaño', () => {
 
     expect(result.current.status).toBe('error');
     expect(result.current.error).not.toBeNull();
-    expect(mock_supabase._mock_upload).not.toHaveBeenCalled();
+    expect(mock_supabase._mock_create_signed_upload_url).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Resiliencia a errores de red — mensaje neutro fijo, sin crash
+// ---------------------------------------------------------------------------
+
+describe('useVideoUpload - resiliencia a errores (red)', () => {
+  beforeEach(() => {
+    MockFile.mockImplementation(() => make_mock_file({}) as never);
   });
 
-  it('(EC-17) procede_video_bajo_500MB: video de 100 MB sí sube, status=success', async () => {
-    mock_get_info.mockResolvedValue({
-      exists: true,
-      size: 100 * 1024 * 1024,
-      uri: TEST_LOCAL_URI,
-      isDirectory: false,
-    } as never);
-
+  it('(R1) uploadAsync_rechaza_mensaje_neutro_sin_crash: uploadAsync() rechaza (red/AbortError) → status=error, mensaje neutro fijo', async () => {
+    const upload_task: MockUploadTask = {
+      uploadAsync: jest.fn().mockRejectedValue(new Error('network fail')),
+    };
+    const file_instance = make_mock_file({ upload_task });
+    MockFile.mockImplementation(() => file_instance as never);
     const mock_supabase = make_mock_supabase({});
+
     const { result } = await renderHook(
       () => useVideoUpload({ supabase: mock_supabase as never, uuid: make_uuid_gen() }),
-      { wrapper }
+      { wrapper },
+    );
+
+    await act(async () => {
+      await result.current.upload(TEST_LOCAL_URI).catch(() => {});
+    });
+
+    expect(result.current.status).toBe('error');
+    expect(result.current.error).toBe(FRIENDLY_ERROR_NEUTRAL);
+    expect(result.current.error).not.toMatch(/archivo más pequeño/i);
+  });
+
+  it('(R2) status_503_mensaje_neutro: uploadAsync status=503 → mismo mensaje neutro fijo', async () => {
+    const upload_task = make_mock_upload_task({ status: 503 });
+    const file_instance = make_mock_file({ upload_task });
+    MockFile.mockImplementation(() => file_instance as never);
+    const mock_supabase = make_mock_supabase({});
+
+    const { result } = await renderHook(
+      () => useVideoUpload({ supabase: mock_supabase as never, uuid: make_uuid_gen() }),
+      { wrapper },
     );
 
     await act(async () => {
       await result.current.upload(TEST_LOCAL_URI);
     });
 
-    expect(mock_supabase._mock_upload).toHaveBeenCalledTimes(1);
-    expect(result.current.status).toBe('success');
+    expect(result.current.status).toBe('error');
+    expect(result.current.error).toBe(FRIENDLY_ERROR_NEUTRAL);
+  });
+
+  it('(R3) signed_url_rechaza_mensaje_neutro_sin_crash: createSignedUploadUrl() rechaza (falla de red) → status=error, sin crash', async () => {
+    const mock_supabase = make_mock_supabase({});
+    mock_supabase._mock_create_signed_upload_url.mockRejectedValue(new Error('network down'));
+
+    const { result } = await renderHook(
+      () => useVideoUpload({ supabase: mock_supabase as never, uuid: make_uuid_gen() }),
+      { wrapper },
+    );
+
+    await act(async () => {
+      await result.current.upload(TEST_LOCAL_URI).catch(() => {});
+    });
+
+    expect(result.current.status).toBe('error');
+    expect(result.current.error).toBe(FRIENDLY_ERROR_NEUTRAL);
   });
 });
 
 // ---------------------------------------------------------------------------
-// Resiliencia a errores OOM/red — subtarea 49.4 (try/catch + mensaje amigable)
+// Subtarea 52.6 — Mensaje específico para 413 (límite del servidor)
 // ---------------------------------------------------------------------------
 
-describe('useVideoUpload - resiliencia a errores (OOM/red)', () => {
-  const real_fetch = globalThis.fetch;
-  const FRIENDLY_ERROR = 'Error al subir el video. Intenta de nuevo con un archivo más pequeño.';
+describe('useVideoUpload - error 413 (límite del servidor)', () => {
+  const FRIENDLY_ERROR_413 =
+    'El video supera el tamaño máximo permitido por el servidor. Intenta con un video más ligero.';
 
   beforeEach(() => {
-    // Tamaño pequeño por defecto — pasa la validación de tamaño (49.3) y llega
-    // al fetch/upload real.
-    mock_get_info.mockResolvedValue({
-      exists: true,
-      size: 50 * 1024 * 1024,
-      uri: TEST_LOCAL_URI,
-      isDirectory: false,
-    } as never);
+    MockFile.mockImplementation(() => make_mock_file({}) as never);
   });
 
-  afterEach(() => {
-    globalThis.fetch = real_fetch;
-  });
-
-  it('(EC-18) fetch_rechaza_maneja_sin_crash: fetch(local_uri) rechaza → status=error, mensaje amigable fijo', async () => {
-    globalThis.fetch = jest.fn().mockRejectedValue(new Error('Out of memory')) as unknown as typeof fetch;
-
+  it('(T9) status_413_mensaje_especifico_limite_servidor: uploadAsync status=413 → mensaje EXACTO de límite de servidor, form NO actualizado, progress no llega a 1', async () => {
+    const upload_task = make_mock_upload_task({ status: 413 });
+    const file_instance = make_mock_file({ upload_task });
+    MockFile.mockImplementation(() => file_instance as never);
     const mock_supabase = make_mock_supabase({});
+
     const { result } = await renderHook(
-      () => useVideoUpload({ supabase: mock_supabase as never, uuid: make_uuid_gen() }),
-      { wrapper }
+      () => ({
+        sut: useVideoUpload({ supabase: mock_supabase as never, uuid: make_uuid_gen() }),
+        form: usePublishForm(),
+      }),
+      { wrapper },
     );
 
     await act(async () => {
-      // El .catch es solo defensa del test para el estado RED de hoy (sin
-      // try/catch en el hook, la promesa de upload() rechaza). En GREEN el
-      // hook nunca deja escapar la excepción y este catch nunca se ejecuta.
-      await result.current.upload(TEST_LOCAL_URI).catch(() => {});
+      await result.current.sut.upload(TEST_LOCAL_URI);
     });
 
-    expect(result.current.status).toBe('error');
-    expect(result.current.error).toContain('Error al subir');
-    expect(result.current.error).toBe(FRIENDLY_ERROR);
+    expect(result.current.sut.status).toBe('error');
+    expect(result.current.sut.error).toBe(FRIENDLY_ERROR_413);
+    expect(result.current.sut.progress).not.toBe(1);
+    expect(result.current.form.state.video_id).toBeNull();
+    expect(result.current.form.state.storage_path).toBeNull();
   });
 
-  it('(EC-19) storage_upload_rechaza_maneja_sin_crash: storage.upload rechaza → status=error, mensaje amigable fijo', async () => {
-    globalThis.fetch = jest.fn().mockResolvedValue({
-      arrayBuffer: async () => new ArrayBuffer(8),
-    }) as unknown as typeof fetch;
-
-    const mock_upload = jest.fn().mockRejectedValue(new Error('network fail'));
-    const mock_supabase = {
-      auth: {
-        getSession: jest.fn().mockResolvedValue({
-          data: {
-            session: {
-              user: { id: TEST_USER_ID },
-              access_token: 'tok',
-              refresh_token: 'ref',
-              token_type: 'bearer',
-              expires_in: 3600,
-              expires_at: 9999999,
-            },
-          },
-          error: null,
-        }),
-      },
-      storage: { from: jest.fn().mockReturnValue({ upload: mock_upload }) },
-    };
+  it('(T10) status_413_no_menciona_conexion: el mensaje de 413 NO es el neutro genérico de conexión', async () => {
+    const upload_task = make_mock_upload_task({ status: 413 });
+    const file_instance = make_mock_file({ upload_task });
+    MockFile.mockImplementation(() => file_instance as never);
+    const mock_supabase = make_mock_supabase({});
 
     const { result } = await renderHook(
       () => useVideoUpload({ supabase: mock_supabase as never, uuid: make_uuid_gen() }),
-      { wrapper }
+      { wrapper },
     );
 
     await act(async () => {
-      await result.current.upload(TEST_LOCAL_URI).catch(() => {});
+      await result.current.upload(TEST_LOCAL_URI);
     });
 
-    expect(result.current.status).toBe('error');
-    expect(result.current.error).toContain('Error al subir');
-    expect(result.current.error).toBe(FRIENDLY_ERROR);
+    expect(result.current.error).not.toBe(FRIENDLY_ERROR_NEUTRAL);
+    expect(result.current.error).not.toMatch(/conexión/i);
   });
 });

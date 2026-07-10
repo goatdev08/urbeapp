@@ -2,12 +2,14 @@
  * profileService.ts — lógica de perfil de agente.
  *
  * saveProfile({ fullName, imageUri, userId }):
- *   - Si imageUri: lee el archivo como ArrayBuffer (fetch API de RN/Expo),
- *     sube a profile-photos/{userId}/avatar.jpg y obtiene la URL pública.
+ *   - Si imageUri: sube por streaming vía signed URL — createSignedUploadUrl +
+ *     File(uri).createUploadTask(...).uploadAsync() — a profile-photos/{userId}/avatar.jpg
+ *     y obtiene la URL pública. Ya NO lee el archivo completo con fetch/arrayBuffer
+ *     (evita el pico de RAM, mismo patrón que useVideoUpload post-52.1).
  *   - UPSERT en user_preferences con user_id, full_name y profile_photo_url.
  *   - Lanza Error explícito en fallos de storage o upsert (sin swallow).
  *
- * Implementación GREEN — subtarea 6.5.
+ * Implementación GREEN — subtarea 6.5. Migrada a streaming — subtarea 52.4.
  *
  * NOTA DE DISEÑO: el cliente Supabase se carga con require() dentro de la función
  * (en lugar de import estático) para que los tests con jest.mock() puedan interceptar
@@ -15,6 +17,8 @@
  * En producción (Metro/Expo) el resultado es idéntico — require() devuelve el mismo
  * singleton ya cargado en el bundle.
  */
+
+import { File, UploadType } from 'expo-file-system';
 
 export interface SaveProfileParams {
   fullName: string;
@@ -43,22 +47,30 @@ export async function saveProfile({
   let profile_photo_url: string | null = null;
 
   if (imageUri) {
-    // Leer el archivo local como ArrayBuffer — compatible con supabase-js en Expo/RN.
-    // En producción: fetch() en RN entiende file:// URIs producidos por expo-image-picker.
-    // En tests: el mock de supabase.storage.from intercepta antes de que el body importe.
-    const response = await fetch(imageUri);
-    const file_body = await response.arrayBuffer();
-
-    const { error: upload_error } = await supabase.storage
+    // Streaming: signed upload URL + File.createUploadTask — sin cargar el
+    // archivo completo en RAM (elimina el fetch().arrayBuffer() previo).
+    const { data: signed_data, error: signed_error } = await supabase.storage
       .from('profile-photos')
-      .upload(avatar_path, file_body, {
-        upsert: true,
-        contentType: 'image/jpeg',
-      });
+      .createSignedUploadUrl(avatar_path, { upsert: true });
 
-    if (upload_error) {
+    if (signed_error || !signed_data?.signedUrl) {
       throw new Error(
-        `storage/upload: no se pudo subir la foto de perfil — ${upload_error.message}`
+        `storage/signed-url: no se pudo obtener la URL de subida — ${signed_error?.message ?? 'error desconocido'}`
+      );
+    }
+
+    const file = new File(imageUri);
+    const task = file.createUploadTask(signed_data.signedUrl, {
+      httpMethod: 'PUT',
+      uploadType: UploadType.BINARY_CONTENT,
+      headers: { 'Content-Type': 'image/jpeg' },
+    });
+
+    const { status } = await task.uploadAsync();
+
+    if (status < 200 || status >= 300) {
+      throw new Error(
+        `storage/upload: no se pudo subir la foto de perfil — status ${status}`
       );
     }
 

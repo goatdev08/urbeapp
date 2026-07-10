@@ -1,23 +1,53 @@
 /**
- * Tests unitarios para processProfileImage (imageUtils.ts).
+ * Tests fase RED — processProfileImage (imageUtils.ts)
+ * Subtarea Taskmaster: 52.4 — Migrar subida de imágenes a API File v56 + streaming
  *
- * Patrón: jest-expo globals + jest.fn() DENTRO del factory para evitar hoisting.
- * Ver context.test.tsx para el mismo patrón.
+ * Contrato NUEVO (API File v56, verificado en
+ * node_modules/expo-file-system/build/File.d.ts +
+ * build/internal/NativeFileSystem.types.d.ts):
+ *   - `getInfoAsync` del entry principal de expo-file-system v56 es un SHIM
+ *     LEGACY que LANZA en runtime (node_modules/expo-file-system/src/legacyWarnings.ts:27-28)
+ *     → la foto de perfil del onboarding está rota HOY.
+ *   - Reemplazo: `new File(uri)` expone `.exists` (boolean, getter síncrono) y
+ *     `.size` (number, getter síncrono) — SIN I/O extra, SIN import de getInfoAsync.
+ *   - El resto del algoritmo (resize 512px, compresión iterativa JPEG 0.8→0.6→0.4,
+ *     retorno del último resultado si ninguno cumple ≤1MB) NO cambia — solo cambia
+ *     CÓMO se mide el tamaño del archivo manipulado.
  *
- * Casos cubiertos:
- *   (a) imagen ya ≤ 1 MB: una sola pasada, retorno directo.
- *   (b) imagen > 1 MB: compresión iterativa — manipulateAsync se llama varias veces
- *       hasta que el tamaño cae por debajo del límite.
- *   (c) resize siempre solicita width: 512 (AVATAR_MAX_PX).
- *   (d) se solicita SaveFormat.JPEG en todos los pasos.
- *   (e) si getInfoAsync devuelve exists: false → lanza Error.
+ * EDGE CASES CUBIERTOS (RED):
+ *
+ * ### Happy path
+ * - (a) imagen_ya_bajo_limite_una_sola_pasada: File.size ≤ 1 MB → retorno directo,
+ *   sin reintento.
+ *
+ * ### Edge cases del PRD / lógica preservada (compresión iterativa)
+ * - (b) reintenta_con_calidad_mas_baja_si_excede_limite: primera pasada > 1 MB
+ *   (según File.size) → segunda pasada con calidad más baja.
+ * - (b2) agota_los_tres_pasos_y_retorna_el_ultimo_si_ninguno_cumple: las tres
+ *   pasadas exceden 1 MB → retorna la última sin lanzar.
+ * - (c) resize_siempre_solicita_width_512: invariante de negocio sin cambios.
+ * - (d) solicita_saveformat_jpeg: invariante de negocio sin cambios.
+ *
+ * ### Ramas de la migración a File v56 (no obvias)
+ * - (e) archivo_no_existe_lanza_error_via_file_exists: File.exists === false →
+ *   lanza Error mencionando 'imageUtils' (MISMO contrato público que antes, pero
+ *   la fuente de verdad ahora es File.exists, no FileInfo.exists de getInfoAsync).
+ * - (f) usa_file_v56_con_uri_manipulado_no_getInfoAsync: `new File(...)` se
+ *   invoca con el URI del resultado de manipulateAsync (mismo argumento que antes
+ *   recibía getInfoAsync) — confirma que la medición pasa por la clase File.
+ * - (g) tamano_proviene_del_getter_size_no_de_shape_fileinfo: el tamaño final
+ *   devuelto por processProfileImage es exactamente el valor de `File.size`
+ *   (getter síncrono), no un objeto FileInfo legacy.
+ *
+ * ### Boundary
+ * - (h) tamano_exactamente_en_el_limite_no_reintenta: File.size === MAX_SIZE_BYTES
+ *   (límite exacto, inclusive) → NO reintenta, una sola pasada.
  */
 
 // ---------------------------------------------------------------------------
 // Mocks — jest.fn() DENTRO del factory (evita problemas de hoisting con babel-jest)
 // ---------------------------------------------------------------------------
 
-// Importar módulos DESPUÉS de registrar los mocks
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as FileSystem from 'expo-file-system';
 
@@ -28,8 +58,11 @@ jest.mock('expo-image-manipulator', () => ({
   SaveFormat: { JPEG: 'jpeg', PNG: 'png', WEBP: 'webp' },
 }));
 
+// API NUEVA v56: solo se exporta la clase File (constructor). NO se exporta
+// getInfoAsync — si el SUT aún lo importa/llama, este mock lo deja `undefined`
+// y la llamada explota con TypeError (falla por comportamiento, no por parse).
 jest.mock('expo-file-system', () => ({
-  getInfoAsync: jest.fn(),
+  File: jest.fn(),
 }));
 
 // ---------------------------------------------------------------------------
@@ -40,9 +73,7 @@ const mock_manipulate_async = ImageManipulator.manipulateAsync as jest.MockedFun
   typeof ImageManipulator.manipulateAsync
 >;
 
-const mock_get_info_async = FileSystem.getInfoAsync as jest.MockedFunction<
-  typeof FileSystem.getInfoAsync
->;
+const MockFile = FileSystem.File as unknown as jest.Mock;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -57,18 +88,29 @@ function make_manipulate_result(uri: string) {
   return { uri, width: AVATAR_MAX_PX, height: AVATAR_MAX_PX };
 }
 
-function make_file_info_exists(uri: string, size: number) {
-  return { exists: true as const, uri, size, isDirectory: false as const, modificationTime: 0 };
+/** Factory de instancia mock de File (API v56) — exists/size como getters. */
+function make_file_instance(opts: { exists?: boolean; size?: number }) {
+  const { exists = true, size = 0 } = opts;
+  return { exists, size };
 }
 
-function make_file_info_missing() {
-  return { exists: false as const, uri: '', isDirectory: false as const };
+/**
+ * Encadena implementaciones de `new File(uri)` en el orden de llamada —
+ * cada pasada de compresión crea una instancia distinta.
+ */
+function queue_file_instances(instances: ReturnType<typeof make_file_instance>[]): void {
+  let call = 0;
+  MockFile.mockImplementation(() => {
+    const instance = instances[call] ?? instances[instances.length - 1];
+    call += 1;
+    return instance as never;
+  });
 }
 
 // Tamaños de referencia
-const SMALL_SIZE = 500 * 1024;       // 500 KB → ≤ 1 MB → pasa a la primera
-const LARGE_SIZE = 2 * 1024 * 1024;  // 2 MB   → > 1 MB → necesita reintento
-const MEDIUM_SIZE = 800 * 1024;      // 800 KB → ≤ 1 MB (en el segundo intento)
+const SMALL_SIZE = 500 * 1024; // 500 KB → ≤ 1 MB → pasa a la primera
+const LARGE_SIZE = 2 * 1024 * 1024; // 2 MB   → > 1 MB → necesita reintento
+const MEDIUM_SIZE = 800 * 1024; // 800 KB → ≤ 1 MB (en el segundo intento)
 
 // ---------------------------------------------------------------------------
 // Setup
@@ -82,74 +124,65 @@ beforeEach(() => {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('processProfileImage', () => {
+describe('processProfileImage — API File v56', () => {
   // ── (a) Imagen ya ≤ 1 MB: una sola pasada ──────────────────────────────
 
-  it('(a) retorna el resultado sin reintento si el tamaño es ≤ 1 MB', async () => {
+  it('(a) imagen_ya_bajo_limite_una_sola_pasada: retorna sin reintento si File.size ≤ 1 MB', async () => {
     mock_manipulate_async.mockResolvedValueOnce(make_manipulate_result(PROCESSED_URI_1));
-    mock_get_info_async.mockResolvedValueOnce(make_file_info_exists(PROCESSED_URI_1, SMALL_SIZE));
+    queue_file_instances([make_file_instance({ size: SMALL_SIZE })]);
 
     const result = await processProfileImage(RAW_URI);
 
     expect(result.uri).toBe(PROCESSED_URI_1);
     expect(result.size).toBe(SMALL_SIZE);
     expect(result.size).toBeLessThanOrEqual(MAX_SIZE_BYTES);
-
-    // manipulateAsync solo se llamó una vez (no hubo reintento)
     expect(mock_manipulate_async).toHaveBeenCalledTimes(1);
-    expect(mock_get_info_async).toHaveBeenCalledTimes(1);
+    expect(MockFile).toHaveBeenCalledTimes(1);
   });
 
   // ── (b) Imagen > 1 MB: compresión iterativa ─────────────────────────────
 
-  it('(b) reintenta con calidad más baja si el primer resultado supera 1 MB', async () => {
-    // Primera pasada (quality 0.8) → 2 MB, demasiado grande
+  it('(b) reintenta_con_calidad_mas_baja_si_excede_limite: File.size > 1 MB en la primera pasada → reintenta', async () => {
     mock_manipulate_async.mockResolvedValueOnce(make_manipulate_result(PROCESSED_URI_1));
-    mock_get_info_async.mockResolvedValueOnce(make_file_info_exists(PROCESSED_URI_1, LARGE_SIZE));
-
-    // Segunda pasada (quality 0.6) → 800 KB, acepta
     mock_manipulate_async.mockResolvedValueOnce(make_manipulate_result(PROCESSED_URI_2));
-    mock_get_info_async.mockResolvedValueOnce(make_file_info_exists(PROCESSED_URI_2, MEDIUM_SIZE));
+    queue_file_instances([
+      make_file_instance({ size: LARGE_SIZE }),
+      make_file_instance({ size: MEDIUM_SIZE }),
+    ]);
 
     const result = await processProfileImage(RAW_URI);
 
     expect(result.uri).toBe(PROCESSED_URI_2);
     expect(result.size).toBe(MEDIUM_SIZE);
     expect(result.size).toBeLessThanOrEqual(MAX_SIZE_BYTES);
-
-    // Se llamó dos veces: primera falló el límite, segunda OK
     expect(mock_manipulate_async).toHaveBeenCalledTimes(2);
-    expect(mock_get_info_async).toHaveBeenCalledTimes(2);
+    expect(MockFile).toHaveBeenCalledTimes(2);
   });
 
-  it('(b) agota los tres pasos de calidad si ninguno cumple y retorna el último', async () => {
-    // Las tres pasadas superan 1 MB
+  it('(b2) agota_los_tres_pasos_y_retorna_el_ultimo_si_ninguno_cumple: las tres pasadas exceden 1 MB', async () => {
     mock_manipulate_async.mockResolvedValueOnce(make_manipulate_result(PROCESSED_URI_1));
-    mock_get_info_async.mockResolvedValueOnce(make_file_info_exists(PROCESSED_URI_1, LARGE_SIZE));
-
     mock_manipulate_async.mockResolvedValueOnce(make_manipulate_result(PROCESSED_URI_2));
-    mock_get_info_async.mockResolvedValueOnce(make_file_info_exists(PROCESSED_URI_2, LARGE_SIZE));
-
     mock_manipulate_async.mockResolvedValueOnce(make_manipulate_result(PROCESSED_URI_3));
-    mock_get_info_async.mockResolvedValueOnce(make_file_info_exists(PROCESSED_URI_3, LARGE_SIZE));
+    queue_file_instances([
+      make_file_instance({ size: LARGE_SIZE }),
+      make_file_instance({ size: LARGE_SIZE }),
+      make_file_instance({ size: LARGE_SIZE }),
+    ]);
 
     const result = await processProfileImage(RAW_URI);
 
-    // Retorna el último resultado (quality 0.4) sin lanzar
     expect(result.uri).toBe(PROCESSED_URI_3);
-    // Todos los pasos de QUALITY_STEPS se ejecutaron
     expect(mock_manipulate_async).toHaveBeenCalledTimes(QUALITY_STEPS.length);
   });
 
   // ── (c) Resize siempre solicita width: AVATAR_MAX_PX ────────────────────
 
-  it('(c) siempre solicita resize a width 512 (AVATAR_MAX_PX)', async () => {
+  it('(c) resize_siempre_solicita_width_512: invariante sin cambios tras la migración', async () => {
     mock_manipulate_async.mockResolvedValueOnce(make_manipulate_result(PROCESSED_URI_1));
-    mock_get_info_async.mockResolvedValueOnce(make_file_info_exists(PROCESSED_URI_1, SMALL_SIZE));
+    queue_file_instances([make_file_instance({ size: SMALL_SIZE })]);
 
     await processProfileImage(RAW_URI);
 
-    // Segundo argumento de manipulateAsync es el array de acciones
     const call_args = mock_manipulate_async.mock.calls[0];
     expect(call_args).toBeDefined();
     const actions = call_args![1] as { resize: { width: number } }[];
@@ -160,24 +193,62 @@ describe('processProfileImage', () => {
 
   // ── (d) Formato JPEG ─────────────────────────────────────────────────────
 
-  it('(d) solicita SaveFormat.JPEG en la primera pasada', async () => {
+  it('(d) solicita_saveformat_jpeg: invariante sin cambios tras la migración', async () => {
     mock_manipulate_async.mockResolvedValueOnce(make_manipulate_result(PROCESSED_URI_1));
-    mock_get_info_async.mockResolvedValueOnce(make_file_info_exists(PROCESSED_URI_1, SMALL_SIZE));
+    queue_file_instances([make_file_instance({ size: SMALL_SIZE })]);
 
     await processProfileImage(RAW_URI);
 
     const call_args = mock_manipulate_async.mock.calls[0];
     expect(call_args).toBeDefined();
-    const options = call_args![2] as { format: string; compress: number; base64: boolean };
+    const options = call_args![2] as { format: string };
     expect(options.format).toBe('jpeg'); // SaveFormat.JPEG = 'jpeg'
   });
 
-  // ── (e) Archivo no existe → lanza Error ──────────────────────────────────
+  // ── (e) Archivo no existe (File.exists = false) → lanza Error ───────────
 
-  it('(e) lanza Error si getInfoAsync devuelve exists: false', async () => {
+  it('(e) archivo_no_existe_lanza_error_via_file_exists: File.exists=false → lanza Error mencionando imageUtils', async () => {
     mock_manipulate_async.mockResolvedValueOnce(make_manipulate_result(PROCESSED_URI_1));
-    mock_get_info_async.mockResolvedValueOnce(make_file_info_missing());
+    queue_file_instances([make_file_instance({ exists: false, size: 0 })]);
 
     await expect(processProfileImage(RAW_URI)).rejects.toThrow('imageUtils');
+  });
+
+  // ── (f) Usa File(uri) con el URI manipulado, NO getInfoAsync ────────────
+
+  it('(f) usa_file_v56_con_uri_manipulado_no_getinfoasync: new File() recibe el uri manipulado', async () => {
+    mock_manipulate_async.mockResolvedValueOnce(make_manipulate_result(PROCESSED_URI_1));
+    queue_file_instances([make_file_instance({ size: SMALL_SIZE })]);
+
+    await processProfileImage(RAW_URI);
+
+    expect(MockFile).toHaveBeenCalledWith(PROCESSED_URI_1);
+    // El módulo mockeado de expo-file-system NO expone getInfoAsync — si el SUT
+    // lo importara y llamara, este assert nunca se alcanzaría (TypeError previo).
+    expect((FileSystem as Record<string, unknown>).getInfoAsync).toBeUndefined();
+  });
+
+  // ── (g) Tamaño proviene del getter .size de File, no de un FileInfo legacy ─
+
+  it('(g) tamano_proviene_del_getter_size_no_de_shape_fileinfo: result.size === File.size exacto', async () => {
+    const DISTINCTIVE_SIZE = 654321;
+    mock_manipulate_async.mockResolvedValueOnce(make_manipulate_result(PROCESSED_URI_1));
+    queue_file_instances([make_file_instance({ size: DISTINCTIVE_SIZE })]);
+
+    const result = await processProfileImage(RAW_URI);
+
+    expect(result.size).toBe(DISTINCTIVE_SIZE);
+  });
+
+  // ── (h) Boundary — tamaño exactamente en el límite ──────────────────────
+
+  it('(h) tamano_exactamente_en_el_limite_no_reintenta: File.size === MAX_SIZE_BYTES exacto → no reintenta', async () => {
+    mock_manipulate_async.mockResolvedValueOnce(make_manipulate_result(PROCESSED_URI_1));
+    queue_file_instances([make_file_instance({ size: MAX_SIZE_BYTES })]);
+
+    const result = await processProfileImage(RAW_URI);
+
+    expect(result.size).toBe(MAX_SIZE_BYTES);
+    expect(mock_manipulate_async).toHaveBeenCalledTimes(1);
   });
 });

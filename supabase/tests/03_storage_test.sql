@@ -192,8 +192,22 @@ select lives_ok(
 );
 reset role;
 
--- ══ 3.3 ══ RLS SELECT en storage.objects: lectura pública de videos de propiedades activas
--- Política esperada (GREEN):
+-- ══ 3.3 ══ RLS SELECT en storage.objects: dueño lee sus propios objetos
+-- ACTUALIZADO por la subtarea 52.5 (migración 20260710000002_fix_property_videos_select_rls.sql):
+-- la rama pública original de este bloque (comentario debajo, ahora histórico) esperaba
+-- property_id en el 2º segmento del path, pero la convención real de subida
+-- (mobile/src/features/publish/hooks/useVideoUpload.ts) es SOLO 2 segmentos
+-- ({user_id}/{video_id}.mp4) → esa rama era dead code que además abría un hueco de
+-- seguridad con paths fabricados de 3 segmentos (ver supabase/tests/11_property_videos_select_policy_test.sql).
+-- Se eliminó: el acceso público a video de propiedades activas va EXCLUSIVAMENTE por la
+-- Edge Function mint-video-url (service_role). Política vigente:
+--   for select to authenticated
+--   using (
+--     bucket_id = 'property-videos'
+--     AND (storage.foldername(name))[1] = (select auth.uid())::text
+--   )
+--
+-- Política ORIGINAL (histórica, ya no vigente — documentada solo para contexto):
 --   for select to anon, authenticated
 --   using (
 --     bucket_id = 'property-videos'
@@ -255,15 +269,15 @@ values
 
 -- ── Asserts 3.3 ──────────────────────────────────────────────────────────────
 
--- 3.3.1 — anon VE el video de propiedad ACTIVA (count=1).
--- RED: falla porque no existe política SELECT en storage.objects → count=0 en vez de 1.
--- GREEN: la política permite lectura pública cuando property_is_public=true.
+-- 3.3.1 — anon NO ve el video de propiedad ACTIVA vía storage RLS (count=0).
+-- Actualizado por 52.5: la rama pública fue eliminada (dead code + hueco de seguridad).
+-- El acceso público a video activo va exclusivamente por la Edge Function mint-video-url.
 select pg_temp.act_as(null, 'anon');
 select is(
   (select count(*)::int from storage.objects
    where name = '00000000-0000-0000-0000-0000000a0a01/00000000-0000-0000-0000-0000000a0f0a/vid.mp4'),
-  1,
-  'anon_ve_video_de_propiedad_activa'
+  0,
+  'anon_no_ve_video_de_propiedad_activa_via_storage_rls'
 );
 reset role;
 
@@ -301,15 +315,15 @@ select is(
 );
 reset role;
 
--- 3.3.5 — Otro agente A2 SÍ ve el video de propiedad activa ajena (lectura pública, count=1).
--- RED: falla porque no existe política SELECT → count=0 en vez de 1.
--- GREEN: property_is_public(P_active)=true → lectura pública para cualquier rol autenticado.
+-- 3.3.5 — Otro agente A2 NO ve el video de propiedad activa ajena vía storage RLS (count=0).
+-- Actualizado por 52.5: la rama pública fue eliminada (dead code + hueco de seguridad).
+-- El acceso público a video activo va exclusivamente por la Edge Function mint-video-url.
 select pg_temp.act_as('00000000-0000-0000-0000-0000000a0a02');
 select is(
   (select count(*)::int from storage.objects
    where name = '00000000-0000-0000-0000-0000000a0a01/00000000-0000-0000-0000-0000000a0f0a/vid.mp4'),
-  1,
-  'otro_agente_ve_video_de_propiedad_activa_ajena'
+  0,
+  'otro_agente_no_ve_video_de_propiedad_activa_ajena_via_storage_rls'
 );
 reset role;
 
