@@ -21,7 +21,7 @@ export const EMPTY_FILTERS: FilterState = {
   pet_friendly: false,
   allows_no_guarantor: false,
   student_friendly: false,
-  radius_m: 5000,
+  radius_m: null,
 };
 
 /** Forma mínima del query builder de supabase-js que este módulo necesita. */
@@ -79,6 +79,10 @@ export function build_filter_query<Q extends FilterableQueryBuilder>(
 /**
  * Cuenta cuántos "grupos" de filtro están activos (para el badge del FilterSheet).
  * Rango de precio (min y/o max) cuenta como UN solo grupo.
+ *
+ * ponytail: radius_m NO cuenta — es un parámetro de alcance ("qué tan lejos
+ * buscar"), no un filtro de contenido ("qué tipo de propiedad buscar"). El
+ * badge refleja solo filtros de contenido. (Decisión #58, subtarea 58.5)
  */
 export function get_active_filter_count(filters: FilterState): number {
   let count = 0;

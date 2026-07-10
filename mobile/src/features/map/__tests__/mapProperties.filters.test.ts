@@ -287,14 +287,20 @@ describe('fetchMapProperties — integración de FilterState (12.7)', () => {
   });
 
   // ── (EC-M12) Backward-compat: EMPTY_FILTERS explícito ────────────────────
+  // ACTUALIZADO (#58.1 + #58.3): EMPTY_FILTERS.radius_m ahora es `null` por
+  // default (#58.1, radio sin límite) — pasar EMPTY_FILTERS explícito YA NO
+  // es equivalente a omitir `filters` (ese caso sigue en EC-M11, `filters`
+  // undefined → DEFAULT_RADIUS_M). EMPTY_FILTERS explícito ejercita a propósito
+  // el path plano (#58.3): sin RPC, sin `.in('id', ...)` — trae TODAS las
+  // propiedades activas.
 
-  it('(EC-M12) backward_compat_empty_filters_explicito_solo_in_de_ids_de_rpc: fetchMapProperties(deps, EMPTY_FILTERS) → mismo comportamiento que sin filtros: único .in es el de ids de la RPC (1 llamada); 0 llamadas de filtro', async () => {
+  it('(EC-M12) empty_filters_explicito_radius_null_activa_path_plano_sin_rpc: fetchMapProperties(deps, EMPTY_FILTERS) → radius_m=null (default) → NO invoca client.rpc; sin .in("id", ...); 0 llamadas de filtro', async () => {
     const mock_supabase = make_mock_supabase();
 
     await fetchMapProperties({ supabase: mock_supabase }, EMPTY_FILTERS);
 
-    expect(mock_supabase._query_builder.in).toHaveBeenCalledTimes(1);
-    expect(mock_supabase._query_builder.in).toHaveBeenCalledWith('id', expect.any(Array));
+    expect(mock_supabase._mock_rpc).not.toHaveBeenCalled();
+    expect(mock_supabase._query_builder.in).not.toHaveBeenCalled();
     expect(mock_supabase._query_builder.gte).not.toHaveBeenCalled();
     expect(mock_supabase._query_builder.lte).not.toHaveBeenCalled();
     expect(mock_supabase._query_builder.eq).toHaveBeenCalledTimes(1);
