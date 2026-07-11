@@ -33,6 +33,19 @@
  * ### Boundary / contrato
  * - (EC-S6) save_serializa_correctamente_filtros_con_todos_los_campos_activos
  * - (EC-S7) load_usa_key_urbea_filters_exacta_para_leer
+ *
+ * EDGE CASES (RED) — subtarea 56.2, exclusión de `area` de la persistencia
+ * (área "buscar en esta zona" es EFÍMERA, no debe sobrevivir entre sesiones):
+ *
+ * ### Happy path
+ * - (EC-AREA-1) save_filters_excluye_area_del_json_persistido
+ * - (EC-AREA-2) load_filters_siempre_devuelve_area_null
+ *
+ * ### Ramas de reglas no obvias (defensivo — invariante "area no persiste")
+ * - (EC-AREA-3) load_filters_sobrescribe_area_inyectada_manualmente_en_el_storage
+ *
+ * ### Boundary / roundtrip
+ * - (EC-AREA-4) roundtrip_guardar_con_area_y_leer_preserva_otros_campos_pero_pierde_area
  */
 
 import { EMPTY_FILTERS } from '../lib/filterQuery';
@@ -148,5 +161,74 @@ describe('filterStorage — persistencia del FilterState (12.7)', () => {
 
     expect(storage.getItem).toHaveBeenCalledWith(FILTERS_STORAGE_KEY);
     expect(storage.getItem).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('filterStorage — area es EFÍMERA, excluida de la persistencia (56.2)', () => {
+  // ── (EC-AREA-1) save_filters NO escribe `area` en el JSON persistido ──────
+
+  it('(EC-AREA-1) save_filters_excluye_area_del_json_persistido: FilterState con area activa → el JSON guardado en storage.setItem NO contiene la key "area", pero SÍ conserva los demás campos', async () => {
+    const storage = make_mock_storage();
+    const filters = make_filters({
+      zone: 'Providencia',
+      radius_m: 2000,
+      area: { center: { lat: 20.66, lng: -103.35 }, radius_m: 1500 },
+    });
+
+    await save_filters(filters, { storage });
+
+    const [[, raw_value]] = storage.setItem.mock.calls as [[string, string]];
+    const written = JSON.parse(raw_value) as Record<string, unknown>;
+
+    expect('area' in written).toBe(false);
+    expect(written['zone']).toBe('Providencia');
+    expect(written['radius_m']).toBe(2000);
+  });
+
+  // ── (EC-AREA-2) load_filters siempre devuelve area: null ───────────────────
+
+  it('(EC-AREA-2) load_filters_siempre_devuelve_area_null: tras save_filters de un FilterState con area activa, load_filters devuelve area: null', async () => {
+    const storage = make_mock_storage();
+    const filters = make_filters({
+      area: { center: { lat: 19.43, lng: -99.13 }, radius_m: 800 },
+    });
+
+    await save_filters(filters, { storage });
+    const loaded = await load_filters({ storage });
+
+    expect(loaded.area).toBeNull();
+  });
+
+  // ── (EC-AREA-3) load_filters ignora/sobrescribe un area inyectada a mano ───
+
+  it('(EC-AREA-3) load_filters_sobrescribe_area_inyectada_manualmente_en_el_storage: JSON persistido que trae area explícita (p.ej. de una versión vieja de la app o dato corrupto) → load_filters devuelve area: null, el merge NO la restaura', async () => {
+    const tampered_json = JSON.stringify({
+      ...EMPTY_FILTERS,
+      zone: 'Del Valle',
+      area: { center: { lat: 20.67, lng: -103.39 }, radius_m: 999 },
+    });
+    const storage = make_mock_storage({ [FILTERS_STORAGE_KEY]: tampered_json });
+
+    const loaded = await load_filters({ storage });
+
+    expect(loaded.area).toBeNull();
+    expect(loaded.zone).toBe('Del Valle');
+  });
+
+  // ── (EC-AREA-4) Roundtrip: guarda con area, el roundtrip pierde area pero preserva el resto
+
+  it('(EC-AREA-4) roundtrip_guardar_con_area_y_leer_preserva_otros_campos_pero_pierde_area: save_filters + load_filters con FilterState que trae area activa → loaded es igual al original EXCEPTO area, que queda null', async () => {
+    const storage = make_mock_storage();
+    const filters = make_filters({
+      operation_types: ['rent'],
+      price_min: 8000,
+      bedrooms_min: 2,
+      area: { center: { lat: 20.7, lng: -103.4 }, radius_m: 3000 },
+    });
+
+    await save_filters(filters, { storage });
+    const loaded = await load_filters({ storage });
+
+    expect(loaded).toEqual({ ...filters, area: null });
   });
 });
