@@ -98,21 +98,28 @@ const LENS_SPRING = { damping: glass.lens_spring_damping, stiffness: glass.lens_
  */
 function GlassBackground({ variant }: { variant: GlassVariant }) {
   const is_dark = variant === 'dark';
-  const overlay_color = is_dark ? glass.overlay_dark : glass.overlay_light;
 
   if (isLiquidGlassAvailable()) {
-    // iOS 26+: refracción real de Apple. Sobre el feed (dark) se mantiene un
-    // tinte encima — sin él el contraste del texto/íconos claros cae contra
-    // video en reproducción; decisión visual, ver bitácora de la subtarea.
+    // iOS 26+: refracción real de Apple (UIGlassEffect vía GlassView).
+    //
+    // Fix #65.9 (3ª ronda, feedback del dueño): la barra se veía OPACA en
+    // iOS. Causa raíz diagnosticada en vivo (console.log temporal de
+    // isLiquidGlassAvailable() + log stream del simulador, confirmado true):
+    // `tintColor` con un hex SÓLIDO (colors.ink_feed/colors.paper) tiñe el
+    // UIGlassEffect nativo con un color 100% opaco — Apple nunca tinta el
+    // glass con sólidos (HIG: material puro + vibrancy). Fix: SIN tintColor.
+    // `colorScheme` (prop nativa que hace overrideUserInterfaceStyle sobre el
+    // UIVisualEffectView, ver GlassView.swift:230-235) reemplaza el tinte:
+    // fuerza la variante dark/light del material del sistema — contraste
+    // correcto sin tapar la refracción. Se eliminó también el overlay negro
+    // extra que antes compensaba el tinte opaco (ya no hace falta con el
+    // material real sin tapar).
     return (
-      <>
-        <GlassView
-          style={StyleSheet.absoluteFill}
-          glassEffectStyle="regular"
-          tintColor={is_dark ? colors.ink_feed : colors.paper}
-        />
-        {is_dark && <View style={[StyleSheet.absoluteFill, { backgroundColor: overlay_color }]} />}
-      </>
+      <GlassView
+        style={StyleSheet.absoluteFill}
+        glassEffectStyle="regular"
+        colorScheme={is_dark ? 'dark' : 'light'}
+      />
     );
   }
 
@@ -130,6 +137,7 @@ function GlassBackground({ variant }: { variant: GlassVariant }) {
   // Costo de FPS: medido sobre el feed (video en reproducción) sin caída
   // perceptible — se mantiene blur_intensity_dark reducido (20 vs 30) como
   // margen adicional si un gama media lo necesita.
+  const overlay_color = is_dark ? glass.overlay_dark : glass.overlay_light;
   const blur_intensity = is_dark ? glass.blur_intensity_dark : glass.blur_intensity_light;
   return (
     <>
@@ -161,11 +169,24 @@ function GlassBackground({ variant }: { variant: GlassVariant }) {
  *     mismo diseño simulado sin refracción física real.
  */
 function LensGlass({ variant }: { variant: GlassVariant }) {
+  const is_dark = variant === 'dark';
+
   if (isLiquidGlassAvailable()) {
-    return <GlassView style={StyleSheet.absoluteFill} glassEffectStyle="clear" isInteractive />;
+    // `colorScheme` explícito (#65.9): sin él, 'auto' sigue el
+    // userInterfaceStyle del sistema en vez de la variante local de la tab
+    // bar — en el feed (dark) el estilo "clear" se veía blanco/lechoso
+    // porque el material tomaba la apariencia clara del sistema, no la
+    // oscura del feed. Mismo fix que GlassBackground.
+    return (
+      <GlassView
+        style={StyleSheet.absoluteFill}
+        glassEffectStyle="clear"
+        isInteractive
+        colorScheme={is_dark ? 'dark' : 'light'}
+      />
+    );
   }
 
-  const is_dark = variant === 'dark';
   const blur_intensity = is_dark ? glass.lens_blur_intensity_dark : glass.lens_blur_intensity_light;
   return (
     <>
