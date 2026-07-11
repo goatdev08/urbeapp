@@ -22,6 +22,7 @@ export const EMPTY_FILTERS: FilterState = {
   allows_no_guarantor: false,
   student_friendly: false,
   radius_m: null,
+  area: null,
 };
 
 /** Forma mínima del query builder de supabase-js que este módulo necesita. */

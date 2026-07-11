@@ -130,6 +130,7 @@ describe('filterStorage — persistencia del FilterState (12.7)', () => {
       allows_no_guarantor: true,
       student_friendly: true,
       radius_m: 5000,
+      area: null,
     };
 
     await save_filters(filters, { storage });
