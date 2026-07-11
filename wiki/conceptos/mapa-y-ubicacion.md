@@ -3,7 +3,7 @@ tipo: concepto
 dominio: producto
 estado: vivo
 fuentes: [docs/PRD.md §9, docs/PRD-MVP-demo.md]
-codigo: [mobile/src/features/map/, mobile/src/features/location/, mobile/app/(protected)/_layout.tsx, mobile/app/(protected)/(tabs)/map.tsx, mobile/src/features/property-detail/utils/parseLocation.ts, supabase/migrations/0005_properties_and_videos.sql, supabase/migrations/20260706000001_properties_within_radius_rpc.sql]
+codigo: [mobile/src/features/map/, mobile/src/features/map/lib/viewportToArea.ts, mobile/src/features/map/components/AreaSearchPill.tsx, mobile/src/features/search/components/ZoneActiveChip.tsx, mobile/src/features/location/, mobile/app/(protected)/_layout.tsx, mobile/app/(protected)/(tabs)/map.tsx, mobile/src/features/property-detail/utils/parseLocation.ts, supabase/migrations/0005_properties_and_videos.sql, supabase/migrations/20260706000001_properties_within_radius_rpc.sql]
 actualizado: 2026-07-10
 ---
 
@@ -39,6 +39,12 @@ actualizado: 2026-07-10
 - **Radio en FilterSheet**: `radius_m` en `FilterState`/`EMPTY_FILTERS` (default 5000) + `RadiusSelector.tsx` (pills single-select 5/10/20/50 km, patrón `BedroomsSelector`); filtros persistidos viejos hidratan con merge `{...EMPTY_FILTERS, ...parsed}` en `filterStorage`.
 - **Centrado (42.4)**: MapScreen ya montaba con coords o GDL (#20); ahora un `useEffect` + `coords_used_ref` hace `animateToRegion` **una sola vez** cuando las coords llegan post-mount (no pelea con el pan del usuario). ⚠️ **Punto azul (`showsUserLocation`) SE MANTIENE** aunque la exploración 027 decía "sin marcador tú-estás-aquí" — decisión: preguntar al cliente en la próxima demo.
 - Suite mobile 563/563 · exploración `027-ubicacion-obligatoria-feed-mapa-cercania.md`. Habilita **#56** (buscar en esta zona), que reusa `radius_m` + el loop de expansión.
+- **"Buscar en esta zona" (#56, vivo)** — patrón mapa→feed estilo Airbnb (exploración `030-buscar-en-esta-zona.md`, G1 = reusar el RPC de radio, **sin migración nueva**):
+  - **`lib/viewportToArea.ts` (CRÍTICA TDD, 7 tests, guardian PASS)**: `viewport_to_area(region) → {center:{lat,lng}, radius_m}` — Haversine a mano (R=6.371e6, sin deps), radio = **mitad de la diagonal** del viewport (círculo sobre-incluye esquinas pero cubre todo lo visible — trade-off aceptado, regla no obvia #6), clamp `[MIN_RADIUS_M=100, MAX_RADIUS_M=50_000]`. Función pura.
+  - **Modo zona en `lib/mapProperties.ts` + `feed/lib/feedProperties.ts` (CRÍTICA TDD, EC-Z1..Z7 / EC-ZM1..ZM5, guardian PASS)**: rama `filters.area != null` **aditiva** (evaluada ANTES del check `radius_m===null` en el mapa) que overridea el centro/radio de la RPC con los de la zona, **sin expansión**; zona gana sobre `radius_m`. Con `area==null` las ramas #42/#58/#62 quedan bit-idénticas (restricción del usuario: no-regresión, verificada algebraicamente — `is_unlimited = !has_zone && radius_m===null`).
+  - **`MapScreen.tsx` (#56.4, ligera)**: `AreaSearchPill.tsx` (pill flotante bottom-center, aparece tras panear/zoomear con **debounce 500ms** en `onRegionChangeComplete`) → `viewport_to_area(region)` → `set_filter('area', …)` → `router.push('/')` (tab feed). Mini-spec §8 con tokens `theme.ts` (UI ausente del mockup canónico = trabajo nuevo).
+  - **Chip + empty state (#56.5, ligera)**: `search/components/ZoneActiveChip.tsx` ("Zona activa · Quitar", prop `dark` para feed oscuro / mapa claro; `onPress`→`set_filter('area', null)` = vuelve a cercanía GPS #42) en feed **y** mapa; en `FeedScreen` el empty state de zona ("No hay publicaciones en esta zona" + "Limpiar zona") va como **PRIMERA** rama del bloque `is_empty` (porque `area` no cuenta en `active_filter_count` → si no, caería por error en "Publicar propiedad").
+  - Suite mobile 624/624 · zona **efímera** (no persiste, ver [[busqueda-y-filtros]]).
 
 ## Reglas / gotchas (técnico)
 - ⚠️ `react-native-maps` con **Google Maps nativo** → requiere **development build** (`expo-dev-client`), **no** Expo Go. Esta es la razón principal del dev build ([[0005-demo-cerrada-3-semanas]]). `GOOGLE_MAPS_API_KEY` ya en `app.config.js` (iOS+Android).
