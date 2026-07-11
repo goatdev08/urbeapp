@@ -53,6 +53,33 @@ export const colors = {
 } as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GLASS — tokens del efecto "liquid glass" (exploración 035, tarea #65)
+//
+// Reuso entre GlassTabBar, MapSearchBar y PropertyMiniCard. Overlays/bordes
+// derivados de `colors` (verificados byte a byte contra los hex reales):
+//   overlay_light        = colors.paper    (#F6F2EB) @ 0.72
+//   overlay_dark         = colors.ink_feed (#17140F) @ 0.82
+//   border_highlight_light = colors.paper_3 (#E3DCCF) @ 0.60
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const glass = {
+  // Intensidad de BlurView (expo-blur). Reducida en dark: el blur sobre video
+  // en reproducción (feed Android) cuesta FPS en gama media.
+  blur_intensity_light: 30, // superficies claras/gestión — mismo valor que MapSearchBar
+  blur_intensity_dark: 20,  // feed oscuro — reducida a propósito por rendimiento
+
+  overlay_light: 'rgba(246, 242, 235, 0.72)', // colors.paper @ 0.72
+  overlay_dark: 'rgba(23, 20, 15, 0.82)',     // colors.ink_feed @ 0.82
+
+  border_highlight_light: 'rgba(227, 220, 207, 0.60)', // colors.paper_3 @ 0.60
+  border_highlight_dark: 'rgba(255, 255, 255, 0.12)',
+
+  pill_radius: 24,
+  pill_horizontal_inset: 16,
+  pill_bottom_offset: 12,
+} as const;
+
+// ─────────────────────────────────────────────────────────────────────────────
 // MARCA — LOGO FINAL (urbea-logo-final.html)
 //
 // Paleta EXCLUSIVA del logo (icono de app + login), distinta del verde Salvia
@@ -211,6 +238,7 @@ export const layout = {
 
 export const theme = {
   colors,
+  glass,
   radii,
   shadows,
   fonts,

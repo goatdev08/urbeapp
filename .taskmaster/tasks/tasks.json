@@ -4425,10 +4425,11 @@
             "dependencies": [
               1
             ],
-            "details": "Edit `mobile/src/theme/theme.ts` after line 53 (end of colors section) to add new `glass` object with: blur_intensity_light: 30, blur_intensity_dark: 20 (reduced for video performance on feed), overlay_light: 'rgba(246,242,235,0.72)' (colors.paper @ 0.72), overlay_dark: 'rgba(23,20,15,0.82)' (colors.ink_feed @ 0.82), border_highlight_light: 'rgba(227,220,207,0.60)' (colors.paper_3 @ 0.60), border_highlight_dark: 'rgba(255,255,255,0.12)', pill_radius: 24 (r_24 from radii), pill_horizontal_inset: 16 (spacing.s_16), pill_bottom_offset: 12 (spacing.s_12). Export in theme object at line 212 by adding `glass` to the export. This centralizes glass aesthetics matching existing patterns from MapSearchBar.tsx:54-62 and PropertyMiniCard.tsx:79-86.",
-            "status": "pending",
+            "details": "Edit `mobile/src/theme/theme.ts` after line 53 (end of colors section) to add new `glass` object with: blur_intensity_light: 30, blur_intensity_dark: 20 (reduced for video performance on feed), overlay_light: 'rgba(246,242,235,0.72)' (colors.paper @ 0.72), overlay_dark: 'rgba(23,20,15,0.82)' (colors.ink_feed @ 0.82), border_highlight_light: 'rgba(227,220,207,0.60)' (colors.paper_3 @ 0.60), border_highlight_dark: 'rgba(255,255,255,0.12)', pill_radius: 24 (r_24 from radii), pill_horizontal_inset: 16 (spacing.s_16), pill_bottom_offset: 12 (spacing.s_12). Export in theme object at line 212 by adding `glass` to the export. This centralizes glass aesthetics matching existing patterns from MapSearchBar.tsx:54-62 and PropertyMiniCard.tsx:79-86.\n<info added on 2026-07-11T18:52:08.740Z>\nBased on the user request, the implementation has been completed successfully. Here is the new text to append to the subtask's details:\n\n**Completed (2026-07-11):** Added `export const glass = {...} as const` in mobile/src/theme/theme.ts (lines ~55-80), immediately after the colors block (L53) and before the MARCA/logo section. Tokens configured: blur_intensity_light=30, blur_intensity_dark=20 (intentionally reduced for video blur performance on Android), overlay_light='rgba(246,242,235,0.72)' (derived from colors.paper), overlay_dark='rgba(23,20,15,0.82)' (derived from colors.ink_feed), border_highlight_light='rgba(227,220,207,0.60)' (derived from colors.paper_3), border_highlight_dark='rgba(255,255,255,0.12)', pill_radius=24, pill_horizontal_inset=16, pill_bottom_offset=12. RGB values verified against exploration 035: paper=#F6F2EB→(246,242,235) exact match, ink_feed=#17140F→(23,20,15) exact match, paper_3=#E3DCCF→(227,220,207) exact match, no adjustments needed. Added glass to the theme export at L212 (now L~232), positioned between colors and radii sections. Verification: pnpm tsc --noEmit (0 errors) and pnpm lint (0 errors, 30 pre-existing unrelated warnings) both green. No components or _layout modified in this subtask.\n</info added on 2026-07-11T18:52:08.740Z>",
+            "status": "done",
             "testStrategy": "Non-critical path (design system tokens). Verification: pnpm tsc --noEmit passes, glass object exports correctly from theme.ts, tokens can be imported in components",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-07-11T18:52:32.893Z"
           },
           {
             "id": 3,
@@ -4467,12 +4468,12 @@
             "parentId": "undefined"
           }
         ],
-        "updatedAt": "2026-07-11T18:47:19.906Z"
+        "updatedAt": "2026-07-11T18:52:32.893Z"
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-07-11T18:47:19.906Z",
+      "lastModified": "2026-07-11T18:52:32.893Z",
       "taskCount": 65,
       "completedCount": 53,
       "tags": [
