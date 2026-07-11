@@ -1,0 +1,21 @@
+{
+	"meta": {
+		"generatedAt": "2026-07-11T05:32:45.291Z",
+		"tasksAnalyzed": 1,
+		"totalTasks": 63,
+		"analysisCount": 1,
+		"thresholdScore": 5,
+		"projectName": "Task Master",
+		"usedResearch": false
+	},
+	"complexityAnalysis": [
+		{
+			"taskId": 63,
+			"taskTitle": "Enrich TDD execution agent criteria with curated vocabulary from mattpocock skills",
+			"complexityScore": 3,
+			"recommendedSubtasks": 4,
+			"expansionPrompt": "Break down the agent enrichment task into 4 surgical subtasks, one per agent file (.claude/agents/guardian.md, test-author.md, mobile.md, supabase.md). Each subtask should:\n\n1. Identify the specific sections to enhance (e.g., guardian: add \"Test quality\" section; test-author: enhance Step 0/1 for seams annotation; mobile/supabase: enhance \"Verification\" section)\n2. Extract and translate relevant vocabulary from mattpocock/skills (tdd, implement, code-review) to Urbea's stack (Edge Functions, RLS/pgTAP, Expo/React Native)\n3. Inject curated content (seams definition, 3 anti-patterns for guardian, 4 Fowler smells subset for mobile/supabase)\n4. Verify no enforcement mechanisms are changed (tdd-guard.sh remains untouched, structured output formats preserved)\n\nEach subtask is independent and can be completed sequentially. Verification is human review only (non-critical path per CLAUDE.md §5).",
+			"reasoning": "Complexity score 3/10 because: (1) ZERO new code - only editing 4 markdown prompt files (~166 lines total), (2) No enforcement changes - tdd-guard.sh and workflow remain untouched, (3) Clear scope with surgical injection points already defined in task details, (4) Non-critical path means no RED/GREEN/guardian cycle needed - verification is human review, (5) Source material exists but requires curation/translation (not verbatim copying), (6) Requires understanding of both Urbea's TDD workflow and mattpocock's vocabulary, but no complex technical implementation. This is primarily a content/prompt engineering task with clear constraints. Similar in complexity to documentation updates but requires deeper domain knowledge of TDD patterns. 4 subtasks recommended (1 per agent file) for clean separation and focused edits."
+		}
+	]
+}

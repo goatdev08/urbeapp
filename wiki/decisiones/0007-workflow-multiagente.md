@@ -24,6 +24,13 @@ Flujo **por tarea, subtarea por subtarea, en serie**, orquestado por `/tm-tarea`
 - **Componentes React: PascalCase** (obligatorio por JSX). Tipos: PascalCase.
 - Archivos/skills/agentes/comandos: kebab-case. SQL/Postgres: snake_case. Hooks React: `use_*` salvo que el linter exija `useX`.
 
+## Evolución 2026-07-11 — criterio de calidad injertado (tarea #63, exploración 034)
+Los 4 agentes de ejecución (`guardian`, `test-author`, `mobile`, `supabase`) se enriquecieron con vocabulario curado de `mattpocock/skills` (tdd/implement/code-review), **traducido al stack** — el enforcement (`tdd-guard.sh` + sentinel + guardian árbitro) quedó intacto:
+- **Seams en términos Urbea** = contrato público de la Edge Function (request→respuesta) o comportamiento observable de la política RLS vía impersonación JWT; `test-author` los acuerda y anota (`SEAMS`) en la subtarea antes de enumerar; los tests solo viven en seams anotados.
+- **guardian**: sección de calidad del test (3 anti-patrones: acoplado-a-implementación, tautológico, slicing horizontal) como **observación NO bloqueante** — el veredicto PASS/FAIL sigue siendo solo anti-cheat + cobertura + ejecución.
+- **mobile/supabase**: verificar DURANTE el GREEN (no solo al cierre), GREEN un test a la vez en los seams, **auto-check de conformidad Spec/PRD** antes de reportar (campo `Conformidad spec` en el output — cierra el hueco de las subtareas no críticas, donde el guardian no corre) y checklist de 4 smells curados (Speculative Generality, Duplicated Code, Mysterious Name, Primitive Obsession) condicional a diff no trivial.
+- **Traducción deliberada, no copia**: el "vertical slicing" de mattpocock choca con nuestro RED-batch (el guardian exige enumeración exhaustiva) → el RED sigue siendo completo; "un test a la vez" vive en el GREEN. De los 12 smells de Fowler solo se injertaron 4 (ponytail). Detalle completo: `.taskmaster/docs/exploraciones/034-enriquecer-agentes-tdd-mattpocock.md`.
+
 ## Futuro: graphify
 Sumar `graphify` (grafo automático del código, AST) como segunda fuente de contexto junto al vault: `urbea-context` consultaría `graphify query/explain/path` antes del mapa manual; `/tm-tarea` lo actualizaría en el cierre; habilitaría **olas paralelas** con git worktrees (hoy serie). No instalado aún.
 
