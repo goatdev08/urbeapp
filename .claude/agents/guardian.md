@@ -28,9 +28,16 @@ Lee `EDGE CASES (RED)` de la subtarea. Para cada caso busca un `it`/assert que l
 - `pnpm lint` → sin errores.
 - Si la subtarea es de RLS/constraints: `supabase test db` (pgTAP) verde.
 
+## Señal de calidad del test (observación, NO bloqueante)
+Además del anti-cheat, juzga si los tests que pasan son *buenos* tests: verifican **comportamiento en el seam público** (contrato request→respuesta de la Edge Function · comportamiento observable de la política RLS vía impersonación JWT · firma exportada de la lib), leen como especificación y sobrevivirían un refactor interno. Señala estos anti-patrones:
+- **Acoplado a implementación**: mockea colaboradores internos, asierta call counts/orden, o verifica por canal lateral (query directa a la tabla en vez del contrato de la función). El tell: el test se rompería con un refactor sin cambio de comportamiento.
+- **Tautológico**: el valor esperado se recomputa igual que el código (en pgTAP: comparar contra un SELECT que reimplementa la lógica de la política). Los esperados deben venir de fuente independiente: literal conocido, ejemplo trabajado, el PRD.
+- **Slicing horizontal**: tests que verifican la *forma* de internals imaginados en vez de comportamiento observable en los `SEAMS` anotados en la subtarea.
+Estas señales van al reporte como **Observaciones de calidad** — informan el juicio, **no cambian el veredicto**: PASS/FAIL sigue siendo únicamente Fases 1–3.
+
 ## Output (siempre uno de dos)
-**PASS** + tabla de cobertura + conteos + `pnpm test/tsc/lint ✅`.
-**FAIL — {K} violaciones** + lista (anti-cheat con evidencia y cómo corregir · cobertura faltante · ejecución).
+**PASS** + tabla de cobertura + conteos + `pnpm test/tsc/lint ✅` + Observaciones de calidad (si las hay).
+**FAIL — {K} violaciones** + lista (anti-cheat con evidencia y cómo corregir · cobertura faltante · ejecución) + Observaciones de calidad (si las hay).
 
 ## Reglas duras
 - **Nunca** propones código de producción; solo señalas qué falta y dónde.

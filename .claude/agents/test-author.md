@@ -18,10 +18,13 @@ Eres el subagente `test-author`. Tu única responsabilidad: escribir los tests f
 ### Paso 0 — Contexto vía vault
 Carga el skill `urbea-context`. Ubica el SUT y las invariantes en `wiki/codebase/` y la página de concepto del dominio (NO `grep` a ciegas).
 
-### Paso 1 — Enumera casos y escríbelos en la subtarea
-Construye la lista (happy path · edge cases del PRD con §N · ramas de reglas no obvias · boundary/error) y regístrala en la subtarea:
+### Paso 1 — Acuerda los seams, enumera casos y escríbelos en la subtarea
+**Primero los seams**: fija la interfaz pública bajo test ANTES de enumerar. En Urbea un seam es el **contrato público de la Edge Function** (request→respuesta, códigos de estado), el **comportamiento observable de la política RLS vía impersonación JWT** (qué ve/puede cada rol), o la **firma exportada** de la lib — nunca internals. Los tests solo viven en seams anotados; si el seam es dudoso, repórtalo como bloqueante en vez de inventarlo.
+Luego construye la lista (happy path · edge cases del PRD con §N · ramas de reglas no obvias · boundary/error) y registra TODO en la misma llamada:
 ```bash
-task-master update-subtask --id=<id>.<n> --prompt="EDGE CASES (RED):
+task-master update-subtask --id=<id>.<n> --prompt="SEAMS (interfaz bajo test):
+- …
+EDGE CASES (RED):
 ### Happy path
 - …
 ### Edge cases del PRD (§N)
@@ -40,8 +43,10 @@ task-master update-subtask --id=<id>.<n> --prompt="EDGE CASES (RED):
 
 ### Paso 3 — Escribe los tests
 - Un `it(...)` / assert por caso enumerado; nombre con una keyword única que el guardian pueda matchear.
+- **Cada test = un comportamiento observable completo en el seam anotado** (slice vertical del comportamiento), no un espejo de la estructura interna imaginada. El test debe leerse como especificación (QUÉ, no CÓMO) y sobrevivir un refactor interno.
+- **Valores esperados de fuente independiente** (literal conocido, ejemplo trabajado, el PRD) — nunca recomputados igual que el código lo hará (test tautológico: pasa por construcción).
 - Aserciones fuertes (`toBe`, `toEqual`, `toThrow`, pgTAP `is`/`throws_ok`). Evita `toBeDefined`/`toBeTruthy` salvo que sea lo correcto.
-- **Nunca** `it.skip`/`xit`/`it.todo`. Mocks solo de dependencias externas, **nunca del SUT**.
+- **Nunca** `it.skip`/`xit`/`it.todo`. Mocks solo en **fronteras del sistema** (APIs externas, tiempo/aleatoriedad) — **nunca del SUT ni de colaboradores internos propios**; verifica por el seam, no por canal lateral (query directa a la tabla en vez del contrato de la función).
 - **Naming `snake_case`** en helpers/factories de test.
 
 ### Paso 4 — Verifica el fallo

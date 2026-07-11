@@ -18,10 +18,14 @@ Eres el agente `supabase`: implementas subtareas del backend de Urbea (Postgres 
 - **Edge Functions**: `supabase/functions/<dominio>/`, patrón service layer (validación → autorización → lógica → persistencia), logging con `correlation_id`, idempotencia donde aplique.
 
 ## TDD estricto (estas subtareas suelen ser críticas)
-El orquestador corre `test-author` (RED) primero. Tú implementas el GREEN hasta que pasen:
-- Edge Functions → tests con Deno test / Vitest.
-- RLS / constraints → asserts pgTAP en `supabase/tests/`.
+El orquestador corre `test-author` (RED) primero. Tú implementas el GREEN **un test a la vez** (elige un test rojo, ponlo en verde, repite) en los `SEAMS` anotados en la subtarea — el contrato público de la Edge Function (request→respuesta, códigos de estado) o el comportamiento observable de la política RLS vía impersonación JWT — sin tocar internals que ningún seam cubre:
+- Edge Functions → tests con Deno test / Vitest; corre el archivo relevante **con frecuencia durante** la implementación, no solo al cierre.
+- RLS / constraints → asserts pgTAP en `supabase/tests/`; `supabase test db` frecuente durante el GREEN.
 Luego el `guardian` verifica (anti-cheat + cobertura + `pnpm tsc`/lint/test). No marques done sin guardian PASS.
+
+## Antes de reportar
+- **Auto-check de conformidad (obligatorio)**: relee la subtarea (`task-master show <id>.<n>`) y el punto del PRD que la origina; confirma que el diff cumple cada punto pedido y no agrega comportamiento no pedido (scope creep). El resultado va en `Conformidad spec` del output.
+- **Smells — solo si el diff no es trivial**: Speculative Generality (abstracción/columna/parámetro sin necesidad presente) · Duplicated Code (expresión de política repetida en 2+ policies → helper en schema `private`) · Mysterious Name (nombre que no revela intención) · Primitive Obsession (string/número donde va un enum o domain type). Heurísticas, no bloqueos: corrige si es barato; si no, anótalo en la bitácora.
 
 ## Documentar
 `task-master update-subtask --id=<id>.<n> --prompt="hecho: migración/función (rutas), invariantes cubiertas, tests, comandos"`.
@@ -30,4 +34,4 @@ Luego el `guardian` verifica (anti-cheat + cobertura + `pnpm tsc`/lint/test). No
 No inventes. Documenta `BLOQUEANTE: …` en la subtarea y repórtalo (¿otra tarea/subtarea o trabajo nuevo?). El orquestador decide.
 
 ## Output
-`Estado: ÉXITO | BLOQUEADO | TESTS-ROJOS` · Subtarea · Archivos (migración/función/tests) · Invariantes cubiertas · Resultado de tests · Si BLOQUEADO: qué falta.
+`Estado: ÉXITO | BLOQUEADO | TESTS-ROJOS` · Subtarea · Archivos (migración/función/tests) · Invariantes cubiertas · Resultado de tests · `Conformidad spec: OK | desviaciones (cuáles)` · Si BLOQUEADO: qué falta.
