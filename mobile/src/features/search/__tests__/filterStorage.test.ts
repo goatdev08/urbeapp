@@ -23,7 +23,9 @@
  *
  * ### Happy path
  * - (EC-S1) round_trip_guardar_y_leer_devuelve_mismo_filter_state
- * - (EC-S2) save_serializa_bajo_key_urbea_filters_con_json_correcto
+ * - (EC-S2) save_serializa_bajo_key_urbea_filters_con_json_correcto_excluyendo_area
+ *   (actualizado por 56.2: el JSON persistido es `filters` MENOS la key `area`,
+ *   porque `area` es efímera — ver bloque EDGE CASES (RED) 56.2 más abajo)
  *
  * ### Fail-safe (nunca lanza)
  * - (EC-S3) load_sin_valor_guardado_devuelve_empty_filters
@@ -31,7 +33,9 @@
  * - (EC-S5) load_con_json_valido_pero_shape_invalida_array_devuelve_empty_filters
  *
  * ### Boundary / contrato
- * - (EC-S6) save_serializa_correctamente_filtros_con_todos_los_campos_activos
+ * - (EC-S6) save_serializa_correctamente_filtros_con_todos_los_campos_activos_excluyendo_area
+ *   (actualizado por 56.2: idem EC-S2, el FilterState de este caso ahora trae
+ *   un `area` NO nula precisamente para probar que se excluye del JSON)
  * - (EC-S7) load_usa_key_urbea_filters_exacta_para_leer
  *
  * EDGE CASES (RED) — subtarea 56.2, exclusión de `area` de la persistencia
@@ -89,15 +93,19 @@ describe('filterStorage — persistencia del FilterState (12.7)', () => {
     expect(loaded).toEqual(filters);
   });
 
-  // ── (EC-S2) save serializa bajo la key correcta con JSON correcto ─────────
+  // ── (EC-S2) save serializa bajo la key correcta con JSON correcto, SIN `area` (56.2) ─
 
-  it('(EC-S2) save_serializa_bajo_key_urbea_filters_con_json_correcto: save_filters llama storage.setItem("urbea_filters", JSON.stringify(filters)) exactamente', async () => {
+  it('(EC-S2) save_serializa_bajo_key_urbea_filters_con_json_correcto_excluyendo_area: save_filters llama storage.setItem("urbea_filters", JSON.stringify(filters SIN area)) exactamente', async () => {
     const storage = make_mock_storage();
-    const filters = make_filters({ pet_friendly: true });
+    const filters = make_filters({
+      pet_friendly: true,
+      area: { center: { lat: 20, lng: -103 }, radius_m: 500 },
+    });
 
     await save_filters(filters, { storage });
 
-    expect(storage.setItem).toHaveBeenCalledWith(FILTERS_STORAGE_KEY, JSON.stringify(filters));
+    const { area: _area, ...persistable } = filters;
+    expect(storage.setItem).toHaveBeenCalledWith(FILTERS_STORAGE_KEY, JSON.stringify(persistable));
   });
 
   // ── (EC-S3) Sin valor guardado → EMPTY_FILTERS ────────────────────────────
@@ -128,9 +136,9 @@ describe('filterStorage — persistencia del FilterState (12.7)', () => {
     expect(loaded).toEqual(EMPTY_FILTERS);
   });
 
-  // ── (EC-S6) save serializa correctamente filtros con TODOS los campos activos
+  // ── (EC-S6) save serializa correctamente filtros con TODOS los campos activos, SIN `area` (56.2)
 
-  it('(EC-S6) save_serializa_correctamente_filtros_con_todos_los_campos_activos: FilterState con todos los campos no-default → JSON.stringify exacto pasado a setItem', async () => {
+  it('(EC-S6) save_serializa_correctamente_filtros_con_todos_los_campos_activos_excluyendo_area: FilterState con todos los campos no-default (incluyendo area activa) → JSON.stringify exacto pasado a setItem, SIN la key area', async () => {
     const storage = make_mock_storage();
     const filters: FilterState = {
       operation_types: ['rent', 'sale'],
@@ -143,13 +151,17 @@ describe('filterStorage — persistencia del FilterState (12.7)', () => {
       allows_no_guarantor: true,
       student_friendly: true,
       radius_m: 5000,
-      area: null,
+      area: { center: { lat: 19.4, lng: -99.15 }, radius_m: 2500 },
     };
 
     await save_filters(filters, { storage });
 
     const [[, raw_value]] = storage.setItem.mock.calls as [[string, string]];
-    expect(JSON.parse(raw_value)).toEqual(filters);
+    const written = JSON.parse(raw_value) as Record<string, unknown>;
+    const { area: _area, ...persistable } = filters;
+
+    expect(written).toEqual(persistable);
+    expect('area' in written).toBe(false);
   });
 
   // ── (EC-S7) load usa la key exacta 'urbea_filters' para leer ──────────────
