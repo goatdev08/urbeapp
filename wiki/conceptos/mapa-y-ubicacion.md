@@ -4,7 +4,7 @@ dominio: producto
 estado: vivo
 fuentes: [docs/PRD.md §9, docs/PRD-MVP-demo.md]
 codigo: [mobile/src/features/map/, mobile/src/features/map/lib/viewportToArea.ts, mobile/src/features/map/components/AreaSearchPill.tsx, mobile/src/features/search/components/ZoneActiveChip.tsx, mobile/src/features/location/, mobile/app/(protected)/_layout.tsx, mobile/app/(protected)/(tabs)/map.tsx, mobile/src/features/property-detail/utils/parseLocation.ts, supabase/migrations/0005_properties_and_videos.sql, supabase/migrations/20260706000001_properties_within_radius_rpc.sql]
-actualizado: 2026-07-10
+actualizado: 2026-07-11
 ---
 
 # Mapa y ubicación
@@ -20,8 +20,8 @@ actualizado: 2026-07-10
 - **`MapScreen.tsx`**: `MapContent` (hooks) + `MapErrorBoundary` (clase, fallback si el módulo nativo no enlaza). `useMapProperties` → `region` (state, init GDL) → `cluster_properties(filtered, region)` (memo). Selección → `PropertyMiniCard` overlay; cluster tap → `animateToRegion` delta/2.
 - **`hooks/useMapProperties.ts`** + **`lib/mapProperties.ts`**: query `properties` active+deleted_at null (select id/price/address/property_type/operation_type/bedrooms/bathrooms/**location**, sin paginar) → convierte `location` con `parse_location` (reusado de property-detail) → **fail-closed**: omite filas con location null/no-parseable. (TDD, 10 tests.)
 - **`lib/clusterMarkers.ts`** → `cluster_properties()`: clustering **custom puro, sin dependencia** (decisión grilling). Grid absoluto (0,0): `cellSize = delta/divisions(8)`; 1→point, >1→cluster (id `cluster_<x>_<y>`, centroide media). Guard `delta<=0`. (TDD, 14 tests.)
-- **Marcadores** (`components/`): `PropertyMarker` (teardrop + isotipo play + price tag compacto; **rent=salvia/sale|both=arcilla**), `ClusterMarker` (círculo `ink` + count, tono distinto), `PropertyMiniCard` y `MapSearchBar` con **liquid glass** (BlurView) + neomorfismo. `lib/formatPrice.ts` (`format_compact_price`/`format_full_price`).
-- **Búsqueda**: filtro **cliente** sobre props cargadas (address/property_type), sin geocoding (decisión grilling). Perf: cadena memoizada `data/query→filtered→clustered`, `tracksViewChanges={false}`.
+- **Marcadores** (`components/`): `PropertyMarker` (pin canónico `MapPinIcon` — Phosphor `MapPin` fill vía `react-native-svg`, solo el icono, sin price tag ni isotipo desde el flash 2026-07-06; **rent=salvia/sale|both=arcilla**), `ClusterMarker` (círculo `ink` + count, tono distinto), `PropertyMiniCard` y `MapSearchBar` con **liquid glass** (BlurView) + neomorfismo. `lib/formatPrice.ts` (`format_compact_price`/`format_full_price`).
+- **Búsqueda**: filtro **cliente** sobre props cargadas (address/property_type), sin geocoding (decisión grilling). Perf: cadena memoizada `data/query→filtered→clustered`; `tracksViewChanges` arranca en `true` y se congela a `false` ~300ms tras el mount (#64, ver abajo) — ya NO fijo en `false` desde el primer render.
 
 ## Cercanía por radio — backend (tarea #40, vivo · Fase A del épico 40→41→42)
 - **RPC PostGIS `properties_within_radius(p_lat, p_lng, p_radius_m float8)`** (`supabase/migrations/20260706000001_...`, **desplegado a urbea-app**): devuelve SOLO `{id, distance_m}` de propiedades `active`+`deleted_at null` dentro del radio (metros), ordenadas por distancia asc. Enfoque **A1 "flaco"** (exploración 027): el RPC solo resuelve la geografía; el feed/mapa (Fase C, #42) traen el resto de columnas con su builder PostgREST + `build_filter_query` **intacto** y re-ordenan por el mapa `id→distance_m`. Cero duplicación de `FilterState` en SQL.
@@ -45,6 +45,13 @@ actualizado: 2026-07-10
   - **`MapScreen.tsx` (#56.4, ligera)**: `AreaSearchPill.tsx` (pill flotante bottom-center, aparece tras panear/zoomear con **debounce 500ms** en `onRegionChangeComplete`) → `viewport_to_area(region)` → `set_filter('area', …)` → `router.push('/')` (tab feed). Mini-spec §8 con tokens `theme.ts` (UI ausente del mockup canónico = trabajo nuevo).
   - **Chip + empty state (#56.5, ligera)**: `search/components/ZoneActiveChip.tsx` ("Zona activa · Quitar", prop `dark` para feed oscuro / mapa claro; `onPress`→`set_filter('area', null)` = vuelve a cercanía GPS #42) en feed **y** mapa; en `FeedScreen` el empty state de zona ("No hay publicaciones en esta zona" + "Limpiar zona") va como **PRIMERA** rama del bloque `is_empty` (porque `area` no cuenta en `active_filter_count` → si no, caería por error en "Publicar propiedad").
   - Suite mobile 624/624 · zona **efímera** (no persiste, ver [[busqueda-y-filtros]]).
+
+## Fix: pin rojo default duplicado en Android (tarea #64, vivo)
+- **Síntoma**: en Android, el pin temático (`PropertyMarker`/`ClusterMarker`) aparecía duplicado con el pin rojo default de Google Maps superpuesto.
+- **Causa raíz**: `tracksViewChanges={false}` fijo desde el primer render del `<Marker>`. Android toma un *snapshot* nativo del contenido custom del marker para reemplazar su pin default — como el contenido es SVG (`MapPinIcon` → `phosphor-react-native` → `react-native-svg`), no pinta de forma síncrona en el primer frame; el snapshot se congela ANTES de que el SVG termine de pintar (`tracksViewChanges=false` nunca vuelve a tomar otro) y Google Maps deja su pin rojo de respaldo visible, duplicado con el pin temático.
+- **Descartadas causas de datos** (revisadas por código, sin cambios): la RPC `properties_within_radius` es un `SELECT` puro sin joins (no puede duplicar ids) y `cluster_properties()` asigna cada propiedad a exactamente una celda del grid (sin duplicación posible).
+- **Fix** (`PropertyMarker.tsx`/`ClusterMarker.tsx`, ambos `components/**` = no crítico por CLAUDE.md §5): `tracksViewChanges` arranca en `true` (deja que RN tome el snapshot real ya pintado) y se congela a `false` a los 300ms del mount vía `useState`+`useEffect`+`setTimeout` (`TRACKS_VIEW_CHANGES_FREEZE_MS`) — mismo patrón en ambos componentes, sin dependencias nuevas, 100% JS/OTA-safe. El perf win de congelar el snapshot se conserva; solo se retrasa ~300ms.
+- Verificado en emulador (mount inicial, zoom-in con pins nuevos simultáneos, unmount/remount del tab): pines limpios en los 3 escenarios, 0 errores logcat.
 
 ## Reglas / gotchas (técnico)
 - ⚠️ `react-native-maps` con **Google Maps nativo** → requiere **development build** (`expo-dev-client`), **no** Expo Go. Esta es la razón principal del dev build ([[0005-demo-cerrada-3-semanas]]). `GOOGLE_MAPS_API_KEY` ya en `app.config.js` (iOS+Android).
