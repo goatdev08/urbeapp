@@ -62,7 +62,16 @@ export function useFeedProperties(filters?: FilterState): UseFeedPropertiesState
     return { supabase, coords };
   }, [coords]);
 
+  // #59: no cargar hasta que haya coords reales. Sin este guard, el primer
+  // loadInitial (coords null en cold start) traía el orden centrado en GDL
+  // (fallback del lib) y luego saltaba al orden por proximidad al llegar la
+  // coord real → "flash". Con el guard, isLoading se queda en true (skeleton)
+  // hasta que la coord llega; entonces load_initial cambia de identidad
+  // (dep _can_load) y el useEffect de FeedScreen re-dispara la carga una vez.
+  const _can_load = coords !== null;
+
   const load_initial = useCallback(async () => {
+    if (!_can_load) return;
     set_is_loading(true);
     set_error(null);
     try {
@@ -74,7 +83,7 @@ export function useFeedProperties(filters?: FilterState): UseFeedPropertiesState
     } finally {
       set_is_loading(false);
     }
-  }, [filters, build_deps]);
+  }, [_can_load, filters, build_deps]);
 
   const load_more = useCallback(async () => {
     if (!nextCursor || isLoading) return;

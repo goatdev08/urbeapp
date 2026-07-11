@@ -336,3 +336,43 @@ describe('EC-9: appstate_active_reevalua_el_estado', () => {
     add_spy.mockRestore();
   });
 });
+
+// ===========================================================================
+// EC-10: timeout de adquisición (#59) — si getCurrentPositionAsync CUELGA
+// (nunca resuelve: emulador sin fix / GPS sin timeout del SO), un timeout de
+// ~10s debe rechazar la promesa y caer a 'gps_off' (muro con retry), en vez de
+// dejar el skeleton del feed colgado indefinidamente (el gate de coords de #59
+// mantiene el skeleton hasta que hay coord real).
+// RED hoy: sin timeout, getCurrentPositionAsync nunca resuelve → status se queda
+// en 'loading' para siempre → la aserción de 'gps_off' falla.
+// ===========================================================================
+describe('EC-10: getCurrentPosition_cuelga_timeout_cae_a_gps_off (#59)', () => {
+  it('granted + servicios on pero getCurrentPositionAsync nunca resuelve → tras ~10s status=gps_off, coords null', async () => {
+    // AppState self-contained: en la suite completa, el spyOn+mockRestore de EC-9
+    // deja addEventListener devolviendo undefined → el cleanup del Provider
+    // (subscription.remove) crashea al desmontar. Fijamos una subscription válida.
+    const add_spy = jest
+      .spyOn(AppState, 'addEventListener')
+      .mockReturnValue({ remove: jest.fn() } as ReturnType<typeof AppState.addEventListener>);
+
+    jest.useFakeTimers();
+    mock_get_foreground.mockResolvedValue({ granted: true, canAskAgain: true });
+    mock_has_services.mockResolvedValue(true);
+    // Promesa que nunca se asienta → simula el GPS colgado sin timeout nativo.
+    mock_get_current_position.mockReturnValue(new Promise<never>(() => {}));
+
+    const { result } = await renderHook(() => useLocation(), { wrapper });
+
+    // Avanza el reloj virtual 10s flushando microtasks entre timers: resuelve
+    // permiso + servicios y dispara el timeout de adquisición.
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(10_000);
+    });
+
+    expect(result.current.status).toBe('gps_off');
+    expect(result.current.coords).toBeNull();
+
+    jest.useRealTimers();
+    add_spy.mockRestore();
+  });
+});
