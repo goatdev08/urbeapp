@@ -6,7 +6,12 @@
  *
  * ponytail: objeto plano sin theming engine — dual-mode feed/oscuro vendrá
  * cuando lo toque el feed (#9). Por ahora solo modo gestión (claro).
+ *
+ * Import de Platform (#65.11): único caso en este archivo — `glass.
+ * floating_content_clearance` necesita resolver por plataforma (ver esa
+ * constante para el porqué).
  */
+import { Platform } from 'react-native';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // COLORES
@@ -51,6 +56,140 @@ export const colors = {
   // Integraciones
   whatsapp:     '#25D366',
 } as const;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GLASS — tokens del efecto "liquid glass" (exploración 035, tarea #65)
+//
+// Reuso entre GlassTabBar, MapSearchBar y PropertyMiniCard. Overlays/bordes
+// derivados de `colors` (verificados byte a byte contra los hex reales):
+//   overlay_light        = colors.paper    (#F6F2EB) @ 0.35
+//   overlay_dark         = colors.ink_feed (#17140F) @ 0.40
+//   border_highlight_light = colors.paper_3 (#E3DCCF) @ 0.60
+//
+// Opacidad bajada en #65.7 (feedback del dueño, screenshot 2026-07-11): la
+// pill se veía casi opaca vs. la referencia deseada (dock liquid glass de
+// iOS 26 Home) — 0.72/0.82 apenas dejaban ver el contenido detrás. Iterado
+// visualmente con capturas adb sobre Mapa (claro) y feed (oscuro) hasta
+// distinguir el fondo sin perder legibilidad de íconos.
+//
+// Bajada de nuevo en #65.8 (2ª ronda de feedback, referencia: tab bar de
+// WhatsApp en iOS 26 — pill MUY translúcida, se distingue el contenido
+// detrás claramente). 0.50/0.60 → 0.35/0.40, iterado visualmente hasta el
+// límite en el que los íconos siguen siendo legibles.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const glass = {
+  // Intensidad de BlurView (expo-blur). Reducida en dark: el blur sobre video
+  // en reproducción (feed Android) cuesta FPS en gama media.
+  blur_intensity_light: 30, // superficies claras/gestión — mismo valor que MapSearchBar
+  blur_intensity_dark: 20,  // feed oscuro — reducida a propósito por rendimiento
+
+  overlay_light: 'rgba(246, 242, 235, 0.35)', // colors.paper @ 0.35 (antes 0.50, #65.8)
+  overlay_dark: 'rgba(23, 20, 15, 0.40)',     // colors.ink_feed @ 0.40 (antes 0.60, #65.8)
+
+  border_highlight_light: 'rgba(227, 220, 207, 0.60)', // colors.paper_3 @ 0.60
+  border_highlight_dark: 'rgba(255, 255, 255, 0.12)',
+
+  // pill_radius = mitad de la altura REAL de la pill (semicírculo perfecto en
+  // los extremos, #65.7) — debe recalcularse si cambia cualquier padding de
+  // GlassTabBar.tsx. Altura actual: borde (1×2=2) + fila (paddingVertical
+  // s_4×2=8) + tab_item (paddingVertical s_8×2=16) + ícono (24) = 50 → 25.
+  pill_radius: 25,
+  pill_horizontal_inset: 16,
+  pill_bottom_offset: 6, // antes 12 — más pegada al borde inferior (#65.7)
+
+  // Despeje mínimo para CUALQUIER contenido flotante inferior (pills, mini-cards)
+  // sobre las pantallas de (tabs) — ya no basta con spacing.s_24 a secas (#65.4):
+  // la GlassTabBar ANDROID flota ENCIMA del contenido (position:absolute, ya no
+  // reserva su propio alto en el layout). Debe sumarse a `insets.bottom`, que en
+  // Android NO incluye esa pill (el sistema no sabe que existe).
+  // Matemática (debe coincidir con los estilos de GlassTabBar.tsx, recalculada
+  // en #65.7 tras compactar la pill):
+  //   pill_bottom_offset (6) + fila (paddingVertical s_4×2 = 8)
+  //   + tab_item (paddingVertical s_8×2 = 16) + ícono (24) = 54
+  //   + margen visual (s_12 = 12) = 66.
+  //
+  // SOLO Android/iOS<liquid-glass vía GlassTabBar — en iOS #65.10 la barra es
+  // NativeTabs (UITabBar 100% nativo, ver floating_content_bottom_offset_ios).
+  floating_content_bottom_offset: 66,
+
+  // iOS (#65.11, fix de ronda 5): NativeTabs es una barra nativa ANCLADA (no
+  // flotante) — a diferencia de la pill Android, el propio UIKit ya reporta
+  // su alto dentro de `useSafeAreaInsets().bottom` (confirmado en vivo con un
+  // Text de depuración en AreaSearchPill sobre iPhone 17 Pro/iOS 26.5:
+  // insets.bottom = 83 = ~49 de tab bar + ~34 de home indicator). Sumarle
+  // floating_content_bottom_offset (66, calibrado para que Android compense
+  // una pill que el sistema NO conoce) duplicaba el despeje — el bug
+  // reportado por el dueño (pill/descripción del feed flotando ~150-200px
+  // arriba de la barra). En iOS solo hace falta un margen visual pequeño
+  // sobre `insets.bottom`, ya completo. Ver `floating_content_clearance`.
+  floating_content_bottom_offset_ios: 12,
+
+  // ───────────────────────────────────────────────────────────────────────
+  // LENS — "lupa" deslizante sobre la tab activa (#65.8, referencia: tab bar
+  // de WhatsApp iOS 26). Diseño ÚNICO en ambas plataformas (dirección
+  // explícita del dueño: Android NO es un fallback degradado, debe verse
+  // casi igual que iOS) — la única diferencia aceptada es la refracción
+  // física real, que solo existe en GlassView (iOS 26+); todo lo demás
+  // (geometría, blur más intenso, overlay, rim, spring) es idéntico.
+  // ───────────────────────────────────────────────────────────────────────
+
+  // Blur de la cápsula ~2x más intenso que el de la pill base (Android/iOS<26,
+  // GlassBackground no aplica aquí — la lupa iOS 26+ usa GlassView real).
+  lens_blur_intensity_light: 60,
+  lens_blur_intensity_dark: 40,
+
+  // Overlay de la cápsula — split por variante (#65.11, 5ª ronda). Bajado de
+  // 0.15 a 0.03 en #65.9 pensando que un velo BLANCO tenue ya no se vería
+  // lechoso — no alcanzó: el dueño lo reportó otra vez ("lupa clara/lechosa
+  // sobre la barra oscura del feed", captura Android). Causa real: el blur
+  // ~2x más intenso de la cápsula (lens_blur_intensity_dark=40 vs. 20 de la
+  // pill) sobre dimezisBlurView (RenderEffect) aclara el promedio de color
+  // que samplea, y NINGÚN overlay blanco por tenue que sea puede oscurecer
+  // eso — hacía falta un TINTE OSCURO (rgba de ink_feed), no una reducción
+  // del velo claro. En variante clara el velo blanco original SÍ funcionaba
+  // (la barra ya es clara) — se conserva ahí, solo se separa el token.
+  lens_overlay_light: 'rgba(255, 255, 255, 0.03)',
+  // ink_feed (#17140F) @ 0.45 — más opaco que overlay_dark (0.40, el de la
+  // pill base) porque el blur más intenso de la cápsula necesita más tinte
+  // para leer oscura y cohesiva con el fondo de la barra (feed). Iterado
+  // visualmente con adb screencap sobre el feed hasta que la cápsula dejó de
+  // "brillar" gris/lechosa contra el fondo oscuro.
+  lens_overlay_dark: 'rgba(23, 20, 15, 0.45)',
+
+  // Borde-rim con gradiente: destello arriba, se desvanece abajo.
+  lens_rim_color_top: 'rgba(255, 255, 255, 0.9)',
+  lens_rim_color_bottom: 'rgba(255, 255, 255, 0)',
+  lens_border_width: 1.5,
+
+  // Inset horizontal: la cápsula no ocupa el ancho completo del slot de tab
+  // (se ve más "lupa" alrededor del ícono que una barra ancha). Reducido de
+  // 8 a 4 en #65.9 (dueño: "cápsula ligeramente más grande") — capsula más
+  // ancha dentro del mismo slot, sin tocar layout de GlassTabBar.tsx.
+  lens_horizontal_inset: 4,
+
+  // Spring de traslación al cambiar de tab. Endurecido en #65.9 (3ª ronda,
+  // feedback del dueño: "mucho más rígido, casi sin rebote, denso" — el
+  // valor anterior (18/220, mismo idioma que LikeButton.tsx) se sentía
+  // juguetón/gomoso). damping alto + stiffness alto = asentamiento rápido
+  // sin overshoot perceptible, más "mecánico" que "elástico".
+  lens_spring_damping: 32,
+  lens_spring_stiffness: 420,
+
+  // Fade-in de la primera medición (evita el flash en x:0 antes del layout).
+  lens_fade_duration_ms: 180,
+} as const;
+
+// Despeje YA resuelto por plataforma (#65.11) — fuente única para los 6
+// consumidores de contenido flotante inferior sobre (tabs): AreaSearchPill,
+// PropertyMiniCard, SavedScreen, CRMScreen, PropertiesGrid (todos sumaban
+// `insets.bottom + glass.floating_content_bottom_offset` directo) y el
+// overlay del feed (PropertyOverlay, con su propio margen — ver ese archivo).
+// Evita repetir el `Platform.select` en cada consumidor.
+export const floating_content_clearance = Platform.select({
+  ios: glass.floating_content_bottom_offset_ios,
+  default: glass.floating_content_bottom_offset,
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MARCA — LOGO FINAL (urbea-logo-final.html)
@@ -211,6 +350,7 @@ export const layout = {
 
 export const theme = {
   colors,
+  glass,
   radii,
   shadows,
   fonts,

@@ -18,13 +18,14 @@ import {
   View,
   Text,
   Pressable,
+  Platform,
   StyleSheet,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Bathtub, Bed, BookmarkSimple, Heart, type Icon, ShareNetwork, WhatsappLogo } from 'phosphor-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { colors, fonts, spacing } from '@/theme/theme';
+import { colors, fonts, glass, spacing } from '@/theme/theme';
 import type { FeedPropertyWithUrl } from '../types';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -232,14 +233,25 @@ function ActionButton({
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Offsets sobre insets.bottom para posicionar info y rail por encima del
- * tab bar (~49pt) con margen. Del mockup: info bottom:118, rail bottom:140
+ * Offsets sobre insets.bottom para posicionar info y rail por encima de la
+ * tab bar, con margen. Del mockup: info bottom:118, rail bottom:140
  * (relativos a una pantalla de ~580px de alto con tab bar de ~60px).
- * ponytail: valores hardcodeados (49pt tabBar + margen); se ajustan cuando
- * el feed pase a pantalla completa con tab bar oculto (ver task #9 final).
+ * ponytail: valores hardcodeados; se ajustan cuando el feed pase a pantalla
+ * completa con tab bar oculto (ver task #9 final).
+ *
+ * Platform-aware (#65.11, fix de ronda 5): en Android insets.bottom NO
+ * incluye el alto de la GlassTabBar (pill flotante, el sistema no la conoce)
+ * — se asume el viejo tab bar de 49pt + margen, igual que antes de #65.10.
+ * En iOS NativeTabs es una barra nativa ANCLADA: `insets.bottom` YA incluye
+ * su alto completo (confirmado en vivo: 83pt = ~49 tab bar + ~34 home
+ * indicator) — sumar el mismo 80/100 duplicaba el despeje (bug reportado:
+ * descripción/precio flotando con hueco grande sobre la barra). En iOS solo
+ * hace falta el margen visual chico (glass.floating_content_bottom_offset_ios),
+ * y RAIL_BOTTOM conserva el mismo delta (+20) que ya existía en Android para
+ * que el rail siga arrancando un poco más arriba que el bloque de info.
  */
-const INFO_BOTTOM = 80;  // ~49pt tab bar + 31pt margen
-const RAIL_BOTTOM = 100; // ~49pt tab bar + 51pt margen (rail arranca más arriba)
+const INFO_BOTTOM = Platform.OS === 'ios' ? glass.floating_content_bottom_offset_ios : 80;
+const RAIL_BOTTOM = Platform.OS === 'ios' ? glass.floating_content_bottom_offset_ios + 20 : 100;
 
 /** Color de texto de specs — blanco cálido semitransparente. Hardcodeado porque
  * el feed es siempre oscuro (ponytail: dual-mode diferido). */

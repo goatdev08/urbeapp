@@ -54,13 +54,19 @@ export interface ProfileScreenProps {
   agent_id: string;
   /** true cuando el usuario autenticado está viendo su propio perfil. */
   is_own_profile: boolean;
+  /**
+   * true cuando esta pantalla se renderiza dentro de (tabs) (tab "Perfil"),
+   * bajo la GlassTabBar flotante — reenviado a PropertiesGrid (#65.6).
+   * La ruta empujada /profile/[id] (Stack, sin tab bar) no lo pasa.
+   */
+  under_floating_tab_bar?: boolean;
 }
 
 // ---------------------------------------------------------------------------
 // Componente
 // ---------------------------------------------------------------------------
 
-export function ProfileScreen({ agent_id, is_own_profile }: ProfileScreenProps) {
+export function ProfileScreen({ agent_id, is_own_profile, under_floating_tab_bar = false }: ProfileScreenProps) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { signOut } = useAuth();
@@ -183,6 +189,7 @@ export function ProfileScreen({ agent_id, is_own_profile }: ProfileScreenProps) 
           owner_user_id={agent_id}
           is_own_profile={is_own_profile}
           onPressProperty={handle_press_property}
+          under_floating_tab_bar={under_floating_tab_bar}
         />
       </ScrollView>
 
