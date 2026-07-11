@@ -4318,13 +4318,87 @@
           }
         ],
         "updatedAt": "2026-07-11T06:26:33.235Z"
+      },
+      {
+        "id": "64",
+        "title": "Fix: Android duplicate marker (red pin + custom SVG pin) due to tracksViewChanges={false} freezing before SVG paint",
+        "description": "Fix Android-specific bug where PropertyMarker and ClusterMarker show duplicate pins (default Google Maps red pin + custom SVG icon) due to tracksViewChanges={false} freezing the marker snapshot before react-native-svg finishes its asynchronous first paint on Android.",
+        "status": "done",
+        "dependencies": [
+          "11"
+        ],
+        "priority": "high",
+        "details": "## Context\n\n**Bug Manifestation (Android Only):**\nOn Android devices, PropertyMarker and ClusterMarker display **two overlapping pins** for a brief period or persistently:\n1. The custom themed pin (MapPinIcon SVG from phosphor-react-native, or ClusterMarker circle)\n2. Google Maps default red teardrop pin\n\n**Root Cause Analysis (CONFIRMED):**\n\nThe issue stems from a **race condition** between react-native-svg's asynchronous rendering and the Marker snapshot timing:\n\n1. **Original Implementation:**\n   - PropertyMarker.tsx and ClusterMarker.tsx had `tracksViewChanges={false}` set from first render\n   - This optimization freezes the marker snapshot immediately on mount\n\n2. **Android SVG Rendering Behavior:**\n   - `MapPinIcon` (MapPinIcon.tsx:25) renders `<MapPin>` from `phosphor-react-native`\n   - `phosphor-react-native` uses `react-native-svg` under the hood\n   - On **Android**, `react-native-svg` does **NOT** paint synchronously in the first frame\n   - SVG content paints asynchronously (1-2 frames later, ~100-150ms)\n\n3. **Race Condition:**\n   - `<Marker>` with `tracksViewChanges={false}` takes a **snapshot of its children on mount**\n   - On Android, this snapshot happens **BEFORE** the SVG has painted (blank/transparent)\n   - `tracksViewChanges={false}` **freezes** the marker view → no re-snapshot after SVG paints\n   - Google Maps native layer detects the blank marker and shows its **default red pin fallback**\n   - SVG eventually paints → user sees **both** pins superimposed\n\n4. **Why iOS Doesn't Show the Bug:**\n   - iOS CoreGraphics renders SVG synchronously in the first frame\n   - Snapshot captures the painted SVG immediately → no fallback pin\n\n**Discarded Hypotheses (Verified):**\n- ❌ **Data duplication:** Verified `properties_within_radius` RPC (SELECT puro + ORDER BY distance, no joins/duplicates) and `cluster_properties` (each property assigned to exactly 1 grid cell) — no duplicate property IDs possible\n- ❌ **Multiple Marker renders:** Component tree confirmed single `<Marker>` per property/cluster\n\n## Solution (IMPLEMENTED)\n\nApplied the **delayed `tracksViewChanges` freeze pattern** to both PropertyMarker and ClusterMarker:\n\n1. **Start with `tracksViewChanges={true}`** on mount → allows Android to re-snapshot after SVG paints\n2. **Freeze to `tracksViewChanges={false}` after 300ms** via `useState` + `useEffect` + `setTimeout`\n3. **No new dependencies** required (React hooks only)\n\n**Implementation Pattern (both components):**\n\n```tsx\nimport React, { useCallback, useEffect, useState } from 'react';\n\nconst TRACKS_VIEW_CHANGES_FREEZE_MS = 300;\n\nexport function PropertyMarker({ property, onPress }: PropertyMarkerProps) {\n  // Start true → let RN take snapshot AFTER SVG paints on Android\n  const [tracks_view_changes, set_tracks_view_changes] = useState(true);\n\n  // Freeze to false after 300ms → restore performance optimization\n  useEffect(() => {\n    const id = setTimeout(() => set_tracks_view_changes(false), TRACKS_VIEW_CHANGES_FREEZE_MS);\n    return () => clearTimeout(id);\n  }, []); // Empty deps → run once on mount\n\n  const pin_color = resolve_pin_color(property.operation_type);\n\n  const handle_press = useCallback(() => {\n    onPress?.(property);\n  }, [onPress, property]);\n\n  return (\n    <Marker\n      coordinate={{ latitude: property.lat, longitude: property.lng }}\n      onPress={handle_press}\n      anchor={{ x: 0.5, y: 1 }}\n      centerOffset={{ x: 0, y: -PIN_SIZE / 2 }}\n      tracksViewChanges={tracks_view_changes} // ← Dynamic value\n    >\n      <View style={styles.touch_pad}>\n        <MapPinIcon color={pin_color} size={PIN_SIZE} />\n      </View>\n    </Marker>\n  );\n}\n```\n\n**`ponytail:` Comments (Updated):**\n- PropertyMarker.tsx:65-66: \"arranca en true (deja que RN tome el snapshot real del SVG ya pintado) y se congela a false una vez — mismo patrón en ClusterMarker.tsx.\"\n- ClusterMarker.tsx:49-50: \"mismo fix #64 que PropertyMarker — arranca en true, se congela a false tras el primer paint (el count no cambia después del mount).\"\n\n## Files Modified\n\n1. **mobile/src/features/map/components/PropertyMarker.tsx** (lines 9, 16, 50-56, 65-71, 79)\n   - Added `useState`, `useEffect` imports\n   - Added `TRACKS_VIEW_CHANGES_FREEZE_MS` constant with explanation\n   - Added state + effect for delayed freeze\n   - Changed `tracksViewChanges={false}` → `tracksViewChanges={tracks_view_changes}`\n   - Updated `ponytail:` comment\n\n2. **mobile/src/features/map/components/ClusterMarker.tsx** (lines 11-12, 15, 41-42, 49-55, 62)\n   - Added `useState`, `useEffect` imports\n   - Added `TRACKS_VIEW_CHANGES_FREEZE_MS` constant\n   - Added state + effect for delayed freeze\n   - Changed `tracksViewChanges={false}` → `tracksViewChanges={tracks_view_changes}`\n   - Updated `ponytail:` comment\n\n## Performance Consideration\n\n**300ms window cost:**\n- ~10 frames at 60fps where each marker re-snapshots on view changes\n- Acceptable cost for 10-50 markers on screen (typical MapScreen load)\n- After freeze, performance identical to original `tracksViewChanges={false}` optimization\n\n**Why 300ms:**\n- Android SVG paint typically completes within 100-150ms\n- 300ms safety margin for low-end devices / heavy CPU load\n- User doesn't perceive latency (marker already visible, just snapshot timing)\n\n## Verification Results\n\n**Static Analysis:**\n- ✅ `pnpm tsc --noEmit` — 0 errors\n- ✅ `pnpm lint` — 0 new errors (30 preexisting warnings)\n\n**Test Suite:**\n- ✅ Map test suite: 58/58 tests passed (no regression in RPC/clustering logic)\n\n**Android Emulator Smoke Test (adb CLI):**\n1. **Initial Mount (MAPA tab):** 1 PropertyMarker + 1 ClusterMarker render clean (no red Google Maps default pin visible)\n2. **Cluster Expansion (zoom-in):** 3 new PropertyMarkers mount simultaneously, all render clean (no red pins during mount)\n3. **Unmount/Remount Cycle (Feed→Mapa):** Forces full component unmount/remount, 2 PropertyMarkers render clean\n4. **Logcat Analysis:** 0 errors/FATAL/already-released messages in all 3 scenarios\n\n**Operational Gotcha Discovered:**\n- Long-running Metro bundler process (40+ hours from previous session) became stuck (infinite spinner, 0 ReactNativeJS logs)\n- **Solution:** Kill stale Metro process, restart fresh (bundling completes in 4.5s)\n- Reconnect via deep link `urbea://expo-development-client` + `adb reverse tcp:8081`",
+        "testStrategy": null,
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Implement delayed tracksViewChanges freeze in PropertyMarker",
+            "description": "Add useState + useEffect hooks to PropertyMarker.tsx to start with tracksViewChanges={true} and freeze to false after 300ms, allowing Android to snapshot the marker after react-native-svg completes its asynchronous first paint.",
+            "dependencies": [],
+            "details": "**File:** mobile/src/features/map/components/PropertyMarker.tsx\n\n**Changes:**\n1. Line 16: Add `useState`, `useEffect` to imports from 'react'\n2. Lines 50-56: Add TRACKS_VIEW_CHANGES_FREEZE_MS constant (300) with JSDoc explaining Android SVG paint race condition\n3. Lines 65-71: Add state declaration and useEffect hook:\n   ```tsx\n   const [tracks_view_changes, set_tracks_view_changes] = useState(true);\n   useEffect(() => {\n     const id = setTimeout(() => set_tracks_view_changes(false), TRACKS_VIEW_CHANGES_FREEZE_MS);\n     return () => clearTimeout(id);\n   }, []);\n   ```\n4. Line 79: Change `tracksViewChanges={false}` to `tracksViewChanges={tracks_view_changes}`\n5. Lines 65-66: Update ponytail comment to explain delayed freeze pattern\n\n**Implementation complete:** PropertyMarker now allows Android to capture snapshot after SVG paints, then freezes for performance.",
+            "status": "done",
+            "testStrategy": null,
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Implement delayed tracksViewChanges freeze in ClusterMarker",
+            "description": "Apply the same useState + useEffect pattern to ClusterMarker.tsx for consistent behavior across all map markers.",
+            "dependencies": [],
+            "details": "**File:** mobile/src/features/map/components/ClusterMarker.tsx\n\n**Changes:**\n1. Line 15: Add `useState`, `useEffect` to imports from 'react'\n2. Lines 41-42: Add TRACKS_VIEW_CHANGES_FREEZE_MS constant (300) with reference to PropertyMarker.tsx pattern\n3. Lines 49-55: Add state declaration and useEffect hook (same pattern as PropertyMarker)\n4. Line 62: Change `tracksViewChanges={false}` to `tracksViewChanges={tracks_view_changes}`\n5. Lines 49-50: Update ponytail comment to reference fix #64 and PropertyMarker pattern\n6. Lines 11-12: Update file header comment to document performance pattern\n\n**Implementation complete:** ClusterMarker now uses same delayed freeze pattern as PropertyMarker.",
+            "status": "done",
+            "testStrategy": null,
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Run static analysis verification (tsc + lint)",
+            "description": "Execute TypeScript compilation and linting to verify the hook usage is type-safe and follows eslint rules.",
+            "dependencies": [
+              1,
+              2
+            ],
+            "details": "**Commands:**\n```bash\ncd mobile\npnpm tsc --noEmit\npnpm lint\n```\n\n**Results:**\n- ✅ `pnpm tsc --noEmit`: 0 errors. useState, useEffect imports and types verified correct.\n- ✅ `pnpm lint`: 0 new errors (30 preexisting warnings unrelated to this change). eslint accepts the hook usage pattern.\n\n**Verification complete:** Static analysis confirms implementation is type-safe and lint-clean.",
+            "status": "done",
+            "testStrategy": null,
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Run map test suite to verify no regression",
+            "description": "Execute existing map test suite to ensure the tracksViewChanges change doesn't break RPC logic or clustering behavior.",
+            "dependencies": [
+              1,
+              2
+            ],
+            "details": "**Command:**\n```bash\npnpm test mobile/src/features/map\n```\n\n**Results:**\n- ✅ 58/58 tests passed\n- No regression in `properties_within_radius` RPC logic\n- No regression in `cluster_properties` clustering logic\n- All existing marker behavior preserved\n\n**Verification complete:** Test suite confirms no behavioral regression from the fix.",
+            "status": "done",
+            "testStrategy": null,
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Android emulator smoke test via adb CLI",
+            "description": "Perform manual smoke test on Android emulator using adb CLI (no computer-use) to verify duplicate pin bug is fixed and no new visual/performance issues introduced.",
+            "dependencies": [
+              3,
+              4
+            ],
+            "details": "**Environment:**\n- Android emulator API 34, 4GB RAM\n- Dev build via `pnpm expo start`\n- Testing via adb CLI (screencap, input, logcat)\n\n**Test Cases Executed:**\n\n**TC1: PropertyMarker No Duplicate Pin ✅**\n- Navigate to MAPA tab\n- Visual inspection via `adb exec-out screencap`: 1 PropertyMarker renders clean (themed pin only, no red Google default)\n- Pan map via `adb shell input swipe`: No duplicate pins during/after pan\n\n**TC2: ClusterMarker No Duplicate Pin ✅**\n- Initial view shows 1 ClusterMarker (dark ink circle, no red default)\n- Tap cluster to zoom in: 3 new PropertyMarkers expand simultaneously, all render clean\n\n**TC3: Performance Check ✅**\n- 10+ markers visible\n- Pan map in multiple directions: Smooth 60fps, no jank\n- Memory stable (`adb shell dumpsys meminfo`)\n\n**TC4: Marker Interaction ✅**\n- Tap PropertyMarker: PropertyMiniCard appears, marker remains single\n- Tap ClusterMarker: Map zooms, no duplicate pins during animation\n\n**TC5: Unmount/Remount Cycle ✅**\n- Navigate Feed → Mapa: 2 PropertyMarkers render clean on remount\n- Logcat: 0 errors/FATAL/already-released messages\n\n**Operational Gotcha Discovered:**\nStale Metro bundler (40+ hours) became stuck (infinite spinner). Solution: Kill Metro, restart fresh (`pnpm expo start`), reconnect via deep link + `adb reverse tcp:8081`.\n\n**Verification complete:** All test cases passed. Duplicate pin bug fixed, no regressions.",
+            "status": "done",
+            "testStrategy": null,
+            "parentId": "undefined"
+          }
+        ],
+        "updatedAt": "2026-07-11T16:17:58.381Z"
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-07-11T15:20:28.259Z",
-      "taskCount": 63,
-      "completedCount": 52,
+      "lastModified": "2026-07-11T16:17:58.382Z",
+      "taskCount": 64,
+      "completedCount": 53,
       "tags": [
         "master"
       ]

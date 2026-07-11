@@ -8,10 +8,11 @@
  * La paleta ink (círculo oscuro / count blanco) evita confundir clusters con
  * marcadores de alquiler (salvia) o venta (arcilla). Decisión del grilling #11.
  *
- * Performance: tracksViewChanges={false} — mismo patrón que PropertyMarker.
+ * Performance: tracksViewChanges arranca en true y se congela a false ~300ms
+ * tras el mount — mismo patrón que PropertyMarker.tsx (#64).
  */
 
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Marker } from 'react-native-maps';
 
@@ -37,19 +38,28 @@ interface ClusterMarkerProps {
 // Componente
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Delay (ms) antes de congelar tracksViewChanges a false — ver PropertyMarker.tsx (#64). */
+const TRACKS_VIEW_CHANGES_FREEZE_MS = 300;
+
 export function ClusterMarker({ cluster, onPress }: ClusterMarkerProps) {
   const handle_press = useCallback(() => {
     onPress?.();
   }, [onPress]);
+
+  // ponytail: mismo fix #64 que PropertyMarker — arranca en true, se congela
+  //   a false tras el primer paint (el count no cambia después del mount).
+  const [tracks_view_changes, set_tracks_view_changes] = useState(true);
+  useEffect(() => {
+    const id = setTimeout(() => set_tracks_view_changes(false), TRACKS_VIEW_CHANGES_FREEZE_MS);
+    return () => clearTimeout(id);
+  }, []);
 
   return (
     <Marker
       coordinate={{ latitude: cluster.latitude, longitude: cluster.longitude }}
       onPress={handle_press}
       anchor={{ x: 0.5, y: 0.5 }}
-      // ponytail: tracksViewChanges=false — igual que PropertyMarker; el count del
-      //   cluster no cambia tras el primer render del marker en esta región.
-      tracksViewChanges={false}
+      tracksViewChanges={tracks_view_changes}
     >
       <TouchableOpacity onPress={handle_press} activeOpacity={0.8}>
         <View style={styles.circle}>

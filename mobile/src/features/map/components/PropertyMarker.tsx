@@ -8,11 +8,12 @@
  *   rent         → colors.primary (salvia #5A8A5E)
  *   sale | both  → colors.accent  (arcilla #9A7150)
  *
- * Performance: tracksViewChanges={false} — evita re-renders en cada frame del mapa
- * cuando hay muchos marcadores. Activar a true solo si el contenido cambia tras mount.
+ * Performance: tracksViewChanges arranca en true y se congela a false ~300ms
+ * tras el mount (#64) — evita re-renders en cada frame del mapa una vez que el
+ * pin ya pintó. Activar a true de nuevo solo si el contenido cambia tras mount.
  */
 
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Marker } from 'react-native-maps';
 
@@ -46,6 +47,14 @@ function resolve_pin_color(operation_type: MapProperty['operation_type']): strin
 /** Alto del pin — también dimensiona el área táctil del marker. */
 const PIN_SIZE = 38;
 
+/**
+ * Delay (ms) antes de congelar tracksViewChanges a false (#64). Android toma
+ * el snapshot nativo del marker para reemplazar su pin rojo default — si lo
+ * congela antes de que el SVG (react-native-svg vía Phosphor) termine de
+ * pintar, el pin rojo se queda de fondo, duplicado con el pin temático.
+ */
+const TRACKS_VIEW_CHANGES_FREEZE_MS = 300;
+
 export function PropertyMarker({ property, onPress }: PropertyMarkerProps) {
   const pin_color = resolve_pin_color(property.operation_type);
 
@@ -53,17 +62,21 @@ export function PropertyMarker({ property, onPress }: PropertyMarkerProps) {
     onPress?.(property);
   }, [onPress, property]);
 
+  // ponytail: arranca en true (deja que RN tome el snapshot real del SVG ya
+  //   pintado) y se congela a false una vez — mismo patrón en ClusterMarker.tsx.
+  const [tracks_view_changes, set_tracks_view_changes] = useState(true);
+  useEffect(() => {
+    const id = setTimeout(() => set_tracks_view_changes(false), TRACKS_VIEW_CHANGES_FREEZE_MS);
+    return () => clearTimeout(id);
+  }, []);
+
   return (
     <Marker
       coordinate={{ latitude: property.lat, longitude: property.lng }}
       onPress={handle_press}
       anchor={{ x: 0.5, y: 1 }}
       centerOffset={{ x: 0, y: -PIN_SIZE / 2 }}
-      // ponytail: tracksViewChanges=false — crítico para performance con muchos
-      //   markers; evita que RN mida/re-renderice el contenido del marker en cada
-      //   frame del mapa. Si el contenido del marker necesita actualizarse tras el
-      //   primer render (e.g. highlight al seleccionar), activar a true puntualmente.
-      tracksViewChanges={false}
+      tracksViewChanges={tracks_view_changes}
     >
       {/* Padding extra alrededor del icono → área táctil cómoda sin agrandar el pin */}
       <View style={styles.touch_pad}>
