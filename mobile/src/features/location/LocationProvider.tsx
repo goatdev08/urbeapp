@@ -54,9 +54,27 @@ const LocationContext = createContext<LocationContextValue | undefined>(undefine
 // Helper: lee la coordenada actual con precisión Balanced (batería, exploración 027).
 // ---------------------------------------------------------------------------
 
+// #59: getCurrentPositionAsync puede COLGARSE sin resolver ni rechazar (emulador
+// sin fix, GPS sin timeout del SO). Con el gate de coords (#59) eso dejaría el
+// skeleton del feed colgado indefinidamente. Un timeout acota la espera: si
+// vence, rechazamos y el catch de evaluate_from_permission cae a 'gps_off'
+// (muro bloqueante con retry), igual que cuando getCurrentPositionAsync lanza.
+const GPS_TIMEOUT_MS = 10_000;
+
 async function fetch_current_coords(): Promise<LocationCoords> {
-  const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-  return { latitude: position.coords.latitude, longitude: position.coords.longitude };
+  let timeout_id: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timeout_id = setTimeout(() => reject(new Error('GPS timeout')), GPS_TIMEOUT_MS);
+  });
+  try {
+    const position = await Promise.race([
+      Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+      timeout,
+    ]);
+    return { latitude: position.coords.latitude, longitude: position.coords.longitude };
+  } finally {
+    clearTimeout(timeout_id);
+  }
 }
 
 // ---------------------------------------------------------------------------
