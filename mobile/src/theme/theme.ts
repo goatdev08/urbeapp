@@ -57,8 +57,8 @@ export const colors = {
 //
 // Reuso entre GlassTabBar, MapSearchBar y PropertyMiniCard. Overlays/bordes
 // derivados de `colors` (verificados byte a byte contra los hex reales):
-//   overlay_light        = colors.paper    (#F6F2EB) @ 0.50
-//   overlay_dark         = colors.ink_feed (#17140F) @ 0.60
+//   overlay_light        = colors.paper    (#F6F2EB) @ 0.35
+//   overlay_dark         = colors.ink_feed (#17140F) @ 0.40
 //   border_highlight_light = colors.paper_3 (#E3DCCF) @ 0.60
 //
 // Opacidad bajada en #65.7 (feedback del dueño, screenshot 2026-07-11): la
@@ -66,6 +66,11 @@ export const colors = {
 // iOS 26 Home) — 0.72/0.82 apenas dejaban ver el contenido detrás. Iterado
 // visualmente con capturas adb sobre Mapa (claro) y feed (oscuro) hasta
 // distinguir el fondo sin perder legibilidad de íconos.
+//
+// Bajada de nuevo en #65.8 (2ª ronda de feedback, referencia: tab bar de
+// WhatsApp en iOS 26 — pill MUY translúcida, se distingue el contenido
+// detrás claramente). 0.50/0.60 → 0.35/0.40, iterado visualmente hasta el
+// límite en el que los íconos siguen siendo legibles.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const glass = {
@@ -74,8 +79,8 @@ export const glass = {
   blur_intensity_light: 30, // superficies claras/gestión — mismo valor que MapSearchBar
   blur_intensity_dark: 20,  // feed oscuro — reducida a propósito por rendimiento
 
-  overlay_light: 'rgba(246, 242, 235, 0.50)', // colors.paper @ 0.50 (antes 0.72, #65.7)
-  overlay_dark: 'rgba(23, 20, 15, 0.60)',     // colors.ink_feed @ 0.60 (antes 0.82, #65.7)
+  overlay_light: 'rgba(246, 242, 235, 0.35)', // colors.paper @ 0.35 (antes 0.50, #65.8)
+  overlay_dark: 'rgba(23, 20, 15, 0.40)',     // colors.ink_feed @ 0.40 (antes 0.60, #65.8)
 
   border_highlight_light: 'rgba(227, 220, 207, 0.60)', // colors.paper_3 @ 0.60
   border_highlight_dark: 'rgba(255, 255, 255, 0.12)',
@@ -98,6 +103,41 @@ export const glass = {
   //   + tab_item (paddingVertical s_8×2 = 16) + ícono (24) = 54
   //   + margen visual (s_12 = 12) = 66.
   floating_content_bottom_offset: 66,
+
+  // ───────────────────────────────────────────────────────────────────────
+  // LENS — "lupa" deslizante sobre la tab activa (#65.8, referencia: tab bar
+  // de WhatsApp iOS 26). Diseño ÚNICO en ambas plataformas (dirección
+  // explícita del dueño: Android NO es un fallback degradado, debe verse
+  // casi igual que iOS) — la única diferencia aceptada es la refracción
+  // física real, que solo existe en GlassView (iOS 26+); todo lo demás
+  // (geometría, blur más intenso, overlay, rim, spring) es idéntico.
+  // ───────────────────────────────────────────────────────────────────────
+
+  // Blur de la cápsula ~2x más intenso que el de la pill base (Android/iOS<26,
+  // GlassBackground no aplica aquí — la lupa iOS 26+ usa GlassView real).
+  lens_blur_intensity_light: 60,
+  lens_blur_intensity_dark: 40,
+
+  // Overlay muy sutil, idéntico en ambas variantes (simula luz sobre vidrio,
+  // no un tinte del fondo — a diferencia de overlay_light/overlay_dark).
+  lens_overlay: 'rgba(255, 255, 255, 0.15)',
+
+  // Borde-rim con gradiente: destello arriba, se desvanece abajo.
+  lens_rim_color_top: 'rgba(255, 255, 255, 0.9)',
+  lens_rim_color_bottom: 'rgba(255, 255, 255, 0)',
+  lens_border_width: 1.5,
+
+  // Inset horizontal: la cápsula no ocupa el ancho completo del slot de tab
+  // (se ve más "lupa" alrededor del ícono que una barra ancha).
+  lens_horizontal_inset: 8, // = spacing.s_8
+
+  // Spring de traslación al cambiar de tab (idioma de animación del repo,
+  // ver LikeButton.tsx) — snappy sin rebote exagerado.
+  lens_spring_damping: 18,
+  lens_spring_stiffness: 220,
+
+  // Fade-in de la primera medición (evita el flash en x:0 antes del layout).
+  lens_fade_duration_ms: 180,
 } as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
