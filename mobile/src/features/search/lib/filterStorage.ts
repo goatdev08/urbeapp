@@ -2,10 +2,13 @@
  * filterStorage.ts — persistencia del FilterState en almacenamiento clave/valor (#12.7).
  *
  * - save_filters serializa `filters` (JSON.stringify) y lo guarda bajo la key
- *   estable FILTERS_STORAGE_KEY ('urbea_filters').
+ *   estable FILTERS_STORAGE_KEY ('urbea_filters'). 🔒 `area` es EFÍMERA (zona
+ *   dibujada a mano, exploración 030 / decisión 8): se excluye del JSON
+ *   persistido para que no sobreviva entre sesiones.
  * - load_filters lee esa key y deserializa; fail-safe: si no hay valor, el JSON
  *   es inválido o el shape no es un objeto plano (p.ej. array) → devuelve
- *   EMPTY_FILTERS. NUNCA lanza.
+ *   EMPTY_FILTERS. NUNCA lanza. Fuerza `area: null` siempre después del merge,
+ *   incluso si un JSON legacy/corrupto trae `area` inyectada.
  * - `deps.storage` es DI opcional (forma mínima getItem/setItem) para poder
  *   testear sin el módulo nativo @react-native-async-storage/async-storage;
  *   en producción se usa ese módulo por defecto (lazy-require, mismo patrón
@@ -41,7 +44,8 @@ function is_plain_object(value: unknown): value is Record<string, unknown> {
 
 export async function save_filters(filters: FilterState, deps?: FilterStorageDeps): Promise<void> {
   const storage = deps?.storage ?? default_storage();
-  await storage.setItem(FILTERS_STORAGE_KEY, JSON.stringify(filters));
+  const { area: _area, ...persistable } = filters;
+  await storage.setItem(FILTERS_STORAGE_KEY, JSON.stringify(persistable));
 }
 
 export async function load_filters(deps?: FilterStorageDeps): Promise<FilterState> {
@@ -56,7 +60,7 @@ export async function load_filters(deps?: FilterStorageDeps): Promise<FilterStat
     // Merge sobre EMPTY_FILTERS: un FilterState persistido ANTES de que se
     // agregara un campo nuevo (p.ej. radius_m, #42.1) no lo trae en el JSON
     // guardado; el merge lo hidrata con su default en vez de dejarlo undefined.
-    return { ...EMPTY_FILTERS, ...(parsed as Partial<FilterState>) };
+    return { ...EMPTY_FILTERS, ...(parsed as Partial<FilterState>), area: null };
   } catch {
     return EMPTY_FILTERS;
   }
