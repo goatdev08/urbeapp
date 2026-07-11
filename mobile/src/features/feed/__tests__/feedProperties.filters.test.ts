@@ -300,21 +300,21 @@ describe('fetchFeedProperties — integración de FilterState (12.7)', () => {
   });
 
   // ── (EC-F12) Backward-compat: EMPTY_FILTERS explícito ────────────────────
-  // ACTUALIZADO (#58.1 + #58.3): EMPTY_FILTERS.radius_m ahora es `null` por
-  // default (#58.1, radio sin límite) — pasar EMPTY_FILTERS explícito YA NO
-  // es equivalente a omitir `filters` (ese caso sigue en EC-F11, `filters`
-  // undefined → DEFAULT_RADIUS_M). EMPTY_FILTERS explícito ejercita a propósito
-  // el path plano (#58.3): sin RPC, sin `.in('id', ...)` de paginación, pagina
-  // con `.range()`.
+  // ACTUALIZADO (#62, supersede #58.3): EMPTY_FILTERS.radius_m es `null` por
+  // default (#58.1) y null ahora significa "radio ILIMITADO, cercanía intacta"
+  // — la RPC SÍ se llama (con radio que cubre el planeta) y el path plano con
+  // `.range()` quedó eliminado del feed. Sin filtros de usuario, el único .in
+  // es el de paginación por ids de la RPC (igual que EC-F11).
 
-  it('(EC-F12) empty_filters_explicito_radius_null_activa_path_plano_sin_rpc: fetchFeedProperties(cursor, deps, EMPTY_FILTERS) → radius_m=null (default) → NO invoca client.rpc; pagina con .range(0,9); 0 llamadas de filtro', async () => {
+  it('(EC-F12) empty_filters_explicito_radius_null_rpc_ilimitada_sin_path_plano: fetchFeedProperties(cursor, deps, EMPTY_FILTERS) → radius_m=null (default) → SÍ invoca client.rpc (radio ilimitado); .range nunca; único .in es paginación; 0 llamadas de filtro', async () => {
     const mock_supabase = make_mock_supabase();
 
     await fetchFeedProperties(undefined, { supabase: mock_supabase }, EMPTY_FILTERS);
 
-    expect(mock_supabase._mock_rpc).not.toHaveBeenCalled();
-    expect(mock_supabase._query_builder.range).toHaveBeenCalledWith(0, 9);
-    expect(mock_supabase._query_builder.in).not.toHaveBeenCalled();
+    expect(mock_supabase._mock_rpc).toHaveBeenCalledTimes(1);
+    expect(mock_supabase._query_builder.range).not.toHaveBeenCalled();
+    expect(mock_supabase._query_builder.in).toHaveBeenCalledTimes(1);
+    expect(mock_supabase._query_builder.in).toHaveBeenCalledWith('id', expect.any(Array));
     expect(mock_supabase._query_builder.gte).not.toHaveBeenCalled();
     expect(mock_supabase._query_builder.lte).not.toHaveBeenCalled();
     expect(mock_supabase._query_builder.eq).toHaveBeenCalledTimes(1);

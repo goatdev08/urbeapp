@@ -25,11 +25,14 @@ export interface FilterState {
   student_friendly: boolean;
   /**
    * Radio de búsqueda en metros para la RPC `properties_within_radius` (#42, approach A1).
-   * null = sin límite (skip RPC, flat query); default en EMPTY_FILTERS (#58).
+   * null = "Sin límite" (default en EMPTY_FILTERS, #58): quita el TOPE de
+   * distancia pero la carga contextual (orden por cercanía) sigue aplicando
+   * (#62) — el feed llama la RPC con UNLIMITED_RADIUS_M (cubre el planeta);
+   * el mapa con null muestra todo (query plana, los pins no tienen orden).
    *
-   * 🔒 Invariante A1 (#42): radius_m es SOLO parámetro de la RPC de proximidad;
-   * NUNCA debe viajar por `build_filter_query` (ver EC-26 en filterQuery.test.ts).
-   * null → skip la RPC `properties_within_radius` por completo.
+   * 🔒 Invariante A1 (#42): radius_m es SOLO parámetro de la RPC de proximidad
+   * (o la señal de radio ilimitado); NUNCA debe viajar por `build_filter_query`
+   * (ver EC-26 en filterQuery.test.ts).
    */
   radius_m: number | null;
 }

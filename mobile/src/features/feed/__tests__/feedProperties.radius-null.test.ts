@@ -1,54 +1,44 @@
 /**
- * Tests fase RED — fetchFeedProperties, path NULL de radius_m (#58.3)
+ * Tests — fetchFeedProperties, path NULL de radius_m (contrato #62, supersede #58.3)
  * Archivo SUT: mobile/src/features/feed/lib/feedProperties.ts
- * Subtarea Taskmaster: 58.3 — invocación condicional de la RPC de proximidad
  *
- * Contrato NUEVO exigido por esta subtarea:
- *   - `filters.radius_m === null` → SALTA por completo la RPC
- *     `properties_within_radius` (NO se llama `client.rpc(...)`).
- *   - En su lugar: query PLANA directa a PostgREST
- *     `.from('properties').select(...).eq('status','active').is('deleted_at',null)`
- *     + `build_filter_query(query, filters)` (los mismos filtros de usuario que
- *     el path de proximidad — #12.7 — SIGUEN aplicando).
- *   - Paginación OFFSET vía `.range(offset, offset+PAGE_SIZE-1)` (PAGE_SIZE=10,
- *     ver header de feedProperties.ts) — NO slice sobre ids de la RPC.
- *   - `nextCursor`: página completa (PAGE_SIZE filas, no vacía) → siguiente
- *     offset; página vacía → null ("paginar hasta página vacía", demo scale,
- *     sin `.count()`).
- *   - SIN `distance_m` / SIN re-sort por distancia: el orden final es el orden
- *     en que PostgREST devuelve las filas (NO se reordena por proximidad).
- *   - `filters.radius_m` NUMÉRICO (no null) → el path de proximidad #42
- *     (RPC + expansión + re-sort) sigue exactamente igual (regression guard).
+ * Contrato #62 (corrige la decisión #58.3 tras feedback de producto):
+ * "Sin límite" quita el TOPE de distancia, pero la carga contextual (orden por
+ * cercanía) SIEMPRE aplica en el feed, sin importar el radio elegido.
  *
- * ⚠️ GOTCHA capturado por estos tests (bug HOY, #58.1 ya cambió el tipo pero
- * NO la lógica): `const base_radius = filters?.radius_m ?? DEFAULT_RADIUS_M;`
- * (línea ~87) convierte `radius_m: null` en `DEFAULT_RADIUS_M` (5000) vía `??`,
- * por lo que HOY un `radius_m: null` explícito cae en el path de proximidad
- * (SÍ llama a la RPC). Cada test de comportamiento nuevo aquí incluye como
- * aserción-ancla `expect(mock_supabase._mock_rpc).not.toHaveBeenCalled()`,
- * que FALLA hoy exactamente por ese bug.
+ *   - `filters.radius_m === null` → SÍ llama la RPC `properties_within_radius`,
+ *     con `p_radius_m = UNLIMITED_RADIUS_M` (constante exportada por el SUT,
+ *     > media circunferencia terrestre ≈ 20,015 km → cubre todo el planeta).
+ *   - El path de proximidad #42 aplica ÍNTEGRO con null: paginación OFFSET
+ *     sobre los ids de la RPC (`.in('id', page_ids)`), re-sort cliente por
+ *     distance_m ASC, filtros de usuario vía build_filter_query.
+ *   - SIN expansión ×2 cuando el radio es ilimitado: si la RPC devuelve vacío
+ *     con radio infinito, no hay propiedades — expandir es inútil (1 sola
+ *     llamada a la RPC).
+ *   - El path PLANO de #58.3 (saltar la RPC + `.range()`) queda ELIMINADO del
+ *     feed (el mapa lo conserva — los pins no tienen orden).
+ *   - `filters.radius_m` NUMÉRICO → path #42 sin cambios (regression guard),
+ *     incluida la expansión ×2 cuando la RPC devuelve vacío.
+ *   - Invariante A1 intacta: radius_m NUNCA genera llamadas al builder.
  *
- * PATRÓN DE MOCK: reusa el query builder thenable + mock de supabase de
- * feedProperties.test.ts, agregando `.range()` (chainable, faltante en el
- * arnés original porque el path viejo nunca lo usaba).
+ * PATRÓN DE MOCK: query builder thenable + mock de supabase de
+ * feedProperties.test.ts (con `.range()` para poder afirmar que YA NO se usa).
  *
- * EDGE CASES CUBIERTOS (7 casos — 5 comportamiento nuevo + 2 regresión):
- *
- * ### Comportamiento nuevo (radius_m === null)
- * - (EC-FEED-NULL-1) radius_null_no_llama_rpc_consulta_postgrest_directa_devuelve_propiedades
- * - (EC-FEED-NULL-2a) radius_null_pagina_llena_range_offset_cero_a_nueve_next_cursor_diez
- * - (EC-FEED-NULL-2b) radius_null_pagina_vacia_en_cursor_diez_next_cursor_null
- * - (EC-FEED-NULL-3) radius_null_orden_preservado_de_postgrest_sin_resort_por_distancia
- * - (EC-FEED-NULL-4) radius_null_aplica_filtros_operation_types_y_zone_via_build_filter_query
- *
- * ### Regression guard (radius_m numérico — path de proximidad #42 intacto)
- * - (EC-FEED-NULL-5) radius_5000_numerico_si_llama_rpc_path_proximidad_intacto
+ * EDGE CASES CUBIERTOS (8 casos — 5 comportamiento #62 + 3 regresión):
+ * - (EC-NULL-RPC-1) radius_null_llama_rpc_con_radio_ilimitado_devuelve_propiedades
+ * - (EC-NULL-RPC-2) radius_null_ordena_por_distance_m_de_la_rpc_no_por_orden_postgrest
+ * - (EC-NULL-RPC-3a) radius_null_pagina_offset_sobre_ids_rpc_primera_pagina_next_cursor_diez
+ * - (EC-NULL-RPC-3b) radius_null_pagina_offset_sobre_ids_rpc_ultima_pagina_next_cursor_null
+ * - (EC-NULL-RPC-4) radius_null_rpc_vacia_una_sola_llamada_sin_expansion_data_vacia
+ * - (EC-NULL-RPC-5) radius_null_aplica_filtros_usuario_y_nunca_range
+ * - (EC-NULL-RPC-6) regresion_radius_5000_numerico_rpc_recibe_p_radius_m_5000
+ * - (EC-NULL-RPC-7) regresion_radius_numerico_rpc_vacia_expansion_x2_sigue_viva
  */
 
 import { EMPTY_FILTERS } from '@/features/search/lib/filterQuery';
 import type { FilterState } from '@/features/search/types';
 
-import { fetchFeedProperties } from '../lib/feedProperties';
+import { fetchFeedProperties, UNLIMITED_RADIUS_M } from '../lib/feedProperties';
 
 const PAGE_SIZE = 10;
 
@@ -107,7 +97,7 @@ function make_minted(id: string): MintedVideo {
 }
 
 // ---------------------------------------------------------------------------
-// Mock del query builder encadenable (thenable) — CON .range()
+// Mock del query builder encadenable (thenable)
 // ---------------------------------------------------------------------------
 
 function make_query_builder(result: QueryResult) {
@@ -155,7 +145,7 @@ function make_mock_supabase(opts: {
       data:
         query_result.data === null
           ? [{ id: 'rpc-placeholder-id', distance_m: 1 }]
-          : query_result.data.map((r) => ({ id: r.id, distance_m: 1 })),
+          : query_result.data.map((r, i) => ({ id: r.id, distance_m: i + 1 })),
       error: null,
     },
   } = opts;
@@ -188,11 +178,11 @@ beforeEach(() => {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('fetchFeedProperties — radius_m null (path plano, #58.3)', () => {
+describe('fetchFeedProperties — radius_m null = radio ilimitado, cercanía intacta (#62)', () => {
 
-  // ── (EC-FEED-NULL-1) radius_m=null → NO RPC, query plana, devuelve props ──
+  // ── (EC-NULL-RPC-1) radius null → RPC con radio ilimitado ─────────────────
 
-  it('(EC-FEED-NULL-1) radius_null_no_llama_rpc_consulta_postgrest_directa_devuelve_propiedades: filters.radius_m=null → client.rpc NUNCA se llama; consulta PostgREST directa (.from) devuelve las propiedades con signed_url', async () => {
+  it('(EC-NULL-RPC-1) radius_null_llama_rpc_con_radio_ilimitado_devuelve_propiedades: filters.radius_m=null → client.rpc("properties_within_radius", {p_radius_m: UNLIMITED_RADIUS_M}) SÍ se llama; UNLIMITED cubre el planeta (> 20,015 km); devuelve las propiedades con signed_url', async () => {
     const rows = [make_row('prop-1'), make_row('prop-2'), make_row('prop-3')];
     const videos = rows.map((r) => make_minted(r.id));
     const mock_supabase = make_mock_supabase({
@@ -203,55 +193,21 @@ describe('fetchFeedProperties — radius_m null (path plano, #58.3)', () => {
 
     const result = await fetchFeedProperties(undefined, { supabase: mock_supabase }, filters);
 
-    // Aserción-ancla: hoy el `??` manda radius_m:null al path de proximidad → FALLA.
-    expect(mock_supabase._mock_rpc).not.toHaveBeenCalled();
-    expect(mock_supabase._mock_from).toHaveBeenCalledWith('properties');
+    // La constante misma debe cubrir todo el planeta (media circunferencia ≈ 20,015 km).
+    expect(UNLIMITED_RADIUS_M).toBeGreaterThanOrEqual(20_015_000);
+    expect(mock_supabase._mock_rpc).toHaveBeenCalledWith(
+      'properties_within_radius',
+      expect.objectContaining({ p_radius_m: UNLIMITED_RADIUS_M }),
+    );
     expect(result.data).toHaveLength(3);
     expect(result.data.map((d) => d.id).sort()).toEqual(['prop-1', 'prop-2', 'prop-3']);
   });
 
-  // ── (EC-FEED-NULL-2a) radius_m=null → página llena → .range(0,9), nextCursor="10"
+  // ── (EC-NULL-RPC-2) radius null → orden por distance_m, no orden PostgREST ─
 
-  it('(EC-FEED-NULL-2a) radius_null_pagina_llena_range_offset_cero_a_nueve_next_cursor_diez: sin cursor + radius_m=null → .range(0,9) invocado; página completa (10 filas) → nextCursor="10"', async () => {
-    const rows = Array.from({ length: PAGE_SIZE }, (_, i) => make_row(`prop-${i + 1}`));
-    const videos = rows.map((r) => make_minted(r.id));
-    const mock_supabase = make_mock_supabase({
-      query_result: { data: rows, error: null },
-      invoke_result: { data: { videos }, error: null },
-    });
-    const filters: FilterState = { ...EMPTY_FILTERS, radius_m: null };
-
-    const result = await fetchFeedProperties(undefined, { supabase: mock_supabase }, filters);
-
-    expect(mock_supabase._mock_rpc).not.toHaveBeenCalled();
-    expect(mock_supabase._query_builder.range).toHaveBeenCalledWith(0, PAGE_SIZE - 1);
-    expect(result.nextCursor).toBe('10');
-  });
-
-  // ── (EC-FEED-NULL-2b) radius_m=null → página vacía en offset=10 → nextCursor null
-
-  it('(EC-FEED-NULL-2b) radius_null_pagina_vacia_en_cursor_diez_next_cursor_null: cursor="10" + radius_m=null → .range(10,19) invocado; página vacía → data:[] y nextCursor:null', async () => {
-    const mock_supabase = make_mock_supabase({
-      query_result: { data: [], error: null },
-      invoke_result: { data: { videos: [] }, error: null },
-    });
-    const filters: FilterState = { ...EMPTY_FILTERS, radius_m: null };
-
-    const result = await fetchFeedProperties('10', { supabase: mock_supabase }, filters);
-
-    expect(mock_supabase._mock_rpc).not.toHaveBeenCalled();
-    expect(mock_supabase._query_builder.range).toHaveBeenCalledWith(10, 19);
-    expect(result.data).toEqual([]);
-    expect(result.nextCursor).toBeNull();
-  });
-
-  // ── (EC-FEED-NULL-3) radius_m=null → orden preservado, sin re-sort por distancia
-
-  it('(EC-FEED-NULL-3) radius_null_orden_preservado_de_postgrest_sin_resort_por_distancia: radius_m=null → el orden final es EXACTAMENTE el de las filas de PostgREST (prop-a, prop-b, prop-c), sin reordenar por distance_m', async () => {
+  it('(EC-NULL-RPC-2) radius_null_ordena_por_distance_m_de_la_rpc_no_por_orden_postgrest: RPC devuelve c(100m), a(200m), b(300m); PostgREST devuelve a,b,c → resultado ordenado c,a,b (cercanía manda)', async () => {
     const rows = [make_row('prop-a'), make_row('prop-b'), make_row('prop-c')];
     const videos = rows.map((r) => make_minted(r.id));
-    // Si el código (con el bug) tomara el path de proximidad, esta distance_map
-    // forzaría el orden inverso (prop-c, prop-a, prop-b) tras el re-sort.
     const rpc_result: RpcResult = {
       data: [
         { id: 'prop-c', distance_m: 100 },
@@ -269,13 +225,69 @@ describe('fetchFeedProperties — radius_m null (path plano, #58.3)', () => {
 
     const result = await fetchFeedProperties(undefined, { supabase: mock_supabase }, filters);
 
-    expect(mock_supabase._mock_rpc).not.toHaveBeenCalled();
-    expect(result.data.map((d) => d.id)).toEqual(['prop-a', 'prop-b', 'prop-c']);
+    expect(result.data.map((d) => d.id)).toEqual(['prop-c', 'prop-a', 'prop-b']);
   });
 
-  // ── (EC-FEED-NULL-4) radius_m=null → filtros de usuario siguen aplicando ──
+  // ── (EC-NULL-RPC-3a/3b) radius null → paginación offset sobre ids de la RPC ─
 
-  it('(EC-FEED-NULL-4) radius_null_aplica_filtros_operation_types_y_zone_via_build_filter_query: radius_m=null + operation_types=["rent"] + zone="Zapopan" → query builder recibe .in("operation_type",["rent","both"]) y .eq("zone","Zapopan")', async () => {
+  it('(EC-NULL-RPC-3a) radius_null_pagina_offset_sobre_ids_rpc_primera_pagina_next_cursor_diez: RPC devuelve 12 ids + sin cursor → .in("id", primeros 10) y nextCursor="10"; .range NUNCA se usa', async () => {
+    const rpc_rows: RpcRow[] = Array.from({ length: 12 }, (_, i) => ({
+      id: `prop-${i + 1}`,
+      distance_m: (i + 1) * 10,
+    }));
+    const first_page_ids = rpc_rows.slice(0, PAGE_SIZE).map((r) => r.id);
+    const rows = first_page_ids.map((id) => make_row(id));
+    const videos = rows.map((r) => make_minted(r.id));
+    const mock_supabase = make_mock_supabase({
+      query_result: { data: rows, error: null },
+      invoke_result: { data: { videos }, error: null },
+      rpc_result: { data: rpc_rows, error: null },
+    });
+    const filters: FilterState = { ...EMPTY_FILTERS, radius_m: null };
+
+    const result = await fetchFeedProperties(undefined, { supabase: mock_supabase }, filters);
+
+    expect(mock_supabase._query_builder.in).toHaveBeenCalledWith('id', first_page_ids);
+    expect(mock_supabase._query_builder.range).not.toHaveBeenCalled();
+    expect(result.nextCursor).toBe('10');
+  });
+
+  it('(EC-NULL-RPC-3b) radius_null_pagina_offset_sobre_ids_rpc_ultima_pagina_next_cursor_null: RPC devuelve 12 ids + cursor="10" → .in("id", ids 11..12) y nextCursor=null', async () => {
+    const rpc_rows: RpcRow[] = Array.from({ length: 12 }, (_, i) => ({
+      id: `prop-${i + 1}`,
+      distance_m: (i + 1) * 10,
+    }));
+    const last_page_ids = rpc_rows.slice(10, 12).map((r) => r.id);
+    const mock_supabase = make_mock_supabase({
+      rpc_result: { data: rpc_rows, error: null },
+    });
+    const filters: FilterState = { ...EMPTY_FILTERS, radius_m: null };
+
+    const result = await fetchFeedProperties('10', { supabase: mock_supabase }, filters);
+
+    expect(mock_supabase._query_builder.in).toHaveBeenCalledWith('id', last_page_ids);
+    expect(result.nextCursor).toBeNull();
+  });
+
+  // ── (EC-NULL-RPC-4) radius null + RPC vacía → SIN expansión ×2 ─────────────
+
+  it('(EC-NULL-RPC-4) radius_null_rpc_vacia_una_sola_llamada_sin_expansion_data_vacia: radio ilimitado + RPC devuelve [] → NO hay reintentos ×2 (client.rpc llamado EXACTAMENTE 1 vez) y data:[] sin tocar PostgREST', async () => {
+    const mock_supabase = make_mock_supabase({
+      rpc_result: { data: [], error: null },
+    });
+    const filters: FilterState = { ...EMPTY_FILTERS, radius_m: null };
+
+    const result = await fetchFeedProperties(undefined, { supabase: mock_supabase }, filters);
+
+    expect(mock_supabase._mock_rpc).toHaveBeenCalledTimes(1);
+    expect(mock_supabase._mock_from).not.toHaveBeenCalled();
+    expect(result.data).toEqual([]);
+    expect(result.nextCursor).toBeNull();
+  });
+
+  // ── (EC-NULL-RPC-5) radius null → filtros de usuario aplican, invariante A1 ─
+
+  it('(EC-NULL-RPC-5) radius_null_aplica_filtros_usuario_y_nunca_range: radius_m=null + operation_types=["rent"] + zone="Zapopan" → .in("operation_type",["rent","both"]) y .eq("zone","Zapopan") llamados; .range nunca; radius_m no genera .gte/.lte', async () => {
     const rows = [make_row('prop-1')];
     const videos = rows.map((r) => make_minted(r.id));
     const mock_supabase = make_mock_supabase({
@@ -291,14 +303,14 @@ describe('fetchFeedProperties — radius_m null (path plano, #58.3)', () => {
 
     await fetchFeedProperties(undefined, { supabase: mock_supabase }, filters);
 
-    expect(mock_supabase._mock_rpc).not.toHaveBeenCalled();
     expect(mock_supabase._query_builder.in).toHaveBeenCalledWith('operation_type', ['rent', 'both']);
     expect(mock_supabase._query_builder.eq).toHaveBeenCalledWith('zone', 'Zapopan');
+    expect(mock_supabase._query_builder.range).not.toHaveBeenCalled();
   });
 
-  // ── (EC-FEED-NULL-5) REGRESSION GUARD: radius_m numérico → SÍ llama RPC ──
+  // ── (EC-NULL-RPC-6) REGRESIÓN: radius numérico → p_radius_m intacto ────────
 
-  it('(EC-FEED-NULL-5) radius_5000_numerico_si_llama_rpc_path_proximidad_intacto: filters.radius_m=5000 (numérico) → SÍ invoca client.rpc("properties_within_radius", {..., p_radius_m:5000}) — path de proximidad #42 sin cambios', async () => {
+  it('(EC-NULL-RPC-6) regresion_radius_5000_numerico_rpc_recibe_p_radius_m_5000: filters.radius_m=5000 → client.rpc con p_radius_m:5000 — path #42 sin cambios', async () => {
     const rows = [make_row('prop-1'), make_row('prop-2')];
     const videos = rows.map((r) => make_minted(r.id));
     const mock_supabase = make_mock_supabase({
@@ -313,6 +325,26 @@ describe('fetchFeedProperties — radius_m null (path plano, #58.3)', () => {
       'properties_within_radius',
       expect.objectContaining({ p_radius_m: 5000 }),
     );
+  });
+
+  // ── (EC-NULL-RPC-7) REGRESIÓN: expansión ×2 sigue viva con radio numérico ──
+
+  it('(EC-NULL-RPC-7) regresion_radius_numerico_rpc_vacia_expansion_x2_sigue_viva: radius_m=5000 + RPC siempre vacía → reintentos con 5000, 10000, 20000, 40000 (4 llamadas)', async () => {
+    const mock_supabase = make_mock_supabase({
+      rpc_result: { data: [], error: null },
+    });
+    const filters: FilterState = { ...EMPTY_FILTERS, radius_m: 5000 };
+
+    const result = await fetchFeedProperties(undefined, { supabase: mock_supabase }, filters);
+
+    expect(mock_supabase._mock_rpc).toHaveBeenCalledTimes(4);
+    expect(mock_supabase._mock_rpc).toHaveBeenNthCalledWith(
+      1, 'properties_within_radius', expect.objectContaining({ p_radius_m: 5000 }),
+    );
+    expect(mock_supabase._mock_rpc).toHaveBeenNthCalledWith(
+      4, 'properties_within_radius', expect.objectContaining({ p_radius_m: 40000 }),
+    );
+    expect(result.data).toEqual([]);
   });
 
 });

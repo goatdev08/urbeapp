@@ -13,7 +13,7 @@
  *   (sin transcoding ni thumbnails en la demo).
  */
 
-import React, { memo, useCallback, useEffect, useState } from 'react';
+import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View, Text, useWindowDimensions } from 'react-native';
 import { Image } from 'expo-image';
 import { useVideoPlayer, VideoView, type VideoPlayerStatus } from 'expo-video';
@@ -112,7 +112,15 @@ function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedIte
   }, [property.signed_url, property.address, property.price]);
 
   // ── Video player ──────────────────────────────────────────────────────────
-  const player = useVideoPlayer(property.signed_url, (p) => {
+  // ponytail: fix #61 — player ESTABLE por instancia. useVideoPlayer recrea el
+  // player (release + new) cuando cambia la fuente, y con FlashList reciclando
+  // ítems + URLs re-firmadas en cada refetch de filtros, el VideoView nativo
+  // alcanzaba a recibir el player viejo ya liberado ("Cannot set prop 'player'
+  // ... shared object already released"). El player nace UNA vez con la fuente
+  // inicial de la instancia y los cambios de fuente entran por replaceAsync
+  // (efecto más abajo) — nunca se libera mientras el componente viva.
+  const [initial_source] = useState(property.signed_url);
+  const player = useVideoPlayer(initial_source, (p) => {
     p.loop = true;
     p.muted = false;
     // ponytail: fix #57 — tope al buffer de ExoPlayer para evitar OOM en el
@@ -127,6 +135,32 @@ function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedIte
       maxBufferBytes: 25 * 1024 * 1024,
     };
   });
+
+  // isActive en ref — el .then() de replaceAsync decide si reanudar sin meter
+  // isActive a las deps del efecto de reemplazo (que solo reacciona a la fuente).
+  const is_active_ref = useRef(isActive);
+  useEffect(() => {
+    is_active_ref.current = isActive;
+  }, [isActive]);
+
+  // Cambio de fuente en la MISMA instancia: FlashList recicló el ítem hacia
+  // otra property, o el refetch (filtros/pull-to-refresh) re-firmó la URL del
+  // mismo video. Se reemplaza el medio dentro del player vivo y se resetea el
+  // estado UI heredado del ítem anterior.
+  const applied_source_ref = useRef(initial_source);
+  useEffect(() => {
+    if (property.signed_url === applied_source_ref.current) return;
+    applied_source_ref.current = property.signed_url;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- resetea estado UI heredado del ítem reciclado antes de cargar la fuente nueva.
+    set_has_error(false);
+    set_is_paused(false);
+    void player
+      .replaceAsync(property.signed_url)
+      .then(() => {
+        if (is_active_ref.current) player.play();
+      })
+      .catch(() => set_has_error(true));
+  }, [player, property.signed_url]);
 
   // Tap simple → alterna play/pausa del video activo.
   const toggle_play_pause = useCallback(() => {
