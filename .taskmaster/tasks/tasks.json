@@ -4512,14 +4512,25 @@
             "parentTaskId": 65,
             "updatedAt": "2026-07-11T22:13:38.876Z",
             "parentId": "undefined"
+          },
+          {
+            "id": 10,
+            "title": "Split por plataforma: NativeTabs iOS (liquid glass real, iconos Phosphor rasterizados) + GlassTabBar pill en Android",
+            "description": "Decisión del dueño (2026-07-11, 4ª ronda): iOS usa NativeTabs de expo-router 56 (UITabBar del sistema — liquid glass y lupa/morphing 100% nativos de Apple) manteniendo los iconos Phosphor vía Icon src={default: regular.png, selected: fill.png} (rasterizar SVGs de phosphor a PNG @1x/2x/3x, receta qlmanage); Android conserva la GlassTabBar pill custom ya pulida (65.7-65.9). Resolver en iOS: el tab de publicar [+] como trigger normal que abre el wizard (investigar interceptar el press o redirect en la ruta), slot 4 compartido Leads/Guardados por rol (trigger hidden), variante feed oscuro (la barra nativa maneja colorScheme sola). Como WhatsApp: cada plataforma su mejor versión.",
+            "details": "<info added on 2026-07-11T22:41:43.086Z>\nBased on the user request, I need to generate the new text content documenting what was accomplished in subtask 65.10. The user has provided a comprehensive completion report detailing the platform split implementation.\n\nLet me examine the codebase to verify the references and provide an accurate update:Platform split implemented successfully. Key files created: mobile/app/(protected)/(tabs)/_layout.tsx (pure Platform.OS fork), mobile/src/components/AndroidTabsLayout.tsx (1:1 migration of pre-65.10 GlassTabBar logic, zero visual/behavioral changes), mobile/src/components/IosNativeTabsLayout.tsx (NativeTabs from expo-router/unstable-native-tabs, verified as only import path in node_modules expo-router@56.2.11), 36 PNG tab icons in mobile/assets/tab-icons/ (Phosphor regular+fill at @1x/2x/3x, extracted from phosphor-react-native inline SVG paths, rasterized via qlmanage, critical alpha reconstruction applied via PIL to fix qlmanage white-background flattening bug confirmed via histogram analysis). iOS implementation: publish trigger uses disabled+listeners.tabPress pattern (confirmed in expo-router source NativeBottomTabsNavigator.js:110-124 that tabPress fires even when disabled), slot 4 role-switching via hidden prop (secure on first render since useAuth guarantees user.role resolved before mount per context.tsx), renderingMode template for dynamic tinting, minimizeBehavior onScrollDown enabled, NO forced blurEffect/backgroundColor/colorScheme (system handles liquid glass and variant automatically), documented limitation that NativeTabs follows system-wide colorScheme not per-screen like GlassTabBar (no workaround, out of scope). Android: pixel-identical to pre-65.10 confirmed via screenshots. Verification: pnpm tsc --noEmit green, pnpm lint 0 errors in new files, pnpm test 630 passing, iOS simulator iPhone 17 Pro iOS 26.5 dev-client com.urbea.app NO crash (react-native-screens 4.2.2 already includes NativeTabs native support), visual confirmation via xcrun simctl screenshots on feed dark background showing translucent bar, map and profile with green selection pill, publish trigger never highlighted, limitation acknowledged that simctl lacks tap injection so publish trigger tap verified via source code reading plus visual non-selection evidence (idb-companion install declined to preserve clean system, manual dev-client tap recommended for final validation). Android emulator-5554 force-stop/relaunch screenshots show zero regression. Conforms to subtask 65.10 spec with no deviations.\n</info added on 2026-07-11T22:41:43.086Z>",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 65,
+            "updatedAt": "2026-07-11T22:42:22.960Z",
+            "parentId": "undefined"
           }
         ],
-        "updatedAt": "2026-07-11T22:13:38.876Z"
+        "updatedAt": "2026-07-11T22:42:22.960Z"
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-07-11T22:13:38.876Z",
+      "lastModified": "2026-07-11T22:42:22.960Z",
       "taskCount": 65,
       "completedCount": 53,
       "tags": [
