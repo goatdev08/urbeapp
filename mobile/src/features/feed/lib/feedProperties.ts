@@ -161,26 +161,42 @@ export async function fetchFeedProperties(
 
   const offset = cursor ? parseInt(cursor, 10) : 0;
 
+  // #56: modo zona ("buscar en esta zona") — ADITIVO, override total sobre
+  // coords/radio cuando filters.area != null. Gana sobre radius_m (numérico
+  // o null) y sobre las coords GPS de deps. Reusa el mecanismo de
+  // is_unlimited (attempts=MAX) para desactivar la expansión ×2: una zona
+  // dibujada a mano no debe crecer sola. area === null (o ausente) → esta
+  // rama no aplica y el flujo GPS de #42/#58/#62 corre inalterado abajo.
+  const has_zone = filters?.area != null;
+
   // ponytail: fallback centro de Guadalajara (demo cerrada opera ahí, #11)
   // cuando aún no hay coords reales del usuario — reusa GDL_REGION del mapa
   // en vez de redefinir la constante.
-  const coords = deps?.coords ?? { latitude: GDL_REGION.latitude, longitude: GDL_REGION.longitude };
+  const coords = has_zone
+    ? { latitude: filters!.area!.center.lat, longitude: filters!.area!.center.lng }
+    : (deps?.coords ?? { latitude: GDL_REGION.latitude, longitude: GDL_REGION.longitude });
 
   // #62: null explícito = "Sin límite" → radio que cubre el planeta (la
   // cercanía sigue mandando el orden). ⚠️ El `=== null` va ANTES del `??`:
   // `??` trataría null como ausente y lo mandaría al default de 5 km.
-  // `undefined` (sin filtros) sí cae a DEFAULT_RADIUS_M.
-  const is_unlimited = filters?.radius_m === null;
-  const base_radius = is_unlimited ? UNLIMITED_RADIUS_M : (filters?.radius_m ?? DEFAULT_RADIUS_M);
+  // `undefined` (sin filtros) sí cae a DEFAULT_RADIUS_M. La zona (#56) GANA
+  // sobre is_unlimited: con area set, NUNCA se usa UNLIMITED_RADIUS_M.
+  const is_unlimited = !has_zone && filters?.radius_m === null;
+  const base_radius = has_zone
+    ? filters!.area!.radius_m
+    : is_unlimited
+      ? UNLIMITED_RADIUS_M
+      : (filters?.radius_m ?? DEFAULT_RADIUS_M);
 
   // RPC de proximidad SIEMPRE antes de PostgREST (#42.2, approach A1). Si
   // devuelve vacío, expande el radio ×2 hasta MAX_EXPANSION_ATTEMPTS
-  // reintentos (5000→10000→20000→40000) — salvo con radio ilimitado (#62):
-  // vacío ahí significa que no hay propiedades, expandir es inútil.
+  // reintentos (5000→10000→20000→40000) — salvo con radio ilimitado (#62) o
+  // modo zona (#56): en ambos casos vacío = no hay propiedades, expandir no
+  // aplica (la zona la dibujó el usuario a mano, no se agranda sola).
   // Error de la RPC → lanza sin reintentar.
   let radius = base_radius;
   let rpc_rows: RpcRow[] = [];
-  let attempts = is_unlimited ? MAX_EXPANSION_ATTEMPTS : 0;
+  let attempts = has_zone || is_unlimited ? MAX_EXPANSION_ATTEMPTS : 0;
 
   while (true) {
     const rpc_result = (await client.rpc('properties_within_radius', {

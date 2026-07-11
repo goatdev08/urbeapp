@@ -22,13 +22,14 @@ import {
 } from 'react-native';
 import { FlashList, type ListRenderItemInfo } from '@shopify/flash-list';
 import { useRouter } from 'expo-router';
-import { MagnifyingGlass, SlidersHorizontal, VideoCamera } from 'phosphor-react-native';
+import { MagnifyingGlass, MapPin, SlidersHorizontal, VideoCamera } from 'phosphor-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, spacing } from '@/theme/theme';
 import { EmptyState } from '@/features/profile/components/EmptyState';
 import { useFilters } from '../search/filterStore';
 import { FilterSheet } from '../search/components/FilterSheet';
+import { ZoneActiveChip } from '../search/components/ZoneActiveChip';
 
 import { VideoFeedItem } from './components/VideoFeedItem';
 import { FeedSkeleton } from './components/FeedSkeleton';
@@ -44,7 +45,7 @@ export function FeedScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { viewabilityConfigCallbackPairs, isItemActive } = useFeedActiveIndex();
-  const { filters, active_filter_count, clear_filters } = useFilters();
+  const { filters, active_filter_count, clear_filters, set_filter } = useFilters();
   const { data, isLoading, error, loadInitial, refetch, loadMore } = useFeedProperties(filters);
   const [filter_visible, set_filter_visible] = useState(false);
 
@@ -105,15 +106,30 @@ export function FeedScreen() {
         </View>
       )}
 
-      {/* Sin resultados: se ramifica por active_filter_count.
-          - filtered-empty (hay filtros activos): CTA limpia filtros; el cambio
-            de identidad de `filters` re-dispara loadInitial (useEffect de
-            useFeedProperties) — no hace falta un refetch manual aquí.
-          - BD-vacía (sin filtros): primera impresión, CTA al wizard de
-            publicación (comportamiento previo, sin cambios). */}
+      {/* Sin resultados: se ramifica en 3 niveles, EN ESTE ORDEN:
+          1. zona activa (filters.area != null) — PRIMERA condición: `area`
+             NO cuenta en active_filter_count (decisión 56.1), así que una
+             zona sin resultados y sin otros filtros caería por error en el
+             "BD-vacía" de abajo (con CTA "Publicar propiedad", incorrecto
+             para este caso) si no se revisa primero.
+          2. filtered-empty (hay otros filtros activos): CTA limpia filtros;
+             el cambio de identidad de `filters` re-dispara loadInitial
+             (useEffect de useFeedProperties) — no hace falta un refetch
+             manual aquí.
+          3. BD-vacía (sin filtros de ningún tipo): primera impresión, CTA al
+             wizard de publicación (comportamiento previo, sin cambios). */}
       {is_empty && (
         <View style={styles.state_root}>
-          {active_filter_count > 0 ? (
+          {filters.area != null ? (
+            <EmptyState
+              dark
+              icon={MapPin}
+              message="No hay publicaciones en esta zona"
+              subtitle="Prueba mover el mapa o limpia la zona."
+              cta_label="Limpiar zona"
+              onPressCta={() => set_filter('area', null)}
+            />
+          ) : active_filter_count > 0 ? (
             <EmptyState
               dark
               icon={MagnifyingGlass}
@@ -221,6 +237,23 @@ export function FeedScreen() {
             onClose={() => set_filter_visible(false)}
           />
         </>
+      )}
+
+      {/*
+       * Chip "Zona activa · Quitar" (#56.5) — persistente mientras haya una
+       * zona de búsqueda activa (viene de "Buscar en esta zona" en el mapa,
+       * #56.4). Visible en TODOS los estados del feed (skeleton/error/empty/
+       * feed principal), no solo cuando show_filters — de ahí que se renderice
+       * fuera del bloque anterior. onPress revierte a modo cercanía GPS (#42).
+       * Mismo `top` que filter_btn; sin overlap porque el chip queda centrado
+       * y el botón de filtros a la derecha (ver ZoneActiveChip.tsx).
+       */}
+      {filters.area != null && (
+        <ZoneActiveChip
+          dark
+          on_press={() => set_filter('area', null)}
+          style={{ top: insets.top + spacing.s_12 }}
+        />
       )}
     </View>
   );

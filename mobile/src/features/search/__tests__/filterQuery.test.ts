@@ -439,6 +439,7 @@ describe('get_active_filter_count', () => {
       allows_no_guarantor: true,
       student_friendly: true,
       radius_m: 5000,
+      area: null,
     };
 
     expect(get_active_filter_count(filters)).toBe(8);
@@ -568,5 +569,64 @@ describe('get_active_filter_count — radius_m NO cuenta como filtro activo (58.
 
     expect(get_active_filter_count(filtros_radius_null)).toBe(0);
     expect(get_active_filter_count(filtros_radius_numero)).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// area — "buscar en esta zona" (#56.1, exploración 030-buscar-en-esta-zona)
+// ---------------------------------------------------------------------------
+//
+// FilterState gana el campo `area: {center:{lat,lng}, radius_m} | null`
+// (viewport del mapa → círculo, ver map/lib/viewportToArea.ts). Mismo
+// precedente que radius_m (#58.5): area es un parámetro de ALCANCE
+// ("dónde buscar"), no de CONTENIDO ("qué tipo de propiedad") → NO cuenta en
+// get_active_filter_count, y (🔒 invariante A1) NUNCA viaja por
+// build_filter_query — es solo parámetro de la RPC properties_within_radius.
+//
+// EDGE CASES NUEVOS (56.1):
+// - (EC-32) empty_filters_area_default_null_56_1
+// - (EC-33) get_active_filter_count_no_cuenta_area_activa_56_1
+// - (EC-34) build_filter_query_ignora_area_invariante_a1_56_1
+
+describe('EMPTY_FILTERS — area default null "sin zona" (56.1)', () => {
+  it('(EC-32) empty_filters_area_default_null_56_1: EMPTY_FILTERS.area === null (default "sin zona activa", modo normal = cercanía GPS de #42)', () => {
+    expect(EMPTY_FILTERS.area).toBeNull();
+  });
+});
+
+describe('get_active_filter_count — area NO cuenta como filtro activo (56.1)', () => {
+  it('(EC-33) get_active_filter_count_no_cuenta_area_activa_56_1: con el resto de filtros en EMPTY, area={center:{lat:20,lng:-103},radius_m:1000} cuenta 0 (decisión de producto: la zona es alcance, no filtro de contenido, mismo precedente que radius_m #58.5)', () => {
+    const filtros_con_area = make_filters({
+      area: { center: { lat: 20, lng: -103 }, radius_m: 1000 },
+    });
+
+    expect(get_active_filter_count(filtros_con_area)).toBe(0);
+  });
+});
+
+describe('build_filter_query — invariante A1: area nunca viaja al builder (56.1)', () => {
+  it('(EC-34) build_filter_query_ignora_area_invariante_a1_56_1: un FilterState con area activa produce EXACTAMENTE las mismas llamadas al builder que el mismo FilterState sin area (area es SOLO parámetro de properties_within_radius, jamás del builder)', () => {
+    const builder_sin_area = make_fake_query_builder();
+    const builder_con_area = make_fake_query_builder();
+
+    const filtros_base = make_filters({
+      operation_types: ['rent'],
+      property_types: ['house'],
+      zone: 'Roma Norte',
+      pet_friendly: true,
+    });
+
+    build_filter_query(builder_sin_area, filtros_base);
+    build_filter_query(builder_con_area, {
+      ...filtros_base,
+      area: { center: { lat: 19.4326, lng: -99.1332 }, radius_m: 5000 },
+    });
+
+    expect(builder_con_area.calls).toEqual(builder_sin_area.calls);
+    // Ninguna llamada del builder debe referirse a area/center/zona geoespacial.
+    const area_calls = builder_con_area.calls.filter(
+      (c) => typeof c.args[0] === 'string' && c.args[0].includes('area'),
+    );
+    expect(area_calls).toEqual([]);
   });
 });

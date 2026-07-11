@@ -101,6 +101,47 @@ export async function fetchMapProperties(
 
   const client: any = deps?.supabase ?? (require('@/lib/supabase/client') as any).supabase;
 
+  // #56: modo zona ("buscar en esta zona") — ADITIVO, corre ANTES del check
+  // radius_m===null. Gana sobre la query plana de #58.3 y sobre la
+  // proximidad GPS de #42.3: con area set, siempre pasa por la RPC con el
+  // center/radius de la zona, SIN expansión (una sola llamada). area ===
+  // null (o ausente) → esta rama no aplica, las ramas actuales corren abajo
+  // inalteradas.
+  if (filters?.area != null) {
+    const rpc_result = (await client.rpc('properties_within_radius', {
+      p_lat: filters.area.center.lat,
+      p_lng: filters.area.center.lng,
+      p_radius_m: filters.area.radius_m,
+    })) as { data: RpcRow[] | null; error: { message: string } | null };
+
+    if (rpc_result.error) throw new Error(rpc_result.error.message);
+
+    const rpc_ids = (rpc_result.data ?? []).map((r) => r.id);
+    if (rpc_ids.length === 0) return [];
+
+    // Query base: .in('id', ids) con TODOS los ids de la RPC (sin slice — el
+    // mapa no pagina) + filtros base, igual que el path de proximidad.
+    let zone_query = client
+      .from('properties')
+      .select(MAP_SELECT)
+      .in('id', rpc_ids)
+      .eq('status', 'active')
+      .is('deleted_at', null);
+
+    // Filtros de usuario (#12.7) — area NUNCA llega aquí (invariante A1).
+    zone_query = build_filter_query(zone_query, filters ?? EMPTY_FILTERS);
+
+    const { data: zone_rows, error: zone_error } = (await zone_query) as {
+      data: QueryRow[] | null;
+      error: { message: string } | null;
+    };
+
+    if (zone_error) throw new Error(zone_error.message);
+    if (!zone_rows || zone_rows.length === 0) return [];
+
+    return build_map_result(zone_rows);
+  }
+
   // #58.3: radius_m===null explícito → path plano PRE-#42, sin RPC ni
   // proximidad. `undefined` (sin filtro) sigue cayendo al path de proximidad
   // con DEFAULT_RADIUS_M (comportamiento previo para llamadas sin filtros).

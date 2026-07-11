@@ -35,4 +35,16 @@ export interface FilterState {
    * (ver EC-26 en filterQuery.test.ts).
    */
   radius_m: number | null;
+  /**
+   * Zona "buscar en esta zona" (#56, viewport del mapa → círculo). null = sin
+   * zona activa (modo normal: cercanía GPS de #42). Efímera — NO se persiste
+   * en AsyncStorage (excluida de save_filters/load_filters, decisión 8 de la
+   * exploración 030-buscar-en-esta-zona).
+   *
+   * 🔒 Invariante A1 (igual que radius_m): area es SOLO parámetro de la RPC
+   * `properties_within_radius` (center/radius_m ya calculados por
+   * `map/lib/viewportToArea.ts`); NUNCA debe viajar por `build_filter_query`
+   * (ver EC en filterQuery.test.ts, bloque "area").
+   */
+  area: { center: { lat: number; lng: number }; radius_m: number } | null;
 }
