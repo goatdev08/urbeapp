@@ -38,7 +38,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FilterTabs } from '@/components/FilterTabs';
 import { useAuth } from '@/features/auth/context';
 import { EmptyState } from '@/features/profile/components/EmptyState';
-import { colors, glass, layout, radii, spacing, type_scale } from '@/theme/theme';
+import { colors, floating_content_clearance, layout, radii, spacing, type_scale } from '@/theme/theme';
 import { AgentSelector } from '../components/AgentSelector';
 import { LeadCard } from '../components/LeadCard';
 import { LeadExpandedView } from '../components/LeadExpandedView';
@@ -211,10 +211,13 @@ export function CRMScreen(): React.ReactElement {
           style={styles.list}
           contentContainerStyle={[
             styles.list_content,
-            // #65.6: GlassTabBar flota (position:absolute) sobre esta pantalla y ya
-            // no reserva alto — sin este despeje el último lead queda tapado tras
-            // la barra al hacer scroll hasta el fondo.
-            { paddingBottom: insets.bottom + glass.floating_content_bottom_offset },
+            // #65.6: GlassTabBar (Android) flota (position:absolute) sobre esta
+            // pantalla y ya no reserva alto — sin este despeje el último lead
+            // queda tapado tras la barra al hacer scroll hasta el fondo.
+            // #65.11: floating_content_clearance resuelve por plataforma — en
+            // iOS (NativeTabs, barra nativa anclada) insets.bottom ya incluye
+            // el alto de la barra, solo hace falta un margen chico.
+            { paddingBottom: insets.bottom + floating_content_clearance },
           ]}
           data={filtered_leads}
           keyExtractor={(item) => item.id}
@@ -338,7 +341,7 @@ const styles = StyleSheet.create({
   },
   list_content: {
     paddingTop: spacing.s_8,
-    // paddingBottom real se aplica inline (insets.bottom + glass token, #65.6)
+    // paddingBottom real se aplica inline (insets.bottom + floating_content_clearance, #65.6/#65.11)
     flexGrow: 1,
   },
   separator: {

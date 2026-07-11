@@ -188,6 +188,7 @@ function LensGlass({ variant }: { variant: GlassVariant }) {
   }
 
   const blur_intensity = is_dark ? glass.lens_blur_intensity_dark : glass.lens_blur_intensity_light;
+  const overlay_color = is_dark ? glass.lens_overlay_dark : glass.lens_overlay_light;
   return (
     <>
       <BlurView
@@ -196,7 +197,7 @@ function LensGlass({ variant }: { variant: GlassVariant }) {
         experimentalBlurMethod="dimezisBlurView"
         style={StyleSheet.absoluteFill}
       />
-      <View style={[StyleSheet.absoluteFill, { backgroundColor: glass.lens_overlay }]} />
+      <View style={[StyleSheet.absoluteFill, { backgroundColor: overlay_color }]} />
     </>
   );
 }

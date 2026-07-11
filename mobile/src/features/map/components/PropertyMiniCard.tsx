@@ -5,11 +5,13 @@
  * MapScreen la monta/desmonta condicionalmente). NO usa el Callout nativo de
  * react-native-maps para evitar el bug de onCalloutPress en Android.
  *
- * Bottom = insets.bottom + glass.floating_content_bottom_offset (#65.4: antes
- * spacing.s_24 a secas, pero la GlassTabBar ahora flota ENCIMA del contenido
- * — position:absolute, ya no reserva su propio alto — la card quedaría tapada
- * detrás de la pill sin este despeje). Ver AreaSearchPill.tsx (mismo patrón,
- * "mismo nivel" entre ambas se conserva).
+ * Bottom = insets.bottom + glass.floating_content_clearance (#65.4: antes
+ * spacing.s_24 a secas, pero la GlassTabBar Android ahora flota ENCIMA del
+ * contenido — position:absolute, ya no reserva su propio alto — la card
+ * quedaría tapada detrás de la pill sin este despeje). Ver AreaSearchPill.tsx
+ * (mismo patrón, "mismo nivel" entre ambas se conserva). `floating_content_
+ * clearance` resuelve por plataforma (#65.11) — en iOS (NativeTabs, barra
+ * nativa anclada) insets.bottom ya incluye el alto de la barra.
  *
  * Estética LIQUID GLASS: BlurView (expo-blur) de fondo + overlay semi-translúcido
  * derivado de colors.paper para legibilidad + borde sutil + sombra neomórfica.
@@ -30,7 +32,7 @@ import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Bathtub, Bed, CaretRight, Play } from 'phosphor-react-native';
 
-import { colors, fonts, glass, radii, shadows, spacing } from '@/theme/theme';
+import { colors, floating_content_clearance, fonts, radii, shadows, spacing } from '@/theme/theme';
 import type { MapProperty } from '@/features/map/types';
 import { format_full_price } from '@/features/map/lib/formatPrice';
 
@@ -78,7 +80,7 @@ export function PropertyMiniCard({ property, onPress }: PropertyMiniCardProps) {
 
   return (
     <TouchableOpacity
-      style={[styles.container, { bottom: insets.bottom + glass.floating_content_bottom_offset }]}
+      style={[styles.container, { bottom: insets.bottom + floating_content_clearance }]}
       onPress={onPress}
       activeOpacity={0.88}
       accessibilityRole="button"

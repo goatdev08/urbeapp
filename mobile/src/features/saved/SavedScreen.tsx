@@ -25,7 +25,7 @@ import {
 import { BookmarkSimple } from 'phosphor-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { colors, glass, spacing, type_scale } from '@/theme/theme';
+import { colors, floating_content_clearance, spacing, type_scale } from '@/theme/theme';
 import { GridSkeleton } from '@/components/GridSkeleton';
 import { EmptyState } from '@/features/profile/components/EmptyState';
 import type { GridProperty } from '@/features/profile/types';
@@ -118,10 +118,13 @@ export function SavedScreen(): React.JSX.Element {
       columnWrapperStyle={styles.column_wrapper}
       contentContainerStyle={[
         styles.list_content,
-        // #65.6: GlassTabBar flota (position:absolute) sobre esta pantalla y ya
-        // no reserva alto — sin este despeje la última fila queda tapada tras
-        // la barra al hacer scroll hasta el fondo.
-        { paddingBottom: insets.bottom + glass.floating_content_bottom_offset },
+        // #65.6: GlassTabBar (Android) flota (position:absolute) sobre esta
+        // pantalla y ya no reserva alto — sin este despeje la última fila
+        // queda tapada tras la barra al hacer scroll hasta el fondo.
+        // #65.11: floating_content_clearance resuelve por plataforma — en
+        // iOS (NativeTabs, barra nativa anclada) insets.bottom ya incluye el
+        // alto de la barra, solo hace falta un margen chico.
+        { paddingBottom: insets.bottom + floating_content_clearance },
       ]}
       ItemSeparatorComponent={GridRowSeparator}
       ListHeaderComponent={<View style={styles.list_header} />}
@@ -175,7 +178,7 @@ const styles = StyleSheet.create({
   list_content: {
     flexGrow: 1,
     paddingHorizontal: H_PAD,
-    // paddingBottom real se aplica inline (insets.bottom + glass token, #65.6)
+    // paddingBottom real se aplica inline (insets.bottom + floating_content_clearance, #65.6/#65.11)
     backgroundColor: colors.paper,
   },
   list_header: {

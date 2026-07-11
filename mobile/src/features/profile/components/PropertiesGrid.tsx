@@ -28,7 +28,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { GridSkeleton } from '@/components/GridSkeleton';
 import { PropertyGridCard } from '@/components/PropertyGridCard';
-import { colors, glass, spacing, type_scale } from '@/theme/theme';
+import { colors, floating_content_clearance, spacing, type_scale } from '@/theme/theme';
 import { usePropertiesGrid } from '../hooks/usePropertiesGrid';
 import type { GridProperty } from '../types';
 import { EmptyState } from './EmptyState';
@@ -53,9 +53,11 @@ export interface PropertiesGridProps {
   is_own_profile?: boolean;
   /**
    * true cuando ProfileScreen se renderiza dentro de (tabs) (tab "Perfil"),
-   * donde la GlassTabBar flota (position:absolute) sobre el contenido (#65.6).
-   * false en la ruta empujada /profile/[id] (Stack fuera de (tabs)), que NO
-   * tiene tab bar — ahí el padding extra sería espacio en blanco injustificado.
+   * donde hay tab bar debajo del contenido — GlassTabBar flotando
+   * (position:absolute) en Android (#65.6) o NativeTabs anclada en iOS
+   * (#65.10). false en la ruta empujada /profile/[id] (Stack fuera de
+   * (tabs)), que NO tiene tab bar — ahí el padding extra sería espacio en
+   * blanco injustificado.
    * Default false: el caller (ProfileScreen) reenvía lo que reciba de su ruta.
    */
   under_floating_tab_bar?: boolean;
@@ -96,7 +98,10 @@ export function PropertiesGrid({
       contentContainerStyle={[
         styles.list_content,
         under_floating_tab_bar && {
-          paddingBottom: insets.bottom + glass.floating_content_bottom_offset,
+          // #65.11: floating_content_clearance resuelve por plataforma — en
+          // iOS (NativeTabs, barra nativa anclada) insets.bottom ya incluye
+          // el alto de la barra, solo hace falta un margen chico.
+          paddingBottom: insets.bottom + floating_content_clearance,
         },
       ]}
       renderItem={({ item }) => (

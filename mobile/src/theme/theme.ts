@@ -6,7 +6,12 @@
  *
  * ponytail: objeto plano sin theming engine — dual-mode feed/oscuro vendrá
  * cuando lo toque el feed (#9). Por ahora solo modo gestión (claro).
+ *
+ * Import de Platform (#65.11): único caso en este archivo — `glass.
+ * floating_content_clearance` necesita resolver por plataforma (ver esa
+ * constante para el porqué).
  */
+import { Platform } from 'react-native';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // COLORES
@@ -95,14 +100,30 @@ export const glass = {
 
   // Despeje mínimo para CUALQUIER contenido flotante inferior (pills, mini-cards)
   // sobre las pantallas de (tabs) — ya no basta con spacing.s_24 a secas (#65.4):
-  // la GlassTabBar ahora flota ENCIMA del contenido (position:absolute, ya no
-  // reserva su propio alto en el layout). Debe sumarse a `insets.bottom`.
+  // la GlassTabBar ANDROID flota ENCIMA del contenido (position:absolute, ya no
+  // reserva su propio alto en el layout). Debe sumarse a `insets.bottom`, que en
+  // Android NO incluye esa pill (el sistema no sabe que existe).
   // Matemática (debe coincidir con los estilos de GlassTabBar.tsx, recalculada
   // en #65.7 tras compactar la pill):
   //   pill_bottom_offset (6) + fila (paddingVertical s_4×2 = 8)
   //   + tab_item (paddingVertical s_8×2 = 16) + ícono (24) = 54
   //   + margen visual (s_12 = 12) = 66.
+  //
+  // SOLO Android/iOS<liquid-glass vía GlassTabBar — en iOS #65.10 la barra es
+  // NativeTabs (UITabBar 100% nativo, ver floating_content_bottom_offset_ios).
   floating_content_bottom_offset: 66,
+
+  // iOS (#65.11, fix de ronda 5): NativeTabs es una barra nativa ANCLADA (no
+  // flotante) — a diferencia de la pill Android, el propio UIKit ya reporta
+  // su alto dentro de `useSafeAreaInsets().bottom` (confirmado en vivo con un
+  // Text de depuración en AreaSearchPill sobre iPhone 17 Pro/iOS 26.5:
+  // insets.bottom = 83 = ~49 de tab bar + ~34 de home indicator). Sumarle
+  // floating_content_bottom_offset (66, calibrado para que Android compense
+  // una pill que el sistema NO conoce) duplicaba el despeje — el bug
+  // reportado por el dueño (pill/descripción del feed flotando ~150-200px
+  // arriba de la barra). En iOS solo hace falta un margen visual pequeño
+  // sobre `insets.bottom`, ya completo. Ver `floating_content_clearance`.
+  floating_content_bottom_offset_ios: 12,
 
   // ───────────────────────────────────────────────────────────────────────
   // LENS — "lupa" deslizante sobre la tab activa (#65.8, referencia: tab bar
@@ -118,14 +139,23 @@ export const glass = {
   lens_blur_intensity_light: 60,
   lens_blur_intensity_dark: 40,
 
-  // Overlay muy sutil, idéntico en ambas variantes (simula luz sobre vidrio,
-  // no un tinte del fondo — a diferencia de overlay_light/overlay_dark).
-  // Bajado de 0.15 a 0.03 en #65.9 (3ª ronda, feedback del dueño): a 0.15 la
-  // lupa se veía CLARA/lechosa sobre el feed — un velo blanco no es cómo se
-  // comporta vidrio real. El rim-gradiente (lens_rim_color_top/bottom) ya
-  // define el borde de la cápsula; este residuo mínimo solo evita que el
-  // relleno quede completamente plano contra el blur en fondos muy oscuros.
-  lens_overlay: 'rgba(255, 255, 255, 0.03)',
+  // Overlay de la cápsula — split por variante (#65.11, 5ª ronda). Bajado de
+  // 0.15 a 0.03 en #65.9 pensando que un velo BLANCO tenue ya no se vería
+  // lechoso — no alcanzó: el dueño lo reportó otra vez ("lupa clara/lechosa
+  // sobre la barra oscura del feed", captura Android). Causa real: el blur
+  // ~2x más intenso de la cápsula (lens_blur_intensity_dark=40 vs. 20 de la
+  // pill) sobre dimezisBlurView (RenderEffect) aclara el promedio de color
+  // que samplea, y NINGÚN overlay blanco por tenue que sea puede oscurecer
+  // eso — hacía falta un TINTE OSCURO (rgba de ink_feed), no una reducción
+  // del velo claro. En variante clara el velo blanco original SÍ funcionaba
+  // (la barra ya es clara) — se conserva ahí, solo se separa el token.
+  lens_overlay_light: 'rgba(255, 255, 255, 0.03)',
+  // ink_feed (#17140F) @ 0.45 — más opaco que overlay_dark (0.40, el de la
+  // pill base) porque el blur más intenso de la cápsula necesita más tinte
+  // para leer oscura y cohesiva con el fondo de la barra (feed). Iterado
+  // visualmente con adb screencap sobre el feed hasta que la cápsula dejó de
+  // "brillar" gris/lechosa contra el fondo oscuro.
+  lens_overlay_dark: 'rgba(23, 20, 15, 0.45)',
 
   // Borde-rim con gradiente: destello arriba, se desvanece abajo.
   lens_rim_color_top: 'rgba(255, 255, 255, 0.9)',
@@ -149,6 +179,17 @@ export const glass = {
   // Fade-in de la primera medición (evita el flash en x:0 antes del layout).
   lens_fade_duration_ms: 180,
 } as const;
+
+// Despeje YA resuelto por plataforma (#65.11) — fuente única para los 6
+// consumidores de contenido flotante inferior sobre (tabs): AreaSearchPill,
+// PropertyMiniCard, SavedScreen, CRMScreen, PropertiesGrid (todos sumaban
+// `insets.bottom + glass.floating_content_bottom_offset` directo) y el
+// overlay del feed (PropertyOverlay, con su propio margen — ver ese archivo).
+// Evita repetir el `Platform.select` en cada consumidor.
+export const floating_content_clearance = Platform.select({
+  ios: glass.floating_content_bottom_offset_ios,
+  default: glass.floating_content_bottom_offset,
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MARCA — LOGO FINAL (urbea-logo-final.html)
