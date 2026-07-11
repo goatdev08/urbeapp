@@ -24,10 +24,11 @@ import {
   Text,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { GridSkeleton } from '@/components/GridSkeleton';
 import { PropertyGridCard } from '@/components/PropertyGridCard';
-import { colors, spacing, type_scale } from '@/theme/theme';
+import { colors, glass, spacing, type_scale } from '@/theme/theme';
 import { usePropertiesGrid } from '../hooks/usePropertiesGrid';
 import type { GridProperty } from '../types';
 import { EmptyState } from './EmptyState';
@@ -50,6 +51,14 @@ export interface PropertiesGridProps {
   onPressProperty: (property_id: string) => void;
   /** Controla el copy del EmptyState: propio vs. ajeno. */
   is_own_profile?: boolean;
+  /**
+   * true cuando ProfileScreen se renderiza dentro de (tabs) (tab "Perfil"),
+   * donde la GlassTabBar flota (position:absolute) sobre el contenido (#65.6).
+   * false en la ruta empujada /profile/[id] (Stack fuera de (tabs)), que NO
+   * tiene tab bar — ahí el padding extra sería espacio en blanco injustificado.
+   * Default false: el caller (ProfileScreen) reenvía lo que reciba de su ruta.
+   */
+  under_floating_tab_bar?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -60,7 +69,9 @@ export function PropertiesGrid({
   owner_user_id,
   onPressProperty,
   is_own_profile = false,
+  under_floating_tab_bar = false,
 }: PropertiesGridProps): React.JSX.Element {
+  const insets = useSafeAreaInsets();
   const { loading, error, data } = usePropertiesGrid(owner_user_id);
 
   if (loading) {
@@ -82,7 +93,12 @@ export function PropertiesGrid({
       keyExtractor={(item) => item.id}
       numColumns={2}
       columnWrapperStyle={styles.column_wrapper}
-      contentContainerStyle={styles.list_content}
+      contentContainerStyle={[
+        styles.list_content,
+        under_floating_tab_bar && {
+          paddingBottom: insets.bottom + glass.floating_content_bottom_offset,
+        },
+      ]}
       renderItem={({ item }) => (
         <PropertyGridCard
           item={item}

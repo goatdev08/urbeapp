@@ -33,11 +33,12 @@ import {
   View,
 } from 'react-native';
 import { MagnifyingGlass, Tray } from 'phosphor-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { FilterTabs } from '@/components/FilterTabs';
 import { useAuth } from '@/features/auth/context';
 import { EmptyState } from '@/features/profile/components/EmptyState';
-import { colors, layout, radii, spacing, type_scale } from '@/theme/theme';
+import { colors, glass, layout, radii, spacing, type_scale } from '@/theme/theme';
 import { AgentSelector } from '../components/AgentSelector';
 import { LeadCard } from '../components/LeadCard';
 import { LeadExpandedView } from '../components/LeadExpandedView';
@@ -87,6 +88,7 @@ function apply_filter(leads: AgentLead[], filter: CrmFilter): AgentLead[] {
 // ─── Componente ───────────────────────────────────────────────────────────────
 
 export function CRMScreen(): React.ReactElement {
+  const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const { isOwner, agencyId } = useAgencyRole();
   const { agents } = useAgencyAgents(agencyId, isOwner);
@@ -207,7 +209,13 @@ export function CRMScreen(): React.ReactElement {
         {/* Lista de leads */}
         <FlatList<AgentLead>
           style={styles.list}
-          contentContainerStyle={styles.list_content}
+          contentContainerStyle={[
+            styles.list_content,
+            // #65.6: GlassTabBar flota (position:absolute) sobre esta pantalla y ya
+            // no reserva alto — sin este despeje el último lead queda tapado tras
+            // la barra al hacer scroll hasta el fondo.
+            { paddingBottom: insets.bottom + glass.floating_content_bottom_offset },
+          ]}
           data={filtered_leads}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
@@ -330,7 +338,7 @@ const styles = StyleSheet.create({
   },
   list_content: {
     paddingTop: spacing.s_8,
-    paddingBottom: spacing.s_32,
+    // paddingBottom real se aplica inline (insets.bottom + glass token, #65.6)
     flexGrow: 1,
   },
   separator: {

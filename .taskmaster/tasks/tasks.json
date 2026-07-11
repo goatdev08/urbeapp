@@ -4473,19 +4473,20 @@
             "id": 6,
             "title": "Auditar paddingBottom de listas en (tabs) contra la barra flotante",
             "description": "Hallazgo de 65.4: la GlassTabBar (position:absolute) ya no reserva alto. AreaSearchPill y PropertyMiniCard ya corregidos con glass.floating_content_bottom_offset (88). Falta auditar visualmente con datos (cuenta demo con propiedades/leads): CRMScreen.tsx, SavedScreen.tsx, PropertiesGrid.tsx (perfil) y LeadExpandedView.tsx — paddingBottom fijos pensados para barra anclada; alinear al token donde el último item quede tapado.",
-            "details": "",
-            "status": "pending",
+            "details": "<info added on 2026-07-11T20:39:39.620Z>\nBased on the user request detailing the completion of subtask 65.6, here is the update text:\n\nCompleted audit of paddingBottom in all tab screen lists against the floating GlassTabBar. Fixed 3 screens (CRMScreen, SavedScreen, PropertiesGrid) that had hardcoded spacing.s_32 paddingBottom values incompatible with the absolute-positioned pill.\n\nFiles modified:\n- mobile/src/features/leads/screens/CRMScreen.tsx: Changed FlatList contentContainerStyle from fixed paddingBottom to dynamic calculation using insets.bottom + glass.floating_content_bottom_offset (added useSafeAreaInsets import). Same pattern as AreaSearchPill/PropertyMiniCard from 65.4.\n- mobile/src/features/saved/SavedScreen.tsx: Applied identical fix to 2-column FlatList (previously hardcoded spacing.s_32).\n- mobile/src/features/profile/components/PropertiesGrid.tsx: Added optional under_floating_tab_bar prop (default false). When true, applies paddingBottom formula. Conditional implementation because PropertiesGrid is reused in /profile/[id] route (Stack outside tabs with no tab bar per (protected)/_layout.tsx verification), where offset would create unintended whitespace.\n- mobile/src/features/profile/ProfileScreen.tsx: Added under_floating_tab_bar prop and forwarded to PropertiesGrid.\n- mobile/app/(protected)/(tabs)/profile.tsx: Passes under_floating_tab_bar=true to ProfileScreen (only tab route using this screen).\n\nFiles verified as not requiring changes:\n- LeadExpandedView.tsx: Uses native RN Modal (transparent + statusBarTranslucent) which renders in separate hierarchy above entire screen including GlassTabBar. Empirically confirmed in Android emulator with Vlad agent account - modal completely covers tab bar with zero overlap.\n- Feed (index.tsx → FeedScreen): Full-screen snapping items intentionally designed to render behind floating bar for immersion, not a scrollable list requiring clearance.\n- Map components (AreaSearchPill/PropertyMiniCard): Already fixed in 65.4, not touched.\n\nVisual verification performed via Android emulator (ADB CLI only: input/screencap/uiautomator dump) using demo account vladimiryeh@gmail.com:\n- Profile tab: 5 properties in 2-column grid. Scrolled to bottom item (Terreno $40,000,000) - fully visible above tab bar with proper clearance. Previously partially obscured (same symptom as 65.4 map findings).\n- Saved tab: Bookmarked 5 properties to force overflow. Bottom row fully cleared from tab bar.\n- CRM tab: Only 2 leads available in demo (Andrea, Ramos) - insufficient to trigger visual overflow. Verified by code inspection: identical formula (insets.bottom + glass.floating_content_bottom_offset) already validated empirically in Saved/Profile and 65.4 AreaSearchPill. Marked as code-verified without visual overflow smoke test.\n- LeadExpandedView: Screenshot with uiautomator dump confirmed modal completely covers tab bar, validating no changes needed.\n\nTechnical verification: pnpm tsc --noEmit (0 errors), pnpm lint (0 errors, 30 preexisting warnings in unrelated files), pnpm test (56/56 suites, 630/630 tests passing, no regressions).\n\nSpec conformance: All changes within declared footprint. ProfileScreen.tsx and profile.tsx tab route added beyond initial suspect list but necessary for threading under_floating_tab_bar prop through component hierarchy (PropertiesGrid/ProfileScreen shared between (tabs)/profile with tab bar and /profile/[id] Stack route without tab bar). AreaSearchPill/PropertyMiniCard from 65.4 and GlassTabBar.tsx untouched as specified. No out-of-scope behavior added.\n\nNo blockers encountered.\n</info added on 2026-07-11T20:39:39.620Z>",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 65,
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-07-11T20:40:09.601Z"
           }
         ],
-        "updatedAt": "2026-07-11T19:29:35.924Z"
+        "updatedAt": "2026-07-11T20:40:09.601Z"
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-07-11T19:29:35.924Z",
+      "lastModified": "2026-07-11T20:40:09.601Z",
       "taskCount": 65,
       "completedCount": 53,
       "tags": [

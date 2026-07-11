@@ -24,6 +24,7 @@ export default function OwnProfileTab() {
     <ProfileScreen
       agent_id={user.id}
       is_own_profile
+      under_floating_tab_bar
     />
   );
 }
