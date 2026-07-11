@@ -18,6 +18,7 @@ import React, { Component, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import MapView, { Region } from 'react-native-maps';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, spacing } from '@/theme/theme';
 import { useLocation } from '@/features/location/LocationProvider';
@@ -32,7 +33,17 @@ import { PropertyMiniCard } from './components/PropertyMiniCard';
 import { AreaSearchPill } from './components/AreaSearchPill';
 import { MapSearchBar } from './components/MapSearchBar';
 import { FilterSheet } from '../search/components/FilterSheet';
+import { ZoneActiveChip } from '../search/components/ZoneActiveChip';
 import type { MapProperty } from './types';
+
+/**
+ * Alto aproximado de MapSearchBar (#56.5, mini-spec): paddingVertical s_12*2
+ * (24) + fila de contenido ~20px (ícono/input) + borde 1px*2 — el chip de
+ * zona se ancla debajo de la barra con un gap de s_8 para no encimarse
+ * (mismo patrón geométrico que AreaSearchPill.tsx: constantes locales
+ * derivadas de spacing.*, sin token nuevo en theme.ts).
+ */
+const MAP_SEARCH_BAR_HEIGHT_APPROX = spacing.s_24 * 2;
 
 /**
  * Debounce (ms) tras terminar de panear/zoomear antes de mostrar el pill
@@ -84,6 +95,7 @@ type ClusterCoords = {
 function MapContent(): React.JSX.Element {
   const router = useRouter();
   const map_ref = useRef<MapView>(null);
+  const insets = useSafeAreaInsets();
 
   const { filters, set_filter, active_filter_count } = useFilters();
   const { data, loading, error } = useMapProperties(undefined, filters);
@@ -266,6 +278,22 @@ function MapContent(): React.JSX.Element {
         <View style={styles.error_overlay} pointerEvents="none">
           <Text style={styles.error_text}>{error}</Text>
         </View>
+      )}
+
+      {/*
+       * Chip "Zona activa · Quitar" (#56.5) — persistente mientras
+       * filters.area != null (viene del pill "Buscar en esta zona" de
+       * arriba). Se ancla debajo de MapSearchBar (misma coordenada left/right
+       * s_16 conceptual, pero centrado) para no encimarse con ella.
+       * onPress revierte a modo cercanía GPS (#42).
+       */}
+      {filters.area != null && (
+        <ZoneActiveChip
+          on_press={() => set_filter('area', null)}
+          style={{
+            top: insets.top + spacing.s_8 + MAP_SEARCH_BAR_HEIGHT_APPROX + spacing.s_8,
+          }}
+        />
       )}
 
       {/* ── Barra de búsqueda flotante — overlay superior (z-index último) ── */}
