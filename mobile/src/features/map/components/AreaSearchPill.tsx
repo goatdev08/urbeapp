@@ -4,9 +4,13 @@
  * Mini-spec de diseño (CLAUDE.md §8 — UI nueva, ausente del mockup canónico
  * `urbea-identidad-visual.html`; techo = tokens existentes, ningún token nuevo):
  *   - Posición: absolute, bottom-center (alignSelf: 'center').
- *     Bottom base = spacing.s_24 (mismo nivel que PropertyMiniCard).
+ *     Bottom base = insets.bottom + glass.floating_content_bottom_offset (#65.4:
+ *     antes era spacing.s_24 a secas, pero la GlassTabBar ahora flota ENCIMA
+ *     del contenido — position:absolute, ya no reserva su propio alto en el
+ *     layout — así que cualquier UI flotante inferior debe despejarla
+ *     explícitamente o queda tapada/sin poder tocarse detrás de la pill).
  *     Cuando `lifted` (mini-card visible), sube por encima de ella:
- *     spacing.s_24 (bottom de la mini-card)
+ *     bottom base
  *       + spacing.s_32*2 (thumb 64px de la mini-card = 2×s_32)
  *       + spacing.s_12*2 (padding vertical de la fila de la mini-card)
  *       + spacing.s_16 (gap visual entre pill y mini-card)
@@ -20,17 +24,16 @@
  */
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { colors, fonts, radii, shadows, spacing, type_scale } from '@/theme/theme';
+import { colors, fonts, glass, radii, shadows, spacing, type_scale } from '@/theme/theme';
 
 // Offset del pill sobre la mini-card — ver mini-spec arriba (todo desde spacing.*).
-const MINI_CARD_BOTTOM = spacing.s_24;
 const MINI_CARD_THUMB_HEIGHT = spacing.s_32 * 2; // 64 — coincide con THUMB_SIZE de PropertyMiniCard
 const MINI_CARD_ROW_PADDING = spacing.s_12 * 2;
 const PILL_GAP_ABOVE_MINI_CARD = spacing.s_16;
 
-const LIFTED_BOTTOM =
-  MINI_CARD_BOTTOM + MINI_CARD_THUMB_HEIGHT + MINI_CARD_ROW_PADDING + PILL_GAP_ABOVE_MINI_CARD;
+const LIFTED_EXTRA = MINI_CARD_THUMB_HEIGHT + MINI_CARD_ROW_PADDING + PILL_GAP_ABOVE_MINI_CARD;
 
 interface AreaSearchPillProps {
   on_press: () => void;
@@ -39,9 +42,12 @@ interface AreaSearchPillProps {
 }
 
 export function AreaSearchPill({ on_press, lifted }: AreaSearchPillProps) {
+  const insets = useSafeAreaInsets();
+  const base_bottom = insets.bottom + glass.floating_content_bottom_offset;
+
   return (
     <TouchableOpacity
-      style={[styles.container, { bottom: lifted ? LIFTED_BOTTOM : MINI_CARD_BOTTOM }]}
+      style={[styles.container, { bottom: lifted ? base_bottom + LIFTED_EXTRA : base_bottom }]}
       onPress={on_press}
       activeOpacity={0.88}
       accessibilityRole="button"

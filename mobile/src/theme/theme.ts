@@ -77,6 +77,16 @@ export const glass = {
   pill_radius: 24,
   pill_horizontal_inset: 16,
   pill_bottom_offset: 12,
+
+  // Despeje mínimo para CUALQUIER contenido flotante inferior (pills, mini-cards)
+  // sobre las pantallas de (tabs) — ya no basta con spacing.s_24 a secas (#65.4):
+  // la GlassTabBar ahora flota ENCIMA del contenido (position:absolute, ya no
+  // reserva su propio alto en el layout). Debe sumarse a `insets.bottom`.
+  // Matemática (debe coincidir con los estilos de GlassTabBar.tsx):
+  //   pill_bottom_offset (12) + fila (paddingVertical s_8×2 = 16)
+  //   + tab_item (paddingVertical s_12×2 = 24) + ícono (24) = 76
+  //   + margen visual (s_12 = 12) = 88.
+  floating_content_bottom_offset: 88,
 } as const;
 
 // ─────────────────────────────────────────────────────────────────────────────

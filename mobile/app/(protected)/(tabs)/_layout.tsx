@@ -14,52 +14,40 @@
  * sobresale −16px con borde del fondo) no es una pantalla: empuja el wizard
  * de publicación. La ruta dummy publish.tsx existe solo para reservar el slot.
  *
- * La barra tiene dos variantes (mockup líneas 374-383): oscura translúcida
- * sobre el feed inmersivo, clara sobre el resto. Se aplica por pantalla vía
- * tabBarStyle/tints; el FAB detecta la variante con useSegments.
+ * Barra: pill flotante "liquid glass" (#65, exploración
+ * `.taskmaster/docs/exploraciones/035-tab-bar-glass-flotante.md`) —
+ * DIVERGENCIA CONSCIENTE del mockup canónico (que define una barra anclada,
+ * no flotante; decisión del dueño, ver doc de exploración § intake). El
+ * dibujo (pill, vidrio por plataforma, variante oscura/clara) vive en
+ * `GlassTabBar.tsx` (#65.3); este archivo solo cablea `tabBar={GlassTabBar}` y
+ * mantiene la lógica de slots/roles/FAB — GlassTabBar decide la variante por
+ * sí mismo leyendo `state.routes[state.index]`, ya NO por tabBarStyle/tints
+ * en screenOptions (que aquí quedarían muertos: el tabBar custom no los lee).
  *
- * Íconos: Phosphor bold (fill en la tab activa) — sistema único de la app (#43).
+ * Íconos: Phosphor fill en la tab activa, regular en las inactivas (trazo
+ * fino a propósito para la estética glass — ajuste sobre la convención #43,
+ * decidido en el intake de la exploración 035).
  *
  * CRM tab: href=null oculta el tab de la barra para no-agentes.
  * La ruta crm.tsx añade un Redirect como segunda capa de seguridad.
  */
 import { Tabs, useRouter, useSegments } from 'expo-router';
 import { BookmarkSimple, HouseLine, type Icon, MapPin, Plus, Ranking, UserCircle } from 'phosphor-react-native';
-import { Pressable, StyleSheet, View, type ColorValue, type ViewStyle } from 'react-native';
+import { Pressable, StyleSheet, View, type ColorValue } from 'react-native';
 
 import { colors, shadows } from '@/theme/theme';
 import { useAuth } from '@/features/auth/context';
+import { GlassTabBar } from '@/components/GlassTabBar';
 
-// weight=fill en la tab activa, bold en las inactivas (convención #43).
-// color llega como ColorValue de React Navigation; los tints de la barra son
-// siempre hex strings, así que se estrecha a string para el prop de phosphor.
+// weight=fill en la tab activa, regular en las inactivas (trazo fino, estética
+// glass — ajuste sobre la convención #43 decidido en la exploración 035).
+// color llega como ColorValue de React Navigation; GlassTabBar siempre pasa
+// un hex string, así que se estrecha a string para el prop de phosphor.
 function tab_icon(IconCmp: Icon) {
   return function render({ focused, color, size }: { focused: boolean; color: ColorValue; size: number }) {
-    return <IconCmp size={size} color={color as string} weight={focused ? 'fill' : 'bold'} />;
+    return <IconCmp size={size} color={color as string} weight={focused ? 'fill' : 'regular'} />;
   };
 }
-
-// Variantes de barra según el mockup: el feed es inmersivo oscuro, el resto claro.
-const bar_dark: ViewStyle = {
-  backgroundColor: 'rgba(18,15,11,0.94)',
-  borderTopColor: 'rgba(255,255,255,0.08)',
-};
-const bar_light: ViewStyle = {
-  backgroundColor: colors.paper,
-  borderTopColor: colors.paper_3,
-};
-
-/** Opciones de barra por pantalla — variante oscura (feed) o clara (gestión). */
-const dark_bar_options = {
-  tabBarStyle: bar_dark,
-  tabBarActiveTintColor: colors.primary_soft,
-  tabBarInactiveTintColor: colors.silver_dk,
-} as const;
-const light_bar_options = {
-  tabBarStyle: bar_light,
-  tabBarActiveTintColor: colors.primary,
-  tabBarInactiveTintColor: colors.gray_2,
-} as const;
 
 /**
  * Botón central de publicar — tab-fab del mockup. No navega a la ruta dummy:
@@ -102,17 +90,17 @@ export default function TabsLayout() {
 
   return (
     <Tabs
+      tabBar={GlassTabBar}
       screenOptions={{
         headerShown: false,
         // Congela las pantallas fuera de foco (react-native-screens):
         // el MapView y el CRM no re-renderizan mientras no se ven.
         freezeOnBlur: true,
-        ...light_bar_options,
       }}
     >
       <Tabs.Screen
         name="index"
-        options={{ title: 'Feed', tabBarIcon: tab_icon(HouseLine), ...dark_bar_options }}
+        options={{ title: 'Feed', tabBarIcon: tab_icon(HouseLine) }}
       />
       <Tabs.Screen
         name="map"

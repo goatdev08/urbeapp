@@ -5,6 +5,12 @@
  * MapScreen la monta/desmonta condicionalmente). NO usa el Callout nativo de
  * react-native-maps para evitar el bug de onCalloutPress en Android.
  *
+ * Bottom = insets.bottom + glass.floating_content_bottom_offset (#65.4: antes
+ * spacing.s_24 a secas, pero la GlassTabBar ahora flota ENCIMA del contenido
+ * — position:absolute, ya no reserva su propio alto — la card quedaría tapada
+ * detrás de la pill sin este despeje). Ver AreaSearchPill.tsx (mismo patrón,
+ * "mismo nivel" entre ambas se conserva).
+ *
  * Estética LIQUID GLASS: BlurView (expo-blur) de fondo + overlay semi-translúcido
  * derivado de colors.paper para legibilidad + borde sutil + sombra neomórfica.
  *
@@ -21,9 +27,10 @@ import {
   View,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Bathtub, Bed, CaretRight, Play } from 'phosphor-react-native';
 
-import { colors, fonts, radii, shadows, spacing } from '@/theme/theme';
+import { colors, fonts, glass, radii, shadows, spacing } from '@/theme/theme';
 import type { MapProperty } from '@/features/map/types';
 import { format_full_price } from '@/features/map/lib/formatPrice';
 
@@ -61,6 +68,7 @@ interface PropertyMiniCardProps {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function PropertyMiniCard({ property, onPress }: PropertyMiniCardProps) {
+  const insets = useSafeAreaInsets();
   const type_label =
     PROPERTY_TYPE_LABEL[property.property_type] ?? property.property_type;
   const price_text = format_full_price(property.price);
@@ -70,7 +78,7 @@ export function PropertyMiniCard({ property, onPress }: PropertyMiniCardProps) {
 
   return (
     <TouchableOpacity
-      style={styles.container}
+      style={[styles.container, { bottom: insets.bottom + glass.floating_content_bottom_offset }]}
       onPress={onPress}
       activeOpacity={0.88}
       accessibilityRole="button"
@@ -145,7 +153,6 @@ const styles = StyleSheet.create({
    */
   container: {
     position: 'absolute',
-    bottom: spacing.s_24,
     left: spacing.s_16,
     right: spacing.s_16,
     borderRadius: radii.r_16,
