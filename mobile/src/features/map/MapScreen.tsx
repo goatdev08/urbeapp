@@ -25,12 +25,21 @@ import { useFilters } from '../search/filterStore';
 import { GDL_REGION } from './constants';
 import { useMapProperties } from './hooks/useMapProperties';
 import { cluster_properties } from './lib/clusterMarkers';
+import { viewport_to_area } from './lib/viewportToArea';
 import { PropertyMarker } from './components/PropertyMarker';
 import { ClusterMarker } from './components/ClusterMarker';
 import { PropertyMiniCard } from './components/PropertyMiniCard';
+import { AreaSearchPill } from './components/AreaSearchPill';
 import { MapSearchBar } from './components/MapSearchBar';
 import { FilterSheet } from '../search/components/FilterSheet';
 import type { MapProperty } from './types';
+
+/**
+ * Debounce (ms) tras terminar de panear/zoomear antes de mostrar el pill
+ * "Buscar en esta zona" — patrón Airbnb (#56.4, ver
+ * .taskmaster/docs/exploraciones/030-buscar-en-esta-zona.md).
+ */
+const AREA_PILL_DEBOUNCE_MS = 500;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Error Boundary — evita crash si el módulo nativo no está enlazado
@@ -76,7 +85,7 @@ function MapContent(): React.JSX.Element {
   const router = useRouter();
   const map_ref = useRef<MapView>(null);
 
-  const { filters, active_filter_count } = useFilters();
+  const { filters, set_filter, active_filter_count } = useFilters();
   const { data, loading, error } = useMapProperties(undefined, filters);
   // Ubicación real (LocationProvider, permiso obligatorio #41): centra el mapa
   // en la ciudad del usuario en vez de GDL fija. Fallback: GDL_REGION.
@@ -95,6 +104,8 @@ function MapContent(): React.JSX.Element {
   const [selected, set_selected] = useState<MapProperty | null>(null);
   const [query, set_query] = useState('');
   const [filter_visible, set_filter_visible] = useState(false);
+  const [show_area_pill, set_show_area_pill] = useState(false);
+  const area_pill_timer_ref = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /*
    * coords_used_ref: arranca en true si ya montamos con coords reales (nada que
@@ -142,6 +153,46 @@ function MapContent(): React.JSX.Element {
     [filtered, region],
   );
 
+  // Limpia el timer del pill "Buscar en esta zona" al desmontar (evita fugas).
+  useEffect(() => {
+    return () => {
+      if (area_pill_timer_ref.current !== null) {
+        clearTimeout(area_pill_timer_ref.current);
+      }
+    };
+  }, []);
+
+  /**
+   * Handler de `onRegionChangeComplete`: guarda la región (comportamiento
+   * previo intacto) y arranca un debounce de 500ms — el pill "Buscar en esta
+   * zona" solo aparece cuando el usuario TERMINA de panear/zoomear (patrón
+   * Airbnb), no en cada frame intermedio.
+   * ponytail: setTimeout/clearTimeout a mano, sin librería de debounce.
+   */
+  function handle_region_change_complete(next_region: Region): void {
+    set_region(next_region);
+
+    if (area_pill_timer_ref.current !== null) {
+      clearTimeout(area_pill_timer_ref.current);
+    }
+    area_pill_timer_ref.current = setTimeout(() => {
+      set_show_area_pill(true);
+      area_pill_timer_ref.current = null;
+    }, AREA_PILL_DEBOUNCE_MS);
+  }
+
+  /**
+   * onPress del pill: convierte el viewport actual a {center, radius_m}
+   * (#56.1), lo setea como `filters.area` y navega al feed — la capa de
+   * datos (56.3) ya reacciona sola al cambio de `area`, sin plomería extra.
+   */
+  function handle_area_search(): void {
+    const area = viewport_to_area(region);
+    set_filter('area', area);
+    set_show_area_pill(false);
+    router.push('/');
+  }
+
   /** Centra y hace zoom-in sobre el cluster tocado. */
   function zoom_to_cluster(cluster: ClusterCoords): void {
     map_ref.current?.animateToRegion(
@@ -162,7 +213,7 @@ function MapContent(): React.JSX.Element {
         ref={map_ref}
         style={styles.map}
         initialRegion={initial_region}
-        onRegionChangeComplete={set_region}
+        onRegionChangeComplete={handle_region_change_complete}
         onPress={() => set_selected(null)}
         showsUserLocation
         showsMyLocationButton
@@ -192,6 +243,14 @@ function MapContent(): React.JSX.Element {
         <PropertyMiniCard
           property={selected}
           onPress={() => router.push(`/property/${selected.id}`)}
+        />
+      )}
+
+      {/* ── Pill "Buscar en esta zona" (#56.4) — aparece 500ms tras panear/zoomear ── */}
+      {show_area_pill && (
+        <AreaSearchPill
+          on_press={handle_area_search}
+          lifted={selected !== null}
         />
       )}
 

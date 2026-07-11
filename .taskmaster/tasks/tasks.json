@@ -3939,10 +3939,11 @@
             "dependencies": [
               3
             ],
-            "details": "File: mobile/src/features/map/MapScreen.tsx (LIGHT verification, component footprint)\n\nAdd state and handlers in MapContent:\n- `show_area_pill: boolean` state (initially false)\n- Debounced region change handler (500ms)\n- Area search handler: calculate area, set filter, navigate to feed, hide pill\n\nMini-spec design tokens:\n- Background: colors.primary (#1A5E44)\n- Text: colors.on_primary, type_scale.body, HankenGrotesk_600SemiBold\n- Border radius: radii.r_24\n- Shadow: shadows.primary\n- Padding: vertical 12, horizontal spacing.s_24\n- Position: absolute, bottom (above PropertyMiniCard), alignSelf center\n\nThis is LIGHT (screen/component) — smoke test + visual verification, no strict TDD.",
-            "status": "pending",
+            "details": "File: mobile/src/features/map/MapScreen.tsx (LIGHT verification, component footprint)\n\nAdd state and handlers in MapContent:\n- `show_area_pill: boolean` state (initially false)\n- Debounced region change handler (500ms)\n- Area search handler: calculate area, set filter, navigate to feed, hide pill\n\nMini-spec design tokens:\n- Background: colors.primary (#1A5E44)\n- Text: colors.on_primary, type_scale.body, HankenGrotesk_600SemiBold\n- Border radius: radii.r_24\n- Shadow: shadows.primary\n- Padding: vertical 12, horizontal spacing.s_24\n- Position: absolute, bottom (above PropertyMiniCard), alignSelf center\n\nThis is LIGHT (screen/component) — smoke test + visual verification, no strict TDD.\n<info added on 2026-07-11T03:42:23.483Z>\nPlan (LIGHT verification, mini-spec per §8 before implementation):\n\n**Approach:**\nMapScreen.tsx will be updated to add viewport-triggered \"Buscar en esta zona\" pill UI with the following components:\n\n**State additions:**\n- `show_area_pill: boolean` — initially false, controls pill visibility\n- Implement debounced region change handler (500ms) to set `show_area_pill(true)` after pan/zoom completes\n\n**Handler modifications:**\n- Intercept current `onRegionChangeComplete` (which sets `set_region` directly)\n- Add 500ms debounce wrapper that:\n  1. Sets the region state (preserve existing behavior)\n  2. Shows pill after debounce settles\n\n**New pill component:**\n- Position: absolute, bottom-center, layered above PropertyMiniCard\n- Text: \"Buscar en esta zona\"\n- Design tokens from theme.ts:\n  - Background: `colors.primary` (#1A5E44)\n  - Text: `colors.on_primary`, `type_scale.body`, `HankenGrotesk_600SemiBold`\n  - Border radius: `radii.r_24`\n  - Shadow: `shadows.primary`\n  - Padding: vertical 12px, horizontal `spacing.s_24`\n- onPress behavior:\n  1. Calculate area via `viewport_to_area(region)` (from subtask 56.1)\n  2. Set filter via `set_filter('area', area_value)` \n  3. Navigate to feed tab using router\n  4. Hide pill with `show_area_pill(false)`\n\n**Verification (LIGHT):**\n- `pnpm tsc --noEmit` + `pnpm lint` pass\n- Smoke test: pan/zoom map → pill appears after 500ms → tap pill → feed loads with constrained results\n- Visual check: pill matches design tokens, positioned correctly above mini-card\n\n**Out-of-scope safeguard:**\nAny UI element absent from `urbea-identidad-visual.html` mockup MapScreen section should be documented as new work via `task-master add-task`.\n</info added on 2026-07-11T03:42:23.483Z>\n<info added on 2026-07-11T03:45:42.533Z>\nDone: Implemented pill UI in mobile/src/features/map/MapScreen.tsx and new mobile/src/features/map/components/AreaSearchPill.tsx. Added show_area_pill state, area_pill_timer_ref for 500ms debounce in handle_region_change_complete (replaced direct set_region in onRegionChangeComplete), handle_area_search calling viewport_to_area(region) + set_filter('area', area) + router.push('/') + hides pill, timer cleanup on unmount. AreaSearchPill component is presentational with design mini-spec in header (bottom-center, colors.primary/on_primary, radii.r_24, shadows.primary, spacing.s_12/s_24, lifted offset calculated 100% from spacing tokens to avoid overlap with PropertyMiniCard when pin selected). Feed route confirmed as router.push('/') per app/(protected)/(tabs)/_layout.tsx index. All tokens verified in theme.ts (colors.primary, colors.on_primary, radii.r_24, shadows.primary, spacing.s_12/s_16/s_24/s_32, type_scale.body, fonts.sans_semibold) — no new tokens, all seeded in task 16.3. Verification: pnpm tsc --noEmit clean, pnpm lint 0 errors/warnings on MapScreen.tsx and AreaSearchPill.tsx, pnpm test src/features/map 6/6 suites 58/58 tests green (viewportToArea/clusterMarkers/mapProperties unchanged). Device smoke test pending orchestrator (requires dev build).\n</info added on 2026-07-11T03:45:42.533Z>",
+            "status": "done",
             "testStrategy": "LIGHT verification: pnpm tsc --noEmit, pnpm lint, smoke test on simulator (pan map → pill appears after 500ms, tap pill → navigates to feed with area filter set, pill disappears). Visual check: pill styled per mini-spec (primary bg, white text, rounded, shadow).",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-07-11T03:45:54.211Z"
           },
           {
             "id": 5,
@@ -3957,7 +3958,7 @@
             "parentId": "undefined"
           }
         ],
-        "updatedAt": "2026-07-11T03:40:29.344Z"
+        "updatedAt": "2026-07-11T03:45:54.211Z"
       },
       {
         "id": "57",
@@ -4184,7 +4185,7 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-07-11T03:40:29.344Z",
+      "lastModified": "2026-07-11T03:45:54.211Z",
       "taskCount": 62,
       "completedCount": 49,
       "tags": [
