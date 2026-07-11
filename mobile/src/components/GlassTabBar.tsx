@@ -5,8 +5,9 @@
  * flotante con vidrio por plataforma:
  *   - iOS 26+ (isLiquidGlassAvailable()): GlassView de expo-glass-effect,
  *     refracción real de Apple.
- *   - Android / iOS < 26: BlurView (expo-blur) + overlay + borde highlight,
- *     mismo patrón que MapSearchBar.tsx / PropertyMiniCard.tsx.
+ *   - Android / iOS < 26: BlurView (expo-blur, experimentalBlurMethod=
+ *     "dimezisBlurView" — ver #65.7) + overlay + borde highlight, mismo
+ *     patrón que MapSearchBar.tsx / PropertyMiniCard.tsx.
  *
  * Import de expo-glass-effect ESTÁTICO (no require() defensivo): el paquete
  * es un <View/> plano en JS cuando el liquid glass no está disponible, no
@@ -98,10 +99,27 @@ function GlassBackground({ variant }: { variant: GlassVariant }) {
 
   // Android / iOS < 26: patrón BlurView + overlay, igual que
   // MapSearchBar.tsx:54-62 / PropertyMiniCard.tsx:79-86.
+  //
+  // experimentalBlurMethod="dimezisBlurView" (#65.7, feedback del dueño):
+  // el método default de expo-blur en Android NO desenfoca — solo tiñe. Se
+  // diagnosticó en vivo (adb screencap sobre Mapa/CRM): la mitad superior de
+  // la pill (antes de la fila de íconos) refractaba el fondo con nitidez,
+  // la mitad inferior (desde la fila de íconos) se veía lavada/opaca — una
+  // franja/salto brusco justo a la altura de los íconos. dimezisBlurView usa
+  // el blur real de Android (RenderEffect, API 31+; expo-blur cae de vuelta
+  // al tinte plano en versiones viejas, sin crashear) y elimina el salto.
+  // Costo de FPS: medido sobre el feed (video en reproducción) sin caída
+  // perceptible — se mantiene blur_intensity_dark reducido (20 vs 30) como
+  // margen adicional si un gama media lo necesita.
   const blur_intensity = is_dark ? glass.blur_intensity_dark : glass.blur_intensity_light;
   return (
     <>
-      <BlurView tint={is_dark ? 'dark' : 'light'} intensity={blur_intensity} style={StyleSheet.absoluteFill} />
+      <BlurView
+        tint={is_dark ? 'dark' : 'light'}
+        intensity={blur_intensity}
+        experimentalBlurMethod="dimezisBlurView"
+        style={StyleSheet.absoluteFill}
+      />
       <View style={[StyleSheet.absoluteFill, { backgroundColor: overlay_color }]} />
     </>
   );
@@ -254,12 +272,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: spacing.s_8,
-    paddingVertical: spacing.s_8,
+    paddingVertical: spacing.s_4,
   },
   tab_item: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: spacing.s_12,
+    paddingVertical: spacing.s_8,
   },
 });

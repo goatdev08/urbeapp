@@ -4479,14 +4479,25 @@
             "parentTaskId": 65,
             "parentId": "undefined",
             "updatedAt": "2026-07-11T20:40:09.601Z"
+          },
+          {
+            "id": 7,
+            "title": "Ajustes visuales de GlassTabBar por feedback del dueño (pre-build)",
+            "description": "Feedback con screenshot (2026-07-11): (1) remover la franja delgada OPACA que se ve dentro de la pill en ambas plataformas — rompe lo translúcido, todo el componente debe ser liquid glass; (2) más translúcido de lo actual (referencia visual: dock del Home de iOS 26); (3) bordes TOTALMENTE redondeados (pill perfecta: radio = mitad de la altura); (4) menos padding y posición más pegada al borde inferior (hoy abarca demasiado espacio). En Android además evaluar experimentalBlurMethod (BlurView sin él no desenfoca, solo tinta). Las refracciones reales en iOS llegan con GlassView tras el rebuild (65.5).",
+            "details": "<info added on 2026-07-11T21:13:41.294Z>\nRoot cause diagnosis confirmed via live ADB screenshot capture (not guessed). Systematically commented out layers (BlurView, overlay, shadows.lg, row) in mobile/src/components/GlassTabBar.tsx testing against CRM (flat background) and Map (detailed background, better signal). Pattern persisted regardless of shadows/row, ruling out FAB/stacking issues. Definitive signal from Map screen: upper half of pill (above icon row) refracted map streets clearly, lower half (icon row downward) appeared washed/opaque — sharp transition exactly at icon height. Root cause: BlurView from expo-blur on Android WITHOUT experimentalBlurMethod does not actually blur (only tints) — confirms suspect (a) from subtask PRD.\n\nFix applied: added experimentalBlurMethod=\"dimezisBlurView\" to BlurView in GlassBackground component (GlassTabBar.tsx lines ~117-122). Visual verification: banding eliminated in Map, CRM, Profile, and Feed screens (screenshots in /private/tmp/.../scratchpad/glass_2[4-7]_*.png, not committed). FPS cost: tested over feed with video playback, no perceptible drop (blur_intensity_dark already reduced to 20 vs 30 maintained as margin for mid-range devices, no formal profiler measurement — visual fluidity inspection only).\n\nFinal token values (mobile/src/theme/theme.ts, glass object):\n- overlay_light: 0.72 → 0.50\n- overlay_dark: 0.82 → 0.60\n- pill_radius: 24 → 25 (half of recalculated actual height: border 2 + row paddingVertical s_4×2=8 + tab_item paddingVertical s_8×2=16 + icon 24 = 50 → 25)\n- pill_bottom_offset: 12 → 6\n- floating_content_bottom_offset: 88 → 66 (recalculated using math in token comment; also consumed by SavedScreen/CRMScreen/AreaSearchPill/PropertyMiniCard/PropertiesGrid — verified in screenshots that none are obscured by pill, actually more clearance now since pill is smaller)\n\nmobile/src/components/GlassTabBar.tsx changes:\n- row.paddingVertical: s_8 → s_4; tab_item.paddingVertical: s_12 → s_8 (compact pill)\n- BlurView + experimentalBlurMethod=\"dimezisBlurView\"\n- Updated comments (header + GlassBackground) documenting diagnosis\n\niOS (GlassView, isLiquidGlassAvailable branch): dark tint reuses same glass.overlay_dark token, so reduction 0.82→0.60 applies automatically there too (no additional code change).\n\nVerification: pnpm tsc --noEmit (clean) + pnpm lint (0 errors, preexisting unrelated warnings) + pnpm test (56 suites / 630 tests, all green) + final ADB screenshots in feed (dark), Map/CRM/Profile (light) confirming: no banding, truly translucent (background content visible), perfect semicircles at ends, compact pill hugging bottom edge (safe area respected via insets.bottom).\n\nTesting 100% via CLI (adb shell input tap/screencap, force-stop+am start to force bundle reload since Metro Fast Refresh did not pick up changes in this session — possible expo-dev-client gotcha with --clear, documented in case it repeats).\n\nNo blockers.\n</info added on 2026-07-11T21:13:41.294Z>",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 65,
+            "updatedAt": "2026-07-11T21:14:20.654Z",
+            "parentId": "undefined"
           }
         ],
-        "updatedAt": "2026-07-11T20:40:09.601Z"
+        "updatedAt": "2026-07-11T21:14:20.654Z"
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-07-11T20:40:09.601Z",
+      "lastModified": "2026-07-11T21:14:20.654Z",
       "taskCount": 65,
       "completedCount": 53,
       "tags": [

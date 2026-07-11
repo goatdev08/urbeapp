@@ -57,9 +57,15 @@ export const colors = {
 //
 // Reuso entre GlassTabBar, MapSearchBar y PropertyMiniCard. Overlays/bordes
 // derivados de `colors` (verificados byte a byte contra los hex reales):
-//   overlay_light        = colors.paper    (#F6F2EB) @ 0.72
-//   overlay_dark         = colors.ink_feed (#17140F) @ 0.82
+//   overlay_light        = colors.paper    (#F6F2EB) @ 0.50
+//   overlay_dark         = colors.ink_feed (#17140F) @ 0.60
 //   border_highlight_light = colors.paper_3 (#E3DCCF) @ 0.60
+//
+// Opacidad bajada en #65.7 (feedback del dueño, screenshot 2026-07-11): la
+// pill se veía casi opaca vs. la referencia deseada (dock liquid glass de
+// iOS 26 Home) — 0.72/0.82 apenas dejaban ver el contenido detrás. Iterado
+// visualmente con capturas adb sobre Mapa (claro) y feed (oscuro) hasta
+// distinguir el fondo sin perder legibilidad de íconos.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const glass = {
@@ -68,25 +74,30 @@ export const glass = {
   blur_intensity_light: 30, // superficies claras/gestión — mismo valor que MapSearchBar
   blur_intensity_dark: 20,  // feed oscuro — reducida a propósito por rendimiento
 
-  overlay_light: 'rgba(246, 242, 235, 0.72)', // colors.paper @ 0.72
-  overlay_dark: 'rgba(23, 20, 15, 0.82)',     // colors.ink_feed @ 0.82
+  overlay_light: 'rgba(246, 242, 235, 0.50)', // colors.paper @ 0.50 (antes 0.72, #65.7)
+  overlay_dark: 'rgba(23, 20, 15, 0.60)',     // colors.ink_feed @ 0.60 (antes 0.82, #65.7)
 
   border_highlight_light: 'rgba(227, 220, 207, 0.60)', // colors.paper_3 @ 0.60
   border_highlight_dark: 'rgba(255, 255, 255, 0.12)',
 
-  pill_radius: 24,
+  // pill_radius = mitad de la altura REAL de la pill (semicírculo perfecto en
+  // los extremos, #65.7) — debe recalcularse si cambia cualquier padding de
+  // GlassTabBar.tsx. Altura actual: borde (1×2=2) + fila (paddingVertical
+  // s_4×2=8) + tab_item (paddingVertical s_8×2=16) + ícono (24) = 50 → 25.
+  pill_radius: 25,
   pill_horizontal_inset: 16,
-  pill_bottom_offset: 12,
+  pill_bottom_offset: 6, // antes 12 — más pegada al borde inferior (#65.7)
 
   // Despeje mínimo para CUALQUIER contenido flotante inferior (pills, mini-cards)
   // sobre las pantallas de (tabs) — ya no basta con spacing.s_24 a secas (#65.4):
   // la GlassTabBar ahora flota ENCIMA del contenido (position:absolute, ya no
   // reserva su propio alto en el layout). Debe sumarse a `insets.bottom`.
-  // Matemática (debe coincidir con los estilos de GlassTabBar.tsx):
-  //   pill_bottom_offset (12) + fila (paddingVertical s_8×2 = 16)
-  //   + tab_item (paddingVertical s_12×2 = 24) + ícono (24) = 76
-  //   + margen visual (s_12 = 12) = 88.
-  floating_content_bottom_offset: 88,
+  // Matemática (debe coincidir con los estilos de GlassTabBar.tsx, recalculada
+  // en #65.7 tras compactar la pill):
+  //   pill_bottom_offset (6) + fila (paddingVertical s_4×2 = 8)
+  //   + tab_item (paddingVertical s_8×2 = 16) + ícono (24) = 54
+  //   + margen visual (s_12 = 12) = 66.
+  floating_content_bottom_offset: 66,
 } as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
