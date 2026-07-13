@@ -1,11 +1,16 @@
 ---
 tipo: estado
-actualizado: 2026-07-10
+actualizado: 2026-07-12
 ---
 
 # Estado actual
 
 > Narrativa de "dónde estamos hoy". El **qué sigue / qué está hecho** vive en **Taskmaster** (`task-master list`), no aquí.
+
+## Hoy (2026-07-12)
+
+- **🧭 Camino a producción DIRIGIDO y descompuesto (ADR 0008 + PRD-beta.md + épicas 71-84).** Backbone que elimina la ambigüedad de arquitectura: `wiki/decisiones/0008-arquitectura-real-prd.md` (reorienta el norte a la versión real) + `docs/PRD-beta.md` (acota `PRD.md` a la beta + mapa módulo→ola→tarea). **Corte de beta = casi-final sin cobrar (Olas 0–3)**; **pagos = capstone final en Stripe test-mode**, flip-ready a cobro real, con el **modelo de datos sembrado temprano (Ola 1)** por flag gratis. **14 épicas nuevas (71-84)** cubren TODO el alcance restante del PRD (roles, auth, publicación completa, feed/mapa/CRM, notificaciones, comentarios/follow, reportes/moderación, métricas, admin web, landing, observabilidad, pagos). Método = **secuencial por olas** con aprobación entre cada una. **Siguiente:** spec detallado ola por ola. Ver [[0008-arquitectura-real-prd]].
+- **🗺️ Planeación del camino a producción real (exploraciones 036 + 037 aprobadas → tareas 66-70).** Sesión estratégica sin código de app. **Rumbo de storage precisado:** de "solo Cloudflare Stream" (2026-07-09) a **híbrido Stream (video del feed, HLS adaptativo → mata cap 50 MB + OOM #57 + thumbnails) + R2 (assets/originales, egress $0)**. El schema ya encaja (`cloudflare_uid`+`storage_path`, CHECK 0012 acepta cualquiera) → migración **aditiva** reusando el patrón EF `mint-video-url`. Decisiones de Abraham: pagos **Stripe** (inactivos por flag en beta), admin web **repo aparte**, push **Expo Notifications**, beta **pública limitada**, video **greenfield**, archivar original en R2. **Promovido "olas listas + graphify":** tareas **66** (épica A: `docs/PRD-beta.md` + ADR 0008), **67** (G: runtimeVersion→fingerprint), **68** (B: Cloudflare Stream, dep 66), **69** (C: Cloudflare R2, dep 66), **70** (integrar graphify). Épicas **D (push), E (admin web), F (pagos-Stripe)** documentadas en 036 como pendientes, sin tarea aún. **graphify (037):** ya instalado + umbral de tamaño cumplido → integrar YA (grafo versionado con merge-driver, install completo con hooks anti-grep, complementa el mapa manual; fase 2 de worktrees paralelos = tarea L futura). ⚠️ **Gotcha nuevo (diagnóstico definitivo):** `task-master add-task`/`expand`/`parse-prd` truenan en este entorno — **NO son los hooks** (descartado por aislamiento), sino que el provider `claude-code` rompe **solo en `generateObject`** (salida JSON estructurada): duplica `tool_use` ids → API 400 → exit 1. `update-subtask` (bitácora, usa `generateText`) y los comandos no-AI SÍ funcionan. Workaround: escribir tareas directo en `tasks.json` (validado por CLI). **Next real: `/tm-plan 66`** para arrancar la ola A. Ver [[propiedades-y-video]], [[estrategia-releases]].
 
 ## Hoy (2026-07-10)
 

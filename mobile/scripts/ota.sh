@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Publica un OTA (JS-only) de Urbea a los canales de testers.
-#   production -> iOS   ·   preview -> Android   (runtime actual 1.0.1)
+#   production -> iOS   ·   preview -> Android   (runtime por fingerprint, #67)
 #
 # Workaround del gotcha pnpm: `eas update` truena al bundlear bajo pnpm
 # (TypeError transformFile). Por eso separamos en 2 pasos:

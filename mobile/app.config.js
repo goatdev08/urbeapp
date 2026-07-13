@@ -45,16 +45,18 @@ module.exports = ({ config }) => ({
     favicon: './assets/favicon.png',
   },
   // EAS Update (OTA): cambios de JS/assets llegan sin recompilar — `eas update
-  // --channel preview`. runtimeVersion por appVersion: solo builds con la misma
-  // `version` de arriba reciben el update (un módulo nativo nuevo → subir version
-  // y recompilar). checkAutomatically ON_LOAD: el update se descarga al abrir y
+  // --channel preview`. runtimeVersion por `fingerprint` (#67): EAS calcula la
+  // huella del código nativo (deps, config, plugins) y decide solo si un cambio
+  // cabe por OTA o exige rebuild — se acaba el adivinar y subir `version` a mano.
+  // Un cambio nativo genera huella distinta → EAS lo separa del canal OTA viejo
+  // automáticamente. checkAutomatically ON_LOAD: el update se descarga al abrir y
   // se aplica al siguiente arranque.
   updates: {
     url: 'https://u.expo.dev/85c7157a-818c-43fd-a78f-9766c2bc6f6f',
     checkAutomatically: 'ON_LOAD',
   },
   runtimeVersion: {
-    policy: 'appVersion',
+    policy: 'fingerprint',
   },
   plugins: [
     'expo-dev-client',
