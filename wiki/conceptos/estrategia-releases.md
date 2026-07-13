@@ -1,7 +1,7 @@
 ---
 titulo: Estrategia de releases (OTA vs rebuild + migración sin romper la DB)
 estado: vivo
-actualizado: 2026-07-07
+actualizado: 2026-07-13
 tags: [concepto, deploy, eas, ota]
 codigo:
   - mobile/eas.json
@@ -14,7 +14,7 @@ Cómo enviar cambios a clientes/beta testers (Android + iOS) **sin recompilar ca
 
 ## Infra ya cableada
 - `expo-updates` instalado; `updates.url` → proyecto EAS `85c7157a-…`; `checkAutomatically: ON_LOAD`.
-- `runtimeVersion.policy: 'appVersion'` (hoy `1.0.1`). Canales en `eas.json`: **`preview`** (Android APK de feedback) y **`production`** (iOS/TestFlight).
+- `runtimeVersion.policy: 'fingerprint'` (desde #67, 2026-07-13; antes `appVersion` fijo `1.0.x`). EAS calcula la **huella del código nativo** (deps, config, plugins) en build time y empareja cada OTA solo con builds de la misma huella. Canales en `eas.json`: **`preview`** (Android APK de feedback) y **`production`** (iOS/TestFlight).
 
 ## Regla OTA vs rebuild
 Solo el **código nativo** obliga a recompilar. El resto va por OTA, llega al reabrir la app, en segundos, sin tienda.
@@ -27,7 +27,7 @@ Solo el **código nativo** obliga a recompilar. El resto va por OTA, llega al re
 | Lógica JS/RN, hooks, validaciones | Cambiar permisos, íconos, splash, versión de SDK |
 | Fixes de UI, ajustes de copy | Cambios nativos en `app.config.js` (maps, location…) |
 
-**Recomendación:** migrar `runtimeVersion.policy` de `appVersion` a **`fingerprint`** → EAS calcula la huella del código nativo y decide solo si un cambio cabe por OTA o exige rebuild (se acaba el adivinar). En la práctica de la beta, ~80–90% de las iteraciones (UI/copy/lógica) van por OTA.
+✅ **Hecho (#67, 2026-07-13):** `runtimeVersion.policy` migrado de `appVersion` a **`fingerprint`** → EAS calcula la huella del código nativo y decide solo si un cambio cabe por OTA o exige rebuild (se acabó el adivinar y el subir `version` a mano). Un cambio nativo genera huella distinta → EAS lo separa del canal OTA viejo automáticamente. En la práctica de la beta, ~80–90% de las iteraciones (UI/copy/lógica) van por OTA. ⚠️ El corte invalidó el emparejamiento OTA de los builds `appVersion` previos: los testers reinstalan **una vez** un build nuevo (huella fingerprint) para volver a recibir OTAs.
 
 ## No romper la DB/backend: expand · migrate · contract
 Con apps viejas y nuevas conviviendo contra la MISMA base:
