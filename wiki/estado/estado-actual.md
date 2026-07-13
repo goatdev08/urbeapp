@@ -1,11 +1,15 @@
 ---
 tipo: estado
-actualizado: 2026-07-12
+actualizado: 2026-07-13
 ---
 
 # Estado actual
 
 > Narrativa de "dónde estamos hoy". El **qué sigue / qué está hecho** vive en **Taskmaster** (`task-master list`), no aquí.
+
+## Hoy (2026-07-13)
+
+- **✅ #67 — runtimeVersion → fingerprint (PRIMERA tarea de ejecución del camino a producción, Ola 0 épica G).** `mobile/app.config.js`: policy `appVersion` (fijo `1.0.x`) → **`fingerprint`**. EAS ahora calcula la huella del código nativo y decide OTA vs rebuild solo (un cambio nativo genera huella distinta → exige rebuild automáticamente; se acabó subir `version` a mano). Verificado end-to-end: build local `expo run:android` SUCCESSFUL + app boota en emulador (smoke adb), y **OTA real desde main** publicado a ambos canales con **Runtime version = hash fingerprint** (android `preview` `17fb1601…`, ios `production` `056f8f7b…`, distintos por plataforma = correcto). ⚠️ **Corte activo:** los builds `appVersion` en la calle no reciben estos OTAs → testers reinstalan **1 vez** un build fingerprint. La entrega OTA a dispositivo se confirmará con el próximo build preview/production. Aterrizó en `main` junto al **backbone de planeación (commit `docs(66)`)** vía merge sin squash (PR #34, historia honesta). **Siguiente Ola 0:** `/tm-plan 69` (R2) → `/tm-plan 68` (Stream). Ver [[estrategia-releases]].
 
 ## Hoy (2026-07-12)
 
