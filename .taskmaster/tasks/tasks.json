@@ -14,9 +14,9 @@
           {
             "id": 1,
             "title": "Create mobile/ directory with Expo blank-typescript template",
-            "description": "Initialize the mobile app directory using create-expo-app with the blank-typescript template, then configure pnpm as package manager with node-linker=hoisted for Metro compatibility.",
+            "description": "Initialize the mobile app directory using create-expo-app with the blank-typescript template, then configure pnpm as package manager with node-linker=hoisted for Metro compatibility. [Updated: 7/12/2026]",
             "dependencies": [],
-            "details": "1. Create mobile/ directory at project root.\n2. Run `npx create-expo-app@latest mobile --template blank-typescript` to scaffold Expo SDK 52+ with TypeScript.\n3. Create `.npmrc` in mobile/ with `node-linker=hoisted` (required for Metro resolver with pnpm).\n4. Run `pnpm install` to initialize dependencies.\n5. Verify the scaffold works: `pnpm expo start` should launch without errors.\n6. Clean up default App.tsx boilerplate to a minimal placeholder.\n\nFiles created:\n- mobile/package.json\n- mobile/tsconfig.json\n- mobile/app.json\n- mobile/.npmrc\n- mobile/App.tsx\n<info added on 2026-06-24T00:23:28.400Z>\nBased on the codebase analysis and the user request, here's the new information that should be appended to subtask 1.1's details:\n\n---\n\nPLAN approved: Scaffold mobile app using `npx create-expo-app@latest mobile --template blank-typescript` in a standalone mobile/ directory (NOT a pnpm workspace member).\n\nKey decisions:\n- mobile/ is STANDALONE: do NOT add to pnpm-workspace.yaml at project root\n- Package manager: pnpm (run `cd mobile && pnpm install`)\n- Create mobile/.npmrc with `node-linker=hoisted` — CRITICAL for Metro resolver compatibility with pnpm\n- Agent: mobile\n- Skills: expo-dev-client, react-native-architecture\n- Criticality: NO (scaffolding only, no TDD required)\n- Expected footprint: mobile/package.json, mobile/tsconfig.json, mobile/app.json, mobile/App.tsx, mobile/.npmrc\n\nVerification step: `cd mobile && pnpm expo start` should launch Metro bundler without errors.\n</info added on 2026-06-24T00:23:28.400Z>\n<info added on 2026-06-24T00:34:39.953Z>\nScaffolded Expo SDK 56 (expo@56.0.12, react-native@0.85.3, react@19.2.3, typescript@6.0.3) using 'pnpm dlx create-expo-app@latest mobile --template blank-typescript --no-install'. mobile/ is standalone (NOT workspace member). Archivos creados: mobile/package.json, mobile/tsconfig.json (strict:true already included), mobile/app.json (sdkVersion:56.0.0), mobile/App.tsx, mobile/assets/, mobile/index.ts, mobile/.gitignore. Created mobile/.npmrc with 'node-linker=hoisted' and 'allow-build=esbuild'. Ran 'pnpm install' in mobile/. Incident: root pnpm-workspace.yaml had 'allowBuilds.esbuild: set this to true or false' (literal string, not boolean) blocking install. Fixed to 'esbuild: true'. Verification: pnpm tsc --noEmit PASS, pnpm expo config resolves SDK 56, Metro Bundler starts on localhost:8081 without module resolution errors (xcrun simctl error expected without Xcode simulators). Hoisted node_modules confirmed (flat structure). pnpm-lock.yaml generated in mobile/.\n</info added on 2026-06-24T00:34:39.953Z>\n<info added on 2026-06-24T00:35:45.146Z>\nScaffolded Expo SDK 56.1.16 using `pnpm dlx create-expo-app@latest mobile --template blank-typescript --no-install`. Versions: react-native@0.85, react@19.2, typescript@6. Created mobile/package.json, mobile/tsconfig.json (strict mode already included in template), mobile/app.json, mobile/App.tsx, mobile/index.ts, mobile/assets/, mobile/.gitignore. Created mobile/.npmrc with `node-linker=hoisted` and `allow-build=esbuild`. Generated mobile/pnpm-lock.yaml (mobile/ is STANDALONE, not listed in root pnpm-workspace.yaml). Fixed blocking issue: root pnpm-workspace.yaml had invalid placeholder `esbuild: set this to true or false` (literal string) → changed to `esbuild: true` to unblock pnpm install. Ran `pnpm install` in mobile/ successfully. Verification: pnpm tsc --noEmit PASS, pnpm expo config resolves SDK 56, pnpm expo start launches Metro bundler on localhost:8081 without module resolution errors, node_modules uses hoisted (flat) structure as expected.\n</info added on 2026-06-24T00:35:45.146Z>\n<info added on 2026-06-24T02:33:40.824Z>\nCRITICAL ROOT CAUSE IDENTIFIED for EAS Gradle build failures: pnpm-workspace.yaml at project root (even containing only allowBuilds without listing packages) caused pnpm to treat entire repo as workspace and HOIST mobile/ dependencies to root-level node_modules. Result: @react-native/gradle-plugin and expo-modules-autolinking installed OUTSIDE mobile/node_modules. Since EAS uploads ONLY mobile/ directory, build received incomplete project and settings.gradle (running 'node --print require.resolve(...)') failed to locate plugins → 'Projects for build : have not been registered yet' error at 8s into Gradle.\n\nROOT FIX: Deleted pnpm-workspace.yaml from project root + reinstalled mobile/ as standalone. Verified: require.resolve now resolves to /mobile/node_modules/.pnpm/. mobile/ is now fully self-contained.\n\nLESSON: mobile/ MUST be self-contained; NO pnpm-workspace.yaml must exist at root while mobile/ remains standalone. node-linker=hoisted in .npmrc is insufficient if parent workspace captures install. EAS limitation (uploads single directory) requires ALL dependencies including native modules be within mobile/node_modules.\n</info added on 2026-06-24T02:33:40.824Z>",
+            "details": "1. Create mobile/ directory at project root.\n2. Run `npx create-expo-app@latest mobile --template blank-typescript` to scaffold Expo SDK 52+ with TypeScript.\n3. Create `.npmrc` in mobile/ with `node-linker=hoisted` (required for Metro resolver with pnpm).\n4. Run `pnpm install` to initialize dependencies.\n5. Verify the scaffold works: `pnpm expo start` should launch without errors.\n6. Clean up default App.tsx boilerplate to a minimal placeholder.\n\nFiles created:\n- mobile/package.json\n- mobile/tsconfig.json\n- mobile/app.json\n- mobile/.npmrc\n- mobile/App.tsx\n<info added on 2026-06-24T00:23:28.400Z>\nBased on the codebase analysis and the user request, here's the new information that should be appended to subtask 1.1's details:\n\n---\n\nPLAN approved: Scaffold mobile app using `npx create-expo-app@latest mobile --template blank-typescript` in a standalone mobile/ directory (NOT a pnpm workspace member).\n\nKey decisions:\n- mobile/ is STANDALONE: do NOT add to pnpm-workspace.yaml at project root\n- Package manager: pnpm (run `cd mobile && pnpm install`)\n- Create mobile/.npmrc with `node-linker=hoisted` — CRITICAL for Metro resolver compatibility with pnpm\n- Agent: mobile\n- Skills: expo-dev-client, react-native-architecture\n- Criticality: NO (scaffolding only, no TDD required)\n- Expected footprint: mobile/package.json, mobile/tsconfig.json, mobile/app.json, mobile/App.tsx, mobile/.npmrc\n\nVerification step: `cd mobile && pnpm expo start` should launch Metro bundler without errors.\n</info added on 2026-06-24T00:23:28.400Z>\n<info added on 2026-06-24T00:34:39.953Z>\nScaffolded Expo SDK 56 (expo@56.0.12, react-native@0.85.3, react@19.2.3, typescript@6.0.3) using 'pnpm dlx create-expo-app@latest mobile --template blank-typescript --no-install'. mobile/ is standalone (NOT workspace member). Archivos creados: mobile/package.json, mobile/tsconfig.json (strict:true already included), mobile/app.json (sdkVersion:56.0.0), mobile/App.tsx, mobile/assets/, mobile/index.ts, mobile/.gitignore. Created mobile/.npmrc with 'node-linker=hoisted' and 'allow-build=esbuild'. Ran 'pnpm install' in mobile/. Incident: root pnpm-workspace.yaml had 'allowBuilds.esbuild: set this to true or false' (literal string, not boolean) blocking install. Fixed to 'esbuild: true'. Verification: pnpm tsc --noEmit PASS, pnpm expo config resolves SDK 56, Metro Bundler starts on localhost:8081 without module resolution errors (xcrun simctl error expected without Xcode simulators). Hoisted node_modules confirmed (flat structure). pnpm-lock.yaml generated in mobile/.\n</info added on 2026-06-24T00:34:39.953Z>\n<info added on 2026-06-24T00:35:45.146Z>\nScaffolded Expo SDK 56.1.16 using `pnpm dlx create-expo-app@latest mobile --template blank-typescript --no-install`. Versions: react-native@0.85, react@19.2, typescript@6. Created mobile/package.json, mobile/tsconfig.json (strict mode already included in template), mobile/app.json, mobile/App.tsx, mobile/index.ts, mobile/assets/, mobile/.gitignore. Created mobile/.npmrc with `node-linker=hoisted` and `allow-build=esbuild`. Generated mobile/pnpm-lock.yaml (mobile/ is STANDALONE, not listed in root pnpm-workspace.yaml). Fixed blocking issue: root pnpm-workspace.yaml had invalid placeholder `esbuild: set this to true or false` (literal string) → changed to `esbuild: true` to unblock pnpm install. Ran `pnpm install` in mobile/ successfully. Verification: pnpm tsc --noEmit PASS, pnpm expo config resolves SDK 56, pnpm expo start launches Metro bundler on localhost:8081 without module resolution errors, node_modules uses hoisted (flat) structure as expected.\n</info added on 2026-06-24T00:35:45.146Z>\n<info added on 2026-06-24T02:33:40.824Z>\nCRITICAL ROOT CAUSE IDENTIFIED for EAS Gradle build failures: pnpm-workspace.yaml at project root (even containing only allowBuilds without listing packages) caused pnpm to treat entire repo as workspace and HOIST mobile/ dependencies to root-level node_modules. Result: @react-native/gradle-plugin and expo-modules-autolinking installed OUTSIDE mobile/node_modules. Since EAS uploads ONLY mobile/ directory, build received incomplete project and settings.gradle (running 'node --print require.resolve(...)') failed to locate plugins → 'Projects for build : have not been registered yet' error at 8s into Gradle.\n\nROOT FIX: Deleted pnpm-workspace.yaml from project root + reinstalled mobile/ as standalone. Verified: require.resolve now resolves to /mobile/node_modules/.pnpm/. mobile/ is now fully self-contained.\n\nLESSON: mobile/ MUST be self-contained; NO pnpm-workspace.yaml must exist at root while mobile/ remains standalone. node-linker=hoisted in .npmrc is insufficient if parent workspace captures install. EAS limitation (uploads single directory) requires ALL dependencies including native modules be within mobile/node_modules.\n</info added on 2026-06-24T02:33:40.824Z>\n",
             "status": "done",
             "testStrategy": "Run `pnpm expo start` and verify Expo CLI launches successfully without errors. Confirm pnpm lock file exists.",
             "parentId": "undefined",
@@ -4537,13 +4537,1688 @@
           }
         ],
         "updatedAt": "2026-07-11T23:08:47.742Z"
+      },
+      {
+        "id": "66",
+        "title": "Épica A — Fundamentos del camino a producción (PRD-beta + ADR 0008)",
+        "description": "Escribir docs/PRD-beta.md (alcance de la beta) y wiki/decisiones/0008-arquitectura-real-prd.md (ADR de arquitectura real hacia PRD). Cierra el cabo suelto de brechas-demo-vs-prd.md (el 0001 aún fija la demo como norte).",
+        "details": "## Contexto\nPromueve la exploración 036 (`.taskmaster/docs/exploraciones/036-camino-a-produccion.md`, sección Resolución con las decisiones de Abraham 2026-07-12).\n\n## Entregables\n1. **docs/PRD-beta.md** — esqueleto de 9 puntos: storage híbrido Cloudflare Stream (feed) + R2 (assets/originales); pagos con **Stripe** (tarjeta+OXXO+SPEI) **inactivos por feature-flag** en beta; admin web Next.js en **repo aparte**; push **Expo Notifications**; audiencia **beta pública limitada**; KPIs (PRD §34.2); estrategia aditiva expand·migrate·contract; migración de video **greenfield** (re-subir, sin backfill); archivar original en R2.\n2. **wiki/decisiones/0008-arquitectura-real-prd.md** — ADR que fija la decisión de storage híbrido Stream+R2 y el rumbo demo→beta→PRD. Actualizar `wiki/estado/brechas-demo-vs-prd.md` y `docs/PRD.md`/`0001` si procede.\n\n## Footprint\ndocs/, wiki/decisiones/ — solo documentación. NO crítica-TDD.",
+        "testStrategy": "Verificación ligera: revisión de que PRD-beta.md cubra los 9 puntos y el ADR 0008 quede coherente con 036 y con la identidad de decisiones previas. Sin tests automatizados (docs).",
+        "status": "done",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2026-07-13T00:00:00.000Z"
+      },
+      {
+        "id": "67",
+        "title": "Épica G — runtimeVersion.policy → fingerprint (OTA vs rebuild automático)",
+        "description": "Migrar runtimeVersion.policy de 'appVersion' a 'fingerprint' para que EAS calcule la huella del código nativo y decida solo si un cambio cabe por OTA o exige rebuild.",
+        "details": "## Contexto\nExploración 036 (épica G). Ver wiki/conceptos/estrategia-releases.md (recomienda fingerprint; ~80-90% de iteraciones van por OTA).\n\n## Cambio\nEditar mobile/app.config.js y mobile/eas.json: `runtimeVersion` de policy `appVersion` (hoy 1.0.1) a `{ policy: 'fingerprint' }`. Validar que un `pnpm ota` de prueba desde main siga funcionando y que un cambio nativo dispare rebuild (huella distinta).\n\n## Footprint\nmobile/app.config.js, mobile/eas.json — config. NO crítica-TDD.",
+        "testStrategy": "Smoke: `pnpm ota` de prueba tras el cambio (llega a testers); confirmar que EAS calcula fingerprint. Sin tests unitarios.",
+        "status": "done",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Migrar runtimeVersion.policy a fingerprint",
+            "description": "Cambiar en mobile/app.config.js runtimeVersion de {policy:\"appVersion\"} a {policy:\"fingerprint\"}.",
+            "details": "Editar mobile/app.config.js (~L56). Verificar que no queden campos incompatibles (runtimeVersion string fijo). Correr `pnpm expo prebuild --clean` NO necesario; sí `npx expo-updates fingerprint:generate` para ver la huella. Documentar la huella base. Aditivo: builds viejos con runtimeVersion appVersion siguen en su canal; los nuevos calculan huella.\n<info added on 2026-07-13T19:24:22.556Z>\nBased on the user request and task context, here is the new text to append to subtask 67.1's details:\n\n**Plan (2026-07-13):** Edit mobile/app.config.js L56-58: change `runtimeVersion: { policy: \"appVersion\" }` to `runtimeVersion: { policy: \"fingerprint\" }`. Update explanatory comment L47-51 to reflect fingerprint policy. Do NOT modify eas.json (fingerprint calculated at build time by EAS, not declared in eas.json). Verify fingerprint generation: `cd mobile && npx @expo/fingerprint .` must produce hash without error. Document the baseline fingerprint hash for reference. Agent=mobile, skills=urbea-expo, criticality=NO-crítica, footprint=mobile/app.config.js only.\n</info added on 2026-07-13T19:24:22.556Z>\n<info added on 2026-07-13T19:52:51.775Z>\nBased on the user request, here is the new text content to append to subtask 67.1's details:\n\n**COMPLETED (2026-07-13):** mobile/app.config.js L56-58 changed runtimeVersion.policy from appVersion to fingerprint. Comment L47-53 rewritten to reflect that EAS calculates the fingerprint automatically (eliminates manual version bumps). eas.json NOT modified (confirmed: with fingerprint policy, no runtimeVersion field required in eas.json). Verification: pnpm tsc --noEmit clean; pnpm lint 0 errors (30 pre-existing warnings unrelated); npx @expo/fingerprint . successfully generated baseline fingerprint without errors. Baseline fingerprint: 1a487c3062e1ae3e4be807a4282cc52850a27f13 (reference for subtasks 67.2/67.3). Files touched: mobile/app.config.js only. Ready for rebuild in 67.2.\n</info added on 2026-07-13T19:52:51.775Z>",
+            "testStrategy": "pnpm tsc --noEmit; `npx @expo/fingerprint . ` genera hash sin error; revisar diff de app.config.js.",
+            "status": "done",
+            "dependencies": [],
+            "priority": "medium",
+            "parentId": "undefined",
+            "updatedAt": "2026-07-13T19:52:58.545Z"
+          },
+          {
+            "id": 2,
+            "title": "Recompilar dev build y verificar arranque",
+            "description": "Generar un nuevo development build con la policy fingerprint y confirmar que la app arranca y toma OTA.",
+            "details": "eas build --profile development (o expo run:android local). Instalar en emulador (adb install), lanzar, verificar que corre. Confirmar que EAS asocia el build a la huella fingerprint, no a appVersion.\n<info added on 2026-07-13T19:24:58.978Z>\nPLAN (2026-07-13): DECISION USUARIO = corte completo ahora + build LOCAL. Recompilar dev build con la policy fingerprint via 'cd mobile && pnpm expo run:android' (local, no eas build nube — mas rapido, respeta regla CLI-only §3, verifica en emulador Android de la Mac). Instalar/lanzar y smoke: la app abre el feed. Confirmar que EAS asocia el build a la huella fingerprint (npx @expo/fingerprint . debe coincidir con la del build). Verificacion 100% por CLI (adb), NUNCA computer-use. agente=mobile skills=urbea-expo,urbea-testing criticidad=NO-critica (build+smoke, sin logica) depende=67.1\n</info added on 2026-07-13T19:24:58.978Z>\n<info added on 2026-07-13T20:01:49.898Z>\nHECHO (2026-07-13): Build nativo local con policy fingerprint ejecutado exitosamente via 'pnpm expo run:android' (SDK homebrew /opt/homebrew/share/android-commandlinetools, Java 17, AVD urbea). BUILD SUCCESSFUL 1m 18s; app instalada com.urbea.app. Smoke end-to-end por CLI (adb shell, logcat, dumpsys, screencap — sin computer-use, regla §3): MainActivity en foreground confirmado, logcat muestra 'ReactNativeJS: Running main' (bundle JS carga OK), sin FATAL EXCEPTION. Screencap (via adb exec-out screencap -p) confirma UI de marca renderizada = pantalla 'Enciende la ubicacion' (gate legitimo del feed sin GPS, comportamiento esperado del commit 58d27dc). El build fingerprint bootea, navega y respeta el flujo de producto. Mobile/android es CNG/gitignored → sin cambios que commitear. Verificacion end-to-end del esquema fingerprint en un build nativo real: PASS. Confirmar huella fingerprint via npx @expo/fingerprint y asociacion EAS quedaria para 67.3 (docs + canal OTA).\n</info added on 2026-07-13T20:01:49.898Z>",
+            "testStrategy": "adb install + adb shell am start; smoke: la app abre el feed. Verificación por CLI (no computer-use).",
+            "status": "done",
+            "dependencies": [
+              1
+            ],
+            "priority": "medium",
+            "parentId": "undefined",
+            "updatedAt": "2026-07-13T20:01:57.383Z"
+          },
+          {
+            "id": 3,
+            "title": "Verificar canal OTA con fingerprint y documentar",
+            "description": "Publicar un cambio JS-only por OTA y confirmar que llega al build fingerprint; actualizar estrategia-releases.",
+            "details": "cd mobile && pnpm ota \"test fingerprint\" all. Confirmar en el build que el update baja (mismo fingerprint). Actualizar wiki/conceptos/estrategia-releases.md y CLAUDE.md §3 (runtime pasa de 1.0.1 fijo a fingerprint). Nota: cambio nativo futuro => nueva huella => exige rebuild automáticamente (ese es el objetivo).\n<info added on 2026-07-13T19:25:29.799Z>\nPLAN: Publish JS-only change via OTA to verify fingerprint-based update delivery. Run `cd mobile && pnpm ota 'test fingerprint' all` from tarea/67-* branch and confirm the update reaches builds with matching fingerprint. Expected: script warns 'not on main' (non-blocking, sleep 3), proceeds with expo export + eas update publish to production(iOS) and preview(Android) channels, update appears in tester builds that share the same native fingerprint.\n\nBREAKING CHANGE NOTICE: Switching runtimeVersion policy from appVersion to fingerprint breaks OTA pairing for builds installed under the old 1.0.x appVersion scheme. Testers with existing builds (1.0.1 or 1.0.2 runtime) will NOT receive fingerprint-keyed updates. Mitigation: testers must REINSTALL the new dev build from 67.2 once to resume OTA updates. Team notification required before publishing.\n\nDocumentation updates (same step): (1) wiki/conceptos/estrategia-releases.md lines 17 and 30 — replace references to fixed 1.0.x appVersion runtime with fingerprint policy explanation, note that current docs cite 1.0.1 but actual config was 1.0.2; (2) CLAUDE.md section 3 OTA paragraph — update runtime reference from '1.0.1' to fingerprint-based; (3) mobile/scripts/ota.sh comments — remove any mentions of fixed runtime version scheme.\n\nAgent assignment: mobile. Skills: urbea-expo, urbea-testing. Criticality: NO-crítica (doc/config + smoke test, no business logic). Dependency: 67.2 (requires fingerprint-enabled dev build installed).\n</info added on 2026-07-13T19:25:29.799Z>\n<info added on 2026-07-13T20:14:22.412Z>\nHECHO (docs): Documentation phase complete. Updated runtime 1.0.x → fingerprint in:\n- wiki/conceptos/estrategia-releases.md L17 (infrastructure) + L30 (recommendation marked DONE + reinstall note + frontmatter date)\n- CLAUDE.md §3 OTA line\n- mobile/scripts/ota.sh L3 comment\n\nCommit docs(67): 972ad63 (staged by hunk: excluded uncommitted §4 gotcha generateObject block from prior planning session).\n\nDECISION: Real OTA verification deferred to POST-MERGE from clean main (respects 'OTA from merged main' rule in CLAUDE.md §3). This serves as both first real fingerprint OTA + end-to-end verification. Fingerprint mechanism already validated by successful 67.2 build (EAS calculated hash 1a487c3062..., build boots).\n\nNEXT (post-merge): cd mobile && pnpm ota 'test fingerprint' all + confirm update downloads to fingerprint build.\n</info added on 2026-07-13T20:14:22.412Z>",
+            "testStrategy": "eas update:list muestra el update en el canal; el build lo recibe. Smoke visual del cambio JS.",
+            "status": "done",
+            "dependencies": [
+              2
+            ],
+            "priority": "low",
+            "parentId": "undefined",
+            "updatedAt": "2026-07-13T20:14:29.731Z"
+          }
+        ],
+        "updatedAt": "2026-07-13T20:14:29.731Z"
+      },
+      {
+        "id": "68",
+        "title": "Épica B — Migrar el video del feed a Cloudflare Stream",
+        "description": "Migrar el video del feed a Cloudflare Stream (HLS adaptativo). Resuelve de raíz el cap global de 50 MB del plan Free de Supabase Y el OOM #57, y da thumbnails automáticos.",
+        "details": "## Contexto\nExploración 036 (épica B). Decisión de storage híbrido (ADR 0008).\n\n## Clave: el schema YA está listo\n`property_videos.cloudflare_uid` coexiste con `storage_path`; el CHECK `property_videos_ready_requires_storage` (migración 0012) acepta cualquiera de las dos refs → migrar = poblar `cloudflare_uid`, migración **aditiva** (expand·migrate·contract, apps viejas conviven).\n\n## Reusar patrón EF-minter\n`mint-video-url` / `make_video_url_minter`: mismo contrato hacia el feed, cambia el minter por dentro para devolver signed HLS de Stream (el vault ya anotaba este patrón como el de la futura migración).\n\n## Pipeline\nEF entrega URL de subida directa resumible (tus) a Stream → device sube directo (sin pasar por Supabase) → webhook de Stream marca `ready` + dispara la push 'video listo'. Archivar el original en R2 (dep épica C).\n\n## Footprint (CRÍTICA-TDD estricto)\nsupabase/functions/** (contrato de EF) · mobile hooks/useVideoUpload.ts (lógica) · posible migración. Requiere provisionar cuenta Cloudflare Stream.",
+        "testStrategy": "TDD estricto (RED→GREEN→guardian): Deno tests del contrato de la EF (subida + minter HLS + webhook ready, fail-closed), pgTAP si hay migración, tests del hook. Smoke E2E Maestro con video real en emulador (CLI).",
+        "status": "pending",
+        "dependencies": [
+          "66",
+          "69"
+        ],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Provisión Stream + secrets + webhook",
+            "description": "Cuenta Cloudflare Stream, token de API, signing key y webhook secret; cargar en Supabase.",
+            "details": "PREREQ EXTERNO (Abraham): habilitar Stream, generar API token, signing key (para HLS firmado), y configurar webhook apuntando a la EF stream-webhook. Secrets: STREAM_ACCOUNT_ID, STREAM_API_TOKEN, STREAM_SIGNING_KEY_ID, STREAM_SIGNING_JWK, STREAM_WEBHOOK_SECRET vía supabase secrets set.",
+            "testStrategy": "supabase secrets list muestra las llaves Stream. Config, sin test de código.",
+            "status": "pending",
+            "dependencies": [],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Migración aditiva de schema (property_videos + app_config)",
+            "description": "Extender property_videos para el ciclo Stream y crear tabla app_config para flags/ventana de retención.",
+            "details": "Migración idempotente + rollback + pgTAP. property_videos: ALTER TYPE property_video_status ADD VALUE \"archived\" (y usar los existentes uploading/processing/ready/failed). Añadir columnas: tus_upload_url text, thumbnail_pct numeric (25/50/75 o exacto), ready_at timestamptz, error_reason text, archived_at timestamptz, r2_archive_key text. Tabla public.app_config(key text pk, value jsonb, updated_at) sembrando {video_slot_free:true, archived_retention_days:7, signed_url_ttl_seconds:14400}. RLS: app_config solo lee admin/EF (service role); property_videos ya tiene RLS (endurecer si hace falta). CRÍTICA: TDD estricto (constraints + RLS pgTAP).",
+            "testStrategy": "pgTAP: enum tiene archived; app_config no legible por usuario normal; columnas nuevas nullable (aditivo). Rollback revierte. supabase migration + impersonación JWT.",
+            "status": "pending",
+            "dependencies": [],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "EF mint-upload-url (tus directo a Stream)",
+            "description": "EF que mintea una URL tus de un solo uso de Stream, valida concurrencia y límites, y registra la fila uploading.",
+            "details": "supabase/functions/mint-upload-url/. Valida JWT. Reglas §13.2: rechaza si el AGENTE ya tiene 1 video en processing/uploading (concurrencia por agente, no por inmobiliaria) -> query property_videos. Crea video en Stream vía Direct Creator Upload (tus), maxDurationSeconds=120, requireSignedURLs=true. Inserta property_videos(status=uploading, cloudflare_uid, tus_upload_url). Devuelve {uploadUrl, uid}. Rechazo >500MB lo hace el cliente pre-subida; la EF fija maxDurationSeconds y (si se puede) el límite. CRÍTICA: TDD estricto (frontera + invariante de concurrencia).",
+            "testStrategy": "Deno test: 2º upload concurrente del mismo agente -> 409; agente distinto de misma inmobiliaria -> OK; sin JWT -> 401; inserta fila uploading. Mock del API de Stream.",
+            "status": "pending",
+            "dependencies": [
+              2
+            ],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Cliente: subida tus resumible en wizard paso 5",
+            "description": "Implementar la subida resumible (tus) en foreground con reanudación, dentro del paso 5 del wizard.",
+            "details": "mobile/: cliente tus (tus-js-client o fetch chunked contra la uploadUrl). Foreground only (§13.3). Rechazo >500MB ANTES de subir (leer tamaño del archivo). Advertencia formato vertical. Estados uploading_media con fracción; al reabrir el borrador: \"Continuar subida\"/\"Cancelar y elegir otro\" (§13.3). Reanudar desde último chunk confirmado. Tras 30s de processing: mensaje \"te avisamos cuando esté listo\" y permitir salir (§13.4). NO crítica de lógica pura pero SÍ toca invariantes de subida -> verificación reforzada + smoke.",
+            "testStrategy": "pnpm tsc/lint; smoke emulador: subir video 60-120s, matar app a mitad, reabrir -> continúa. Rechaza archivo >500MB. adb, no computer-use.",
+            "status": "pending",
+            "dependencies": [
+              3
+            ],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "EF stream-webhook (estado + push)",
+            "description": "EF que recibe el webhook de Stream, valida firma, actualiza estado y encola el push \"video listo/falló\".",
+            "details": "supabase/functions/stream-webhook/. Verifica la firma del webhook (STREAM_WEBHOOK_SECRET, header Webhook-Signature). En ready: status=ready, ready_at=now, generar/registrar thumbnails sugeridos (pct 25/50/75). En error: status=failed, error_reason; property a media_failed (§14.1). Encola notificación push (catálogo §22, evento \"tu video está listo\"/\"falló\") — en Ola 0 dejar el gancho; el envío real llega en Ola 2 (notificaciones). CRÍTICA: TDD estricto (verificación de firma + transición de estado).",
+            "testStrategy": "Deno test: firma inválida -> 401; payload ready -> status ready+ready_at; payload error -> failed+media_failed; idempotente (reentrega no duplica).",
+            "status": "pending",
+            "dependencies": [
+              2
+            ],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 6,
+            "title": "Adaptar mint-video-url a HLS firmado de Stream",
+            "description": "Cambiar el minter del feed para devolver un token HLS firmado (TTL corto) de Stream, sin cambiar el contrato al feed.",
+            "details": "supabase/functions/mint-video-url/: en vez de signed URL de Supabase Storage, generar signed URL de Stream (JWT firmado con STREAM_SIGNING_JWK, exp=signed_url_ttl_seconds de app_config, ~4h). Mismo request/response shape al cliente (ADR 0008 §2). Feed reproduce HLS con expo-video (ya se usa). CRÍTICA: TDD estricto (frontera + expiración del token).",
+            "testStrategy": "Deno test: token válido reproducible; token expira al TTL; solo videos ready se firman. Smoke: feed reproduce HLS en emulador.",
+            "status": "pending",
+            "dependencies": [
+              5
+            ],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 7,
+            "title": "Selección de thumbnail (3 sugeridos + slider)",
+            "description": "UI de selección: 3 thumbnails auto (25/50/75%) + slider frame a frame; guardar solo el timestamp.",
+            "details": "mobile/: al quedar ready, mostrar 3 thumbnails de Stream (endpoint thumbnail ?time= a 25/50/75% de la duración). Slider recorre frames usando el mismo endpoint con time= arbitrario (§13.5). Al elegir, guardar thumbnail_pct (o segundos) en property_videos vía EF/RPC. NO subir imagen externa (§13.5). Stream renderiza on-the-fly (no R2). NO crítica (UI): verificación ligera.",
+            "testStrategy": "pnpm tsc/lint; smoke: elegir thumbnail, recargar, persiste. Verificar que la URL del thumbnail responde por time=.",
+            "status": "pending",
+            "dependencies": [
+              6
+            ],
+            "priority": "medium",
+            "parentId": "undefined"
+          },
+          {
+            "id": 8,
+            "title": "Reemplazo + archivado cold-store a R2 + pg_cron",
+            "description": "Implementar reemplazo/archivado (§13.6) con cold-store a R2 y borrado programado; dispara re-revisión.",
+            "details": "Al reemplazar (§13.6): marcar viejo status=archived, archived_at=now. Bajar el original de Stream (habilitar downloads en el video) y subir a R2 (mint-r2-url kind=archive, tarea 69) -> r2_archive_key; borrar de Stream de inmediato (deja de pagar minutos). Restaurar (<=ventana) = re-subir de R2 a Stream. pg_cron diario: borra de R2 los archived con archived_at > archived_retention_days (app_config, default 7); métricas quedan en DB permanentes. Reemplazar el video ACTIVO dispara re-revisión por admin (§13.6 + §15.5). CRÍTICA: TDD estricto (lógica de retención + transición). Depende de la EF mint-r2-url (tarea 69).",
+            "testStrategy": "pgTAP/Deno: reemplazo marca archived + r2_archive_key + borra de Stream; pg_cron borra >ventana; métricas persisten; reemplazo de activo pone la property en re-revisión.",
+            "status": "pending",
+            "dependencies": [
+              6
+            ],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 9,
+            "title": "Respaldo puntual de videos existentes",
+            "description": "Script one-off para descargar los videos actuales de Supabase Storage a disco antes de apagar el bucket.",
+            "details": "scripts/ (NO commit): descargar los objetos del bucket property-videos de Supabase Storage a una carpeta local (respaldo del contenido demo/real). NO migra a Stream (empezamos limpio, decisión Ola 0); es solo respaldo antes de dejar de usar Storage para video. Luego el contenido real se re-sube por el wizard.",
+            "testStrategy": "Verificar que el # de archivos descargados == # en el bucket; checksum opcional. Sin test de código.",
+            "status": "pending",
+            "dependencies": [],
+            "priority": "low",
+            "parentId": "undefined"
+          },
+          {
+            "id": 10,
+            "title": "Verificación E2E + smoke OOM + ingest",
+            "description": "Prueba de punta a punta y verificación de que el OOM #57 quedó resuelto de raíz; ingest al vault.",
+            "details": "E2E: publicar -> tus sube -> webhook ready -> feed reproduce HLS firmado. Maestro/adb. Smoke OOM: reproducir varios videos largos en el feed y verificar heap estable (adb shell dumpsys meminfo) — HLS adaptativo no bufferea MP4 crudo. Ingest: mapa-codebase (mint-upload-url, stream-webhook, mint-video-url adaptado), concepto feed-vertical-video/propiedades-y-video (estado vivo, Stream), log.md. Cerrar #57 como resuelto de raíz.",
+            "testStrategy": "Maestro suite verde; dumpsys meminfo sin crecimiento anómalo; feed fluido. adb/simctl, no computer-use.",
+            "status": "pending",
+            "dependencies": [
+              4,
+              6,
+              7,
+              8
+            ],
+            "priority": "high",
+            "parentId": "undefined"
+          }
+        ],
+        "updatedAt": "2026-07-13T00:00:00.000Z"
+      },
+      {
+        "id": "69",
+        "title": "Épica C — Añadir Cloudflare R2 para assets/originales (egress $0)",
+        "description": "Añadir Cloudflare R2 (object storage S3-compatible, egress $0) para originales de video, imágenes/avatares, thumbnails y documentos. Presigned URLs server-side vía EF (mismo patrón que mint-video-url).",
+        "details": "## Contexto\nExploración 036 (épica C). Resuelve el cap de 50 MB también para imágenes/avatares (que hoy pegan contra el mismo límite) y el costo de egress.\n\n## Diseño\nPresigned URLs server-side vía una EF (mapea 1:1 al patrón `mint-video-url`). Añadir columna `r2_key` donde aplique (aditivo). El original del video (épica B) se archiva aquí.\n\n## Footprint (CRÍTICA-TDD)\nsupabase/functions/** (presigned server-side = frontera de seguridad) · posible migración aditiva · mobile lib de subida. Requiere provisionar bucket R2.",
+        "testStrategy": "TDD estricto en la EF de presigned (fail-closed, autorización por dueño). pgTAP si hay migración. Smoke de subida/lectura de un asset.",
+        "status": "pending",
+        "dependencies": [
+          "66"
+        ],
+        "priority": "medium",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Provisión R2 + secrets",
+            "description": "Crear bucket(s) R2 y token de API; cargar secrets en Supabase para las EFs.",
+            "details": "PREREQ EXTERNO (Abraham): crear cuenta/bucket Cloudflare R2 (ej. urbea-assets con prefixes avatars/, logos/, archive/). Generar Access Key/Secret (S3 API). Cargar secrets vía `supabase secrets set` (NO commitear): R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET, R2_PUBLIC_BASE (si se usa dominio público para avatares). Deploy EF con --import-map (gotcha conocido).",
+            "testStrategy": "supabase secrets list muestra las llaves R2 (sin valores). No hay test de código aquí; es config.",
+            "status": "pending",
+            "dependencies": [],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "EF mint-r2-url (presigned PUT/GET)",
+            "description": "Edge Function que devuelve URLs presigned de R2 para subir/leer avatares, logos y (para 68) originales archivados. Mismo patrón que mint-video-url.",
+            "details": "Crear supabase/functions/mint-r2-url/. Usa aws4fetch o @aws-sdk/s3-presigned (Deno) contra el endpoint S3 de R2. Valida auth (JWT del solicitante), autoriza el prefix por rol (un usuario solo firma su avatar; inmobiliaria su logo). Params: {kind: avatar|logo|archive, op: put|get, key?}. Devuelve {url, key, expires}. TTL corto (ej. 15 min para put, 1h para get). CRÍTICA (frontera de confianza + lógica de autorización): TDD estricto.",
+            "testStrategy": "Deno test: firma válida para el prefix correcto; rechaza prefix ajeno (403); rechaza sin JWT (401); URL expira. supabase functions serve local.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Cliente: avatar/logo vía R2 presigned",
+            "description": "Subir avatar de usuario y logo de inmobiliaria por presigned PUT; leerlos por GET presigned/público.",
+            "details": "En mobile/: hook use_r2_upload que pide mint-r2-url(put) y hace PUT del binario. Pantallas de perfil/edición de inmobiliaria usan el key devuelto. Lectura: presigned GET (o URL pública si R2_PUBLIC_BASE). NO crítica (UI): verificación ligera.",
+            "testStrategy": "pnpm tsc --noEmit; pnpm lint; smoke en emulador: subir avatar y verlo. adb, no computer-use.",
+            "status": "pending",
+            "dependencies": [
+              2
+            ],
+            "priority": "medium",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Migrar avatares/logos existentes de Storage a R2",
+            "description": "Mover los avatares/logos que hoy están en Supabase Storage a R2 (o dual-read + corte).",
+            "details": "Script one-off en scripts/ (NO commit de assets): listar objetos de los buckets de avatar/logo en Supabase Storage, subir a R2 con el mismo key. Aditivo: el cliente lee de R2 pero puede caer a Storage si falta (dual-read) durante la transición; apagar Storage cuando 0 misses. Los buckets demo son local-only.",
+            "testStrategy": "Verificar N objetos en R2 == N en Storage; smoke: perfiles muestran avatar desde R2.",
+            "status": "pending",
+            "dependencies": [
+              3
+            ],
+            "priority": "low",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Ingest al vault (R2)",
+            "description": "Documentar R2 en el vault: mapa-codebase (mint-r2-url), propiedades-y-video / un concepto storage, estrategia.",
+            "details": "Actualizar wiki/codebase/mapa-codebase.md (EF mint-r2-url, hook use_r2_upload), wiki/conceptos (storage híbrido: Stream feed / R2 assets), wiki/log.md. Enlazar [[propiedades-y-video]].",
+            "testStrategy": "Revisión manual de enlaces del vault; sin test de código.",
+            "status": "pending",
+            "dependencies": [
+              4
+            ],
+            "priority": "low",
+            "parentId": "undefined"
+          }
+        ],
+        "updatedAt": "2026-07-13T00:00:00.000Z"
+      },
+      {
+        "id": "70",
+        "title": "Integrar graphify al workflow (grafo AST como 2ª fuente de contexto)",
+        "description": "Integrar graphify (grafo AST del código) como segunda fuente de contexto junto al vault. graphify YA está instalado (~/.local/bin/graphify).",
+        "details": "## Contexto\nPromueve la exploración 037 (`.taskmaster/docs/exploraciones/037-integracion-graphify-workflow.md`, sección Resolución 2026-07-12). Umbral de tamaño cumplido (321 archivos, ~38.7k LOC TS/TSX + ~6k SQL).\n\n## Subtareas candidatas (a expandir con /tm-plan)\n- (a) `graphify claude install` (**install completo**: edita CLAUDE.md + 2 hooks PreToolUse anti-grep, replica AJN — revisar el diff antes de commitear) + `graphify update .` y medir/comentar el conteo de nodos.\n- (b) cablear el skill `urbea-context` para consultar `graphify explain/path/query` ANTES del mapa-codebase.md manual.\n- (c) añadir `graphify update .` al cierre/ingest de `/tm-tarea`.\n- (d) **VERSIONAR** graphify-out/graph.json en git con el `merge-driver` union (NO gitignore — viaja entre worktrees para la futura fase 2).\n- (e) ingest al vault: ADR 0007 de 'Futuro' a 'vivo', mapa-codebase, log.\n\n## Notas\ngraphify **complementa** el mapa manual (no lo borra en el MVP). Extracción **AST-only** (gratis). La **fase 2** (scheduler de olas paralelas con worktrees) es una tarea L futura aparte, NO incluida aquí — estudiar antes los comandos `tm-paralelo-*` archivados de AJN (`/Users/fru/Dev/AJN`).\n\n## Footprint\n.claude/ (skill + hooks), CLAUDE.md, wiki/. NO crítica-TDD (tooling, no toca functions/migrations/lógica pura).",
+        "testStrategy": "Verificación ligera: `graphify explain`/`path` devuelven resultados coherentes sobre el codebase; el skill urbea-context los usa; `pnpm tsc --noEmit`/`pnpm lint` intactos (no toca código de app). Revisar el diff que `claude install` hace a CLAUDE.md.",
+        "status": "pending",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [],
+        "updatedAt": "2026-07-12T04:36:03.143167-06:00"
+      },
+      {
+        "id": "71",
+        "title": "Ola 1 — Roles y multi-tenant (jerarquía + inmobiliaria + upgrade)",
+        "description": "Modelo de roles completo del PRD §4: visitante→registrado→premium→agente→inmobiliaria→admin, inmobiliaria como entidad organizacional, y upgrade self-service (A/B).",
+        "details": "PRD §4 (4.1–4.8). Hoy todo entra como `agent`. Falta: jerarquía de roles con permisos, entidad inmobiliaria (owner+members), flujos de cambio de rol (§4.2), premium (§4.5), upgrade self-service.  Toca RLS, migraciones, EF y UI de perfil/config. Épica del camino a producción (ADR 0008 / docs/PRD-beta.md). Spec detallado (modelo de datos, RLS, EF, pantallas, estados, edge cases, tests, subtareas) se redacta SECUENCIAL al entrar su ola, con aprobación de Abraham; add-task roto → subtareas por escritura directa en tasks.json.",
+        "testStrategy": "TDD estricto en lógica crítica (supabase/functions/**, migrations/**, lib/hooks/validation): RED→GREEN→guardian. Verificación ligera (tsc/lint/smoke) en UI. Se detalla al specificar la ola.",
+        "status": "pending",
+        "dependencies": [
+          "66",
+          "72"
+        ],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "premium derivado (sin tocar el enum)",
+            "description": "Helper SQL is_premium (EXISTS publicación/purchase) y usarlo en RLS/capacidades; el rol premium no se almacena.",
+            "details": "private.is_premium(uid) = EXISTS (property no borrada del usuario) OR EXISTS (purchase). Las capacidades premium (gestionar publicaciones, ver métricas propias) se habilitan por ese helper. RLS y EFs consultan el helper; enum user_role queda en (user,agent,admin). Denormalizar a un flag SOLO si perf lo exige (// ponytail:). CRÍTICA (RLS/lógica de autorización).",
+            "testStrategy": "pgTAP: user sin publicación no es premium; tras publicar sí; agent hereda premium.",
+            "status": "pending",
+            "dependencies": [],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Extender agency_member_role a 4 + matriz de permisos",
+            "description": "ALTER TYPE agency_member_role add admin y solo_lectura (viewer); RLS por los 4 niveles.",
+            "details": "agency_member_role pasa de (owner,agent) a (owner, admin, agent, viewer). Matriz §4.10: owner=todo; admin=gestión delegada (agentes, propiedades) sin borrar la agencia; agent=publica/CRM propio; viewer=solo lectura de métricas/propiedades. RLS por nivel. CRÍTICA (migración enum + RLS).",
+            "testStrategy": "pgTAP: viewer no puede escribir; admin gestiona agentes pero no borra agencia; agent solo lo suyo.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Wizard upgrade a agente (Camino A token / Camino B solicitud)",
+            "description": "Flujo desde Configuración: Camino A valida token de invitación (reusa EFs existentes); Camino B crea solicitud a admin.",
+            "details": "Camino A (§4.2): reusa validate/redeem-invitation; asocia a la inmobiliaria, otorga badge, cambio inmediato. Camino B (independiente): crea agent_request(status=pending, motivo); la cuenta sigue user/premium hasta aprobación. Al aprobar se habilitan CRM y Publicaciones. Docs no obligatorios en beta (campos preparados). Mobile + EF.",
+            "testStrategy": "Deno/smoke: token válido → agente asociado inmediato; token inválido/expirado rechazado; Camino B deja pending.",
+            "status": "pending",
+            "dependencies": [
+              2
+            ],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Registro de inmobiliaria (flujo separado)",
+            "description": "Alta de inmobiliaria (§4.7): razón social, contacto, logo (R2); estado pending→approved; campos doc preparados.",
+            "details": "Reusa/expande admin-create-agency. Flujo separado del registro de usuario. Estado pending hasta aprobación admin. Logo vía mint-r2-url (tarea 69). Campos de documentación formal existen pero opcionales en beta. Mobile + EF.",
+            "testStrategy": "Deno/smoke: alta crea agencia pending; no opera hasta approved; logo sube a R2.",
+            "status": "pending",
+            "dependencies": [
+              2
+            ],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Aprobaciones admin vía estado (super-admin por Studio en beta)",
+            "description": "EFs/transiciones pending→approved/rejected para agente independiente e inmobiliaria; en beta el super-admin actúa por Studio/SQL.",
+            "details": "Máquina de estados y EFs de transición (approve/reject con motivo → notifica al solicitante). En beta NO hay UI admin: el super-admin (2, §4.8) cambia estado desde Supabase Studio/SQL; el panel web (Ola 3) dará la UI sobre estas MISMAS EFs. admin_actions inmutable (auditoría) desde ya. CRÍTICA (state machine + auditoría).",
+            "testStrategy": "pgTAP/Deno: solo admin transiciona; approve habilita al agente/agencia; reject notifica motivo; admin_actions registra.",
+            "status": "pending",
+            "dependencies": [
+              3,
+              4
+            ],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 6,
+            "title": "Gestión de agentes por inmobiliaria + cambio de agencia",
+            "description": "Alta/baja/suspensión de agentes, auditoría de tokens, y conservar seguidores al cambiar de inmobiliaria (§4.6).",
+            "details": "Inmobiliaria: alta/baja/suspensión de agentes asociados (§4.7 MVP), auditoría de tokens generados/usados. Un agente no pertenece a >1 agencia; si cambia, conserva sus seguidores (el follow es al agente, no a la agencia) y el perfil muestra la inmobiliaria ACTUAL. Independiente = sin inmobiliaria en perfil. Mobile + EF.",
+            "testStrategy": "pgTAP/Deno: agente en 1 sola agencia; cambio conserva followers; suspensión bloquea publicar.",
+            "status": "pending",
+            "dependencies": [
+              5
+            ],
+            "priority": "medium",
+            "parentId": "undefined"
+          },
+          {
+            "id": 7,
+            "title": "Ingest al vault (roles/multi-tenant)",
+            "description": "Documentar el modelo de roles/agencia y flujos de upgrade en el vault.",
+            "details": "mapa-codebase (helpers premium, agent_request, transiciones), concepto roles-y-permisos / inmobiliaria (estado vivo), log.md. Enlazar invitaciones existentes.",
+            "testStrategy": "Revisión de enlaces del vault; sin test de código.",
+            "status": "pending",
+            "dependencies": [
+              6
+            ],
+            "priority": "low",
+            "parentId": "undefined"
+          }
+        ],
+        "updatedAt": "2026-07-13T00:00:00.000Z"
+      },
+      {
+        "id": "72",
+        "title": "Ola 1 — Auth completo (Google/Apple OAuth + OTP teléfono + LFPDPPP versionado)",
+        "description": "Autenticación del PRD §5 más allá de email+pass: Google/Apple OAuth, OTP por teléfono, términos y aviso de privacidad versionados, validaciones obligatorias de registro.",
+        "details": "PRD §5 (5.1–5.5). Hoy: email+pass. Falta OAuth (Google/Apple vía Supabase Auth), OTP teléfono, aceptación versionada LFPDPPP (§5.5), validaciones (§5.4), recuperación (§5.3). Toca Supabase Auth config, migraciones (consentimiento versionado), UI de registro/login. Épica del camino a producción (ADR 0008 / docs/PRD-beta.md). Spec detallado (modelo de datos, RLS, EF, pantallas, estados, edge cases, tests, subtareas) se redacta SECUENCIAL al entrar su ola, con aprobación de Abraham; add-task roto → subtareas por escritura directa en tasks.json.",
+        "testStrategy": "TDD estricto en lógica crítica (supabase/functions/**, migrations/**, lib/hooks/validation): RED→GREEN→guardian. Verificación ligera (tsc/lint/smoke) en UI. Se detalla al specificar la ola.",
+        "status": "pending",
+        "dependencies": [
+          "66"
+        ],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Catálogo oficial MX (estados + municipios)",
+            "description": "Migración + seed de los 32 estados y sus municipios (INEGI) en tablas de catálogo.",
+            "details": "Migración aditiva idempotente + rollback + pgTAP. Tablas public.mx_states(id, name) y public.mx_municipalities(id, state_id fk, name). Seed desde dataset INEGI (script en supabase/seeds o migración con INSERTs). Se reusa en registro (estado/ciudad), publicación (§14.3 dirección) y filtros de feed/mapa/búsqueda. CRÍTICA (migración).",
+            "testStrategy": "pgTAP: 32 estados; cada municipio referencia un estado válido; conteos esperados. Rollback limpio.",
+            "status": "pending",
+            "dependencies": [],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Campos de registro requeridos + constraints (§5.1)",
+            "description": "Asegurar teléfono, email, nombre, estado (fk), ciudad (fk), fecha nacimiento; edad server-side; único por email y por teléfono; mayoría de edad.",
+            "details": "Delta sobre identity_users/profiles: FKs a mx_states/mx_municipalities, birthdate not null, unique(email) y unique(phone) (§5.1). Edad = age(now(), birthdate) server-side; check mayoría de edad al registrar. CRÍTICA (constraints + validación de frontera).",
+            "testStrategy": "pgTAP: unique email/phone rechaza duplicado; menor de edad rechazado; fk ciudad inválida rechazada.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Verificación real de email (apagar autoconfirm + Resend SMTP)",
+            "description": "Apagar mailer_autoconfirm y enchufar Resend como SMTP de Supabase Auth; el usuario confirma antes de operar.",
+            "details": "PREREQ EXTERNO (Abraham): cuenta Resend + dominio verificado (DNS en Cloudflare) + API/SMTP creds. Configurar SMTP custom en Supabase Auth; mailer_autoconfirm=false. Cliente: pantalla \"verifica tu correo\" + reenvío. Nota: rompe el flujo actual dependiente de autoconfirm (memoria remote_auth_autoconfirm_enabled) — actualizar esa memoria. Mismo SMTP servirá para recuperación y notificaciones (Ola 2).",
+            "testStrategy": "E2E: registro nuevo queda unconfirmed hasta click en el correo; smoke con dominio Resend real. Deno/manual.",
+            "status": "pending",
+            "dependencies": [
+              2
+            ],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Google OAuth (Apple oculto tras flag, bloqueante pre-iOS)",
+            "description": "Habilitar Sign in with Google en Supabase Auth y el botón en la app; dejar Apple detrás de flag documentado como gate pre-iOS.",
+            "details": "PREREQ EXTERNO: Google Cloud OAuth client (ids Android/iOS/web) en Supabase. Cliente: botón Google (expo-auth-session / supabase signInWithOAuth). Apple: componente oculto tras feature-flag; anotar // ponytail: gate de release iOS (guía 4.8 App Store obliga Apple si hay social login en iOS). NO crítica (UI/config) salvo el intercambio de token.",
+            "testStrategy": "Smoke: login con Google crea/enlaza cuenta; el botón Apple no aparece en beta. pnpm tsc/lint.",
+            "status": "pending",
+            "dependencies": [
+              3
+            ],
+            "priority": "medium",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Recuperación de contraseña (§5.3)",
+            "description": "Flujo de recuperación por email (magic link / OTP 15 min) solo para cuentas email+contraseña.",
+            "details": "Supabase nativo (resetPasswordForEmail). Pantallas: solicitar, y set nueva contraseña. Solo aplica a cuentas email+pass (las de Google no). Expiración corta (§5.3). Usa el SMTP Resend.",
+            "testStrategy": "Smoke: solicitar reset envía correo; link caduca a los 15 min; cuenta Google no ofrece reset.",
+            "status": "pending",
+            "dependencies": [
+              3
+            ],
+            "priority": "medium",
+            "parentId": "undefined"
+          },
+          {
+            "id": 6,
+            "title": "Términos/privacidad versionados + re-aceptación (§5.5)",
+            "description": "Construir sobre user_profile_legal/seed_terms: exigir aceptación en registro y re-aceptación en login si cambió la versión vigente.",
+            "details": "Verificar el schema existente (user_profile_legal, seed_terms) y añadir lo que falte: versión vigente, historial de aceptaciones por usuario, gate en login que compara versión aceptada vs vigente y pide re-aceptar (§5.5). Documentos = plantilla LFPDPPP MX. CRÍTICA (consentimiento legal).",
+            "testStrategy": "pgTAP/Deno: sin aceptación no completa registro; cambio de versión fuerza re-aceptación en próximo login; historial persiste.",
+            "status": "pending",
+            "dependencies": [
+              2
+            ],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 7,
+            "title": "Consentimiento WhatsApp + ingest",
+            "description": "Capturar el consentimiento explícito de compartir datos al contactar por WhatsApp (§5.4) e ingest al vault.",
+            "details": "Checkbox/consent explícito en registro (§5.4 última viñeta): al contactar un agente por WhatsApp, el agente verá datos de contacto y contexto. Guardar el consentimiento. Ingest: mapa-codebase (catálogo MX, auth delta), concepto autenticacion-registro (estado vivo), log.md. Actualizar memoria remote_auth_autoconfirm_enabled (ya no aplica).",
+            "testStrategy": "pnpm tsc/lint; smoke registro completo; revisión de enlaces del vault.",
+            "status": "pending",
+            "dependencies": [
+              6
+            ],
+            "priority": "low",
+            "parentId": "undefined"
+          }
+        ],
+        "updatedAt": "2026-07-13T00:00:00.000Z"
+      },
+      {
+        "id": "73",
+        "title": "Ola 1 — Publicación completa (5 pasos + 16 estados + moderación manual)",
+        "description": "Wizard de 5 pasos con autoguardado de borrador, máquina de 16 estados de publicación, pipeline de moderación manual, publicación rápida, re-revisión por edición y cierre/baja. PRD §14–16.",
+        "details": "PRD §14 (wizard+autosave draft), §15 (moderación, pipeline, estados §15.4, re-revisión §15.5, visibilidad §15.6), §16 (cierre). Hoy: 3 pasos, auto-`active`, sin moderación. Es el corazón transaccional → CRÍTICO (EF publish-property, RPC atómica, RLS, máquina de estados). Cablear la abstracción de slot (vigencia) aunque sea gratis. Épica del camino a producción (ADR 0008 / docs/PRD-beta.md). Spec detallado (modelo de datos, RLS, EF, pantallas, estados, edge cases, tests, subtareas) se redacta SECUENCIAL al entrar su ola, con aprobación de Abraham; add-task roto → subtareas por escritura directa en tasks.json.",
+        "testStrategy": "TDD estricto en lógica crítica (supabase/functions/**, migrations/**, lib/hooks/validation): RED→GREEN→guardian. Verificación ligera (tsc/lint/smoke) en UI. Se detalla al specificar la ola.",
+        "status": "pending",
+        "dependencies": [
+          "66",
+          "68",
+          "71",
+          "76"
+        ],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Extender property_status con estados operativos",
+            "description": "Añadir aditivamente los estados que faltan; mantener closed+closed_reason y deleted_at.",
+            "details": "ALTER TYPE property_status ADD VALUE para: uploading_media, media_failed, pending_payment, approved, rejected. rented/sold/expired quedan como closed_reason (ya existe). deleted_soft/hard = deleted_at + hard delete (no enum). Migración idempotente + rollback + pgTAP. CRÍTICA.",
+            "testStrategy": "pgTAP: enum contiene los nuevos valores; transiciones válidas; rented/sold siguen vía closed_reason.",
+            "status": "pending",
+            "dependencies": [],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "property_revisions (doble versión §15.6)",
+            "description": "Tabla snapshot para la edición pendiente + lógica aplicar-al-aprobar / descartar-al-rechazar.",
+            "details": "public.property_revisions(id, property_id fk, snapshot jsonb de campos editados, status pending|needs_changes|rejected, created_at). La propiedad viva = current_published (feed/mapa solo ven la viva). Al aprobar: aplicar snapshot a properties. Al pedir cambios/rechazar: la viva intacta, revision a needs_changes/rejected. RLS: revision no visible al feed. CRÍTICA.",
+            "testStrategy": "pgTAP: feed nunca ve pending_revision; approve aplica snapshot; reject deja viva intacta.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Wizard 5 pasos + autoguardado de borrador",
+            "description": "Cliente del wizard (§14) con autosave a draft sin confirmación (§14.1); paso 5 integra la subida tus de Stream (tarea 68).",
+            "details": "mobile/: 5 pasos (operación, tipo, obligatorios con dirección en mapa + m2/rec/baños/precio/visibilidad, opcionales, video). Salir en cualquier punto → guarda draft (RPC/EF por paso, sin confirmar). Borrador en \"Mis publicaciones\". Paso 5 usa mint-upload-url + cliente tus (68). Dirección usa catálogo MX (72.1). Ubicación siempre con dirección exacta (§12.5). NO crítica de lógica pura → verificación reforzada.",
+            "testStrategy": "pnpm tsc/lint; smoke: salir a mitad → draft persiste y se reanuda; completar 5 pasos.",
+            "status": "pending",
+            "dependencies": [
+              1,
+              2
+            ],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Envío a revisión con abstracción de slot (flag gratis)",
+            "description": "Al tocar Publicar: otorgar slot gratis por flag video_slot_free y enviar a pending_review (§14.2, ADR 0008 §2.2).",
+            "details": "Adaptar EF publish-property: si video_slot_free (app_config) → auto-otorgar video_slot, saltar pending_payment, ir a pending_review. Registrar el slot (tabla de tarea 76) aunque sea gratis, para cablear vigencia/expiración. Registrado que publica → deriva premium (71.1). CRÍTICA (frontera + invariante de slot).",
+            "testStrategy": "Deno: publicar con flag ON → pending_review + slot gratis registrado; sin flag → pending_payment (Ola 4).",
+            "status": "pending",
+            "dependencies": [
+              3
+            ],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Pipeline de moderación + firma de duplicados",
+            "description": "Validaciones automáticas del pipeline (§15.2) y marca de duplicado por dirección+agente para revisión prioritaria.",
+            "details": "EF/validación al enviar: video existe + dura 60-120s + reproduce (estado ready); campos obligatorios completos; firma duplicado = coordenadas cercanas + mismo agente → flag prioridad (NO bloquea). \"Video igual\" (hash) diferido (// ponytail:). NO IA como decisión final (§15.2). CRÍTICA.",
+            "testStrategy": "Deno/pgTAP: sin campos obligatorios → bloquea; video no ready → bloquea; duplicado marca prioridad sin bloquear.",
+            "status": "pending",
+            "dependencies": [
+              4
+            ],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 6,
+            "title": "Re-revisión por edición (§15.5)",
+            "description": "Diff de campos: los que disparan re-revisión crean property_revision; los que no, aplican directo.",
+            "details": "Disparan (§15.5): dirección/coords, operación, tipo, video, descripción, precio interno, cambio de agente → crea property_revision (pending) manteniendo la viva visible. NO disparan: pausar/reactivar, ocultar/mostrar precio (sin cambiar interno), redes/contacto → aplican directo. Excepción §15.6: suspensión por fraude oculta de inmediato (suspended). CRÍTICA.",
+            "testStrategy": "pgTAP/Deno: editar precio → revision pending, viva visible; pausar → sin revision; suspensión oculta ya.",
+            "status": "pending",
+            "dependencies": [
+              2,
+              5
+            ],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 7,
+            "title": "Publicación rápida (§15.3)",
+            "description": "Premium/agente crea publicación rápida que queda pending_review; puede terminar carga/edición sin esperar al admin.",
+            "details": "mobile/: flujo rápido para premium/agente → pending_review directo. El usuario termina carga/edición sin esperar aprobación (§15.3). Badge NO se otorga por publicar (§15.3). NO crítica (UI).",
+            "testStrategy": "pnpm tsc/lint; smoke: agente publica rápido → pending_review.",
+            "status": "pending",
+            "dependencies": [
+              4
+            ],
+            "priority": "medium",
+            "parentId": "undefined"
+          },
+          {
+            "id": 8,
+            "title": "Cierre y baja (§16)",
+            "description": "Marcar sold/rented manual desde Mis publicaciones; sale de feed/mapa, queda en Publicaciones cerradas, slot consumido.",
+            "details": "Premium/agente marca closed + closed_reason (rented/sold) manual (§16.1). Efectos: fuera de feed/mapa; visible en perfil \"Publicaciones cerradas\"; vigencia del slot consumida sin reembolso; métricas permanentes. No reapertura en MVP. EF de transición + UI.",
+            "testStrategy": "pgTAP/Deno: closed sale del feed; aparece en cerradas; slot marcado consumido; métricas persisten.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "priority": "medium",
+            "parentId": "undefined"
+          },
+          {
+            "id": 9,
+            "title": "Aprobación admin (transiciones vía Studio en beta)",
+            "description": "EFs de transición approve/needs_changes/reject/suspend que el super-admin dispara por Studio en beta (usa 71.5).",
+            "details": "EFs de moderación: approve (aplica revision → active/approved), needs_changes (motivo), reject (motivo), suspend (fraude/reporte, inmediato §15.6). En beta el super-admin las invoca por Studio/SQL; el panel web (Ola 3) las envolverá. admin_actions inmutable. CRÍTICA (state machine + auditoría).",
+            "testStrategy": "pgTAP/Deno: solo admin transiciona; approve activa y aplica revision; suspend oculta ya; auditoría registra.",
+            "status": "pending",
+            "dependencies": [
+              6
+            ],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 10,
+            "title": "Ingest + E2E",
+            "description": "Verificación E2E de publicación y ingest al vault.",
+            "details": "E2E: draft → wizard → tus upload → pending_review → (admin approve por Studio) → active en feed → editar precio → re-revisión con viva visible → aprobar → cerrar. Ingest: mapa-codebase (property_revisions, publish-property adaptado, moderación), concepto publicacion-moderacion (estado vivo, 16 estados mapeados), log.md.",
+            "testStrategy": "Maestro/smoke del flujo completo; revisión del vault.",
+            "status": "pending",
+            "dependencies": [
+              3,
+              6,
+              8,
+              9
+            ],
+            "priority": "high",
+            "parentId": "undefined"
+          }
+        ],
+        "updatedAt": "2026-07-13T00:00:00.000Z"
+      },
+      {
+        "id": "74",
+        "title": "Ola 1 — Feed ranking §9.8 + mapa/búsqueda completos",
+        "description": "Ranking del feed (§9.8), anti-clustering, 'buscar en esta zona' (#56 ya planeada), y búsqueda por código/agente. PRD §9–11.",
+        "details": "PRD §9.8 (ranking MVP), §9.4 (filtros), §10.6 (buscar en esta zona), §11 (búsqueda por código/agente). Hoy: feed global+radio parcial, clustering. RPC de radio (#40) ya existe. Toca lógica de ranking (lib/hooks → crítico), RPCs, UI feed/mapa/búsqueda. Épica del camino a producción (ADR 0008 / docs/PRD-beta.md). Spec detallado (modelo de datos, RLS, EF, pantallas, estados, edge cases, tests, subtareas) se redacta SECUENCIAL al entrar su ola, con aprobación de Abraham; add-task roto → subtareas por escritura directa en tasks.json.",
+        "testStrategy": "TDD estricto en lógica crítica (supabase/functions/**, migrations/**, lib/hooks/validation): RED→GREEN→guardian. Verificación ligera (tsc/lint/smoke) en UI. Se detalla al specificar la ola.",
+        "status": "pending",
+        "dependencies": [
+          "66",
+          "72",
+          "73"
+        ],
+        "priority": "medium",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Extender catálogo MX con colonias/CP",
+            "description": "Sembrar colonias y códigos postales sobre el catálogo estados/municipios (tarea 72.1) para autocompletado de zona.",
+            "details": "Migración aditiva + seed (dataset SEPOMEX/INEGI de colonias por CP). Tabla public.mx_neighborhoods(id, municipality_id fk, name, postal_code). Alimenta autocompletado de zona en mapa (§10.3) y búsqueda (§11) SIN API externa. CRÍTICA (migración).",
+            "testStrategy": "pgTAP: colonias referencian municipio válido; búsqueda por prefijo de nombre responde.",
+            "status": "pending",
+            "dependencies": [],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Código público de propiedad (URB-XXXXX)",
+            "description": "Generar un código corto legible y único al aprobar; indexarlo para búsqueda.",
+            "details": "Añadir properties.public_code text unique. Generar al pasar a active/approved (trigger o en la EF de aprobación 73.9): base32 sin caracteres ambiguos, formato URB-7F3K9. Índice para búsqueda por código (§11.2). Estable una vez generado. CRÍTICA (unicidad).",
+            "testStrategy": "pgTAP: code único; se genera solo al aprobar; búsqueda exacta por code encuentra la propiedad.",
+            "status": "pending",
+            "dependencies": [],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "RPC de ranking §9.8 (PostGIS + score)",
+            "description": "Extender properties_within_radius_rpc a un ranking con score: cercanía + match filtros/onboarding + preferencias + frescura.",
+            "details": "RPC pura que recibe {lat,lng, seed, cursor, radius, filtros}. Score = ST_Distance (cercanía) + coincidencia con filtros de sesión/onboarding + preferencias + frescura (created_at). Solo active/approved visibles (§9.8.1). Determinista por seed. Devuelve página ordenada + flag si agotó el radio. CRÍTICA (lógica de negocio).",
+            "testStrategy": "pgTAP: solo active/approved; orden por score esperado; mismo seed → mismo orden; filtros acotan.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Anti-clustering + expansión de radio + loop",
+            "description": "Post-pass de anti-clustering (5 posiciones §9.2) y orquestación de expansión de radio 2/5/10/20km + loop (§9.1/9.3).",
+            "details": "Post-pass (EF o cliente) reordena para separar ≥5 posiciones videos de la misma propiedad; si no alcanza, maximiza separación. Expansión progresiva de radio cuando se agotan resultados (2→5→10→20→sin límite). Loop: reenviar desde el inicio con la misma seed → mismo orden (§9.1). Estado (seed/cursor/radius) lo lleva el cliente (sin tabla de sesión). CRÍTICA (invariante de separación).",
+            "testStrategy": "Test: nunca <5 de separación cuando hay material; agotado el radio expande; loop repite orden.",
+            "status": "pending",
+            "dependencies": [
+              3
+            ],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Filtros rápidos (bottom sheet) §9.4",
+            "description": "Bottom sheet de filtros que sobrescribe temporalmente las preferencias de la sesión; botón restaurar.",
+            "details": "mobile/feed + map: filtros (operación, tipo, precio, recámaras, baños, radio 2/5/10/20/sin límite). Sobrescriben preferencias del onboarding SOLO en la sesión (§9.4); botón \"Restaurar mis preferencias\". Estado de filtros compartido feed↔mapa en la sesión (§10.2). Persistir = Configuración → re-onboarding. NO crítica (UI).",
+            "testStrategy": "pnpm tsc/lint; smoke: aplicar filtro afecta feed y mapa; restaurar vuelve al onboarding.",
+            "status": "pending",
+            "dependencies": [
+              4
+            ],
+            "priority": "medium",
+            "parentId": "undefined"
+          },
+          {
+            "id": 6,
+            "title": "Popup detalles + galería vertical multi-video",
+            "description": "Popup de detalles (§9.7) e indicador + galería vertical de todos los videos de la propiedad (§9.2).",
+            "details": "mobile/feed: popup con ubicación, card de datos rápidos (m2/baños/rec), indicador \"N videos disponibles\", acceso a galería vertical separada del feed. Sin descripción completa ni amenidades extensas (§9.7). Reusar componentes de feed existentes. NO crítica (UI).",
+            "testStrategy": "pnpm tsc/lint; smoke: popup abre sin salir del video; galería lista los N videos.",
+            "status": "pending",
+            "dependencies": [
+              4
+            ],
+            "priority": "medium",
+            "parentId": "undefined"
+          },
+          {
+            "id": 7,
+            "title": "Mapa: autocompletado + clustering + pin cards",
+            "description": "Autocompletado de zona (catálogo), clustering de pins (§10.4), tarjeta flotante al tocar pin (§10.5).",
+            "details": "mobile/map: input \"Buscar zona, colonia o dirección\" con autocompletado desde el catálogo (74.1). Clustering estilo Google (círculo con número, colores Urbea) con zoom-to-expand (§10.4). Toque en pin → bottom sheet pequeño con thumbnail, datos rápidos, \"Ver video\"/\"Contactar\"/\"Guardar\" (§10.5); no reproduce en el mapa. \"Buscar en esta zona\" ya existe (#56). Solo aprobadas, dirección exacta (§10.1). NO crítica (UI).",
+            "testStrategy": "pnpm tsc/lint; smoke: autocompletar centra mapa; clusters expanden; pin card con acciones.",
+            "status": "pending",
+            "dependencies": [
+              1,
+              6
+            ],
+            "priority": "medium",
+            "parentId": "undefined"
+          },
+          {
+            "id": 8,
+            "title": "Pantalla de búsqueda §11",
+            "description": "Búsqueda por texto (zona/agente/inmobiliaria/código) + chips estructurados + toggle lista/mapa + recientes.",
+            "details": "mobile/search: input libre que busca zona/colonia, agente, inmobiliaria y public_code (§11.2). Chips (operación, tipo, precio, rec, baños, zona autocompletada, amueblado/mascotas). Toggle Lista/Mapa. Resultados lista = cards con thumbnail + datos rápidos; mapa = pins con filtros. Búsquedas recientes por usuario (§11.2). Solo registrado/premium/agente (§11.1). RPC de búsqueda (texto + filtros). CRÍTICA en la RPC; UI ligera.",
+            "testStrategy": "Deno/pgTAP RPC: busca por code exacto, por nombre de agente, por zona; visitante sin acceso. Smoke UI.",
+            "status": "pending",
+            "dependencies": [
+              2,
+              3
+            ],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 9,
+            "title": "Ingest + verificación",
+            "description": "Ingest al vault y verificación E2E de feed/mapa/búsqueda.",
+            "details": "E2E: feed rankeado con anti-clustering, expansión de radio, loop; mapa con clusters y pin cards; búsqueda por código/agente/zona. Ingest: mapa-codebase (RPC ranking, public_code, catálogo colonias, búsqueda), concepto feed-vertical-video/mapa/busqueda (estado vivo), log.md.",
+            "testStrategy": "Maestro/smoke; revisión del vault.",
+            "status": "pending",
+            "dependencies": [
+              4,
+              5,
+              6,
+              7,
+              8
+            ],
+            "priority": "high",
+            "parentId": "undefined"
+          }
+        ],
+        "updatedAt": "2026-07-13T00:00:00.000Z"
+      },
+      {
+        "id": "75",
+        "title": "Ola 1 — CRM completo (9 estados + scoring frío/tibio/caliente)",
+        "description": "Embudo de leads del PRD §19: 9 estados, scoring por puntaje (frío/tibio/caliente), unificación de leads, export CSV, historial retroactivo y retención.",
+        "details": "PRD §19 (19.5 unificación, 19.6 scoring, 19.8 estados, 19.9 CRM visual, 19.10 retención). Hoy: 7 estados, lead auto. Toca lógica de scoring (crítico), migraciones (estados), EF, UI del CRM. Épica del camino a producción (ADR 0008 / docs/PRD-beta.md). Spec detallado (modelo de datos, RLS, EF, pantallas, estados, edge cases, tests, subtareas) se redacta SECUENCIAL al entrar su ola, con aprobación de Abraham; add-task roto → subtareas por escritura directa en tasks.json.",
+        "testStrategy": "TDD estricto en lógica crítica (supabase/functions/**, migrations/**, lib/hooks/validation): RED→GREEN→guardian. Verificación ligera (tsc/lint/smoke) en UI. Se detalla al specificar la ola.",
+        "status": "pending",
+        "dependencies": [
+          "66",
+          "74"
+        ],
+        "priority": "medium",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Reconciliar lead_status (§19.8) + bandera follow-up",
+            "description": "Extender lead_status a la semántica §19.8; in_follow_up como columna booleana, no estado.",
+            "details": "ALTER TYPE lead_status ADD: whatsapp_opened, interested, closed_won_rent, closed_won_sale. Mapear new→whatsapp_opened (inicial automático al contactar), split closed_won→rent/sale. Añadir leads.is_follow_up boolean (convive con contacted/interested/visit_scheduled, §19.8). Historial de cambios de estado (timeline, §19.8). CRÍTICA (migración).",
+            "testStrategy": "pgTAP: enum tiene los nuevos; is_follow_up ortogonal al estado; timeline registra cada cambio.",
+            "status": "pending",
+            "dependencies": [],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Scoring denormalizado + nivel automático",
+            "description": "lead.score se actualiza al escribir interacción en events_raw; nivel frío/tibio/caliente derivado de umbrales.",
+            "details": "EF/trigger sobre events_raw: al registrar interacción contable suma peso (contacto 10, compartido 5, guardado 4, comentario 3, video_completo 2, like 1, §19.6) con guard \"una vez por (usuario,video,acción)\". lead.score denormalizado. Nivel (frío/tibio/caliente) = derivado del score vía umbrales en app_config (calibrables sin deploy, §19.6). El ESTADO no cambia por actividad (eso es manual del agente); solo score/nivel. CRÍTICA (lógica).",
+            "testStrategy": "pgTAP: pesos correctos; misma acción/video no re-suma; nivel cambia al cruzar umbral; estado intacto.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Privacidad del lead (§19.2)",
+            "description": "El agente ve datos del usuario + historial retroactivo SOLO tras crear el lead; construir sobre rls_lead_searcher_identity.",
+            "details": "Verificar/extender rls_lead_searcher_identity (20260702000001): antes de contactar, el agente NO ve datos del usuario. Al crear lead: acceso a nombre, foto, edad calculada, estado/ciudad, correo, teléfono (§19.4) + historial retroactivo de interacciones del usuario con TODAS las publicaciones del agente (§19.2). Las interacciones se registran SIEMPRE (events_raw) y se exponen por RLS solo si existe lead. CRÍTICA (privacidad/RLS).",
+            "testStrategy": "pgTAP por impersonación: sin lead el agente no lee datos del usuario; con lead lee datos + historial retroactivo; otro agente no.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Contacto WhatsApp + unificación de lead",
+            "description": "Botón contactar abre WhatsApp con template fijo + deep link; crea lead whatsapp_opened; unifica por agente-usuario.",
+            "details": "Adaptar EF contact-agent: al tocar \"Contactar agente\" crea lead whatsapp_opened (§19.2) y abre WhatsApp con template fijo no editable + deep link al video (§19.3). Unificación (§19.5): un solo lead por relación agente-usuario; si contacta desde varias propiedades, crece lead_origin_properties (ya existe), estado único a nivel agente-usuario. Contacto asociado a propiedad+video de origen (§9.6). CRÍTICA (creación de lead + privacidad).",
+            "testStrategy": "Deno/pgTAP: primer contacto crea lead; segundo desde otra propiedad NO duplica, agrega origin; template correcto.",
+            "status": "pending",
+            "dependencies": [
+              3
+            ],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Acciones del agente sobre el lead (§19.7)",
+            "description": "Cambiar estado, destacar follow-up, cerrar (rent/sale/lost), notas internas, eliminar (soft 30d), abrir WhatsApp.",
+            "details": "mobile + EFs (update-lead-status, update-lead-note ya existen, extender): cambio de estado con timeline; toggle is_follow_up; cerrar con tipo (§19.7); notas internas libres no visibles al usuario; eliminar = soft delete retención 30d (§19.10); abrir WhatsApp desde detalle. NO crítica salvo transición/borrado (verificación reforzada).",
+            "testStrategy": "Deno/smoke: cada acción persiste + timeline; soft delete oculta pero conserva 30d.",
+            "status": "pending",
+            "dependencies": [
+              4
+            ],
+            "priority": "medium",
+            "parentId": "undefined"
+          },
+          {
+            "id": 6,
+            "title": "CRM UI (§19.9)",
+            "description": "Lista por score desc, sección follow-up fija arriba, filtros, buscador, card y detalle con timeline/notas/acciones.",
+            "details": "mobile/leads: lista ordenada por score desc (toggle por fecha de último contacto); sección superior fija de is_follow_up; filtros (estado, propiedad, fechas, nivel); buscador por nombre/teléfono; card (nombre, foto, score, nivel, estado, último contacto); detalle con datos §19.4 + timeline + notas + acciones. Sin kanban ni recordatorios (post-MVP). NO crítica (UI).",
+            "testStrategy": "pnpm tsc/lint; smoke: orden por score; follow-up arriba; filtros y buscador funcionan.",
+            "status": "pending",
+            "dependencies": [
+              5
+            ],
+            "priority": "medium",
+            "parentId": "undefined"
+          },
+          {
+            "id": 7,
+            "title": "Export CSV + retención (§19.10)",
+            "description": "Exportar CSV de leads y jobs de retención (soft delete 30d; baja de agente → leads 1 mes con export por inmobiliaria).",
+            "details": "EF export-leads-csv (datos §19.4). pg_cron: purga leads soft-deleted >30d (§19.10); baja de agente → sus leads a soft delete, conservados 1 mes durante el cual la inmobiliaria puede pedir export al admin, luego purga. CRÍTICA en el job de retención.",
+            "testStrategy": "Deno/pgTAP: CSV con columnas esperadas; cron purga >30d; baja de agente conserva 1 mes.",
+            "status": "pending",
+            "dependencies": [
+              6
+            ],
+            "priority": "medium",
+            "parentId": "undefined"
+          },
+          {
+            "id": 8,
+            "title": "Ingest + verificación",
+            "description": "Ingest al vault del CRM y verificación E2E.",
+            "details": "E2E: interacciones suben score/nivel; contacto crea lead + expone datos; agente gestiona estados/notas/cierre; export CSV. Ingest: mapa-codebase (scoring, privacidad, contact-agent, export), concepto contacto-leads-crm (estado vivo, 9 estados + nivel automático), log.md.",
+            "testStrategy": "Maestro/smoke; revisión del vault.",
+            "status": "pending",
+            "dependencies": [
+              2,
+              3,
+              7
+            ],
+            "priority": "high",
+            "parentId": "undefined"
+          }
+        ],
+        "updatedAt": "2026-07-13T00:00:00.000Z"
+      },
+      {
+        "id": "76",
+        "title": "Ola 1 — Modelo de datos de pagos (purchase/video_slot/precios/vigencia, SIN gateway)",
+        "description": "Sembrar el modelo de datos de pagos del PRD §17.7 y la lógica de vigencia/expiración/renovación — SIN pasarela; slot auto-otorgado gratis por feature-flag en beta. Deja todo flip-ready para la Ola 4.",
+        "details": "PRD §17 (17.2 planes/precios en tabla configurable, 17.3 caducidad crédito 90d, 17.6 expiración video con avisos 7d/1d + renovación, 17.7 modelo purchase/video_slot/property_video). Migraciones aditivas + RLS + RPC de otorgar/consumir slot (flag gratis) + jobs de expiración. CRÍTICO. Base de la Ola 4. Épica del camino a producción (ADR 0008 / docs/PRD-beta.md). Spec detallado (modelo de datos, RLS, EF, pantallas, estados, edge cases, tests, subtareas) se redacta SECUENCIAL al entrar su ola, con aprobación de Abraham; add-task roto → subtareas por escritura directa en tasks.json.",
+        "testStrategy": "TDD estricto en lógica crítica (supabase/functions/**, migrations/**, lib/hooks/validation): RED→GREEN→guardian. Verificación ligera (tsc/lint/smoke) en UI. Se detalla al specificar la ola.",
+        "status": "pending",
+        "dependencies": [
+          "66",
+          "71"
+        ],
+        "priority": "medium",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Tablas purchase + video_slot + planes/precios",
+            "description": "Modelo §17.7: purchase, video_slot y tabla configurable de planes/precios; precio histórico por compra.",
+            "details": "Migración aditiva + rollback + pgTAP. public.plans(id, audience premium|agent, months 1|3|6, price_mxn, active) sembrando §17.2 ($399/1m premium; $1197/3m y $1194/6m agente; premium solo 1m). public.purchases(id, user_id, plan_id, price_snapshot, method, status, created_at). public.video_slots(id, purchase_id fk, credit_expires_at = created+90d, consumed_at, active_from, active_until, status available|consumed|expired). Precios en tabla (no código) → cambio sin migración (§17.2). CRÍTICA.",
+            "testStrategy": "pgTAP: premium no compra 3/6m; purchase guarda price_snapshot inmutable; slot nace con credit_expires_at=+90d.",
+            "status": "pending",
+            "dependencies": [],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Otorgamiento de slot (gratis por flag)",
+            "description": "Al publicar, crear/consumir un video_slot; en beta gratis por flag (integra 73.4).",
+            "details": "EF (o dentro de publish-property, 73.4): si video_slot_free → crear purchase con price_snapshot=0 + video_slot available, y consumirlo al asociar el video. Fuera de beta el slot viene de una purchase pagada. Rechazo de video: el slot sigue available hasta video aprobado o caducidad (§17.7). CRÍTICA (invariante de slot).",
+            "testStrategy": "Deno/pgTAP: publicar con flag → slot gratis consumido; rechazo mantiene slot available; sin flag exige purchase.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Vigencia del video + expiración (§17.6)",
+            "description": "active_from/until al consumir el slot; pg_cron avisos 7d/1d (gancho notif) y transición a expired.",
+            "details": "Al consumir slot y quedar el video ready: active_from=ready, active_until=active_from + months del plan (§17.2). pg_cron diario: a 7d y 1d de active_until encola notificación (gancho; envío en Ola 2); al vencer → property expired, sale de feed/mapa, queda en \"Publicaciones cerradas\" (§17.6). La vigencia corre desde que sube el video, no desde el pago (§17.1). CRÍTICA (lógica temporal).",
+            "testStrategy": "pgTAP: active_until = ready + plan; cron a 7d/1d encola aviso; al vencer expired y fuera de feed.",
+            "status": "pending",
+            "dependencies": [
+              2
+            ],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Caducidad de crédito 90d (§17.3)",
+            "description": "pg_cron marca crédito no usado como caducado a los 90 días; aviso 7 días antes.",
+            "details": "pg_cron: video_slots available con credit_expires_at vencido → status expired (sin reembolso, §17.3). A 7d de credit_expires_at encola aviso (gancho, Ola 2). En beta el slot se consume al instante (auto-gratis) así que rara vez aplica, pero la maquinaria queda cableada para el cobro real (ADR §2.2). CRÍTICA.",
+            "testStrategy": "pgTAP: slot available a 91d → expired; aviso a 83d; slot consumido no caduca.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Renovación (§17.6)",
+            "description": "\"Renovar\" en publicación expirada consume/crea slot y reactiva a pending_review.",
+            "details": "mobile/ Mis publicaciones: botón \"Renovar\" en expired → consume slot disponible o crea uno (gratis en beta) → property vuelve a pending_review (§17.6). Si no renueva, queda expired indefinidamente para consulta histórica. EF de renovación.",
+            "testStrategy": "Deno/smoke: renovar expired → nuevo slot + pending_review; sin renovar permanece expired.",
+            "status": "pending",
+            "dependencies": [
+              3
+            ],
+            "priority": "medium",
+            "parentId": "undefined"
+          },
+          {
+            "id": 6,
+            "title": "Ingest + verificación",
+            "description": "Ingest al vault del modelo de pagos y verificación.",
+            "details": "mapa-codebase (purchases/video_slots/plans, jobs de vigencia/caducidad, renovación), concepto monetizacion-pago-por-video (estado vivo, modelo §17.7), log.md. Enlazar [[0002-monetizacion-pago-por-video]]. Nota: pasarela = Ola 4 (tarea 84).",
+            "testStrategy": "Revisión del vault; sin test de código.",
+            "status": "pending",
+            "dependencies": [
+              5
+            ],
+            "priority": "low",
+            "parentId": "undefined"
+          }
+        ],
+        "updatedAt": "2026-07-13T00:00:00.000Z"
+      },
+      {
+        "id": "77",
+        "title": "Ola 2 — Notificaciones (centro in-app + push FCM/APNs vía Expo)",
+        "description": "Centro de notificaciones in-app + push móvil (Expo Notifications sobre FCM/APNs), con catálogo de ~18 eventos. PRD §22.",
+        "details": "PRD §22 (22.1 centro in-app, 22.2 push, 22.3 catálogo ~18 eventos). Módulo nuevo (solo schema hoy). Push = módulo nativo → requiere rebuild (no OTA). Toca migraciones (notifications), EF de despacho, integración Expo Notifications, UI centro. Engancha a eventos de §17.6/publicación. Épica del camino a producción (ADR 0008 / docs/PRD-beta.md). Spec detallado (modelo de datos, RLS, EF, pantallas, estados, edge cases, tests, subtareas) se redacta SECUENCIAL al entrar su ola, con aprobación de Abraham; add-task roto → subtareas por escritura directa en tasks.json.",
+        "testStrategy": "TDD estricto en lógica crítica (supabase/functions/**, migrations/**, lib/hooks/validation): RED→GREEN→guardian. Verificación ligera (tsc/lint/smoke) en UI. Se detalla al specificar la ola.",
+        "status": "pending",
+        "dependencies": [
+          "66",
+          "73",
+          "75",
+          "76"
+        ],
+        "priority": "medium",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "device_tokens + registro Expo push token",
+            "description": "Tabla device_tokens y registro/invalidación del Expo push token (§22.2).",
+            "details": "public.device_tokens(user_id, expo_token, platform, updated_at). Cliente pide permisos; si los rechaza, solo in-app (§22.2) y puede activar luego desde Configuración. Registrar token al iniciar sesión; invalidar al cerrar sesión. Migración + mobile.",
+            "testStrategy": "pgTAP: token único por dispositivo; smoke: logout invalida token.",
+            "status": "pending",
+            "dependencies": [],
+            "priority": "medium",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "EF push-dispatch (Expo) + trigger on insert",
+            "description": "Trigger sobre notifications encola envío a una EF que llama a la Expo Push API respetando toggles y tokens.",
+            "details": "Trigger/pg_net sobre insert en notifications → EF push-dispatch: agrupa por usuario, respeta el toggle de categoría (§22.3) y los device_tokens, llama Expo Push API, maneja receipts/errores (token inválido → limpiar). Notifications = fuente única (in-app + push). CRÍTICA (entrega + frontera externa).",
+            "testStrategy": "Deno: respeta toggle off (no envía); token inválido se limpia; reintento en fallo transitorio.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Conectar catálogo de eventos (§22.3)",
+            "description": "Cablear los ~18 eventos del catálogo a inserts en notifications con la audiencia correcta.",
+            "details": "Conectar los ganchos ya sembrados en Olas 0/1 + los de Ola 2: aprobada/rechazada/cambios/suspendida, video listo/falló (68.5), 7d/1d/expirado (76.3), crédito por caducar (76.4), agente aprob/rechaz + token validado + inmobiliaria baja (71.5), nuevo comentario (78), nuevo lead (75.4), nuevo seguidor + nuevo video de agente seguido (78.3), resumen semanal. Cada uno con push/in-app y audiencia según la tabla §22.3.",
+            "testStrategy": "Deno/pgTAP: cada evento inserta notificación a la audiencia correcta con flags push/in-app correctos.",
+            "status": "pending",
+            "dependencies": [
+              2
+            ],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Centro de notificaciones in-app (§22.1)",
+            "description": "Pantalla del centro: lista cronológica, no-leída, marcar todo leído, navegación al contenido, retención 30d.",
+            "details": "mobile/notifications: lista desc por fecha, punto de no-leída hasta tocar, \"Marcar todo como leído\", al tocar navega al contenido relevante. pg_cron purga >30d (§22.1). Sin agrupación (post-MVP). NO crítica (UI) salvo el job de retención.",
+            "testStrategy": "pnpm tsc/lint; smoke: no-leída→leída; navega; cron purga >30d.",
+            "status": "pending",
+            "dependencies": [
+              3
+            ],
+            "priority": "medium",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Toggles por categoría (§22.3)",
+            "description": "Configuración → Notificaciones con un toggle por categoría del catálogo.",
+            "details": "mobile/settings: toggles por categoría persistidos por usuario; la EF push-dispatch (77.2) los respeta. NO crítica (UI).",
+            "testStrategy": "pnpm tsc/lint; smoke: apagar categoría suprime su push, conserva in-app.",
+            "status": "pending",
+            "dependencies": [
+              4
+            ],
+            "priority": "low",
+            "parentId": "undefined"
+          },
+          {
+            "id": 6,
+            "title": "Resumen semanal (§22.3)",
+            "description": "pg_cron consolida actividad reciente en una notificación semanal in-app al publicador.",
+            "details": "pg_cron semanal: agrega likes/guardados/vistas recientes por publicador → 1 notificación in-app \"resumen semanal\" (evita ruido por cada interacción, §22.3). Solo in-app (sin push, §22.3).",
+            "testStrategy": "pgTAP: genera 1 resumen/semana/publicador con conteos correctos.",
+            "status": "pending",
+            "dependencies": [
+              3
+            ],
+            "priority": "low",
+            "parentId": "undefined"
+          },
+          {
+            "id": 7,
+            "title": "Ingest + verificación",
+            "description": "Ingest al vault y verificación E2E de notificaciones.",
+            "details": "E2E: evento → notificación in-app + push (Expo) respetando toggle; centro; retención. Ingest: mapa-codebase (device_tokens, push-dispatch, catálogo), concepto notificaciones (estado vivo), log.md.",
+            "testStrategy": "Smoke con dispositivo/emulador (push de prueba Expo); revisión del vault.",
+            "status": "pending",
+            "dependencies": [
+              3,
+              4
+            ],
+            "priority": "high",
+            "parentId": "undefined"
+          }
+        ],
+        "updatedAt": "2026-07-13T00:00:00.000Z"
+      },
+      {
+        "id": "78",
+        "title": "Ola 2 — Comentarios + Follow + Compartir (deep links)",
+        "description": "Comentarios moderados (§18), follow a agentes (§20) y compartir contenido con deep links (§21).",
+        "details": "PRD §18 (comentarios + moderación, enfoque MVP §18.3), §20 (follow), §21 (compartir + deep link). Módulos nuevos. Toca migraciones, RLS, EF de moderación de comentarios, UI, deep links `urbea.com/v/[id]`. Épica del camino a producción (ADR 0008 / docs/PRD-beta.md). Spec detallado (modelo de datos, RLS, EF, pantallas, estados, edge cases, tests, subtareas) se redacta SECUENCIAL al entrar su ola, con aprobación de Abraham; add-task roto → subtareas por escritura directa en tasks.json.",
+        "testStrategy": "TDD estricto en lógica crítica (supabase/functions/**, migrations/**, lib/hooks/validation): RED→GREEN→guardian. Verificación ligera (tsc/lint/smoke) en UI. Se detalla al specificar la ola.",
+        "status": "pending",
+        "dependencies": [
+          "66",
+          "71",
+          "74"
+        ],
+        "priority": "low",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Tabla comments + moderación por reglas (§18.2)",
+            "description": "Tabla comments con estados y filtro por lista configurable → held_for_review.",
+            "details": "public.comments(id, video_id, author_id, body, status published|held_for_review|hidden, created_at) + auditoría de moderación (original, autor, propiedad, acción, actor §18.2). EF de filtro: regex/lista configurable (insultos, spam, links, teléfonos/correos, discriminación, sexual, amenazas) → held_for_review; si pasa → published. Lista en tabla editable por admin (§28.9). CRÍTICA (frontera + moderación).",
+            "testStrategy": "Deno/pgTAP: comentario con teléfono/insulto → held_for_review; limpio → published; auditoría registrada.",
+            "status": "pending",
+            "dependencies": [],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "UI de comentarios + acciones",
+            "description": "Ver/crear comentarios (autenticados); agente oculta (no borra); reportar; notif nuevo comentario.",
+            "details": "mobile/feed: comentarios visibles a autenticados (§18.1); crear; agente/inmobiliaria oculta comentarios de sus publicaciones sin borrar (§18.2); reportar comentario. Gancho notificación \"nuevo comentario\" al publicador (§22.3). Preguntas directas van por WhatsApp, no Q&A (§18.1). NO crítica (UI).",
+            "testStrategy": "pnpm tsc/lint; smoke: comentar, ocultar como agente, reportar.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "priority": "medium",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Follow de agentes (§20)",
+            "description": "Tabla follows (solo agentes) + follow/unfollow; notif nuevo seguidor y nuevo video de agente seguido.",
+            "details": "public.follows(follower_id, agent_id, created_at). Solo perfiles de agente son seguibles (premium no, §20/§23.2). El follow es al agente (conserva followers al cambiar de agencia, ya en 71.6). Ganchos: \"nuevo seguidor\" (in-app, §22.3) y \"nuevo video de un agente que sigues\" (push+in-app). mobile + table.",
+            "testStrategy": "pgTAP/smoke: seguir agente; premium no seguible; nuevo video notifica a seguidores.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "priority": "medium",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Compartir video (§21)",
+            "description": "Share nativo del SO con deep link permanente al video + evento share_clicked.",
+            "details": "mobile: API nativa de share (sheet iOS/Android); comparte el deep link del video (no el archivo), permanente mientras la propiedad esté activa (§21). Registra share_clicked en events_raw (video_id, user_id, ts). No se trackea canal (§21). Compartir perfil = no MVP. NO crítica (UI).",
+            "testStrategy": "pnpm tsc/lint; smoke: share abre sheet; evento registrado.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "priority": "low",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Página web del deep link (§4.3/§21)",
+            "description": "Página web mínima urbea.com/v/[id]: reproduce HLS, datos públicos, CTA descarga, fallback \"no disponible\".",
+            "details": "Web ligera (repo web público en Next.js/Vercel, creado aquí y ampliado a landing en Ola 3): reproduce el HLS de Stream, muestra datos públicos básicos (§4.3), CTA de descarga/registro para acciones bloqueadas, y fallback \"Esta propiedad ya no está disponible\" + CTA si sold/rented/expired/deleted (§21). El link es permanente. Hace Compartir 100% funcional.",
+            "testStrategy": "Smoke: link de propiedad activa reproduce; link de cerrada muestra fallback.",
+            "status": "pending",
+            "dependencies": [
+              4
+            ],
+            "priority": "medium",
+            "parentId": "undefined"
+          },
+          {
+            "id": 6,
+            "title": "Ingest + verificación",
+            "description": "Ingest al vault y verificación E2E.",
+            "details": "E2E: comentar (+moderación), seguir agente (+notif), compartir (+página web). Ingest: mapa-codebase (comments, follows, share, web /v/[id]), conceptos engagement (estado vivo), log.md.",
+            "testStrategy": "Smoke; revisión del vault.",
+            "status": "pending",
+            "dependencies": [
+              2,
+              3,
+              5
+            ],
+            "priority": "high",
+            "parentId": "undefined"
+          }
+        ],
+        "updatedAt": "2026-07-13T00:00:00.000Z"
+      },
+      {
+        "id": "79",
+        "title": "Ola 2 — Reportes, bloqueos y moderación (antifraude)",
+        "description": "Cola de moderación manual, reportes de propiedades y entre usuarios, regla 3 reportes/24h→`suspended`, y validación/antifraude. PRD §24, §30.",
+        "details": "PRD §24 (24.1 reportes propiedades, 24.2 reportes/bloqueo entre usuarios), §30 (antifraude). Hoy: solo schema (`property_reports`). Toca migraciones, RLS, EF/trigger de auto-suspensión, cola de moderación (enlaza con admin web §81). Épica del camino a producción (ADR 0008 / docs/PRD-beta.md). Spec detallado (modelo de datos, RLS, EF, pantallas, estados, edge cases, tests, subtareas) se redacta SECUENCIAL al entrar su ola, con aprobación de Abraham; add-task roto → subtareas por escritura directa en tasks.json.",
+        "testStrategy": "TDD estricto en lógica crítica (supabase/functions/**, migrations/**, lib/hooks/validation): RED→GREEN→guardian. Verificación ligera (tsc/lint/smoke) en UI. Se detalla al specificar la ola.",
+        "status": "pending",
+        "dependencies": [
+          "66",
+          "73",
+          "78"
+        ],
+        "priority": "medium",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Reportes de propiedad + auto-suspensión (§24.1)",
+            "description": "Reportar desde el popup con motivos; 1 por usuario/propiedad; 1-2 → cola prioritaria, 3+/24h → suspended.",
+            "details": "Usa property_reports (existe) + enums de motivo/estado (existen). Reglas §24.1: un usuario no reporta la misma propiedad 2 veces; 1-2 reportes → cola prioritaria del admin sin ocultar; ≥3 reportes independientes en <24h → suspended automático hasta revisión. Gancho notificación al publicador (reportada/suspendida). CRÍTICA (invariante de conteo/ventana).",
+            "testStrategy": "pgTAP: doble reporte del mismo usuario rechazado; 3/24h → suspended; 2 → prioritaria sin ocultar.",
+            "status": "pending",
+            "dependencies": [],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Reportes de perfil y de comentarios (§24.2/§18)",
+            "description": "Reportar perfiles de publicador (premium/agente) y comentarios; a cola de moderación.",
+            "details": "Reporte de perfil desde la pantalla de perfil (§24.2); reporte de comentario (§18.2) → cola. Bloqueo entre usuarios = NO MVP (§24.2, el contacto real es por WhatsApp). EF + mobile.",
+            "testStrategy": "Deno/smoke: reportar perfil y comentario encolan; sin bloqueo entre usuarios.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "priority": "medium",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Evidencia antifraude al publicar (§30)",
+            "description": "Capturar evidencia mínima en cada publicación: identidad, teléfono verificado, IP/dispositivo, dirección, timestamp, aceptación de responsabilidad.",
+            "details": "Al enviar a revisión (integra 73): guardar evidencia §30 (publisher_id, teléfono verificado, IP/dispositivo, dirección de la propiedad, timestamp, declaración explícita de autorización para publicar). Revisión manual obligatoria antes de activar (ya en 73.9). Reporte por fraude → suspende hasta revisión (79.1). CRÍTICA (evidencia/auditoría).",
+            "testStrategy": "pgTAP: publicar sin declaración de autorización se bloquea; evidencia queda registrada e inmutable.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Ingest + verificación",
+            "description": "Ingest al vault y verificación E2E de reportes/antifraude.",
+            "details": "E2E: 3 reportes/24h suspenden; publicador notificado; evidencia antifraude capturada. Ingest: mapa-codebase (reportes, antifraude), concepto moderacion-reportes (estado vivo), log.md.",
+            "testStrategy": "pgTAP/smoke; revisión del vault.",
+            "status": "pending",
+            "dependencies": [
+              1,
+              3
+            ],
+            "priority": "medium",
+            "parentId": "undefined"
+          }
+        ],
+        "updatedAt": "2026-07-13T00:00:00.000Z"
+      },
+      {
+        "id": "80",
+        "title": "Ola 3 — Métricas y eventos (events_raw, view ≥3s, dashboards)",
+        "description": "Analítica del PRD §26: tabla `events_raw`, evento `view` con umbral ≥3s, vistas únicas vs múltiples, métricas por publicación y agregadas, dashboards.",
+        "details": "PRD §26 (26.1 def 'video visto', 26.5 evento view, 26.6 métricas publicación, 26.7 agregadas, 26.8 eventos crudos) y §32.5. Hoy: contadores por trigger. Toca migraciones (events_raw + índices), captura de eventos en cliente, agregaciones, UI de dashboards. Épica del camino a producción (ADR 0008 / docs/PRD-beta.md). Spec detallado (modelo de datos, RLS, EF, pantallas, estados, edge cases, tests, subtareas) se redacta SECUENCIAL al entrar su ola, con aprobación de Abraham; add-task roto → subtareas por escritura directa en tasks.json.",
+        "testStrategy": "TDD estricto en lógica crítica (supabase/functions/**, migrations/**, lib/hooks/validation): RED→GREEN→guardian. Verificación ligera (tsc/lint/smoke) en UI. Se detalla al specificar la ola.",
+        "status": "pending",
+        "dependencies": [
+          "66",
+          "74",
+          "75"
+        ],
+        "priority": "medium",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Captura del evento view (§26.1-26.5)",
+            "description": "Cliente registra vista (≥3s visible), seconds_watched, percent máx, completed (≥95%), device, session_id en events_raw.",
+            "details": "mobile/feed: detectar visible ≥3s continuos = vista (§26.1); acumular seconds_watched y percent_watched máx por exposición (§26.2); completed si ≥95% (§26.3). Estructura del evento §26.5 en events_raw (ya existe; extender columnas si faltan). Cada exposición = evento independiente (§26.4). CRÍTICA (definición operativa).",
+            "testStrategy": "pgTAP/smoke: <3s no cuenta; percent máx correcto; completed a 95%.",
+            "status": "pending",
+            "dependencies": [],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Rollup diario pg_cron → metrics_daily",
+            "description": "Job nocturno agrega events_raw a una tabla de métricas diarias por video/propiedad.",
+            "details": "pg_cron diario → metrics_daily(property_id, video_id, day, unique_views, completed_views, avg_percent, likes, saves, comments, shares, contacts). Vistas públicas = únicas por usuario/video (§26.4). Los contadores denormalizados de properties siguen para totales en vivo. CRÍTICA (job).",
+            "testStrategy": "pgTAP: rollup calcula únicas y % promedio esperados; idempotente por día.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Dashboard por publicación (§26.6)",
+            "description": "Mis publicaciones → métricas de la publicación con gráfica diaria 30d y comparativa vs promedio del agente.",
+            "details": "mobile: vistas únicas, completadas, %prom, likes/guardados/comentarios/compartidos/contactos, gráfica 30d (lee metrics_daily), comparativa vs promedio del agente (§26.6). NO crítica (UI).",
+            "testStrategy": "pnpm tsc/lint; smoke: dashboard carga con datos de metrics_daily.",
+            "status": "pending",
+            "dependencies": [
+              2
+            ],
+            "priority": "medium",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Analítica agregada del agente (§26.7)",
+            "description": "Drawer → Analítica: totales, top 3 por engagement, distribución de leads por estado, evolución semanal.",
+            "details": "mobile: totales por métrica, top 3 publicaciones, distribución de leads por estado del embudo (de 75), evolución semanal (§26.7). NO crítica (UI).",
+            "testStrategy": "pnpm tsc/lint; smoke: agregados y top 3 correctos.",
+            "status": "pending",
+            "dependencies": [
+              2
+            ],
+            "priority": "medium",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Ingest + verificación",
+            "description": "Ingest al vault y verificación de métricas.",
+            "details": "mapa-codebase (view event, metrics_daily, dashboards), concepto metricas-eventos (estado vivo), log.md.",
+            "testStrategy": "Smoke; revisión del vault.",
+            "status": "pending",
+            "dependencies": [
+              3,
+              4
+            ],
+            "priority": "low",
+            "parentId": "undefined"
+          }
+        ],
+        "updatedAt": "2026-07-13T00:00:00.000Z"
+      },
+      {
+        "id": "81",
+        "title": "Ola 3 — Panel admin web (Next.js separado, 10 pantallas, admin_actions)",
+        "description": "Panel de administración web en Next.js, repo/paquete APARTE (deploy Vercel independiente), 10 pantallas, con `admin_actions` inmutable y auditoría. PRD §28.",
+        "details": "PRD §28 (28.1 plataforma, 28.2 subroles, 28.3 pantallas, 28.4 comunicación admin-publicador, 28.5 auditoría). ⚠️ Sin mockup canónico en la identidad → diseño = trabajo nuevo. Reusa `admin_create_agency_atomic`. Repo aparte (no toca mobile/). Consume la cola de moderación (§79). Épica del camino a producción (ADR 0008 / docs/PRD-beta.md). Spec detallado (modelo de datos, RLS, EF, pantallas, estados, edge cases, tests, subtareas) se redacta SECUENCIAL al entrar su ola, con aprobación de Abraham; add-task roto → subtareas por escritura directa en tasks.json.",
+        "testStrategy": "TDD estricto en lógica crítica (supabase/functions/**, migrations/**, lib/hooks/validation): RED→GREEN→guardian. Verificación ligera (tsc/lint/smoke) en UI. Se detalla al specificar la ola.",
+        "status": "pending",
+        "dependencies": [
+          "66",
+          "71",
+          "73",
+          "79"
+        ],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Scaffold repo urbea-admin (Next.js/Vercel) + auth super-admin",
+            "description": "Crear el repo/panel Next.js separado, con login de super-admin (Supabase) y guard por rol.",
+            "details": "Repo aparte (ADR §6), NO toca mobile/. Next.js en Vercel. Auth Supabase; solo user_role=admin entra (guard). Mobile-first responsive (§28.1). Cuentas admin solo por seed/invitación (§28.2, ya existen 2). CRÍTICA (guard de acceso).",
+            "testStrategy": "Smoke: no-admin no entra; admin ve el dashboard. Deploy preview en Vercel.",
+            "status": "pending",
+            "dependencies": [],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Dashboard + colas de moderación (publicaciones y comentarios)",
+            "description": "Dashboard de métricas globales y colas de moderación reusando las EFs de Olas 1-2.",
+            "details": "Dashboard §28.3.1 (usuarios activos, publicaciones por estado, leads, reportes pendientes). Cola de publicaciones §28.3.2 (reproduce video, filtros estado/prioridad, Aprobar/Rechazar/Pedir cambios/Suspender → EFs de 73.9). Cola de comentarios §28.3.3 (held_for_review + reportados → Publicar/Eliminar/Restaurar/Sancionar → EFs de 78). Reusa EFs (misma lógica que la app). web.",
+            "testStrategy": "Smoke: aprobar desde el panel usa la EF y refleja estado; auditoría registra.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Gestión de usuarios, inmobiliarias y solicitudes de agente",
+            "description": "Pantallas §28.3.4/5: usuarios (buscar, detalle, suspender/reactivar/eliminar/cambiar rol/aprobar agente) e inmobiliarias (cola de aprobación, doc, aprobar/rechazar/suspender).",
+            "details": "Reusa las transiciones de 71.5 (aprobaciones que el super-admin hacía por Studio en beta). Cambiar rol manual (§28.3.4). web + EFs existentes.",
+            "testStrategy": "Smoke: aprobar inmobiliaria/agente desde el panel; cambiar rol; auditoría.",
+            "status": "pending",
+            "dependencies": [
+              2
+            ],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Reportes, invitaciones beta, captación e config/auditoría",
+            "description": "Pantallas §28.3.6-10: cola de reportes, invitaciones beta, agent_interest_submissions, config/catálogos (tipos, precios, lista de palabras), auditoría admin_actions.",
+            "details": "Cola de reportes (de 79). Invitaciones beta (EFs existen). Captación de interesados = lista de agent_interest_submissions (creada en 82): marcar contactado/archivar/exportar (§28.3.8). Config: tipos de propiedad, precios/planes (76.1), lista de palabras del filtro (78.1). Auditoría admin_actions inmutable (§28.5). web.",
+            "testStrategy": "Smoke: cada pantalla lista y actúa; admin_actions inmutable.",
+            "status": "pending",
+            "dependencies": [
+              3
+            ],
+            "priority": "medium",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Comunicación admin-publicador (§28.4)",
+            "description": "Al rechazar/pedir cambios, motivo obligatorio → notificación push+in-app+correo y visible en Mis publicaciones.",
+            "details": "Motivo libre obligatorio (§28.4) → dispara notificación (77) push+in-app + correo (Resend); queda visible en Mis publicaciones para las correcciones. Sin chat bidireccional (MVP). web + EF.",
+            "testStrategy": "Smoke: rechazar con motivo notifica por 3 vías y aparece en la app.",
+            "status": "pending",
+            "dependencies": [
+              4
+            ],
+            "priority": "medium",
+            "parentId": "undefined"
+          },
+          {
+            "id": 6,
+            "title": "Deploy + verificación + ingest",
+            "description": "Deploy a Vercel, verificación E2E del panel e ingest al vault.",
+            "details": "Deploy producción Vercel. E2E: moderar, aprobar, gestionar, auditar. Ingest: mapa-codebase (repo admin, pantallas), concepto panel-admin (estado vivo), log.md. Nota: repo aparte, referenciar desde el vault.",
+            "testStrategy": "E2E manual del panel; revisión del vault.",
+            "status": "pending",
+            "dependencies": [
+              5
+            ],
+            "priority": "medium",
+            "parentId": "undefined"
+          }
+        ],
+        "updatedAt": "2026-07-13T00:00:00.000Z"
+      },
+      {
+        "id": "82",
+        "title": "Ola 3 — Landing (Next.js público + /v/[id] + captación de agentes)",
+        "description": "Landing page pública (Next.js (repo web público, mismo stack que admin)) con secciones del PRD §27 y captación de interesados a agente.",
+        "details": "PRD §27 (27.1 secciones, 27.2 captación agentes). Repo/paquete web (posible junto al admin). NO crítica-TDD (marketing/estático). Deep links y SEO básicos. Épica del camino a producción (ADR 0008 / docs/PRD-beta.md). Spec detallado (modelo de datos, RLS, EF, pantallas, estados, edge cases, tests, subtareas) se redacta SECUENCIAL al entrar su ola, con aprobación de Abraham; add-task roto → subtareas por escritura directa en tasks.json.",
+        "testStrategy": "Verificación ligera (build + smoke visual). No crítica-TDD.",
+        "status": "pending",
+        "dependencies": [
+          "66",
+          "78"
+        ],
+        "priority": "low",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Ampliar repo web público con secciones de landing (§27.1)",
+            "description": "Sobre el repo Next.js creado en 78.5 (/v/[id]), agregar la landing: hero, cómo funciona, para agentes, beta cerrada, footer.",
+            "details": "Next.js/Vercel (mismo stack que admin, decisión 2026-07-13 reemplaza Astro). Secciones §27.1: hero (valor + logos de tienda + CTA descarga), cómo funciona (3-4 pasos), para agentes (sin registro abierto, CTA \"Soy agente\"), beta cerrada (waitlist email), footer (términos/privacidad/contacto/redes). Mobile-first. Mismo dominio que /v/[id].",
+            "testStrategy": "Smoke: landing responsive; /v/[id] sigue funcionando en el mismo sitio.",
+            "status": "pending",
+            "dependencies": [],
+            "priority": "medium",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Captación de interesados a agente (§27.2)",
+            "description": "Formulario \"Soy agente, quiero saber más\" → tabla agent_interest_submissions.",
+            "details": "CTA secundario abre formulario (nombre, apellido, teléfono, correo). Tabla public.agent_interest_submissions(nombre, apellido, telefono, correo, fecha, ip, fuente landing|app, estado new|contacted|archived, §27.2). La gestiona el admin (81.4). Migración + web.",
+            "testStrategy": "pgTAP/smoke: envío guarda fila con fuente=landing, estado=new.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "priority": "medium",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Waitlist beta cerrada (§27.1.4)",
+            "description": "Campo de email \"solicita acceso\" → tabla de lista de espera.",
+            "details": "public.beta_waitlist(email unique, created_at, source). El bloque de beta cerrada capta emails. web + migración.",
+            "testStrategy": "pgTAP/smoke: email duplicado no re-inserta; se guarda.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "priority": "low",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Deploy + verificación + ingest",
+            "description": "Deploy Vercel, verificación e ingest.",
+            "details": "Deploy. Ingest: mapa-codebase (repo web público, landing, captación), concepto landing (estado vivo), log.md.",
+            "testStrategy": "Smoke landing + formularios; revisión del vault.",
+            "status": "pending",
+            "dependencies": [
+              2,
+              3
+            ],
+            "priority": "low",
+            "parentId": "undefined"
+          }
+        ],
+        "updatedAt": "2026-07-13T00:00:00.000Z"
+      },
+      {
+        "id": "83",
+        "title": "Transversal — Observabilidad (Sentry/Logflare) + deep links",
+        "description": "Instrumentación de observabilidad (Sentry + Logflare) y deep links `urbea.com/v/[id]` para compartir/abrir propiedades. PRD §33.",
+        "details": "PRD §33.2/§33.3. Transversal a todas las olas. Toca config móvil (Sentry RN → posible rebuild), Edge Functions (logs), y el esquema de deep links (enlaza con §21 compartir). Épica del camino a producción (ADR 0008 / docs/PRD-beta.md). Spec detallado (modelo de datos, RLS, EF, pantallas, estados, edge cases, tests, subtareas) se redacta SECUENCIAL al entrar su ola, con aprobación de Abraham; add-task roto → subtareas por escritura directa en tasks.json.",
+        "testStrategy": "Verificación por captura real de un error de prueba en Sentry + apertura de un deep link. Config, no crítica-TDD.",
+        "status": "pending",
+        "dependencies": [
+          "66"
+        ],
+        "priority": "medium",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Sentry (app Expo + Edge Functions)",
+            "description": "Integrar Sentry para crashes/errores en el cliente y las EFs.",
+            "details": "SDK Sentry en Expo (sentry-expo) y en las EFs (captura de errores). Releases atados al fingerprint (67). Alertas básicas. config.",
+            "testStrategy": "Smoke: un error de prueba llega a Sentry con stack trace.",
+            "status": "pending",
+            "dependencies": [],
+            "priority": "medium",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Logflare (logs Supabase)",
+            "description": "Conectar Logflare para logs de Postgres/Edge Functions.",
+            "details": "Logflare (nativo Supabase) para agregación/consulta de logs de DB y EFs. config.",
+            "testStrategy": "Smoke: logs de una EF visibles en Logflare.",
+            "status": "pending",
+            "dependencies": [],
+            "priority": "low",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Deep links universales (§4.3)",
+            "description": "Universal links iOS + app links Android → urbea.com/v/[id]; abre app si instalada+registrada, si no web.",
+            "details": "mobile (Expo Router linking) + verificación de dominio (AASA iOS, assetlinks Android en el repo web). Lógica §4.3: app instalada Y registrada → abre en app; instalada sin registro → tratar como sin app → web; sin app → web (§4.3). CRÍTICA (routing + verificación de dominio).",
+            "testStrategy": "Smoke: link abre la app en dispositivo con sesión; cae a web sin app.",
+            "status": "pending",
+            "dependencies": [],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Verificación + ingest",
+            "description": "Verificación e ingest al vault.",
+            "details": "Ingest: mapa-codebase (Sentry, Logflare, deep links), concepto observabilidad/estrategia-releases (estado vivo), log.md.",
+            "testStrategy": "Smoke integral; revisión del vault.",
+            "status": "pending",
+            "dependencies": [
+              1,
+              3
+            ],
+            "priority": "low",
+            "parentId": "undefined"
+          }
+        ],
+        "updatedAt": "2026-07-13T00:00:00.000Z"
+      },
+      {
+        "id": "84",
+        "title": "Ola 4 (capstone) — Pasarela Stripe test-mode (flip-ready a cobro real MX)",
+        "description": "ÚLTIMO módulo. Pasarela de pagos en Stripe TEST-MODE: Payment Intents, webhooks (Stripe CLI), tarjeta + OXXO Pay + SPEI, recibo por correo. Deja todo flip-ready: cobro real = cambiar llaves test→live + apagar flag, sin migración. PRD §17.4.",
+        "details": "PRD §17.4 (Stripe, tarjeta/Apple/Google Pay/OXXO/SPEI). Depende del modelo de datos de la Ola 1 (§76). Se construye AL FINAL del desarrollo (decisión Abraham 2026-07-12). Test-mode: `sk_test`, tarjetas de prueba, `stripe listen`/`stripe trigger` para webhooks. CRÍTICO (EF de checkout + webhook = frontera de dinero/seguridad, fail-closed). Facturación CFDI = post-MVP. Épica del camino a producción (ADR 0008 / docs/PRD-beta.md). Spec detallado (modelo de datos, RLS, EF, pantallas, estados, edge cases, tests, subtareas) se redacta SECUENCIAL al entrar su ola, con aprobación de Abraham; add-task roto → subtareas por escritura directa en tasks.json.",
+        "testStrategy": "TDD estricto en lógica crítica (supabase/functions/**, migrations/**, lib/hooks/validation): RED→GREEN→guardian. Verificación ligera (tsc/lint/smoke) en UI. Se detalla al specificar la ola.",
+        "status": "pending",
+        "dependencies": [
+          "66",
+          "76"
+        ],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Stripe test-mode + EF create-payment-intent",
+            "description": "Cuenta Stripe test-mode, secrets y EF que crea el Payment Intent del plan (MXN).",
+            "details": "PREREQ EXTERNO (Abraham): cuenta Stripe (llaves sk_test/pk_test), habilitar OXXO Pay y SPEI en el dashboard. Secrets: STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET. EF create-payment-intent: recibe plan_id, calcula monto del plan (76.1) en MXN, crea Payment Intent con métodos card/apple_pay/google_pay/oxxo/spei, devuelve client_secret. CRÍTICA (frontera de pago).",
+            "testStrategy": "Deno: intent con monto correcto del plan; rechaza plan inválido; solo el dueño paga lo suyo.",
+            "status": "pending",
+            "dependencies": [],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "PaymentSheet nativo en la app",
+            "description": "Integrar @stripe/stripe-react-native (PaymentSheet) en Publicar (fuera de beta) y Renovar.",
+            "details": "mobile: PaymentSheet con client_secret de 84.1; métodos tarjeta + Apple/Google Pay + OXXO + SPEI. Se dispara al Publicar cuando el flag video_slot_free está OFF (pending_payment → pago) y en Renovar (76.5). Premium solo compra plan 1 mes; agente 1/3/6 (§17.2). NO crítica de lógica pero maneja dinero → verificación reforzada.",
+            "testStrategy": "Smoke con tarjetas de test (4242...): PaymentSheet abre, aprueba, y avanza el estado.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "EF stripe-webhook → purchase + video_slot",
+            "description": "Webhook de Stripe (firma validada) que al confirmar el pago crea purchase + video_slot del modelo 76.",
+            "details": "EF stripe-webhook: valida firma (STRIPE_WEBHOOK_SECRET). En payment_intent.succeeded → crea purchase (price_snapshot, method, status=paid) + video_slot available (76). OXXO/SPEI son asíncronos (el usuario paga después) → manejar payment_intent.processing/succeeded. Stripe CLI (stripe listen/trigger) para local. Idempotente por event id. CRÍTICA (confirmación de pago).",
+            "testStrategy": "Deno: firma inválida → 401; succeeded crea purchase+slot; reentrega no duplica; OXXO pendiente→pagado.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "priority": "high",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Recibo por correo (§17.5)",
+            "description": "Al confirmar el pago, enviar recibo de confirmación por correo (Resend). Sin CFDI (post-MVP).",
+            "details": "Gancho en 84.3: pago confirmado → correo de recibo vía Resend (§17.5). Facturación CFDI 4.0 = post-MVP (fuera de alcance).",
+            "testStrategy": "Smoke: pago de test genera correo de recibo con monto/plan.",
+            "status": "pending",
+            "dependencies": [
+              3
+            ],
+            "priority": "medium",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Flip-ready a cobro real",
+            "description": "Documentar y cablear el cambio test→live: apagar video_slot_free + llaves live, sin migración; OXXO/SPEI a validar en live.",
+            "details": "El flip = apagar flag video_slot_free (app_config) + cambiar sk_test/pk_test por live + verificar webhook en live. Sin migración de schema (todo el modelo ya existe desde 76). OXXO Pay y SPEI: cableados en test pero con simulación limitada → marcar // ponytail: validación final en live. Documentar el runbook del flip en el vault.",
+            "testStrategy": "Checklist del flip verificado en staging; doc en el vault.",
+            "status": "pending",
+            "dependencies": [
+              3
+            ],
+            "priority": "medium",
+            "parentId": "undefined"
+          },
+          {
+            "id": 6,
+            "title": "Verificación E2E + ingest",
+            "description": "E2E con tarjetas de test e ingest al vault.",
+            "details": "E2E: comprar plan → PaymentSheet → webhook → purchase+slot → publicar. Ingest: mapa-codebase (create-payment-intent, stripe-webhook, PaymentSheet), concepto monetizacion-pago-por-video (estado vivo, gateway Stripe test-mode), log.md. Enlazar tarea 76.",
+            "testStrategy": "E2E con Stripe CLI + tarjetas de test; revisión del vault.",
+            "status": "pending",
+            "dependencies": [
+              4,
+              5
+            ],
+            "priority": "high",
+            "parentId": "undefined"
+          }
+        ],
+        "updatedAt": "2026-07-13T00:00:00.000Z"
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-07-11T23:08:47.742Z",
-      "taskCount": 65,
-      "completedCount": 53,
+      "lastModified": "2026-07-13T20:14:29.731Z",
+      "taskCount": 84,
+      "completedCount": 55,
       "tags": [
         "master"
       ]
