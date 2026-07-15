@@ -12,6 +12,7 @@ import { Image } from 'expo-image';
 
 import { colors, radii, shadows, spacing, type_scale } from '@/theme/theme';
 import { IsotipoMark } from '@/components/IsotipoMark';
+import { useR2Urls } from '@/hooks/useR2Urls';
 import type { AgentProfile } from '../types';
 import type { AgentStats } from '../hooks/useAgentStats';
 import { ProfessionalStats } from './ProfessionalStats';
@@ -64,7 +65,12 @@ export function ProfileHeader({ profile, stats, loading = false }: ProfileHeader
 
   const [img_error, set_img_error] = useState(false);
 
-  const show_photo = Boolean(profile_photo_url) && !img_error;
+  // profile_photo_url guarda el R2 KEY (bucket privado, subtarea 69.3) — se
+  // resuelve a una URL presigned GET antes de pasarla a <Image>.
+  const { urls: avatar_urls } = useR2Urls([profile_photo_url]);
+  const avatar_url = avatar_urls[0] ?? null;
+
+  const show_photo = Boolean(avatar_url) && !img_error;
   const initials = get_initials(full_name);
   const display_name = full_name ?? 'Agente Urbea';
 
@@ -77,7 +83,7 @@ export function ProfileHeader({ profile, stats, loading = false }: ProfileHeader
         <View style={styles.avatar_ring}>
           {show_photo ? (
             <Image
-              source={{ uri: profile_photo_url! }}
+              source={{ uri: avatar_url! }}
               style={styles.avatar_img}
               transition={150}
               onError={() => set_img_error(true)}

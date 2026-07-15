@@ -77,7 +77,11 @@ export interface MyProperty {
 export interface AgentProfile {
   /** Nombre completo — de user_preferences.full_name (migración 0015). */
   full_name: string | null;
-  /** URL de foto de perfil — de user_preferences.profile_photo_url (migración 0015). */
+  /**
+   * R2 key de la foto de perfil (bucket privado, subtarea 69.3) — de
+   * user_preferences.profile_photo_url (migración 0015). NO es una URL: se
+   * resuelve a una URL presigned GET vía useR2Urls antes de mostrarla.
+   */
   profile_photo_url: string | null;
   /** Biografía corta — de users.bio (null hasta que se implemente edición). */
   bio: UserRow['bio'];
