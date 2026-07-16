@@ -25,13 +25,24 @@ import { File, UploadType } from 'expo-file-system';
 
 export interface SaveProfileParams {
   fullName: string;
-  imageUri: string | null;
+  /**
+   * Semántica de 3 estados (69.6 — fix post-migración R2, especificada en
+   * profileService.test.ts casos (q)-(t); implementación pendiente — GREEN):
+   *   - `undefined` → KEEP: no se sube nada; el upsert OMITE la columna
+   *     `profile_photo_url` (no pisa el valor existente).
+   *   - `null` → REMOVE: se guarda `profile_photo_url: null` (borra la foto).
+   *   - `string` (uri local) → REPLACE: mintea + sube + guarda el nuevo key.
+   */
+  imageUri: string | null | undefined;
   userId: string;
 }
 
 export interface SaveProfileResult {
-  /** R2 key del avatar (NO url pública) — null si no hay foto. */
-  profilePhotoUrl: string | null;
+  /**
+   * R2 key del avatar nuevo, `null` si se removió, `undefined` si KEEP (sin
+   * dato nuevo — el llamador no debe pisar el valor existente).
+   */
+  profilePhotoUrl: string | null | undefined;
 }
 
 /** Forma de la respuesta de mint-r2-url para op:put. */

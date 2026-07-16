@@ -56,6 +56,33 @@
  * - (k) invoke_lanza_excepcion_fail_soft_sin_throw: invoke RECHAZA (red
  *   caída) → TODAS las posiciones válidas → null, resolve_r2_urls NO
  *   propaga la excepción.
+ *
+ * ---------------------------------------------------------------------------
+ * AÑADIDO — Subtarea 69.6: passthrough de URLs legacy (Supabase Storage)
+ * ---------------------------------------------------------------------------
+ * Bug motivador: avatares sembrados ANTES de la migración a R2 (69.4) siguen
+ * en `user_preferences.profile_photo_url` como URL PÚBLICA completa
+ * (`https://<proj>.supabase.co/storage/v1/object/public/...`), no como R2
+ * key (`avatars/<uid>/<uuid>`). El resolver los trataba como key R2 → los
+ * mandaba a mint-r2-url (que jamás los reconoce) → resolvían null → el
+ * avatar legacy desaparecía de la UI.
+ *
+ * Contrato NUEVO: un elemento que EMPIEZA CON `http://` o `https://` ya es
+ * una URL utilizable → se devuelve TAL CUAL, sin incluirse en la llamada a
+ * la EF (no es un key R2). Las keys R2 reales (sin ese prefijo) siguen su
+ * camino normal. Mezclas de key + url + null mantienen la alineación 1:1;
+ * si NINGÚN elemento es un key R2 (todos son URLs o null), no se llama la EF.
+ *
+ * ### Ramas nuevas (passthrough legacy, 69.6)
+ * - (l) passthrough_url_https_no_llama_ef: un único valor `https://...` se
+ *   devuelve tal cual, SIN invocar la EF.
+ * - (m) passthrough_url_http_no_llama_ef: idem con `http://...`.
+ * - (n) mezcla_key_r2_y_url_legacy_alineada: keys=[key_r2, url_legacy, null]
+ *   → invoke SOLO con el key R2 (la url legacy NO viaja en el body); salida
+ *   alineada 1:1 con la url legacy intacta en su posición.
+ * - (o) todos_urls_o_null_no_llama_ef: si NINGÚN elemento es un key R2
+ *   (todos URLs legacy o null) → NO invoca la EF, cada posición se devuelve
+ *   tal cual (urls) o null.
  */
 
 import { resolve_r2_urls } from '../r2Resolver';
@@ -72,6 +99,12 @@ const TEST_KEY_3 = 'avatars/user-3/uuid-3';
 const TEST_URL_1 = 'https://abc.r2.cloudflarestorage.com/urbea-assets/avatars/user-1/uuid-1?sig=1';
 const TEST_URL_2 = 'https://abc.r2.cloudflarestorage.com/urbea-assets/avatars/user-2/uuid-2?sig=2';
 const TEST_URL_3 = 'https://abc.r2.cloudflarestorage.com/urbea-assets/avatars/user-3/uuid-3?sig=3';
+
+// URLs legacy (Supabase Storage, pre-migración R2 / 69.4) — ya son URLs
+// utilizables, NO keys R2 (no empiezan con "avatars/").
+const TEST_LEGACY_URL_HTTPS =
+  'https://xyzproj.supabase.co/storage/v1/object/public/profile-photos/user-9/avatar.jpg';
+const TEST_LEGACY_URL_HTTP = 'http://legacy.internal.example/avatar.jpg';
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -248,5 +281,46 @@ describe('resolve_r2_urls — resolver de lectura en lote (mint-r2-url op:get)',
 
     expect(thrown).toBeNull();
     expect(result).toEqual([null]);
+  });
+
+  // ── (l)-(o) passthrough de URLs legacy (69.6) ─────────────────────────────
+
+  it('(l) passthrough_url_https_no_llama_ef: un valor https:// se devuelve tal cual, SIN invocar la EF', async () => {
+    const result = await resolve_r2_urls([TEST_LEGACY_URL_HTTPS], { supabase: mock_supabase });
+
+    expect(result).toEqual([TEST_LEGACY_URL_HTTPS]);
+    expect(mock_invoke).not.toHaveBeenCalled();
+  });
+
+  it('(m) passthrough_url_http_no_llama_ef: un valor http:// se devuelve tal cual, SIN invocar la EF', async () => {
+    const result = await resolve_r2_urls([TEST_LEGACY_URL_HTTP], { supabase: mock_supabase });
+
+    expect(result).toEqual([TEST_LEGACY_URL_HTTP]);
+    expect(mock_invoke).not.toHaveBeenCalled();
+  });
+
+  it('(n) mezcla_key_r2_y_url_legacy_alineada: keys=[key_r2, url_legacy, null] → invoke SOLO con el key R2, alineación 1:1 preservada', async () => {
+    mock_invoke.mockResolvedValue({
+      data: { urls: [{ key: TEST_KEY_1, url: TEST_URL_1, expires: 3600 }] },
+      error: null,
+    });
+
+    const result = await resolve_r2_urls([TEST_KEY_1, TEST_LEGACY_URL_HTTPS, null], {
+      supabase: mock_supabase,
+    });
+
+    expect(result).toEqual([TEST_URL_1, TEST_LEGACY_URL_HTTPS, null]);
+    expect(mock_invoke).toHaveBeenCalledTimes(1);
+    const [, options] = mock_invoke.mock.calls[0] as [string, { body: { keys: string[] } }];
+    expect(options.body.keys).toEqual([TEST_KEY_1]);
+  });
+
+  it('(o) todos_urls_o_null_no_llama_ef: si ningún elemento es key R2 (todos URLs legacy o null) → NO invoca la EF', async () => {
+    const result = await resolve_r2_urls([TEST_LEGACY_URL_HTTPS, null, TEST_LEGACY_URL_HTTP], {
+      supabase: mock_supabase,
+    });
+
+    expect(result).toEqual([TEST_LEGACY_URL_HTTPS, null, TEST_LEGACY_URL_HTTP]);
+    expect(mock_invoke).not.toHaveBeenCalled();
   });
 });

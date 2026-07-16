@@ -63,6 +63,37 @@
  * - (o) error_de_upload_status_no_2xx_rechaza: uploadAsync status=500 → lanza,
  *   NO hace upsert.
  * - (p) error_de_upsert_rechaza: upsert error → saveProfile lanza, no swallow.
+ *
+ * ---------------------------------------------------------------------------
+ * AÑADIDO — Subtarea 69.6: fix del flujo editar-perfil post-R2 (KEEP)
+ * ---------------------------------------------------------------------------
+ * Bug motivador: `edit.tsx` pre-puebla `avatar_uri` con el KEY R2 guardado
+ * (`avatars/<uid>/<uuid>`) y lo reenvía tal cual como `imageUri` si el usuario
+ * NO cambia la foto → saveProfile intentaba `new File(key)` y subir un
+ * "archivo" que no existe en el filesystem del device → explota.
+ *
+ * Contrato NUEVO — `imageUri` pasa a `string | null | undefined` (3 estados):
+ *   - `undefined` → **KEEP**: NO invoca mint-r2-url, NO crea File, el upsert
+ *     OMITE la clave `profile_photo_url` por completo (ON CONFLICT conserva
+ *     el valor existente en DB — nunca se pisa con null). `full_name` SÍ se
+ *     actualiza igual que siempre.
+ *   - `null` → REMOVE (sin cambios — cubierto por (b) arriba).
+ *   - `string` → REPLACE (sin cambios — cubierto por (a),(c)-(p) arriba).
+ * NOTA: la lógica de "removePhoto → forzar null" y "avatar sin cambios →
+ * undefined" vive en `useEditProfile` (fuera de alcance de este archivo);
+ * aquí solo se especifica cómo reacciona `saveProfile` al recibir `undefined`.
+ *
+ * ### Ramas nuevas (KEEP, 69.6)
+ * - (q) keep_undefined_no_invoca_mint_ni_sube: imageUri undefined → NO invoca
+ *   mint-r2-url, NO crea File.
+ * - (r) keep_undefined_upsert_omite_columna_profile_photo_url: el objeto que
+ *   se manda a `.upsert()` NO tiene la clave `profile_photo_url` (ni siquiera
+ *   en null) — así ON CONFLICT no la pisa.
+ * - (s) keep_undefined_upsert_incluye_full_name: el upsert SÍ trae
+ *   `user_id`/`full_name` correctos aunque KEEP omita la foto.
+ * - (t) keep_undefined_retorna_profilePhotoUrl_undefined: el resultado es
+ *   `{ profilePhotoUrl: undefined }` — distinto de `null` (removido) y de un
+ *   key (reemplazado): "sin dato nuevo".
  */
 
 // ---------------------------------------------------------------------------
@@ -464,5 +495,64 @@ describe('saveProfile — avatar vía R2 presigned (mint-r2-url)', () => {
         userId: TEST_USER_ID,
       }),
     ).rejects.toThrow(/upsert|preferences|DB|database/i);
+  });
+
+  // ── (q)-(t) KEEP: imageUri undefined (69.6) ──────────────────────────────
+
+  it('(q) keep_undefined_no_invoca_mint_ni_sube: imageUri undefined (KEEP) → NO invoca mint-r2-url ni crea File', async () => {
+    setup_db_upsert_ok();
+
+    await saveProfile({
+      fullName: TEST_FULL_NAME,
+      imageUri: undefined,
+      userId: TEST_USER_ID,
+    });
+
+    expect(mock_invoke).not.toHaveBeenCalled();
+    expect(MockFile).not.toHaveBeenCalled();
+  });
+
+  it('(r) keep_undefined_upsert_omite_columna_profile_photo_url: el upsert NO incluye la clave profile_photo_url (KEEP no debe pisar el valor existente)', async () => {
+    setup_db_upsert_ok();
+
+    await saveProfile({
+      fullName: TEST_FULL_NAME,
+      imageUri: undefined,
+      userId: TEST_USER_ID,
+    });
+
+    const upsert_call = mock_upsert.mock.calls[0];
+    expect(upsert_call).toBeDefined();
+    const upsert_data = upsert_call![0] as Record<string, unknown>;
+    expect(upsert_data).not.toHaveProperty('profile_photo_url');
+  });
+
+  it('(s) keep_undefined_upsert_incluye_full_name: aunque KEEP omite la foto, el upsert sigue mandando user_id y full_name correctos', async () => {
+    setup_db_upsert_ok();
+
+    await saveProfile({
+      fullName: TEST_FULL_NAME,
+      imageUri: undefined,
+      userId: TEST_USER_ID,
+    });
+
+    const upsert_call = mock_upsert.mock.calls[0];
+    expect(upsert_call).toBeDefined();
+    const upsert_data = upsert_call![0] as Record<string, unknown>;
+    expect(upsert_data).toEqual(
+      expect.objectContaining({ user_id: TEST_USER_ID, full_name: TEST_FULL_NAME }),
+    );
+  });
+
+  it('(t) keep_undefined_retorna_profilePhotoUrl_undefined: KEEP retorna profilePhotoUrl undefined — distinto de null (removido)', async () => {
+    setup_db_upsert_ok();
+
+    const result = await saveProfile({
+      fullName: TEST_FULL_NAME,
+      imageUri: undefined,
+      userId: TEST_USER_ID,
+    });
+
+    expect(result.profilePhotoUrl).toBeUndefined();
   });
 });
