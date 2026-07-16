@@ -1,11 +1,15 @@
 ---
 tipo: estado
-actualizado: 2026-07-13
+actualizado: 2026-07-16
 ---
 
 # Estado actual
 
 > Narrativa de "dónde estamos hoy". El **qué sigue / qué está hecho** vive en **Taskmaster** (`task-master list`), no aquí.
+
+## Hoy (2026-07-16)
+
+- **✅ #69 — Épica C: Cloudflare R2 para assets (Ola 0), avatar end-to-end por presigned.** Bucket privado `urbea-assets` provisionado (Abraham) + secrets en Supabase; EF **`mint-r2-url`** desplegada y validada con round-trip real (PUT 200 + GET sirve; autz fail-closed: avatar=prefix propio, logo=owner de agencia; aws4fetch; 40 Deno tests + guardian). Cliente: `saveProfile`→R2 (guarda **key**), `r2Resolver`/`useR2Urls` (batch presigned GET fail-soft + **passthrough URLs legacy** → los avatares viejos siguen visibles), wiring perfil/detalle/edición. El smoke en emulador cazó **#69.6** (guardar sin cambiar foto tronaba; contrato keep/remove/replace) — arreglado con TDD, confirmación visual del usuario en ambos emuladores. Greenfield: sin backfill. Suite móvil **658/658**, Deno 467+. Nuevo concepto [[storage-hibrido]]; **tareas nuevas 85 (avatares CRM) y 86 (UI logo)** por hallazgos diferidos. Rama `tarea/69-r2-assets` (commits locales, PR pendiente). **Desbloquea #68 (Stream)** — el `archive/` de R2 ya lo espera. ⚠️ Gotchas nuevos: deploy EF **sin Docker** = `--use-api`; secrets mal capturados se diagnostican por la URL firmada (credential=nombre literal / SignatureDoesNotMatch=par ID/secret de tokens distintos).
 
 ## Hoy (2026-07-13)
 

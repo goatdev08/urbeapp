@@ -32,4 +32,4 @@ Catálogo de todas las páginas. Actualizar en cada *ingest*.
 - [[feed-vertical-video]] · [[propiedades-y-video]] · [[busqueda-y-filtros]] · [[mapa-y-ubicacion]]
 - [[roles-y-permisos]] · [[inmobiliarias-y-agentes]] · [[onboarding-y-preferencias]]
 - [[crm-leads]] · [[moderacion]] · [[notificaciones]]
-- [[rls-seguridad]] · [[legal-consentimientos]] · [[monetizacion-pago-por-video]]
+- [[rls-seguridad]] · [[legal-consentimientos]] · [[monetizacion-pago-por-video]] · [[storage-hibrido]]
