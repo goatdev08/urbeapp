@@ -7,7 +7,13 @@
 //   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { AwsClient } from "aws4fetch";
 import type { VideoUrlMinter } from "../mint-video-url/types.ts";
+import type {
+  AgencyOwnershipVerifier,
+  R2UrlMinter,
+  SignedGetItem,
+} from "../mint-r2-url/types.ts";
 
 import type { InvitationDb, InvitationTokenRow } from "./invitation.ts";
 import type {
@@ -285,6 +291,93 @@ export function make_video_url_minter(client: SupabaseClient): VideoUrlMinter {
       }
 
       return results;
+    },
+  };
+}
+
+/**
+ * Adaptador real de AgencyOwnershipVerifier (subtarea 69.2).
+ * Resuelve "¿el usuario es owner activo de alguna agencia? ¿de cuál?" en una
+ * sola consulta a agency_members. status='active' + member_role='owner' es
+ * la definición de "owner activo" (migración 0003 — agencies_and_agents).
+ */
+export function make_agency_ownership_verifier(
+  client: SupabaseClient,
+): AgencyOwnershipVerifier {
+  return {
+    async get_owned_agency_id(user_id: string): Promise<string | null> {
+      const { data, error } = await client
+        .from("agency_members")
+        .select("agency_id")
+        .eq("user_id", user_id)
+        .eq("member_role", "owner")
+        .eq("status", "active")
+        .maybeSingle();
+
+      if (error || !data) return null;
+      return data.agency_id as string;
+    },
+  };
+}
+
+/**
+ * Adaptador real de R2UrlMinter (subtarea 69.2): firma presigned URLs S3v4
+ * contra el endpoint S3-compatible de Cloudflare R2 usando aws4fetch.
+ *
+ * NUNCA se ejercita en unit tests (SEAM del RED): el handler solo depende de
+ * la interfaz R2UrlMinter, inyectada como fake en handler.test.ts.
+ *
+ * Variables de entorno requeridas: R2_ACCOUNT_ID, R2_ACCESS_KEY_ID,
+ * R2_SECRET_ACCESS_KEY, R2_BUCKET, R2_ENDPOINT.
+ */
+export function make_r2_url_minter(): R2UrlMinter {
+  function r2_config() {
+    const account_id = Deno.env.get("R2_ACCOUNT_ID");
+    const access_key_id = Deno.env.get("R2_ACCESS_KEY_ID");
+    const secret_access_key = Deno.env.get("R2_SECRET_ACCESS_KEY");
+    const bucket = Deno.env.get("R2_BUCKET");
+    const endpoint = Deno.env.get("R2_ENDPOINT");
+    if (!account_id || !access_key_id || !secret_access_key || !bucket || !endpoint) {
+      throw new Error(
+        "Faltan variables de entorno R2_ACCOUNT_ID/R2_ACCESS_KEY_ID/R2_SECRET_ACCESS_KEY/R2_BUCKET/R2_ENDPOINT",
+      );
+    }
+    return { access_key_id, secret_access_key, bucket, endpoint };
+  }
+
+  async function sign(key: string, method: "PUT" | "GET", ttl_seconds: number): Promise<string> {
+    const { access_key_id, secret_access_key, bucket, endpoint } = r2_config();
+    const aws = new AwsClient({
+      accessKeyId: access_key_id,
+      secretAccessKey: secret_access_key,
+      service: "s3",
+      region: "auto",
+    });
+
+    const url = new URL(`${endpoint}/${bucket}/${key}`);
+    url.searchParams.set("X-Amz-Expires", String(ttl_seconds));
+
+    const signed_request = await aws.sign(url.toString(), {
+      method,
+      aws: { signQuery: true },
+    });
+    return signed_request.url;
+  }
+
+  return {
+    async sign_put(key: string, ttl_seconds: number): Promise<string> {
+      return await sign(key, "PUT", ttl_seconds);
+    },
+    async sign_get_batch(
+      keys: string[],
+      ttl_seconds: number,
+    ): Promise<SignedGetItem[]> {
+      const items: SignedGetItem[] = [];
+      for (const key of keys) {
+        const url = await sign(key, "GET", ttl_seconds);
+        items.push({ key, url, expires: ttl_seconds });
+      }
+      return items;
     },
   };
 }

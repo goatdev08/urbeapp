@@ -1,56 +1,99 @@
 /**
  * Tests fase RED — saveProfile (profileService.ts)
- * Subtarea Taskmaster: 52.4 — Migrar subida de imágenes a API File v56 + streaming
+ * Subtarea Taskmaster: 69.3 — Cliente: avatar de usuario vía R2 presigned
  *
  * SUT: saveProfile({ fullName, imageUri, userId }): Promise<{ profilePhotoUrl: string | null }>
  *
- * Contrato NUEVO (streaming, mismo patrón que useVideoUpload post-52.1):
- *   1. `supabase.storage.from('profile-photos').createSignedUploadUrl(path, { upsert: true })`
- *      → `{ data: { signedUrl, path, token }, error }`. El segundo argumento
- *      `{ upsert: true }` PRESERVA la semántica de upsert que hoy vive en
- *      `storage.upload(path, body, { upsert: true, ... })` — verificado en
- *      node_modules/@supabase/storage-js/src/packages/StorageFileApi.ts:379-399
- *      (`createSignedUploadUrl(path, options?: { upsert: boolean })`).
- *   2. `new File(imageUri).createUploadTask(signedUrl, { httpMethod: 'PUT',
+ * MIGRACIÓN (supersede el contrato de streaming a Supabase Storage de la
+ * subtarea 52.4): el avatar YA NO sube a `profile-photos` (Supabase Storage) —
+ * sube a Cloudflare R2 (bucket privado) vía la Edge Function `mint-r2-url`
+ * (69.2, desplegada). Contrato NUEVO:
+ *   1. `supabase.functions.invoke('mint-r2-url', { body: { kind: 'avatar', op: 'put' } })`
+ *      → `{ data: { url, key, expires }, error }`. El body NO incluye `key`:
+ *      el handler lo DERIVA del uid del JWT (`avatars/<uid>/<uuid>`) — el
+ *      cliente jamás decide el key de su propio avatar (69.2, handler.ts:108-118).
+ *   2. `new File(imageUri).createUploadTask(mint_data.url, { httpMethod: 'PUT',
  *      uploadType: UploadType.BINARY_CONTENT, headers: {'Content-Type': 'image/jpeg'} })`
- *      → UploadTask (verificado en build/File.d.ts + build/NetworkTasks.d.ts).
+ *      → UploadTask (misma API que useVideoUpload / 52.4).
  *   3. `task.uploadAsync()` → `{ status, body, headers }`; 2xx = éxito.
- *   4. `supabase.storage.from('profile-photos').getPublicUrl(path)` con el MISMO
- *      path que el signed upload.
- *   5. UPSERT en user_preferences — SIN CAMBIOS respecto al contrato actual.
+ *   4. UPSERT `user_preferences` con `profile_photo_url` = el **KEY** devuelto
+ *      por el mint (NO la url presigned, NO una url pública — bucket privado,
+ *      la lectura resuelve el key a URL en el momento de mostrarlo vía el
+ *      resolver `resolve_r2_urls`, fuera de alcance de este archivo).
+ *   5. `supabase.storage` YA NO SE USA para nada en este flujo (ni
+ *      `createSignedUploadUrl` ni `getPublicUrl`) — la migración a R2 lo
+ *      reemplaza por completo.
  *
  * EDGE CASES CUBIERTOS (RED):
  *
  * ### Happy path
- * - (a) happy_path_con_foto_via_signed_url_y_upload_task: signed URL con path
- *   correcto + uploadAsync 2xx + getPublicUrl → upsert → retorna publicUrl.
- * - (b) happy_path_sin_foto: imageUri null → sin createSignedUploadUrl, sin
- *   File, upsert con null, retorna null.
+ * - (a) happy_path_con_foto_mintea_sube_y_guarda_key: invoke mint-r2-url con
+ *   {kind:avatar,op:put} + upload 2xx + upsert con el KEY (no url) → retorna
+ *   {profilePhotoUrl: key}.
+ * - (b) happy_path_sin_foto: imageUri null → NO invoca mint-r2-url, NO crea
+ *   File, upsert con profile_photo_url null, retorna null.
  *
- * ### Ramas de la migración a streaming (no obvias)
- * - (g) signed_url_incluye_upsert_true: createSignedUploadUrl recibe
- *   `{ upsert: true }` como segundo argumento — preserva la semántica de
- *   upsert que antes vivía en las opciones de `storage.upload`.
- * - (h) upload_task_opciones_correctas: createUploadTask recibe httpMethod PUT,
- *   uploadType BINARY_CONTENT, Content-Type image/jpeg.
- * - (i) getpublicurl_usa_mismo_path_que_signed_url: getPublicUrl recibe
- *   exactamente el mismo path que createSignedUploadUrl.
- * - (m) no_usa_fetch_para_leer_el_archivo: el flujo streaming NO llama al
- *   fetch() global para leer el archivo como ArrayBuffer (elimina el pico de
- *   memoria — mismo root cause que el OOM de video).
+ * ### Ramas de la migración a R2 (no obvias)
+ * - (c) invoke_body_no_incluye_key: el body de la invocación NO trae `key` —
+ *   el cliente nunca manda el key de su propio avatar (lo deriva el servidor).
+ * - (d) invoke_exacto_kind_avatar_op_put: el body es exactamente
+ *   {kind:'avatar', op:'put'}, sin campos extra.
+ * - (e) upload_task_usa_url_del_mint: createUploadTask recibe la url devuelta
+ *   por mint-r2-url (NO una signed url de Supabase Storage).
+ * - (f) guarda_key_no_url_en_upsert: profile_photo_url en el upsert es el KEY
+ *   (formato "avatars/<uid>/<uuid>"), distinto de la url presigned de subida.
+ * - (g) upload_task_opciones_correctas: httpMethod PUT + uploadType
+ *   BINARY_CONTENT + Content-Type image/jpeg.
+ * - (h) no_usa_supabase_storage: el mock de supabase NO expone `.storage` —
+ *   si el SUT todavía llamara `.storage.from(...)` (patrón viejo, Storage-based)
+ *   explotaría con TypeError, confirmando que sigue el patrón legado.
+ * - (i) no_usa_fetch_para_leer_el_archivo: streaming puro, sin fetch() global
+ *   (mismo invariante que 52.4 — evita el pico de RAM).
  *
  * ### Invariantes de negocio preservadas (sin cambios respecto al contrato previo)
- * - (c) tabla_correcta_user_preferences.
- * - (d) onConflict_user_id.
- * - (e) path_exacto_sin_prefijo_bucket: path es '{userId}/avatar.jpg' exactamente.
- * - (f) upsert_incluye_full_name_y_url.
+ * - (j) tabla_correcta_user_preferences.
+ * - (k) onConflict_user_id.
+ * - (l) upsert_incluye_full_name.
  *
  * ### Boundary / error
- * - (j) error_de_signed_url_rechaza: createSignedUploadUrl con error → lanza,
+ * - (m) error_de_mint_rechaza: mint-r2-url devuelve error → saveProfile lanza,
  *   NO llama createUploadTask, NO hace upsert.
- * - (k) error_de_upload_status_no_2xx_rechaza: uploadAsync status=500 → lanza,
- *   NO llama getPublicUrl, NO hace upsert.
- * - (l) error_de_upsert_rechaza: upsert error → saveProfile lanza, no swallow.
+ * - (n) mint_sin_url_rechaza: mint-r2-url resuelve sin error pero sin `url` en
+ *   data (forma inesperada) → saveProfile lanza, NO sube, NO hace upsert.
+ * - (o) error_de_upload_status_no_2xx_rechaza: uploadAsync status=500 → lanza,
+ *   NO hace upsert.
+ * - (p) error_de_upsert_rechaza: upsert error → saveProfile lanza, no swallow.
+ *
+ * ---------------------------------------------------------------------------
+ * AÑADIDO — Subtarea 69.6: fix del flujo editar-perfil post-R2 (KEEP)
+ * ---------------------------------------------------------------------------
+ * Bug motivador: `edit.tsx` pre-puebla `avatar_uri` con el KEY R2 guardado
+ * (`avatars/<uid>/<uuid>`) y lo reenvía tal cual como `imageUri` si el usuario
+ * NO cambia la foto → saveProfile intentaba `new File(key)` y subir un
+ * "archivo" que no existe en el filesystem del device → explota.
+ *
+ * Contrato NUEVO — `imageUri` pasa a `string | null | undefined` (3 estados):
+ *   - `undefined` → **KEEP**: NO invoca mint-r2-url, NO crea File, el upsert
+ *     OMITE la clave `profile_photo_url` por completo (ON CONFLICT conserva
+ *     el valor existente en DB — nunca se pisa con null). `full_name` SÍ se
+ *     actualiza igual que siempre.
+ *   - `null` → REMOVE (sin cambios — cubierto por (b) arriba).
+ *   - `string` → REPLACE (sin cambios — cubierto por (a),(c)-(p) arriba).
+ * NOTA: la lógica de "removePhoto → forzar null" y "avatar sin cambios →
+ * undefined" vive en `useEditProfile` (fuera de alcance de este archivo);
+ * aquí solo se especifica cómo reacciona `saveProfile` al recibir `undefined`.
+ *
+ * ### Ramas nuevas (KEEP, 69.6)
+ * - (q) keep_undefined_no_invoca_mint_ni_sube: imageUri undefined → NO invoca
+ *   mint-r2-url, NO crea File.
+ * - (r) keep_undefined_upsert_omite_columna_profile_photo_url: el objeto que
+ *   se manda a `.upsert()` NO tiene la clave `profile_photo_url` (ni siquiera
+ *   en null) — así ON CONFLICT no la pisa.
+ * - (s) keep_undefined_upsert_incluye_full_name: el upsert SÍ trae
+ *   `user_id`/`full_name` correctos aunque KEEP omita la foto.
+ * - (t) keep_undefined_retorna_profilePhotoUrl_undefined: el resultado es
+ *   `{ profilePhotoUrl: undefined }` — distinto de `null` (removido) y de un
+ *   key (reemplazado): "sin dato nuevo".
  */
 
 // ---------------------------------------------------------------------------
@@ -60,21 +103,20 @@
 import { saveProfile } from '../profileService';
 import * as FileSystem from 'expo-file-system';
 
-const mock_create_signed_upload_url = jest.fn();
-const mock_get_public_url = jest.fn();
+const mock_invoke = jest.fn();
 const mock_upsert = jest.fn();
-const mock_from_storage = jest.fn();
 const mock_from_db = jest.fn();
 
 // El cliente supabase exportado desde @/lib/supabase/client se sustituye por
-// un objeto con la forma mínima necesaria para profileService. NOTA: esta
-// forma de storage YA NO expone `.upload` — solo `createSignedUploadUrl` +
-// `getPublicUrl` (streaming). Si el SUT aún llama `.upload(...)`, explota con
-// TypeError (falla por comportamiento, confirma que sigue en el patrón viejo).
+// un objeto con la forma mínima necesaria para profileService en su NUEVO
+// contrato R2: `functions.invoke` (mint-r2-url) + `from` (upsert). NOTA:
+// esta forma **NO expone `.storage`** — si el SUT aún llama
+// `supabase.storage.from(...)` (patrón viejo, Supabase Storage), explota con
+// TypeError (falla por comportamiento, confirma que sigue en el patrón legado).
 jest.mock('@/lib/supabase/client', () => ({
   supabase: {
-    storage: {
-      from: mock_from_storage,
+    functions: {
+      invoke: mock_invoke,
     },
     from: mock_from_db,
   },
@@ -95,10 +137,9 @@ const MockFile = FileSystem.File as unknown as jest.Mock;
 const TEST_USER_ID = 'user-abc-123';
 const TEST_FULL_NAME = 'María García López';
 const TEST_IMAGE_URI = 'file:///processed/avatar_q0.8.jpg';
-const TEST_PUBLIC_URL =
-  'https://supabase.co/storage/v1/object/public/profile-photos/user-abc-123/avatar.jpg';
-const EXPECTED_PATH = `${TEST_USER_ID}/avatar.jpg`;
-const SIGNED_URL = `https://proyecto.supabase.co/storage/v1/object/upload/sign/profile-photos/${EXPECTED_PATH}?token=tok-firmado-abc`;
+const TEST_R2_KEY = 'avatars/user-abc-123/8f14e45f-ceea-4d3a-9f1c-2e34ab567890';
+const TEST_R2_PUT_URL =
+  'https://abc123.r2.cloudflarestorage.com/urbea-assets/avatars/user-abc-123/8f14e45f-ceea-4d3a-9f1c-2e34ab567890?X-Amz-Signature=deadbeef';
 
 interface MockUploadTask {
   uploadAsync: jest.Mock<Promise<{ status: number; body?: string }>, []>;
@@ -115,16 +156,11 @@ function make_mock_file(upload_task: MockUploadTask = make_mock_upload_task()) {
   };
 }
 
-/** Configura el mock de storage para un flujo streaming exitoso. */
-function setup_storage_streaming_ok() {
-  mock_create_signed_upload_url.mockResolvedValue({
-    data: { signedUrl: SIGNED_URL, path: EXPECTED_PATH, token: 'tok-firmado-abc' },
+/** Configura mock_invoke para un mint exitoso (op:put, kind:avatar). */
+function setup_mint_ok() {
+  mock_invoke.mockResolvedValue({
+    data: { url: TEST_R2_PUT_URL, key: TEST_R2_KEY, expires: 900 },
     error: null,
-  });
-  mock_get_public_url.mockReturnValue({ data: { publicUrl: TEST_PUBLIC_URL } });
-  mock_from_storage.mockReturnValue({
-    createSignedUploadUrl: mock_create_signed_upload_url,
-    getPublicUrl: mock_get_public_url,
   });
   MockFile.mockImplementation(() => make_mock_file() as never);
 }
@@ -149,11 +185,11 @@ beforeEach(() => {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('saveProfile — streaming (signed URL + File v56)', () => {
+describe('saveProfile — avatar vía R2 presigned (mint-r2-url)', () => {
   // ── (a) happy path con foto ──────────────────────────────────────────────
 
-  it('(a) happy_path_con_foto_via_signed_url_y_upload_task: sube por streaming, obtiene publicUrl, upsert y retorna url', async () => {
-    setup_storage_streaming_ok();
+  it('(a) happy_path_con_foto_mintea_sube_y_guarda_key: mintea put, sube por streaming, guarda el KEY y lo retorna', async () => {
+    setup_mint_ok();
     setup_db_upsert_ok();
 
     const result = await saveProfile({
@@ -162,15 +198,14 @@ describe('saveProfile — streaming (signed URL + File v56)', () => {
       userId: TEST_USER_ID,
     });
 
-    expect(result.profilePhotoUrl).toBe(TEST_PUBLIC_URL);
-    expect(mock_create_signed_upload_url).toHaveBeenCalledTimes(1);
-    expect(mock_get_public_url).toHaveBeenCalledTimes(1);
+    expect(result.profilePhotoUrl).toBe(TEST_R2_KEY);
+    expect(mock_invoke).toHaveBeenCalledTimes(1);
     expect(mock_upsert).toHaveBeenCalledTimes(1);
   });
 
   // ── (b) happy path SIN foto ──────────────────────────────────────────────
 
-  it('(b) happy_path_sin_foto: imageUri null → NO llama signed url ni File, upsert con null, retorna null', async () => {
+  it('(b) happy_path_sin_foto: imageUri null → NO invoca mint-r2-url ni crea File, upsert con null, retorna null', async () => {
     setup_db_upsert_ok();
 
     const result = await saveProfile({
@@ -180,16 +215,15 @@ describe('saveProfile — streaming (signed URL + File v56)', () => {
     });
 
     expect(result.profilePhotoUrl).toBeNull();
-    expect(mock_create_signed_upload_url).not.toHaveBeenCalled();
-    expect(mock_get_public_url).not.toHaveBeenCalled();
+    expect(mock_invoke).not.toHaveBeenCalled();
     expect(MockFile).not.toHaveBeenCalled();
     expect(mock_upsert).toHaveBeenCalledTimes(1);
   });
 
-  // ── (c) tabla correcta: user_preferences ────────────────────────────────
+  // ── (c) el body NO incluye key ───────────────────────────────────────────
 
-  it('(c) tabla_correcta_user_preferences: upsert usa tabla user_preferences, NOT users', async () => {
-    setup_storage_streaming_ok();
+  it('(c) invoke_body_no_incluye_key: el body de mint-r2-url NO trae `key` — el servidor lo deriva del uid', async () => {
+    setup_mint_ok();
     setup_db_upsert_ok();
 
     await saveProfile({
@@ -198,14 +232,14 @@ describe('saveProfile — streaming (signed URL + File v56)', () => {
       userId: TEST_USER_ID,
     });
 
-    expect(mock_from_db).toHaveBeenCalledWith('user_preferences');
-    expect(mock_from_db).not.toHaveBeenCalledWith('users');
+    const [, options] = mock_invoke.mock.calls[0] as [string, { body: Record<string, unknown> }];
+    expect(options.body).not.toHaveProperty('key');
   });
 
-  // ── (d) onConflict: user_id ──────────────────────────────────────────────
+  // ── (d) invoke exacto kind avatar op put ─────────────────────────────────
 
-  it('(d) onConflict_user_id: el upsert incluye onConflict: "user_id"', async () => {
-    setup_storage_streaming_ok();
+  it('(d) invoke_exacto_kind_avatar_op_put: invoca mint-r2-url con {kind:"avatar", op:"put"} exactamente', async () => {
+    setup_mint_ok();
     setup_db_upsert_ok();
 
     await saveProfile({
@@ -214,79 +248,15 @@ describe('saveProfile — streaming (signed URL + File v56)', () => {
       userId: TEST_USER_ID,
     });
 
-    const upsert_call = mock_upsert.mock.calls[0];
-    expect(upsert_call).toBeDefined();
-    const upsert_options = upsert_call![1] as Record<string, unknown>;
-    expect(upsert_options).toEqual(expect.objectContaining({ onConflict: 'user_id' }));
-  });
-
-  // ── (e) path exacto sin prefijo de bucket ───────────────────────────────
-
-  it('(e) path_exacto_sin_prefijo_bucket: path pasado a createSignedUploadUrl es "{userId}/avatar.jpg" exactamente', async () => {
-    setup_storage_streaming_ok();
-    setup_db_upsert_ok();
-
-    await saveProfile({
-      fullName: TEST_FULL_NAME,
-      imageUri: TEST_IMAGE_URI,
-      userId: TEST_USER_ID,
+    expect(mock_invoke).toHaveBeenCalledWith('mint-r2-url', {
+      body: { kind: 'avatar', op: 'put' },
     });
-
-    const signed_call = mock_create_signed_upload_url.mock.calls[0];
-    expect(signed_call).toBeDefined();
-    const path_arg = signed_call![0] as string;
-    expect(path_arg).toBe(EXPECTED_PATH);
-    expect(path_arg).not.toContain('profile-photos/');
   });
 
-  // ── (f) columnas del upsert: full_name y profile_photo_url ──────────────
+  // ── (e) upload task usa la url del mint ──────────────────────────────────
 
-  it('(f) upsert_incluye_full_name_y_url: upsert contiene full_name y profile_photo_url', async () => {
-    setup_storage_streaming_ok();
-    setup_db_upsert_ok();
-
-    await saveProfile({
-      fullName: TEST_FULL_NAME,
-      imageUri: TEST_IMAGE_URI,
-      userId: TEST_USER_ID,
-    });
-
-    const upsert_call = mock_upsert.mock.calls[0];
-    expect(upsert_call).toBeDefined();
-    const upsert_data = upsert_call![0] as Record<string, unknown>;
-    expect(upsert_data).toEqual(
-      expect.objectContaining({
-        user_id: TEST_USER_ID,
-        full_name: TEST_FULL_NAME,
-        profile_photo_url: TEST_PUBLIC_URL,
-      }),
-    );
-    expect(upsert_data).not.toHaveProperty('display_name');
-    expect(upsert_data).not.toHaveProperty('photo_url');
-  });
-
-  // ── (g) createSignedUploadUrl preserva semántica upsert:true ────────────
-
-  it('(g) signed_url_incluye_upsert_true: createSignedUploadUrl recibe { upsert: true } como segundo argumento', async () => {
-    setup_storage_streaming_ok();
-    setup_db_upsert_ok();
-
-    await saveProfile({
-      fullName: TEST_FULL_NAME,
-      imageUri: TEST_IMAGE_URI,
-      userId: TEST_USER_ID,
-    });
-
-    const signed_call = mock_create_signed_upload_url.mock.calls[0];
-    expect(signed_call).toBeDefined();
-    const options_arg = signed_call![1] as Record<string, unknown>;
-    expect(options_arg).toEqual(expect.objectContaining({ upsert: true }));
-  });
-
-  // ── (h) opciones de createUploadTask: PUT + BINARY_CONTENT + Content-Type ─
-
-  it('(h) upload_task_opciones_correctas: createUploadTask recibe signedUrl + httpMethod PUT + uploadType BINARY_CONTENT + Content-Type image/jpeg', async () => {
-    setup_storage_streaming_ok();
+  it('(e) upload_task_usa_url_del_mint: createUploadTask recibe la url devuelta por mint-r2-url', async () => {
+    setup_mint_ok();
     setup_db_upsert_ok();
     const file_instance = make_mock_file();
     MockFile.mockImplementation(() => file_instance as never);
@@ -298,22 +268,14 @@ describe('saveProfile — streaming (signed URL + File v56)', () => {
     });
 
     expect(file_instance.createUploadTask).toHaveBeenCalledTimes(1);
-    const [signed_url_arg, options_arg] = file_instance.createUploadTask.mock.calls[0] as [
-      string,
-      Record<string, unknown>,
-    ];
-    expect(signed_url_arg).toBe(SIGNED_URL);
-    expect(options_arg).toMatchObject({
-      httpMethod: 'PUT',
-      uploadType: FileSystem.UploadType.BINARY_CONTENT,
-      headers: { 'Content-Type': 'image/jpeg' },
-    });
+    const [url_arg] = file_instance.createUploadTask.mock.calls[0] as [string, unknown];
+    expect(url_arg).toBe(TEST_R2_PUT_URL);
   });
 
-  // ── (i) getPublicUrl usa el mismo path que el signed upload ─────────────
+  // ── (f) guarda el KEY, no la url, en el upsert ───────────────────────────
 
-  it('(i) getpublicurl_usa_mismo_path_que_signed_url: getPublicUrl recibe el mismo path que createSignedUploadUrl', async () => {
-    setup_storage_streaming_ok();
+  it('(f) guarda_key_no_url_en_upsert: profile_photo_url en el upsert es el KEY, no la url presigned', async () => {
+    setup_mint_ok();
     setup_db_upsert_ok();
 
     await saveProfile({
@@ -322,47 +284,42 @@ describe('saveProfile — streaming (signed URL + File v56)', () => {
       userId: TEST_USER_ID,
     });
 
-    const signed_path = mock_create_signed_upload_url.mock.calls[0]![0] as string;
-    const get_public_url_path = mock_get_public_url.mock.calls[0]![0] as string;
-    expect(get_public_url_path).toBe(signed_path);
-    expect(get_public_url_path).toBe(EXPECTED_PATH);
+    const upsert_call = mock_upsert.mock.calls[0];
+    expect(upsert_call).toBeDefined();
+    const upsert_data = upsert_call![0] as Record<string, unknown>;
+    expect(upsert_data.profile_photo_url).toBe(TEST_R2_KEY);
+    expect(upsert_data.profile_photo_url).not.toBe(TEST_R2_PUT_URL);
   });
 
-  // ── (j) error de createSignedUploadUrl → lanza, no sube, no upsert ──────
+  // ── (g) opciones de createUploadTask ──────────────────────────────────────
 
-  it('(j) error_de_signed_url_rechaza: createSignedUploadUrl error → saveProfile lanza, NO llama upload ni upsert', async () => {
-    mock_create_signed_upload_url.mockResolvedValue({
-      data: null,
-      error: { message: 'signed url: permiso denegado' },
-    });
-    mock_from_storage.mockReturnValue({
-      createSignedUploadUrl: mock_create_signed_upload_url,
-      getPublicUrl: mock_get_public_url,
-    });
+  it('(g) upload_task_opciones_correctas: createUploadTask recibe httpMethod PUT + uploadType BINARY_CONTENT + Content-Type image/jpeg', async () => {
+    setup_mint_ok();
     setup_db_upsert_ok();
-
-    await expect(
-      saveProfile({
-        fullName: TEST_FULL_NAME,
-        imageUri: TEST_IMAGE_URI,
-        userId: TEST_USER_ID,
-      }),
-    ).rejects.toThrow(/permiso denegado|signed|url/i);
-
-    // El fallo debe originarse DESPUÉS de intentar el signed URL (nueva API) —
-    // no de un TypeError incidental por seguir llamando al `.upload` legacy.
-    expect(mock_create_signed_upload_url).toHaveBeenCalledTimes(1);
-    expect(mock_get_public_url).not.toHaveBeenCalled();
-    expect(mock_upsert).not.toHaveBeenCalled();
-  });
-
-  // ── (k) uploadAsync status no-2xx → lanza, no getPublicUrl, no upsert ───
-
-  it('(k) error_de_upload_status_no_2xx_rechaza: uploadAsync status=500 → saveProfile lanza, NO llama getPublicUrl ni upsert', async () => {
-    setup_storage_streaming_ok();
-    const failing_upload_task = make_mock_upload_task(500);
-    const file_instance = make_mock_file(failing_upload_task);
+    const file_instance = make_mock_file();
     MockFile.mockImplementation(() => file_instance as never);
+
+    await saveProfile({
+      fullName: TEST_FULL_NAME,
+      imageUri: TEST_IMAGE_URI,
+      userId: TEST_USER_ID,
+    });
+
+    const [, options_arg] = file_instance.createUploadTask.mock.calls[0] as [
+      string,
+      Record<string, unknown>,
+    ];
+    expect(options_arg).toMatchObject({
+      httpMethod: 'PUT',
+      uploadType: FileSystem.UploadType.BINARY_CONTENT,
+      headers: { 'Content-Type': 'image/jpeg' },
+    });
+  });
+
+  // ── (h) ya no usa supabase.storage ───────────────────────────────────────
+
+  it('(h) no_usa_supabase_storage: el flujo NO depende de supabase.storage (mock sin `.storage`, sin TypeError)', async () => {
+    setup_mint_ok();
     setup_db_upsert_ok();
 
     await expect(
@@ -371,39 +328,13 @@ describe('saveProfile — streaming (signed URL + File v56)', () => {
         imageUri: TEST_IMAGE_URI,
         userId: TEST_USER_ID,
       }),
-    ).rejects.toThrow(/storage|upload/i);
-
-    // El fallo debe originarse DESPUÉS de crear el upload task (nueva API) —
-    // no de un TypeError incidental por seguir llamando al `.upload` legacy.
-    expect(file_instance.createUploadTask).toHaveBeenCalledTimes(1);
-    expect(failing_upload_task.uploadAsync).toHaveBeenCalledTimes(1);
-    expect(mock_get_public_url).not.toHaveBeenCalled();
-    expect(mock_upsert).not.toHaveBeenCalled();
+    ).resolves.toEqual({ profilePhotoUrl: TEST_R2_KEY });
   });
 
-  // ── (l) error de upsert → lanza con mensaje específico ──────────────────
+  // ── (i) no usa fetch() para leer el archivo ──────────────────────────────
 
-  it('(l) error_de_upsert_rechaza: user_preferences.upsert error → saveProfile lanza con mensaje de DB', async () => {
-    setup_storage_streaming_ok();
-
-    mock_upsert.mockResolvedValue({ data: null, error: { message: 'DB error: duplicate key' } });
-    mock_from_db.mockReturnValue({
-      upsert: mock_upsert,
-    });
-
-    await expect(
-      saveProfile({
-        fullName: TEST_FULL_NAME,
-        imageUri: TEST_IMAGE_URI,
-        userId: TEST_USER_ID,
-      }),
-    ).rejects.toThrow(/upsert|preferences|DB|database/i);
-  });
-
-  // ── (m) ya no usa fetch() para leer el archivo (elimina el pico de RAM) ──
-
-  it('(m) no_usa_fetch_para_leer_el_archivo: el flujo streaming NO llama a fetch() global', async () => {
-    setup_storage_streaming_ok();
+  it('(i) no_usa_fetch_para_leer_el_archivo: el flujo streaming NO llama a fetch() global', async () => {
+    setup_mint_ok();
     setup_db_upsert_ok();
 
     const original_fetch = global.fetch;
@@ -421,5 +352,207 @@ describe('saveProfile — streaming (signed URL + File v56)', () => {
     } finally {
       global.fetch = original_fetch;
     }
+  });
+
+  // ── (j) tabla correcta: user_preferences ─────────────────────────────────
+
+  it('(j) tabla_correcta_user_preferences: upsert usa tabla user_preferences, NOT users', async () => {
+    setup_mint_ok();
+    setup_db_upsert_ok();
+
+    await saveProfile({
+      fullName: TEST_FULL_NAME,
+      imageUri: TEST_IMAGE_URI,
+      userId: TEST_USER_ID,
+    });
+
+    expect(mock_from_db).toHaveBeenCalledWith('user_preferences');
+    expect(mock_from_db).not.toHaveBeenCalledWith('users');
+  });
+
+  // ── (k) onConflict: user_id ───────────────────────────────────────────────
+
+  it('(k) onConflict_user_id: el upsert incluye onConflict: "user_id"', async () => {
+    setup_mint_ok();
+    setup_db_upsert_ok();
+
+    await saveProfile({
+      fullName: TEST_FULL_NAME,
+      imageUri: TEST_IMAGE_URI,
+      userId: TEST_USER_ID,
+    });
+
+    const upsert_call = mock_upsert.mock.calls[0];
+    expect(upsert_call).toBeDefined();
+    const upsert_options = upsert_call![1] as Record<string, unknown>;
+    expect(upsert_options).toEqual(expect.objectContaining({ onConflict: 'user_id' }));
+  });
+
+  // ── (l) upsert incluye full_name ──────────────────────────────────────────
+
+  it('(l) upsert_incluye_full_name: el upsert contiene user_id y full_name correctos', async () => {
+    setup_mint_ok();
+    setup_db_upsert_ok();
+
+    await saveProfile({
+      fullName: TEST_FULL_NAME,
+      imageUri: TEST_IMAGE_URI,
+      userId: TEST_USER_ID,
+    });
+
+    const upsert_call = mock_upsert.mock.calls[0];
+    expect(upsert_call).toBeDefined();
+    const upsert_data = upsert_call![0] as Record<string, unknown>;
+    expect(upsert_data).toEqual(
+      expect.objectContaining({
+        user_id: TEST_USER_ID,
+        full_name: TEST_FULL_NAME,
+      }),
+    );
+  });
+
+  // ── (m) error de mint → rechaza ───────────────────────────────────────────
+
+  it('(m) error_de_mint_rechaza: mint-r2-url devuelve error → saveProfile lanza, NO sube, NO hace upsert', async () => {
+    mock_invoke.mockResolvedValue({
+      data: null,
+      error: { message: 'mint-r2-url: FORBIDDEN' },
+    });
+    setup_db_upsert_ok();
+
+    await expect(
+      saveProfile({
+        fullName: TEST_FULL_NAME,
+        imageUri: TEST_IMAGE_URI,
+        userId: TEST_USER_ID,
+      }),
+    ).rejects.toThrow(/mint|r2|FORBIDDEN/i);
+
+    expect(mock_invoke).toHaveBeenCalledTimes(1);
+    expect(MockFile).not.toHaveBeenCalled();
+    expect(mock_upsert).not.toHaveBeenCalled();
+  });
+
+  // ── (n) mint sin url en la respuesta → rechaza ───────────────────────────
+
+  it('(n) mint_sin_url_rechaza: mint-r2-url resuelve sin error pero sin `url` en data → saveProfile lanza, NO sube, NO hace upsert', async () => {
+    mock_invoke.mockResolvedValue({
+      data: { key: TEST_R2_KEY, expires: 900 },
+      error: null,
+    });
+    setup_db_upsert_ok();
+
+    await expect(
+      saveProfile({
+        fullName: TEST_FULL_NAME,
+        imageUri: TEST_IMAGE_URI,
+        userId: TEST_USER_ID,
+      }),
+    ).rejects.toThrow();
+
+    // El rechazo debe originarse DESPUÉS de invocar mint-r2-url y detectar la
+    // forma inválida — no de un stub que lanza antes de intentar nada.
+    expect(mock_invoke).toHaveBeenCalledTimes(1);
+    expect(MockFile).not.toHaveBeenCalled();
+    expect(mock_upsert).not.toHaveBeenCalled();
+  });
+
+  // ── (o) uploadAsync status no-2xx → rechaza ──────────────────────────────
+
+  it('(o) error_de_upload_status_no_2xx_rechaza: uploadAsync status=500 → saveProfile lanza, NO hace upsert', async () => {
+    setup_mint_ok();
+    const failing_upload_task = make_mock_upload_task(500);
+    const file_instance = make_mock_file(failing_upload_task);
+    MockFile.mockImplementation(() => file_instance as never);
+    setup_db_upsert_ok();
+
+    await expect(
+      saveProfile({
+        fullName: TEST_FULL_NAME,
+        imageUri: TEST_IMAGE_URI,
+        userId: TEST_USER_ID,
+      }),
+    ).rejects.toThrow(/upload|r2|storage/i);
+
+    expect(failing_upload_task.uploadAsync).toHaveBeenCalledTimes(1);
+    expect(mock_upsert).not.toHaveBeenCalled();
+  });
+
+  // ── (p) error de upsert → rechaza ─────────────────────────────────────────
+
+  it('(p) error_de_upsert_rechaza: user_preferences.upsert error → saveProfile lanza con mensaje de DB', async () => {
+    setup_mint_ok();
+
+    mock_upsert.mockResolvedValue({ data: null, error: { message: 'DB error: duplicate key' } });
+    mock_from_db.mockReturnValue({
+      upsert: mock_upsert,
+    });
+
+    await expect(
+      saveProfile({
+        fullName: TEST_FULL_NAME,
+        imageUri: TEST_IMAGE_URI,
+        userId: TEST_USER_ID,
+      }),
+    ).rejects.toThrow(/upsert|preferences|DB|database/i);
+  });
+
+  // ── (q)-(t) KEEP: imageUri undefined (69.6) ──────────────────────────────
+
+  it('(q) keep_undefined_no_invoca_mint_ni_sube: imageUri undefined (KEEP) → NO invoca mint-r2-url ni crea File', async () => {
+    setup_db_upsert_ok();
+
+    await saveProfile({
+      fullName: TEST_FULL_NAME,
+      imageUri: undefined,
+      userId: TEST_USER_ID,
+    });
+
+    expect(mock_invoke).not.toHaveBeenCalled();
+    expect(MockFile).not.toHaveBeenCalled();
+  });
+
+  it('(r) keep_undefined_upsert_omite_columna_profile_photo_url: el upsert NO incluye la clave profile_photo_url (KEEP no debe pisar el valor existente)', async () => {
+    setup_db_upsert_ok();
+
+    await saveProfile({
+      fullName: TEST_FULL_NAME,
+      imageUri: undefined,
+      userId: TEST_USER_ID,
+    });
+
+    const upsert_call = mock_upsert.mock.calls[0];
+    expect(upsert_call).toBeDefined();
+    const upsert_data = upsert_call![0] as Record<string, unknown>;
+    expect(upsert_data).not.toHaveProperty('profile_photo_url');
+  });
+
+  it('(s) keep_undefined_upsert_incluye_full_name: aunque KEEP omite la foto, el upsert sigue mandando user_id y full_name correctos', async () => {
+    setup_db_upsert_ok();
+
+    await saveProfile({
+      fullName: TEST_FULL_NAME,
+      imageUri: undefined,
+      userId: TEST_USER_ID,
+    });
+
+    const upsert_call = mock_upsert.mock.calls[0];
+    expect(upsert_call).toBeDefined();
+    const upsert_data = upsert_call![0] as Record<string, unknown>;
+    expect(upsert_data).toEqual(
+      expect.objectContaining({ user_id: TEST_USER_ID, full_name: TEST_FULL_NAME }),
+    );
+  });
+
+  it('(t) keep_undefined_retorna_profilePhotoUrl_undefined: KEEP retorna profilePhotoUrl undefined — distinto de null (removido)', async () => {
+    setup_db_upsert_ok();
+
+    const result = await saveProfile({
+      fullName: TEST_FULL_NAME,
+      imageUri: undefined,
+      userId: TEST_USER_ID,
+    });
+
+    expect(result.profilePhotoUrl).toBeUndefined();
   });
 });

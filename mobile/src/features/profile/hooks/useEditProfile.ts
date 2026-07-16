@@ -12,7 +12,10 @@
  *   Si op A lanza, op B AÚN se intenta (sin short-circuit).
  *   Cualquier fallo se expone en `error` (no se traga).
  *
- * removePhoto=true → imageUri=null a saveProfileFn (borra profile_photo_url).
+ * imageUri sigue la semántica de 3 estados de saveProfile (69.6):
+ *   undefined=KEEP (foto sin cambios, no se pisa lo guardado), null=REMOVE,
+ *   string=REPLACE. removePhoto=true → fuerza imageUri=null a saveProfileFn
+ *   (borra profile_photo_url) independientemente del imageUri recibido.
  *
  * INYECCIÓN DE DEPS (para tests): useEditProfile({ supabase: mock, saveProfileFn: mock }).
  *
@@ -38,7 +41,8 @@ import type { SaveProfileParams, SaveProfileResult } from '@/lib/profileService'
 
 export interface EditProfileSaveParams {
   fullName: string;
-  imageUri: string | null;
+  /** string=REPLACE, null=REMOVE, undefined=KEEP (sin cambio de foto). */
+  imageUri: string | null | undefined;
   bio: string;
   removePhoto?: boolean;
 }

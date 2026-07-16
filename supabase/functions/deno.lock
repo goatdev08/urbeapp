@@ -54,6 +54,8 @@
     "https://esm.sh/@supabase/storage-js@2.7.0/denonext/storage-js.mjs": "e831f9ac91b49f5e7026879efa7b61a360bc1c4b9fa2dd9890432c2e877a6611",
     "https://esm.sh/@supabase/supabase-js@2.45.4": "1108d69216995335d057dbd15907caaf514a4d1ef082f097050573b9d589a57c",
     "https://esm.sh/@supabase/supabase-js@2.45.4/denonext/supabase-js.mjs": "8d7c017f03473b9c0f9cd1be611dc51d8c4f359183ece1fcffda731ccc55aba3",
+    "https://esm.sh/aws4fetch@1.0.20": "72c2789ab2e7a037ed00c4230574ccc31a0c0cebc7ebd19a2c9da574e3133bc7",
+    "https://esm.sh/aws4fetch@1.0.20/denonext/aws4fetch.mjs": "f4388406bca44e08c07822b0f26c093603a2947538e7c20320670c600587c707",
     "https://esm.sh/bufferutil@4.1.0/denonext/bufferutil.mjs": "9b6e81087bdc57848ad1de1f8618ebbace98ebd9ff6cab51260b48c2a045a9c9",
     "https://esm.sh/bufferutil@4.1.0?target=denonext": "aaa2a112199593ccc40da1aedf5124779862ea166afb0a8529f04f907001428a",
     "https://esm.sh/node-gyp-build@4.8.4/denonext/node-gyp-build.mjs": "9a86f2d044fc77bd60aaa3d697c2ba1b818da5fb1b9aaeedec59a40b8e908803",

@@ -21,7 +21,11 @@ export type AgentInfo = {
   id: string;
   /** full_name viene de user_preferences (migración 0015); puede ser null. */
   full_name: string | null;
-  /** profile_photo_url viene de user_preferences (migración 0015); puede ser null. */
+  /**
+   * R2 key de la foto de perfil (bucket privado, subtarea 69.3) — viene de
+   * user_preferences (migración 0015); puede ser null. Se resuelve a URL
+   * presigned GET vía useR2Urls antes de mostrarla (ver AgentCard).
+   */
   profile_photo_url: string | null;
   phone: string | null;
 };

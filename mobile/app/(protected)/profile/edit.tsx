@@ -36,6 +36,7 @@ import { Stack , useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase/client';
 import { useAuth } from '@/features/auth/context';
 import { useEditProfile } from '@/features/profile/hooks/useEditProfile';
+import { useR2Urls } from '@/hooks/useR2Urls';
 import { AvatarPicker } from '@/features/onboarding/components/AvatarPicker';
 import { is_valid_full_name } from '@/features/onboarding/validation';
 import { PrimaryButton } from '@/components/PrimaryButton';
@@ -66,10 +67,29 @@ export default function EditProfileScreen() {
   const router = useRouter();
   const { user, session, isLoading: auth_loading } = useAuth();
 
-  // Estado del formulario — inicializado vacío, pre-poblado en useEffect
-  const [avatar_uri, set_avatar_uri] = useState<string | undefined>(undefined);
+  // Estado del formulario — inicializado vacío, pre-poblado en useEffect.
+  // `saved_avatar_key` es el valor CRUDO guardado en DB (key R2 o URL legacy
+  // pre-migración) — nunca se pasa directo a saveProfile ni a <Image>, se
+  // resuelve a URL de preview vía useR2Urls (69.6 — el key crudo no es una
+  // uri de archivo local que AvatarPicker/expo-image puedan mostrar).
+  const [saved_avatar_key, set_saved_avatar_key] = useState<string | undefined>(undefined);
+  // `picked_image_uri` solo se setea cuando el usuario ELIGE una foto nueva
+  // (AvatarPicker.onChange) — distingue "sin cambios" (KEEP → undefined a
+  // saveProfile) de "reemplazar" (REPLACE → uri local a saveProfile). Bug
+  // motivador (69.6): antes se reenviaba el key guardado tal cual como
+  // imageUri, y saveProfile intentaba `new File(key)` sobre un key R2 que no
+  // es un archivo del device → explotaba.
+  const [picked_image_uri, set_picked_image_uri] = useState<string | undefined>(undefined);
   // ponytail: removePhoto fijo en false hasta trabajo nuevo (botón de quitar foto)
   const remove_photo = false;
+
+  // Preview de la foto YA guardada — resuelve el key/URL legacy a una URL
+  // utilizable (el passthrough de resolve_r2_urls cubre las URLs legacy).
+  const { urls: saved_avatar_urls } = useR2Urls([saved_avatar_key]);
+  const saved_avatar_url = saved_avatar_urls[0] ?? undefined;
+  // El picker muestra la foto recién elegida (preview local inmediata) o,
+  // si no hay cambio, la foto guardada ya resuelta a URL.
+  const avatar_preview_uri = picked_image_uri ?? saved_avatar_url ?? undefined;
   const [full_name, set_full_name] = useState('');
   const [bio, set_bio] = useState('');
 
@@ -141,7 +161,7 @@ export default function EditProfileScreen() {
 
       const prefs = raw_prefs as PrefsRow | null;
       set_full_name(prefs?.full_name ?? '');
-      set_avatar_uri(prefs?.profile_photo_url ?? undefined);
+      set_saved_avatar_key(prefs?.profile_photo_url ?? undefined);
       set_prefs_loading(false);
     }
 
@@ -161,9 +181,12 @@ export default function EditProfileScreen() {
     // Usamos el valor DEVUELTO por save() (no la variable destructurada del render
     // anterior, que es un snapshot obsoleto): garantiza que un fallo parcial
     // siempre llegue al usuario aunque el componente no se haya re-renderizado aún.
+    // picked_image_uri undefined (usuario no cambió la foto) → KEEP: no se
+    // pasa la key/URL guardada (no es un archivo local), saveProfile omite
+    // la columna y conserva el valor existente en DB.
     const save_result = await save({
       fullName: full_name,
-      imageUri: avatar_uri ?? null,
+      imageUri: picked_image_uri,
       bio,
       removePhoto: remove_photo,
     });
@@ -223,8 +246,8 @@ export default function EditProfileScreen() {
           {/* Avatar — centrado, margen superior s_32 */}
           <View style={styles.avatar_wrap}>
             <AvatarPicker
-              uri={avatar_uri}
-              onChange={set_avatar_uri}
+              uri={avatar_preview_uri}
+              onChange={set_picked_image_uri}
               uploading={false}
             />
           </View>

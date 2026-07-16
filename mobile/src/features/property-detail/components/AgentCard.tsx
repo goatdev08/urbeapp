@@ -16,6 +16,7 @@ import { Image } from 'expo-image';
 import { WhatsappLogo } from 'phosphor-react-native';
 
 import { colors, fonts, radii, shadows, spacing } from '@/theme/theme';
+import { useR2Urls } from '@/hooks/useR2Urls';
 import type { AgentInfo, AgencyInfo } from '../types';
 import { open_whatsapp } from '../utils/whatsapp';
 
@@ -50,7 +51,13 @@ interface AgentCardProps {
 export function AgentCard({ agent, agency, address }: AgentCardProps) {
   const [img_error, set_img_error] = useState(false);
 
-  const show_photo = Boolean(agent.profile_photo_url) && !img_error;
+  // agent.profile_photo_url guarda el R2 KEY (misma columna user_preferences
+  // que ProfileHeader, bucket privado, subtarea 69.3) — se resuelve a una URL
+  // presigned GET antes de pasarla a <Image>.
+  const { urls: avatar_urls } = useR2Urls([agent.profile_photo_url]);
+  const avatar_url = avatar_urls[0] ?? null;
+
+  const show_photo = Boolean(avatar_url) && !img_error;
   const initials = get_initials(agent.full_name);
   const display_name = agent.full_name ?? 'Agente';
   const has_phone = agent.phone !== null && agent.phone.length > 0;
@@ -67,7 +74,7 @@ export function AgentCard({ agent, agency, address }: AgentCardProps) {
       <View style={styles.avatar_ring}>
         {show_photo ? (
           <Image
-            source={{ uri: agent.profile_photo_url! }}
+            source={{ uri: avatar_url! }}
             style={styles.avatar_img}
             transition={150}
             onError={() => set_img_error(true)}
