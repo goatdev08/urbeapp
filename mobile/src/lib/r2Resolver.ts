@@ -4,15 +4,18 @@
  * Contrato:
  *   resolve_r2_urls(keys, deps?) → (string | null)[], MISMA longitud y
  *   orden que `keys`. keys inválidos (null/undefined/'') → null sin invocar
- *   la EF. Keys válidos se piden en UN SOLO invoke a `mint-r2-url`
- *   (`{kind:'avatar', op:'get', keys:[...]}`, deduplicados). Fail-soft: error
- *   de la EF o excepción de red → todas las posiciones válidas resuelven
- *   null, NUNCA lanza.
+ *   la EF. Elementos que empiezan con `http://` o `https://` (URLs legacy de
+ *   Supabase Storage, pre-migración R2 — 69.6) se devuelven TAL CUAL, sin
+ *   incluirse en la llamada a la EF (no son keys R2). Keys R2 válidos se
+ *   piden en UN SOLO invoke a `mint-r2-url` (`{kind:'avatar', op:'get',
+ *   keys:[...]}`, deduplicados). Fail-soft: error de la EF o excepción de
+ *   red → todas las posiciones de key R2 resuelven null, NUNCA lanza. Si no
+ *   queda ninguna key R2 real (todo URLs legacy o null), no se invoca la EF.
  *
  * Ver mobile/src/lib/__tests__/r2Resolver.test.ts para el contrato completo
- * (batch, dedup, fail-soft, alineación 1:1).
+ * (batch, dedup, fail-soft, alineación 1:1, passthrough legacy).
  *
- * Implementación GREEN — subtarea 69.3.
+ * Implementación GREEN — subtarea 69.3. Passthrough de URLs legacy — 69.6.
  */
 
 export interface R2ResolverDeps {
@@ -56,15 +59,22 @@ export async function resolve_r2_urls(
 ): Promise<(string | null)[]> {
   const result: (string | null)[] = keys.map(() => null);
 
-  // Índices y valores de las keys válidas (no null/undefined/''), en el
-  // orden en que aparecen — preserva alineación 1:1 con la entrada.
+  // Índices y valores de las keys R2 REALES (no null/undefined/'', y sin
+  // prefijo http(s) — esas son URLs legacy que se devuelven tal cual más
+  // abajo sin pasar por la EF), en el orden en que aparecen — preserva
+  // alineación 1:1 con la entrada.
   const valid_indices: number[] = [];
   const valid_keys: string[] = [];
   keys.forEach((key, index) => {
-    if (key) {
-      valid_indices.push(index);
-      valid_keys.push(key);
+    if (!key) return;
+    if (key.startsWith('http://') || key.startsWith('https://')) {
+      // URL legacy (Supabase Storage, pre-migración R2) — ya es utilizable,
+      // se devuelve tal cual sin pedirla a mint-r2-url.
+      result[index] = key;
+      return;
     }
+    valid_indices.push(index);
+    valid_keys.push(key);
   });
 
   if (valid_keys.length === 0) {

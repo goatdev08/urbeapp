@@ -66,9 +66,14 @@ export async function saveProfile({
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { supabase } = require('@/lib/supabase/client') as typeof import('@/lib/supabase/client');
 
-  let profile_photo_url: string | null = null;
+  // Branching por los 3 estados del contrato (69.6): undefined=KEEP,
+  // null=REMOVE, string=REPLACE. `profile_photo_url` queda `undefined` en
+  // KEEP para poder omitir la columna del payload del upsert más abajo.
+  let profile_photo_url: string | null | undefined;
 
-  if (imageUri) {
+  if (imageUri === null) {
+    profile_photo_url = null;
+  } else if (typeof imageUri === 'string') {
     // El body NUNCA incluye `key` — el handler de mint-r2-url lo deriva del
     // uid del JWT (avatars/<uid>/<uuid>): el cliente jamás decide el key de
     // su propio avatar.
@@ -103,21 +108,25 @@ export async function saveProfile({
     // resuelve el key a URL en el momento de mostrarlo (r2Resolver).
     profile_photo_url = mint_result.key;
   }
+  // else: imageUri === undefined → KEEP, profile_photo_url queda undefined.
 
   // Columnas full_name y profile_photo_url añadidas por migración 0015.
   // Los tipos generados aún no incluyen esas columnas; el cast `as never`
   // evita el error de TypeScript sin debilitar la lógica.
   // Una vez regenerados los tipos con 0015 se puede quitar.
+  const upsert_payload: Record<string, unknown> = {
+    user_id: userId,
+    full_name: fullName,
+  };
+  // KEEP (imageUri undefined) omite la columna por completo — ON CONFLICT no
+  // la pisa y conserva el valor existente en DB.
+  if (imageUri !== undefined) {
+    upsert_payload.profile_photo_url = profile_photo_url;
+  }
+
   const { error: upsert_error } = await supabase
     .from('user_preferences')
-    .upsert(
-      {
-        user_id: userId,
-        full_name: fullName,
-        profile_photo_url,
-      } as never,
-      { onConflict: 'user_id' },
-    );
+    .upsert(upsert_payload as never, { onConflict: 'user_id' });
 
   if (upsert_error) {
     throw new Error(
