@@ -68,7 +68,7 @@ select ok(true, 'publish_property_atomic INSERT sin excepción');
 
 -- ── 4) properties.status = active ────────────────────────────────────────────
 select is(
-  (select status::text
+  (select p.status::text
      from public.properties p
      join public.property_videos v on v.property_id = p.id
     where v.id = '00000000-0000-0000-0000-000000000b10'

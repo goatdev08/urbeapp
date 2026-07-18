@@ -126,13 +126,13 @@ select throws_ok(
 -- 11) El consumo atómico de un token agotado afecta 0 filas.
 insert into public.agency_invitation_tokens (id, agency_id, token, max_uses, current_uses, created_by_user_id)
   values ('00000000-0000-0000-0000-00000000aa01', '00000000-0000-0000-0000-0000000000e1', 'hash_agotado', 1, 1, '00000000-0000-0000-0000-0000000000c1');
-select is(
-  (with u as (
-     update public.agency_invitation_tokens set current_uses = current_uses + 1
-     where id = '00000000-0000-0000-0000-00000000aa01' and (max_uses is null or current_uses < max_uses)
-     returning 1)
-   select count(*)::int from u),
-  0, 'tokens: consumo atómico de token agotado afecta 0 filas');
+-- El CTE modificador debe ir en el nivel superior del statement: Postgres rechaza
+-- "WITH ... UPDATE" anidado dentro de una subconsulta escalar.
+with u as (
+  update public.agency_invitation_tokens set current_uses = current_uses + 1
+  where id = '00000000-0000-0000-0000-00000000aa01' and (max_uses is null or current_uses < max_uses)
+  returning 1)
+select is(count(*)::int, 0, 'tokens: consumo atómico de token agotado afecta 0 filas') from u;
 
 -- 12) Insertar un token válido (ilimitado) funciona.
 select lives_ok(

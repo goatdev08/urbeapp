@@ -6,7 +6,7 @@
 -- una API más robusta de impersonación. Aquí se usa el patrón nativo.
 
 begin;
-select plan(15);
+select plan(17);
 
 -- ── Fixtures ────────────────────────────────────────────────────────────────
 insert into auth.users (id, email) values
@@ -42,9 +42,12 @@ insert into public.properties (id, owner_user_id, agency_id, property_type, oper
   ('00000000-0000-0000-0000-0000000000f4', '00000000-0000-0000-0000-0000000000b3', null,
    'casa', 'sale', 'Indep draft', extensions.ST_SetSRID(extensions.ST_MakePoint(-103.33, 20.65), 4326)::extensions.geography, 999000, 'draft');
 
-insert into public.property_videos (property_id, status, position) values
-  ('00000000-0000-0000-0000-0000000000f1', 'ready', 1),
-  ('00000000-0000-0000-0000-0000000000f1', 'processing', 2);
+-- El video 'ready' necesita storage_path (o cloudflare_uid): la constraint
+-- property_videos_ready_requires_storage (migración 0012) exige una de las dos refs.
+insert into public.property_videos (property_id, status, position, storage_path) values
+  ('00000000-0000-0000-0000-0000000000f1', 'ready', 1,
+   '00000000-0000-0000-0000-0000000000b1/video-f1-ready.mp4'),
+  ('00000000-0000-0000-0000-0000000000f1', 'processing', 2, null);
 
 insert into public.leads (agent_id, user_id) values
   ('00000000-0000-0000-0000-0000000000b1', '00000000-0000-0000-0000-0000000000a1'),
@@ -85,17 +88,33 @@ select is((select count(*) from public.leads where agent_id = '00000000-0000-000
 reset role;
 
 -- 5) El admin ve todos los leads.
+-- Los conteos de admin/anon se acotan a las filas del fixture: la base local puede tener
+-- datos de seed.sql y un count(*) global haría el test dependiente del contenido previo.
 select pg_temp.act_as('00000000-0000-0000-0000-0000000000d1');
-select is((select count(*) from public.leads)::int, 3, 'Admin ve todos los leads');
+select is((select count(*) from public.leads where agent_id in (
+    '00000000-0000-0000-0000-0000000000b1',
+    '00000000-0000-0000-0000-0000000000b2',
+    '00000000-0000-0000-0000-0000000000b3'))::int,
+  3, 'Admin ve todos los leads');
 reset role;
 
 -- 6) Público (anon) ve solo propiedades activas (2), no el draft.
 select pg_temp.act_as(null, 'anon');
-select is((select count(*) from public.properties)::int, 2, 'anon ve solo propiedades activas');
+select is((select count(*) from public.properties where id in (
+    '00000000-0000-0000-0000-0000000000f1',
+    '00000000-0000-0000-0000-0000000000f2',
+    '00000000-0000-0000-0000-0000000000f3',
+    '00000000-0000-0000-0000-0000000000f4'))::int,
+  2, 'anon ve solo propiedades activas');
 -- 7) ...y ninguna en draft.
 select is((select count(*) from public.properties where status = 'draft')::int, 0, 'anon no ve drafts');
 -- 10) anon ve solo videos ready de propiedades activas (1 de 2).
-select is((select count(*) from public.property_videos)::int, 1, 'anon ve solo videos ready de propiedades activas');
+select is((select count(*) from public.property_videos where property_id in (
+    '00000000-0000-0000-0000-0000000000f1',
+    '00000000-0000-0000-0000-0000000000f2',
+    '00000000-0000-0000-0000-0000000000f3',
+    '00000000-0000-0000-0000-0000000000f4'))::int,
+  1, 'anon ve solo videos ready de propiedades activas');
 reset role;
 
 -- 8) El dueño G1 ve su propia propiedad en draft.
@@ -113,10 +132,9 @@ reset role;
 select pg_temp.act_as('00000000-0000-0000-0000-0000000000a2');
 select is((select count(*) from public.user_preferences)::int, 0, 'B no ve preferencias de A');
 -- 12) B no puede actualizar el perfil de A (0 filas afectadas por RLS).
-select is(
-  (with u as (update public.users set bio = 'hack' where id = '00000000-0000-0000-0000-0000000000a1' returning 1)
-   select count(*)::int from u),
-  0, 'B no puede actualizar el perfil de A');
+-- El CTE modificador va en el nivel superior del statement (Postgres lo rechaza anidado).
+with u as (update public.users set bio = 'hack' where id = '00000000-0000-0000-0000-0000000000a1' returning 1)
+select is(count(*)::int, 0, 'B no puede actualizar el perfil de A') from u;
 -- 15) B no ve las notificaciones de A.
 select is((select count(*) from public.notifications)::int, 0, 'B no ve notificaciones de A');
 reset role;
