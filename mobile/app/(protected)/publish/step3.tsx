@@ -175,7 +175,11 @@ export default function Step3Screen() {
   // ── Derivados de estado ────────────────────────────────────────────────────
 
   const is_uploading = ui_status === 'uploading';
-  const is_success = ui_status === 'success';
+  // Contrato 68.4: el binario terminó de subir y quedó 'processing' en
+  // Cloudflare Stream (transcodificando) — nunca llega a 'success' en el
+  // cliente; 'ready' se resuelve por webhook (68.5). Se trata como el estado
+  // "listo para publicar" de esta pantalla.
+  const is_success = ui_status === 'processing';
   const is_error = ui_status === 'error';
   const has_video = local_uri !== null;
   const is_publishing = publish_status === 'submitting';

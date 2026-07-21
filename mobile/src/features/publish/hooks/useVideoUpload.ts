@@ -1,43 +1,54 @@
 /**
  * useVideoUpload — lógica de upload de video al wizard de publicación.
  *
- * Contrato (Opción C):
- *   - Deps inyectables: supabase client + generador de uuid (para tests deterministas).
- *   - Obtiene user_id de la sesión activa (supabase.auth.getSession).
- *   - Genera video_id con el uuid inyectado ANTES de subir.
- *   - Sube a storage bucket 'property-videos' con path '{user_id}/{video_id}.mp4'.
- *   - Reporta estado: idle → uploading → success | error.
- *   - Al éxito llama update({ video_id, storage_path }) del PublishFormContext.
- *   - En error: expone mensaje, NO escribe al form.
+ * GREEN — subtarea 68.4 (Taskmaster). Contrato upload-first vía Cloudflare
+ * Stream, POST simple ≤200MB, sin tus-js-client:
  *
- * NOTA DE IMPLEMENTACIÓN — refs puro, sin useState:
- *   RNTL v14 actualiza result.current vía useEffect (lazy). El sync act() de
- *   EC-12 drena microtasks via React internals; si hay un useState/force_rerender
- *   pendiente, se registra como "unresolved act work" y contamina tests siguientes.
+ *   1. Valida local_uri no nulo → null implica status='error', SIN invocar
+ *      mint-upload-url.
+ *   2. status='uploading' (visible antes del primer await, sync act()).
+ *   3. `new File(local_uri)` (expo-file-system v56, getters síncronos
+ *      .exists/.size). !exists → status='error', SIN invocar mint-upload-url.
+ *   4. Techo de tamaño del direct upload simple de Stream: MAX_STREAM_UPLOAD_BYTES
+ *      (200 MB). Excede → status='error' con mensaje claro, SIN invocar
+ *      mint-upload-url.
+ *   5. `supabase.functions.invoke('mint-upload-url', ...)` → { data: { uploadUrl,
+ *      uid }, error }. Mapea error_code (vía extract_error_code, mismo patrón
+ *      que ContactAgentButton/edge-errors.ts): UNAUTHENTICATED → mensaje de
+ *      sesión; UPLOAD_IN_PROGRESS → mensaje específico de "video en proceso";
+ *      cualquier otro (STREAM_UPLOAD_FAILED/INTERNAL_ERROR/red) → mensaje
+ *      neutro. En error: NO sube a Stream, NO escribe al form.
+ *   6. `file.createUploadTask(uploadUrl, { onProgress, ... })` +
+ *      `uploadAsync()` — streaming, sin cargar el archivo completo en RAM
+ *      (mismo patrón que profileService/#69). onProgress → progress 0..0.99.
+ *   7. Éxito (2xx): status='processing' (NO 'success' — el video queda
+ *      transcodificando en Stream; 'ready' llega por webhook, subtarea 68.5).
+ *      progress=1. `update({ video_id: uid, cloudflare_uid: uid })`.
+ *   8. Fallo (no-2xx o excepción): status='error', mensaje neutro, NO escribe
+ *      al form.
  *
- *   Solución: estado SOLO en useRef. El hook devuelve un objeto con getters que
- *   leen los refs directamente. result.current apunta al objeto de la primera
- *   render (estable), pero los getters siempre devuelven el valor más reciente.
- *
- *   Para la UI (step3.tsx): el re-render se dispara a través de PublishFormContext
- *   (update() en éxito) o del estado local de la pantalla que invoca el hook.
- *   ponytail: sin useState extra en el hook — el techo de estado reactivo lo
- *   maneja el llamador (screen) no el hook.
+ * NOTA DE IMPLEMENTACIÓN — refs puro, sin useState (heredado del hook
+ * anterior, ver historial): RNTL v14 actualiza result.current vía useEffect
+ * (lazy); estado en refs + getters evita "unresolved act work" en sync act().
  */
 
-import { useRef, useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { File, UploadType } from 'expo-file-system';
 
 import { usePublishForm } from '../store/PublishFormContext';
-import { validate_video_size } from '../validation';
+import { extract_error_code } from '@/lib/supabase/edge-errors';
 
-// Mensaje neutro fijo para cualquier falla de red/subida (no expone detalle técnico
-// ni sugiere "archivo más pequeño" — el límite de tamaño ya se valida antes).
-const UPLOAD_ERROR_MESSAGE = 'Error al subir el video. Verifica tu conexión e intenta de nuevo.';
-// 413 Payload Too Large — el servidor rechazó el archivo por tamaño (límite del bucket).
-const UPLOAD_ERROR_MESSAGE_413 =
-  'El video supera el tamaño máximo permitido por el servidor. Intenta con un video más ligero.';
+// ponytail: techo del direct upload simple de Cloudflare Stream (sin tus). Si
+// algún día se exige >200MB o resume, migrar a tus-js-client (decisión #68.4).
+export const MAX_STREAM_UPLOAD_BYTES = 200 * 1024 * 1024;
+
+// Mensajes fijos — no exponen detalle técnico al owner (mismo criterio que
+// ContactAgentButton/map_ef_error).
+const SESSION_ERROR_MESSAGE = 'No hay sesión activa. Inicia sesión para publicar.';
+const NEUTRAL_ERROR_MESSAGE = 'Error al subir el video. Verifica tu conexión e intenta de nuevo.';
+const UPLOAD_IN_PROGRESS_MESSAGE = 'Ya tienes un video en proceso. Espera a que termine para subir otro.';
+const SIZE_ERROR_MESSAGE = `El video supera el máximo permitido (200 MB). Intenta con un video más ligero.`;
 
 // ponytail: import lazy — el cliente real solo se carga cuando no se inyecta
 // uno externo (los tests siempre inyectan su propio mock).
@@ -46,51 +57,39 @@ function get_default_supabase(): SupabaseClient {
   return (require('@/lib/supabase/client') as { supabase: SupabaseClient }).supabase;
 }
 
-// ponytail: UUID vía expo-crypto (no crypto.randomUUID — NO existe en Hermes).
-// Lazy-require para que los tests, que siempre inyectan su propio generador, no
-// carguen el módulo nativo.
-function default_uuid(): string {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  return (require('expo-crypto') as { randomUUID: () => string }).randomUUID();
+/** Mapea el error_code de mint-upload-url a un mensaje en español. */
+function map_mint_error_code(code: string | undefined): string {
+  if (code === 'UPLOAD_IN_PROGRESS') return UPLOAD_IN_PROGRESS_MESSAGE;
+  if (code === 'UNAUTHENTICATED') return SESSION_ERROR_MESSAGE;
+  return NEUTRAL_ERROR_MESSAGE;
 }
 
-export type UploadStatus = 'idle' | 'uploading' | 'success' | 'error';
+export type UploadStatus = 'idle' | 'uploading' | 'processing' | 'error';
 
 export interface UseVideoUploadDeps {
   /** Cliente Supabase — inyectable para tests. Por defecto el singleton del módulo. */
   supabase?: SupabaseClient;
-  /**
-   * Generador de UUID — inyectable para tests deterministas. Por defecto expo-crypto randomUUID.
-   * ponytail: tipado como `() => any` para aceptar jest.Mock sin forzar downcast en tests.
-   *   En prod siempre devuelve string; en tests el mock también devuelve string en runtime.
-   */
-   
-  uuid?: (...args: any[]) => any;
 }
 
 export interface UseVideoUploadResult {
   /** Inicia la subida del video indicado por su URI local. */
   upload: (local_uri: string | null) => Promise<void>;
-  /** 'idle' | 'uploading' | 'success' | 'error' */
+  /** 'idle' | 'uploading' | 'processing' | 'error' */
   status: UploadStatus;
-  /** Progreso de la subida 0..1 (0 cuando no hay subida activa, 1 en éxito). */
+  /** Progreso de la subida 0..1 (0 cuando no hay subida activa, 1 al terminar el binario). */
   progress: number;
   /** Mensaje de error si status === 'error'; null en caso contrario. */
   error: string | null;
 }
 
 /**
- * Hook que encapsula la lógica de upload de video al wizard de publicación.
- * Debe usarse dentro de un PublishFormProvider.
+ * Hook que encapsula la lógica de upload de video al wizard de publicación
+ * (Cloudflare Stream, upload-first). Debe usarse dentro de un PublishFormProvider.
  */
 export function useVideoUpload(deps?: UseVideoUploadDeps): UseVideoUploadResult {
   const supabase_client = deps?.supabase ?? get_default_supabase();
-  // ponytail: default uuid vía expo-crypto (crypto.randomUUID no existe en Hermes)
-  const uuid_fn = deps?.uuid ?? default_uuid;
-
   const { update } = usePublishForm();
 
-  // Estado SOLO en refs — sin useState. Ver nota de implementación arriba.
   const status_ref = useRef<UploadStatus>('idle');
   const progress_ref = useRef<number>(0);
   const error_ref = useRef<string | null>(null);
@@ -106,69 +105,64 @@ export function useVideoUpload(deps?: UseVideoUploadDeps): UseVideoUploadResult 
       }
 
       // Marcar como uploading ANTES del primer await — sincrónico en la
-      // ejecución del async function, visible vía getter en sync act() (EC-12).
+      // ejecución del async function, visible vía getter en sync act().
       status_ref.current = 'uploading';
       error_ref.current = null;
       progress_ref.current = 0;
 
-      // Validación de tamaño pre-upload — SÍNCRONA vía la API nueva de File (v56):
-      // .exists / .size son getters síncronos, sin I/O extra. Evita OOM y da un
-      // error legible antes de intentar la subida.
+      // Validación local: existencia + techo de tamaño — SÍNCRONA vía la API
+      // nueva de File (v56): .exists / .size son getters síncronos, sin I/O
+      // extra. Se valida ANTES de invocar mint-upload-url (EC10).
       const file = new File(local_uri);
       if (!file.exists) {
         status_ref.current = 'error';
         error_ref.current = 'El archivo de video no existe';
         return;
       }
-      const size_validation = validate_video_size(file.size);
-      if (!size_validation.valid) {
+      if (file.size > MAX_STREAM_UPLOAD_BYTES) {
         status_ref.current = 'error';
-        error_ref.current = size_validation.error;
+        error_ref.current = SIZE_ERROR_MESSAGE;
         return;
       }
 
-      // Obtener sesión — user_id es el primer segmento del path (invariante RLS)
-      const {
-        data: { session },
-      } = await supabase_client.auth.getSession();
-
-      if (!session?.user?.id) {
-        status_ref.current = 'error';
-        error_ref.current = 'No hay sesión activa. Inicia sesión para publicar.';
-        return;
-      }
-
-      const user_id = session.user.id;
-      const video_id = uuid_fn();
-      const storage_path = `${user_id}/${video_id}.mp4`;
-
-      // Paso 1 — signed upload URL. Error devuelto (no throw) → mensaje del
-      // error (o fallback neutro); excepción (red caída) → mensaje neutro fijo.
-      let signed_url: string;
+      // Paso 1 — mint-upload-url: crea el upload slot en Cloudflare Stream
+      // (upload-first) y devuelve { uploadUrl, uid }. El uid del agente sale
+      // del JWT dentro de la EF, no se envía en el body.
+      let upload_url: string;
+      let stream_uid: string;
       try {
-        const { data: signed_data, error: signed_error } = await supabase_client.storage
-          .from('property-videos')
-          .createSignedUploadUrl(storage_path);
+        const { data, error: mint_error } = await supabase_client.functions.invoke<{
+          uploadUrl: string;
+          uid: string;
+        }>('mint-upload-url', { body: {} });
 
-        if (signed_error || !signed_data?.signedUrl) {
+        if (mint_error || !data?.uploadUrl || !data?.uid) {
+          const code = await extract_error_code(mint_error);
           status_ref.current = 'error';
-          error_ref.current = signed_error?.message ?? UPLOAD_ERROR_MESSAGE;
+          error_ref.current = map_mint_error_code(code);
           return;
         }
-        signed_url = signed_data.signedUrl;
-      } catch (err) {
-        console.warn('[useVideoUpload] createSignedUploadUrl failed:', err);
+        upload_url = data.uploadUrl;
+        stream_uid = data.uid;
+      } catch {
         status_ref.current = 'error';
-        error_ref.current = UPLOAD_ERROR_MESSAGE;
+        error_ref.current = NEUTRAL_ERROR_MESSAGE;
         return;
       }
 
-      // Paso 2/3 — subida por streaming (sin cargar el archivo completo en RAM).
+      // Paso 2 — subida por streaming al Direct Creator Upload de Cloudflare
+      // Stream. ponytail: Stream espera POST multipart/form-data con el campo
+      // 'file' (NO un PUT binario, a diferencia del path legado de Supabase
+      // Storage / R2) — confirmado vía WebFetch a
+      // developers.cloudflare.com/stream/uploading-videos/direct-creator-uploads/
+      // ("basic POST uploads ... multipart/form-data ... field named file ...
+      // 200 en éxito, 4xx si excede 200MB"). E2E real contra Stream sigue
+      // pendiente (gateway remoto en 402 al momento de escribir esto).
       try {
-        const task = file.createUploadTask(signed_url, {
-          httpMethod: 'PUT',
-          uploadType: UploadType.BINARY_CONTENT,
-          headers: { 'Content-Type': 'video/mp4' },
+        const task = file.createUploadTask(upload_url, {
+          httpMethod: 'POST',
+          uploadType: UploadType.MULTIPART,
+          fieldName: 'file',
           onProgress: ({ bytesSent, totalBytes }) => {
             progress_ref.current = totalBytes > 0 ? Math.min(bytesSent / totalBytes, 0.99) : 0;
           },
@@ -178,33 +172,26 @@ export function useVideoUpload(deps?: UseVideoUploadDeps): UseVideoUploadResult 
 
         if (status < 200 || status >= 300) {
           status_ref.current = 'error';
-          error_ref.current = status === 413 ? UPLOAD_ERROR_MESSAGE_413 : UPLOAD_ERROR_MESSAGE;
-          // NO escribir al form en error (EC-9)
+          error_ref.current = NEUTRAL_ERROR_MESSAGE;
+          // NO escribir al form en error.
           return;
         }
 
-        // Éxito — escribir al form (EC-2) y actualizar estado
-        update({ video_id, storage_path });
-        status_ref.current = 'success';
+        // Éxito — 'processing': el video queda transcodificando en Stream;
+        // 'ready' llega por webhook (68.5). NO storage_path (flujo legado).
+        update({ video_id: stream_uid, cloudflare_uid: stream_uid });
+        status_ref.current = 'processing';
         progress_ref.current = 1;
       } catch (err) {
-        // Captura errores de red o cualquier fallo no manejado del upload task.
-        // Mensaje amigable fijo: no exponemos el error técnico al owner.
         console.warn('[useVideoUpload] upload failed:', err);
         status_ref.current = 'error';
-        error_ref.current = UPLOAD_ERROR_MESSAGE;
+        error_ref.current = NEUTRAL_ERROR_MESSAGE;
       }
     },
-     
-    [supabase_client, uuid_fn, update],
+
+    [supabase_client, update],
   );
 
-  // Objeto con getters que leen directamente de los refs.
-  // Estable por useMemo([upload]): si upload no cambia, es el MISMO objeto.
-  // Si upload cambia (deps cambiaron), nuevo objeto, pero mismos refs → mismos getters.
-  // RNTL v14: result.current apunta a este objeto (vía useEffect de HookContainer).
-  // Aunque result.current quede obsoleto (pre-useEffect), los getters siempre
-  // devuelven el ref.current más reciente.
   return useMemo(
     () => ({
       upload,
@@ -218,7 +205,7 @@ export function useVideoUpload(deps?: UseVideoUploadDeps): UseVideoUploadResult 
         return error_ref.current;
       },
     }),
-     
+
     [upload],
   );
 }

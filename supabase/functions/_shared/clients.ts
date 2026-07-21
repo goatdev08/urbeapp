@@ -33,6 +33,22 @@ import type {
   AgencyCreateResult,
   AgencyCreator,
 } from "./agency.ts";
+import type {
+  ActiveUploadChecker,
+  RegisterUploadingVideoParams,
+  StreamDirectUploadParams,
+  StreamDirectUploadResult,
+  StreamUploadCreator,
+  VideoRegistrar,
+} from "../mint-upload-url/types.ts";
+import type {
+  MarkVideoFailedParams,
+  MarkVideoReadyParams,
+  VideoEventNotifier,
+  VideoNotifyEvent,
+  VideoStatusUpdater,
+} from "../stream-webhook/types.ts";
+import type { HlsSignerConfig } from "../mint-video-url/types.ts";
 
 /** Cliente supabase-js con service_role (bypassa RLS y column-grants). */
 export function service_client(): SupabaseClient {
@@ -247,8 +263,17 @@ export function make_redeemer(client: SupabaseClient): InvitationRedeemer {
  * los filtros SQL son la ÚNICA barrera de seguridad que impide mintar URLs
  * de propiedades no publicadas (draft/paused/closed) o videos no listos.
  * ponytail: batch degradado — errores de red/storage se excluyen sin lanzar.
+ *
+ * DUAL-REF (68.6, RED): `hlsConfig` es el seam DI para firmar HLS de Stream por
+ * fila con `cloudflare_uid`. TODO(68.6 GREEN): reemplazar el throw de abajo por
+ * el firmado JWT RS256 real (fail-closed por fila si falta/JWK inválido), y
+ * agregar `cloudflare_uid` al `.select()`.
  */
-export function make_video_url_minter(client: SupabaseClient): VideoUrlMinter {
+export function make_video_url_minter(
+  client: SupabaseClient,
+  hlsConfig?: HlsSignerConfig,
+): VideoUrlMinter {
+  void hlsConfig; // RED: aún sin uso real; el GREEN lo consume para firmar HLS.
   return {
     async mint_signed_urls(property_ids: string[]): Promise<import("../mint-video-url/types.ts").MintedVideo[]> {
       // Defensa: array vacío → no tocar la red
@@ -269,10 +294,17 @@ export function make_video_url_minter(client: SupabaseClient): VideoUrlMinter {
         id: string;
         property_id: string;
         storage_path: string | null;
+        cloudflare_uid?: string | null;
       }>;
 
       const results: import("../mint-video-url/types.ts").MintedVideo[] = [];
       for (const row of rows) {
+        // ponytail: stub RED (68.6) — la rama Stream (dual-ref) aún no está
+        // implementada; el GREEN sustituye este throw por el firmado JWT real.
+        if (row.cloudflare_uid) {
+          throw new Error("not_implemented: hls_stream_signing");
+        }
+
         // Filas sin storage_path (path aún no registrado) → excluir sin llamar storage
         if (!row.storage_path) continue;
 
@@ -378,6 +410,159 @@ export function make_r2_url_minter(): R2UrlMinter {
         items.push({ key, url, expires: ttl_seconds });
       }
       return items;
+    },
+  };
+}
+
+/**
+ * Adaptador real de ActiveUploadChecker (subtarea 68.3, invariante §13.2).
+ * Cuenta, con service_role, los videos del agente en 'uploading' o 'processing'
+ * (soft-delete excluido). El WHERE ... IN (...) es la barrera real: al fake de
+ * los tests solo le importa el count agregado.
+ */
+export function make_active_upload_checker(client: SupabaseClient): ActiveUploadChecker {
+  return {
+    async count_active_uploads(agent_id: string): Promise<number> {
+      const { count, error } = await client
+        .from("property_videos")
+        .select("id", { count: "exact", head: true })
+        .eq("agent_id", agent_id)
+        .in("status", ["uploading", "processing"])
+        .is("deleted_at", null);
+
+      if (error) {
+        // Fail-closed: un error de red/DB al chequear concurrencia no debe
+        // permitir un upload que quizás sí colisione — se trata como "hay 1".
+        return 1;
+      }
+      return count ?? 0;
+    },
+  };
+}
+
+/**
+ * Adaptador real de StreamUploadCreator (subtarea 68.3): Direct Creator Upload
+ * de Cloudflare Stream (POST simple, NO tus). Lanza si la respuesta no es 2xx
+ * o success:false — el handler lo traduce a 502 STREAM_UPLOAD_FAILED.
+ * Variables de entorno requeridas: STREAM_ACCOUNT_ID, STREAM_API_TOKEN.
+ */
+export function make_stream_upload_creator(): StreamUploadCreator {
+  return {
+    async create_direct_upload(
+      params: StreamDirectUploadParams,
+    ): Promise<StreamDirectUploadResult> {
+      const account_id = Deno.env.get("STREAM_ACCOUNT_ID");
+      const api_token = Deno.env.get("STREAM_API_TOKEN");
+      if (!account_id || !api_token) {
+        throw new Error("Faltan variables de entorno STREAM_ACCOUNT_ID/STREAM_API_TOKEN");
+      }
+
+      const res = await fetch(
+        `https://api.cloudflare.com/client/v4/accounts/${account_id}/stream/direct_upload`,
+        {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${api_token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            maxDurationSeconds: params.maxDurationSeconds,
+            requireSignedURLs: params.requireSignedURLs,
+            creator: params.creator,
+          }),
+        },
+      );
+
+      const json = await res.json();
+      if (!res.ok || json.success === false) {
+        throw new Error(
+          `Cloudflare Stream direct_upload falló: ${res.status} ${JSON.stringify(json.errors ?? json)}`,
+        );
+      }
+
+      return {
+        uploadURL: json.result.uploadURL,
+        uid: json.result.uid,
+      };
+    },
+  };
+}
+
+/**
+ * Adaptador real de VideoRegistrar (subtarea 68.3): inserta la fila
+ * 'uploading' upload-first (property_id NULL) con service_role.
+ */
+export function make_video_registrar(client: SupabaseClient): VideoRegistrar {
+  return {
+    async register_uploading_video(params: RegisterUploadingVideoParams): Promise<void> {
+      const { error } = await client.from("property_videos").insert({
+        agent_id: params.agent_id,
+        property_id: params.property_id,
+        status: params.status,
+        position: params.position,
+        cloudflare_uid: params.cloudflare_uid,
+        tus_upload_url: params.tus_upload_url,
+      });
+      if (error) {
+        throw new Error(`Insert en property_videos falló: ${error.message}`);
+      }
+    },
+  };
+}
+
+/**
+ * Adaptador real de VideoStatusUpdater (subtarea 68.5, webhook de Cloudflare Stream).
+ * Filtra SIEMPRE por cloudflare_uid (NUNCA por property_id: upload-first admite
+ * videos sin propiedad todavía) y excluye soft-deleted. `.select("id")` tras el
+ * UPDATE es lo que permite distinguir 0 filas afectadas (uid desconocido, o
+ * re-entrega de una transición ya aplicada) — la idempotencia vive en el conteo,
+ * no en un error: el handler responde 200 aunque affected_rows sea 0.
+ */
+export function make_video_status_updater(client: SupabaseClient): VideoStatusUpdater {
+  return {
+    async mark_ready(params: MarkVideoReadyParams): Promise<number> {
+      const { data, error } = await client
+        .from("property_videos")
+        .update({
+          status: "ready",
+          ready_at: new Date().toISOString(),
+          thumbnail_url: params.thumbnail_url,
+        })
+        .eq("cloudflare_uid", params.cloudflare_uid)
+        .is("deleted_at", null)
+        .select("id");
+      if (error) {
+        throw new Error(`UPDATE property_videos (mark_ready) falló: ${error.message}`);
+      }
+      return data?.length ?? 0;
+    },
+    async mark_failed(params: MarkVideoFailedParams): Promise<number> {
+      const { data, error } = await client
+        .from("property_videos")
+        .update({ status: "failed", failure_reason: params.failure_reason })
+        .eq("cloudflare_uid", params.cloudflare_uid)
+        .is("deleted_at", null)
+        .select("id");
+      if (error) {
+        throw new Error(`UPDATE property_videos (mark_failed) falló: ${error.message}`);
+      }
+      return data?.length ?? 0;
+    },
+  };
+}
+
+/**
+ * Adaptador real de VideoEventNotifier (subtarea 68.5). Ola 0: SOLO el gancho —
+ * registra el evento con log estructurado. El envío real de push (FCM/APNs)
+ * llega en Ola 2 (notificaciones); no existe aún tabla/cola de notificaciones
+ * pendientes que valga la pena escribir para un evento que nadie consume todavía.
+ * ponytail: no-op observable (console.log) en vez de infraestructura prematura.
+ */
+export function make_video_event_notifier(): VideoEventNotifier {
+  return {
+    notify_video_event(event: VideoNotifyEvent, cloudflare_uid: string): Promise<void> {
+      console.log(JSON.stringify({ event, cloudflare_uid, at: new Date().toISOString() }));
+      return Promise.resolve();
     },
   };
 }

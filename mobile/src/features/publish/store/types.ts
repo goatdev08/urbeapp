@@ -45,7 +45,8 @@ export interface PublishFormState {
 
   // Step 3 — video
   video_id: string | null;       // UUID generado en cliente antes de subir
-  storage_path: string | null;   // ruta en Supabase Storage tras upload
+  storage_path: string | null;   // ruta en Supabase Storage tras upload (flujo legado)
+  cloudflare_uid: string | null; // uid de Cloudflare Stream devuelto por mint-upload-url (68.4)
   video_local_uri: string | null; // URI local para preview antes de subir
 
   // Modo edición — propagado desde publish/_layout, inmune a pérdida de URL param
@@ -95,6 +96,7 @@ export const INITIAL_PUBLISH_FORM_STATE: PublishFormState = {
   description: '',
   video_id: null,
   storage_path: null,
+  cloudflare_uid: null,
   video_local_uri: null,
   edit_mode: false,
   property_id: null,

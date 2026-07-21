@@ -1,9 +1,11 @@
 /**
- * Tests RED — subtarea 21.3
- * SUT: make_video_url_minter(client) en _shared/clients.ts
+ * Tests RED — subtareas 21.3 (legacy Supabase Storage) y 68.6 (dual-ref Stream HLS)
+ * SUT: make_video_url_minter(client, hlsConfig?) en _shared/clients.ts
  *
- * Framework: Deno.test + @std/assert
- * Ejecutar: deno test --allow-net supabase/functions/_shared/video_url_minter.test.ts
+ * Framework: Deno.test + @std/assert + jose (verificación de JWT RS256)
+ * Ejecutar:
+ *   cd supabase/functions && deno test --allow-env --allow-net --allow-read \
+ *     --config deno.json _shared/video_url_minter.test.ts
  *
  * ─── ESTRATEGIA DE FAKES ─────────────────────────────────────────────────────
  * El SupabaseClient real se sustituye por un fake que:
@@ -13,33 +15,49 @@
  *   - Es thenable: await builder resuelve { data, error } configurable.
  *   - Expone .storage.from(bucket).createSignedUrl(path, expiresIn) con
  *     responses configurables por path y registro de cada llamada.
+ * Para la rama Stream (68.6) se genera una llave RSA real de prueba con
+ * crypto.subtle.generateKey vía jose (`generateKeyPair("RS256")`), se exporta a
+ * JWK y se inyecta como `hlsConfig.streamSigningJwk` (mismo encoding que el
+ * secret real: JSON → base64 estándar). El JWT emitido se verifica con la
+ * pública de prueba — nunca se mockea el firmado en sí (frontera de confianza).
  *
  * ─── EDGE CASES CUBIERTOS ────────────────────────────────────────────────────
  *
  * ### Happy path / shape de la query (lección #8 mock-vs-prod — crítico)
  * - query_usa_tabla_property_videos
  * - select_embebe_properties_inner_status
+ * - select_incluye_cloudflare_uid_para_dual_ref  ← NUEVO (68.6)
  * - filtro_in_property_ids_con_array_exacto
  * - filtro_eq_status_ready
  * - filtro_eq_properties_status_active  ← CLAVE de seguridad
  * - filtro_is_deleted_at_null
  *
- * ### createSignedUrl
+ * ### createSignedUrl (legacy Supabase Storage)
  * - bucket_es_property_videos_con_guion
  * - expires_in_exactamente_3600
  * - happy_una_fila_devuelve_un_minted_video
  * - batch_tres_filas_devuelve_tres_minted_videos
  *
- * ### Exclusión (no romper el batch)
+ * ### Exclusión (no romper el batch) — legacy
  * - storage_path_nulo_excluido_sin_llamar_storage
  * - create_signed_url_con_error_excluye_solo_esa_fila
  * - query_error_devuelve_array_vacio  ← decisión: batch degradado, no lanza
  * - property_ids_vacio_devuelve_array_vacio
+ *
+ * ### Dual-ref Stream HLS (68.6, NUEVO)
+ * - fila_con_cloudflare_uid_devuelve_url_hls_firmada_con_jwt_valido
+ * - fila_sin_cloudflare_uid_con_storage_path_sigue_usando_supabase_storage_signed_url
+ * - exp_del_jwt_respeta_signed_url_ttl_seconds_inyectado
+ * - stream_row_sin_hls_config_inyectado_se_excluye_del_batch_sin_lanzar
+ * - stream_row_con_jwk_invalido_se_excluye_solo_esa_fila_legacy_no_se_rompe
+ * - batch_mixto_stream_y_legacy_devuelve_ambas_correctamente_firmadas
+ * - precedencia_cloudflare_uid_sobre_storage_path_cuando_fila_tiene_ambos
  */
 
-import { assertEquals, assertExists } from "@std/assert";
+import { assertEquals, assertExists, assertMatch, assertNotEquals } from "@std/assert";
+import { exportJWK, generateKeyPair, importJWK, type JWK, jwtVerify } from "jose";
 import { make_video_url_minter } from "./clients.ts";
-import type { MintedVideo } from "../mint-video-url/types.ts";
+import type { HlsSignerConfig, MintedVideo } from "../mint-video-url/types.ts";
 
 // ── Tipos internos del fake ───────────────────────────────────────────────────
 
@@ -59,6 +77,7 @@ interface VideoRow {
   id: string;
   property_id: string;
   storage_path: string | null;
+  cloudflare_uid?: string | null;
 }
 
 // ── FakeQueryBuilder (thenable y chainable) ───────────────────────────────────
@@ -239,6 +258,7 @@ function make_video_row(overrides: Partial<VideoRow> = {}): VideoRow {
     id: VIDEO_ID_1,
     property_id: PROP_ID_1,
     storage_path: `${PROP_ID_1}/${VIDEO_ID_1}.mp4`,
+    cloudflare_uid: null,
     ...overrides,
   };
 }
@@ -306,6 +326,29 @@ Deno.test("select_embebe_properties_inner_status", async () => {
     has_id,
     true,
     `select debe incluir la columna 'id' del video; recibido: '${sel}'`,
+  );
+});
+
+Deno.test("select_incluye_cloudflare_uid_para_dual_ref", async () => {
+  // 68.6: el select debe traer cloudflare_uid además de storage_path para que
+  // el minter pueda decidir la rama dual-ref (Stream vs Supabase Storage).
+  const { client, get_last_builder } = make_fake_client_tracked({
+    query_data: [make_video_row()],
+    query_error: null,
+    storage_responses: {
+      [`${PROP_ID_1}/${VIDEO_ID_1}.mp4`]: "https://cdn.example.com/signed?tok=abc",
+    },
+  });
+
+  const minter = make_video_url_minter(client as never);
+  await minter.mint_signed_urls([PROP_ID_1]);
+
+  const builder = get_last_builder();
+  assertExists(builder);
+  assertEquals(
+    builder.select_str.includes("cloudflare_uid"),
+    true,
+    `select debe incluir 'cloudflare_uid' para la rama dual-ref; recibido: '${builder.select_str}'`,
   );
 });
 
@@ -640,3 +683,376 @@ Deno.test("property_ids_vacio_devuelve_array_vacio", async () => {
   // Si el adapter sí llama .from() con array vacío, el resultado debe seguir siendo [].
   void get_last_builder; // presencia de builder opcional; lo que importa es result === []
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TESTS — Dual-ref Stream HLS (subtarea 68.6)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Fuente de verdad del formato: subtask 68.6 (Taskmaster) + docs/ADR Cloudflare
+// Stream. JWT: header { alg: RS256, kid }, payload { sub: cloudflare_uid, kid, exp }.
+// URL: https://customer-<CODE>.cloudflarestream.com/<UID>/manifest/video.m3u8?token=<JWT>
+//   (o la variante videodelivery.net/<UID>/manifest/video.m3u8?token=<JWT>).
+
+const TEST_KEY_ID = "test-stream-signing-key-01";
+const DEFAULT_TTL_SECONDS = 14400; // valor real sembrado en app_config (signed_url_ttl_seconds)
+const CLOUDFLARE_UID_1 = "cf-uid-0000000000000000000001";
+const CLOUDFLARE_UID_2 = "cf-uid-0000000000000000000002";
+
+// Regex de invariantes de la URL HLS: NO hardcodea un customer code inventado;
+// acepta ambos dominios legítimos de Stream (customer subdomain o videodelivery.net).
+const HLS_URL_RE =
+  /^https:\/\/(?:customer-[a-z0-9]+\.cloudflarestream\.com|(?:[a-z0-9.-]*\.)?videodelivery\.net)\/([A-Za-z0-9_-]+)\/manifest\/video\.m3u8\?token=([^&]+)$/i;
+
+/** Genera un par de llaves RSA de prueba (RS256) y exporta la privada como JWK. */
+async function generate_test_signing_key(): Promise<{
+  public_jwk: JWK;
+  private_jwk_base64: string;
+}> {
+  const { publicKey, privateKey } = await generateKeyPair("RS256", {
+    extractable: true,
+  });
+  const private_jwk = await exportJWK(privateKey);
+  private_jwk.kid = TEST_KEY_ID;
+  private_jwk.alg = "RS256";
+  private_jwk.use = "sig";
+  const public_jwk = await exportJWK(publicKey);
+
+  return {
+    public_jwk,
+    // Mismo encoding que el secret real STREAM_SIGNING_JWK: JSON → base64 estándar.
+    private_jwk_base64: btoa(JSON.stringify(private_jwk)),
+  };
+}
+
+function make_hls_config(
+  private_jwk_base64: string,
+  overrides: Partial<HlsSignerConfig> = {},
+): HlsSignerConfig {
+  return {
+    streamSigningKeyId: TEST_KEY_ID,
+    streamSigningJwk: private_jwk_base64,
+    signedUrlTtlSeconds: DEFAULT_TTL_SECONDS,
+    ...overrides,
+  };
+}
+
+/** Extrae { uid, token } de una URL HLS firmada; lanza si no matchea el patrón. */
+function parse_hls_url(url: string): { uid: string; token: string } {
+  const match = HLS_URL_RE.exec(url);
+  if (!match) {
+    throw new Error(`signed_url no matchea el formato HLS de Stream: '${url}'`);
+  }
+  return { uid: match[1], token: decodeURIComponent(match[2]) };
+}
+
+Deno.test("fila_con_cloudflare_uid_devuelve_url_hls_firmada_con_jwt_valido", async () => {
+  const { public_jwk, private_jwk_base64 } = await generate_test_signing_key();
+  const hls_config = make_hls_config(private_jwk_base64);
+
+  const { client } = make_fake_client_tracked({
+    query_data: [
+      make_video_row({
+        id: VIDEO_ID_1,
+        property_id: PROP_ID_1,
+        storage_path: null,
+        cloudflare_uid: CLOUDFLARE_UID_1,
+      }),
+    ],
+    query_error: null,
+    storage_responses: {},
+  });
+
+  const minter = make_video_url_minter(client as never, hls_config);
+  const result = await minter.mint_signed_urls([PROP_ID_1]);
+
+  assertEquals(
+    result.length,
+    1,
+    "Una fila con cloudflare_uid y hlsConfig válido debe producir 1 MintedVideo",
+  );
+  assertEquals(result[0].property_id, PROP_ID_1);
+  assertEquals(result[0].video_id, VIDEO_ID_1);
+  assertMatch(
+    result[0].signed_url,
+    HLS_URL_RE,
+    `signed_url debe ser un manifest HLS de Stream; recibido: '${result[0].signed_url}'`,
+  );
+
+  const { uid, token } = parse_hls_url(result[0].signed_url);
+  assertEquals(uid, CLOUDFLARE_UID_1, "El UID de la URL HLS debe ser el cloudflare_uid de la fila");
+
+  const token_segments = token.split(".");
+  assertEquals(token_segments.length, 3, "El token debe ser un JWT de 3 segmentos (header.payload.signature)");
+
+  const public_key = await importJWK(public_jwk, "RS256");
+  const { payload, protectedHeader } = await jwtVerify(token, public_key, {
+    algorithms: ["RS256"],
+  });
+
+  assertEquals(protectedHeader.kid, TEST_KEY_ID, "El header del JWT debe traer el kid de la signing key");
+  assertEquals(payload.sub, CLOUDFLARE_UID_1, "El claim 'sub' debe ser el cloudflare_uid del video");
+  assertEquals(payload.kid, TEST_KEY_ID, "El claim 'kid' del payload debe ser la signing key id");
+});
+
+Deno.test(
+  "fila_sin_cloudflare_uid_con_storage_path_sigue_usando_supabase_storage_signed_url",
+  async () => {
+    // Rama legacy intacta: apps viejas sin cloudflare_uid conviven con el dual-ref.
+    const { public_jwk: _unused, private_jwk_base64 } = await generate_test_signing_key();
+    void _unused;
+    const hls_config = make_hls_config(private_jwk_base64);
+    const path = `${PROP_ID_1}/${VIDEO_ID_1}.mp4`;
+    const expected_storage_url = "https://cdn.example.com/signed?tok=legacy123";
+
+    const { client, storage_calls } = make_fake_client_tracked({
+      query_data: [
+        make_video_row({
+          id: VIDEO_ID_1,
+          property_id: PROP_ID_1,
+          storage_path: path,
+          cloudflare_uid: null,
+        }),
+      ],
+      query_error: null,
+      storage_responses: { [path]: expected_storage_url },
+    });
+
+    // hlsConfig SÍ está inyectado, pero la fila no tiene cloudflare_uid → debe
+    // seguir yendo por Supabase Storage, no por Stream.
+    const minter = make_video_url_minter(client as never, hls_config);
+    const result = await minter.mint_signed_urls([PROP_ID_1]);
+
+    assertEquals(result.length, 1);
+    assertEquals(
+      result[0].signed_url,
+      expected_storage_url,
+      "Sin cloudflare_uid, signed_url debe seguir siendo la Supabase Storage signed URL",
+    );
+    assertEquals(
+      storage_calls.length,
+      1,
+      "createSignedUrl de Supabase Storage debe seguir llamándose para la rama legacy",
+    );
+  },
+);
+
+Deno.test("exp_del_jwt_respeta_signed_url_ttl_seconds_inyectado", async () => {
+  const { public_jwk, private_jwk_base64 } = await generate_test_signing_key();
+  const custom_ttl_seconds = 1800; // valor deliberadamente distinto de 3600 y de 14400
+  const hls_config = make_hls_config(private_jwk_base64, {
+    signedUrlTtlSeconds: custom_ttl_seconds,
+  });
+
+  const { client } = make_fake_client_tracked({
+    query_data: [
+      make_video_row({
+        id: VIDEO_ID_1,
+        property_id: PROP_ID_1,
+        storage_path: null,
+        cloudflare_uid: CLOUDFLARE_UID_1,
+      }),
+    ],
+    query_error: null,
+    storage_responses: {},
+  });
+
+  const before = Math.floor(Date.now() / 1000);
+  const minter = make_video_url_minter(client as never, hls_config);
+  const result = await minter.mint_signed_urls([PROP_ID_1]);
+
+  const { token } = parse_hls_url(result[0].signed_url);
+  const public_key = await importJWK(public_jwk, "RS256");
+  const { payload } = await jwtVerify(token, public_key, { algorithms: ["RS256"] });
+
+  assertExists(payload.exp, "El JWT debe traer claim 'exp'");
+  const expected_exp = before + custom_ttl_seconds;
+  const drift = Math.abs((payload.exp as number) - expected_exp);
+  assertEquals(
+    drift <= 5,
+    true,
+    `exp debe ser ~now+signedUrlTtlSeconds (±5s); esperado≈${expected_exp}, recibido=${payload.exp}, drift=${drift}s`,
+  );
+  assertNotEquals(
+    payload.exp,
+    before + 3600,
+    "exp NO debe usar el TTL legacy hardcodeado de 3600s cuando se inyecta un TTL distinto",
+  );
+});
+
+Deno.test(
+  "stream_row_sin_hls_config_inyectado_se_excluye_del_batch_sin_lanzar",
+  async () => {
+    // Fail-closed: si el caller no inyecta hlsConfig (p.ej. secrets STREAM_* ausentes
+    // en el entorno), una fila Stream se excluye; el batch NO debe lanzar y las
+    // filas legacy del mismo batch deben seguir apareciendo.
+    const legacy_path = `${PROP_ID_2}/${VIDEO_ID_2}.mp4`;
+    const legacy_url = "https://cdn.example.com/signed?tok=legacy456";
+
+    const { client } = make_fake_client_tracked({
+      query_data: [
+        make_video_row({
+          id: VIDEO_ID_1,
+          property_id: PROP_ID_1,
+          storage_path: null,
+          cloudflare_uid: CLOUDFLARE_UID_1,
+        }),
+        make_video_row({
+          id: VIDEO_ID_2,
+          property_id: PROP_ID_2,
+          storage_path: legacy_path,
+          cloudflare_uid: null,
+        }),
+      ],
+      query_error: null,
+      storage_responses: { [legacy_path]: legacy_url },
+    });
+
+    // Sin segundo argumento: hlsConfig === undefined.
+    const minter = make_video_url_minter(client as never);
+    const result = await minter.mint_signed_urls([PROP_ID_1, PROP_ID_2]);
+
+    assertEquals(
+      result.length,
+      1,
+      "Sin hlsConfig, solo la fila legacy debe aparecer (la Stream se excluye, fail-closed)",
+    );
+    assertEquals(result[0].property_id, PROP_ID_2);
+    assertEquals(result[0].signed_url, legacy_url);
+  },
+);
+
+Deno.test(
+  "stream_row_con_jwk_invalido_se_excluye_solo_esa_fila_legacy_no_se_rompe",
+  async () => {
+    const legacy_path = `${PROP_ID_2}/${VIDEO_ID_2}.mp4`;
+    const legacy_url = "https://cdn.example.com/signed?tok=legacy789";
+    const invalid_hls_config = make_hls_config("esto-no-es-un-jwk-base64-valido---");
+
+    const { client } = make_fake_client_tracked({
+      query_data: [
+        make_video_row({
+          id: VIDEO_ID_1,
+          property_id: PROP_ID_1,
+          storage_path: null,
+          cloudflare_uid: CLOUDFLARE_UID_1,
+        }),
+        make_video_row({
+          id: VIDEO_ID_2,
+          property_id: PROP_ID_2,
+          storage_path: legacy_path,
+          cloudflare_uid: null,
+        }),
+      ],
+      query_error: null,
+      storage_responses: { [legacy_path]: legacy_url },
+    });
+
+    const minter = make_video_url_minter(client as never, invalid_hls_config);
+    const result = await minter.mint_signed_urls([PROP_ID_1, PROP_ID_2]);
+
+    assertEquals(
+      result.length,
+      1,
+      "JWK inválido excluye SOLO la fila Stream; la legacy del mismo batch debe seguir presente",
+    );
+    assertEquals(result[0].property_id, PROP_ID_2);
+    assertEquals(result[0].signed_url, legacy_url);
+  },
+);
+
+Deno.test("batch_mixto_stream_y_legacy_devuelve_ambas_correctamente_firmadas", async () => {
+  const { public_jwk, private_jwk_base64 } = await generate_test_signing_key();
+  const hls_config = make_hls_config(private_jwk_base64);
+  const legacy_path = `${PROP_ID_2}/${VIDEO_ID_2}.mp4`;
+  const legacy_url = "https://cdn.example.com/signed?tok=legacy999";
+
+  const { client } = make_fake_client_tracked({
+    query_data: [
+      make_video_row({
+        id: VIDEO_ID_1,
+        property_id: PROP_ID_1,
+        storage_path: null,
+        cloudflare_uid: CLOUDFLARE_UID_1,
+      }),
+      make_video_row({
+        id: VIDEO_ID_2,
+        property_id: PROP_ID_2,
+        storage_path: legacy_path,
+        cloudflare_uid: null,
+      }),
+    ],
+    query_error: null,
+    storage_responses: { [legacy_path]: legacy_url },
+  });
+
+  const minter = make_video_url_minter(client as never, hls_config);
+  const result = await minter.mint_signed_urls([PROP_ID_1, PROP_ID_2]);
+
+  assertEquals(result.length, 2, "El batch mixto debe devolver ambas filas firmadas");
+
+  const stream_result = result.find((v) => v.property_id === PROP_ID_1);
+  const legacy_result = result.find((v) => v.property_id === PROP_ID_2);
+
+  assertExists(stream_result, "Debe aparecer el MintedVideo de la fila Stream");
+  assertExists(legacy_result, "Debe aparecer el MintedVideo de la fila legacy");
+
+  assertMatch(stream_result!.signed_url, HLS_URL_RE, "La fila Stream debe traer URL HLS");
+  assertEquals(
+    legacy_result!.signed_url,
+    legacy_url,
+    "La fila legacy debe traer la Supabase Storage signed URL sin modificar",
+  );
+
+  const public_key = await importJWK(public_jwk, "RS256");
+  const { token } = parse_hls_url(stream_result!.signed_url);
+  const { payload } = await jwtVerify(token, public_key, { algorithms: ["RS256"] });
+  assertEquals(payload.sub, CLOUDFLARE_UID_1);
+});
+
+Deno.test(
+  "precedencia_cloudflare_uid_sobre_storage_path_cuando_fila_tiene_ambos",
+  async () => {
+    // Migración dual-ref: si una fila tuviera AMBOS storage_path Y cloudflare_uid
+    // (transición legacy→Stream), la rama Stream siempre gana.
+    const { public_jwk, private_jwk_base64 } = await generate_test_signing_key();
+    const hls_config = make_hls_config(private_jwk_base64);
+    const path = `${PROP_ID_1}/${VIDEO_ID_1}.mp4`;
+
+    const { client, storage_calls } = make_fake_client_tracked({
+      query_data: [
+        make_video_row({
+          id: VIDEO_ID_1,
+          property_id: PROP_ID_1,
+          storage_path: path, // legacy ref presente...
+          cloudflare_uid: CLOUDFLARE_UID_1, // ...pero también Stream: debe ganar Stream
+        }),
+      ],
+      query_error: null,
+      // Si el minter (incorrectamente) usara la rama legacy, este sería el resultado:
+      storage_responses: { [path]: "https://cdn.example.com/signed?tok=NO-DEBE-USARSE" },
+    });
+
+    const minter = make_video_url_minter(client as never, hls_config);
+    const result = await minter.mint_signed_urls([PROP_ID_1]);
+
+    assertEquals(result.length, 1);
+    assertMatch(
+      result[0].signed_url,
+      HLS_URL_RE,
+      "Con ambas refs presentes, signed_url debe ser HLS de Stream (cloudflare_uid gana)",
+    );
+    assertEquals(
+      storage_calls.length,
+      0,
+      "createSignedUrl de Supabase Storage NO debe llamarse cuando cloudflare_uid está presente",
+    );
+
+    const { uid } = parse_hls_url(result[0].signed_url);
+    assertEquals(uid, CLOUDFLARE_UID_1);
+
+    const public_key = await importJWK(public_jwk, "RS256");
+    const { token } = parse_hls_url(result[0].signed_url);
+    const { payload } = await jwtVerify(token, public_key, { algorithms: ["RS256"] });
+    assertEquals(payload.sub, CLOUDFLARE_UID_1);
+  },
+);
