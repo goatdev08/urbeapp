@@ -50,6 +50,7 @@ import type {
   VideoStatusUpdater,
 } from "../stream-webhook/types.ts";
 import type { HlsSignerConfig } from "../mint-video-url/types.ts";
+import type { ThumbnailUrlSigner } from "../mint-thumbnail-url/types.ts";
 import type {
   ArchivableVideoRow,
   ArchiveUploader,
@@ -751,6 +752,23 @@ export function make_video_archiver(client: SupabaseClient): VideoArchiver {
       if (error) {
         throw new Error(`UPDATE property_videos (mark_archived) falló: ${error.message}`);
       }
+    },
+  };
+}
+
+/**
+ * STUB — subtarea 68.14 (fase RED). Firmante real del token de thumbnail de
+ * Cloudflare Stream (JWT RS256, mismo mecanismo que sign_stream_hls_url pero con
+ * baseUrl .../thumbnails/thumbnail.jpg en vez de .../manifest/video.m3u8). Sin
+ * lógica de negocio todavía: únicamente hace que
+ * _shared/thumbnail_url_signer.test.ts falle por aserción/excepción en vez de
+ * por import roto. La implementación real llega en GREEN.
+ */
+export function make_thumbnail_url_signer(_hlsConfig: HlsSignerConfig): ThumbnailUrlSigner {
+  return {
+    // deno-lint-ignore require-await
+    async sign(_cloudflare_uid: string): Promise<import("../mint-thumbnail-url/types.ts").ThumbnailSignResult> {
+      throw new Error("not_implemented");
     },
   };
 }
