@@ -53,6 +53,12 @@
 // ### Boundary / error (parseo del payload)
 // - EC14: firma válida pero body no es JSON válido → 400, sin UPDATE ni notify.
 // - EC15: forma invariante de error: toda respuesta 401 sigue { error: { code, message } }.
+//
+// EDGE CASES (RED) — 68.13 (portada Stream: duration_seconds):
+// - EC16: payload 'ready' con duration: 92.3 (numérico) → mark_ready se invoca con
+//   duration_seconds: 92.3 EXACTO (además de cloudflare_uid/thumbnail_url ya cubiertos).
+// - EC17: payload 'ready' SIN campo duration → mark_ready recibe duration_seconds: null
+//   EXPLÍCITO (nunca undefined — la key debe existir en el objeto con valor null).
 
 import { assertEquals, assertNotEquals } from "@std/assert";
 import { make_stream_webhook_handler } from "./handler.ts";
@@ -92,6 +98,16 @@ const ERROR_PAYLOAD = JSON.stringify({
 const INPROGRESS_PAYLOAD = JSON.stringify({
   uid: STREAM_UID,
   status: { state: "inprogress", pctComplete: "42.000000" },
+});
+
+// duration_seconds (68.13): Cloudflare Stream incluye `duration` (numérico, segundos,
+// puede ser fraccionario) en el payload 'ready' una vez que conoce la duración real.
+const READY_DURATION_SECONDS = 92.3;
+const READY_PAYLOAD_WITH_DURATION = JSON.stringify({
+  uid: STREAM_UID,
+  status: { state: "ready" },
+  thumbnail: READY_THUMBNAIL_URL,
+  duration: READY_DURATION_SECONDS,
 });
 
 // ── Firma HMAC real (crypto.subtle de Deno) ──────────────────────────────────
@@ -205,6 +221,48 @@ Deno.test("firma_valida_state_ready_marca_ready_con_thumbnail_y_notifica_200", a
   assertEquals(updater.failed_calls.length, 0, "mark_failed NO debe invocarse en el camino ready");
   assertEquals(notifier.calls.length, 1, "el gancho de notificación debe invocarse una vez");
   assertEquals(notifier.calls[0], { event: "video_ready", cloudflare_uid: STREAM_UID });
+});
+
+// ── duration_seconds (68.13: portada Stream) ─────────────────────────────────
+
+Deno.test("firma_valida_state_ready_con_duration_marca_ready_con_duration_seconds_exacto", async () => {
+  const { header } = await sign_body(READY_PAYLOAD_WITH_DURATION);
+  const updater = updater_ok();
+  const deps = make_deps({ videoStatusUpdater: updater });
+  const respond = make_stream_webhook_handler(deps);
+
+  const res = await respond(webhook_request(READY_PAYLOAD_WITH_DURATION, header));
+
+  assertEquals(res.status, 200);
+  assertEquals(updater.ready_calls.length, 1);
+  assertEquals(updater.ready_calls[0], {
+    cloudflare_uid: STREAM_UID,
+    thumbnail_url: READY_THUMBNAIL_URL,
+    duration_seconds: READY_DURATION_SECONDS,
+  });
+});
+
+Deno.test("firma_valida_state_ready_sin_duration_marca_ready_con_duration_seconds_null_explicito", async () => {
+  const { header } = await sign_body(READY_PAYLOAD);
+  const updater = updater_ok();
+  const deps = make_deps({ videoStatusUpdater: updater });
+  const respond = make_stream_webhook_handler(deps);
+
+  await respond(webhook_request(READY_PAYLOAD, header));
+
+  assertEquals(updater.ready_calls.length, 1);
+  // duration_seconds debe ser null EXPLÍCITO (la key existe), nunca undefined
+  // (payload.duration ?? null, no payload.duration a secas).
+  assertEquals(
+    Object.prototype.hasOwnProperty.call(updater.ready_calls[0], "duration_seconds"),
+    true,
+    "duration_seconds debe existir como key aunque el payload no traiga duration",
+  );
+  assertEquals(updater.ready_calls[0], {
+    cloudflare_uid: STREAM_UID,
+    thumbnail_url: READY_THUMBNAIL_URL,
+    duration_seconds: null,
+  });
 });
 
 Deno.test("firma_valida_state_error_marca_failed_con_failure_reason_y_notifica_200", async () => {
