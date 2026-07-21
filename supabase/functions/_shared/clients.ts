@@ -50,6 +50,16 @@ import type {
   VideoStatusUpdater,
 } from "../stream-webhook/types.ts";
 import type { HlsSignerConfig } from "../mint-video-url/types.ts";
+import type {
+  ArchivableVideoRow,
+  ArchiveUploader,
+  ArchiveUploadResult,
+  EnableDownloadResult,
+  MarkArchivedParams,
+  StreamArchiver,
+  VideoArchiver,
+  VideoLoader,
+} from "../archive-video/types.ts";
 
 /** Cliente supabase-js con service_role (bypassa RLS y column-grants). */
 export function service_client(): SupabaseClient {
@@ -607,6 +617,139 @@ export function make_video_event_notifier(): VideoEventNotifier {
     notify_video_event(event: VideoNotifyEvent, cloudflare_uid: string): Promise<void> {
       console.log(JSON.stringify({ event, cloudflare_uid, at: new Date().toISOString() }));
       return Promise.resolve();
+    },
+  };
+}
+
+/**
+ * Adaptador real de VideoLoader (subtarea 68.8): carga la fila a archivar por id,
+ * con service_role (bypassa RLS — la autorización de negocio vive en el handler,
+ * comparando agent_id contra el caller). Excluye soft-deleted.
+ */
+export function make_video_loader(client: SupabaseClient): VideoLoader {
+  return {
+    async load(property_video_id: string): Promise<ArchivableVideoRow | null> {
+      const { data, error } = await client
+        .from("property_videos")
+        .select("id, agent_id, cloudflare_uid, status")
+        .eq("id", property_video_id)
+        .is("deleted_at", null)
+        .maybeSingle();
+      if (error || !data) return null;
+      return data as ArchivableVideoRow;
+    },
+  };
+}
+
+/**
+ * Adaptador real de StreamArchiver (subtarea 68.8): habilita/descarga/borra el
+ * video original en Cloudflare Stream vía la Downloads API.
+ *
+ * ponytail: el shape exacto de la respuesta de la Stream Downloads API
+ * (`result.default.{status,percentComplete,url}`) se documenta en la API de
+ * Cloudflare pero no se pudo verificar en vivo en esta subtarea (credenciales
+ * bloqueadas, ver bitácora 68.8) — el mapeo de abajo sigue la doc pública; el
+ * seam bajo test es la interfaz StreamArchiver, no esta llamada real.
+ * Variables de entorno requeridas: STREAM_ACCOUNT_ID, STREAM_API_TOKEN.
+ */
+export function make_stream_archiver(): StreamArchiver {
+  function stream_headers(): Record<string, string> {
+    const api_token = Deno.env.get("STREAM_API_TOKEN");
+    if (!api_token) {
+      throw new Error("Falta la variable de entorno STREAM_API_TOKEN");
+    }
+    return { "Authorization": `Bearer ${api_token}` };
+  }
+
+  function account_id(): string {
+    const id = Deno.env.get("STREAM_ACCOUNT_ID");
+    if (!id) {
+      throw new Error("Falta la variable de entorno STREAM_ACCOUNT_ID");
+    }
+    return id;
+  }
+
+  return {
+    async enable_download(cloudflare_uid: string): Promise<EnableDownloadResult> {
+      const res = await fetch(
+        `https://api.cloudflare.com/client/v4/accounts/${account_id()}/stream/${cloudflare_uid}/downloads`,
+        { method: "POST", headers: stream_headers() },
+      );
+      const json = await res.json();
+      if (!res.ok || json.success === false) {
+        throw new Error(
+          `Cloudflare Stream enable_download falló: ${res.status} ${JSON.stringify(json.errors ?? json)}`,
+        );
+      }
+      const default_download = json.result?.default ?? {};
+      return {
+        state: default_download.status === "ready" ? "ready" : "inprogress",
+        url: default_download.url,
+        percentComplete: default_download.percentComplete !== undefined
+          ? Number(default_download.percentComplete)
+          : undefined,
+      };
+    },
+    async fetch_mp4(url: string): Promise<Uint8Array> {
+      const res = await fetch(url);
+      if (!res.ok) {
+        throw new Error(`Descarga del MP4 de Cloudflare Stream falló: ${res.status}`);
+      }
+      return new Uint8Array(await res.arrayBuffer());
+    },
+    async delete_video(cloudflare_uid: string): Promise<void> {
+      const res = await fetch(
+        `https://api.cloudflare.com/client/v4/accounts/${account_id()}/stream/${cloudflare_uid}`,
+        { method: "DELETE", headers: stream_headers() },
+      );
+      if (!res.ok) {
+        throw new Error(`Cloudflare Stream delete_video falló: ${res.status}`);
+      }
+    },
+  };
+}
+
+/**
+ * Adaptador real de ArchiveUploader (subtarea 68.8): firma un presigned PUT con
+ * make_r2_url_minter (mismo mecanismo que mint-r2-url, kind=archive) y sube los
+ * bytes descargados de Stream. Lanza si el PUT no es 2xx — el handler lo traduce
+ * a 502 R2_UPLOAD_FAILED.
+ */
+export function make_archive_uploader(): ArchiveUploader {
+  const R2_ARCHIVE_PUT_TTL_SECONDS = 15 * 60; // mismo TTL que mint-r2-url op=put
+
+  return {
+    async upload(key: string, body: Uint8Array): Promise<ArchiveUploadResult> {
+      const put_url = await make_r2_url_minter().sign_put(key, R2_ARCHIVE_PUT_TTL_SECONDS);
+      const res = await fetch(put_url, { method: "PUT", body: body as BodyInit });
+      if (!res.ok) {
+        throw new Error(`PUT a R2 falló: ${res.status}`);
+      }
+      return { ok: true, key };
+    },
+  };
+}
+
+/**
+ * Adaptador real de VideoArchiver (subtarea 68.8): escritura final tras el
+ * ordering seguro (R2 confirmado -> Stream borrado -> este UPDATE). Limpia
+ * cloudflare_uid (el video ya no vive en Stream) y deja el rastro en R2.
+ */
+export function make_video_archiver(client: SupabaseClient): VideoArchiver {
+  return {
+    async mark_archived(params: MarkArchivedParams): Promise<void> {
+      const { error } = await client
+        .from("property_videos")
+        .update({
+          status: "archived",
+          archived_at: new Date().toISOString(),
+          r2_archive_key: params.r2_archive_key,
+          cloudflare_uid: null,
+        })
+        .eq("id", params.property_video_id);
+      if (error) {
+        throw new Error(`UPDATE property_videos (mark_archived) falló: ${error.message}`);
+      }
     },
   };
 }
