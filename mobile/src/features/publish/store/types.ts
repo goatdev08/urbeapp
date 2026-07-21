@@ -72,8 +72,7 @@ export interface PublishFormPayload {
   allows_no_guarantor: boolean;
   student_friendly: boolean;
   description: string;
-  video_id: string;
-  storage_path: string;
+  cloudflare_uid: string;
 }
 
 // ---------------------------------------------------------------------------

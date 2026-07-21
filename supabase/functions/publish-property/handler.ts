@@ -108,23 +108,16 @@ function parse_publish_property_input(raw: unknown): ParseResult {
     return invalid("lng debe ser un número");
   }
 
-  // video_id: string no vacío (UUID generado por el cliente, PRD §13)
-  if (obj.video_id === undefined || obj.video_id === null) {
-    return invalid("video_id es requerido");
-  }
-  if (typeof obj.video_id !== "string" || obj.video_id.trim().length === 0) {
-    return invalid("video_id no puede ser vacío");
-  }
-
-  // storage_path: string no vacío (objeto ya subido al bucket property-videos)
-  if (obj.storage_path === undefined || obj.storage_path === null) {
-    return invalid("storage_path es requerido");
+  // cloudflare_uid: string no vacío (68.12 — referencia del video en vuelo ya
+  // subido a Cloudflare Stream antes de publicar; reemplaza video_id/storage_path)
+  if (obj.cloudflare_uid === undefined || obj.cloudflare_uid === null) {
+    return invalid("cloudflare_uid es requerido");
   }
   if (
-    typeof obj.storage_path !== "string" ||
-    obj.storage_path.trim().length === 0
+    typeof obj.cloudflare_uid !== "string" ||
+    obj.cloudflare_uid.trim().length === 0
   ) {
-    return invalid("storage_path no puede ser vacío");
+    return invalid("cloudflare_uid no puede ser vacío");
   }
 
   return {
@@ -145,11 +138,7 @@ function parse_publish_property_input(raw: unknown): ParseResult {
       allows_no_guarantor: obj.allows_no_guarantor === true,
       student_friendly: obj.student_friendly === true,
       description: typeof obj.description === "string" ? obj.description : "",
-      // ponytail (68.12, RED): pass-through mínimo sin validar requeridad —
-      // la validación real de cloudflare_uid es responsabilidad del GREEN.
-      cloudflare_uid: typeof obj.cloudflare_uid === "string"
-        ? obj.cloudflare_uid
-        : "",
+      cloudflare_uid: obj.cloudflare_uid,
     },
   };
 }

@@ -72,8 +72,7 @@ Deno.serve((req: Request) => {
         p_allows_no_guarantor: params.allows_no_guarantor,
         p_student_friendly: params.student_friendly,
         p_description: params.description ?? null,
-        p_video_id: params.video_id,
-        p_storage_path: params.storage_path,
+        p_cloudflare_uid: params.cloudflare_uid,
       });
 
       if (error) {
