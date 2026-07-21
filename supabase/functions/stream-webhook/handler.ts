@@ -103,6 +103,7 @@ export function make_stream_webhook_handler(
       await deps.videoStatusUpdater.mark_ready({
         cloudflare_uid: uid,
         thumbnail_url: payload.thumbnail ?? null,
+        duration_seconds: payload.duration ?? null,
       });
       await deps.notifier.notify_video_event("video_ready", uid);
     } else if (state === "error") {

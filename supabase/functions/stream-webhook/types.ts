@@ -11,7 +11,9 @@
 //   2. Parsea el payload de Cloudflare Stream: { uid, status: { state }, thumbnail, ... }.
 //      Payload no-JSON → 400, sin tocar DB ni notifier.
 //   3. state='ready' → videoStatusUpdater.mark_ready({ cloudflare_uid: uid,
-//      thumbnail_url: payload.thumbnail ?? null }).
+//      thumbnail_url: payload.thumbnail ?? null,
+//      duration_seconds: payload.duration ?? null }) — duration_seconds SIEMPRE presente
+//      como key (null explícito si Stream no reportó duration), nunca undefined (68.13).
 //      state='error' → videoStatusUpdater.mark_failed({ cloudflare_uid: uid,
 //      failure_reason: <de status.errorReasonText/Code> }).
 //      Cualquier otro state (p.ej. 'inprogress') → no-op, 200, sin notify.
@@ -38,6 +40,7 @@ export interface CloudflareStreamWebhookPayload {
   uid: string;
   status: CloudflareStreamWebhookStatus;
   thumbnail?: string;
+  duration?: number; // segundos, fraccional (68.13) — solo presente cuando state='ready'
 }
 
 // ── VideoStatusUpdater — escritura en property_videos, SIEMPRE por cloudflare_uid ─
@@ -48,6 +51,7 @@ export interface CloudflareStreamWebhookPayload {
 export interface MarkVideoReadyParams {
   cloudflare_uid: string;
   thumbnail_url: string | null;
+  duration_seconds: number | null;
 }
 
 export interface MarkVideoFailedParams {

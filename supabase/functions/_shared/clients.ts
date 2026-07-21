@@ -581,6 +581,7 @@ export function make_video_status_updater(client: SupabaseClient): VideoStatusUp
           status: "ready",
           ready_at: new Date().toISOString(),
           thumbnail_url: params.thumbnail_url,
+          duration_seconds: params.duration_seconds,
         })
         .eq("cloudflare_uid", params.cloudflare_uid)
         .is("deleted_at", null)

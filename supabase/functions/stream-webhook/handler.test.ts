@@ -217,6 +217,7 @@ Deno.test("firma_valida_state_ready_marca_ready_con_thumbnail_y_notifica_200", a
   assertEquals(updater.ready_calls[0], {
     cloudflare_uid: STREAM_UID,
     thumbnail_url: READY_THUMBNAIL_URL,
+    duration_seconds: null,
   });
   assertEquals(updater.failed_calls.length, 0, "mark_failed NO debe invocarse en el camino ready");
   assertEquals(notifier.calls.length, 1, "el gancho de notificación debe invocarse una vez");
@@ -377,7 +378,7 @@ Deno.test("firma_valida_state_inprogress_no_actualiza_ni_notifica_200", async ()
   assertEquals(notifier.calls.length, 0, "state inprogress no debe disparar el gancho de notificación");
 });
 
-Deno.test("mark_ready_recibe_solo_cloudflare_uid_y_thumbnail_url_sin_property_id", async () => {
+Deno.test("mark_ready_recibe_solo_cloudflare_uid_thumbnail_url_y_duration_seconds_sin_property_id", async () => {
   const { header } = await sign_body(READY_PAYLOAD);
   const updater = updater_ok();
   const deps = make_deps({ videoStatusUpdater: updater });
@@ -387,8 +388,8 @@ Deno.test("mark_ready_recibe_solo_cloudflare_uid_y_thumbnail_url_sin_property_id
 
   assertEquals(
     Object.keys(updater.ready_calls[0]).sort(),
-    ["cloudflare_uid", "thumbnail_url"],
-    "el updater debe filtrar SOLO por cloudflare_uid; nunca por property_id",
+    ["cloudflare_uid", "duration_seconds", "thumbnail_url"],
+    "el updater debe filtrar SOLO por cloudflare_uid (+ duration_seconds del payload); nunca por property_id",
   );
 });
 
