@@ -8,6 +8,7 @@
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { AwsClient } from "aws4fetch";
+import { importJWK, SignJWT } from "jose";
 import type { VideoUrlMinter } from "../mint-video-url/types.ts";
 import type {
   AgencyOwnershipVerifier,
@@ -259,21 +260,53 @@ export function make_redeemer(client: SupabaseClient): InvitationRedeemer {
 }
 
 /**
+ * Firma un JWT RS256 para el token de Stream y arma la URL de manifest HLS.
+ * header { alg: RS256, kid }, payload { sub: cloudflare_uid, kid, exp }.
+ * Lanza si streamSigningJwk no decodifica a un JWK RSA válido — el caller
+ * (mint_signed_urls) atrapa el error y excluye solo esa fila (fail-closed).
+ */
+async function sign_stream_hls_url(
+  cloudflare_uid: string,
+  hlsConfig: HlsSignerConfig,
+): Promise<string> {
+  const jwk = JSON.parse(atob(hlsConfig.streamSigningJwk));
+  const private_key = await importJWK(jwk, "RS256");
+
+  const now = Math.floor(Date.now() / 1000);
+  const exp = now + hlsConfig.signedUrlTtlSeconds;
+
+  const token = await new SignJWT({
+    sub: cloudflare_uid,
+    kid: hlsConfig.streamSigningKeyId,
+  })
+    .setProtectedHeader({ alg: "RS256", kid: hlsConfig.streamSigningKeyId })
+    .setExpirationTime(exp)
+    .sign(private_key);
+
+  const domain = hlsConfig.streamCustomerSubdomain
+    ? `customer-${hlsConfig.streamCustomerSubdomain}.cloudflarestream.com`
+    : "videodelivery.net";
+
+  return `https://${domain}/${cloudflare_uid}/manifest/video.m3u8?token=${token}`;
+}
+
+/**
  * Adaptador real de VideoUrlMinter. Opera con service_role (bypassa RLS);
  * los filtros SQL son la ÚNICA barrera de seguridad que impide mintar URLs
  * de propiedades no publicadas (draft/paused/closed) o videos no listos.
  * ponytail: batch degradado — errores de red/storage se excluyen sin lanzar.
  *
- * DUAL-REF (68.6, RED): `hlsConfig` es el seam DI para firmar HLS de Stream por
- * fila con `cloudflare_uid`. TODO(68.6 GREEN): reemplazar el throw de abajo por
- * el firmado JWT RS256 real (fail-closed por fila si falta/JWK inválido), y
- * agregar `cloudflare_uid` al `.select()`.
+ * DUAL-REF (68.6): una fila con `cloudflare_uid` (no nulo) se firma como HLS
+ * de Stream (JWT RS256 vía `hlsConfig`); una fila sin `cloudflare_uid` pero con
+ * `storage_path` sigue la rama legacy de Supabase Storage. Si una fila tiene
+ * ambas refs, gana Stream (migración 20260720000002). Fail-closed: sin
+ * `hlsConfig` inyectado, o con `streamSigningJwk` inválido, la fila Stream se
+ * EXCLUYE del batch (no se lanza, no rompe las demás filas legacy).
  */
 export function make_video_url_minter(
   client: SupabaseClient,
   hlsConfig?: HlsSignerConfig,
 ): VideoUrlMinter {
-  void hlsConfig; // RED: aún sin uso real; el GREEN lo consume para firmar HLS.
   return {
     async mint_signed_urls(property_ids: string[]): Promise<import("../mint-video-url/types.ts").MintedVideo[]> {
       // Defensa: array vacío → no tocar la red
@@ -281,7 +314,7 @@ export function make_video_url_minter(
 
       const { data, error } = await client
         .from("property_videos")
-        .select("id, property_id, storage_path, properties!inner(status)")
+        .select("id, property_id, storage_path, cloudflare_uid, properties!inner(status)")
         .in("property_id", property_ids)
         .eq("status", "ready")
         .eq("properties.status", "active")
@@ -299,10 +332,21 @@ export function make_video_url_minter(
 
       const results: import("../mint-video-url/types.ts").MintedVideo[] = [];
       for (const row of rows) {
-        // ponytail: stub RED (68.6) — la rama Stream (dual-ref) aún no está
-        // implementada; el GREEN sustituye este throw por el firmado JWT real.
+        // Precedencia dual-ref: cloudflare_uid gana sobre storage_path.
         if (row.cloudflare_uid) {
-          throw new Error("not_implemented: hls_stream_signing");
+          if (!hlsConfig) continue; // fail-closed: sin config, excluir la fila Stream
+
+          try {
+            const signed_url = await sign_stream_hls_url(row.cloudflare_uid, hlsConfig);
+            results.push({
+              property_id: row.property_id,
+              video_id: row.id,
+              signed_url,
+            });
+          } catch {
+            // fail-closed: JWK inválido u otro error de firmado → excluir solo esta fila
+          }
+          continue;
         }
 
         // Filas sin storage_path (path aún no registrado) → excluir sin llamar storage
