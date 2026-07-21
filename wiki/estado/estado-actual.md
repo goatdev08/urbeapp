@@ -1,11 +1,15 @@
 ---
 tipo: estado
-actualizado: 2026-07-16
+actualizado: 2026-07-21
 ---
 
 # Estado actual
 
 > Narrativa de "dónde estamos hoy". El **qué sigue / qué está hecho** vive en **Taskmaster** (`task-master list`), no aquí.
+
+## Hoy (2026-07-21)
+
+- **🎬 #68 — Épica B (Cloudflare Stream): 10/12 subtareas, pipeline core completo.** Esta sesión cerró con TDD estricto + guardian PASS: **68.6** (minter del feed `mint-video-url` → HLS firmado dual-ref: `cloudflare_uid`→JWT RS256 vía `jose`, legacy `storage_path`→Storage signed URL, precedencia Stream, fail-closed por fila), **68.12** (publicación **upload-first**: el RPC `publish_property_atomic` ahora **ENLAZA** el video en vuelo por `cloudflare_uid` en vez de insertar uno nuevo — migración `20260721000001`; invariantes cross-agent/atomicidad/no-reenlace; EF+mobile migrados a `cloudflare_uid`), **68.9** (script `backup-property-videos.sh` local-only) y **68.8** (archivado cold-store **Stream→R2** on-demand, modelo síncrono+backoff, **ordering seguro anti-pérdida** R2-antes-de-borrar-Stream; CHECK `property_videos_archived_requires_r2` migración `20260721000002`; `pg_cron` descartado). Migraciones aplicadas al remoto (paridad verificada). Suites verdes: pgTAP 204/204, Deno EFs 533/533, Jest publish 66/66. **Faltan 2:** **68.7** (selección de thumbnail — **necesita decisión de diseño**: sin mockup canónico + el mecanismo de URL firmada de thumbnails de Stream no está asignado a ninguna EF + dónde vive la UI post-webhook) y **68.10** (E2E deploy-day — **bloqueada dura**). ⚠️ **Bloqueantes externos (acción de Abraham):** el **402 `exceed_cached_egress_quota` afecta TODO el gateway** del proyecto (PostgREST+Storage+Functions, no solo EFs) → bloquea invocar EFs en vivo y bajar los 7 videos legacy; **par R2 desajustado** (403); **webhook de Stream sin registrar** (falta `STREAM_WEBHOOK_SECRET`); y **rotar de verdad las credenciales Cloudflare** expuestas (chip vivo). Rama `tarea/68-stream` (commits locales, **PR pendiente**). Ver [[propiedades-y-video]].
 
 ## Hoy (2026-07-16)
 
