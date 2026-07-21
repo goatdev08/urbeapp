@@ -145,8 +145,11 @@ function parse_publish_property_input(raw: unknown): ParseResult {
       allows_no_guarantor: obj.allows_no_guarantor === true,
       student_friendly: obj.student_friendly === true,
       description: typeof obj.description === "string" ? obj.description : "",
-      video_id: obj.video_id,
-      storage_path: obj.storage_path,
+      // ponytail (68.12, RED): pass-through mínimo sin validar requeridad —
+      // la validación real de cloudflare_uid es responsabilidad del GREEN.
+      cloudflare_uid: typeof obj.cloudflare_uid === "string"
+        ? obj.cloudflare_uid
+        : "",
     },
   };
 }
@@ -219,8 +222,7 @@ export async function handler(
     description: input.description,
     property_status: "active",
     video_status: "ready",
-    video_id: input.video_id,
-    storage_path: input.storage_path,
+    cloudflare_uid: input.cloudflare_uid,
   });
 
   if (!publishResult.ok) {

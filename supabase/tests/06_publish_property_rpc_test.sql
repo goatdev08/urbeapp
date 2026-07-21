@@ -1,18 +1,41 @@
--- Tests pgTAP — RPC publish_property_atomic (migración 0017)
--- Subtarea 8.9: atomicidad de publicación (properties + property_videos en 1 tx).
+-- Tests pgTAP — RPC publish_property_atomic (migración 0017 + 20260721000001)
+-- Subtarea 68.12: upload-first — publicar ENLAZA (UPDATE) el video ya subido a
+-- Cloudflare Stream en vez de INSERTAR una fila nueva. Nueva referencia del
+-- video en el contrato: p_cloudflare_uid (reemplaza p_video_id + p_storage_path).
 -- Ejecutar con: supabase test db
 -- Corre como superusuario dentro de una transacción revertida.
+--
+-- RED (68.12): todas las llamadas usan parámetros NOMBRADOS (p_cloudflare_uid
+-- incluido). La firma vieja del RPC no tiene ese parámetro → Postgres no
+-- encuentra un overload que matchee (42883 function does not exist) →
+-- toda invocación falla ahora mismo, incluida la del "happy path". El GREEN
+-- crea la migración 20260721000001 con la nueva firma y el enlace (UPDATE)
+-- en vez del INSERT.
 
 begin;
-select plan(8);
+select plan(26);
 
--- ── Fixtures ──────────────────────────────────────────────────────────────────
+-- ── Fixtures: agentes (uno por escenario, aislados) ───────────────────────────
 -- El trigger handle_new_user (migración 0002) crea public.users al insertar en auth.users.
 insert into auth.users (id, email) values
-  ('00000000-0000-0000-0000-000000000b01', 'agente_pub@urbea.mx');
+  ('00000000-0000-0000-0000-000000000c01', 'agente_happy@urbea.mx'),
+  ('00000000-0000-0000-0000-000000000c02', 'agente_cross_caller@urbea.mx'),
+  ('00000000-0000-0000-0000-000000000c03', 'agente_cross_video@urbea.mx'),
+  ('00000000-0000-0000-0000-000000000c04', 'agente_linked@urbea.mx'),
+  ('00000000-0000-0000-0000-000000000c05', 'agente_uploading@urbea.mx'),
+  ('00000000-0000-0000-0000-000000000c06', 'agente_notfound@urbea.mx'),
+  ('00000000-0000-0000-0000-000000000c07', 'agente_guards@urbea.mx');
 
--- update role to 'agent' (el trigger crea con role='user' por defecto)
-update public.users set role = 'agent' where id = '00000000-0000-0000-0000-000000000b01';
+update public.users set role = 'agent'
+ where id in (
+   '00000000-0000-0000-0000-000000000c01',
+   '00000000-0000-0000-0000-000000000c02',
+   '00000000-0000-0000-0000-000000000c03',
+   '00000000-0000-0000-0000-000000000c04',
+   '00000000-0000-0000-0000-000000000c05',
+   '00000000-0000-0000-0000-000000000c06',
+   '00000000-0000-0000-0000-000000000c07'
+ );
 
 -- ── 1) La función publish_property_atomic existe en public ────────────────────
 select has_function(
@@ -33,99 +56,398 @@ select is(
   'publish_property_atomic debe ser SECURITY DEFINER'
 );
 
--- ── 3) Inserción atómica: propiedad + video en una sola llamada ───────────────
+-- ── Guards de parámetros obligatorios (migrados al nuevo shape) ───────────────
+-- Parámetros NOMBRADOS: la firma nueva agrega p_cloudflare_uid (reemplaza
+-- p_video_id + p_storage_path). Todas usan al mismo agente (AGENT_GUARDS);
+-- ninguna debe dejar una propiedad huérfana (atomicidad), verificado al final.
+
+select throws_ok(
+  $$
+    select * from public.publish_property_atomic(
+      p_user_id             => null::uuid,   -- p_user_id nulo → excepción
+      p_operation_type      => 'rent',
+      p_property_type       => 'departamento',
+      p_price               => 5000.00,
+      p_address             => 'Calle Falsa 123',
+      p_lat                 => 19.0,
+      p_lng                 => -99.0,
+      p_cloudflare_uid      => 'cfuid-guard-01'
+    )
+  $$,
+  'P0001',
+  'user_id es requerido',
+  '3) p_user_id nulo debe lanzar P0001 (guard migrado, sin inserción parcial)'
+);
+
+select throws_ok(
+  $$
+    select * from public.publish_property_atomic(
+      p_user_id             => '00000000-0000-0000-0000-000000000c07'::uuid,
+      p_operation_type      => 'rent',
+      p_property_type       => 'departamento',
+      p_price               => 5000.00,
+      p_address             => null,          -- p_address nulo
+      p_lat                 => 19.0,
+      p_lng                 => -99.0,
+      p_cloudflare_uid      => 'cfuid-guard-02'
+    )
+  $$,
+  'P0001',
+  null,
+  '4) p_address nulo debe lanzar P0001'
+);
+
+select throws_ok(
+  $$
+    select * from public.publish_property_atomic(
+      p_user_id             => '00000000-0000-0000-0000-000000000c07'::uuid,
+      p_operation_type      => 'rent',
+      p_property_type       => 'departamento',
+      p_price               => 5000.00,
+      p_address             => '   ',         -- p_address solo espacios
+      p_lat                 => 19.0,
+      p_lng                 => -99.0,
+      p_cloudflare_uid      => 'cfuid-guard-03'
+    )
+  $$,
+  'P0001',
+  null,
+  '5) p_address solo espacios debe lanzar P0001'
+);
+
+select throws_ok(
+  $$
+    select * from public.publish_property_atomic(
+      p_user_id             => '00000000-0000-0000-0000-000000000c07'::uuid,
+      p_operation_type      => 'rent',
+      p_property_type       => 'departamento',
+      p_price               => 5000.00,
+      p_address             => 'Calle Falsa 123',
+      p_lat                 => null,           -- p_lat nulo
+      p_lng                 => -99.0,
+      p_cloudflare_uid      => 'cfuid-guard-04'
+    )
+  $$,
+  'P0001',
+  null,
+  '6) p_lat nulo debe lanzar P0001 (no se puede construir ST_Point)'
+);
+
+select throws_ok(
+  $$
+    select * from public.publish_property_atomic(
+      p_user_id             => '00000000-0000-0000-0000-000000000c07'::uuid,
+      p_operation_type      => 'rent',
+      p_property_type       => 'departamento',
+      p_price               => 5000.00,
+      p_address             => 'Calle Falsa 123',
+      p_lat                 => 19.0,
+      p_lng                 => null,           -- p_lng nulo
+      p_cloudflare_uid      => 'cfuid-guard-05'
+    )
+  $$,
+  'P0001',
+  null,
+  '7) p_lng nulo debe lanzar P0001 (no se puede construir ST_Point)'
+);
+
+select throws_ok(
+  $$
+    select * from public.publish_property_atomic(
+      p_user_id             => '00000000-0000-0000-0000-000000000c07'::uuid,
+      p_operation_type      => 'rent',
+      p_property_type       => 'departamento',
+      p_price               => 5000.00,
+      p_address             => 'Calle Falsa 123',
+      p_lat                 => 19.0,
+      p_lng                 => -99.0,
+      p_cloudflare_uid      => null             -- p_cloudflare_uid nulo
+    )
+  $$,
+  'P0001',
+  null,
+  '8) p_cloudflare_uid nulo debe lanzar P0001 (nueva referencia del video, reemplaza video_id/storage_path)'
+);
+
+select throws_ok(
+  $$
+    select * from public.publish_property_atomic(
+      p_user_id             => '00000000-0000-0000-0000-000000000c07'::uuid,
+      p_operation_type      => 'rent',
+      p_property_type       => 'departamento',
+      p_price               => 5000.00,
+      p_address             => 'Calle Falsa 123',
+      p_lat                 => 19.0,
+      p_lng                 => -99.0,
+      p_cloudflare_uid      => ''                -- p_cloudflare_uid vacío
+    )
+  $$,
+  'P0001',
+  null,
+  '9) p_cloudflare_uid vacío debe lanzar P0001'
+);
+
+select is(
+  (select count(*)::int from public.properties
+    where owner_user_id = '00000000-0000-0000-0000-000000000c07'),
+  0,
+  '10) atomicidad: ninguno de los guards anteriores dejó una propiedad creada'
+);
+
+-- ── Enlace feliz: el video en vuelo del agente se ENLAZA (UPDATE), no se INSERTA ──
+
+insert into public.property_videos
+  (id, property_id, agent_id, status, position, cloudflare_uid, tus_upload_url)
+values (
+  '00000000-0000-0000-0000-000000000c10',
+  null,
+  '00000000-0000-0000-0000-000000000c01',
+  'processing',
+  1,
+  'cfuid-happy-01',
+  'https://upload.example/happy'
+);
+
+create temp table result_happy (
+  ok           boolean,
+  property_id  uuid,
+  err_sqlstate text,
+  err_message  text
+);
+
 do $$
 declare
   v_property_id uuid;
 begin
   select property_id into v_property_id
     from public.publish_property_atomic(
-      '00000000-0000-0000-0000-000000000b01'::uuid,  -- p_user_id
-      'rent',                                         -- p_operation_type
-      'departamento',                                 -- p_property_type
-      12500.00,                                       -- p_price
-      2,                                              -- p_bedrooms
-      1,                                              -- p_bathrooms
-      65.0,                                           -- p_square_meters
-      'Av. Insurgentes Sur 1602, CDMX',               -- p_address
-      19.3836,                                        -- p_lat
-      -99.1748,                                       -- p_lng
-      false,                                          -- p_pet_friendly
-      true,                                           -- p_allows_no_guarantor
-      false,                                          -- p_student_friendly
-      'Depto luminoso con balcón.',                   -- p_description
-      '00000000-0000-0000-0000-000000000b10'::uuid,  -- p_video_id
-      '00000000-0000-0000-0000-000000000b01/prop1/vid1.mp4' -- p_storage_path
+      p_user_id             => '00000000-0000-0000-0000-000000000c01'::uuid,  -- AGENT_HAPPY
+      p_operation_type      => 'rent',
+      p_property_type       => 'departamento',
+      p_price               => 12500.00,
+      p_bedrooms            => 2,
+      p_bathrooms           => 1,
+      p_square_meters       => 65.0,
+      p_address             => 'Av. Insurgentes Sur 1602, CDMX',
+      p_lat                 => 19.3836,
+      p_lng                 => -99.1748,
+      p_pet_friendly        => false,
+      p_allows_no_guarantor => true,
+      p_student_friendly    => false,
+      p_description         => 'Depto luminoso con balcón.',
+      p_cloudflare_uid      => 'cfuid-happy-01'  -- NUEVO: reemplaza p_video_id + p_storage_path
     );
-
-  -- La función devuelve un property_id
-  if v_property_id is null then
-    raise exception 'property_id es nulo después de la llamada a publish_property_atomic';
-  end if;
+  insert into result_happy values (true, v_property_id, null, null);
+exception when others then
+  insert into result_happy values (false, null, sqlstate, sqlerrm);
 end $$;
 
-select ok(true, 'publish_property_atomic INSERT sin excepción');
-
--- ── 4) properties.status = active ────────────────────────────────────────────
 select is(
-  (select p.status::text
-     from public.properties p
-     join public.property_videos v on v.property_id = p.id
-    where v.id = '00000000-0000-0000-0000-000000000b10'
-    limit 1),
-  'active',
-  'properties.status debe ser active tras publicación'
+  (select ok from result_happy),
+  true,
+  '11) enlace feliz: publish_property_atomic no lanza excepción con el contrato nuevo'
 );
 
--- ── 5) properties.published_at no es nulo ────────────────────────────────────
+select is(
+  (select count(*)::int from public.properties
+    where owner_user_id = '00000000-0000-0000-0000-000000000c01' and status = 'active'),
+  1,
+  '12) enlace feliz: se creó exactamente 1 propiedad active para el agente'
+);
+
 select isnt(
-  (select published_at
-     from public.properties p
-     join public.property_videos v on v.property_id = p.id
-    where v.id = '00000000-0000-0000-0000-000000000b10'
-    limit 1),
+  (select published_at from public.properties
+    where owner_user_id = '00000000-0000-0000-0000-000000000c01'),
   null,
-  'properties.published_at no debe ser nulo tras publicación'
+  '13) enlace feliz: properties.published_at no debe ser nulo'
 );
 
--- ── 6) property_videos.status = ready ────────────────────────────────────────
+select isnt(
+  (select property_id from result_happy),
+  null,
+  '14) enlace feliz: el RPC debe devolver un property_id no nulo'
+);
+
+select isnt(
+  (select property_id from public.property_videos
+    where id = '00000000-0000-0000-0000-000000000c10'),
+  null,
+  '15) enlace feliz: la fila de video en vuelo queda con property_id NO nulo tras el enlace'
+);
+
 select is(
-  (select status::text
-     from public.property_videos
-    where id = '00000000-0000-0000-0000-000000000b10'),
-  'ready',
-  'property_videos.status debe ser ready tras publicación'
+  (select property_id from public.property_videos
+    where id = '00000000-0000-0000-0000-000000000c10'),
+  (select id from public.properties
+    where owner_user_id = '00000000-0000-0000-0000-000000000c01'),
+  '16) enlace feliz: la MISMA fila de video en vuelo queda enlazada (UPDATE) a la nueva propiedad'
 );
 
--- ── 7) property_videos.storage_path igual al enviado ─────────────────────────
 select is(
-  (select storage_path
-     from public.property_videos
-    where id = '00000000-0000-0000-0000-000000000b10'),
-  '00000000-0000-0000-0000-000000000b01/prop1/vid1.mp4',
-  'property_videos.storage_path debe coincidir con el p_storage_path enviado'
+  (select count(*)::int from public.property_videos
+    where agent_id = '00000000-0000-0000-0000-000000000c01'),
+  1,
+  '17) enlace feliz: NO se creó una fila de video duplicada (sigue habiendo 1 sola del agente)'
 );
 
--- ── 8) Atomicidad: p_user_id nulo lanza excepción (no inserción parcial) ─────
+select is(
+  (select property_id from result_happy),
+  (select id from public.properties
+    where owner_user_id = '00000000-0000-0000-0000-000000000c01'),
+  '18) enlace feliz: el property_id devuelto por el RPC coincide con la propiedad realmente creada'
+);
+
+-- ── Rechazo cross-agent: el video en vuelo pertenece a OTRO agente (seguridad) ──
+
+insert into public.property_videos
+  (id, property_id, agent_id, status, position, cloudflare_uid, tus_upload_url)
+values (
+  '00000000-0000-0000-0000-000000000c20',
+  null,
+  '00000000-0000-0000-0000-000000000c03',  -- AGENT_CROSS_VIDEO_OWNER
+  'processing',
+  1,
+  'cfuid-cross-01',
+  'https://upload.example/cross'
+);
+
 select throws_ok(
   $$
     select * from public.publish_property_atomic(
-      null::uuid,           -- p_user_id nulo → excepción
-      'rent',
-      'departamento',
-      5000.00,
-      null, null, null,
-      'Calle Falsa 123',
-      19.0, -99.0,
-      false, false, false,
-      null,
-      '00000000-0000-0000-0000-000000000b99'::uuid,
-      'path/video.mp4'
+      p_user_id             => '00000000-0000-0000-0000-000000000c02'::uuid,  -- AGENT_CROSS_CALLER (≠ dueño del video)
+      p_operation_type      => 'rent',
+      p_property_type       => 'departamento',
+      p_price               => 8000.00,
+      p_address             => 'Calle Cross 1',
+      p_lat                 => 19.1,
+      p_lng                 => -99.1,
+      p_cloudflare_uid      => 'cfuid-cross-01'
     )
   $$,
   'P0001',
-  'user_id es requerido',
-  'p_user_id nulo debe lanzar P0001 (atomicidad: sin inserción parcial)'
+  null,
+  '19) rechazo cross-agent: el caller no es dueño del video en vuelo → excepción'
+);
+
+select is(
+  (select count(*)::int from public.properties
+    where owner_user_id = '00000000-0000-0000-0000-000000000c02'),
+  0,
+  '20) rechazo cross-agent: atomicidad — no se creó propiedad huérfana para el caller'
+);
+
+-- ── Rechazo: fila ya enlazada (property_id no nulo) ───────────────────────────
+
+insert into public.properties
+  (id, owner_user_id, operation_type, property_type, price, address, location, status, published_at)
+values (
+  '00000000-0000-0000-0000-000000000c99',
+  '00000000-0000-0000-0000-000000000c04',  -- AGENT_LINKED
+  'rent', 'departamento', 9000.00, 'Calle Ya Publicada 1',
+  extensions.ST_SetSRID(extensions.ST_Point(-99.0, 19.0), 4326)::extensions.geography,
+  'active', now()
+);
+
+insert into public.property_videos
+  (id, property_id, agent_id, status, position, cloudflare_uid)
+values (
+  '00000000-0000-0000-0000-000000000c21',
+  '00000000-0000-0000-0000-000000000c99',  -- ya enlazado a una propiedad existente
+  '00000000-0000-0000-0000-000000000c04',
+  'ready',
+  1,
+  'cfuid-linked-01'
+);
+
+select throws_ok(
+  $$
+    select * from public.publish_property_atomic(
+      p_user_id             => '00000000-0000-0000-0000-000000000c04'::uuid,
+      p_operation_type      => 'rent',
+      p_property_type       => 'departamento',
+      p_price               => 7000.00,
+      p_address             => 'Calle Linked 2',
+      p_lat                 => 19.2,
+      p_lng                 => -99.2,
+      p_cloudflare_uid      => 'cfuid-linked-01'
+    )
+  $$,
+  'P0001',
+  null,
+  '21) rechazo fila ya enlazada: property_id ya seteado → no es enlazable, excepción'
+);
+
+select is(
+  (select count(*)::int from public.properties
+    where owner_user_id = '00000000-0000-0000-0000-000000000c04'),
+  1,
+  '22) rechazo fila ya enlazada: sigue habiendo solo la propiedad preexistente (no se creó una nueva)'
+);
+
+-- ── Rechazo: status='uploading' (el upload aún no terminó, no enlazable) ─────
+
+insert into public.property_videos
+  (id, property_id, agent_id, status, position, cloudflare_uid, tus_upload_url)
+values (
+  '00000000-0000-0000-0000-000000000c22',
+  null,
+  '00000000-0000-0000-0000-000000000c05',  -- AGENT_UPLOADING
+  'uploading',
+  1,
+  'cfuid-uploading-01',
+  'https://upload.example/uploading'
+);
+
+select throws_ok(
+  $$
+    select * from public.publish_property_atomic(
+      p_user_id             => '00000000-0000-0000-0000-000000000c05'::uuid,
+      p_operation_type      => 'rent',
+      p_property_type       => 'departamento',
+      p_price               => 6000.00,
+      p_address             => 'Calle Uploading 3',
+      p_lat                 => 19.3,
+      p_lng                 => -99.3,
+      p_cloudflare_uid      => 'cfuid-uploading-01'
+    )
+  $$,
+  'P0001',
+  null,
+  '23) rechazo status=uploading: el upload aún no terminó → no enlazable, excepción'
+);
+
+select is(
+  (select count(*)::int from public.properties
+    where owner_user_id = '00000000-0000-0000-0000-000000000c05'),
+  0,
+  '24) rechazo status=uploading: atomicidad — no se creó propiedad huérfana'
+);
+
+-- ── Rechazo: cloudflare_uid inexistente (no matchea ninguna fila) ────────────
+
+select throws_ok(
+  $$
+    select * from public.publish_property_atomic(
+      p_user_id             => '00000000-0000-0000-0000-000000000c06'::uuid,  -- AGENT_NOTFOUND
+      p_operation_type      => 'rent',
+      p_property_type       => 'departamento',
+      p_price               => 5500.00,
+      p_address             => 'Calle Notfound 4',
+      p_lat                 => 19.4,
+      p_lng                 => -99.4,
+      p_cloudflare_uid      => 'cfuid-does-not-exist'
+    )
+  $$,
+  'P0001',
+  null,
+  '25) rechazo cloudflare_uid inexistente: no matchea ninguna fila en vuelo → excepción'
+);
+
+select is(
+  (select count(*)::int from public.properties
+    where owner_user_id = '00000000-0000-0000-0000-000000000c06'),
+  0,
+  '26) rechazo cloudflare_uid inexistente: atomicidad — no se creó propiedad huérfana'
 );
 
 select * from finish();

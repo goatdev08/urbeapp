@@ -1,19 +1,24 @@
 // supabase/functions/publish-property/handler.test.ts
-// Tests RED — subtarea 8.9
+// Tests RED — subtarea 8.9, MIGRADO en subtarea 68.12 (upload-first)
 // Edge Function: publish-property/handler.ts
 // Framework: Deno.test + @std/assert
-// Runner: deno test --allow-net supabase/functions/publish-property/handler.test.ts
+// Runner: deno test --allow-env --allow-net --allow-read --config deno.json publish-property/handler.test.ts
 //         (desde supabase/functions/ para tomar el deno.json con el import map)
 //
-// EDGE CASES (RED) — 8.9:
+// 68.12 — CAMBIO DE CONTRATO: el video se sube a Cloudflare Stream ANTES de que
+// exista la propiedad (mint-upload-url, 68.4). Publicar ya NO manda video_id +
+// storage_path: manda cloudflare_uid (la referencia del video en vuelo que el
+// RPC publish_property_atomic va a ENLAZAR — UPDATE, no INSERT). video_id y
+// storage_path desaparecen del payload/params; el gate real es cloudflare_uid.
+//
+// EDGE CASES (RED) — 8.9 + 68.12:
 //
 // ### Happy path
-// - POST agente válido + payload completo → 201 con { property_id }
+// - POST agente válido + payload completo (con cloudflare_uid) → 201 con { property_id }
 // - publisher.publish llamado exactamente una vez
 // - publisher recibe property_status='active' (contrato: handler siempre publica activo)
 // - publisher recibe video_status='ready' (contrato: video ya subido = listo)
-// - publisher recibe video_id = UUID generado por el cliente
-// - publisher recibe storage_path del bucket property-videos
+// - publisher recibe cloudflare_uid del payload (68.12 — reemplaza video_id/storage_path)
 // - publisher recibe user_id = auth.uid() del caller verificado
 // - publisher recibe lat/lng para construir ST_Point(lng, lat) en la capa de persistencia
 //
@@ -52,11 +57,9 @@
 // - lat no numérico (string) → 400 INVALID_INPUT
 // - lng nulo (null) → 400 INVALID_INPUT
 //
-// ### Validación — campos de video (requeridos, PRD §13)
-// - Falta video_id → 400 INVALID_INPUT
-// - Falta storage_path → 400 INVALID_INPUT
-// - video_id vacío ('') → 400 INVALID_INPUT
-// - storage_path vacío ('') → 400 INVALID_INPUT
+// ### Validación — cloudflare_uid (requerido, 68.12 — reemplaza video_id/storage_path)
+// - Falta cloudflare_uid → 400 INVALID_INPUT (el video no terminó de subirse)
+// - cloudflare_uid vacío ('') → 400 INVALID_INPUT
 //
 // ### Auth — CallerVerifier DI
 // - Sin Authorization header → 401 UNAUTHENTICATED
@@ -90,7 +93,7 @@ import type {
 
 const AGENT_ID = "00000000-0000-0000-0000-000000000001";
 const PROPERTY_ID = "00000000-0000-0000-0000-000000000002";
-const VIDEO_ID = "00000000-0000-0000-0000-000000000003";
+const CLOUDFLARE_UID = "cf-stream-uid-abc123";
 
 const PAYLOAD_VALIDO = {
   // step1
@@ -108,9 +111,9 @@ const PAYLOAD_VALIDO = {
   allows_no_guarantor: true,
   student_friendly: false,
   description: "Depto luminoso con balcón y estacionamiento incluido.",
-  // video
-  video_id: VIDEO_ID,
-  storage_path: `${AGENT_ID}/${PROPERTY_ID}/${VIDEO_ID}.mp4`,
+  // video (68.12 — el video ya se subió a Cloudflare Stream antes de publicar;
+  // esta es la referencia que el RPC va a ENLAZAR, no video_id/storage_path)
+  cloudflare_uid: CLOUDFLARE_UID,
 };
 
 // ── Factories de fakes — CallerVerifier ───────────────────────────────────────
@@ -246,23 +249,13 @@ Deno.test("happy_path_publisher_recibe_video_status_ready", async () => {
   );
 });
 
-Deno.test("happy_path_publisher_recibe_video_id_del_payload", async () => {
+Deno.test("happy_path_publisher_recibe_cloudflare_uid_del_payload", async () => {
   const publisher = publisher_ok();
   await handler(post_agente(PAYLOAD_VALIDO), deps_validos(publisher));
   assertEquals(
-    publisher.calls[0].video_id,
-    VIDEO_ID,
-    "video_id debe ser el UUID generado por el cliente y enviado en el payload",
-  );
-});
-
-Deno.test("happy_path_publisher_recibe_storage_path_del_payload", async () => {
-  const publisher = publisher_ok();
-  await handler(post_agente(PAYLOAD_VALIDO), deps_validos(publisher));
-  assertEquals(
-    publisher.calls[0].storage_path,
-    PAYLOAD_VALIDO.storage_path,
-    "storage_path debe venir del payload (objeto ya subido al bucket property-videos)",
+    publisher.calls[0].cloudflare_uid,
+    CLOUDFLARE_UID,
+    "cloudflare_uid debe venir del payload — es la referencia del video en vuelo (Cloudflare Stream) a enlazar, reemplaza video_id/storage_path (68.12)",
   );
 });
 
@@ -487,40 +480,40 @@ Deno.test("validacion_lng_nulo_retorna_400", async () => {
   assertEquals(body.error.code, "INVALID_INPUT");
 });
 
-// ── Validación — video_id y storage_path ──────────────────────────────────────
+// ── Validación — cloudflare_uid (68.12, reemplaza video_id/storage_path) ──────
+//
+// NOTA DE DISEÑO: estos dos payloads agregan video_id/storage_path "legacy"
+// (además de manipular cloudflare_uid) a propósito. El handler.ts sin migrar
+// (RED actual) todavía exige esos dos campos legacy antes de siquiera llegar
+// al publisher — sin ellos, CUALQUIER payload cae en 400 por esa razón vieja,
+// enmascarando si cloudflare_uid en verdad se está validando. Incluirlos aquí
+// aísla la señal: con video_id/storage_path presentes, el ÚNICO motivo por el
+// que debería fallar es la ausencia/vacío de cloudflare_uid — y hoy el handler
+// no lo valida en absoluto, así que el publisher SÍ es invocado y responde 201
+// (falla la aserción de 400, RED genuino y no incidental).
 
-Deno.test("validacion_video_id_ausente_retorna_400", async () => {
-  const { video_id: _omit, ...sin_vid } = PAYLOAD_VALIDO;
-  const res = await handler(post_agente(sin_vid), deps_validos());
-  assertEquals(res.status, 400);
+Deno.test("validacion_cloudflare_uid_ausente_retorna_400", async () => {
+  const { cloudflare_uid: _omit, ...sin_cf } = PAYLOAD_VALIDO;
+  const payload_con_legacy = {
+    ...sin_cf,
+    video_id: "legacy-video-id",
+    storage_path: "legacy/storage/path.mp4",
+  };
+  const res = await handler(post_agente(payload_con_legacy), deps_validos());
+  assertEquals(res.status, 400, "cloudflare_uid ausente debe rechazarse con 400 (el video no terminó de subirse)");
   const body = await res.json();
   assertEquals(body.error.code, "INVALID_INPUT");
 });
 
-Deno.test("validacion_storage_path_ausente_retorna_400", async () => {
-  const { storage_path: _omit, ...sin_path } = PAYLOAD_VALIDO;
-  const res = await handler(post_agente(sin_path), deps_validos());
-  assertEquals(res.status, 400);
-  const body = await res.json();
-  assertEquals(body.error.code, "INVALID_INPUT");
-});
-
-Deno.test("validacion_video_id_vacio_retorna_400", async () => {
-  const res = await handler(
-    post_agente({ ...PAYLOAD_VALIDO, video_id: "" }),
-    deps_validos(),
-  );
-  assertEquals(res.status, 400);
-  const body = await res.json();
-  assertEquals(body.error.code, "INVALID_INPUT");
-});
-
-Deno.test("validacion_storage_path_vacio_retorna_400", async () => {
-  const res = await handler(
-    post_agente({ ...PAYLOAD_VALIDO, storage_path: "" }),
-    deps_validos(),
-  );
-  assertEquals(res.status, 400);
+Deno.test("validacion_cloudflare_uid_vacio_retorna_400", async () => {
+  const payload_con_legacy = {
+    ...PAYLOAD_VALIDO,
+    cloudflare_uid: "",
+    video_id: "legacy-video-id",
+    storage_path: "legacy/storage/path.mp4",
+  };
+  const res = await handler(post_agente(payload_con_legacy), deps_validos());
+  assertEquals(res.status, 400, "cloudflare_uid vacío debe rechazarse con 400");
   const body = await res.json();
   assertEquals(body.error.code, "INVALID_INPUT");
 });

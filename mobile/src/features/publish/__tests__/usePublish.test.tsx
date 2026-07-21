@@ -62,7 +62,11 @@ import { usePublish } from '../hooks/usePublish';
 
 const TEST_PROPERTY_ID = 'prop-uuid-test-abc123';
 
-// State válido que satisface los 3 pasos del wizard (todos los campos requeridos)
+// State válido que satisface los 3 pasos del wizard (todos los campos requeridos).
+// video_id/storage_path se conservan en el state (legacy, no cambia PublishFormState)
+// para no bloquear el flujo con get_property_payload SIN migrar (RED, 68.12):
+// la señal de este archivo es que el body enviado a la EF debe llevar
+// cloudflare_uid — no que el flujo entero se caiga por falta de storage_path.
 const VALID_FORM_FIELDS = {
   operation_type: 'rent' as const,
   property_type: 'departamento' as const,
@@ -72,6 +76,7 @@ const VALID_FORM_FIELDS = {
   lng: -99.1731,
   video_id: 'vid-uuid-test-xyz',
   storage_path: 'user-uid-123/vid-uuid-test-xyz.mp4',
+  cloudflare_uid: 'cf-stream-uid-test-xyz',
 };
 
 // ---------------------------------------------------------------------------
@@ -176,8 +181,9 @@ describe('usePublish', () => {
     expect(body.address).toBe(VALID_FORM_FIELDS.address);
     expect(body.lat).toBe(VALID_FORM_FIELDS.lat);
     expect(body.lng).toBe(VALID_FORM_FIELDS.lng);
-    expect(body.video_id).toBe(VALID_FORM_FIELDS.video_id);
-    expect(body.storage_path).toBe(VALID_FORM_FIELDS.storage_path);
+    // 68.12 — upload-first: el body debe llevar cloudflare_uid (referencia del
+    // video ya subido a Cloudflare Stream a enlazar), no storage_path.
+    expect(body.cloudflare_uid).toBe(VALID_FORM_FIELDS.cloudflare_uid);
   });
 
   // ── (EC-2) Éxito: expone property_id y status='success' ──────────────────
