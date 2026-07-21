@@ -757,18 +757,40 @@ export function make_video_archiver(client: SupabaseClient): VideoArchiver {
 }
 
 /**
- * STUB — subtarea 68.14 (fase RED). Firmante real del token de thumbnail de
- * Cloudflare Stream (JWT RS256, mismo mecanismo que sign_stream_hls_url pero con
- * baseUrl .../thumbnails/thumbnail.jpg en vez de .../manifest/video.m3u8). Sin
- * lógica de negocio todavía: únicamente hace que
- * _shared/thumbnail_url_signer.test.ts falle por aserción/excepción en vez de
- * por import roto. La implementación real llega en GREEN.
+ * Adaptador real de ThumbnailUrlSigner (subtarea 68.14): firma un JWT RS256
+ * para el token de thumbnail de Cloudflare Stream con la MISMA mecánica que
+ * sign_stream_hls_url (header { alg: RS256, kid }, payload { sub: cloudflare_uid,
+ * kid, exp }), cambiando solo la baseUrl a .../<uid>/thumbnails/thumbnail.jpg
+ * (en vez de .../manifest/video.m3u8). Lanza si streamSigningJwk no decodifica
+ * a un JWK RSA válido — el handler lo traduce a 500 INTERNAL_ERROR (fail-closed,
+ * nunca una URL/token a medias).
  */
-export function make_thumbnail_url_signer(_hlsConfig: HlsSignerConfig): ThumbnailUrlSigner {
+export function make_thumbnail_url_signer(hlsConfig: HlsSignerConfig): ThumbnailUrlSigner {
   return {
-    // deno-lint-ignore require-await
-    async sign(_cloudflare_uid: string): Promise<import("../mint-thumbnail-url/types.ts").ThumbnailSignResult> {
-      throw new Error("not_implemented");
+    async sign(cloudflare_uid: string): Promise<import("../mint-thumbnail-url/types.ts").ThumbnailSignResult> {
+      const jwk = JSON.parse(atob(hlsConfig.streamSigningJwk));
+      const private_key = await importJWK(jwk, "RS256");
+
+      const now = Math.floor(Date.now() / 1000);
+      const exp = now + hlsConfig.signedUrlTtlSeconds;
+
+      const token = await new SignJWT({
+        sub: cloudflare_uid,
+        kid: hlsConfig.streamSigningKeyId,
+      })
+        .setProtectedHeader({ alg: "RS256", kid: hlsConfig.streamSigningKeyId })
+        .setExpirationTime(exp)
+        .sign(private_key);
+
+      const domain = hlsConfig.streamCustomerSubdomain
+        ? `customer-${hlsConfig.streamCustomerSubdomain}.cloudflarestream.com`
+        : "videodelivery.net";
+
+      return {
+        baseUrl: `https://${domain}/${cloudflare_uid}/thumbnails/thumbnail.jpg`,
+        token,
+        expiresIn: hlsConfig.signedUrlTtlSeconds,
+      };
     },
   };
 }
