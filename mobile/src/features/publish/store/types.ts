@@ -48,6 +48,12 @@ export interface PublishFormState {
   storage_path: string | null;   // ruta en Supabase Storage tras upload (flujo legado)
   cloudflare_uid: string | null; // uid de Cloudflare Stream devuelto por mint-upload-url (68.4)
   video_local_uri: string | null; // URI local para preview antes de subir
+  // 68.7: estado y duración del video linkeado — solo se pueblan en edit mode
+  // (useLoadProperty) para decidir si la sección "Portada" (ThumbnailPicker) se
+  // puede mostrar (video 'ready') y para armar la URL del frame (?time=).
+  video_status: string | null;             // status de property_videos ('processing'|'ready'|'failed'|'archived')
+  video_duration_seconds: number | null;   // property_videos.duration_seconds (poblada por el webhook 68.5)
+  video_thumbnail_pct: number | null;      // property_videos.thumbnail_pct — null hasta la 1a elección (default 50 en render)
 
   // Modo edición — propagado desde publish/_layout, inmune a pérdida de URL param
   edit_mode: boolean;            // true si se edita una property existente (UPDATE, no EF)
@@ -97,6 +103,9 @@ export const INITIAL_PUBLISH_FORM_STATE: PublishFormState = {
   storage_path: null,
   cloudflare_uid: null,
   video_local_uri: null,
+  video_status: null,
+  video_duration_seconds: null,
+  video_thumbnail_pct: null,
   edit_mode: false,
   property_id: null,
 };
