@@ -17,7 +17,7 @@
  *
  * EDGE CASES (RED):
  * ### baseUrl
- * - baseUrl_contiene_uid_y_thumbnails_thumbnail_jpg_con_customer_subdomain
+ * - baseUrl_contiene_token_en_el_path_y_thumbnails_thumbnail_jpg_con_customer_subdomain
  * - baseUrl_usa_videodelivery_net_fallback_sin_subdomain_configurado
  *
  * ### token JWT (firma real, verificado con jose contra la llave pública de prueba)
@@ -75,8 +75,11 @@ function make_hls_config(
 
 // ── baseUrl ────────────────────────────────────────────────────────────────────
 
-Deno.test("baseUrl_contiene_uid_y_thumbnails_thumbnail_jpg_con_customer_subdomain", async () => {
-  const { private_jwk_base64 } = await generate_test_signing_key();
+Deno.test("baseUrl_contiene_token_en_el_path_y_thumbnails_thumbnail_jpg_con_customer_subdomain", async () => {
+  // ⚠️ CONTRATO CORREGIDO (verificado en vivo 2026-07-22): Cloudflare exige el
+  // TOKEN en el path — no el uid. '.../<uid>/thumbnails/...?token=' → 401;
+  // '.../<TOKEN>/thumbnails/...' → 200.
+  const { public_jwk, private_jwk_base64 } = await generate_test_signing_key();
   const hls_config = make_hls_config(private_jwk_base64, {
     streamCustomerSubdomain: "abc123",
   });
@@ -86,8 +89,26 @@ Deno.test("baseUrl_contiene_uid_y_thumbnails_thumbnail_jpg_con_customer_subdomai
 
   assertEquals(
     result.baseUrl,
-    `https://customer-abc123.cloudflarestream.com/${CLOUDFLARE_UID_1}/thumbnails/thumbnail.jpg`,
-    "baseUrl debe usar el subdominio customer-<sub>.cloudflarestream.com y terminar en /thumbnails/thumbnail.jpg",
+    `https://customer-abc123.cloudflarestream.com/${result.token}/thumbnails/thumbnail.jpg`,
+    "baseUrl debe usar el subdominio customer-<sub>.cloudflarestream.com, el TOKEN (no el uid) en el path, y terminar en /thumbnails/thumbnail.jpg",
+  );
+  assertEquals(
+    result.baseUrl.includes(CLOUDFLARE_UID_1),
+    false,
+    "ANTI-REGRESIÓN: baseUrl NO debe contener el uid en el path — Cloudflare exige el token ahí",
+  );
+  assertEquals(
+    result.baseUrl.includes("?token="),
+    false,
+    "ANTI-REGRESIÓN: baseUrl NO debe llevar '?token=' como query param",
+  );
+
+  const public_key = await importJWK(public_jwk, "RS256");
+  const { payload } = await jwtVerify(result.token, public_key, { algorithms: ["RS256"] });
+  assertEquals(
+    payload.sub,
+    CLOUDFLARE_UID_1,
+    "el token embebido en el path de baseUrl debe firmar sub=cloudflare_uid",
   );
 });
 
@@ -100,8 +121,13 @@ Deno.test("baseUrl_usa_videodelivery_net_fallback_sin_subdomain_configurado", as
 
   assertEquals(
     result.baseUrl,
-    `https://videodelivery.net/${CLOUDFLARE_UID_1}/thumbnails/thumbnail.jpg`,
-    "sin streamCustomerSubdomain, baseUrl debe caer al dominio videodelivery.net",
+    `https://videodelivery.net/${result.token}/thumbnails/thumbnail.jpg`,
+    "sin streamCustomerSubdomain, baseUrl debe caer al dominio videodelivery.net con el TOKEN (no el uid) en el path",
+  );
+  assertEquals(
+    result.baseUrl.includes(CLOUDFLARE_UID_1),
+    false,
+    "ANTI-REGRESIÓN: baseUrl NO debe contener el uid en el path",
   );
 });
 

@@ -306,9 +306,15 @@ async function sign_stream_token(
 /**
  * Arma la URL de manifest HLS de Stream a partir de un token+dominio ya
  * firmados (sign_stream_token). No vuelve a firmar.
+ *
+ * ⚠️ CONTRATO DE CLOUDFLARE (verificado en vivo 2026-07-22, prueba E2E local):
+ * en un video con `requireSignedURLs=true` el **token va EN EL PATH, en lugar
+ * del uid** — NO como query param. `.../<uid>/manifest/video.m3u8?token=<JWT>`
+ * devuelve **401 unauthorized**; `.../<TOKEN>/manifest/video.m3u8` devuelve 200.
+ * El uid ya viaja dentro del JWT (claim `sub`), por eso no se repite en la ruta.
  */
-function build_hls_url(cloudflare_uid: string, domain: string, token: string): string {
-  return `https://${domain}/${cloudflare_uid}/manifest/video.m3u8?token=${token}`;
+function build_hls_url(domain: string, token: string): string {
+  return `https://${domain}/${token}/manifest/video.m3u8`;
 }
 
 /**
@@ -316,21 +322,22 @@ function build_hls_url(cloudflare_uid: string, domain: string, token: string): s
  * el token+dominio ya firmados por sign_stream_token (mismo JWT que el HLS).
  * T = COALESCE(thumbnail_pct,50)/100 × duration_seconds, formateado .toFixed(1).
  * Sin duration_seconds → sin '?time=' (Stream sirve su frame default).
+ *
+ * ⚠️ Mismo contrato que build_hls_url: el token va en el PATH (ver nota arriba).
  */
 function build_poster_url(
-  cloudflare_uid: string,
   domain: string,
   token: string,
   thumbnail_pct: number | null | undefined,
   duration_seconds: number | null | undefined,
 ): string {
-  const base = `https://${domain}/${cloudflare_uid}/thumbnails/thumbnail.jpg`;
+  const base = `https://${domain}/${token}/thumbnails/thumbnail.jpg`;
   if (duration_seconds == null) {
-    return `${base}?token=${token}`;
+    return base;
   }
   const pct = thumbnail_pct ?? 50;
   const time_seconds = (pct / 100) * duration_seconds;
-  return `${base}?time=${time_seconds.toFixed(1)}s&token=${token}`;
+  return `${base}?time=${time_seconds.toFixed(1)}s`;
 }
 
 /**
@@ -387,9 +394,8 @@ export function make_video_url_minter(
             // Un solo JWT (sub=cloudflare_uid) firma AMBOS endpoints — manifest
             // HLS y thumbnail — evitando una segunda llamada de firmado por fila.
             const { token, domain } = await sign_stream_token(row.cloudflare_uid, hlsConfig);
-            const signed_url = build_hls_url(row.cloudflare_uid, domain, token);
+            const signed_url = build_hls_url(domain, token);
             const posterUrl = build_poster_url(
-              row.cloudflare_uid,
               domain,
               token,
               row.thumbnail_pct,
@@ -835,8 +841,11 @@ export function make_thumbnail_url_signer(hlsConfig: HlsSignerConfig): Thumbnail
         ? `customer-${hlsConfig.streamCustomerSubdomain}.cloudflarestream.com`
         : "videodelivery.net";
 
+      // ⚠️ El token va EN EL PATH (contrato de Cloudflare para requireSignedURLs;
+      // verificado en vivo 2026-07-22: `/<uid>/...?token=` → 401, `/<token>/...` → 200).
+      // baseUrl queda listo para usarse: el cliente solo le agrega `?time=<N>s`.
       return {
-        baseUrl: `https://${domain}/${cloudflare_uid}/thumbnails/thumbnail.jpg`,
+        baseUrl: `https://${domain}/${token}/thumbnails/thumbnail.jpg`,
         token,
         expiresIn: hlsConfig.signedUrlTtlSeconds,
       };

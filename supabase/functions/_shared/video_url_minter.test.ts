@@ -705,8 +705,14 @@ Deno.test("property_ids_vacio_devuelve_array_vacio", async () => {
 //
 // Fuente de verdad del formato: subtask 68.6 (Taskmaster) + docs/ADR Cloudflare
 // Stream. JWT: header { alg: RS256, kid }, payload { sub: cloudflare_uid, kid, exp }.
-// URL: https://customer-<CODE>.cloudflarestream.com/<UID>/manifest/video.m3u8?token=<JWT>
-//   (o la variante videodelivery.net/<UID>/manifest/video.m3u8?token=<JWT>).
+//
+// ⚠️ CONTRATO CORREGIDO (verificado en vivo 2026-07-22, prueba E2E contra un video
+// real con requireSignedURLs=true): el TOKEN va EN EL PATH, sustituyendo al uid —
+// NUNCA como query param. `.../<uid>/manifest/video.m3u8?token=<JWT>` → 401
+// unauthorized; `.../<TOKEN>/manifest/video.m3u8` → 200. El uid ya viaja dentro
+// del JWT (claim `sub`), por eso no se repite en la ruta.
+// URL: https://customer-<CODE>.cloudflarestream.com/<TOKEN>/manifest/video.m3u8
+//   (o la variante videodelivery.net/<TOKEN>/manifest/video.m3u8).
 
 const TEST_KEY_ID = "test-stream-signing-key-01";
 const DEFAULT_TTL_SECONDS = 14400; // valor real sembrado en app_config (signed_url_ttl_seconds)
@@ -715,8 +721,10 @@ const CLOUDFLARE_UID_2 = "cf-uid-0000000000000000000002";
 
 // Regex de invariantes de la URL HLS: NO hardcodea un customer code inventado;
 // acepta ambos dominios legítimos de Stream (customer subdomain o videodelivery.net).
+// El único segmento de path capturado es el TOKEN (el uid ya no viaja en la URL,
+// solo dentro del JWT como claim 'sub') — sin query string alguno.
 const HLS_URL_RE =
-  /^https:\/\/(?:customer-[a-z0-9]+\.cloudflarestream\.com|(?:[a-z0-9.-]*\.)?videodelivery\.net)\/([A-Za-z0-9_-]+)\/manifest\/video\.m3u8\?token=([^&]+)$/i;
+  /^https:\/\/(?:customer-[a-z0-9]+\.cloudflarestream\.com|(?:[a-z0-9.-]*\.)?videodelivery\.net)\/([^/]+)\/manifest\/video\.m3u8$/i;
 
 /** Genera un par de llaves RSA de prueba (RS256) y exporta la privada como JWK. */
 async function generate_test_signing_key(): Promise<{
@@ -751,13 +759,17 @@ function make_hls_config(
   };
 }
 
-/** Extrae { uid, token } de una URL HLS firmada; lanza si no matchea el patrón. */
-function parse_hls_url(url: string): { uid: string; token: string } {
+/**
+ * Extrae { token } del path de una URL HLS firmada; lanza si no matchea el patrón.
+ * El uid YA NO viaja en la URL (contrato corregido 2026-07-22): solo se verifica
+ * decodificando el JWT (claim 'sub'), nunca parseando la ruta.
+ */
+function parse_hls_url(url: string): { token: string } {
   const match = HLS_URL_RE.exec(url);
   if (!match) {
     throw new Error(`signed_url no matchea el formato HLS de Stream: '${url}'`);
   }
-  return { uid: match[1], token: decodeURIComponent(match[2]) };
+  return { token: match[1] };
 }
 
 Deno.test("fila_con_cloudflare_uid_devuelve_url_hls_firmada_con_jwt_valido", async () => {
@@ -793,8 +805,21 @@ Deno.test("fila_con_cloudflare_uid_devuelve_url_hls_firmada_con_jwt_valido", asy
     `signed_url debe ser un manifest HLS de Stream; recibido: '${result[0].signed_url}'`,
   );
 
-  const { uid, token } = parse_hls_url(result[0].signed_url);
-  assertEquals(uid, CLOUDFLARE_UID_1, "El UID de la URL HLS debe ser el cloudflare_uid de la fila");
+  // ANTI-REGRESIÓN (bug verificado en vivo 2026-07-22): Cloudflare exige el token
+  // EN EL PATH — nunca como query param '?token=' ni '&token='. Ese query param
+  // es exactamente el bug que devolvía 401 unauthorized en todo el feed.
+  assertEquals(
+    result[0].signed_url.includes("?token="),
+    false,
+    "signed_url NO debe llevar '?token=' como query param (el token va en el path)",
+  );
+  assertEquals(
+    result[0].signed_url.includes("&token="),
+    false,
+    "signed_url NO debe llevar '&token=' como query param (el token va en el path)",
+  );
+
+  const { token } = parse_hls_url(result[0].signed_url);
 
   const token_segments = token.split(".");
   assertEquals(token_segments.length, 3, "El token debe ser un JWT de 3 segmentos (header.payload.signature)");
@@ -805,7 +830,11 @@ Deno.test("fila_con_cloudflare_uid_devuelve_url_hls_firmada_con_jwt_valido", asy
   });
 
   assertEquals(protectedHeader.kid, TEST_KEY_ID, "El header del JWT debe traer el kid de la signing key");
-  assertEquals(payload.sub, CLOUDFLARE_UID_1, "El claim 'sub' debe ser el cloudflare_uid del video");
+  assertEquals(
+    payload.sub,
+    CLOUDFLARE_UID_1,
+    "El claim 'sub' del JWT (no la URL: el uid ya no viaja en el path) debe ser el cloudflare_uid del video",
+  );
   assertEquals(payload.kid, TEST_KEY_ID, "El claim 'kid' del payload debe ser la signing key id");
 });
 
@@ -1062,13 +1091,14 @@ Deno.test(
       "createSignedUrl de Supabase Storage NO debe llamarse cuando cloudflare_uid está presente",
     );
 
-    const { uid } = parse_hls_url(result[0].signed_url);
-    assertEquals(uid, CLOUDFLARE_UID_1);
-
     const public_key = await importJWK(public_jwk, "RS256");
     const { token } = parse_hls_url(result[0].signed_url);
     const { payload } = await jwtVerify(token, public_key, { algorithms: ["RS256"] });
-    assertEquals(payload.sub, CLOUDFLARE_UID_1);
+    assertEquals(
+      payload.sub,
+      CLOUDFLARE_UID_1,
+      "El claim 'sub' del JWT (no la URL) debe ser el cloudflare_uid — el uid ya no viaja en el path",
+    );
   },
 );
 
@@ -1076,23 +1106,27 @@ Deno.test(
 // TESTS — Poster URL (portada firmada), subtarea 68.15
 // ─────────────────────────────────────────────────────────────────────────────
 //
-// Contrato (68.15): para una fila Stream (cloudflare_uid presente), además del
-// signed_url HLS se computa posterUrl:
-//   https://<domain>/<uid>/thumbnails/thumbnail.jpg[?time=<T>s]&token=<jwt>
+// Contrato (68.15, corregido 2026-07-22): para una fila Stream (cloudflare_uid
+// presente), además del signed_url HLS se computa posterUrl:
+//   https://<domain>/<TOKEN>/thumbnails/thumbnail.jpg[?time=<T>s]
 //   T = COALESCE(thumbnail_pct,50)/100 × duration_seconds, formateado .toFixed(1).
-//   Sin duration_seconds → posterUrl SIN '?time=' (solo '?token=').
-// Fila legacy Storage (sin cloudflare_uid) → posterUrl siempre null.
-// El token firma sub=uid con el MISMO mecanismo que el HLS (jose RS256).
+//   Sin duration_seconds → posterUrl SIN '?time=' (sin query string alguno).
+// ⚠️ El TOKEN va EN EL PATH (mismo contrato que el HLS, ver arriba) — NUNCA como
+// query param '?token='/'&token='. Fila legacy Storage (sin cloudflare_uid) →
+// posterUrl siempre null. El token firma sub=uid con el MISMO mecanismo que el
+// HLS (jose RS256).
 //
 // Los valores esperados de T son literales calculados a mano (fuente
 // independiente de la fórmula que implementará el GREEN):
 //   50/100×92=46.0 · 50/100×80=40.0 (default por thumbnail_pct null) · 25/100×8=2.0
 
+// Grupo 1 = TOKEN (path, no query — el uid ya no viaja en la URL); grupo 2 = time.
 const POSTER_URL_WITH_TIME_RE =
-  /^https:\/\/(?:customer-[a-z0-9]+\.cloudflarestream\.com|(?:[a-z0-9.-]*\.)?videodelivery\.net)\/([A-Za-z0-9_-]+)\/thumbnails\/thumbnail\.jpg\?time=([0-9]+\.[0-9]s)&token=([^&]+)$/i;
+  /^https:\/\/(?:customer-[a-z0-9]+\.cloudflarestream\.com|(?:[a-z0-9.-]*\.)?videodelivery\.net)\/([^/]+)\/thumbnails\/thumbnail\.jpg\?time=([0-9]+\.[0-9]s)$/i;
 
+// Sin duration_seconds: ni '?time=' ni '?token=' — la URL termina en el token de path.
 const POSTER_URL_NO_TIME_RE =
-  /^https:\/\/(?:customer-[a-z0-9]+\.cloudflarestream\.com|(?:[a-z0-9.-]*\.)?videodelivery\.net)\/([A-Za-z0-9_-]+)\/thumbnails\/thumbnail\.jpg\?token=([^&]+)$/i;
+  /^https:\/\/(?:customer-[a-z0-9]+\.cloudflarestream\.com|(?:[a-z0-9.-]*\.)?videodelivery\.net)\/([^/]+)\/thumbnails\/thumbnail\.jpg$/i;
 
 /** Extrae el host (dominio) de cualquier URL https. */
 function extract_host(url: string): string {
@@ -1137,8 +1171,22 @@ Deno.test(
       POSTER_URL_WITH_TIME_RE,
       `posterUrl debe matchear el patrón de thumbnail con time; recibido: '${result[0].posterUrl}'`,
     );
+
+    // ANTI-REGRESIÓN (bug verificado en vivo 2026-07-22): el token va EN EL PATH,
+    // nunca como query param '?token=' ni '&token=' — ese era exactamente el bug
+    // que devolvía 401 unauthorized en la portada del video.
+    assertEquals(
+      (result[0].posterUrl as string).includes("?token="),
+      false,
+      "posterUrl NO debe llevar '?token=' como query param (el token va en el path)",
+    );
+    assertEquals(
+      (result[0].posterUrl as string).includes("&token="),
+      false,
+      "posterUrl NO debe llevar '&token=' como query param (el token va en el path)",
+    );
+
     const match = POSTER_URL_WITH_TIME_RE.exec(result[0].posterUrl as string)!;
-    assertEquals(match[1], CLOUDFLARE_UID_1, "El UID del posterUrl debe ser el cloudflare_uid de la fila");
     assertEquals(
       match[2],
       "46.0s",
@@ -1146,10 +1194,14 @@ Deno.test(
     );
 
     const public_key = await importJWK(public_jwk, "RS256");
-    const { payload } = await jwtVerify(decodeURIComponent(match[3]), public_key, {
+    const { payload } = await jwtVerify(match[1], public_key, {
       algorithms: ["RS256"],
     });
-    assertEquals(payload.sub, CLOUDFLARE_UID_1, "El token del posterUrl debe firmar sub=cloudflare_uid");
+    assertEquals(
+      payload.sub,
+      CLOUDFLARE_UID_1,
+      "El token del posterUrl (extraído del path, no de una query) debe firmar sub=cloudflare_uid",
+    );
   },
 );
 
@@ -1256,12 +1308,24 @@ Deno.test(
     assertMatch(
       result[0].posterUrl as string,
       POSTER_URL_NO_TIME_RE,
-      `posterUrl debe matchear el patrón sin time, solo '?token='; recibido: '${result[0].posterUrl}'`,
+      `posterUrl debe matchear el patrón sin time (token en el path, sin query string); recibido: '${result[0].posterUrl}'`,
+    );
+
+    // ANTI-REGRESIÓN: nunca '?token=' ni '&token=' como query param.
+    assertEquals(
+      (result[0].posterUrl as string).includes("?token="),
+      false,
+      "posterUrl NO debe llevar '?token=' como query param (el token va en el path)",
+    );
+    assertEquals(
+      (result[0].posterUrl as string).includes("&token="),
+      false,
+      "posterUrl NO debe llevar '&token=' como query param (el token va en el path)",
     );
 
     const match = POSTER_URL_NO_TIME_RE.exec(result[0].posterUrl as string)!;
     const public_key = await importJWK(public_jwk, "RS256");
-    const { payload } = await jwtVerify(decodeURIComponent(match[2]), public_key, {
+    const { payload } = await jwtVerify(match[1], public_key, {
       algorithms: ["RS256"],
     });
     assertEquals(payload.sub, CLOUDFLARE_UID_1);
