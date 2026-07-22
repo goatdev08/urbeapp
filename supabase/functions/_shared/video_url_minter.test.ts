@@ -52,6 +52,15 @@
  * - stream_row_con_jwk_invalido_se_excluye_solo_esa_fila_legacy_no_se_rompe
  * - batch_mixto_stream_y_legacy_devuelve_ambas_correctamente_firmadas
  * - precedencia_cloudflare_uid_sobre_storage_path_cuando_fila_tiene_ambos
+ *
+ * ### Poster URL — portada firmada (subtarea 68.15, NUEVO)
+ * - poster_url_stream_thumbnail_pct_50_duration_92_da_time_46_0s_y_token_valido
+ * - poster_url_stream_thumbnail_pct_null_usa_default_50_duration_80_da_time_40_0s
+ * - poster_url_stream_thumbnail_pct_25_duration_8_da_time_2_0s
+ * - poster_url_stream_duration_null_omite_time_pero_token_presente
+ * - poster_url_null_en_fila_legacy_storage
+ * - poster_url_comparte_dominio_con_signed_url_hls
+ * - campos_existentes_property_id_video_id_signed_url_siguen_intactos_con_posterUrl
  */
 
 import { assertEquals, assertExists, assertMatch, assertNotEquals } from "@std/assert";
@@ -78,6 +87,10 @@ interface VideoRow {
   property_id: string;
   storage_path: string | null;
   cloudflare_uid?: string | null;
+  /** % (0-100) del timestamp del thumbnail respecto a duration_seconds; null → default 50 (68.15) */
+  thumbnail_pct?: number | null;
+  /** Duración del video en segundos; null → posterUrl sin '?time=' (68.15) */
+  duration_seconds?: number | null;
 }
 
 // ── FakeQueryBuilder (thenable y chainable) ───────────────────────────────────
@@ -259,6 +272,8 @@ function make_video_row(overrides: Partial<VideoRow> = {}): VideoRow {
     property_id: PROP_ID_1,
     storage_path: `${PROP_ID_1}/${VIDEO_ID_1}.mp4`,
     cloudflare_uid: null,
+    thumbnail_pct: null,
+    duration_seconds: null,
     ...overrides,
   };
 }
@@ -1054,5 +1069,336 @@ Deno.test(
     const { token } = parse_hls_url(result[0].signed_url);
     const { payload } = await jwtVerify(token, public_key, { algorithms: ["RS256"] });
     assertEquals(payload.sub, CLOUDFLARE_UID_1);
+  },
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TESTS — Poster URL (portada firmada), subtarea 68.15
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Contrato (68.15): para una fila Stream (cloudflare_uid presente), además del
+// signed_url HLS se computa posterUrl:
+//   https://<domain>/<uid>/thumbnails/thumbnail.jpg[?time=<T>s]&token=<jwt>
+//   T = COALESCE(thumbnail_pct,50)/100 × duration_seconds, formateado .toFixed(1).
+//   Sin duration_seconds → posterUrl SIN '?time=' (solo '?token=').
+// Fila legacy Storage (sin cloudflare_uid) → posterUrl siempre null.
+// El token firma sub=uid con el MISMO mecanismo que el HLS (jose RS256).
+//
+// Los valores esperados de T son literales calculados a mano (fuente
+// independiente de la fórmula que implementará el GREEN):
+//   50/100×92=46.0 · 50/100×80=40.0 (default por thumbnail_pct null) · 25/100×8=2.0
+
+const POSTER_URL_WITH_TIME_RE =
+  /^https:\/\/(?:customer-[a-z0-9]+\.cloudflarestream\.com|(?:[a-z0-9.-]*\.)?videodelivery\.net)\/([A-Za-z0-9_-]+)\/thumbnails\/thumbnail\.jpg\?time=([0-9]+\.[0-9]s)&token=([^&]+)$/i;
+
+const POSTER_URL_NO_TIME_RE =
+  /^https:\/\/(?:customer-[a-z0-9]+\.cloudflarestream\.com|(?:[a-z0-9.-]*\.)?videodelivery\.net)\/([A-Za-z0-9_-]+)\/thumbnails\/thumbnail\.jpg\?token=([^&]+)$/i;
+
+/** Extrae el host (dominio) de cualquier URL https. */
+function extract_host(url: string): string {
+  const match = /^https:\/\/([^/]+)\//.exec(url);
+  if (!match) {
+    throw new Error(`No se pudo extraer el host de la URL: '${url}'`);
+  }
+  return match[1];
+}
+
+Deno.test(
+  "poster_url_stream_thumbnail_pct_50_duration_92_da_time_46_0s_y_token_valido",
+  async () => {
+    const { public_jwk, private_jwk_base64 } = await generate_test_signing_key();
+    const hls_config = make_hls_config(private_jwk_base64);
+
+    const { client } = make_fake_client_tracked({
+      query_data: [
+        make_video_row({
+          id: VIDEO_ID_1,
+          property_id: PROP_ID_1,
+          storage_path: null,
+          cloudflare_uid: CLOUDFLARE_UID_1,
+          thumbnail_pct: 50,
+          duration_seconds: 92,
+        }),
+      ],
+      query_error: null,
+      storage_responses: {},
+    });
+
+    const minter = make_video_url_minter(client as never, hls_config);
+    const result = await minter.mint_signed_urls([PROP_ID_1]);
+
+    assertEquals(result.length, 1);
+    assertExists(
+      result[0].posterUrl,
+      "La fila Stream con thumbnail_pct/duration_seconds debe traer posterUrl",
+    );
+    assertMatch(
+      result[0].posterUrl as string,
+      POSTER_URL_WITH_TIME_RE,
+      `posterUrl debe matchear el patrón de thumbnail con time; recibido: '${result[0].posterUrl}'`,
+    );
+    const match = POSTER_URL_WITH_TIME_RE.exec(result[0].posterUrl as string)!;
+    assertEquals(match[1], CLOUDFLARE_UID_1, "El UID del posterUrl debe ser el cloudflare_uid de la fila");
+    assertEquals(
+      match[2],
+      "46.0s",
+      "T = thumbnail_pct(50)/100 × duration_seconds(92) = 46.0, formateado 'time=46.0s'",
+    );
+
+    const public_key = await importJWK(public_jwk, "RS256");
+    const { payload } = await jwtVerify(decodeURIComponent(match[3]), public_key, {
+      algorithms: ["RS256"],
+    });
+    assertEquals(payload.sub, CLOUDFLARE_UID_1, "El token del posterUrl debe firmar sub=cloudflare_uid");
+  },
+);
+
+Deno.test(
+  "poster_url_stream_thumbnail_pct_null_usa_default_50_duration_80_da_time_40_0s",
+  async () => {
+    const { private_jwk_base64 } = await generate_test_signing_key();
+    const hls_config = make_hls_config(private_jwk_base64);
+
+    const { client } = make_fake_client_tracked({
+      query_data: [
+        make_video_row({
+          id: VIDEO_ID_1,
+          property_id: PROP_ID_1,
+          storage_path: null,
+          cloudflare_uid: CLOUDFLARE_UID_1,
+          thumbnail_pct: null,
+          duration_seconds: 80,
+        }),
+      ],
+      query_error: null,
+      storage_responses: {},
+    });
+
+    const minter = make_video_url_minter(client as never, hls_config);
+    const result = await minter.mint_signed_urls([PROP_ID_1]);
+
+    assertExists(result[0].posterUrl, "thumbnail_pct null no debe omitir posterUrl");
+    const match = POSTER_URL_WITH_TIME_RE.exec(result[0].posterUrl as string);
+    assertExists(match, `posterUrl debe traer '?time=' usando el default 50%; recibido: '${result[0].posterUrl}'`);
+    assertEquals(
+      match![2],
+      "40.0s",
+      "thumbnail_pct null → default 50; T = 50/100 × 80 = 40.0 ('time=40.0s')",
+    );
+  },
+);
+
+Deno.test("poster_url_stream_thumbnail_pct_25_duration_8_da_time_2_0s", async () => {
+  const { private_jwk_base64 } = await generate_test_signing_key();
+  const hls_config = make_hls_config(private_jwk_base64);
+
+  const { client } = make_fake_client_tracked({
+    query_data: [
+      make_video_row({
+        id: VIDEO_ID_1,
+        property_id: PROP_ID_1,
+        storage_path: null,
+        cloudflare_uid: CLOUDFLARE_UID_1,
+        thumbnail_pct: 25,
+        duration_seconds: 8,
+      }),
+    ],
+    query_error: null,
+    storage_responses: {},
+  });
+
+  const minter = make_video_url_minter(client as never, hls_config);
+  const result = await minter.mint_signed_urls([PROP_ID_1]);
+
+  assertExists(result[0].posterUrl);
+  const match = POSTER_URL_WITH_TIME_RE.exec(result[0].posterUrl as string);
+  assertExists(match, `posterUrl debe traer '?time='; recibido: '${result[0].posterUrl}'`);
+  assertEquals(
+    match![2],
+    "2.0s",
+    "T = thumbnail_pct(25)/100 × duration_seconds(8) = 2.0 ('time=2.0s')",
+  );
+});
+
+Deno.test(
+  "poster_url_stream_duration_null_omite_time_pero_token_presente",
+  async () => {
+    const { public_jwk, private_jwk_base64 } = await generate_test_signing_key();
+    const hls_config = make_hls_config(private_jwk_base64);
+
+    const { client } = make_fake_client_tracked({
+      query_data: [
+        make_video_row({
+          id: VIDEO_ID_1,
+          property_id: PROP_ID_1,
+          storage_path: null,
+          cloudflare_uid: CLOUDFLARE_UID_1,
+          thumbnail_pct: 50,
+          duration_seconds: null,
+        }),
+      ],
+      query_error: null,
+      storage_responses: {},
+    });
+
+    const minter = make_video_url_minter(client as never, hls_config);
+    const result = await minter.mint_signed_urls([PROP_ID_1]);
+
+    assertExists(
+      result[0].posterUrl,
+      "duration_seconds null debe seguir produciendo posterUrl (sin '?time=', Stream sirve su frame default)",
+    );
+    assertEquals(
+      (result[0].posterUrl as string).includes("time="),
+      false,
+      "Sin duration_seconds, posterUrl NO debe incluir el parámetro 'time='",
+    );
+    assertMatch(
+      result[0].posterUrl as string,
+      POSTER_URL_NO_TIME_RE,
+      `posterUrl debe matchear el patrón sin time, solo '?token='; recibido: '${result[0].posterUrl}'`,
+    );
+
+    const match = POSTER_URL_NO_TIME_RE.exec(result[0].posterUrl as string)!;
+    const public_key = await importJWK(public_jwk, "RS256");
+    const { payload } = await jwtVerify(decodeURIComponent(match[2]), public_key, {
+      algorithms: ["RS256"],
+    });
+    assertEquals(payload.sub, CLOUDFLARE_UID_1);
+  },
+);
+
+Deno.test("poster_url_null_en_fila_legacy_storage", async () => {
+  const { private_jwk_base64 } = await generate_test_signing_key();
+  const hls_config = make_hls_config(private_jwk_base64);
+  const path = `${PROP_ID_1}/${VIDEO_ID_1}.mp4`;
+  const expected_storage_url = "https://cdn.example.com/signed?tok=legacy-poster";
+
+  const { client } = make_fake_client_tracked({
+    query_data: [
+      make_video_row({
+        id: VIDEO_ID_1,
+        property_id: PROP_ID_1,
+        storage_path: path,
+        cloudflare_uid: null,
+        thumbnail_pct: null,
+        duration_seconds: null,
+      }),
+    ],
+    query_error: null,
+    storage_responses: { [path]: expected_storage_url },
+  });
+
+  // hlsConfig SÍ inyectado (podría estarlo en prod); la fila es legacy (sin
+  // cloudflare_uid) → posterUrl debe ser null, no undefined ni la signed_url.
+  const minter = make_video_url_minter(client as never, hls_config);
+  const result = await minter.mint_signed_urls([PROP_ID_1]);
+
+  assertEquals(result.length, 1);
+  assertEquals(
+    result[0].signed_url,
+    expected_storage_url,
+    "signed_url legacy debe seguir intacto",
+  );
+  assertEquals(
+    result[0].posterUrl,
+    null,
+    "El poster de Stream NO aplica a filas legacy Storage: posterUrl debe ser null explícito (no undefined)",
+  );
+});
+
+Deno.test("poster_url_comparte_dominio_con_signed_url_hls", async () => {
+  const { private_jwk_base64 } = await generate_test_signing_key();
+  const hls_config = make_hls_config(private_jwk_base64, {
+    streamCustomerSubdomain: "abc123customer",
+  });
+
+  const { client } = make_fake_client_tracked({
+    query_data: [
+      make_video_row({
+        id: VIDEO_ID_1,
+        property_id: PROP_ID_1,
+        storage_path: null,
+        cloudflare_uid: CLOUDFLARE_UID_1,
+        thumbnail_pct: 50,
+        duration_seconds: 92,
+      }),
+    ],
+    query_error: null,
+    storage_responses: {},
+  });
+
+  const minter = make_video_url_minter(client as never, hls_config);
+  const result = await minter.mint_signed_urls([PROP_ID_1]);
+
+  assertExists(result[0].posterUrl, "posterUrl debe existir para comparar su dominio con el del HLS");
+  const hls_host = extract_host(result[0].signed_url);
+  const poster_host = extract_host(result[0].posterUrl as string);
+  assertEquals(
+    poster_host,
+    hls_host,
+    `El posterUrl debe usar el MISMO dominio que el signed_url HLS; hls='${hls_host}' poster='${poster_host}'`,
+  );
+});
+
+Deno.test(
+  "campos_existentes_property_id_video_id_signed_url_siguen_intactos_con_posterUrl",
+  async () => {
+    // Regresión: agregar posterUrl NO debe romper el contrato original del feed
+    // (#21/#9) — property_id/video_id/signed_url deben seguir presentes y
+    // correctos, y posterUrl debe ser una propiedad propia explícita (incluida
+    // como null en legacy), no un campo ausente/omitido.
+    const { private_jwk_base64 } = await generate_test_signing_key();
+    const hls_config = make_hls_config(private_jwk_base64);
+    const legacy_path = `${PROP_ID_2}/${VIDEO_ID_2}.mp4`;
+    const legacy_url = "https://cdn.example.com/signed?tok=legacy-regresion";
+
+    const { client } = make_fake_client_tracked({
+      query_data: [
+        make_video_row({
+          id: VIDEO_ID_1,
+          property_id: PROP_ID_1,
+          storage_path: null,
+          cloudflare_uid: CLOUDFLARE_UID_1,
+          thumbnail_pct: 50,
+          duration_seconds: 92,
+        }),
+        make_video_row({
+          id: VIDEO_ID_2,
+          property_id: PROP_ID_2,
+          storage_path: legacy_path,
+          cloudflare_uid: null,
+        }),
+      ],
+      query_error: null,
+      storage_responses: { [legacy_path]: legacy_url },
+    });
+
+    const minter = make_video_url_minter(client as never, hls_config);
+    const result = await minter.mint_signed_urls([PROP_ID_1, PROP_ID_2]);
+
+    assertEquals(result.length, 2, "El batch mixto debe seguir devolviendo ambas filas");
+
+    const stream_row = result.find((v) => v.property_id === PROP_ID_1)!;
+    const legacy_row = result.find((v) => v.property_id === PROP_ID_2)!;
+
+    assertExists(stream_row, "Contrato original: la fila Stream debe seguir apareciendo");
+    assertExists(legacy_row, "Contrato original: la fila legacy debe seguir apareciendo");
+    assertEquals(stream_row.video_id, VIDEO_ID_1, "video_id de la fila Stream intacto");
+    assertEquals(legacy_row.video_id, VIDEO_ID_2, "video_id de la fila legacy intacto");
+    assertEquals(legacy_row.signed_url, legacy_url, "signed_url de la fila legacy intacto");
+
+    // posterUrl debe existir como propiedad propia en AMBAS filas (Stream: string; legacy: null).
+    assertEquals(
+      Object.prototype.hasOwnProperty.call(stream_row, "posterUrl"),
+      true,
+      "La fila Stream debe traer la propiedad 'posterUrl' (no omitida)",
+    );
+    assertEquals(
+      Object.prototype.hasOwnProperty.call(legacy_row, "posterUrl"),
+      true,
+      "La fila legacy debe traer la propiedad 'posterUrl' explícita (null, no omitida)",
+    );
+    assertEquals(legacy_row.posterUrl, null, "posterUrl de la fila legacy debe ser null explícito");
   },
 );

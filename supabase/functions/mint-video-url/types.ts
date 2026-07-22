@@ -19,6 +19,20 @@ export interface MintedVideo {
   property_id: string;
   video_id: string;
   signed_url: string;
+  // ── posterUrl (subtarea 68.15, aditivo) ─────────────────────────────────────
+  // URL firmada de la portada (thumbnail) para render en feed/detalle:
+  //   - Fila Stream (cloudflare_uid): URL firmada de
+  //     `https://<domain>/<uid>/thumbnails/thumbnail.jpg[?time=<T>s]&token=<jwt>`,
+  //     donde T = COALESCE(thumbnail_pct,50)/100 × duration_seconds (.toFixed(1));
+  //     sin `?time=` si duration_seconds es null. Mismo dominio y mecanismo de
+  //     firma (sub=uid) que el manifest HLS.
+  //   - Fila legacy Storage (sin cloudflare_uid): siempre null explícito.
+  // Opcional en el tipo (no `posterUrl: string | null` estricto) para que los
+  // productores existentes de MintedVideo (adapter real en clients.ts, fixtures
+  // de handler.test.ts) sigan compilando sin tocarse durante el RED de 68.15;
+  // el GREEN debe poblarlo explícitamente (incl. `null` en legacy) en TODAS las
+  // filas — los tests nuevos lo exigen por presencia+valor, no solo por tipo.
+  posterUrl?: string | null;
 }
 
 // ── VideoUrlMinter ────────────────────────────────────────────────────────────
