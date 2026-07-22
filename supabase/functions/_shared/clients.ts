@@ -271,15 +271,17 @@ export function make_redeemer(client: SupabaseClient): InvitationRedeemer {
 }
 
 /**
- * Firma un JWT RS256 para el token de Stream y arma la URL de manifest HLS.
- * header { alg: RS256, kid }, payload { sub: cloudflare_uid, kid, exp }.
+ * Firma el JWT RS256 (sub=cloudflare_uid) y resuelve el dominio de Stream para
+ * una fila dada. Extraído de sign_stream_hls_url (68.15) para que el manifest
+ * HLS y el posterUrl del thumbnail reutilicen el MISMO token+dominio en vez de
+ * firmar dos veces — un solo JWT sirve para ambos endpoints de Stream.
  * Lanza si streamSigningJwk no decodifica a un JWK RSA válido — el caller
  * (mint_signed_urls) atrapa el error y excluye solo esa fila (fail-closed).
  */
-async function sign_stream_hls_url(
+async function sign_stream_token(
   cloudflare_uid: string,
   hlsConfig: HlsSignerConfig,
-): Promise<string> {
+): Promise<{ token: string; domain: string }> {
   const jwk = JSON.parse(atob(hlsConfig.streamSigningJwk));
   const private_key = await importJWK(jwk, "RS256");
 
@@ -298,7 +300,37 @@ async function sign_stream_hls_url(
     ? `customer-${hlsConfig.streamCustomerSubdomain}.cloudflarestream.com`
     : "videodelivery.net";
 
+  return { token, domain };
+}
+
+/**
+ * Arma la URL de manifest HLS de Stream a partir de un token+dominio ya
+ * firmados (sign_stream_token). No vuelve a firmar.
+ */
+function build_hls_url(cloudflare_uid: string, domain: string, token: string): string {
   return `https://${domain}/${cloudflare_uid}/manifest/video.m3u8?token=${token}`;
+}
+
+/**
+ * Arma la URL de portada (thumbnail) firmada de Stream (68.15), reutilizando
+ * el token+dominio ya firmados por sign_stream_token (mismo JWT que el HLS).
+ * T = COALESCE(thumbnail_pct,50)/100 × duration_seconds, formateado .toFixed(1).
+ * Sin duration_seconds → sin '?time=' (Stream sirve su frame default).
+ */
+function build_poster_url(
+  cloudflare_uid: string,
+  domain: string,
+  token: string,
+  thumbnail_pct: number | null | undefined,
+  duration_seconds: number | null | undefined,
+): string {
+  const base = `https://${domain}/${cloudflare_uid}/thumbnails/thumbnail.jpg`;
+  if (duration_seconds == null) {
+    return `${base}?token=${token}`;
+  }
+  const pct = thumbnail_pct ?? 50;
+  const time_seconds = (pct / 100) * duration_seconds;
+  return `${base}?time=${time_seconds.toFixed(1)}s&token=${token}`;
 }
 
 /**
@@ -325,7 +357,9 @@ export function make_video_url_minter(
 
       const { data, error } = await client
         .from("property_videos")
-        .select("id, property_id, storage_path, cloudflare_uid, properties!inner(status)")
+        .select(
+          "id, property_id, storage_path, cloudflare_uid, thumbnail_pct, duration_seconds, properties!inner(status)",
+        )
         .in("property_id", property_ids)
         .eq("status", "ready")
         .eq("properties.status", "active")
@@ -339,6 +373,8 @@ export function make_video_url_minter(
         property_id: string;
         storage_path: string | null;
         cloudflare_uid?: string | null;
+        thumbnail_pct?: number | null;
+        duration_seconds?: number | null;
       }>;
 
       const results: import("../mint-video-url/types.ts").MintedVideo[] = [];
@@ -348,11 +384,22 @@ export function make_video_url_minter(
           if (!hlsConfig) continue; // fail-closed: sin config, excluir la fila Stream
 
           try {
-            const signed_url = await sign_stream_hls_url(row.cloudflare_uid, hlsConfig);
+            // Un solo JWT (sub=cloudflare_uid) firma AMBOS endpoints — manifest
+            // HLS y thumbnail — evitando una segunda llamada de firmado por fila.
+            const { token, domain } = await sign_stream_token(row.cloudflare_uid, hlsConfig);
+            const signed_url = build_hls_url(row.cloudflare_uid, domain, token);
+            const posterUrl = build_poster_url(
+              row.cloudflare_uid,
+              domain,
+              token,
+              row.thumbnail_pct,
+              row.duration_seconds,
+            );
             results.push({
               property_id: row.property_id,
               video_id: row.id,
               signed_url,
+              posterUrl,
             });
           } catch {
             // fail-closed: JWK inválido u otro error de firmado → excluir solo esta fila
@@ -374,6 +421,8 @@ export function make_video_url_minter(
           property_id: row.property_id,
           video_id: row.id,
           signed_url: signed.signedUrl,
+          // El poster de Stream no aplica a filas legacy Storage: null explícito.
+          posterUrl: null,
         });
       }
 
