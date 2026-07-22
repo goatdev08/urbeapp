@@ -41,13 +41,19 @@ export type PropertyVideoDetail = {
   position: number;
   /** storage_path puede ser null en la DB (video aún processing). */
   storage_path: string | null;
-  /** Portada del video (frame medio, URL pública) — poster del hero de detalle. */
+  /** Portada legacy del video (frame medio, URL pública Storage). */
   thumbnail_url: string | null;
   /**
    * signed_url: presente solo tras llamar a mint-video-url EF.
    * En la demo el storage_path directo está roto (#21), por eso se usa el minter.
    */
   signed_url?: string;
+  /**
+   * Portada firmada de Cloudflare Stream (68.15) al frame de thumbnail_pct.
+   * Presente solo tras mint-video-url; null para legacy o si la EF no la firmó.
+   * Preferida sobre thumbnail_url por el hero de detalle.
+   */
+  posterUrl?: string | null;
 };
 
 // ---------------------------------------------------------------------------

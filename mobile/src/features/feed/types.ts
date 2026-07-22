@@ -35,4 +35,10 @@ export type FeedProperty = {
 export type FeedPropertyWithUrl = FeedProperty & {
   signed_url: string;
   video_id: string;
+  /**
+   * Portada firmada de Cloudflare Stream (68.15) al frame de thumbnail_pct.
+   * null para videos legacy (Storage) o si la EF no pudo firmarla — en ese
+   * caso el feed cae a video.thumbnail_url (legacy) o al fondo oscuro.
+   */
+  posterUrl: string | null;
 };

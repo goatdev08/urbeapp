@@ -46,6 +46,8 @@ type MintedVideo = {
   property_id: string;
   video_id: string;
   signed_url: string;
+  /** Portada firmada de Stream (68.15); ausente/null en fixtures viejos o legacy. */
+  posterUrl?: string | null;
 };
 
 /**
@@ -174,9 +176,10 @@ export function usePropertyDetail(id: string): UsePropertyDetailResult {
           storage_path: v.storage_path,
           thumbnail_url: v.thumbnail_url,
         };
-        // Asigna signed_url al video que coincide con el minted por la EF
+        // Asigna signed_url + posterUrl al video que coincide con el minted por la EF
         if (minted !== undefined && minted.video_id === v.id) {
           video.signed_url = localizeSignedUrl(minted.signed_url);
+          video.posterUrl = minted.posterUrl ?? null;
         }
         return video;
       });

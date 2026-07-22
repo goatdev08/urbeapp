@@ -9,8 +9,8 @@
  * useSaveProperty) y gesto de doble-tap (GestureDetector) con
  * HeartAnimation + haptics.
  *
- * ponytail: sin poster real — fondo oscuro sólido mientras carga
- *   (sin transcoding ni thumbnails en la demo).
+ * Portada: posterUrl firmado de Cloudflare Stream (68.15) con fallback al
+ *   thumbnail_url legacy de Storage; fondo oscuro sólido si no hay ninguno.
  */
 
 import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
@@ -48,6 +48,8 @@ export type VideoFeedItemProps = {
 
 function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedItemProps) {
   const { width, height } = useWindowDimensions();
+  // 68.15: prefiere el poster firmado de Stream; cae al thumbnail_url legacy.
+  const poster_uri = property.posterUrl ?? property.video.thumbnail_url;
   const [has_error, set_has_error] = useState(false);
   // ponytail: player_status para mostrar spinner mientras carga el ítem activo.
   const [player_status, set_player_status] = useState<VideoPlayerStatus>('loading');
@@ -245,18 +247,15 @@ function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedIte
   return (
     <GestureDetector gesture={tap_gesture}>
       <View style={[styles.container, { width, height }]}>
-        {/* Portada (P7): frame medio del video servido como URL pública. Vive
-            SIEMPRE detrás del VideoView (antes solo en status 'loading', lo que
-            dejaba un flash oscuro en 'idle' y entre swipes); el video la cubre
-            en cuanto pinta su primer frame. expo-image la cachea en disco, así
-            que el swipe de regreso es instantáneo. Sin thumbnail → fondo oscuro
-            sólido del container (fallback). */}
-        {property.video.thumbnail_url && (
-          <Image
-            source={{ uri: property.video.thumbnail_url }}
-            style={styles.poster}
-            contentFit="cover"
-          />
+        {/* Portada: prefiere el posterUrl firmado de Cloudflare Stream (68.15,
+            frame elegido por thumbnail_pct); cae al thumbnail_url legacy de
+            Storage si no hay (video pre-Stream). Vive SIEMPRE detrás del
+            VideoView (antes solo en status 'loading', lo que dejaba un flash
+            oscuro en 'idle' y entre swipes); el video la cubre en cuanto pinta
+            su primer frame. expo-image la cachea en disco, así que el swipe de
+            regreso es instantáneo. Sin poster → fondo oscuro sólido (fallback). */}
+        {poster_uri && (
+          <Image source={{ uri: poster_uri }} style={styles.poster} contentFit="cover" />
         )}
         <VideoView
           player={player}
