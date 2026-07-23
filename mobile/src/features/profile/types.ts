@@ -38,6 +38,13 @@ export interface GridProperty {
   thumbnail_url: string | null;
   /** storage_path del primer video. Puede ser null (sin video aún). */
   storage_path: string | null;
+  /**
+   * URL firmada de Stream (mint-poster-urls, 89.1/89.2) para la portada del
+   * grid. Null si la EF no autorizó/no tiene video listo aún — el card usa
+   * `posterUrl ?? thumbnail_url` como fuente (89.2, componentes fuera de
+   * este alcance).
+   */
+  posterUrl: string | null;
 }
 
 /**
@@ -72,6 +79,11 @@ export interface MyProperty {
   thumbnail_url: VideoRow['thumbnail_url'];
   /** Storage path del primer video. Null si sin video. */
   storage_path: VideoRow['storage_path'];
+  /**
+   * URL firmada de Stream (mint-poster-urls, 89.1/89.2) para la portada de
+   * "Mis publicaciones". Null si la EF no tiene video listo aún.
+   */
+  posterUrl: string | null;
 }
 
 export interface AgentProfile {
