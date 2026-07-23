@@ -177,50 +177,42 @@ reset role;
 -- 5.1 — Usuario A SÍ puede UPDATE su propio objeto (exactamente 1 fila afectada).
 -- RED: falla porque no existe política UPDATE ni objeto seed (bucket no existe) → count=0 ≠ 1.
 select pg_temp.act_as('00000000-0000-0000-0000-0000000b0001');
-select is(
-  (select count(*)::int from (
-    update storage.objects
-    set metadata = '{"updated": true}'::jsonb
-    where bucket_id = 'profile-photos'
-      and name = '00000000-0000-0000-0000-0000000b0001/avatar-seed.jpg'
-    returning 1
-  ) _sub),
-  1,
-  'usuario_a_puede_update_su_propio_objeto'
-);
+-- El DML va en un CTE de nivel superior: Postgres no admite UPDATE/DELETE dentro de un FROM.
+with u as (
+  update storage.objects
+  set metadata = '{"updated": true}'::jsonb
+  where bucket_id = 'profile-photos'
+    and name = '00000000-0000-0000-0000-0000000b0001/avatar-seed.jpg'
+  returning 1
+)
+select is(count(*)::int, 1, 'usuario_a_puede_update_su_propio_objeto') from u;
 reset role;
 
 -- 5.2 — Usuario B NO puede UPDATE el objeto de usuario A.
 -- RED y GREEN: la política UPDATE exige que (foldername(name))[1] = auth.uid()::text.
 -- RLS filtra silenciosamente: UPDATE afecta 0 filas (no lanza).
 select pg_temp.act_as('00000000-0000-0000-0000-0000000b0002');
-select is(
-  (select count(*)::int from (
-    update storage.objects
-    set metadata = '{"hack": true}'::jsonb
-    where bucket_id = 'profile-photos'
-      and name = '00000000-0000-0000-0000-0000000b0001/avatar-seed.jpg'
-    returning 1
-  ) _sub),
-  0,
-  'usuario_b_no_puede_update_objeto_de_usuario_a'
-);
+with u as (
+  update storage.objects
+  set metadata = '{"hack": true}'::jsonb
+  where bucket_id = 'profile-photos'
+    and name = '00000000-0000-0000-0000-0000000b0001/avatar-seed.jpg'
+  returning 1
+)
+select is(count(*)::int, 0, 'usuario_b_no_puede_update_objeto_de_usuario_a') from u;
 reset role;
 
 -- 5.3 — anon NO puede UPDATE (sin JWT).
 -- RLS filtra silenciosamente: UPDATE afecta 0 filas.
 select pg_temp.act_as(null, 'anon');
-select is(
-  (select count(*)::int from (
-    update storage.objects
-    set metadata = '{"hack": true}'::jsonb
-    where bucket_id = 'profile-photos'
-      and name = '00000000-0000-0000-0000-0000000b0001/avatar-seed.jpg'
-    returning 1
-  ) _sub),
-  0,
-  'anon_no_puede_update_en_profile_photos'
-);
+with u as (
+  update storage.objects
+  set metadata = '{"hack": true}'::jsonb
+  where bucket_id = 'profile-photos'
+    and name = '00000000-0000-0000-0000-0000000b0001/avatar-seed.jpg'
+  returning 1
+)
+select is(count(*)::int, 0, 'anon_no_puede_update_en_profile_photos') from u;
 reset role;
 
 -- 5.4 — Usuario B NO puede DELETE el objeto de usuario A.
@@ -232,31 +224,25 @@ reset role;
 -- accidentales fuera de la API). RLS sigue aplicando encima de esta configuración.
 set local storage.allow_delete_query = 'true';
 select pg_temp.act_as('00000000-0000-0000-0000-0000000b0002');
-select is(
-  (select count(*)::int from (
-    delete from storage.objects
-    where bucket_id = 'profile-photos'
-      and name = '00000000-0000-0000-0000-0000000b0001/avatar-seed.jpg'
-    returning 1
-  ) _sub),
-  0,
-  'usuario_b_no_puede_delete_objeto_de_usuario_a'
-);
+with d as (
+  delete from storage.objects
+  where bucket_id = 'profile-photos'
+    and name = '00000000-0000-0000-0000-0000000b0001/avatar-seed.jpg'
+  returning 1
+)
+select is(count(*)::int, 0, 'usuario_b_no_puede_delete_objeto_de_usuario_a') from d;
 reset role;
 
 -- 5.5 — Usuario A SÍ puede DELETE su propio objeto (exactamente 1 fila afectada).
 -- RED: falla porque no existe política DELETE ni objeto (bucket no existe) → count=0 ≠ 1.
 select pg_temp.act_as('00000000-0000-0000-0000-0000000b0001');
-select is(
-  (select count(*)::int from (
-    delete from storage.objects
-    where bucket_id = 'profile-photos'
-      and name = '00000000-0000-0000-0000-0000000b0001/avatar-seed.jpg'
-    returning 1
-  ) _sub),
-  1,
-  'usuario_a_puede_delete_su_propio_objeto'
-);
+with d as (
+  delete from storage.objects
+  where bucket_id = 'profile-photos'
+    and name = '00000000-0000-0000-0000-0000000b0001/avatar-seed.jpg'
+  returning 1
+)
+select is(count(*)::int, 1, 'usuario_a_puede_delete_su_propio_objeto') from d;
 reset role;
 
 -- ══ §6 ══ RLS no-regresión de user_preferences (post-migración 0015)

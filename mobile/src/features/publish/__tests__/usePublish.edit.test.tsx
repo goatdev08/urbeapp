@@ -69,7 +69,12 @@ import { usePublish } from '../hooks/usePublish';
 const TEST_PROPERTY_ID = 'prop-uuid-edit-abc-123';
 const TEST_USER_ID = 'user-uid-agente-edit-456';
 
-/** Campos del form válidos para CREATE (incluye video) */
+/**
+ * Campos del form válidos para CREATE (incluye video).
+ * 68.12 (upload-first): cloudflare_uid es el gate real que exige
+ * get_property_payload — video_id/storage_path se conservan como legado
+ * en el state pero ya no bastan por sí solos.
+ */
 const VALID_FORM_CREATE = {
   operation_type: 'rent' as const,
   property_type: 'departamento' as const,
@@ -79,6 +84,7 @@ const VALID_FORM_CREATE = {
   lng: -99.1731,
   video_id: 'vid-uuid-create-xyz',
   storage_path: `${TEST_USER_ID}/vid-uuid-create-xyz.mp4`,
+  cloudflare_uid: 'cf-stream-uid-test-create-xyz',
 };
 
 /**

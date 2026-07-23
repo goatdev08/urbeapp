@@ -63,6 +63,8 @@ type MintedVideo = {
   property_id: string;
   video_id: string;
   signed_url: string;
+  /** Portada firmada de Stream (68.15); ausente/null en fixtures viejos o legacy. */
+  posterUrl?: string | null;
 };
 
 /** Fila cruda que devuelve la RPC properties_within_radius (#42.2). */
@@ -144,6 +146,7 @@ async function mint_and_build_feed_data(client: any, rows: QueryRow[]): Promise<
       },
       signed_url: localizeSignedUrl(minted.signed_url),
       video_id: minted.video_id,
+      posterUrl: minted.posterUrl ?? null,
     });
   }
 

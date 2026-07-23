@@ -112,12 +112,16 @@ export const PropertyListItem = React.memo(function PropertyListItem({
     operation_type,
     status,
     thumbnail_url,
+    posterUrl,
     view_count,
     like_count,
     save_count,
     contact_count,
     closed_reason,
   } = item;
+
+  /** Portada: URL firmada de Stream si está disponible, si no el thumbnail legacy. */
+  const cover_uri = posterUrl ?? thumbnail_url;
 
   const show_per_mes = operation_type === 'rent' || operation_type === 'both';
   const is_paused    = status === 'paused';
@@ -144,9 +148,9 @@ export const PropertyListItem = React.memo(function PropertyListItem({
 
       {/* ── Thumbnail ────────────────────────────────────────────────────── */}
       <View style={styles.thumb}>
-        {thumbnail_url ? (
+        {cover_uri ? (
           <Image
-            source={{ uri: thumbnail_url }}
+            source={{ uri: cover_uri }}
             style={StyleSheet.absoluteFill}
             contentFit="cover"
             transition={200}

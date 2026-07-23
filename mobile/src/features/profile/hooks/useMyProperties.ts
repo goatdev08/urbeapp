@@ -17,6 +17,7 @@ import { useState, useEffect, useCallback } from 'react';
 
 import { useAuth } from '@/features/auth/context';
 import { supabase } from '@/lib/supabase/client';
+import { fetch_grid_posters } from '@/lib/gridPosters';
 import type { MyProperty } from '../types';
 
 // ---------------------------------------------------------------------------
@@ -104,6 +105,13 @@ export function useMyProperties(): UseMyPropertiesState {
         return;
       }
 
+      // Portadas firmadas de Stream (89.1/89.2) — batch por los ids de esta página,
+      // fail-soft: Map vacío si la EF falla, no rompe la lista.
+      const ids = (rows ?? []).map((row) => row.id);
+      const poster_map = await fetch_grid_posters(supabase, ids);
+
+      if (ignore) return;
+
       const properties: MyProperty[] = (rows ?? []).map((row) => {
         const videos = (row.property_videos ?? []) as VideoEmbed[];
         // Primer video por menor position; thumbnail para la card.
@@ -134,6 +142,7 @@ export function useMyProperties(): UseMyPropertiesState {
           video_count: videos.length,
           thumbnail_url: first_video?.thumbnail_url ?? null,
           storage_path: first_video?.storage_path ?? null,
+          posterUrl: poster_map.get(row.id) ?? null,
         };
       });
 

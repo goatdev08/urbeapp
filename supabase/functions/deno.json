@@ -2,6 +2,7 @@
   "imports": {
     "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.45.4",
     "@std/assert": "https://deno.land/std@0.224.0/assert/mod.ts",
-    "aws4fetch": "https://esm.sh/aws4fetch@1.0.20"
+    "aws4fetch": "https://esm.sh/aws4fetch@1.0.20",
+    "jose": "https://esm.sh/jose@5"
   }
 }

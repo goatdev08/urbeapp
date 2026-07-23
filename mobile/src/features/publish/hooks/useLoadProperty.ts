@@ -90,7 +90,7 @@ export function useLoadProperty(
            pet_friendly,
            allows_no_guarantor,
            student_friendly,
-           property_videos ( id, storage_path, position, status, thumbnail_url )`,
+           property_videos ( id, storage_path, position, status, thumbnail_url, cloudflare_uid, duration_seconds, thumbnail_pct )`,
         )
         .eq('id', property_id)
         .single()) as {
@@ -141,7 +141,15 @@ export function useLoadProperty(
         allows_no_guarantor: data.allows_no_guarantor,
         student_friendly: data.student_friendly,
         ...(first_video
-          ? { video_id: first_video.id, storage_path: first_video.storage_path }
+          ? {
+              video_id: first_video.id,
+              storage_path: first_video.storage_path,
+              // 68.7: pasan directo — el ThumbnailPicker decide visibilidad por status.
+              cloudflare_uid: first_video.cloudflare_uid ?? null,
+              video_status: first_video.status ?? null,
+              video_duration_seconds: first_video.duration_seconds ?? null,
+              video_thumbnail_pct: first_video.thumbnail_pct ?? null,
+            }
           : {}),
       };
 

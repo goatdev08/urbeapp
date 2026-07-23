@@ -34,9 +34,10 @@ export interface PublishPropertyInput {
   allows_no_guarantor: boolean;
   student_friendly: boolean;
   description: string;
-  // video
-  video_id: string;
-  storage_path: string;
+  // video (68.12 — upload-first: cloudflare_uid reemplaza video_id + storage_path;
+  // el video ya fue subido a Cloudflare Stream ANTES de existir la propiedad y
+  // solo se ENLAZA — ver publish_property_atomic en supabase/migrations).
+  cloudflare_uid: string;
 }
 
 // ── CallerVerifier ────────────────────────────────────────────────────────────
@@ -80,9 +81,8 @@ export interface PropertyPublishParams {
   // Estado explícito (contrato testeable): el handler siempre pasa estos valores.
   property_status: "active";
   video_status: "ready";
-  // campos de property_videos
-  video_id: string;
-  storage_path: string;
+  // referencia al video en vuelo a ENLAZAR (68.12 — reemplaza video_id/storage_path)
+  cloudflare_uid: string;
 }
 
 export type PropertyPublishResult =

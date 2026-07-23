@@ -6,7 +6,7 @@
  *
  * Patrón: useVideoPlayer + VideoView de expo-video, igual que VideoFeedItem.
  *
- * ponytail: fondo ink_feed como poster sólido — sin thumbnails en la demo.
+ * ponytail: fondo ink_feed como fallback cuando no hay poster (ni Stream ni legacy).
  * ponytail: autoplay muted al montar; nativeControls=false (hero limpio, mockup #5).
  * ponytail: NO player.pause() / release() en cleanup — useVideoPlayer libera el
  *   player al desmontar; pausar un objeto liberado truena ("shared object already released").
@@ -56,6 +56,8 @@ export function PropertyVideoPlayer({ videos }: PropertyVideoPlayerProps) {
   const primary_video = find_primary_video(videos);
   // null cuando no hay video o el signed_url aún no fue minted
   const video_url: string | null = primary_video?.signed_url ?? null;
+  // 68.15: prefiere el poster firmado de Stream; cae al thumbnail_url legacy.
+  const poster_uri = primary_video?.posterUrl ?? primary_video?.thumbnail_url ?? null;
 
   const [has_error, set_has_error] = useState(false);
   const [player_status, set_player_status] = useState<VideoPlayerStatus>('loading');
@@ -101,14 +103,12 @@ export function PropertyVideoPlayer({ videos }: PropertyVideoPlayerProps) {
   // ── Reproductor ────────────────────────────────────────────────────────────
   return (
     <View style={styles.container}>
-      {/* Poster real (thumbnail del video) detrás del VideoView — el hero deja
-          de ser un rectángulo oscuro mientras carga (pulido flash 2026-07-06). */}
-      {primary_video?.thumbnail_url && (
-        <Image
-          source={{ uri: primary_video.thumbnail_url }}
-          style={StyleSheet.absoluteFill}
-          contentFit="cover"
-        />
+      {/* Poster real detrás del VideoView — el hero deja de ser un rectángulo
+          oscuro mientras carga (pulido flash 2026-07-06). Prefiere el poster
+          firmado de Stream (68.15, frame de thumbnail_pct) sobre el
+          thumbnail_url legacy de Storage. */}
+      {poster_uri && (
+        <Image source={{ uri: poster_uri }} style={StyleSheet.absoluteFill} contentFit="cover" />
       )}
       <VideoView
         player={player}

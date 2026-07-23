@@ -20,6 +20,7 @@ import {
   ActivityIndicator,
   Alert,
   SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -33,7 +34,7 @@ import { useRouter } from 'expo-router';
 import { usePublishForm } from '@/features/publish/store/PublishFormContext';
 import { useVideoUpload, type UploadStatus } from '@/features/publish/hooks/useVideoUpload';
 import { usePublish } from '@/features/publish/hooks/usePublish';
-import { generate_and_store_thumbnail } from '@/features/publish/lib/videoThumbnail';
+import { ThumbnailPicker } from '@/features/publish/components/ThumbnailPicker';
 import { PrimaryButton } from '@/components/PrimaryButton';
 
 // ---------------------------------------------------------------------------
@@ -139,12 +140,6 @@ export default function Step3Screen() {
 
   const handle_publish = useCallback(async () => {
     // 8.10: submit a publish-property
-    // Captura video_id/URI/duración ANTES de publicar: en create mode el éxito
-    // dispara reset() y limpia el form → se perderían para la portada.
-    const cap_video_id = state.video_id;
-    const cap_local_uri = state.video_local_uri;
-    const cap_duration = video_player.duration ?? null;
-
     set_publish_status('submitting');
     set_publish_error(null);
 
@@ -157,11 +152,10 @@ export default function Step3Screen() {
     set_publish_error(final_error);
 
     if (final_status === 'success') {
-      // Portada (P7): frame medio → bucket público → property_videos.thumbnail_url.
-      // Solo create mode con video nuevo; fire-and-forget fail-soft (no bloquea).
-      if (!is_edit_mode && cap_video_id && cap_local_uri) {
-        void generate_and_store_thumbnail(cap_video_id, cap_local_uri, cap_duration);
-      }
+      // Portada: default 50% (Stream, 68.4) al publicar. El agente puede
+      // refinarla en el editor una vez el video quede 'ready' (68.7, sección
+      // "Portada" más abajo) — la generación de un frame local ya no aplica
+      // con upload-first (cleanup P7 legacy, ver videoThumbnail.ts eliminado).
       Alert.alert('¡Publicada!', 'Tu propiedad ya está disponible en el feed.', [
         {
           text: 'Aceptar',
@@ -170,12 +164,16 @@ export default function Step3Screen() {
         },
       ]);
     }
-  }, [publish_hook, router, state.video_id, state.video_local_uri, video_player, is_edit_mode]);
+  }, [publish_hook, router]);
 
   // ── Derivados de estado ────────────────────────────────────────────────────
 
   const is_uploading = ui_status === 'uploading';
-  const is_success = ui_status === 'success';
+  // Contrato 68.4: el binario terminó de subir y quedó 'processing' en
+  // Cloudflare Stream (transcodificando) — nunca llega a 'success' en el
+  // cliente; 'ready' se resuelve por webhook (68.5). Se trata como el estado
+  // "listo para publicar" de esta pantalla.
+  const is_success = ui_status === 'processing';
   const is_error = ui_status === 'error';
   const has_video = local_uri !== null;
   const is_publishing = publish_status === 'submitting';
@@ -196,6 +194,12 @@ export default function Step3Screen() {
         </Text>
       </View>
 
+      {/* ── Contenido scrolleable (video + status + Portada en edit mode) ── */}
+      <ScrollView
+        style={styles.scroll_area}
+        contentContainerStyle={styles.scroll_content}
+        showsVerticalScrollIndicator={false}
+      >
       {/* ── Área de preview / picker ──────────────────────────────────── */}
       <View style={styles.video_area}>
         {has_video ? (
@@ -276,6 +280,16 @@ export default function Step3Screen() {
         )}
       </View>
 
+      {/* ── Portada del video (68.7) — solo edit mode, con video linkeado ── */}
+      {is_edit_mode && state.cloudflare_uid && (
+        <ThumbnailPicker
+          cloudflareUid={state.cloudflare_uid}
+          videoStatus={state.video_status ?? 'processing'}
+          initialPct={state.video_thumbnail_pct}
+        />
+      )}
+      </ScrollView>
+
       {/* ── CTA (fijo al fondo) ───────────────────────────────────────── */}
       <View style={styles.cta_area}>
         {is_publish_error && (
@@ -311,6 +325,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 8,
     paddingBottom: 16,
+  },
+
+  // ── Contenido scrolleable ────────────────────────────────────────────────
+  scroll_area: {
+    flex: 1,
+  },
+  scroll_content: {
+    paddingBottom: 100, // despeje del cta_area fijo (absolute) al fondo
   },
   page_title: {
     fontSize: 22,

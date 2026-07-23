@@ -59,17 +59,17 @@ export function validate_step2(state: PublishFormState): ValidationResult {
 }
 
 // ---------------------------------------------------------------------------
-// Step 3 — video_id y storage_path presentes (upload completado)
+// Step 3 — cloudflare_uid presente (upload a Cloudflare Stream completado).
+// 68.12 (upload-first): el gate real es cloudflare_uid — el video ya vive en
+// Stream antes de existir la propiedad (mint-upload-url, 68.4). storage_path
+// (Supabase Storage) es el flujo legado y ya no se exige aquí.
 // ---------------------------------------------------------------------------
 
 export function validate_step3(state: PublishFormState): ValidationResult {
   const errors: Record<string, string> = {};
 
-  if (!state.video_id) {
-    errors.video_id = 'El video es requerido';
-  }
-  if (!state.storage_path) {
-    errors.storage_path = 'El video no terminó de subirse';
+  if (!state.cloudflare_uid) {
+    errors.cloudflare_uid = 'El video no terminó de subirse';
   }
 
   return { valid: Object.keys(errors).length === 0, errors };
@@ -115,8 +115,7 @@ export function get_property_payload(state: PublishFormState): PublishFormPayloa
     state.price === null ||
     state.lat === null ||
     state.lng === null ||
-    !state.video_id ||
-    !state.storage_path
+    !state.cloudflare_uid
   ) {
     throw new Error(
       'get_property_payload: estado incompleto — valida los 3 pasos antes de llamar',
@@ -137,7 +136,6 @@ export function get_property_payload(state: PublishFormState): PublishFormPayloa
     allows_no_guarantor: state.allows_no_guarantor,
     student_friendly: state.student_friendly,
     description: state.description,
-    video_id: state.video_id,
-    storage_path: state.storage_path,
+    cloudflare_uid: state.cloudflare_uid,
   };
 }

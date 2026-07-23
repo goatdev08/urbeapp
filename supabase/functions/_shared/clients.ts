@@ -8,6 +8,7 @@
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { AwsClient } from "aws4fetch";
+import { importJWK, SignJWT } from "jose";
 import type { VideoUrlMinter } from "../mint-video-url/types.ts";
 import type {
   AgencyOwnershipVerifier,
@@ -33,6 +34,34 @@ import type {
   AgencyCreateResult,
   AgencyCreator,
 } from "./agency.ts";
+import type {
+  ActiveUploadChecker,
+  RegisterUploadingVideoParams,
+  StreamDirectUploadParams,
+  StreamDirectUploadResult,
+  StreamUploadCreator,
+  VideoRegistrar,
+} from "../mint-upload-url/types.ts";
+import type {
+  MarkVideoFailedParams,
+  MarkVideoReadyParams,
+  VideoEventNotifier,
+  VideoNotifyEvent,
+  VideoStatusUpdater,
+} from "../stream-webhook/types.ts";
+import type { HlsSignerConfig } from "../mint-video-url/types.ts";
+import type { ThumbnailUrlSigner } from "../mint-thumbnail-url/types.ts";
+import type { MintedPoster, PosterUrlMinter } from "../mint-poster-urls/types.ts";
+import type {
+  ArchivableVideoRow,
+  ArchiveUploader,
+  ArchiveUploadResult,
+  EnableDownloadResult,
+  MarkArchivedParams,
+  StreamArchiver,
+  VideoArchiver,
+  VideoLoader,
+} from "../archive-video/types.ts";
 
 /** Cliente supabase-js con service_role (bypassa RLS y column-grants). */
 export function service_client(): SupabaseClient {
@@ -243,12 +272,92 @@ export function make_redeemer(client: SupabaseClient): InvitationRedeemer {
 }
 
 /**
+ * Firma el JWT RS256 (sub=cloudflare_uid) y resuelve el dominio de Stream para
+ * una fila dada. Extraído de sign_stream_hls_url (68.15) para que el manifest
+ * HLS y el posterUrl del thumbnail reutilicen el MISMO token+dominio en vez de
+ * firmar dos veces — un solo JWT sirve para ambos endpoints de Stream.
+ * Lanza si streamSigningJwk no decodifica a un JWK RSA válido — el caller
+ * (mint_signed_urls) atrapa el error y excluye solo esa fila (fail-closed).
+ */
+async function sign_stream_token(
+  cloudflare_uid: string,
+  hlsConfig: HlsSignerConfig,
+): Promise<{ token: string; domain: string }> {
+  const jwk = JSON.parse(atob(hlsConfig.streamSigningJwk));
+  const private_key = await importJWK(jwk, "RS256");
+
+  const now = Math.floor(Date.now() / 1000);
+  const exp = now + hlsConfig.signedUrlTtlSeconds;
+
+  const token = await new SignJWT({
+    sub: cloudflare_uid,
+    kid: hlsConfig.streamSigningKeyId,
+  })
+    .setProtectedHeader({ alg: "RS256", kid: hlsConfig.streamSigningKeyId })
+    .setExpirationTime(exp)
+    .sign(private_key);
+
+  const domain = hlsConfig.streamCustomerSubdomain
+    ? `customer-${hlsConfig.streamCustomerSubdomain}.cloudflarestream.com`
+    : "videodelivery.net";
+
+  return { token, domain };
+}
+
+/**
+ * Arma la URL de manifest HLS de Stream a partir de un token+dominio ya
+ * firmados (sign_stream_token). No vuelve a firmar.
+ *
+ * ⚠️ CONTRATO DE CLOUDFLARE (verificado en vivo 2026-07-22, prueba E2E local):
+ * en un video con `requireSignedURLs=true` el **token va EN EL PATH, en lugar
+ * del uid** — NO como query param. `.../<uid>/manifest/video.m3u8?token=<JWT>`
+ * devuelve **401 unauthorized**; `.../<TOKEN>/manifest/video.m3u8` devuelve 200.
+ * El uid ya viaja dentro del JWT (claim `sub`), por eso no se repite en la ruta.
+ */
+function build_hls_url(domain: string, token: string): string {
+  return `https://${domain}/${token}/manifest/video.m3u8`;
+}
+
+/**
+ * Arma la URL de portada (thumbnail) firmada de Stream (68.15), reutilizando
+ * el token+dominio ya firmados por sign_stream_token (mismo JWT que el HLS).
+ * T = COALESCE(thumbnail_pct,50)/100 × duration_seconds, formateado .toFixed(1).
+ * Sin duration_seconds → sin '?time=' (Stream sirve su frame default).
+ *
+ * ⚠️ Mismo contrato que build_hls_url: el token va en el PATH (ver nota arriba).
+ */
+function build_poster_url(
+  domain: string,
+  token: string,
+  thumbnail_pct: number | null | undefined,
+  duration_seconds: number | null | undefined,
+): string {
+  const base = `https://${domain}/${token}/thumbnails/thumbnail.jpg`;
+  if (duration_seconds == null) {
+    return base;
+  }
+  const pct = thumbnail_pct ?? 50;
+  const time_seconds = (pct / 100) * duration_seconds;
+  return `${base}?time=${time_seconds.toFixed(1)}s`;
+}
+
+/**
  * Adaptador real de VideoUrlMinter. Opera con service_role (bypassa RLS);
  * los filtros SQL son la ÚNICA barrera de seguridad que impide mintar URLs
  * de propiedades no publicadas (draft/paused/closed) o videos no listos.
  * ponytail: batch degradado — errores de red/storage se excluyen sin lanzar.
+ *
+ * DUAL-REF (68.6): una fila con `cloudflare_uid` (no nulo) se firma como HLS
+ * de Stream (JWT RS256 vía `hlsConfig`); una fila sin `cloudflare_uid` pero con
+ * `storage_path` sigue la rama legacy de Supabase Storage. Si una fila tiene
+ * ambas refs, gana Stream (migración 20260720000002). Fail-closed: sin
+ * `hlsConfig` inyectado, o con `streamSigningJwk` inválido, la fila Stream se
+ * EXCLUYE del batch (no se lanza, no rompe las demás filas legacy).
  */
-export function make_video_url_minter(client: SupabaseClient): VideoUrlMinter {
+export function make_video_url_minter(
+  client: SupabaseClient,
+  hlsConfig?: HlsSignerConfig,
+): VideoUrlMinter {
   return {
     async mint_signed_urls(property_ids: string[]): Promise<import("../mint-video-url/types.ts").MintedVideo[]> {
       // Defensa: array vacío → no tocar la red
@@ -256,7 +365,9 @@ export function make_video_url_minter(client: SupabaseClient): VideoUrlMinter {
 
       const { data, error } = await client
         .from("property_videos")
-        .select("id, property_id, storage_path, properties!inner(status)")
+        .select(
+          "id, property_id, storage_path, cloudflare_uid, thumbnail_pct, duration_seconds, properties!inner(status)",
+        )
         .in("property_id", property_ids)
         .eq("status", "ready")
         .eq("properties.status", "active")
@@ -269,10 +380,40 @@ export function make_video_url_minter(client: SupabaseClient): VideoUrlMinter {
         id: string;
         property_id: string;
         storage_path: string | null;
+        cloudflare_uid?: string | null;
+        thumbnail_pct?: number | null;
+        duration_seconds?: number | null;
       }>;
 
       const results: import("../mint-video-url/types.ts").MintedVideo[] = [];
       for (const row of rows) {
+        // Precedencia dual-ref: cloudflare_uid gana sobre storage_path.
+        if (row.cloudflare_uid) {
+          if (!hlsConfig) continue; // fail-closed: sin config, excluir la fila Stream
+
+          try {
+            // Un solo JWT (sub=cloudflare_uid) firma AMBOS endpoints — manifest
+            // HLS y thumbnail — evitando una segunda llamada de firmado por fila.
+            const { token, domain } = await sign_stream_token(row.cloudflare_uid, hlsConfig);
+            const signed_url = build_hls_url(domain, token);
+            const posterUrl = build_poster_url(
+              domain,
+              token,
+              row.thumbnail_pct,
+              row.duration_seconds,
+            );
+            results.push({
+              property_id: row.property_id,
+              video_id: row.id,
+              signed_url,
+              posterUrl,
+            });
+          } catch {
+            // fail-closed: JWK inválido u otro error de firmado → excluir solo esta fila
+          }
+          continue;
+        }
+
         // Filas sin storage_path (path aún no registrado) → excluir sin llamar storage
         if (!row.storage_path) continue;
 
@@ -287,6 +428,8 @@ export function make_video_url_minter(client: SupabaseClient): VideoUrlMinter {
           property_id: row.property_id,
           video_id: row.id,
           signed_url: signed.signedUrl,
+          // El poster de Stream no aplica a filas legacy Storage: null explícito.
+          posterUrl: null,
         });
       }
 
@@ -378,6 +521,430 @@ export function make_r2_url_minter(): R2UrlMinter {
         items.push({ key, url, expires: ttl_seconds });
       }
       return items;
+    },
+  };
+}
+
+/**
+ * Adaptador real de ActiveUploadChecker (subtarea 68.3, invariante §13.2).
+ * Cuenta, con service_role, los videos del agente en 'uploading' o 'processing'
+ * (soft-delete excluido). El WHERE ... IN (...) es la barrera real: al fake de
+ * los tests solo le importa el count agregado.
+ */
+export function make_active_upload_checker(client: SupabaseClient): ActiveUploadChecker {
+  return {
+    async count_active_uploads(agent_id: string): Promise<number> {
+      const { count, error } = await client
+        .from("property_videos")
+        .select("id", { count: "exact", head: true })
+        .eq("agent_id", agent_id)
+        .in("status", ["uploading", "processing"])
+        .is("deleted_at", null);
+
+      if (error) {
+        // Fail-closed: un error de red/DB al chequear concurrencia no debe
+        // permitir un upload que quizás sí colisione — se trata como "hay 1".
+        return 1;
+      }
+      return count ?? 0;
+    },
+  };
+}
+
+/**
+ * Adaptador real de StreamUploadCreator (subtarea 68.3): Direct Creator Upload
+ * de Cloudflare Stream (POST simple, NO tus). Lanza si la respuesta no es 2xx
+ * o success:false — el handler lo traduce a 502 STREAM_UPLOAD_FAILED.
+ * Variables de entorno requeridas: STREAM_ACCOUNT_ID, STREAM_API_TOKEN.
+ */
+export function make_stream_upload_creator(): StreamUploadCreator {
+  return {
+    async create_direct_upload(
+      params: StreamDirectUploadParams,
+    ): Promise<StreamDirectUploadResult> {
+      const account_id = Deno.env.get("STREAM_ACCOUNT_ID");
+      const api_token = Deno.env.get("STREAM_API_TOKEN");
+      if (!account_id || !api_token) {
+        throw new Error("Faltan variables de entorno STREAM_ACCOUNT_ID/STREAM_API_TOKEN");
+      }
+
+      const res = await fetch(
+        `https://api.cloudflare.com/client/v4/accounts/${account_id}/stream/direct_upload`,
+        {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${api_token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            maxDurationSeconds: params.maxDurationSeconds,
+            requireSignedURLs: params.requireSignedURLs,
+            creator: params.creator,
+          }),
+        },
+      );
+
+      const json = await res.json();
+      if (!res.ok || json.success === false) {
+        throw new Error(
+          `Cloudflare Stream direct_upload falló: ${res.status} ${JSON.stringify(json.errors ?? json)}`,
+        );
+      }
+
+      return {
+        uploadURL: json.result.uploadURL,
+        uid: json.result.uid,
+      };
+    },
+  };
+}
+
+/**
+ * Adaptador real de VideoRegistrar (subtarea 68.3): inserta la fila
+ * 'uploading' upload-first (property_id NULL) con service_role.
+ */
+export function make_video_registrar(client: SupabaseClient): VideoRegistrar {
+  return {
+    async register_uploading_video(params: RegisterUploadingVideoParams): Promise<void> {
+      const { error } = await client.from("property_videos").insert({
+        agent_id: params.agent_id,
+        property_id: params.property_id,
+        status: params.status,
+        position: params.position,
+        cloudflare_uid: params.cloudflare_uid,
+        tus_upload_url: params.tus_upload_url,
+      });
+      if (error) {
+        throw new Error(`Insert en property_videos falló: ${error.message}`);
+      }
+    },
+  };
+}
+
+/**
+ * Adaptador real de VideoStatusUpdater (subtarea 68.5, webhook de Cloudflare Stream).
+ * Filtra SIEMPRE por cloudflare_uid (NUNCA por property_id: upload-first admite
+ * videos sin propiedad todavía) y excluye soft-deleted. `.select("id")` tras el
+ * UPDATE es lo que permite distinguir 0 filas afectadas (uid desconocido, o
+ * re-entrega de una transición ya aplicada) — la idempotencia vive en el conteo,
+ * no en un error: el handler responde 200 aunque affected_rows sea 0.
+ */
+export function make_video_status_updater(client: SupabaseClient): VideoStatusUpdater {
+  return {
+    async mark_ready(params: MarkVideoReadyParams): Promise<number> {
+      const { data, error } = await client
+        .from("property_videos")
+        .update({
+          status: "ready",
+          ready_at: new Date().toISOString(),
+          thumbnail_url: params.thumbnail_url,
+          duration_seconds: params.duration_seconds,
+        })
+        .eq("cloudflare_uid", params.cloudflare_uid)
+        .is("deleted_at", null)
+        .select("id");
+      if (error) {
+        throw new Error(`UPDATE property_videos (mark_ready) falló: ${error.message}`);
+      }
+      return data?.length ?? 0;
+    },
+    async mark_failed(params: MarkVideoFailedParams): Promise<number> {
+      const { data, error } = await client
+        .from("property_videos")
+        .update({ status: "failed", failure_reason: params.failure_reason })
+        .eq("cloudflare_uid", params.cloudflare_uid)
+        .is("deleted_at", null)
+        .select("id");
+      if (error) {
+        throw new Error(`UPDATE property_videos (mark_failed) falló: ${error.message}`);
+      }
+      return data?.length ?? 0;
+    },
+  };
+}
+
+/**
+ * Adaptador real de VideoEventNotifier (subtarea 68.5). Ola 0: SOLO el gancho —
+ * registra el evento con log estructurado. El envío real de push (FCM/APNs)
+ * llega en Ola 2 (notificaciones); no existe aún tabla/cola de notificaciones
+ * pendientes que valga la pena escribir para un evento que nadie consume todavía.
+ * ponytail: no-op observable (console.log) en vez de infraestructura prematura.
+ */
+export function make_video_event_notifier(): VideoEventNotifier {
+  return {
+    notify_video_event(event: VideoNotifyEvent, cloudflare_uid: string): Promise<void> {
+      console.log(JSON.stringify({ event, cloudflare_uid, at: new Date().toISOString() }));
+      return Promise.resolve();
+    },
+  };
+}
+
+/**
+ * Adaptador real de VideoLoader (subtarea 68.8): carga la fila a archivar por id,
+ * con service_role (bypassa RLS — la autorización de negocio vive en el handler,
+ * comparando agent_id contra el caller). Excluye soft-deleted.
+ */
+export function make_video_loader(client: SupabaseClient): VideoLoader {
+  return {
+    async load(property_video_id: string): Promise<ArchivableVideoRow | null> {
+      const { data, error } = await client
+        .from("property_videos")
+        .select("id, agent_id, cloudflare_uid, status")
+        .eq("id", property_video_id)
+        .is("deleted_at", null)
+        .maybeSingle();
+      if (error || !data) return null;
+      return data as ArchivableVideoRow;
+    },
+  };
+}
+
+/**
+ * Adaptador real de StreamArchiver (subtarea 68.8): habilita/descarga/borra el
+ * video original en Cloudflare Stream vía la Downloads API.
+ *
+ * ponytail: el shape exacto de la respuesta de la Stream Downloads API
+ * (`result.default.{status,percentComplete,url}`) se documenta en la API de
+ * Cloudflare pero no se pudo verificar en vivo en esta subtarea (credenciales
+ * bloqueadas, ver bitácora 68.8) — el mapeo de abajo sigue la doc pública; el
+ * seam bajo test es la interfaz StreamArchiver, no esta llamada real.
+ * Variables de entorno requeridas: STREAM_ACCOUNT_ID, STREAM_API_TOKEN.
+ */
+export function make_stream_archiver(): StreamArchiver {
+  function stream_headers(): Record<string, string> {
+    const api_token = Deno.env.get("STREAM_API_TOKEN");
+    if (!api_token) {
+      throw new Error("Falta la variable de entorno STREAM_API_TOKEN");
+    }
+    return { "Authorization": `Bearer ${api_token}` };
+  }
+
+  function account_id(): string {
+    const id = Deno.env.get("STREAM_ACCOUNT_ID");
+    if (!id) {
+      throw new Error("Falta la variable de entorno STREAM_ACCOUNT_ID");
+    }
+    return id;
+  }
+
+  return {
+    async enable_download(cloudflare_uid: string): Promise<EnableDownloadResult> {
+      const res = await fetch(
+        `https://api.cloudflare.com/client/v4/accounts/${account_id()}/stream/${cloudflare_uid}/downloads`,
+        { method: "POST", headers: stream_headers() },
+      );
+      const json = await res.json();
+      if (!res.ok || json.success === false) {
+        throw new Error(
+          `Cloudflare Stream enable_download falló: ${res.status} ${JSON.stringify(json.errors ?? json)}`,
+        );
+      }
+      const default_download = json.result?.default ?? {};
+      return {
+        state: default_download.status === "ready" ? "ready" : "inprogress",
+        url: default_download.url,
+        percentComplete: default_download.percentComplete !== undefined
+          ? Number(default_download.percentComplete)
+          : undefined,
+      };
+    },
+    async fetch_mp4(url: string): Promise<Uint8Array> {
+      const res = await fetch(url);
+      if (!res.ok) {
+        throw new Error(`Descarga del MP4 de Cloudflare Stream falló: ${res.status}`);
+      }
+      return new Uint8Array(await res.arrayBuffer());
+    },
+    async delete_video(cloudflare_uid: string): Promise<void> {
+      const res = await fetch(
+        `https://api.cloudflare.com/client/v4/accounts/${account_id()}/stream/${cloudflare_uid}`,
+        { method: "DELETE", headers: stream_headers() },
+      );
+      if (!res.ok) {
+        throw new Error(`Cloudflare Stream delete_video falló: ${res.status}`);
+      }
+    },
+  };
+}
+
+/**
+ * Adaptador real de ArchiveUploader (subtarea 68.8): firma un presigned PUT con
+ * make_r2_url_minter (mismo mecanismo que mint-r2-url, kind=archive) y sube los
+ * bytes descargados de Stream. Lanza si el PUT no es 2xx — el handler lo traduce
+ * a 502 R2_UPLOAD_FAILED.
+ */
+export function make_archive_uploader(): ArchiveUploader {
+  const R2_ARCHIVE_PUT_TTL_SECONDS = 15 * 60; // mismo TTL que mint-r2-url op=put
+
+  return {
+    async upload(key: string, body: Uint8Array): Promise<ArchiveUploadResult> {
+      const put_url = await make_r2_url_minter().sign_put(key, R2_ARCHIVE_PUT_TTL_SECONDS);
+      const res = await fetch(put_url, { method: "PUT", body: body as BodyInit });
+      if (!res.ok) {
+        throw new Error(`PUT a R2 falló: ${res.status}`);
+      }
+      return { ok: true, key };
+    },
+  };
+}
+
+/**
+ * Adaptador real de VideoArchiver (subtarea 68.8): escritura final tras el
+ * ordering seguro (R2 confirmado -> Stream borrado -> este UPDATE). Limpia
+ * cloudflare_uid (el video ya no vive en Stream) y deja el rastro en R2.
+ */
+export function make_video_archiver(client: SupabaseClient): VideoArchiver {
+  return {
+    async mark_archived(params: MarkArchivedParams): Promise<void> {
+      const { error } = await client
+        .from("property_videos")
+        .update({
+          status: "archived",
+          archived_at: new Date().toISOString(),
+          r2_archive_key: params.r2_archive_key,
+          cloudflare_uid: null,
+        })
+        .eq("id", params.property_video_id);
+      if (error) {
+        throw new Error(`UPDATE property_videos (mark_archived) falló: ${error.message}`);
+      }
+    },
+  };
+}
+
+/**
+ * Adaptador real de ThumbnailUrlSigner (subtarea 68.14): firma un JWT RS256
+ * para el token de thumbnail de Cloudflare Stream con la MISMA mecánica que
+ * sign_stream_hls_url (header { alg: RS256, kid }, payload { sub: cloudflare_uid,
+ * kid, exp }), cambiando solo la baseUrl a .../<uid>/thumbnails/thumbnail.jpg
+ * (en vez de .../manifest/video.m3u8). Lanza si streamSigningJwk no decodifica
+ * a un JWK RSA válido — el handler lo traduce a 500 INTERNAL_ERROR (fail-closed,
+ * nunca una URL/token a medias).
+ */
+export function make_thumbnail_url_signer(hlsConfig: HlsSignerConfig): ThumbnailUrlSigner {
+  return {
+    async sign(cloudflare_uid: string): Promise<import("../mint-thumbnail-url/types.ts").ThumbnailSignResult> {
+      const jwk = JSON.parse(atob(hlsConfig.streamSigningJwk));
+      const private_key = await importJWK(jwk, "RS256");
+
+      const now = Math.floor(Date.now() / 1000);
+      const exp = now + hlsConfig.signedUrlTtlSeconds;
+
+      const token = await new SignJWT({
+        sub: cloudflare_uid,
+        kid: hlsConfig.streamSigningKeyId,
+      })
+        .setProtectedHeader({ alg: "RS256", kid: hlsConfig.streamSigningKeyId })
+        .setExpirationTime(exp)
+        .sign(private_key);
+
+      const domain = hlsConfig.streamCustomerSubdomain
+        ? `customer-${hlsConfig.streamCustomerSubdomain}.cloudflarestream.com`
+        : "videodelivery.net";
+
+      // ⚠️ El token va EN EL PATH (contrato de Cloudflare para requireSignedURLs;
+      // verificado en vivo 2026-07-22: `/<uid>/...?token=` → 401, `/<token>/...` → 200).
+      // baseUrl queda listo para usarse: el cliente solo le agrega `?time=<N>s`.
+      return {
+        baseUrl: `https://${domain}/${token}/thumbnails/thumbnail.jpg`,
+        token,
+        expiresIn: hlsConfig.signedUrlTtlSeconds,
+      };
+    },
+  };
+}
+
+/** Fila cruda de la query property_videos ⋈ properties usada por make_poster_url_minter. */
+interface PosterVideoRow {
+  id: string;
+  property_id: string;
+  cloudflare_uid: string | null;
+  thumbnail_pct: number | null;
+  duration_seconds: number | null;
+  position: number;
+  properties:
+    | { owner_user_id: string; status: string }
+    | { owner_user_id: string; status: string }[]
+    | null;
+}
+
+/**
+ * Adaptador real de PosterUrlMinter (subtarea 89.1): batch de portadas firmadas
+ * (posterUrl) del grid de propiedades, con auth por-item combinada
+ * dueño-o-active. service_role bypassa RLS — el filtro de abajo, hecho en JS,
+ * es la ÚNICA barrera de seguridad (fail-closed, nunca se olvida).
+ *
+ * 1. Trae property_videos ⋈ properties!inner (owner_user_id, status) filtrando
+ *    status='ready' AND deleted_at IS NULL (de la fila del video) AND
+ *    properties.deleted_at IS NULL AND property_id IN (property_ids).
+ * 2. Por propiedad, se queda con el video de menor `position` (el primero).
+ * 3. Autoriza cada fila: owner_user_id === caller_id (cualquier status) O
+ *    status === 'active' (público). No autorizado → se OMITE.
+ * 4. Sin cloudflare_uid, sin hlsConfig, o error de firma (JWK inválido) →
+ *    se OMITE esa fila, SIN lanzar — el batch nunca se rompe por un item.
+ * 5. Firma reusando sign_stream_token/build_poster_url (mismo mecanismo que
+ *    make_video_url_minter, 68.15): token EN EL PATH, time =
+ *    COALESCE(thumbnail_pct,50)/100 × duration_seconds.
+ *
+ * ponytail: batch degradado — un error de red/DB en la query devuelve []
+ * en vez de lanzar, mismo patrón que make_video_url_minter.
+ */
+export function make_poster_url_minter(
+  client: SupabaseClient,
+  hlsConfig?: HlsSignerConfig,
+): PosterUrlMinter {
+  return {
+    async mint_posters(property_ids: string[], caller_id: string): Promise<MintedPoster[]> {
+      if (property_ids.length === 0) return [];
+
+      const { data, error } = await client
+        .from("property_videos")
+        .select(
+          "id, property_id, cloudflare_uid, thumbnail_pct, duration_seconds, position, properties!inner(owner_user_id, status, deleted_at)",
+        )
+        .in("property_id", property_ids)
+        .eq("status", "ready")
+        .is("deleted_at", null)
+        .is("properties.deleted_at", null)
+        .order("position", { ascending: true });
+
+      if (error) return [];
+
+      const rows = (data as unknown) as PosterVideoRow[];
+
+      // Primer video ready por propiedad = el de menor `position`.
+      const first_by_property = new Map<string, PosterVideoRow>();
+      for (const row of rows) {
+        const current = first_by_property.get(row.property_id);
+        if (!current || row.position < current.position) {
+          first_by_property.set(row.property_id, row);
+        }
+      }
+
+      const results: MintedPoster[] = [];
+      for (const row of first_by_property.values()) {
+        const raw_properties = row.properties;
+        const properties = (Array.isArray(raw_properties) ? raw_properties[0] : raw_properties) as
+          | { owner_user_id: string; status: string }
+          | undefined
+          | null;
+        if (!properties) continue;
+
+        const authorized = properties.owner_user_id === caller_id || properties.status === "active";
+        if (!authorized) continue;
+
+        if (!row.cloudflare_uid || !hlsConfig) continue;
+
+        try {
+          const { token, domain } = await sign_stream_token(row.cloudflare_uid, hlsConfig);
+          const posterUrl = build_poster_url(domain, token, row.thumbnail_pct, row.duration_seconds);
+          results.push({ property_id: row.property_id, posterUrl });
+        } catch {
+          // fail-closed: JWK inválido u otro error de firmado → excluir solo esta fila
+        }
+      }
+
+      return results;
     },
   };
 }

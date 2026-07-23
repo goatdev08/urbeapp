@@ -27,6 +27,7 @@ import { useState, useEffect } from 'react';
 
 import { supabase } from '@/lib/supabase/client';
 import { onPropertyDeleted } from '@/lib/propertyEvents';
+import { fetch_grid_posters } from '@/lib/gridPosters';
 import type { GridProperty } from '../types';
 
 // ---------------------------------------------------------------------------
@@ -95,6 +96,13 @@ export function usePropertiesGrid(owner_user_id: string): UsePropertiesGridState
         return;
       }
 
+      // Portadas firmadas de Stream (89.1/89.2) — batch por los ids de esta página,
+      // fail-soft: Map vacío si la EF falla, no rompe la grilla.
+      const ids = (rows ?? []).map((row) => row.id);
+      const poster_map = await fetch_grid_posters(supabase, ids);
+
+      if (ignore) return;
+
       // Mapear cada fila al tipo GridProperty extrayendo el primer video.
       const properties: GridProperty[] = (rows ?? []).map((row) => {
         // property_videos llega como array (1-N embebido).
@@ -116,6 +124,7 @@ export function usePropertiesGrid(owner_user_id: string): UsePropertiesGridState
           published_at: row.published_at,
           thumbnail_url: first_video?.thumbnail_url ?? null,
           storage_path: first_video?.storage_path ?? null,
+          posterUrl: poster_map.get(row.id) ?? null,
         };
       });
 

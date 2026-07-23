@@ -69,13 +69,15 @@ function format_price(n: number): string {
 // React.memo: en grillas con RefreshControl/quitado optimista, cada setState del
 // padre re-renderizaba todas las celdas; con memo solo re-renderiza la que cambia.
 export const PropertyGridCard = React.memo(function PropertyGridCard({ item, onPress, onLongPress }: PropertyGridCardProps): React.JSX.Element {
-  const { price, operation_type, property_type, status, address, thumbnail_url } = item;
+  const { price, operation_type, property_type, status, address, thumbnail_url, posterUrl } = item;
 
   const is_paused    = status === 'paused';
   const is_sale      = operation_type === 'sale' || operation_type === 'both';
   const op_label     = OPERATION_LABEL[operation_type] ?? operation_type;
   const prop_label   = PROPERTY_TYPE_LABEL[property_type] ?? property_type;
   const show_per_mes = operation_type === 'rent' || operation_type === 'both';
+  /** Portada: URL firmada de Stream si está disponible, si no el thumbnail legacy. */
+  const cover_uri    = posterUrl ?? thumbnail_url;
 
   return (
     <Pressable
@@ -93,9 +95,9 @@ export const PropertyGridCard = React.memo(function PropertyGridCard({ item, onP
 
         {/* ── Media ──────────────────────────────────────────────────────────── */}
         <View style={styles.media}>
-          {thumbnail_url !== null ? (
+          {cover_uri !== null ? (
             <Image
-              source={{ uri: thumbnail_url }}
+              source={{ uri: cover_uri }}
               style={StyleSheet.absoluteFill}
               contentFit="cover"
               transition={200}

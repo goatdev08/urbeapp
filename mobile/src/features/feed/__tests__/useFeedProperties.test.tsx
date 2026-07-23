@@ -59,6 +59,7 @@ function make_feed_property(
     },
     signed_url: `https://cdn.urbea.app/signed/${id}.mp4`,
     video_id: `video-${id}`,
+    posterUrl: null,
     ...overrides,
   };
 }
