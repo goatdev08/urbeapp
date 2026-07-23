@@ -854,23 +854,97 @@ export function make_thumbnail_url_signer(hlsConfig: HlsSignerConfig): Thumbnail
   };
 }
 
+/** Fila cruda de la query property_videos ⋈ properties usada por make_poster_url_minter. */
+interface PosterVideoRow {
+  id: string;
+  property_id: string;
+  cloudflare_uid: string | null;
+  thumbnail_pct: number | null;
+  duration_seconds: number | null;
+  position: number;
+  properties:
+    | { owner_user_id: string; status: string }
+    | { owner_user_id: string; status: string }[]
+    | null;
+}
+
 /**
- * STUB — subtarea 89.1 (fase RED). Adapter real de PosterUrlMinter: batch de
- * portadas firmadas con auth por-item (dueño-o-active), fail-closed por item.
- * Sin lógica de negocio todavía: únicamente hace que
- * _shared/poster_url_minter.test.ts falle por aserción/excepción en vez de por
- * import roto. La implementación real (query property_videos⋈properties,
- * primer video ready por position, auth owner-o-active, firma reusando
- * sign_stream_token/build_poster_url) llega en GREEN.
+ * Adaptador real de PosterUrlMinter (subtarea 89.1): batch de portadas firmadas
+ * (posterUrl) del grid de propiedades, con auth por-item combinada
+ * dueño-o-active. service_role bypassa RLS — el filtro de abajo, hecho en JS,
+ * es la ÚNICA barrera de seguridad (fail-closed, nunca se olvida).
+ *
+ * 1. Trae property_videos ⋈ properties!inner (owner_user_id, status) filtrando
+ *    status='ready' AND deleted_at IS NULL (de la fila del video) AND
+ *    properties.deleted_at IS NULL AND property_id IN (property_ids).
+ * 2. Por propiedad, se queda con el video de menor `position` (el primero).
+ * 3. Autoriza cada fila: owner_user_id === caller_id (cualquier status) O
+ *    status === 'active' (público). No autorizado → se OMITE.
+ * 4. Sin cloudflare_uid, sin hlsConfig, o error de firma (JWK inválido) →
+ *    se OMITE esa fila, SIN lanzar — el batch nunca se rompe por un item.
+ * 5. Firma reusando sign_stream_token/build_poster_url (mismo mecanismo que
+ *    make_video_url_minter, 68.15): token EN EL PATH, time =
+ *    COALESCE(thumbnail_pct,50)/100 × duration_seconds.
+ *
+ * ponytail: batch degradado — un error de red/DB en la query devuelve []
+ * en vez de lanzar, mismo patrón que make_video_url_minter.
  */
 export function make_poster_url_minter(
-  _client: SupabaseClient,
-  _hlsConfig?: HlsSignerConfig,
+  client: SupabaseClient,
+  hlsConfig?: HlsSignerConfig,
 ): PosterUrlMinter {
   return {
-    // deno-lint-ignore require-await
-    async mint_posters(_property_ids: string[], _caller_id: string): Promise<MintedPoster[]> {
-      throw new Error("not_implemented");
+    async mint_posters(property_ids: string[], caller_id: string): Promise<MintedPoster[]> {
+      if (property_ids.length === 0) return [];
+
+      const { data, error } = await client
+        .from("property_videos")
+        .select(
+          "id, property_id, cloudflare_uid, thumbnail_pct, duration_seconds, position, properties!inner(owner_user_id, status, deleted_at)",
+        )
+        .in("property_id", property_ids)
+        .eq("status", "ready")
+        .is("deleted_at", null)
+        .is("properties.deleted_at", null)
+        .order("position", { ascending: true });
+
+      if (error) return [];
+
+      const rows = (data as unknown) as PosterVideoRow[];
+
+      // Primer video ready por propiedad = el de menor `position`.
+      const first_by_property = new Map<string, PosterVideoRow>();
+      for (const row of rows) {
+        const current = first_by_property.get(row.property_id);
+        if (!current || row.position < current.position) {
+          first_by_property.set(row.property_id, row);
+        }
+      }
+
+      const results: MintedPoster[] = [];
+      for (const row of first_by_property.values()) {
+        const raw_properties = row.properties;
+        const properties = (Array.isArray(raw_properties) ? raw_properties[0] : raw_properties) as
+          | { owner_user_id: string; status: string }
+          | undefined
+          | null;
+        if (!properties) continue;
+
+        const authorized = properties.owner_user_id === caller_id || properties.status === "active";
+        if (!authorized) continue;
+
+        if (!row.cloudflare_uid || !hlsConfig) continue;
+
+        try {
+          const { token, domain } = await sign_stream_token(row.cloudflare_uid, hlsConfig);
+          const posterUrl = build_poster_url(domain, token, row.thumbnail_pct, row.duration_seconds);
+          results.push({ property_id: row.property_id, posterUrl });
+        } catch {
+          // fail-closed: JWK inválido u otro error de firmado → excluir solo esta fila
+        }
+      }
+
+      return results;
     },
   };
 }
