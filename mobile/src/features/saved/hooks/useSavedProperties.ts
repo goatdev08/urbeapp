@@ -22,6 +22,7 @@ import { useState, useEffect, useCallback } from 'react';
 
 import { useAuth } from '@/features/auth/context';
 import { onPropertyDeleted } from '@/lib/propertyEvents';
+import { fetch_grid_posters } from '@/lib/gridPosters';
 import type { GridProperty } from '@/features/profile/types';
 
 // ---------------------------------------------------------------------------
@@ -113,6 +114,11 @@ export function useSavedProperties(deps?: { supabase?: any }): UseSavedPropertie
       (row): row is { properties: PropertyEmbed } => row.properties !== null,
     );
 
+    // Portadas firmadas de Stream (89.1/89.2) — batch por los ids de esta página,
+    // fail-soft: Map vacío si la EF falla, no rompe la lista.
+    const ids = valid_rows.map((row) => row.properties.id);
+    const poster_map = await fetch_grid_posters(get_client(), ids);
+
     // Transform: embed → GridProperty
     const mapped: GridProperty[] = valid_rows.map(({ properties: p }) => {
       // EC-4a: thumbnail = video con menor position (sort ASC, tomar [0]).
@@ -136,6 +142,7 @@ export function useSavedProperties(deps?: { supabase?: any }): UseSavedPropertie
         thumbnail_url: first_video?.thumbnail_url ?? null,
         // ponytail: storage_path no solicitado en el embed de saves.
         storage_path: null,
+        posterUrl: poster_map.get(p.id) ?? null,
       };
     });
 

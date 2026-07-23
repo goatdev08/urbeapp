@@ -14,7 +14,7 @@
  *     red → Map vacío, NUNCA lanza (la lista de propiedades no debe romperse
  *     por falta de portada).
  *
- * STUB — subtarea 89.2 (Taskmaster). Fase RED: solo signature, sin lógica.
+ * GREEN — subtarea 89.2 (Taskmaster).
  */
 
 interface SupabaseFunctionsClient {
@@ -26,9 +26,28 @@ interface SupabaseFunctionsClient {
   };
 }
 
+interface MintPosterUrlsData {
+  posters: { property_id: string; posterUrl: string }[];
+}
+
 export async function fetch_grid_posters(
-  _supabase: SupabaseFunctionsClient,
-  _property_ids: string[],
+  supabase: SupabaseFunctionsClient,
+  property_ids: string[],
 ): Promise<Map<string, string>> {
-  throw new Error('not_implemented');
+  if (property_ids.length === 0) return new Map();
+
+  try {
+    const { data, error } = await supabase.functions.invoke('mint-poster-urls', {
+      body: { property_ids },
+    });
+
+    if (error) return new Map();
+
+    const posters = (data as MintPosterUrlsData | null)?.posters;
+    if (!posters) return new Map();
+
+    return new Map(posters.map((p) => [p.property_id, p.posterUrl]));
+  } catch {
+    return new Map();
+  }
 }
