@@ -51,6 +51,7 @@ import type {
 } from "../stream-webhook/types.ts";
 import type { HlsSignerConfig } from "../mint-video-url/types.ts";
 import type { ThumbnailUrlSigner } from "../mint-thumbnail-url/types.ts";
+import type { MintedPoster, PosterUrlMinter } from "../mint-poster-urls/types.ts";
 import type {
   ArchivableVideoRow,
   ArchiveUploader,
@@ -849,6 +850,27 @@ export function make_thumbnail_url_signer(hlsConfig: HlsSignerConfig): Thumbnail
         token,
         expiresIn: hlsConfig.signedUrlTtlSeconds,
       };
+    },
+  };
+}
+
+/**
+ * STUB — subtarea 89.1 (fase RED). Adapter real de PosterUrlMinter: batch de
+ * portadas firmadas con auth por-item (dueño-o-active), fail-closed por item.
+ * Sin lógica de negocio todavía: únicamente hace que
+ * _shared/poster_url_minter.test.ts falle por aserción/excepción en vez de por
+ * import roto. La implementación real (query property_videos⋈properties,
+ * primer video ready por position, auth owner-o-active, firma reusando
+ * sign_stream_token/build_poster_url) llega en GREEN.
+ */
+export function make_poster_url_minter(
+  _client: SupabaseClient,
+  _hlsConfig?: HlsSignerConfig,
+): PosterUrlMinter {
+  return {
+    // deno-lint-ignore require-await
+    async mint_posters(_property_ids: string[], _caller_id: string): Promise<MintedPoster[]> {
+      throw new Error("not_implemented");
     },
   };
 }
