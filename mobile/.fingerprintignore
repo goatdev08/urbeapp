@@ -1,0 +1,12 @@
+# Excluye del fingerprint (runtime version OTA) dos paquetes cuyo directorio
+# hashea distinto en macOS (tu Mac) que en el Linux de EAS, aunque la versión y
+# el contenido del tarball de npm sean idénticos. Eso rompía TODO build con
+# "Runtime version mismatch" en la fase CONFIGURE_EXPO_UPDATES (2026-07-23, #65.5).
+# Descartados como causa: versión de pnpm (se fijó packageManager y EAS ya usa
+# 11.1.3, mismo hash), artefactos android/build locales, lockfile, .DS_Store.
+# Seguro: un cambio de versión de estos paquetes igual mueve el fingerprint por
+# package.json/lockfile, que sí se hashean.
+node_modules/@react-native-masked-view/masked-view
+node_modules/@react-native-masked-view/masked-view/**
+node_modules/react-native-maps
+node_modules/react-native-maps/**

@@ -2,6 +2,7 @@
   "name": "mobile",
   "version": "1.0.2",
   "main": "expo-router/entry",
+  "packageManager": "pnpm@11.1.3",
   "dependencies": {
     "@expo-google-fonts/hanken-grotesk": "^0.4.3",
     "@expo-google-fonts/outfit": "^0.4.3",
