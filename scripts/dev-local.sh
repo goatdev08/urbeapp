@@ -41,4 +41,6 @@ echo
 echo "📱 Teléfono en la MISMA Wi-Fi. Abre el dev-client y apúntalo a:  http://$IP:8081"
 echo "   Backend de la app:  http://$IP:54321"
 echo
-exec pnpm --dir mobile expo start --dev-client --host lan
+# `cd`, no `pnpm --dir/-C`: bajo pnpm 11 esos flags no se parsean aquí y toma "mobile" como el comando.
+cd mobile
+exec pnpm expo start --dev-client --host lan

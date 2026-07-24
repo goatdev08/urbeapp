@@ -20,6 +20,10 @@ Stack, capas y lineamientos. Fuente: `docs/lineamientos-desarrollo.md`. Schema o
 - Triggers → solo atómicos (updated_at, integridad). Nada de orquestación.
 - Cliente → UI, validaciones UX, navegación.
 
+## Entornos y entrega
+- [[entornos-desarrollo]] — las **tres ramas** (local · preview · production): contra qué backend corre la app y cómo se levanta cada emulador (Android/iOS/teléfono)
+- [[estrategia-releases]] — OTA vs rebuild, fingerprint, canales EAS
+
 ## Puente al código
 - [[mapa-codebase]] — concepto → archivos
 - [[db-schema-map]] — tabla → migración

@@ -4827,9 +4827,20 @@
             "subtasks": [],
             "updatedAt": "2026-07-22T00:43:37.680Z",
             "parentId": "undefined"
+          },
+          {
+            "id": 16,
+            "title": "Fix: localizeSignedUrl rompe las URLs de Cloudflare Stream (404 en feed y detalle)",
+            "description": "",
+            "details": "<info added on 2026-07-24T19:53:05.877Z>\nBased on my analysis of the codebase, here is the new text for the subtask details:\n\n---\n\n**Plan: RED → GREEN**\n\n**Root Cause (confirmed via archaeology):**  \nCommit `829ab55` (2026-06-29) introduced `localizeSignedUrl` helper (`mobile/src/lib/localizeSignedUrl.ts`) to rewrite Supabase Storage URLs for local dev: replace Docker-internal `kong:8000` origin with host-reachable endpoint. This was correct when video came from Supabase Storage (same origin as API).\n\n**Regression:** Task #68 migrated video to Cloudflare Stream (`videodelivery.net`). No one audited the helper—it now blindly rewrites ALL signed URLs, including `videodelivery.net → supabase origin → 404`. Breaks local AND remote environments (masked by 402 paywall in #68.14).\n\n**Fix Strategy:**  \nScope rewrite to ONLY Docker-internal hosts (`kong`, `supabase-kong`, `127.0.0.1:54321/storage`). Leave external origins (`videodelivery.net`, `stream.cloudflare.com`) untouched.\n\n**Implementation:**\n1. **RED:** Write Deno tests for `localizeSignedUrl`:\n   - Supabase Storage URL with kong → rewritten to localhost\n   - Cloudflare Stream URL → passed through unchanged\n   - External HTTPS URL → passed through unchanged\n   - Edge case: malformed URL → handled gracefully\n   \n   Tests file: `mobile/src/lib/__tests__/localizeSignedUrl.test.ts` (Vitest setup already exists per `mobile/vite.config.ts`)\n\n2. **GREEN:** Update `localizeSignedUrl` logic:\n   - Parse URL, check if hostname matches Docker-internal patterns\n   - Only rewrite if match found (kong/supabase-kong/127.0.0.1 storage endpoint)\n   - Return original URL otherwise\n   \n   Files: `mobile/src/lib/localizeSignedUrl.ts`\n\n3. **Guardian:** Run `pnpm tsc --noEmit` + `pnpm test` (Vitest). Verify feed/detail screens render Cloudflare videos in local dev.\n\n**Criticality:** CRITICAL (lógica pura en `mobile/src/lib/`) → TDD estricto required per §5 rules.\n</info added on 2026-07-24T19:53:05.877Z>\n<info added on 2026-07-24T19:57:49.845Z>\nBased on the user request and task context, here is the new text that should be appended to the subtask's details:\n\n---\n\n**DONE: RED → GREEN → verified in emulator**\n\n**Files modified:**\n- `mobile/src/lib/supabase/localizeSignedUrl.ts` — added `STORAGE_URL_RE` regex pattern to scope rewrite to ONLY Supabase Storage URLs (`/storage/v1/` path). All other origins (Cloudflare Stream, external HTTPS) now pass through unchanged.\n- `mobile/src/lib/supabase/__tests__/localizeSignedUrl.test.ts` — NEW FILE (7 tests, none existed before). Covers: Supabase Storage URLs with kong/supabase-kong/127.0.0.1 → rewritten; Cloudflare Stream URLs → unchanged; external HTTPS → unchanged; malformed URL → graceful handling.\n\n**Root cause confirmed (git archaeology):**  \nCommit `829ab55` (2026-06-29) created helper to rewrite Docker-internal origins (`kong:8000` → host-reachable endpoint) for local EF. **Premise:** video lived in Supabase Storage = same origin as API; commit comment said \"no-op in remote\". Task #68 (commit `3bdaf11`) migrated video to Cloudflare Stream, updated `feedProperties.ts` but **NOT the helper** → premise broke. Helper blindly rewrote `videodelivery.net` URLs → Supabase origin → HTTP 404.\n\n**Blast radius:** Local AND remote (remote became `https://<ref>.supabase.co/<token>/manifest/video.m3u8`). 402 gateway error masked it; poster thumbnails kept loading (`posterUrl` doesn't pass through helper) → appeared \"almost working\".\n\n**Fix scope:** Localize ONLY Supabase Storage URLs (path `/storage/v1/`), leave all other origins intact. Preserves helper's reason-to-exist (legacy videos in Storage, live branch `mint-video-url`).\n\n**Verification:**\n- Jest: 708/708 passed (65 suites)\n- TypeScript: 0 errors\n- Lint: 0 errors\n- Android emulator (owner.gdl@urbea.demo): logcat shows `state=PLAYING(3) position=9148 buffered=20045 error=null`, 0 HTTP 404 responses, 0 \"Source error\". Before: `ExoPlaybackException Source error / Response code 404`.\n\n**Flow lesson:** Local-only patch mutating data bound for production, no tests, no smoke in preview/production. See environment review discussion.\n</info added on 2026-07-24T19:57:49.845Z>",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 68,
+            "updatedAt": "2026-07-24T19:57:56.614Z",
+            "parentId": "undefined"
           }
         ],
-        "updatedAt": "2026-07-22T00:43:37.680Z"
+        "updatedAt": "2026-07-24T19:57:56.614Z"
       },
       {
         "id": "69",
@@ -6414,7 +6425,7 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-07-24T00:58:51.931Z",
+      "lastModified": "2026-07-24T19:57:56.614Z",
       "taskCount": 89,
       "completedCount": 58,
       "tags": [

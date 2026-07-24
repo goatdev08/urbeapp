@@ -100,3 +100,16 @@ Suite E2E declarativa contra **Supabase local con seed** (determinista) + emulad
 - `helpers/launch.yaml` / `helpers/login.yaml` — arranque endurecido (deep link `10.0.2.2:8081`, dev menu condicional, apagar burbuja "Tools button") + login parametrizado por `EMAIL`.
 
 Gotchas Maestro (durables, aprendidos el 2026-07-04): matcheo de texto = **regex de elemento completo** (substring → `.*x.*`; paréntesis escapan); `hideKeyboard` manda BACK si el teclado ya se cerró (**prohibido en la suite** — tap en texto estático); inputs controlados RN pierden el primer `inputText` tras cargar el bundle (patrón retry + assert del texto); el photo picker sincroniza perezoso (`force-stop com.google.android.providers.media.module` tras `adb push` a DCIM; anclar el video por su duración `00:52`); el seed escalona `created_at` (1º del feed = prop0A) y siembra token `DEMO2026` + phones de agentes. testIDs: `login-email/password`, `register-*`, `map-picker`. → [[propiedades-y-video]], [[crm-leads]]
+
+## Entornos de desarrollo — scripts de arranque (`scripts/`)
+
+Un comando levanta el entorno local completo (stack Supabase + Edge Functions contra Cloudflare Stream **real** + Metro). Los tres son equivalentes y **solo difieren en cómo el dispositivo alcanza a la Mac**. `--stop` en cualquiera baja stack y functions. Detalle y riesgos en [[entornos-desarrollo]].
+
+- `scripts/dev-emu.sh` — **emulador Android**. `adb reverse` de `8081` (Metro) y `54321` (Supabase) → la app usa `localhost`, inmune a la Wi-Fi/IP.
+- `scripts/dev-ios.sh [simulador]` — **simulador iOS** (default `iPhone 17 Pro`). El simulador comparte la red del Mac → `localhost` directo, sin túnel. Avisa y sale si falta el dev-client.
+- `scripts/dev-local.sh` — **teléfono real**. Recalcula la IP de la LAN en cada corrida y la escribe en `mobile/.env.local`.
+- `mobile/scripts/emu.sh` (`pnpm emu`) — solo emulador + Metro, **sin** backend local. Anterior a los de arriba; útil cuando `.env.local` ya apunta al remoto.
+
+⚠️ Los scripts **reescriben `EXPO_PUBLIC_SUPABASE_URL` en `mobile/.env.local`** (localhost vs IP de la LAN) → corre uno u otro, no dos a la vez. El dev-client debe estar instalado: `pnpm expo run:android` / `pnpm expo run:ios` una vez.
+
+Gotchas durables: `pnpm --dir mobile`/`-C mobile` **NO funciona** bajo pnpm 11 (toma `mobile` como el comando → `ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL`) → usar `cd mobile && pnpm …`. El deep link del dev-client debe dispararse **después** de que Metro responda, si no la app arranca con "unexpected end of stream". → [[entornos-desarrollo]]
