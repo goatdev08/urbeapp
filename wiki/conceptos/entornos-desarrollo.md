@@ -64,14 +64,34 @@ Ver [[estrategia-releases]]: cambio de JS → `cd mobile && pnpm ota "<msg>"`; c
 1. **`preview` y `production` apuntan al MISMO proyecto Supabase** (`urbea-app`), con las
    mismas keys. No hay aislamiento: lo que un tester crea entra a la misma base que
    producción. Aceptable en beta cerrada; **hay que separarlo antes de cobrar** (Ola 4).
-2. **El entorno `development` de EAS está incompleto**: solo tiene `GOOGLE_MAPS_API_KEY`; le
-   faltan las 3 `EXPO_PUBLIC_*`. Hoy no duele porque el dev-client toma su JS (y sus vars) de
-   Metro vía `.env.local`, pero un build `development` sin Metro se queda sin backend.
+2. ~~El entorno `development` de EAS está incompleto~~ — **FALSO, corregido el 2026-07-25.**
+   Que solo tenga `GOOGLE_MAPS_API_KEY` es **correcto por diseño**, no un hueco:
+   `mobile/app.config.js` es el único que lee `process.env` en tiempo de build (línea 40) y esa
+   llave se hornea en el **manifiesto nativo**, así que tiene que estar en EAS. Las 3
+   `EXPO_PUBLIC_*` se **inlinean en el bundle de JS**, y en un dev-client ese bundle lo sirve
+   **Metro** leyendo `mobile/.env.local`. Por eso las demos y los previews siempre funcionaron.
+   - 🔴 El riesgo real es otro: el prefijo `EXPO_PUBLIC_` significa **"cualquiera puede leerlo
+     en el bundle"**. Y hoy en EAS `EXPO_PUBLIC_GOOGLE_PLACES_API_KEY` y `GOOGLE_MAPS_API_KEY`
+     tienen **exactamente el mismo valor** → la llave de Maps queda expuesta. Partirlas en dos y
+     restringir cada una por app/API es la **tarea #36**.
 3. **`.env.local` es un interruptor mutable y silencioso**: los scripts lo reescriben
    (`localhost` vs IP de la LAN). Correr dos scripts distintos deja el archivo apuntando al
    último. Es el diseño elegido (un solo archivo, cero ceremonia), pero conviene saberlo.
 4. **No existe una compuerta de smoke contra preview/production.** Es lo que dejó pasar el bug
    de abajo.
+5. 💰 **Un emulador olvidado con el feed abierto factura solo.** El feed reproduce en **loop**:
+   dejar la app abierta en un emulador (peor aún, en dos a la vez) consume cuota real de forma
+   continua, sin que nadie lo esté viendo. **Así se quemó el egress de Supabase** que hoy tiene
+   al proyecto en **402** — en la era del MP4 servido desde Storage, cada loop bajaba el archivo
+   completo otra vez.
+   - ⚠️ **Post-#68 cambió la factura, no el problema.** El video ya no sale de Supabase sino de
+     **Cloudflare Stream**, así que el egress de Supabase ya no se toca; ahora se cobran
+     **minutos entregados de Stream**. Más barato, pero igual de silencioso.
+   - **Regla de trabajo:** en testing, verificar que reproduce y **parar** — no dejarlo corriendo.
+     Mandar la app a segundo plano basta (`expo-video` pausa al perder foco): Android
+     `adb shell input keyevent 3`, iOS `xcrun simctl terminate <udid> com.urbea.app`. Todo flujo
+     de Maestro que abra el feed debe **terminar en `stopApp`** — no en un tap, que alterna
+     play/pausa y puede dejarlo corriendo.
 
 ## ⚠️ Lección: el bug de `localizeSignedUrl` (#68.16, 2026-07-24)
 

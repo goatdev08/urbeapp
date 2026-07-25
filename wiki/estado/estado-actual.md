@@ -1,11 +1,20 @@
 ---
 tipo: estado
-actualizado: 2026-07-21
+actualizado: 2026-07-25
 ---
 
 # Estado actual
 
 > Narrativa de "dónde estamos hoy". El **qué sigue / qué está hecho** vive en **Taskmaster** (`task-master list`), no aquí.
+
+## Hoy (2026-07-25)
+
+- **✅ #68 — Épica B CERRADA (Cloudflare Stream).** El video del feed vive en Stream y **está verificado reproduciendo en Android y en iOS**. El desbloqueo real vino de #68.16 (2026-07-24): Abraham reportó que el video no reproducía como owner; la causa era `localizeSignedUrl`, un parche **solo-local** de junio que reescribía el origin de *cualquier* URL firmada — correcto mientras el video vivía en Storage (mismo origin que la API), letal cuando #68 lo movió a `videodelivery.net`. Rompía **local y remoto**; el 402 tapó el smoke remoto y la portada seguía cargando, así que parecía "casi funcionando". Con eso resuelto, **68.10 se partió**: la mitad local se cerró (reproducción en ambas plataformas, detalle, portada firmada con origin intacto, 0 errores 404) y el E2E remoto salió como **tarea #90** de deploy-day.
+- **🧠 OOM #57 — resuelto de raíz, con número.** La causa era bufferear MP4 crudo; con HLS el player pide segmentos. Medido con 11 items y **4 players vivos** (el escenario exacto del crash): heap Java **40 → 46 MB**, plano, contra **107–117 MB** de la era MP4 y un techo de crash de **192 MB**. Los caps de #57 se quedan como defensa en profundidad. Fixture reusable en `supabase/scripts/smoke-oom-fixture.sql` (+teardown) — la cuenta de Stream tiene **un solo video**, así que sin fixture el feed monta 1 player y no reproduce el escenario.
+- **💰 Regla nueva que explica el 402 (la aportó Abraham).** El feed reproduce en **loop**: un emulador olvidado con el feed abierto **quema cuota sin que nadie mire** — así se consumió el egress de Supabase. Post-#68 cambió la factura, no el problema: ahora se cobran **minutos entregados de Cloudflare Stream**. En testing: verificar que reproduce y **parar**; todo flujo Maestro que abra el feed termina en `stopApp`.
+- **🛠️ Las tres ramas de entorno, documentadas y con arranque de un comando** (#68.16, 2026-07-24): concepto [[entornos-desarrollo]] + `scripts/dev-emu.sh` (Android), **`scripts/dev-ios.sh` (nuevo)** y `scripts/dev-local.sh` (teléfono). Y el **primer flujo Maestro de iOS** del repo (`mobile/.maestro/ios/feed-hls.yaml`), fuera del glob de la suite Android.
+- **📍 Dónde queda la ruta crítica.** #68 cerrada quita **uno de los cuatro** candados de **#73** (Publicación completa); siguen pendientes **#71** (roles y multi-tenant) y **#76** (modelo de datos de pagos). El siguiente movimiento natural es planear una de esas dos — o los prototipos de onboarding/secciones nuevas, que no dependen de nada.
+- ⚠️ **Bloqueantes externos vivos (acción de Abraham), ahora concentrados en la tarea #90:** el **402** del gateway remoto; **webhook de Stream sin registrar** (falta `STREAM_WEBHOOK_SECRET`); **par R2 desajustado** (403); y **rotar de verdad las credenciales de Cloudflare** expuestas. Aparte, **#36**: en EAS `EXPO_PUBLIC_GOOGLE_PLACES_API_KEY` y `GOOGLE_MAPS_API_KEY` guardan **la misma llave** → la de Maps queda expuesta en el bundle.
 
 ## Hoy (2026-07-21)
 

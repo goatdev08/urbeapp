@@ -1,0 +1,85 @@
+# feed-hls.yaml — smoke de paridad iOS (subtarea 68.10).
+# Verifica que expo-video reproduce el HLS FIRMADO de Cloudflare Stream en el
+# simulador, entrando como owner. Nació al comprobar #68: hasta entonces la
+# única verificación de reproducción era Android.
+#
+# Vive en `ios/` a propósito: `config.yaml` declara `flows: ["*.yaml"]`, que solo
+# matchea el nivel superior. Así este flujo NO entra en la suite de run-e2e.sh
+# (que corre contra el emulador Android) y no la rompe.
+#
+# Prerrequisitos: stack local arriba + Metro (./scripts/dev-ios.sh) y el
+# dev-client instalado en el simulador (cd mobile && pnpm expo run:ios).
+#
+# Uso:
+#   UDID=$(xcrun simctl list devices booted | grep -oE '[0-9A-F-]{36}' | head -1)
+#   JAVA_HOME=/opt/homebrew/opt/openjdk@17 \
+#     maestro --device "$UDID" test mobile/.maestro/ios/feed-hls.yaml
+#
+# Nota iOS: el permiso de ubicación usa `inuse` (en Android es `allow`); con
+# `allow` Maestro aborta con "wrong argument value".
+appId: com.urbea.app
+name: "ios — feed reproduce HLS firmado de Stream"
+---
+# ⚠️ SIN `clearState` a propósito. Limpiarlo dispara el developer menu del dev
+# client, que en iOS tapa el login y NO se cierra con `back` (no existe en iOS)
+# — tocar "Continue" solo avanza del intro al sheet principal, que sigue encima.
+# Sin clearState ese menú nunca aparece. El precio es que la sesión persiste
+# entre corridas, y por eso el bloque de login de abajo es CONDICIONAL.
+- launchApp:
+    permissions:
+      location: inuse
+# El gate de (protected)/_layout.tsx muestra LocationWall sin ubicación real;
+# el simulador no tiene fix propio, así que se moquea GDL centro.
+- setLocation:
+    latitude: 20.6597
+    longitude: -103.3496
+# El dev client arranca en su home cuando no trae URL; el simulador comparte la
+# red del Mac, así que apunta a localhost (Android necesitaría 10.0.2.2).
+- extendedWaitUntil:
+    visible: "Development Build"
+    timeout: 30000
+    optional: true
+- runFlow:
+    when:
+      visible: "Development Build"
+    commands:
+      - openLink: "urbea://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081"
+# Login CONDICIONAL: sin clearState la sesión puede seguir viva, y entonces la
+# app entra directo al feed sin pasar por esta pantalla. Aserirla sin condición
+# hace fallar el flujo justo cuando todo está bien.
+- extendedWaitUntil:
+    visible: "Inicia sesión para continuar"
+    timeout: 60000
+    optional: true
+- runFlow:
+    when:
+      visible: "Inicia sesión para continuar"
+    commands:
+      - tapOn:
+          id: "login-email"
+      - inputText: "owner.gdl@urbea.demo"
+      - tapOn:
+          id: "login-password"
+      - inputText: "urbea2026"
+      # Cierra el teclado tocando el título antes de buscar el botón.
+      - tapOn: "Inicia sesión para continuar"
+      - tapOn: "Iniciar sesión"
+# Llegue por login o por sesión viva, el destino es el mismo: el feed.
+- extendedWaitUntil:
+    visible: "Perfil"
+    timeout: 90000
+# El feed monta el player del ítem activo y lo arranca SOLO (isActive -> play()).
+# ⚠️ NO tocar la pantalla aquí: un tap simple alterna play/pausa, así que
+# "ayudar" a arrancar el video en realidad lo pausa cuando ya iba corriendo.
+# Margen corto para el primer segmento HLS y se captura. La captura ES el
+# artefacto: si sale un frame del video, el HLS firmado se resolvió.
+# (No se asierta el texto de la dirección: el nodo RN envuelto en dos líneas no
+# matchea el selector de texto de Maestro aunque se vea en pantalla.)
+- waitForAnimationToEnd:
+    timeout: 8000
+- takeScreenshot: /tmp/urbea-ios-feed-hls
+# 💰 OBLIGATORIO cerrar al final. El feed reproduce en LOOP, y cada minuto
+# entregado se cobra en Cloudflare Stream — un emulador olvidado con el feed
+# abierto factura solo. `stopApp` corta seguro; un tap NO sirve porque alterna
+# play/pausa y podría dejarlo corriendo. Ver [[entornos-desarrollo]].
+- stopApp
