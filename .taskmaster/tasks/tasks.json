@@ -6426,14 +6426,15 @@
       {
         "id": "90",
         "title": "E2E de deploy-day: publicar → tus → webhook ready → feed (remoto)",
-        "description": "",
+        "description": "E2E de la Épica B contra el REMOTO: publicar desde la app → subida directa a Cloudflare Stream → el webhook marca ready → el video aparece y reproduce en el feed. Incluye el deploy de las EFs pendientes y el smoke Stream→R2 del archivado. Bloqueada por externos (402, webhook sin registrar, par R2, rotar credenciales). La verificación LOCAL ya se cerró en 68.10 — no repetirla.",
         "details": "<info added on 2026-07-25T17:07:04.865Z>\nI'll analyze the codebase to understand the deployment context and then generate the subtask details.Based on my analysis of the codebase, I can now generate the subtask details for 68.17:\n\nSCOPE (what 68.10 could NOT close locally, separated 2026-07-25). HARD EXTERNAL BLOCKERS, all requiring Abraham action: (a) lift 402 gateway-remote (upgrade to Pro or reset billing) to invoke Edge Functions in production; (b) register Stream webhook in Cloudflare (PUT /stream/webhook) → generates STREAM_WEBHOOK_SECRET → load it as remote project secret; (c) fix R2 access pair (403 today) for cold-store archival; (d) ROTATE exposed Cloudflare credentials before production. STEPS: 1) Deploy pending EFs (mint-thumbnail-url, mint-poster-urls, stream-webhook) with --import-map supabase/functions/deno.json --use-api. Deploy commands per index.ts headers: supabase functions deploy stream-webhook --import-map supabase/functions/deno.json --no-verify-jwt --use-api (public webhook, HMAC-only auth), supabase functions deploy mint-thumbnail-url --import-map supabase/functions/deno.json --use-api, supabase functions deploy mint-poster-urls --import-map supabase/functions/deno.json --use-api. 2) Full E2E against remote: publish from app → direct upload to Stream → webhook marks ready → video appears and plays in feed. 3) Visual smoke of poster with real Stream frames. 4) Smoke Stream→R2 archival (68.8). WHY NOT POSSIBLE LOCALLY: Cloudflare cannot deliver webhook to localhost, so a locally-uploaded video stays in processing forever; can simulate by signing POST with HMAC-SHA256(STREAM_WEBHOOK_SECRET, '<time>.<rawBody>') but that tests our handler, not Cloudflare's real delivery. ALREADY VERIFIED LOCALLY (68.10, DO NOT REPEAT): signed HLS playback on Android and iOS, signed poster with intact origin, memory smoke closing OOM #57 at root (heap 40→46 MB with 4 live players, vs 107-117 MB from MP4 era and 192 MB ceiling). COST RULE: feed plays in loop and every delivered minute bills in Stream — verify and stop, never leave emulator with feed open.\n</info added on 2026-07-25T17:07:04.865Z>",
         "status": "pending",
         "dependencies": [
           "68"
         ],
         "priority": "high",
-        "subtasks": []
+        "subtasks": [],
+        "testStrategy": "Publicación real end-to-end contra urbea-app con un video nuevo; portada con frames reales de Stream; round-trip de archivado a R2. Emulador/simulador por CLI (adb/simctl/Maestro), nunca computer-use. 💰 Verificar y PARAR: el feed reproduce en loop y cada minuto entregado se cobra en Stream."
       }
     ],
     "metadata": {
