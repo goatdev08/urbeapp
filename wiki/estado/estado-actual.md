@@ -1,11 +1,17 @@
 ---
 tipo: estado
-actualizado: 2026-07-25
+actualizado: 2026-07-27
 ---
 
 # Estado actual
 
 > Narrativa de "dónde estamos hoy". El **qué sigue / qué está hecho** vive en **Taskmaster** (`task-master list`), no aquí.
+
+## Hoy (2026-07-27)
+
+- **🧭 Las dos "fallas de dev" que reportó Abraham NO eran regresiones — eran brechas de paridad del seed/entorno local.** (a) **Feed vacío / sin orden por cercanía: RESUELTO.** El emulador arranca con GPS de fábrica en **Mountain View, CA**; el seed vive todo en la ZMG, a ~2,500 km, y la expansión de radio topa en 40 km → 0 filas siempre. La suite Maestro **ya** moqueaba GDL y el arranque manual no: por eso la E2E salía verde mientras el dev manual salía vacío. `dev-emu.sh` y `dev-ios.sh` ahora fijan las mismas coords (20.6597, −103.3496). (b) **Portada en blanco: documentado (tarea #91, baja).** `seed-videos.sh` crea filas **legacy de Storage** (solo `storage_path`), y esa rama del minter devuelve `posterUrl: null` por diseño — el poster es exclusivo de Stream. El video sí reproduce, por eso se leía como miniatura rota. Solo afecta a local. Ver [[entornos-desarrollo]].
+- **🧹 Repo higienizado.** `main` sincronizado con `origin/main` (5 commits del cierre de #68/#65.5), `app.json` fantasma de la raíz eliminado, 0 PRs abiertos, un solo worktree. Quedan **18 ramas remotas `tarea/*` con PR ya mergeado** pendientes de borrar (requiere tu permiso; `--no-merged` da señal falsa porque el flujo usa `--squash`).
+- **📍 Dónde queda la ruta crítica.** Sin cambios: el siguiente movimiento es `/tm-plan 72` (Auth completo) o planear **#71**/**#76** para destrabar **#73**. Los bloqueantes externos (402, webhook de Stream, par R2, rotar credenciales de Cloudflare) siguen concentrados en **#90** y gatean solo el deploy-day.
 
 ## Hoy (2026-07-25)
 

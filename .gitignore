@@ -82,3 +82,7 @@ supabase/scripts/teardown-*.sql
 # Respaldo puntual de videos legacy (68.9) — LOCAL-ONLY, nunca a prod.
 # backup-property-videos.sh (script) SÍ se versiona; los .mp4 descargados NO.
 supabase/scripts/video-backups/
+
+# Respaldos del workaround de Taskmaster (CLAUDE.md §4: add-task/expand rotos →
+# editar tasks.json a mano con respaldo .bak). Son efímeros; uno se coló en 3bdaf11.
+*.bak
