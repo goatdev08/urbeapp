@@ -46,6 +46,16 @@ if ! adb devices | grep -q "emulator-"; then
 fi
 echo "✔ Emulador listo"
 
+# 3.5 Fix de GPS a GDL centro — MISMAS coords que `.maestro/helpers/launch.yaml`.
+#   Sin esto el emulador arranca con su default de fábrica (Mountain View, CA):
+#   `properties_within_radius` busca a ~2,500 km del seed (todo el seed vive en
+#   la ZMG) y la expansión ×2 topa en 40 km → el feed sale VACÍO y el orden por
+#   cercanía no se puede apreciar. La suite E2E ya mockeaba la coord; el arranque
+#   manual no, y esa asimetría se leía como "en dev el feed no funciona".
+adb emu geo fix -103.3496 20.6597 >/dev/null 2>&1 \
+  && echo "✔ GPS del emulador -> GDL centro (20.6597, -103.3496)" \
+  || echo "⚠ No pude fijar el GPS (adb emu geo fix); el feed puede salir vacío"
+
 # 4. adb reverse → la app usa localhost para Metro Y Supabase (inmune a Wi-Fi/IP)
 adb reverse tcp:8081 tcp:8081 >/dev/null
 adb reverse tcp:54321 tcp:54321 >/dev/null

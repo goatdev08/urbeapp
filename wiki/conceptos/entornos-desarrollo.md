@@ -1,7 +1,7 @@
 ---
 titulo: Entornos de desarrollo — las tres ramas (local · preview · production)
 estado: vivo
-actualizado: 2026-07-24
+actualizado: 2026-07-27
 tags: [concepto, entornos, deploy, dx]
 codigo:
   - scripts/dev-emu.sh
@@ -49,6 +49,12 @@ cómo el dispositivo nombra a tu Mac**. `--stop` en cualquiera baja stack y func
 > 🔑 **`localhost` no es una dirección, es "yo mismo".** Desde un teléfono, `localhost` es el
 > teléfono. Por eso el teléfono necesita la IP de la LAN, mientras que el emulador Android la
 > evita con el túnel de `adb` y el simulador iOS ni la necesita (comparte red con el Mac).
+
+> 📍 **`dev-emu.sh` y `dev-ios.sh` fijan el GPS a GDL centro (20.6597, -103.3496)** — las MISMAS
+> coords que la suite Maestro (`dev-local.sh` no lo necesita: teléfono real = GPS real). Sin fix,
+> el emulador arranca en **Mountain View, CA** y el simulador sin ubicación: `properties_within_radius` busca a ~2,500 km del seed (que vive **todo** en la ZMG)
+> y la expansión ×2 topa en 40 km → **feed vacío** y el orden por cercanía no se puede apreciar.
+> Ver "Paridad dev↔prod" abajo.
 
 **Requisito único:** el dev-client debe estar instalado.
 Android: `cd mobile && pnpm expo run:android`. iOS: `cd mobile && pnpm expo run:ios` (el
@@ -125,3 +131,58 @@ cualquier otro origin. 7 tests nuevos. Verificado en emulador: `state=PLAYING`, 
 
 Relacionado: [[estrategia-releases]] · [[propiedades-y-video]] · [[storage-hibrido]] ·
 [[dev_client_vs_release_apk]] · [[android_emulator_mac_setup]].
+
+## 📐 Paridad dev↔prod: qué diverge **por diseño** (2026-07-27)
+
+Abraham reportó que en el emulador fallaban cosas que en el build de producción sí servían.
+Ninguna era regresión: las dos son **brechas de paridad de datos del stack local**. Anotadas
+aquí para que no se vuelvan a leer como bugs de la app.
+
+### 1. El feed sale vacío / el orden por cercanía no se aprecia — ✅ RESUELTO
+
+**Causa.** El emulador Android arranca con su GPS de fábrica (**Mountain View, CA**) y el
+simulador iOS sin fix. `useFeedProperties` **gatea en `coords !== null`** (#59) y una vez que
+llegan esas coords falsas se las pasa tal cual a `properties_within_radius`. Todo el seed vive
+en la ZMG (`seed.sql`: lat 20.64–20.72 / lng −103.31…−103.41), a ~2,500 km. Con radio 5 km y
+expansión ×2 tope 40 km (`feedProperties.ts`) → **0 filas**, siempre.
+
+⚠️ El fallback GDL de `feedProperties.ts` **no salva esto**: solo aplica cuando `coords` es
+`undefined`. Una coord *falsa pero presente* lo esquiva — que es justo el caso del emulador.
+
+**Por qué la E2E nunca lo vio.** `.maestro/helpers/launch.yaml` y `.maestro/ios/feed-hls.yaml`
+**sí** hacían `setLocation: 20.6597, −103.3496`. El arranque manual no. Esa asimetría —la suite
+verde mientras el arranque manual salía vacío— es la que hacía ver "roto" el dev.
+
+**Fix aplicado.** `scripts/dev-emu.sh` (`adb emu geo fix -103.3496 20.6597` — ⚠️ **longitud
+primero**) y `scripts/dev-ios.sh` (`xcrun simctl location <udid> set 20.6597,-103.3496`), con
+las mismas coords que Maestro. `dev-local.sh` no lo necesita: teléfono real = GPS real.
+
+### 2. La portada del feed se ve en blanco — 📋 documentado, tarea #91
+
+**Causa.** `supabase/scripts/seed-videos.sh` marca los 10 videos `ready` seteando **solo**
+`storage_path` — sin `cloudflare_uid`, `thumbnail_url`, `duration_seconds` ni `thumbnail_pct`.
+Son filas **legacy de Supabase Storage**, y la rama legacy de `make_video_url_minter`
+(`_shared/clients.ts`) devuelve **`posterUrl: null` explícito** — el poster es exclusivo de
+Stream. Con `thumbnail_url` también null, `VideoFeedItem` calcula
+`poster_uri = posterUrl ?? thumbnail_url` → `null` → **el `<Image>` de la portada no monta**.
+El video **sí reproduce** (la signed URL de Storage es válida), y por eso se lee como
+"miniatura rota" en vez de "seed sin portada".
+
+**Por qué en producción no pasa.** Ahí los videos vienen de Cloudflare Stream: `stream-webhook`
+—el **único** escritor de `thumbnail_url`/`duration_seconds`— los puebla al marcar `ready`, y el
+minter toma la rama Stream que **sí** firma `posterUrl`.
+
+🔑 **Corolario estructural:** Cloudflare **no puede entregar webhooks a `localhost`**, así que un
+video publicado desde la app en local **nunca llega a `ready`** por sí solo → queda fuera del
+feed (el minter filtra `status='ready'`). El único contenido local con portada real es el que
+fabrica `smoke-oom-fixture.sql`, que sí trae `cloudflare_uid` + `duration_seconds` 52.2 + pct 25.
+
+**Decisión pendiente** (tarea **#91**, prioridad baja): (A) extraer un frame por sample con
+`qlmanage`+`sips` (cero deps, ver [[svg_to_png_qlmanage]]) y setear `thumbnail_url` en el seed;
+(B) usar el fixture de Stream como contenido local por defecto; (C) dejarlo y vivir con la
+diferencia. Es cosmética y **solo afecta a local**.
+
+### Regla que deja
+🔴 **Cuando "en dev falla y en prod no", sospecha primero del seed y del entorno del
+dispositivo (GPS, permisos, red), no del código de la app.** Y si la E2E pasa mientras el
+arranque manual falla, la diferencia está en lo que **la E2E moquea y el script no**.

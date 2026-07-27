@@ -42,6 +42,14 @@ xcrun simctl bootstatus "$UDID" -b >/dev/null 2>&1 || xcrun simctl boot "$UDID" 
 open -a Simulator
 echo "✔ Simulador '$SIM' listo"
 
+# 3.5 Fix de GPS a GDL centro — MISMAS coords que `.maestro/ios/feed-hls.yaml`.
+#   Sin esto el simulador arranca SIN fix (o con el de Apple en Cupertino):
+#   `properties_within_radius` busca lejísimos del seed (todo en la ZMG) y la
+#   expansión ×2 topa en 40 km → feed VACÍO y el orden por cercanía no se aprecia.
+xcrun simctl location "$UDID" set 20.6597,-103.3496 >/dev/null 2>&1 \
+  && echo "✔ GPS del simulador -> GDL centro (20.6597, -103.3496)" \
+  || echo "⚠ No pude fijar el GPS (simctl location); el feed puede salir vacío"
+
 # 4. .env.local → localhost (el simulador comparte la red del Mac)
 sed -i '' -E "s#^EXPO_PUBLIC_SUPABASE_URL=http://[0-9A-Za-z.]+:54321#EXPO_PUBLIC_SUPABASE_URL=http://localhost:54321#" mobile/.env.local
 echo "✔ .env.local -> http://localhost:54321"

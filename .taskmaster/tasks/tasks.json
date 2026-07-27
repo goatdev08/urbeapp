@@ -6435,6 +6435,20 @@
         "priority": "high",
         "subtasks": [],
         "testStrategy": "Publicación real end-to-end contra urbea-app con un video nuevo; portada con frames reales de Stream; round-trip de archivado a R2. Emulador/simulador por CLI (adb/simctl/Maestro), nunca computer-use. 💰 Verificar y PARAR: el feed reproduce en loop y cada minuto entregado se cobra en Stream."
+      },
+      {
+        "id": "91",
+        "title": "Paridad de portada en el seed local (feed sin miniatura en dev)",
+        "description": "En el stack local el feed muestra la portada EN BLANCO porque seed-videos.sh crea filas legacy de Supabase Storage (storage_path + status=ready) sin cloudflare_uid, thumbnail_url, duration_seconds ni thumbnail_pct. La rama legacy de make_video_url_minter devuelve posterUrl:null por diseno, y thumbnail_url tambien es null -> poster_uri null -> no se renderiza <Image>. El video SI reproduce. En produccion no pasa porque los videos vienen de Cloudflare Stream y el stream-webhook puebla thumbnail_url/duration_seconds.",
+        "details": "Causa raiz confirmada por lectura de codigo (2026-07-27, sin stack corriendo):\n- supabase/scripts/seed-videos.sh:123-125 hace UPDATE storage_path/status/ready_at y NADA mas.\n- supabase/functions/_shared/clients.ts:415-433 rama legacy Storage -> posterUrl: null explicito.\n- mobile/src/features/feed/components/VideoFeedItem.tsx:52 poster_uri = posterUrl ?? thumbnail_url -> null -> el <Image> de la portada no monta (linea 257).\n- El UNICO escritor de thumbnail_url/duration_seconds/status=ready-desde-Stream es supabase/functions/stream-webhook/handler.ts:105, y Cloudflare no puede entregar webhooks a localhost.\nNO es regresion: es una brecha de paridad de datos del seed local.\nOpciones (decidir con Abraham): (A) extraer un frame por sample MP4 con qlmanage/sips (cero deps nuevas, ver memoria svg_to_png_qlmanage), subirlo a un bucket local y setear thumbnail_url en seed-videos.sh; (B) dejar el feed local apuntando al fixture de Stream (smoke-oom-fixture.sql ya trae cloudflare_uid + duration 52.2 + pct 25 y SI produce portada); (C) no arreglar y documentarlo como diferencia esperada de dev.",
+        "testStrategy": "Verificacion ligera: correr el seed elegido contra el stack local, abrir el feed en el emulador y confirmar que la portada pinta antes del primer frame del video. Sin TDD estricto: seed-videos.sh es tooling local, no toca supabase/functions ni mobile/**/lib.",
+        "status": "pending",
+        "dependencies": [
+          "68"
+        ],
+        "priority": "low",
+        "subtasks": [],
+        "updatedAt": "2026-07-27T00:00:00.000Z"
       }
     ],
     "metadata": {
