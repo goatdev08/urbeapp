@@ -35,8 +35,23 @@ import {
   validate_login_form,
   type LoginFormErrors,
 } from '@/features/auth/validation';
+import { APPLE_OAUTH_ENABLED, GOOGLE_OAUTH_ENABLED } from '@/features/auth/feature-flags';
 import { UrbeaLockup } from '@/components/UrbeaLockup';
 import { brand, colors, fonts } from '@/theme/theme';
+
+// ---------------------------------------------------------------------------
+// Login social (72.4) — detrás de flag, ver feature-flags.ts. Sin
+// credenciales de proveedor (Google Cloud OAuth client / Apple) NO hay nada
+// que probar, así que el handler es un stub explícito: si algún día se
+// llegara a invocar por error (flag prendido antes de tiempo), falla ruidoso
+// en vez de fingir que el login funcionó.
+// ---------------------------------------------------------------------------
+
+function handle_social_login_stub(provider: 'Google' | 'Apple'): never {
+  throw new Error(
+    `Falta configurar el proveedor de ${provider} (credenciales pendientes — ver subtarea 72.4).`
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Pantalla
@@ -223,6 +238,12 @@ export default function LoginScreen() {
               right_addon={password_toggle}
             />
 
+            {/* Recuperación de contraseña (§5.3, 72.5) — la pantalla existe y
+                valida, pero el envío real de correo depende del SMTP de 72.3. */}
+            <Link href="/forgot-password" style={styles.forgot_password_link} accessibilityRole="link">
+              ¿Olvidaste tu contraseña?
+            </Link>
+
             {general_error !== null && (
               <View
                 style={styles.error_banner}
@@ -258,6 +279,40 @@ export default function LoginScreen() {
                 </Text>
               )}
             </Pressable>
+
+            {/* Login social (72.4) — oculto hasta que existan credenciales de
+                proveedor; ver feature-flags.ts. */}
+            {(GOOGLE_OAUTH_ENABLED || APPLE_OAUTH_ENABLED) && (
+              <View style={styles.social_block}>
+                <View style={styles.divider_row}>
+                  <View style={styles.divider_line} />
+                  <Text style={styles.divider_text}>o continúa con</Text>
+                  <View style={styles.divider_line} />
+                </View>
+
+                {GOOGLE_OAUTH_ENABLED && (
+                  <Pressable
+                    style={styles.social_button}
+                    onPress={() => handle_social_login_stub('Google')}
+                    accessibilityRole="button"
+                    accessibilityLabel="Continuar con Google"
+                  >
+                    <Text style={styles.social_button_text}>Continuar con Google</Text>
+                  </Pressable>
+                )}
+
+                {APPLE_OAUTH_ENABLED && (
+                  <Pressable
+                    style={styles.social_button}
+                    onPress={() => handle_social_login_stub('Apple')}
+                    accessibilityRole="button"
+                    accessibilityLabel="Continuar con Apple"
+                  >
+                    <Text style={styles.social_button_text}>Continuar con Apple</Text>
+                  </Pressable>
+                )}
+              </View>
+            )}
 
             {/* CTA de registro — /register abre el registro libre por default;
                 el flujo de agente con código vive como modo secundario ahí. */}
@@ -310,6 +365,47 @@ const styles = StyleSheet.create({
     fontFamily: fonts.sans_semibold,
     fontSize: 13,
     color: colors.gray_2,
+  },
+  social_block: {
+    marginTop: 24,
+  },
+  divider_row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 16,
+  },
+  divider_line: {
+    flex: 1,
+    height: 1,
+    backgroundColor: brand.carnita_2,
+  },
+  divider_text: {
+    fontFamily: fonts.sans,
+    fontSize: 12,
+    color: colors.gray_3,
+  },
+  social_button: {
+    borderWidth: 1,
+    borderColor: brand.carnita_2,
+    borderRadius: 12,
+    paddingVertical: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  social_button_text: {
+    fontFamily: fonts.sans_semibold,
+    fontSize: 15,
+    color: brand.ink,
+  },
+  forgot_password_link: {
+    alignSelf: 'flex-end',
+    marginTop: -8,
+    marginBottom: 16,
+    fontFamily: fonts.sans_semibold,
+    fontSize: 13,
+    color: brand.green,
   },
   submit_button: {
     marginTop: 8,

@@ -6,7 +6,7 @@
  *   - isLoading=true                             → <ActivityIndicator testID="loading-indicator" />
  *   - isLoading=false, session=null              → <Redirect href="/login" />
  *   - isLoading=false, session≠null, role≠admin  → <Redirect href="/(protected)" />
- *   - isLoading=false, session≠null, role=admin  → <Slot />
+ *   - isLoading=false, session≠null, role=admin  → <Slot /> tras el gate legal (#72.6)
  *
  * isLoading tiene prioridad absoluta (evita race conditions EC-AL2):
  * si todavía estamos validando la sesión, no redirigimos ni mostramos
@@ -20,6 +20,7 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { Redirect, Slot } from 'expo-router';
 
 import { useAuth } from '@/features/auth/context';
+import { LegalGateBoundary } from '@/features/auth/components/legal-gate-boundary';
 
 export default function AdminLayout(): React.ReactElement {
   const { session, user, isLoading } = useAuth();
@@ -43,8 +44,14 @@ export default function AdminLayout(): React.ReactElement {
     return <Redirect href="/(protected)" />;
   }
 
-  // Sesión activa + rol admin — renderiza el contenido del panel
-  return <Slot />;
+  // Sesión activa + rol admin — gate legal (#72.6) y luego el panel.
+  // El panel NO estaba tras el gate: era alcanzable por deep link (urbea://admin) con
+  // documentos vigentes sin aceptar, y es justo el rol con más poder de la plataforma.
+  return (
+    <LegalGateBoundary>
+      <Slot />
+    </LegalGateBoundary>
+  );
 }
 
 const styles = StyleSheet.create({

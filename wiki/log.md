@@ -434,3 +434,28 @@ Verificación: `tsc` 0, `lint` 0 errores. Ingest: [[feed-vertical-video]], [[pro
 **Regla que deja:** cuando "en dev falla y en prod no", sospechar primero del **seed** y del **entorno del dispositivo** (GPS, permisos, red), no del código. Y si la E2E pasa mientras el arranque manual falla, la diferencia está en lo que **la E2E moquea y el script no**.
 
 **Higiene.** 0 PRs abiertos; 18 ramas remotas `tarea/*` con PR **MERGED** confirmadas listas para borrar (`--no-merged` da señal falsa: el flujo usa `--squash`, el tip original nunca es ancestro de `main`) — el borrado quedó pendiente de permiso. `main == origin/main`, un solo worktree, working tree limpio. Verificación: `pnpm tsc --noEmit` 0, `bash -n` OK en ambos scripts. Ingest: [[entornos-desarrollo]].
+
+## [2026-07-28] feat | Ola 1 Auth (#72): catálogo INEGI, constraints de registro §5.1 y gate legal versionado §5.5
+
+**4 de 7 subtareas cerradas; 3 `deferred` por cuentas externas que aún no existen** (Resend y Google Cloud). Decisión del usuario: cerrar todo lo desbloqueado y además dejar construida la UI de lo bloqueado, para que al llegar las credenciales solo falte configurar.
+
+**#72.1 — Catálogo oficial MX.** 32 estados y **2478 municipios** (no 2469, esa cifra es vieja) bajados del web service **OFICIAL** de INEGI `gaia.inegi.org.mx/wscatgeo`, no de un mirror de GitHub. PK = clave INEGI literal en `text`: une con cualquier dataset de INEGI sin tabla de traducción, y `'09' != 9` al unir contra un CSV. Constraint `mx_muni_cvegeo_coherente` (`left(id,2)=state_id`) — la FK sola dejaría pasar un municipio con `state_id` válido pero ajeno.
+
+**#72.2 — Campos de registro §5.1.** Aditiva: FK al catálogo + backfill best-effort desde el texto libre, que queda **deprecado** (no se dropea). CHECKs de coherencia municipio↔estado y de mayoría de edad server-side. 🔒 El hallazgo que valía: **el teléfono se guardaba sin normalizar** y `users_phone_unique_active` compara **texto crudo** — `'3312345678'`, `'+523312345678'` y `'33 1234 5678'` eran tres cuentas distintas de la misma persona, o sea la unicidad de §5.1 no servía de nada. Fix: `to_e164_mx` en el cliente **más** un CHECK en la DB (indispensable: `phone` está en el grant por columna de 0008 y se escribe por PostgREST saltándose el formulario).
+
+**#72.6 + #72.7 — Legal versionado y consentimientos.** El schema de 0004 ya traía lo difícil; faltaba la lógica del gate. Ver [[legal-consentimientos]] para el detalle.
+
+### Cuatro trampas que dejó esta tarea
+
+1. **`public.is_admin()` YA NO EXISTE.** La migración 0010 movió los helpers de RLS al schema `private` y dropeó los de `public`. **0008 todavía muestra el nombre viejo** — copiarlo de ahí revienta cualquier migración con RLS con `42883`.
+2. **El backfill de una migración NO corre en local.** `db reset` aplica migraciones **antes** del seed, así que cuando el backfill se ejecuta la tabla está vacía. En prod sí opera. El seed tiene que sembrar el dato final directo, o dev y prod divergen en silencio.
+3. **El seed puede impedir que una migración aplique.** Los 7 agentes del seed compartían el **mismo** teléfono, así que el `create unique index` fallaba. De-dup defensivo en la migración + teléfonos distintos en el seed.
+4. 🔒 **TRUNCATE no pasa por RLS y Supabase lo regala.** `pg_default_acl` da el bit `D` a `anon` en **toda** tabla nueva de `public`. Probado: `truncate public.users cascade` bajo rol `anon` arrastró 13 tablas y solo se detuvo en `events_raw`, la única con un `revoke all` explícito. No es explotable por PostgREST (no emite TRUNCATE), es defensa en profundidad. → tarea **#92** para el barrido de las 21+ tablas.
+
+### Lo que el guardián encontró y no habríamos visto
+- Se podía **aceptar un documento cuyo texto nunca cargó** (el error del fetch se descartaba en silencio y el checkbox seguía marcable) — lo contrario del consentimiento *informado* que §5.5 existe para sostener.
+- **El gate legal no era inevitable**: `admin/` y `onboarding` lo esquivaban. Tener el gate en un solo layout y creerlo total era el error.
+
+**Deuda levantada como tarea, no dejada en el chat:** #92 (revocar TRUNCATE en todo `public`), #93 (el registro por `/auth/v1/signup` con la anon key crea cuentas incompletas §5.1, y los errores crudos de Postgres llegan sin filtrar a un llamante anónimo), #94 (el consentimiento de WhatsApp no se verifica en el punto de contacto).
+
+**Verificación:** pgTAP 312/312 · Jest 785/785 · `pnpm tsc --noEmit` 0 · `pnpm lint` 0 errores. Ingest: [[legal-consentimientos]], [[mapa-codebase]].

@@ -56,6 +56,7 @@ jest.mock('@/lib/supabase/client', () => ({
       getSession: jest.fn(),
       onAuthStateChange: jest.fn(),
       signInWithPassword: jest.fn(),
+      signUp: jest.fn(),
       signOut: jest.fn(),
     },
     from: jest.fn(),
@@ -99,6 +100,8 @@ function make_user_profile(id = 'uid-test-123'): UserProfile {
     bio: null,
     city: 'Ciudad de Mexico',
     state: 'CDMX',
+    state_id: null,
+    municipality_id: null,
     phone: null,
     is_verified_agent: false,
     date_of_birth: null,
@@ -411,5 +414,90 @@ describe('EC-9: useAuth_fuera_de_provider_lanza_error', () => {
     expect((caught_error as Error).message).toMatch(/AuthProvider|auth.*context|fuera.*provider/i);
 
     console_error_spy.mockRestore();
+  });
+});
+
+// ===========================================================================
+// EC-10 (#72.2): signUp arma raw_user_meta_data con las claves EXACTAS que lee
+// el trigger handle_new_user.
+//
+// Por qué existe este test: `options.data` es un contrato implícito entre la app
+// y la migración 20260727000002 — el trigger hace
+// `new.raw_user_meta_data ->> 'date_of_birth'` y compañía. Un typo en cualquiera
+// de las 6 claves NO rompe la compilación, NO rompe el registro y NO pone rojo
+// ningún test: simplemente el campo se guarda NULL para siempre. Este test es lo
+// único que fija esos nombres.
+// ===========================================================================
+describe('EC-10: signUp_envia_metadata_con_claves_del_trigger', () => {
+  it('manda las 6 claves de perfil con los nombres que espera handle_new_user', async () => {
+    mock_auth.getSession.mockResolvedValue({ data: { session: null }, error: null } as Awaited<ReturnType<typeof mock_auth.getSession>>);
+    mock_auth.signUp.mockResolvedValue({ data: { user: null, session: null }, error: null } as Awaited<ReturnType<typeof mock_auth.signUp>>);
+
+    const { result } = await renderHook(() => useAuth(), { wrapper });
+
+    await act(async () => {
+      await result.current.signUp('ana@urbea.mx', 'Secreto$1', {
+        first_name: 'Ana',
+        last_name: 'Pérez',
+        phone: '+523312345678',
+        date_of_birth: '1995-06-15',
+        state_id: '14',
+        municipality_id: '14039',
+      });
+    });
+
+    expect(mock_auth.signUp).toHaveBeenCalledWith({
+      email: 'ana@urbea.mx',
+      password: 'Secreto$1',
+      options: {
+        data: {
+          first_name: 'Ana',
+          last_name: 'Pérez',
+          phone: '+523312345678',
+          date_of_birth: '1995-06-15',
+          state_id: '14',
+          municipality_id: '14039',
+        },
+      },
+    });
+  });
+
+  it('omite las claves sin valor en vez de mandarlas vacías', async () => {
+    // Un '' explícito se guardaría como cadena vacía y el municipio quedaría
+    // fuera del CHECK de coherencia; el trigger espera ausencia, no vacío.
+    mock_auth.getSession.mockResolvedValue({ data: { session: null }, error: null } as Awaited<ReturnType<typeof mock_auth.getSession>>);
+    mock_auth.signUp.mockResolvedValue({ data: { user: null, session: null }, error: null } as Awaited<ReturnType<typeof mock_auth.signUp>>);
+
+    const { result } = await renderHook(() => useAuth(), { wrapper });
+
+    await act(async () => {
+      await result.current.signUp('sin@perfil.mx', 'Secreto$1', {
+        first_name: 'Solo',
+        last_name: '',
+        phone: '',
+        date_of_birth: '',
+        state_id: '',
+        municipality_id: '',
+      });
+    });
+
+    const call = mock_auth.signUp.mock.calls[0]?.[0] as { options?: { data?: Record<string, string> } };
+    expect(call.options?.data).toEqual({ first_name: 'Solo' });
+  });
+
+  it('propaga el error de signUp (supabase-js v2 no lanza, devuelve {error})', async () => {
+    mock_auth.getSession.mockResolvedValue({ data: { session: null }, error: null } as Awaited<ReturnType<typeof mock_auth.getSession>>);
+    mock_auth.signUp.mockResolvedValue({
+      data: { user: null, session: null },
+      error: { message: 'duplicate key value violates unique constraint "users_phone_unique_active"' },
+    } as unknown as Awaited<ReturnType<typeof mock_auth.signUp>>);
+
+    const { result } = await renderHook(() => useAuth(), { wrapper });
+
+    await expect(
+      act(async () => {
+        await result.current.signUp('dup@urbea.mx', 'Secreto$1', { phone: '+523312345678' });
+      })
+    ).rejects.toBeDefined();
   });
 });

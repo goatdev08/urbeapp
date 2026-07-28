@@ -8,6 +8,7 @@
  */
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
+import * as Linking from 'expo-linking';
 
 import { supabase } from '@/lib/supabase/client';
 import type { Database } from '@/types/database';
@@ -18,13 +19,44 @@ import type { Database } from '@/types/database';
 
 export type UserProfile = Database['public']['Tables']['users']['Row'];
 
+/**
+ * Campos de perfil opcionales del registro libre (§5.1). Viajan en
+ * options.data de supabase.auth.signUp → raw_user_meta_data; el trigger
+ * handle_new_user (migración #72.2) los persiste con estas claves EXACTAS —
+ * cambiarlas rompe el registro en silencio (el trigger ignora lo que no
+ * reconoce y guarda null).
+ */
+export interface SignUpProfile {
+  first_name?: string;
+  last_name?: string;
+  /** Único por cuenta activa — índice parcial users_phone_unique_active. */
+  phone?: string;
+  /** ISO 'YYYY-MM-DD'; el CHECK users_mayoria_de_edad la valida server-side. */
+  date_of_birth?: string;
+  /** Clave INEGI de 2 dígitos (catálogo mx_states). */
+  state_id?: string;
+  /** Clave INEGI (cvegeo) de 5 dígitos (catálogo mx_municipalities). */
+  municipality_id?: string;
+}
+
 export interface AuthContextValue {
   session: Session | null;
   user: UserProfile | null;
   isLoading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string, first_name?: string) => Promise<void>;
+  signUp: (email: string, password: string, profile?: SignUpProfile) => Promise<void>;
   signOut: () => Promise<void>;
+  /**
+   * Recuperación de contraseña (§5.3, subtarea 72.5). Dispara el correo con el
+   * enlace de recuperación; NUNCA revela si la cuenta existe — es
+   * responsabilidad de quien llama (forgot-password.tsx) mostrar SIEMPRE el
+   * mismo mensaje de éxito, atrape o no un error de este wrapper.
+   * Bloqueado end-to-end hasta que 72.3 configure el SMTP Resend — hoy los
+   * correos salen por el mailer default de Supabase (rate-limited).
+   */
+  requestPasswordReset: (email: string) => Promise<void>;
+  /** Cambia la contraseña de la sesión activa (flujo de recuperación, §5.3). */
+  updatePassword: (password: string) => Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -129,12 +161,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signUp = async (
     email: string,
     password: string,
-    first_name?: string,
+    profile?: SignUpProfile,
   ): Promise<void> => {
+    // Solo viajan los campos con valor: un string vacío no debe pisar el
+    // coalesce-a-null del trigger con un '' guardado a propósito.
+    const metadata: Record<string, string> = {};
+    if (profile?.first_name) metadata.first_name = profile.first_name;
+    if (profile?.last_name) metadata.last_name = profile.last_name;
+    if (profile?.phone) metadata.phone = profile.phone;
+    if (profile?.date_of_birth) metadata.date_of_birth = profile.date_of_birth;
+    if (profile?.state_id) metadata.state_id = profile.state_id;
+    if (profile?.municipality_id) metadata.municipality_id = profile.municipality_id;
+
     const { error } = await supabase.auth.signUp({
       email,
       password,
-      ...(first_name ? { options: { data: { first_name } } } : {}),
+      ...(Object.keys(metadata).length > 0 ? { options: { data: metadata } } : {}),
     });
     if (error) {
       throw error;
@@ -145,6 +187,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await supabase.auth.signOut();
   };
 
+  // redirectTo: deep link propio (scheme 'urbea', app.config.js) — el correo de
+  // recuperación abre la app directo en /reset-password. La sesión de
+  // recuperación que Supabase adjunta a ese link NO se procesa todavía (sin
+  // SMTP real no hay forma de probar el viaje completo, ver 72.3); queda
+  // documentado en reset-password.tsx dónde engancharla.
+  const requestPasswordReset = async (email: string): Promise<void> => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: Linking.createURL('reset-password'),
+    });
+    if (error) {
+      throw error;
+    }
+  };
+
+  const updatePassword = async (password: string): Promise<void> => {
+    const { error } = await supabase.auth.updateUser({ password });
+    if (error) {
+      throw error;
+    }
+  };
+
   const value: AuthContextValue = {
     session,
     user,
@@ -152,6 +215,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     signIn,
     signUp,
     signOut,
+    requestPasswordReset,
+    updatePassword,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -61,6 +61,30 @@ jest.mock('@/features/auth/context', () => ({
 // Captura el href que recibe Redirect para poder asertar sobre él
 let captured_redirect_href: string | null = null;
 
+// #72.6 — AdminLayout ahora envuelve el panel con LegalGateBoundary. Se mockea el
+// hook del gate (tiene su propia suite) para que estos tests sigan probando lo suyo:
+// la precedencia del guard de ROL. Por defecto el gate está al día.
+const mock_legal_gate_state: {
+  pending: { doc_type: 'terms' | 'privacy'; version: string; terms_version_id: string }[];
+  is_loading: boolean;
+  error: string | null;
+} = { pending: [], is_loading: false, error: null };
+
+jest.mock('@/features/auth/hooks/useLegalGate', () => ({
+  useLegalGate: () => ({
+    pending: mock_legal_gate_state.pending,
+    is_loading: mock_legal_gate_state.is_loading,
+    error: mock_legal_gate_state.error,
+    accept: jest.fn(),
+    refresh: jest.fn(),
+  }),
+}));
+
+jest.mock('@/features/auth/components/legal-wall', () => {
+  const { View } = require('react-native');
+  return { LegalWall: () => <View testID="legal-wall" /> };
+});
+
 jest.mock('expo-router', () => {
   const { View, Text } = require('react-native');
   return {
@@ -117,6 +141,9 @@ beforeEach(() => {
   mock_use_auth_state.session = null;
   mock_use_auth_state.user = null;
   mock_use_auth_state.isLoading = true;
+  mock_legal_gate_state.pending = [];
+  mock_legal_gate_state.is_loading = false;
+  mock_legal_gate_state.error = null;
 });
 
 afterEach(() => {
@@ -295,5 +322,47 @@ describe('EC-AL8: transicion_user_a_admin_deja_de_redirigir', () => {
 
     // Estado 2: Slot debe haberse renderizado
     expect(q.getByTestId('slot-content')).toBeTruthy();
+  });
+});
+
+// ===========================================================================
+// EC-AL9 (#72.6) — el panel de admin TAMBIÉN está tras el gate legal.
+//
+// Regresión encontrada por la auditoría de 72.6: el gate vivía solo en
+// ProtectedLayout, así que `urbea://admin` (deep link, scheme registrado en
+// app.json) llevaba al panel con documentos vigentes sin aceptar — y es el rol
+// con más poder de la plataforma.
+// ===========================================================================
+describe('EC-AL9: admin_con_documentos_pendientes_ve_el_muro_legal', () => {
+  it('admin autenticado + terms pendiente → muro legal, NO el panel', async () => {
+    mock_use_auth_state.isLoading = false;
+    mock_use_auth_state.session = make_session();
+    mock_use_auth_state.user = make_user('admin');
+    mock_legal_gate_state.pending = [
+      { doc_type: 'terms', version: '2.0', terms_version_id: 'v-2-0' },
+    ];
+
+    let q!: Awaited<ReturnType<typeof render>>;
+    await act(async () => {
+      q = await render(<AdminLayout />);
+    });
+
+    expect(q.queryByTestId('legal-wall')).not.toBeNull();
+    expect(q.queryByTestId('slot-content')).toBeNull();
+  });
+
+  it('admin autenticado y al día → el panel, sin muro', async () => {
+    mock_use_auth_state.isLoading = false;
+    mock_use_auth_state.session = make_session();
+    mock_use_auth_state.user = make_user('admin');
+    mock_legal_gate_state.pending = [];
+
+    let q!: Awaited<ReturnType<typeof render>>;
+    await act(async () => {
+      q = await render(<AdminLayout />);
+    });
+
+    expect(q.queryByTestId('legal-wall')).toBeNull();
+    expect(q.queryByTestId('slot-content')).not.toBeNull();
   });
 });

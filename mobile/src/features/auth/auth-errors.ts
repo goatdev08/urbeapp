@@ -31,6 +31,11 @@ const MSG_RATE_LIMIT =
   'Demasiados intentos. Espera un momento antes de intentarlo de nuevo.';
 const MSG_NETWORK = 'Sin conexión. Verifica tu red e intenta de nuevo.';
 const MSG_FALLBACK = 'Ocurrió un error inesperado. Inténtalo de nuevo.';
+// #72.2 — teléfono duplicado. Es el desenlace más probable de la unicidad recién
+// estrenada (§5.1) y llega como un 500 crudo de Postgres, no como un code de GoTrue,
+// así que sin este caso el usuario veía el fallback genérico y no sabía qué corregir.
+const MSG_PHONE_TAKEN =
+  'Ese teléfono ya está registrado en otra cuenta. Usa uno distinto o inicia sesión.';
 
 // ---------------------------------------------------------------------------
 // Helpers de narrowing — acceso seguro a propiedades de un objeto desconocido
@@ -63,6 +68,14 @@ export function map_auth_error(error: unknown): string {
   const code = get_string_prop(error, 'code');
   const message = get_string_prop(error, 'message') ?? '';
   const status = get_number_prop(error, 'status');
+
+  // Teléfono duplicado (#72.2). GoTrue no lo traduce: el fallo del índice
+  // users_phone_unique_active sube como error de base de datos, así que se detecta
+  // por el nombre del índice en el message. Va ANTES del fallback por eso.
+  // ⚠️ El message crudo de Postgres incluye el teléfono en conflicto — se busca la
+  // firma pero NUNCA se devuelve el message al usuario (permitiría enumerar qué
+  // teléfonos ya están registrados).
+  if (message.includes('users_phone_unique_active')) return MSG_PHONE_TAKEN;
 
   // Credenciales inválidas — por code explícito
   if (code === 'invalid_credentials') return MSG_INVALID_CREDENTIALS;

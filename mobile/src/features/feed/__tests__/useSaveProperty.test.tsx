@@ -149,6 +149,8 @@ beforeEach(() => {
     signIn: jest.fn(),
     signUp: jest.fn(),
     signOut: jest.fn(),
+    requestPasswordReset: jest.fn(),
+    updatePassword: jest.fn(),
   });
 });
 
@@ -311,6 +313,8 @@ describe('useSaveProperty', () => {
       signIn: jest.fn(),
       signUp: jest.fn(),
       signOut: jest.fn(),
+      requestPasswordReset: jest.fn(),
+      updatePassword: jest.fn(),
     });
 
     const mock_supabase = make_mock_supabase_save();

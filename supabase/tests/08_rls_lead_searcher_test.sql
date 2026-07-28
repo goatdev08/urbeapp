@@ -36,10 +36,14 @@ insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-000000008006', 'ad.searcher@test.local');
 
 -- S1 es el buscador: identidad de contacto que el agente/owner necesitan leer.
+-- #72.2: el teléfono va en E.164 sin espacios. Antes era '+52 33 1234 5678', que la
+-- constraint users_phone_e164_mx ahora rechaza — guardar teléfonos con formato libre
+-- es justo lo que rompía la unicidad de §5.1. Lo que este test verifica (que la RLS
+-- expone el teléfono del buscador al agente con lead activo) no cambia.
 update public.users set
     first_name = 'Sofia',
     last_name  = 'Buscadora',
-    phone      = '+52 33 1234 5678',
+    phone      = '+523312345678',
     avatar_url = 'https://cdn.test.local/s1.jpg'
   where id = '00000000-0000-0000-0000-000000008004';
 
@@ -88,7 +92,7 @@ select pg_temp.act_as('00000000-0000-0000-0000-000000008002');
 select is(
   (select first_name || '|' || last_name || '|' || phone || '|' || avatar_url
      from public.users where id = '00000000-0000-0000-0000-000000008004'),
-  'Sofia|Buscadora|+52 33 1234 5678|https://cdn.test.local/s1.jpg',
+  'Sofia|Buscadora|+523312345678|https://cdn.test.local/s1.jpg',
   'agente_con_lead_activo_lee_datos_de_contacto_del_buscador'
 );
 reset role;
