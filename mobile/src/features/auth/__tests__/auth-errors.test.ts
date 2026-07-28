@@ -280,3 +280,31 @@ describe('EC-A12: mensaje_nunca_vacio', () => {
     expect(result.length).toBeGreaterThan(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// #72.2 — teléfono duplicado (users_phone_unique_active)
+// ---------------------------------------------------------------------------
+
+describe('map_auth_error — teléfono duplicado (#72.2)', () => {
+  const pg_error = {
+    message:
+      'duplicate key value violates unique constraint "users_phone_unique_active" Key (phone)=(+523312345678) already exists.',
+    status: 500,
+  };
+
+  it('devuelve un mensaje accionable, no el fallback genérico', () => {
+    const result = map_auth_error(pg_error);
+    expect(result).toContain('teléfono');
+    expect(result).not.toContain('inesperado');
+  });
+
+  it('NO filtra el teléfono en conflicto (permitiría enumerar registrados)', () => {
+    expect(map_auth_error(pg_error)).not.toContain('523312345678');
+  });
+
+  it('NO expone el mensaje crudo de Postgres', () => {
+    const result = map_auth_error(pg_error);
+    expect(result).not.toContain('duplicate key');
+    expect(result).not.toContain('users_phone_unique_active');
+  });
+});

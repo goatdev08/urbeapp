@@ -163,6 +163,25 @@ begin
   update public.users set first_name = 'Fernando', last_name = 'Castillo Núñez',
          city = 'Guadalajara', state = 'Jalisco' where id = bus4;
 
+  -- #72.2 — catálogo INEGI + fecha de nacimiento para las 11 cuentas demo.
+  -- El backfill de la migración NO alcanza a estos usuarios: `db reset` corre las
+  -- migraciones ANTES del seed, así que cuando el backfill se ejecuta la tabla está
+  -- vacía. En producción sí opera (ahí las filas ya existían). Aquí se siembra directo
+  -- el dato final para que dev y prod queden en el mismo estado.
+  --   '14' = Jalisco · '14039' = Guadalajara (claves INEGI, ver mx_states/mx_municipalities)
+  -- Las fechas son ficticias pero mayores de edad: ejercitan users_mayoria_de_edad en
+  -- lugar de dejar la columna NULL, que esquiva el CHECK por completo.
+  update public.users u
+     set state_id = '14', municipality_id = '14039',
+         -- Una fecha distinta por usuario, determinista entre re-seeds. No se usa
+         -- created_at: todas las filas comparten el now() de la transacción del seed
+         -- y quedarían con la misma fecha. El offset va en int, no bigint: no existe
+         -- el operador date + bigint.
+         date_of_birth = date '1990-01-01' + (r.rn * 137)::int
+    from (select id, row_number() over (order by created_at, id) as rn
+            from public.users where state_id is null) r
+   where u.id = r.id;
+
   -- ────────────────────────────────────────────────────────────────────────────
   -- 3. agencies — creadas por sus owners (created_by_user_id ya existe en public.users)
   --    Constraints: agencies_slug_unique_active, agencies_name_unique_active
@@ -366,8 +385,18 @@ begin
   --     phone NULL y el CTA de WhatsApp no renderiza. Mismo criterio que la
   --     migración: solo role='agent' con phone NULL.
   -- ────────────────────────────────────────────────────────────────────────────
-  update public.users set phone = '+523312345678'
-  where role = 'agent' and phone is null;
+  --     #72.2: teléfonos DISTINTOS por agente. Antes todos recibían el mismo
+  --     '+523312345678', lo que choca con el índice único users_phone_unique_active
+  --     (la migración lo de-duplica dejando uno solo y el resto en NULL → los CTA de
+  --     WhatsApp desaparecían del feed demo). El sufijo sale de row_number(), así que
+  --     es determinista y estable entre re-seeds.
+  update public.users u
+  set phone = '+52331234' || lpad(r.rn::text, 4, '0')
+  from (
+    select id, row_number() over (order by created_at, id) as rn
+    from public.users where role = 'agent' and phone is null
+  ) r
+  where u.id = r.id;
 
   -- ────────────────────────────────────────────────────────────────────────────
   -- 14. created_at escalonado — el feed ordena por created_at desc y las 10

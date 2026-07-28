@@ -20,10 +20,11 @@
  * cada pantalla trae su propio header con identidad Urbea (BackButton).
  */
 import React from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Redirect, Stack } from 'expo-router';
 
 import { useAuth } from '@/features/auth/context';
+import { LegalGateBoundary } from '@/features/auth/components/legal-gate-boundary';
 
 export default function ProtectedLayout(): React.ReactElement {
   const { session, isLoading } = useAuth();
@@ -42,16 +43,18 @@ export default function ProtectedLayout(): React.ReactElement {
     return <Redirect href="/login" />;
   }
 
-  // Sesión activa — renderiza el contenido protegido como Stack navegable.
+  // Sesión activa — gate legal (#72.6) y luego el contenido protegido como Stack.
   return (
-    <Stack
-      screenOptions={{
-        headerShown: false,
-        gestureEnabled: true,
-        fullScreenGestureEnabled: true,
-        animation: 'slide_from_right',
-      }}
-    />
+    <LegalGateBoundary>
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          gestureEnabled: true,
+          fullScreenGestureEnabled: true,
+          animation: 'slide_from_right',
+        }}
+      />
+    </LegalGateBoundary>
   );
 }
 

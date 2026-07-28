@@ -1,11 +1,19 @@
 ---
 tipo: estado
-actualizado: 2026-07-27
+actualizado: 2026-07-28
 ---
 
 # Estado actual
 
 > Narrativa de "dónde estamos hoy". El **qué sigue / qué está hecho** vive en **Taskmaster** (`task-master list`), no aquí.
+
+## Hoy (2026-07-28)
+
+- **🔐 #72 (Ola 1 — Auth) avanzada: 4 de 7 subtareas cerradas, 3 `deferred` por cuentas externas.** Lo que ya está en `main`: el **catálogo oficial INEGI** (32 estados, 2478 municipios, bajados del web service oficial de INEGI, no de un mirror), los **constraints de registro §5.1** (FK al catálogo, mayoría de edad server-side, teléfono único y canónico) y el **gate legal versionado §5.5** (bloqueante, con re-aceptación al publicar una versión nueva). Ver [[legal-consentimientos]].
+- **🔒 El hallazgo que más valía.** El teléfono se guardaba tal como se tecleaba, y `users_phone_unique_active` compara **texto crudo**: `'3312345678'`, `'+523312345678'` y `'33 1234 5678'` eran tres cuentas activas distintas de la misma persona. La unicidad que §5.1 promete no servía de nada. Se cerró en el cliente (`to_e164_mx`) **y** con un CHECK en la DB — el CHECK no es redundante: `phone` está en el grant por columna de 0008 y se puede escribir por PostgREST saltándose el formulario.
+- **🚧 Qué falta de #72 y por qué.** `72.3` (verificación real de correo) espera **cuenta Resend + dominio verificado**; `72.4` (Google OAuth) espera un **Google Cloud OAuth client**; `72.5` (recuperar contraseña) solo espera el SMTP de 72.3. **La UI de las tres ya está construida y en verde** — al llegar las credenciales es configurar, no programar.
+- **🧾 Deuda nueva, levantada como tarea y no dejada en el chat.** **#92**: `anon` tiene TRUNCATE sobre todo `public` (Supabase lo concede de fábrica; probado, arrastra 13 tablas y solo se detiene en `events_raw`). **#93**: `/auth/v1/signup` con la anon key crea cuentas incompletas §5.1, y los errores crudos de Postgres llegan sin filtrar a un llamante anónimo. **#94**: el consentimiento de WhatsApp no se verifica en el punto de contacto, así que hoy es puramente probatorio.
+- **📍 Ruta crítica.** Sigue igual: **#71** (roles/multi-tenant) o **#76** (modelo de datos de pagos) para destrabar **#73**. Los bloqueantes de deploy-day siguen en **#90**.
 
 ## Hoy (2026-07-27)
 

@@ -30,7 +30,7 @@
  */
 
 import React from 'react';
-import { render, act, cleanup } from '@testing-library/react-native';
+import { render, act, cleanup, fireEvent } from '@testing-library/react-native';
 import type { Session } from '@supabase/supabase-js';
 
 // ---------------------------------------------------------------------------
@@ -60,6 +60,37 @@ jest.mock('@/features/auth/context', () => ({
     signOut: jest.fn(),
   }),
 }));
+
+// Estado controlable de useLegalGate (#72.6). Se mockea el hook completo porque ya
+// tiene su propia suite (useLegalGate.test.ts, 7 tests) — aquí lo que se prueba es la
+// PRECEDENCIA de gates del layout, no la lógica del gate.
+const mock_legal_gate_state: {
+  pending: { doc_type: 'terms' | 'privacy'; version: string; terms_version_id: string }[];
+  is_loading: boolean;
+  error: string | null;
+} = {
+  pending: [],
+  is_loading: false,
+  error: null,
+};
+
+const mock_legal_refresh = jest.fn();
+
+jest.mock('@/features/auth/hooks/useLegalGate', () => ({
+  useLegalGate: () => ({
+    pending: mock_legal_gate_state.pending,
+    is_loading: mock_legal_gate_state.is_loading,
+    error: mock_legal_gate_state.error,
+    accept: jest.fn(),
+    refresh: mock_legal_refresh,
+  }),
+}));
+
+// El muro se sustituye por un marcador: su render no es lo que se prueba aquí.
+jest.mock('@/features/auth/components/legal-wall', () => {
+  const { View } = require('react-native');
+  return { LegalWall: () => <View testID="legal-wall" /> };
+});
 
 // Captura el href que recibe Redirect para poder asertar sobre él
 let captured_redirect_href: string | null = null;
@@ -117,6 +148,12 @@ beforeEach(() => {
   // Estado por defecto: cargando sin sesión (inicio de app)
   mock_use_auth_state.session = null;
   mock_use_auth_state.isLoading = true;
+  // Gate legal al día por defecto: los tests preexistentes de auth no deben verse
+  // afectados por el gate nuevo (#72.6).
+  mock_legal_gate_state.pending = [];
+  mock_legal_gate_state.is_loading = false;
+  mock_legal_gate_state.error = null;
+  mock_legal_refresh.mockClear();
 });
 
 afterEach(() => {
@@ -289,5 +326,119 @@ describe('EC-PL7: estado_autenticado_completo_muestra_slot', () => {
 
     // Aserción fuerte: debe existir el contenido protegido
     expect(q.getByTestId('stack-content')).toBeTruthy();
+  });
+});
+
+// ===========================================================================
+// #72.6 — Gate legal (PRD §5.5). Lo que se prueba aquí es la PRECEDENCIA de
+// gates del layout; la lógica del gate vive en useLegalGate.test.ts.
+//
+// Orden esperado: isLoading de auth → sesión → gate legal → contenido.
+// ===========================================================================
+
+const PENDING_TERMS = [
+  { doc_type: 'terms' as const, version: '2.0', terms_version_id: 'v-2-0' },
+];
+
+async function render_layout(): Promise<RenderResult> {
+  let q!: RenderResult;
+  await act(async () => {
+    q = await render(<ProtectedLayout />);
+  });
+  return q;
+}
+
+describe('EC-PL8: gate_legal_con_pendientes_muestra_muro', () => {
+  it('con sesión y documentos sin aceptar → muro legal, NO contenido protegido', async () => {
+    mock_use_auth_state.isLoading = false;
+    mock_use_auth_state.session = make_session();
+    mock_legal_gate_state.pending = PENDING_TERMS;
+
+    const q = await render_layout();
+
+    expect(q.queryByTestId('legal-wall')).not.toBeNull();
+    expect(q.queryByTestId('stack-content')).toBeNull();
+  });
+});
+
+describe('EC-PL9: gate_legal_al_dia_deja_pasar', () => {
+  it('con sesión y sin pendientes → contenido protegido, sin muro', async () => {
+    mock_use_auth_state.isLoading = false;
+    mock_use_auth_state.session = make_session();
+    mock_legal_gate_state.pending = [];
+
+    const q = await render_layout();
+
+    expect(q.queryByTestId('legal-wall')).toBeNull();
+    expect(q.queryByTestId('stack-content')).not.toBeNull();
+  });
+});
+
+describe('EC-PL10: gate_legal_cargando_no_deja_pasar', () => {
+  it('mientras el gate carga NO se renderiza el contenido protegido', async () => {
+    // El caso que importa: dejar pasar "mientras carga" abriría justo la ventana
+    // que el gate existe para cerrar.
+    mock_use_auth_state.isLoading = false;
+    mock_use_auth_state.session = make_session();
+    mock_legal_gate_state.is_loading = true;
+
+    const q = await render_layout();
+
+    expect(q.queryByTestId('legal-gate-loading')).not.toBeNull();
+    expect(q.queryByTestId('stack-content')).toBeNull();
+    expect(q.queryByTestId('legal-wall')).toBeNull();
+  });
+});
+
+describe('EC-PL11: gate_legal_con_error_falla_cerrado_con_reintento', () => {
+  it('error de la RPC → NO deja pasar, ofrece reintentar', async () => {
+    mock_use_auth_state.isLoading = false;
+    mock_use_auth_state.session = make_session();
+    mock_legal_gate_state.error = 'connection timeout';
+    mock_legal_gate_state.pending = [];
+
+    const q = await render_layout();
+
+    expect(q.queryByTestId('legal-gate-error')).not.toBeNull();
+    expect(q.queryByTestId('legal-gate-retry')).not.toBeNull();
+    // Lo esencial: no se cuela al contenido por un fallo de red.
+    expect(q.queryByTestId('stack-content')).toBeNull();
+  });
+
+  it('el botón de reintentar vuelve a consultar el gate (no es un callejón sin salida)', async () => {
+    mock_use_auth_state.isLoading = false;
+    mock_use_auth_state.session = make_session();
+    mock_legal_gate_state.error = 'connection timeout';
+
+    const q = await render_layout();
+    await act(async () => {
+      fireEvent.press(q.getByTestId('legal-gate-retry'));
+    });
+
+    expect(mock_legal_refresh).toHaveBeenCalled();
+  });
+});
+
+describe('EC-PL12: precedencia_auth_sobre_gate_legal', () => {
+  it('sin sesión, aunque haya pendientes legales, redirige a login (auth manda)', async () => {
+    mock_use_auth_state.isLoading = false;
+    mock_use_auth_state.session = null;
+    mock_legal_gate_state.pending = PENDING_TERMS;
+
+    const q = await render_layout();
+
+    expect(captured_redirect_href).toBe('/login');
+    expect(q.queryByTestId('legal-wall')).toBeNull();
+  });
+
+  it('isLoading de auth manda sobre todo, incluido el gate legal', async () => {
+    mock_use_auth_state.isLoading = true;
+    mock_use_auth_state.session = null;
+    mock_legal_gate_state.pending = PENDING_TERMS;
+
+    const q = await render_layout();
+
+    expect(q.queryByTestId('loading-indicator')).not.toBeNull();
+    expect(q.queryByTestId('legal-wall')).toBeNull();
   });
 });

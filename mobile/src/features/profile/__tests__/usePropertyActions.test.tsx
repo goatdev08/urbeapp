@@ -160,6 +160,8 @@ beforeEach(() => {
     signIn: jest.fn(),
     signUp: jest.fn(),
     signOut: jest.fn(),
+    requestPasswordReset: jest.fn(),
+    updatePassword: jest.fn(),
   });
 });
 

@@ -193,6 +193,8 @@ beforeEach(() => {
     signIn: jest.fn(),
     signUp: jest.fn(),
     signOut: jest.fn(),
+    requestPasswordReset: jest.fn(),
+    updatePassword: jest.fn(),
   });
 });
 
@@ -415,6 +417,8 @@ describe('useSavedProperties', () => {
       signIn: jest.fn(),
       signUp: jest.fn(),
       signOut: jest.fn(),
+      requestPasswordReset: jest.fn(),
+      updatePassword: jest.fn(),
     });
 
     const mock = make_supabase_mock();
@@ -491,6 +495,8 @@ describe('useSavedProperties — suscripción a onPropertyDeleted (55.2)', () =>
       signIn: jest.fn(),
       signUp: jest.fn(),
       signOut: jest.fn(),
+      requestPasswordReset: jest.fn(),
+      updatePassword: jest.fn(),
     });
   });
 

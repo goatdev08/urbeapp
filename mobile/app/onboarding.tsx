@@ -18,6 +18,7 @@ import { Redirect } from 'expo-router';
 
 import { useAuth } from '@/features/auth/context';
 import { OnboardingScreen } from '@/features/onboarding/OnboardingScreen';
+import { LegalGateBoundary } from '@/features/auth/components/legal-gate-boundary';
 
 export default function OnboardingRoute() {
   const { session, isLoading } = useAuth();
@@ -32,5 +33,12 @@ export default function OnboardingRoute() {
     return <Redirect href="/login" />;
   }
 
-  return <OnboardingScreen />;
+  // Gate legal (#72.6) antes del onboarding: aquí se capturan datos personales y foto
+  // de perfil, así que dejarlo fuera del gate significaba recolectarlos ANTES de que el
+  // usuario aceptara el Aviso de Privacidad. Lo detectó la auditoría de 72.6.
+  return (
+    <LegalGateBoundary>
+      <OnboardingScreen />
+    </LegalGateBoundary>
+  );
 }

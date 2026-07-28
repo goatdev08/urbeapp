@@ -1,6 +1,15 @@
 // Tipos TypeScript generados desde el esquema de Supabase (proyecto urbea-app).
 // Regenerar con:  supabase gen types typescript --project-id mvpvqmyhrrkwbnpctpuq > supabase/types/database.types.ts
 // (o vía el MCP de Supabase: generate_typescript_types). NO editar a mano.
+//
+// ⚠️ #72 (2026-07-27): esta versión se generó con `--local`, contra el stack de
+// desarrollo, porque las migraciones 20260727000001/2/3 (catálogo INEGI, constraints de
+// registro y gate legal) TODAVÍA NO están desplegadas al remoto. O sea: este archivo
+// describe un esquema que aún no existe en urbea-app. Al desplegar esas migraciones,
+// regenerar contra --project-id para volver a la fuente canónica.
+//
+// Gotcha de entorno: `gen types --local` necesita el credential helper de Docker en el
+// PATH → export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"
 
 export type Json =
   | string
@@ -11,10 +20,30 @@ export type Json =
   | Json[]
 
 export type Database = {
-  // Allows to automatically instantiate createClient with right options
-  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
-  __InternalSupabase: {
-    PostgrestVersion: "14.5"
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
   }
   public: {
     Tables: {
@@ -403,6 +432,24 @@ export type Database = {
         }
         Relationships: []
       }
+      app_config: {
+        Row: {
+          key: string
+          updated_at: string
+          value: Json
+        }
+        Insert: {
+          key: string
+          updated_at?: string
+          value: Json
+        }
+        Update: {
+          key?: string
+          updated_at?: string
+          value?: Json
+        }
+        Relationships: []
+      }
       events_raw: {
         Row: {
           agent_id: string | null
@@ -619,6 +666,56 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      mx_municipalities: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          state_id: string
+        }
+        Insert: {
+          created_at?: string
+          id: string
+          name: string
+          state_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          state_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mx_municipalities_state_id_fkey"
+            columns: ["state_id"]
+            isOneToOne: false
+            referencedRelation: "mx_states"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      mx_states: {
+        Row: {
+          abbr: string
+          created_at: string
+          id: string
+          name: string
+        }
+        Insert: {
+          abbr: string
+          created_at?: string
+          id: string
+          name: string
+        }
+        Update: {
+          abbr?: string
+          created_at?: string
+          id?: string
+          name?: string
+        }
+        Relationships: []
       }
       notifications: {
         Row: {
@@ -865,6 +962,8 @@ export type Database = {
       }
       property_videos: {
         Row: {
+          agent_id: string | null
+          archived_at: string | null
           cloudflare_uid: string | null
           created_at: string
           deleted_at: string | null
@@ -873,15 +972,20 @@ export type Database = {
           id: string
           playback_url: string | null
           position: number
-          property_id: string
+          property_id: string | null
+          r2_archive_key: string | null
           ready_at: string | null
           size_bytes: number | null
           status: Database["public"]["Enums"]["property_video_status"]
           storage_path: string | null
+          thumbnail_pct: number | null
           thumbnail_url: string | null
+          tus_upload_url: string | null
           updated_at: string
         }
         Insert: {
+          agent_id?: string | null
+          archived_at?: string | null
           cloudflare_uid?: string | null
           created_at?: string
           deleted_at?: string | null
@@ -890,15 +994,20 @@ export type Database = {
           id?: string
           playback_url?: string | null
           position: number
-          property_id: string
+          property_id?: string | null
+          r2_archive_key?: string | null
           ready_at?: string | null
           size_bytes?: number | null
           status?: Database["public"]["Enums"]["property_video_status"]
           storage_path?: string | null
+          thumbnail_pct?: number | null
           thumbnail_url?: string | null
+          tus_upload_url?: string | null
           updated_at?: string
         }
         Update: {
+          agent_id?: string | null
+          archived_at?: string | null
           cloudflare_uid?: string | null
           created_at?: string
           deleted_at?: string | null
@@ -907,15 +1016,25 @@ export type Database = {
           id?: string
           playback_url?: string | null
           position?: number
-          property_id?: string
+          property_id?: string | null
+          r2_archive_key?: string | null
           ready_at?: string | null
           size_bytes?: number | null
           status?: Database["public"]["Enums"]["property_video_status"]
           storage_path?: string | null
+          thumbnail_pct?: number | null
           thumbnail_url?: string | null
+          tus_upload_url?: string | null
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "property_videos_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "property_videos_property_id_fkey"
             columns: ["property_id"]
@@ -1043,10 +1162,12 @@ export type Database = {
           budget_max: number | null
           budget_min: number | null
           created_at: string
+          full_name: string | null
           id: string
           location: unknown
           location_radius_km: number
           onboarding_completed_at: string | null
+          profile_photo_url: string | null
           search_operation_type:
             | Database["public"]["Enums"]["operation_type"]
             | null
@@ -1060,10 +1181,12 @@ export type Database = {
           budget_max?: number | null
           budget_min?: number | null
           created_at?: string
+          full_name?: string | null
           id?: string
           location?: unknown
           location_radius_km?: number
           onboarding_completed_at?: string | null
+          profile_photo_url?: string | null
           search_operation_type?:
             | Database["public"]["Enums"]["operation_type"]
             | null
@@ -1077,10 +1200,12 @@ export type Database = {
           budget_max?: number | null
           budget_min?: number | null
           created_at?: string
+          full_name?: string | null
           id?: string
           location?: unknown
           location_radius_km?: number
           onboarding_completed_at?: string | null
+          profile_photo_url?: string | null
           search_operation_type?:
             | Database["public"]["Enums"]["operation_type"]
             | null
@@ -1114,9 +1239,11 @@ export type Database = {
           is_verified_agent: boolean
           last_login_at: string | null
           last_name: string | null
+          municipality_id: string | null
           phone: string | null
           role: Database["public"]["Enums"]["user_role"]
           state: string | null
+          state_id: string | null
           updated_at: string
         }
         Insert: {
@@ -1134,9 +1261,11 @@ export type Database = {
           is_verified_agent?: boolean
           last_login_at?: string | null
           last_name?: string | null
+          municipality_id?: string | null
           phone?: string | null
           role?: Database["public"]["Enums"]["user_role"]
           state?: string | null
+          state_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -1154,9 +1283,11 @@ export type Database = {
           is_verified_agent?: boolean
           last_login_at?: string | null
           last_name?: string | null
+          municipality_id?: string | null
           phone?: string | null
           role?: Database["public"]["Enums"]["user_role"]
           state?: string | null
+          state_id?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -1167,6 +1298,20 @@ export type Database = {
             referencedRelation: "agencies"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "users_municipality_id_fkey"
+            columns: ["municipality_id"]
+            isOneToOne: false
+            referencedRelation: "mx_municipalities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "users_state_id_fkey"
+            columns: ["state_id"]
+            isOneToOne: false
+            referencedRelation: "mx_states"
+            referencedColumns: ["id"]
+          },
         ]
       }
     }
@@ -1174,7 +1319,68 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      admin_create_agency_atomic: {
+        Args: {
+          p_contact_email: string
+          p_contact_name: string
+          p_contact_phone: string
+          p_created_by_user_id: string
+          p_name: string
+          p_owner_user_id?: string
+          p_slug: string
+          p_token_hash?: string
+          p_token_max_uses?: number
+        }
+        Returns: {
+          agency_id: string
+          agency_member_id: string
+          token_id: string
+        }[]
+      }
+      pending_legal_consents: {
+        Args: never
+        Returns: {
+          doc_type: string
+          terms_version_id: string
+          version: string
+        }[]
+      }
+      properties_within_radius: {
+        Args: { p_lat: number; p_lng: number; p_radius_m: number }
+        Returns: {
+          distance_m: number
+          id: string
+        }[]
+      }
+      publish_property_atomic: {
+        Args: {
+          p_address?: string
+          p_allows_no_guarantor?: boolean
+          p_bathrooms?: number
+          p_bedrooms?: number
+          p_cloudflare_uid?: string
+          p_description?: string
+          p_lat?: number
+          p_lng?: number
+          p_operation_type: string
+          p_pet_friendly?: boolean
+          p_price: number
+          p_property_type: string
+          p_square_meters?: number
+          p_student_friendly?: boolean
+          p_user_id: string
+        }
+        Returns: {
+          property_id: string
+        }[]
+      }
+      redeem_invitation_atomic: {
+        Args: { p_ip?: unknown; p_token_id: string; p_user_id: string }
+        Returns: {
+          agency_id: string
+          agency_member_id: string
+        }[]
+      }
     }
     Enums: {
       agency_member_role: "owner" | "agent"
@@ -1230,7 +1436,12 @@ export type Database = {
         | "closed"
         | "suspended"
       property_type: "casa" | "departamento" | "local" | "oficina" | "terreno"
-      property_video_status: "uploading" | "processing" | "ready" | "failed"
+      property_video_status:
+        | "uploading"
+        | "processing"
+        | "ready"
+        | "failed"
+        | "archived"
       user_role: "user" | "agent" | "admin"
     }
     CompositeTypes: {
@@ -1357,6 +1568,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {
       agency_member_role: ["owner", "agent"],
@@ -1418,8 +1632,15 @@ export const Constants = {
         "suspended",
       ],
       property_type: ["casa", "departamento", "local", "oficina", "terreno"],
-      property_video_status: ["uploading", "processing", "ready", "failed"],
+      property_video_status: [
+        "uploading",
+        "processing",
+        "ready",
+        "failed",
+        "archived",
+      ],
       user_role: ["user", "agent", "admin"],
     },
   },
 } as const
+
