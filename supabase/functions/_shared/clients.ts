@@ -216,7 +216,10 @@ export function make_phone_exists(
       .eq("phone", phone)
       .is("deleted_at", null)
       .maybeSingle();
-    if (error) return false;
+    if (error) {
+      console.error("register: phone_exists falló, fail-open (false)", error);
+      return false;
+    }
     return data !== null;
   };
 }

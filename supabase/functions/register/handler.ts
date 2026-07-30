@@ -28,12 +28,38 @@
 import { handle_cors_preflight } from "../_shared/cors.ts";
 import { error_response, json_response } from "../_shared/response.ts";
 import { parse_register_input } from "../_shared/validation.ts";
-import type { RegisterDeps } from "./types.ts";
+import type {
+  RegisterAtomicResult,
+  RegisterAuthAdmin,
+  RegisterDeps,
+} from "./types.ts";
 
 // Mensaje genérico para cualquier fallo de register_atomic (FIELDS_INCOMPLETE,
 // NO_ACTIVE_TERMS, NO_ACTIVE_PRIVACY): son errores de configuración/integridad
 // del lado del servidor, no algo que el usuario pueda corregir con el mensaje.
 const REGISTER_ATOMIC_ERROR_MESSAGE = "No se pudo completar el registro";
+
+/**
+ * Compensación best-effort: revierte el usuario huérfano de auth.users cuando
+ * register_atomic falla (o lanza) DESPUÉS de que createUser ya lo creó. No hay
+ * transacción distribuida entre auth.admin y public.*. Si la compensación
+ * también falla, se registra con console.error (O2) — sin enmascarar el error
+ * original, que sigue subiendo igual.
+ */
+async function compensate_delete_user(
+  authAdmin: RegisterAuthAdmin,
+  user_id: string,
+  context: string,
+): Promise<void> {
+  try {
+    await authAdmin.deleteUser(user_id);
+  } catch (delete_error) {
+    console.error(`register: compensación deleteUser falló (${context})`, {
+      user_id,
+      delete_error,
+    });
+  }
+}
 
 function pad2(n: number): string {
   return String(n).padStart(2, "0");
@@ -188,22 +214,35 @@ export async function handler(
 
     // Canje atómico vía RPC register_user_atomic (migración 20260729000001,
     // subtarea 93.1). Append-only, NO idempotente — se llama EXACTAMENTE una vez.
-    const atomic_result = await registrar.register_atomic({ user_id, ip });
+    // Envuelto en su propio try: si LANZA (no devuelve {ok:false}) el usuario
+    // ya quedó creado en auth.users, así que la compensación debe correr
+    // igual (N1) — el catch global de más abajo NO compensa, solo responde.
+    let atomic_result: RegisterAtomicResult;
+    try {
+      atomic_result = await registrar.register_atomic({ user_id, ip });
+    } catch (atomic_error) {
+      await compensate_delete_user(
+        authAdmin,
+        user_id,
+        "register_atomic lanzó una excepción",
+      );
+      console.error(
+        "register: register_atomic lanzó una excepción inesperada",
+        { user_id, atomic_error },
+      );
+      return error_response(
+        "INTERNAL_ERROR",
+        REGISTER_ATOMIC_ERROR_MESSAGE,
+        500,
+      );
+    }
 
     if (!atomic_result.ok) {
-      // Compensación: no hay transacción distribuida entre auth.admin y
-      // public.*. Si la RPC falla tras crear el usuario, revertimos el
-      // usuario huérfano (best-effort). Si la compensación también falla, se
-      // registra con console.error (O2) — sin enmascarar el error original,
-      // que sigue subiendo igual.
-      try {
-        await authAdmin.deleteUser(user_id);
-      } catch (delete_error) {
-        console.error(
-          "register: compensación deleteUser falló tras register_atomic",
-          { user_id, delete_error },
-        );
-      }
+      await compensate_delete_user(
+        authAdmin,
+        user_id,
+        "register_atomic falló",
+      );
       return error_response(
         atomic_result.error_code,
         REGISTER_ATOMIC_ERROR_MESSAGE,
@@ -212,7 +251,11 @@ export async function handler(
     }
 
     return json_response({ user_id }, 200);
-  } catch (_e) {
+  } catch (e) {
+    // Cualquier otra dependencia (phone_exists, createUser) que LANCE en vez
+    // de resolver/devolver {error} termina aquí — se registra con
+    // console.error (N2) y se responde 500 estático, nunca el texto crudo.
+    console.error("register: excepción inesperada en el flujo", e);
     return error_response(
       "INTERNAL_ERROR",
       "No se pudo completar el registro",

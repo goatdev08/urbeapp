@@ -254,12 +254,15 @@ export function parse_create_agency_input(
     data: {
       name: obj.name,
       slug: obj.slug,
-      contact_email:
-        typeof obj.contact_email === "string" ? obj.contact_email : undefined,
-      contact_name:
-        typeof obj.contact_name === "string" ? obj.contact_name : undefined,
-      contact_phone:
-        typeof obj.contact_phone === "string" ? obj.contact_phone : undefined,
+      contact_email: typeof obj.contact_email === "string"
+        ? obj.contact_email
+        : undefined,
+      contact_name: typeof obj.contact_name === "string"
+        ? obj.contact_name
+        : undefined,
+      contact_phone: typeof obj.contact_phone === "string"
+        ? obj.contact_phone
+        : undefined,
     },
   };
 }
@@ -280,6 +283,23 @@ function invalid_input(
   message: string,
 ): { success: false; error: { code: string; message: string } } {
   return { success: false, error: { code: "INVALID_INPUT", message } };
+}
+
+/**
+ * Valida que `YYYY-MM-DD` (ya validado por DATE_REGEX) sea una fecha REAL del
+ * calendario, no solo un string con la forma correcta. `Date.parse`/`new Date`
+ * de V8 "rola" al mes siguiente en vez de devolver NaN para días imposibles
+ * (`new Date("2010-02-31T00:00:00Z")` → 2010-03-03) — isNaN() no lo cacha. El
+ * round-trip de los componentes UTC contra el string original sí delata el
+ * rolling. 2008-02-29 (bisiesto real) hace round-trip limpio y pasa.
+ */
+function is_real_calendar_date(iso_date: string): boolean {
+  const date = new Date(`${iso_date}T00:00:00Z`);
+  if (isNaN(date.getTime())) return false;
+  const [year, month, day] = iso_date.split("-").map(Number);
+  return date.getUTCFullYear() === year &&
+    date.getUTCMonth() + 1 === month &&
+    date.getUTCDate() === day;
 }
 
 /**
@@ -335,7 +355,7 @@ export function parse_register_input(raw: unknown): ParseResult<RegisterInput> {
   ) {
     return invalid_input("date_of_birth debe tener formato YYYY-MM-DD");
   }
-  if (isNaN(Date.parse(`${obj.date_of_birth}T00:00:00Z`))) {
+  if (!is_real_calendar_date(obj.date_of_birth)) {
     return invalid_input("date_of_birth no es una fecha válida");
   }
 
