@@ -1,5 +1,20 @@
 // supabase/functions/register/handler.test.ts
 //
+// Tests RED v3 (mini-addendum) — subtarea 93.2 (Edge Function `register`, POST
+// público sin JWT). El guardián dio PASS sobre el RED v2/GREEN con 3
+// observaciones adicionales, fijadas aquí con tests ANTES de cerrar:
+//   N1 (la importante): si register_atomic LANZA (no {ok:false}) DESPUÉS de
+//     que createUser ya creó el usuario, la compensación deleteUser debe
+//     seguir ejecutándose — hoy el catch global se salta la compensación por
+//     completo y deja un usuario logueable sin los 4 consentimientos de
+//     §5.5 (el hueco exacto que la tarea #93 existe para cerrar).
+//   N2: el catch global de una excepción inesperada se registra con
+//     console.error — hoy desaparece sin rastro.
+//   N3: fechas imposibles que el regex YYYY-MM-DD deja pasar y que V8 "rola"
+//     al mes siguiente en vez de devolver NaN ("2010-02-31" → parsea a
+//     2010-03-03, NO NaN) deben rechazarse con 400 INVALID_INPUT sin llamar
+//     createUser; un bisiesto real ("2008-02-29") NO debe rechazarse.
+//
 // Tests RED v2 — subtarea 93.2 (Edge Function `register`, POST público sin JWT).
 // Framework: Deno.test + std/assert. DI puro (mirror de
 // ../redeem-invitation/{index.test.ts,redeem_flow.test.ts}): fakes de
@@ -515,6 +530,46 @@ Deno.test("validacion_date_of_birth_no_fecha_retorna_400", async () => {
   assertEquals((await res.json()).error.code, "INVALID_INPUT");
 });
 
+// ── ⭐ N3 (addendum guardián): fechas imposibles que el regex deja pasar y V8
+//     "rola" al mes siguiente en vez de devolver NaN — confirmado empíricamente:
+//     new Date("2010-02-31T00:00:00Z") → 2010-03-03 (NO NaN). isNaN(Date.parse(...))
+//     no las cacha, así que hoy pasan la validación y revientan en Postgres con
+//     un 500 opaco en vez de un 400 claro.
+
+Deno.test("validacion_date_of_birth_31_de_febrero_no_existe_retorna_400", async () => {
+  const authAdmin = admin_ok(), registrar = registrar_ok();
+  const res = await handler(
+    post({ ...PAYLOAD_VALIDO, date_of_birth: "2010-02-31" }),
+    { authAdmin, registrar },
+  );
+  assertEquals(res.status, 400);
+  assertEquals((await res.json()).error.code, "INVALID_INPUT");
+  assertEquals(authAdmin.create_calls.length, 0);
+});
+
+Deno.test("validacion_date_of_birth_30_de_febrero_no_existe_retorna_400", async () => {
+  const authAdmin = admin_ok(), registrar = registrar_ok();
+  const res = await handler(
+    post({ ...PAYLOAD_VALIDO, date_of_birth: "2027-02-30" }),
+    { authAdmin, registrar },
+  );
+  assertEquals(res.status, 400);
+  assertEquals((await res.json()).error.code, "INVALID_INPUT");
+  assertEquals(authAdmin.create_calls.length, 0);
+});
+
+Deno.test("validacion_date_of_birth_29_de_febrero_bisiesto_real_no_se_rechaza", async () => {
+  // Control: 2008 SÍ fue bisiesto — esta fecha es válida y NO debe rechazarse
+  // por "fecha imposible" (2008-02-29 ya cumple 18 años, así que el happy path
+  // completo debe funcionar, no solo pasar la validación de formato).
+  const authAdmin = admin_ok(), registrar = registrar_ok();
+  const res = await handler(
+    post({ ...PAYLOAD_VALIDO, date_of_birth: "2008-02-29" }),
+    { authAdmin, registrar },
+  );
+  assertEquals(res.status, 200);
+});
+
 Deno.test("validacion_state_id_ausente_retorna_400", async () => {
   const { state_id: _omit, ...sin_state } = PAYLOAD_VALIDO;
   const res = await handler(post(sin_state));
@@ -947,6 +1002,48 @@ Deno.test("register_atomic_lanza_excepcion_retorna_500_estatico_sin_exponer_el_t
   assertEquals(typeof body.error.code, "string");
   assertEquals(typeof body.error.message, "string");
   no_string_leak(body, mensaje_interno_sensible);
+});
+
+// ── ⭐ N1 (addendum guardián, la importante): si register_atomic LANZA
+//     (después de que createUser YA creó el usuario), la compensación
+//     deleteUser debe seguir ejecutándose — igual que en el camino
+//     {ok:false}. Hoy el catch global se salta la compensación por completo:
+//     queda un usuario logueable en auth.users SIN los 4 consentimientos de
+//     §5.5 — exactamente el hueco que la tarea #93 existe para cerrar.
+Deno.test("register_atomic_lanza_excepcion_igual_compensa_delete_user", async () => {
+  const authAdmin = admin_ok();
+  const registrar = registrar_throws("connection terminated unexpectedly");
+  const res = await handler(post(PAYLOAD_VALIDO), { authAdmin, registrar });
+  assertEquals(res.status, 500);
+  assertEquals(
+    authAdmin.delete_calls,
+    [USER_ID],
+    "register_atomic lanzando una excepción también debe compensar con deleteUser(user_id)",
+  );
+});
+
+// ── ⭐ N2 (addendum guardián): el catch global de una excepción inesperada se
+//     REGISTRA con console.error — hoy desaparece sin rastro (catch vacío que
+//     solo retorna 500), mismo patrón de spy que la compensación fallida (O2).
+Deno.test("catch_global_de_excepcion_inesperada_se_registra_con_console_error", async () => {
+  const original_console_error = console.error;
+  const console_error_calls: unknown[][] = [];
+  console.error = (...args: unknown[]) => {
+    console_error_calls.push(args);
+  };
+  try {
+    const authAdmin = admin_create_throws("boom_interno_inesperado");
+    const registrar = registrar_ok();
+    const res = await handler(post(PAYLOAD_VALIDO), { authAdmin, registrar });
+    assertEquals(res.status, 500);
+    assertEquals(
+      console_error_calls.length > 0,
+      true,
+      "el catch global debe registrar la excepción inesperada con console.error",
+    );
+  } finally {
+    console.error = original_console_error;
+  }
 });
 
 // ── IP del cliente ─────────────────────────────────────────────────────────

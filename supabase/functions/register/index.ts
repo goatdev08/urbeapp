@@ -13,6 +13,7 @@
 
 import { handler } from "./handler.ts";
 import {
+  make_phone_exists,
   make_register_auth_admin,
   make_registrar,
   service_client,
@@ -23,5 +24,6 @@ Deno.serve((req: Request) => {
   return handler(req, {
     authAdmin: make_register_auth_admin(client),
     registrar: make_registrar(client),
+    phone_exists: make_phone_exists(client),
   });
 });
