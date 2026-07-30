@@ -1,13 +1,43 @@
 // supabase/functions/register/handler.test.ts
 //
-// Tests RED — subtarea 93.2 (Edge Function `register`, POST público sin JWT).
+// Tests RED v2 — subtarea 93.2 (Edge Function `register`, POST público sin JWT).
 // Framework: Deno.test + std/assert. DI puro (mirror de
 // ../redeem-invitation/{index.test.ts,redeem_flow.test.ts}): fakes de
-// RegisterAuthAdmin/RegisterAtomicRunner como funciones simples que graban
-// llamadas — sin supabase-js, sin red.
+// RegisterAuthAdmin/RegisterAtomicRunner/phone_exists como funciones simples
+// que graban llamadas — sin supabase-js, sin red.
 //
-// Contrato bajo test (fijado por el orquestador, PRD §5.1 y §5.5, y por el
-// contrato de 93.1 register_user_atomic — append-only, NO idempotente):
+// RENEGOCIACIÓN 2026-07-30 (hallazgo del guardián contra el stack local con
+// deps REALES): el bloque original "mapeo sanitizado de errores de
+// createUser" fijaba un contrato IMPOSIBLE. Evidencia empírica:
+//   - Email duplicado real: AuthApiError con message "A user with this email
+//     address has already been registered" (nótese: NO contiene la substring
+//     contigua "already registered" — "been" se interpone) y, en versiones
+//     nuevas de GoTrue, code "email_exists".
+//   - Teléfono duplicado y menor de edad: GoTrue SIEMPRE colapsa la violación
+//     del trigger handle_new_user en un 500 genérico "Database error creating
+//     new user" — el nombre del índice/constraint (users_phone_unique_active,
+//     users_mayoria_de_edad) JAMÁS llega en error.message. Las ramas del
+//     handler que lo buscan ahí son código muerto.
+// Contrato renegociado:
+//   - UNDERAGE se valida en el handler ANTES de tocar createUser, a partir de
+//     date_of_birth (edad >= 18 años AL DÍA DE HOY, boundary en UTC) → 422,
+//     createUser NUNCA se llama.
+//   - PHONE_TAKEN se resuelve con una nueva dep `phone_exists(phone)`
+//     (SELECT propio, semántica del índice parcial users_phone_unique_active
+//     — solo cuentas activas) consultada ANTES de createUser → 409 si existe,
+//     createUser NUNCA se llama. La carrera residual cae en createUser
+//     fallando con 500 AUTH_CREATE_FAILED genérico (backstop del CHECK/índice
+//     de la DB, sin fuga).
+//   - EMAIL_ALREADY_EXISTS reconoce AMBAS señales: code === "email_exists" O
+//     message que contenga "already been registered" O "already registered".
+//   - Cualquier otro error de createUser (incluido el 500 real de GoTrue
+//     "Database error creating new user") → 500 AUTH_CREATE_FAILED con
+//     mensaje ESTÁTICO.
+// El resto de los 54 tests originales (validación §5.1 de formato, CORS,
+// método HTTP, orquestación/compensación, IP, forma del error) queda igual.
+//
+// Contrato bajo test (PRD §5.1 y §5.5; contrato de 93.1 register_user_atomic
+// — append-only, NO idempotente):
 //   POST { email, password, first_name, last_name, phone, date_of_birth,
 //          state_id, municipality_id } — TODOS obligatorios.
 //   Happy path: authAdmin.createUser(...) con user_metadata EXACTA a lo que
@@ -16,7 +46,8 @@
 //   (user_id, ip) EXACTAMENTE UNA VEZ → 200 { user_id }.
 //   Si register_atomic falla → compensación deleteUser(user_id); si la
 //   compensación también falla, el error ORIGINAL de register_atomic sigue
-//   subiendo (no se enmascara).
+//   subiendo (no se enmascara), y el fallo de la compensación se registra con
+//   console.error (O2, sin enmascarar).
 //   Mapeo sanitizado de errores de createUser/RPC → nunca teléfono/email/
 //   nombre de índice/detail crudo de Postgres en el body de la respuesta
 //   (hueco 2 de la tarea #93 — ⭐ assert central).
@@ -56,6 +87,21 @@
 // - Para TODO caso de validación inválida: createUser NUNCA se llama
 // - Campos extra en el payload son ignorados (no rompe la validación)
 //
+// ### ⭐ Validación de edad (UNDERAGE, renegociada — YA NO es mapeo de createUser)
+// - date_of_birth de alguien que cumple 17 años HOY → 422 UNDERAGE,
+//   createUser NUNCA se llama
+// - date_of_birth de alguien que cumple EXACTAMENTE 18 años HOY → pasa la
+//   validación (boundary inclusive, mismo criterio que el CHECK
+//   users_mayoria_de_edad: "hace 18 años o más")
+// - date_of_birth de alguien a quien le faltan 18 años MENOS UN DÍA (cumple
+//   18 mañana) → 422 UNDERAGE
+//
+// ### ⭐ PHONE_TAKEN vía pre-check `phone_exists` (renegociado — YA NO es
+//     mapeo de createUser, porque GoTrue nunca expone el índice violado)
+// - phone_exists(phone) resuelve true → 409 PHONE_TAKEN, createUser NUNCA se llama
+// - phone_exists(phone) resuelve false → continúa el flujo normal (createUser SÍ se llama)
+// - phone_exists se consulta ANTES que createUser (orden verificado)
+//
 // ### CORS — ramas de reglas no obvias
 // - OPTIONS → 200-204 con Access-Control-Allow-Origin/Methods/Headers
 //
@@ -70,22 +116,35 @@
 //   (no hay usuario que compensar)
 // - register_atomic falla Y deleteUser también falla (rechaza) → el error
 //   ORIGINAL de register_atomic sigue subiendo igual (no se enmascara)
+// - (O2) si deleteUser falla, el fallo se registra con console.error — sin
+//   enmascarar el error original que sigue subiendo
 //
-// ### Mapeo sanitizado de errores de createUser
-// - mensaje crudo "User already registered" → EMAIL_ALREADY_EXISTS, 409
-// - mensaje crudo con el índice users_phone_unique_active → PHONE_TAKEN, 409
-// - mensaje crudo con el constraint users_mayoria_de_edad → UNDERAGE, 422
+// ### Mapeo sanitizado de errores de createUser (renegociado)
+// - message "A user with this email address has already been registered"
+//   (mensaje REAL de GoTrue) → EMAIL_ALREADY_EXISTS, 409
+// - message "User already registered" (variante corta) → EMAIL_ALREADY_EXISTS, 409
+// - code "email_exists" (con message NO relacionado) → EMAIL_ALREADY_EXISTS, 409
+// - message "Database error creating new user" (mensaje REAL de GoTrue para
+//   teléfono duplicado / menor de edad / cualquier violación del trigger) →
+//   500 AUTH_CREATE_FAILED genérico
 // - mensaje crudo desconocido/inesperado → 500, código genérico (no expone el mensaje)
 //
 // ### ⭐ ASSERT CENTRAL (hueco 2) — no-contención de datos sensibles en errores
-// - Body de PHONE_TAKEN NO contiene el teléfono en conflicto
-// - Body de PHONE_TAKEN NO contiene el nombre del índice "users_phone_unique_active"
+// - Body del pre-check PHONE_TAKEN NO contiene el teléfono consultado
 // - Body de EMAIL_ALREADY_EXISTS NO contiene el email
-// - Body de UNDERAGE NO contiene el nombre del constraint "users_mayoria_de_edad"
-// - Body de UNDERAGE NO contiene el detail crudo de la fila (fecha de nacimiento
-//   ni el email que Postgres reporta en el DETAIL de la violación de CHECK)
 // - Body de un error 500 genérico de createUser NO contiene el mensaje crudo
-//   de Postgres tal cual llegó
+//   de Postgres/GoTrue tal cual llegó
+//
+// ### (O1) Rama scaffold sin deps — no debe filtrar credenciales
+// - handler(req) SIN deps con payload válido → el body de respuesta NO
+//   contiene el password ni el payload completo serializado tal cual
+//
+// ### (O3) Una dependencia LANZA (en vez de devolver {error}) → no debe
+//     filtrar el texto de la excepción; conserva forma {error:{code,message}}
+// - authAdmin.createUser rechaza (throw) → 500 con mensaje ESTÁTICO, el texto
+//   de la excepción NO aparece en el body
+// - registrar.register_atomic rechaza (throw) → 500 con mensaje ESTÁTICO, el
+//   texto de la excepción NO aparece en el body
 //
 // ### IP del cliente (mismo criterio que redeem-invitation)
 // - x-forwarded-for con una sola IP → se pasa esa IP a register_atomic
@@ -121,6 +180,43 @@ const PAYLOAD_VALIDO = {
   state_id: "14", // Jalisco (catálogo INEGI mx_states)
   municipality_id: "14039", // Guadalajara — prefijo '14' == state_id
 };
+
+// ── Helpers de fecha (boundary de mayoría de edad, UTC) ─────────────────────
+// Mismo criterio que el CHECK users_mayoria_de_edad (migración
+// 20260727000002): "hace 18 años o más" evaluado con current_date. Se computa
+// en UTC (mismo patrón que validate_birthdate en mobile/src/features/auth/
+// validation.ts) para que el test sea determinista sin importar el huso
+// horario de la máquina que lo corre.
+
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+function format_utc_date(d: Date): string {
+  return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${
+    pad2(d.getUTCDate())
+  }`;
+}
+
+/** date_of_birth de alguien que cumple `years` años HOY + `extra_days` días. */
+function years_ago_utc(years: number, extra_days = 0): string {
+  const now = new Date();
+  const d = new Date(
+    Date.UTC(
+      now.getUTCFullYear() - years,
+      now.getUTCMonth(),
+      now.getUTCDate() + extra_days,
+    ),
+  );
+  return format_utc_date(d);
+}
+
+// Cumple 17 hoy → menor de edad.
+const DOB_17_ANIOS_HOY = years_ago_utc(17);
+// Cumple EXACTAMENTE 18 hoy → boundary inclusive, ya es mayor de edad.
+const DOB_18_ANIOS_HOY = years_ago_utc(18);
+// Cumplirá 18 MAÑANA (hoy tiene 17) → todavía menor de edad.
+const DOB_18_ANIOS_MENOS_UN_DIA = years_ago_utc(18, 1);
 
 // ── Helpers de request ─────────────────────────────────────────────────────
 
@@ -158,13 +254,31 @@ function admin_ok(user_id: string = USER_ID): FakeAuthAdmin {
   } as FakeAuthAdmin;
 }
 
-function admin_create_error(message: string): FakeAuthAdmin {
+function admin_create_error(message: string, code?: string): FakeAuthAdmin {
   return {
     create_calls: [],
     delete_calls: [],
     createUser(params: CreateUserParams): Promise<CreateUserResponse> {
       this.create_calls.push(params);
-      return Promise.resolve({ data: null, error: { message } });
+      return Promise.resolve({
+        data: null,
+        error: code !== undefined ? { message, code } : { message },
+      });
+    },
+    deleteUser(uid: string): Promise<void> {
+      this.delete_calls.push(uid);
+      return Promise.resolve();
+    },
+  } as FakeAuthAdmin;
+}
+
+function admin_create_throws(message: string): FakeAuthAdmin {
+  return {
+    create_calls: [],
+    delete_calls: [],
+    createUser(params: CreateUserParams): Promise<CreateUserResponse> {
+      this.create_calls.push(params);
+      return Promise.reject(new Error(message));
     },
     deleteUser(uid: string): Promise<void> {
       this.delete_calls.push(uid);
@@ -214,6 +328,24 @@ function registrar_error(error_code: string): FakeRegistrar {
       return Promise.resolve({ ok: false, error_code });
     },
   } as FakeRegistrar;
+}
+
+function registrar_throws(message: string): FakeRegistrar {
+  return {
+    calls: [],
+    register_atomic(
+      params: RegisterAtomicParams,
+    ): Promise<RegisterAtomicResult> {
+      this.calls.push(params);
+      return Promise.reject(new Error(message));
+    },
+  } as FakeRegistrar;
+}
+
+// ── Fake de la nueva dep `phone_exists` (renegociación 2026-07-30) ─────────
+
+function phone_checker(exists: boolean): (phone: string) => Promise<boolean> {
+  return (_phone: string) => Promise.resolve(exists);
 }
 
 function no_string_leak(body: unknown, forbidden: string): void {
@@ -467,6 +599,112 @@ Deno.test("validacion_campos_extra_no_rompen_la_validacion", async () => {
   assertEquals(res.status, 200);
 });
 
+// ── (O1) Rama scaffold sin deps: no debe filtrar credenciales ──────────────
+
+Deno.test("scaffold_sin_deps_no_incluye_password_ni_el_payload_completo", async () => {
+  const res = await handler(post(PAYLOAD_VALIDO));
+  const body = await res.json();
+  const serialized = JSON.stringify(body);
+  assertEquals(
+    serialized.includes(PAYLOAD_VALIDO.password),
+    false,
+    `El body sin deps NO debe contener el password, pero lo contiene: ${serialized}`,
+  );
+  assertEquals(
+    serialized.includes(JSON.stringify(PAYLOAD_VALIDO)),
+    false,
+    "El body sin deps no debe echar el payload completo tal cual",
+  );
+});
+
+// ── ⭐ Validación de edad (UNDERAGE) — renegociada, YA NO es mapeo de createUser ──
+// GoTrue nunca expone el CHECK users_mayoria_de_edad violado (siempre colapsa
+// en un 500 genérico), así que el handler debe rechazar ANTES de tocar
+// createUser, calculando la edad de date_of_birth él mismo.
+
+Deno.test("date_of_birth_17_anios_hoy_retorna_422_underage_sin_llamar_create_user", async () => {
+  const authAdmin = admin_ok(), registrar = registrar_ok();
+  const res = await handler(
+    post({ ...PAYLOAD_VALIDO, date_of_birth: DOB_17_ANIOS_HOY }),
+    { authAdmin, registrar },
+  );
+  assertEquals(res.status, 422);
+  assertEquals((await res.json()).error.code, "UNDERAGE");
+  assertEquals(authAdmin.create_calls.length, 0);
+});
+
+Deno.test("date_of_birth_exactamente_18_anios_hoy_pasa_la_validacion_de_edad", async () => {
+  const authAdmin = admin_ok(), registrar = registrar_ok();
+  const res = await handler(
+    post({ ...PAYLOAD_VALIDO, date_of_birth: DOB_18_ANIOS_HOY }),
+    { authAdmin, registrar },
+  );
+  assertEquals(res.status, 200);
+});
+
+Deno.test("date_of_birth_18_anios_menos_un_dia_retorna_422_underage", async () => {
+  const authAdmin = admin_ok(), registrar = registrar_ok();
+  const res = await handler(
+    post({ ...PAYLOAD_VALIDO, date_of_birth: DOB_18_ANIOS_MENOS_UN_DIA }),
+    { authAdmin, registrar },
+  );
+  assertEquals(res.status, 422);
+  assertEquals((await res.json()).error.code, "UNDERAGE");
+});
+
+// ── ⭐ PHONE_TAKEN vía pre-check `phone_exists` — renegociado ────────────────
+// GoTrue nunca expone el índice users_phone_unique_active violado, así que el
+// handler consulta phone_exists ANTES de createUser en vez de parsear el
+// mensaje de createUser.
+
+Deno.test("phone_exists_true_retorna_409_phone_taken_sin_llamar_create_user", async () => {
+  const authAdmin = admin_ok(), registrar = registrar_ok();
+  const phone_exists = phone_checker(true);
+  const res = await handler(post(PAYLOAD_VALIDO), {
+    authAdmin,
+    registrar,
+    phone_exists,
+  });
+  assertEquals(res.status, 409);
+  assertEquals((await res.json()).error.code, "PHONE_TAKEN");
+  assertEquals(authAdmin.create_calls.length, 0);
+});
+
+Deno.test("phone_exists_false_continua_el_flujo_normal", async () => {
+  const authAdmin = admin_ok(), registrar = registrar_ok();
+  const phone_exists = phone_checker(false);
+  const res = await handler(post(PAYLOAD_VALIDO), {
+    authAdmin,
+    registrar,
+    phone_exists,
+  });
+  assertEquals(res.status, 200);
+  assertEquals(authAdmin.create_calls.length, 1);
+});
+
+Deno.test("phone_exists_se_consulta_antes_que_create_user", async () => {
+  const call_order: string[] = [];
+  const authAdmin: RegisterAuthAdmin = {
+    createUser(_params: CreateUserParams): Promise<CreateUserResponse> {
+      call_order.push("create_user");
+      return Promise.resolve({
+        data: { user: { id: USER_ID } },
+        error: null,
+      });
+    },
+    deleteUser(_uid: string): Promise<void> {
+      return Promise.resolve();
+    },
+  };
+  const registrar = registrar_ok();
+  const phone_exists = (_phone: string) => {
+    call_order.push("phone_exists");
+    return Promise.resolve(false);
+  };
+  await handler(post(PAYLOAD_VALIDO), { authAdmin, registrar, phone_exists });
+  assertEquals(call_order, ["phone_exists", "create_user"]);
+});
+
 // ── CORS preflight ────────────────────────────────────────────────────────
 
 Deno.test("cors_options_preflight_retorna_200_a_204", async () => {
@@ -541,9 +779,50 @@ Deno.test("rpc_falla_y_delete_user_tambien_falla_sube_el_error_original", async 
   assertEquals((await res.json()).error.code, "FIELDS_INCOMPLETE");
 });
 
-// ── Mapeo sanitizado de errores de createUser ─────────────────────────────
+// (O2) El fallo de la compensación se REGISTRA (console.error), no se ignora en silencio.
+Deno.test("compensacion_fallida_se_registra_con_console_error_sin_enmascarar", async () => {
+  const original_console_error = console.error;
+  const console_error_calls: unknown[][] = [];
+  console.error = (...args: unknown[]) => {
+    console_error_calls.push(args);
+  };
+  try {
+    const authAdmin = admin_ok_but_delete_fails();
+    const registrar = registrar_error("FIELDS_INCOMPLETE");
+    const res = await handler(post(PAYLOAD_VALIDO), { authAdmin, registrar });
+    assertEquals(res.status, 500);
+    assertEquals((await res.json()).error.code, "FIELDS_INCOMPLETE");
+    assertEquals(
+      console_error_calls.length > 0,
+      true,
+      "el fallo de deleteUser debe registrarse con console.error",
+    );
+  } finally {
+    console.error = original_console_error;
+  }
+});
 
-Deno.test("create_user_email_duplicado_retorna_409_email_already_exists", async () => {
+// ── Mapeo sanitizado de errores de createUser (renegociado 2026-07-30) ─────
+// GoTrue real: email duplicado → message "A user with this email address has
+// already been registered" (o code "email_exists"); CUALQUIER otra violación
+// del trigger handle_new_user (teléfono duplicado, menor de edad) → SIEMPRE
+// message "Database error creating new user", sin el nombre del índice/
+// constraint. PHONE_TAKEN/UNDERAGE ya NO se detectan aquí (ver secciones
+// dedicadas arriba).
+
+Deno.test("create_user_email_duplicado_mensaje_real_gotrue_retorna_409", async () => {
+  // Mensaje REAL verificado por el guardián contra GoTrue — nótese que NO
+  // contiene la substring contigua "already registered" ("been" se interpone).
+  const authAdmin = admin_create_error(
+    "A user with this email address has already been registered",
+  );
+  const registrar = registrar_ok();
+  const res = await handler(post(PAYLOAD_VALIDO), { authAdmin, registrar });
+  assertEquals(res.status, 409);
+  assertEquals((await res.json()).error.code, "EMAIL_ALREADY_EXISTS");
+});
+
+Deno.test("create_user_email_duplicado_variante_corta_retorna_409", async () => {
   const authAdmin = admin_create_error("User already registered");
   const registrar = registrar_ok();
   const res = await handler(post(PAYLOAD_VALIDO), { authAdmin, registrar });
@@ -551,27 +830,28 @@ Deno.test("create_user_email_duplicado_retorna_409_email_already_exists", async 
   assertEquals((await res.json()).error.code, "EMAIL_ALREADY_EXISTS");
 });
 
-Deno.test("create_user_telefono_duplicado_retorna_409_phone_taken", async () => {
+Deno.test("create_user_email_duplicado_por_code_email_exists_retorna_409", async () => {
+  // El message NO menciona "registered" a propósito: la detección debe
+  // disparar por error.code, no solo por substring del mensaje.
   const authAdmin = admin_create_error(
-    'duplicate key value violates unique constraint "users_phone_unique_active"\n' +
-      "DETAIL:  Key (phone)=(+523312345678) already exists.",
+    "Unable to validate email address: invalid format",
+    "email_exists",
   );
   const registrar = registrar_ok();
   const res = await handler(post(PAYLOAD_VALIDO), { authAdmin, registrar });
   assertEquals(res.status, 409);
-  assertEquals((await res.json()).error.code, "PHONE_TAKEN");
+  assertEquals((await res.json()).error.code, "EMAIL_ALREADY_EXISTS");
 });
 
-Deno.test("create_user_menor_de_edad_retorna_422_underage", async () => {
-  const authAdmin = admin_create_error(
-    'new row for relation "users" violates check constraint "users_mayoria_de_edad"\n' +
-      "DETAIL:  Failing row contains (00000000-0000-0000-0000-000000000099, " +
-      "usuario@correo.mx, +523312345678, Ana, García, 2015-01-01, ...).",
-  );
+Deno.test("create_user_database_error_creating_new_user_retorna_500_generico", async () => {
+  // Mensaje REAL que GoTrue devuelve SIEMPRE para violaciones de constraint
+  // del trigger handle_new_user (teléfono duplicado, menor de edad, etc.) —
+  // JAMÁS incluye el nombre del índice/constraint (evidencia del guardián).
+  const authAdmin = admin_create_error("Database error creating new user");
   const registrar = registrar_ok();
   const res = await handler(post(PAYLOAD_VALIDO), { authAdmin, registrar });
-  assertEquals(res.status, 422);
-  assertEquals((await res.json()).error.code, "UNDERAGE");
+  assertEquals(res.status, 500);
+  assertEquals((await res.json()).error.code, "AUTH_CREATE_FAILED");
 });
 
 Deno.test("create_user_error_desconocido_retorna_500", async () => {
@@ -583,66 +863,54 @@ Deno.test("create_user_error_desconocido_retorna_500", async () => {
 });
 
 // ── ⭐ ASSERT CENTRAL (hueco 2): no filtración de datos sensibles ─────────
+// Reforzado sobre los caminos NUEVOS: el pre-check phone_exists y el 500
+// genérico de createUser (ya no hay ruta de PHONE_TAKEN/UNDERAGE vía mensaje
+// crudo de Postgres — GoTrue nunca lo expone).
 
-Deno.test("phone_taken_no_expone_el_telefono_en_conflicto", async () => {
-  const authAdmin = admin_create_error(
-    'duplicate key value violates unique constraint "users_phone_unique_active"\n' +
-      "DETAIL:  Key (phone)=(+523312345678) already exists.",
-  );
-  const registrar = registrar_ok();
-  const res = await handler(post(PAYLOAD_VALIDO), { authAdmin, registrar });
+Deno.test("phone_taken_precheck_no_expone_el_telefono_consultado", async () => {
+  const authAdmin = admin_ok(), registrar = registrar_ok();
+  const phone_exists = phone_checker(true);
+  const res = await handler(post(PAYLOAD_VALIDO), {
+    authAdmin,
+    registrar,
+    phone_exists,
+  });
   const body = await res.json();
-  no_string_leak(body, "+523312345678");
-});
-
-Deno.test("phone_taken_no_expone_el_nombre_del_indice", async () => {
-  const authAdmin = admin_create_error(
-    'duplicate key value violates unique constraint "users_phone_unique_active"\n' +
-      "DETAIL:  Key (phone)=(+523312345678) already exists.",
-  );
-  const registrar = registrar_ok();
-  const res = await handler(post(PAYLOAD_VALIDO), { authAdmin, registrar });
-  const body = await res.json();
-  no_string_leak(body, "users_phone_unique_active");
+  no_string_leak(body, PAYLOAD_VALIDO.phone);
 });
 
 Deno.test("email_already_exists_no_expone_el_email", async () => {
   const authAdmin = admin_create_error(
-    "User already registered: usuario@correo.mx",
+    "A user with this email address has already been registered",
   );
   const registrar = registrar_ok();
   const res = await handler(post(PAYLOAD_VALIDO), { authAdmin, registrar });
   const body = await res.json();
-  no_string_leak(body, "usuario@correo.mx");
+  no_string_leak(body, PAYLOAD_VALIDO.email);
 });
 
-Deno.test("underage_no_expone_el_nombre_del_constraint", async () => {
-  const authAdmin = admin_create_error(
-    'new row for relation "users" violates check constraint "users_mayoria_de_edad"\n' +
-      "DETAIL:  Failing row contains (00000000-0000-0000-0000-000000000099, " +
-      "usuario@correo.mx, +523312345678, Ana, García, 2015-01-01, ...).",
-  );
-  const registrar = registrar_ok();
-  const res = await handler(post(PAYLOAD_VALIDO), { authAdmin, registrar });
-  const body = await res.json();
-  no_string_leak(body, "users_mayoria_de_edad");
-});
-
-Deno.test("underage_no_expone_el_detail_crudo_de_la_fila", async () => {
-  const authAdmin = admin_create_error(
-    'new row for relation "users" violates check constraint "users_mayoria_de_edad"\n' +
-      "DETAIL:  Failing row contains (00000000-0000-0000-0000-000000000099, " +
-      "usuario@correo.mx, +523312345678, Ana, García, 2015-01-01, ...).",
-  );
-  const registrar = registrar_ok();
-  const res = await handler(post(PAYLOAD_VALIDO), { authAdmin, registrar });
-  const body = await res.json();
-  no_string_leak(body, "2015-01-01");
-  no_string_leak(body, "usuario@correo.mx");
-  no_string_leak(body, "Failing row contains");
-});
+Deno.test(
+  "database_error_creating_new_user_no_expone_el_mensaje_crudo_de_gotrue",
+  async () => {
+    const mensaje_crudo = "Database error creating new user";
+    const authAdmin = admin_create_error(mensaje_crudo);
+    const registrar = registrar_ok();
+    const res = await handler(post(PAYLOAD_VALIDO), { authAdmin, registrar });
+    const body = await res.json();
+    // El código debe ser un código sanitizado nuestro (AUTH_CREATE_FAILED),
+    // NUNCA el mensaje crudo de GoTrue reenviado como si fuera el "code".
+    assertEquals(body.error.code, "AUTH_CREATE_FAILED");
+    assertEquals(
+      body.error.code === mensaje_crudo,
+      false,
+      "error.code no debe ser el mensaje crudo de GoTrue reenviado tal cual",
+    );
+  },
+);
 
 Deno.test("error_generico_de_create_user_no_expone_el_mensaje_crudo_de_postgres", async () => {
+  // Defensa en profundidad: CUALQUIER mensaje no reconocido (no solo los
+  // fixtures reales de GoTrue) nunca debe aparecer verbatim en el body.
   const mensaje_crudo_muy_especifico =
     "PGRST_INTERNAL_9f3a: connection reset by peer at socket 42";
   const authAdmin = admin_create_error(mensaje_crudo_muy_especifico);
@@ -650,6 +918,35 @@ Deno.test("error_generico_de_create_user_no_expone_el_mensaje_crudo_de_postgres"
   const res = await handler(post(PAYLOAD_VALIDO), { authAdmin, registrar });
   const body = await res.json();
   no_string_leak(body, mensaje_crudo_muy_especifico);
+});
+
+// ── (O3) Una dependencia LANZA en vez de devolver {error} ──────────────────
+// No debe filtrar el texto de la excepción; conserva forma {error:{code,message}}.
+
+Deno.test("create_user_lanza_excepcion_retorna_500_estatico_sin_exponer_el_texto", async () => {
+  const mensaje_interno_sensible =
+    "ECONNRESET at pg_pool_internal.ts:88 (secret_debug_token=abc123)";
+  const authAdmin = admin_create_throws(mensaje_interno_sensible);
+  const registrar = registrar_ok();
+  const res = await handler(post(PAYLOAD_VALIDO), { authAdmin, registrar });
+  assertEquals(res.status, 500);
+  const body = await res.json();
+  assertEquals(typeof body.error.code, "string");
+  assertEquals(typeof body.error.message, "string");
+  no_string_leak(body, mensaje_interno_sensible);
+});
+
+Deno.test("register_atomic_lanza_excepcion_retorna_500_estatico_sin_exponer_el_texto", async () => {
+  const mensaje_interno_sensible =
+    "connection terminated unexpectedly (pool=service_role, host=10.0.4.2)";
+  const authAdmin = admin_ok();
+  const registrar = registrar_throws(mensaje_interno_sensible);
+  const res = await handler(post(PAYLOAD_VALIDO), { authAdmin, registrar });
+  assertEquals(res.status, 500);
+  const body = await res.json();
+  assertEquals(typeof body.error.code, "string");
+  assertEquals(typeof body.error.message, "string");
+  no_string_leak(body, mensaje_interno_sensible);
 });
 
 // ── IP del cliente ─────────────────────────────────────────────────────────

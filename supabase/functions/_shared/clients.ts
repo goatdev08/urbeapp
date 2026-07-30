@@ -28,6 +28,13 @@ import type {
   RedeemParams,
   RedeemResult,
 } from "./redeem.ts";
+import type {
+  CreateUserParams as RegisterCreateUserParams,
+  RegisterAtomicParams,
+  RegisterAtomicResult,
+  RegisterAtomicRunner,
+  RegisterAuthAdmin,
+} from "../register/types.ts";
 import type { AdminVerifier, AdminVerifyResult } from "./admin_auth.ts";
 import type {
   AgencyCreateParams,
@@ -150,6 +157,62 @@ export function make_auth_admin(client: SupabaseClient): AuthAdminClient {
         },
         error: null,
       };
+    },
+  };
+}
+
+/**
+ * Adaptador real de RegisterAuthAdmin (subtarea 93.2) sobre supabase.auth.admin.
+ * Mismo wrapping que make_auth_admin (createUser/deleteUser): se separa como
+ * función hermana en vez de reusar AuthAdminClient porque su user_metadata
+ * (register/types.ts, 6 campos §5.1) es un tipo distinto y más rico que el de
+ * la invitación de agente (solo first_name/last_name) — ningún cambio en
+ * auth_user.ts, cero riesgo de romper redeem-invitation.
+ */
+export function make_register_auth_admin(
+  client: SupabaseClient,
+): RegisterAuthAdmin {
+  return {
+    async createUser(params: RegisterCreateUserParams) {
+      const { data, error } = await client.auth.admin.createUser(params);
+      return {
+        data: data?.user ? { user: { id: data.user.id } } : null,
+        error: error ? { message: error.message } : null,
+      };
+    },
+    async deleteUser(uid: string) {
+      await client.auth.admin.deleteUser(uid);
+    },
+  };
+}
+
+// Códigos de negocio que register_user_atomic levanta con SQLSTATE P0001
+// (migración 20260729000001, subtarea 93.1).
+const REGISTER_ERROR_CODES = [
+  "FIELDS_INCOMPLETE",
+  "NO_ACTIVE_TERMS",
+  "NO_ACTIVE_PRIVACY",
+];
+
+function extract_register_code(message: string): string {
+  return REGISTER_ERROR_CODES.find((c) => message.includes(c)) ??
+    "REGISTER_FAILED";
+}
+
+/** Adaptador real de RegisterAtomicRunner sobre la RPC register_user_atomic (subtarea 93.1). */
+export function make_registrar(client: SupabaseClient): RegisterAtomicRunner {
+  return {
+    async register_atomic(
+      params: RegisterAtomicParams,
+    ): Promise<RegisterAtomicResult> {
+      const { error } = await client.rpc("register_user_atomic", {
+        p_user_id: params.user_id,
+        p_ip: params.ip ?? null,
+      });
+      if (error) {
+        return { ok: false, error_code: extract_register_code(error.message) };
+      }
+      return { ok: true };
     },
   };
 }

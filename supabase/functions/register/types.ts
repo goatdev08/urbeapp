@@ -30,14 +30,18 @@ export interface CreateUserParams {
 
 /**
  * Respuesta cruda de `admin.createUser` (subconjunto mínimo, mismo shape que
- * ../_shared/auth_user.ts AdminCreateUserResponse). `error.message` puede traer
- * el detalle crudo de Postgres (nombre de índice/constraint, valores en
- * conflicto) — el handler es responsable de SANITIZARLO antes de responder,
- * nunca de reenviarlo tal cual a un llamante anónimo (hueco 2 de la tarea #93).
+ * ../_shared/auth_user.ts AdminCreateUserResponse). `error.message` NUNCA trae
+ * el detalle crudo de Postgres para violaciones de constraint del trigger
+ * `handle_new_user` (teléfono duplicado, menor de edad): GoTrue las colapsa
+ * SIEMPRE en "Database error creating new user" (evidencia empírica del
+ * guardián contra el stack local) — el nombre del índice/constraint JAMÁS
+ * llega aquí. `error.code` (versiones nuevas de GoTrue) puede traer un código
+ * corto como "email_exists" — el handler debe reconocer AMBAS señales (code
+ * y variantes de `message`) para email duplicado.
  */
 export interface CreateUserResponse {
   data: { user: { id: string } } | null;
-  error: { message: string } | null;
+  error: { message: string; code?: string } | null;
 }
 
 export interface RegisterAuthAdmin {
@@ -76,8 +80,19 @@ export interface RegisterInput {
  * Dependencias inyectables del handler (DI pattern, mirror de RedeemDeps en
  * ../redeem-invitation/handler.ts). Opcionales: en producción se construyen a
  * partir del cliente Supabase real (service_role); en tests se inyectan fakes.
+ *
+ * `phone_exists` (renegociación 2026-07-30, hallazgo del guardián): GoTrue
+ * SIEMPRE colapsa la violación del índice parcial `users_phone_unique_active`
+ * en un 500 genérico "Database error creating new user" — el handler NO puede
+ * distinguir "teléfono duplicado" de esa respuesta. Por eso el chequeo se hace
+ * ANTES de createUser, con un SELECT propio (service_role) contra
+ * public.users que replica la semántica del índice (solo cuentas activas,
+ * `deleted_at IS NULL`). La carrera residual (dos registros simultáneos con
+ * el mismo teléfono) cae en createUser fallando con el 500 genérico
+ * AUTH_CREATE_FAILED — sin fuga, el CHECK/índice de la DB es el backstop.
  */
 export interface RegisterDeps {
   authAdmin?: RegisterAuthAdmin;
   registrar?: RegisterAtomicRunner;
+  phone_exists?: (phone: string) => Promise<boolean>;
 }
