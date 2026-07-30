@@ -34,7 +34,9 @@ const MSG_FALLBACK = 'Ocurrió un error inesperado. Inténtalo de nuevo.';
 // #72.2 — teléfono duplicado. Es el desenlace más probable de la unicidad recién
 // estrenada (§5.1) y llega como un 500 crudo de Postgres, no como un code de GoTrue,
 // así que sin este caso el usuario veía el fallback genérico y no sabía qué corregir.
-const MSG_PHONE_TAKEN =
+// Exportado: register_user (§5.1, 93.3) reusa el mismo mensaje cuando la EF
+// `register` responde PHONE_TAKEN — no hay por qué duplicar el string.
+export const MSG_PHONE_TAKEN =
   'Ese teléfono ya está registrado en otra cuenta. Usa uno distinto o inicia sesión.';
 
 // ---------------------------------------------------------------------------

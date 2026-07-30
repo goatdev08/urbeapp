@@ -16,7 +16,9 @@ const PASSWORD_MIN_LENGTH = 6;
 // dígitos con cero a la izquierda ('09') y el municipio es el cvegeo de 5 ('14039').
 const STATE_ID_REGEX = /^\d{2}$/;
 const MUNICIPALITY_ID_REGEX = /^\d{5}$/;
-const MINIMUM_AGE = 18;
+// Exportado: register.tsx (93.3) reusa el mismo número al construir el
+// mensaje UNDERAGE que devuelve la EF `register`, en vez de hardcodear "18".
+export const MINIMUM_AGE = 18;
 const FULL_NAME_MIN_LENGTH = 3;
 
 // ---------------------------------------------------------------------------

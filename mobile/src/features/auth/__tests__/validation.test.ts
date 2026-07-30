@@ -320,6 +320,27 @@ describe('validate_full_name', () => {
   it('devuelve error cuando el nombre es más corto que el mínimo razonable', () => {
     expect(validate_full_name('Al')).toEqual({ message: expect.any(String) });
   });
+
+  // RED mini (93.3, hallazgo del guardián): la EF `register` exige last_name
+  // no vacío (supabase/functions/_shared/validation.ts) y el submit ahora manda
+  // `last_name` incondicional — un nombre de una sola palabra pasaba el gate
+  // local (≥3 chars) y tronaba en el servidor con un 400 INVALID_INPUT genérico.
+  // La validación local debe exigir nombre Y apellido ANTES de llamar la EF.
+  it('devuelve error cuando el nombre es una sola palabra (falta apellido)', () => {
+    expect(validate_full_name('Ana')).toEqual({ message: 'Escribe tu nombre y apellido' });
+  });
+
+  it('devuelve undefined cuando trae nombre y apellido', () => {
+    expect(validate_full_name('Ana Torres')).toBeUndefined();
+  });
+
+  it('devuelve error cuando el nombre es una sola palabra con espacio de sobra', () => {
+    expect(validate_full_name('Ana ')).toEqual({ message: 'Escribe tu nombre y apellido' });
+  });
+
+  it('devuelve undefined para un nombre compuesto de varias palabras', () => {
+    expect(validate_full_name('María de la Luz Pérez')).toBeUndefined();
+  });
 });
 
 // ---------------------------------------------------------------------------

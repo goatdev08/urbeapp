@@ -21,6 +21,8 @@
  * EMAIL_ALREADY_EXISTS, AUTH_CREATE_FAILED, FIELDS_INCOMPLETE, NO_ACTIVE_TERMS,
  * NO_ACTIVE_PRIVACY, INTERNAL_ERROR).
  */
+import { supabase } from '@/lib/supabase/client';
+import { extract_error_code } from '@/lib/supabase/edge-errors';
 
 export interface RegisterUserInput {
   email: string;
@@ -48,14 +50,13 @@ export interface RegisterUserApiError {
   code: string | undefined;
 }
 
-/**
- * ponytail: stub de la fase RED (93.3) — sin lógica todavía. La fase GREEN
- * invoca `supabase.functions.invoke('register', { body: input })` y traduce
- * el resultado con `extract_error_code`, mismo patrón que
- * `registration/api.ts::redeem_invitation`.
- */
 export async function register_user(
-  _input: RegisterUserInput,
+  input: RegisterUserInput,
 ): Promise<RegisterUserOk | RegisterUserApiError> {
-  throw new Error('not_implemented');
+  const { data, error } = await supabase.functions.invoke('register', { body: input });
+
+  if (error !== null) {
+    return { ok: false, code: await extract_error_code(error) };
+  }
+  return { ok: true, user_id: data.user_id };
 }

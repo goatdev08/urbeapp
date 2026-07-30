@@ -28,6 +28,11 @@
  * ### Validación local (gate antes de llamar a la red)
  * - EC-2: falta un consentimiento (whatsapp) → register_user NO se llama (0 veces)
  *   y se ve el mensaje de consentimientos obligatorios.
+ * - EC-7 (RED mini, hallazgo del guardián): nombre de una sola palabra ("Ana",
+ *   sin apellido) → register_user NO se llama; se ve 'Escribe tu nombre y
+ *   apellido'. La EF exige last_name no vacío y el submit ahora lo manda
+ *   incondicional — sin este gate local, el usuario ve un 400 INVALID_INPUT
+ *   genérico sin saber qué corregir.
  *
  * ### Errores de negocio de la EF → mensaje ES ya definido en el repo
  * - EC-3: PHONE_TAKEN → mensaje EXACTO de auth-errors.ts (MSG_PHONE_TAKEN)
@@ -179,9 +184,13 @@ async function drain_react_updates() {
   });
 }
 
-async function fill_valid_user_form(q: RenderResult, accept_whatsapp = true) {
+async function fill_valid_user_form(
+  q: RenderResult,
+  accept_whatsapp = true,
+  full_name: string = VALID.full_name,
+) {
   await act(async () => {
-    fireEvent.changeText(q.getByTestId('signup-name'), VALID.full_name);
+    fireEvent.changeText(q.getByTestId('signup-name'), full_name);
     fireEvent.changeText(q.getByTestId('signup-phone'), VALID.phone);
     fireEvent.changeText(q.getByTestId('signup-birthdate'), VALID.birthdate);
     fireEvent.press(q.getByTestId('signup-state'));
@@ -265,6 +274,33 @@ describe('EC-2: sin_los_tres_consentimientos_no_llama_register_user', () => {
 
     expect(mock_register_user).not.toHaveBeenCalled();
     expect(q.queryByText('Debes aceptar los tres para crear tu cuenta')).not.toBeNull();
+  });
+});
+
+// ===========================================================================
+// EC-7 (RED mini, hallazgo del guardián): nombre de una sola palabra → la EF
+// exige last_name no vacío (ahora se manda incondicional) — el gate LOCAL debe
+// exigir nombre y apellido ANTES de llamar a register_user, con el mismo
+// mensaje que fija validate_full_name (ver validation.test.ts).
+// ===========================================================================
+describe('EC-7: nombre_de_una_sola_palabra_no_llama_register_user', () => {
+  it('"Ana" (sin apellido) → mensaje de validación visible; register_user NO se llama', async () => {
+    mock_register_user.mockResolvedValue({ ok: true, user_id: 'uuid-93' });
+
+    let q!: RenderResult;
+    await act(async () => {
+      q = await render(<RegisterScreen />);
+    });
+
+    await fill_valid_user_form(q, /* accept_whatsapp */ true, /* full_name */ 'Ana');
+
+    await act(async () => {
+      fireEvent.press(q.getByRole('button', { name: /crear cuenta/i }));
+    });
+    await drain_react_updates();
+
+    expect(mock_register_user).not.toHaveBeenCalled();
+    expect(q.queryByText('Escribe tu nombre y apellido')).not.toBeNull();
   });
 });
 
