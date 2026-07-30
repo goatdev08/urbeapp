@@ -231,6 +231,15 @@ export function validate_full_name(full_name: string): FieldError | undefined {
   if (trimmed.length < FULL_NAME_MIN_LENGTH) {
     return { message: `El nombre debe tener al menos ${FULL_NAME_MIN_LENGTH} caracteres` };
   }
+  // 93.3 (hallazgo del guardián): la EF `register` exige last_name no vacío
+  // (supabase/functions/_shared/validation.ts) y el submit manda `last_name`
+  // incondicional (el resto de las palabras tras la primera) — sin este gate,
+  // un nombre de una sola palabra pasaba local y tronaba en el servidor con
+  // un 400 INVALID_INPUT genérico. Se exige nombre Y apellido aquí, antes de
+  // llamar a la EF.
+  if (trimmed.split(/\s+/).length < 2) {
+    return { message: 'Escribe tu nombre y apellido' };
+  }
   return undefined;
 }
 

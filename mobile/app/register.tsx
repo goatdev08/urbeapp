@@ -164,7 +164,7 @@ export default function RegisterScreen() {
 
   const code_validated = agency_name !== null;
 
-  // ── Registro libre: validar + signUp (§5.1) ─────────────────────────────────
+  // ── Registro libre: validar + register_user (§5.1) ──────────────────────────
   const validate_user_form = (): UserFormErrors => {
     const values: UserRegisterFormValues = {
       full_name: u_name_ref.current,
