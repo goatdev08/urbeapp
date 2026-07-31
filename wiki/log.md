@@ -459,3 +459,5 @@ Verificación: `tsc` 0, `lint` 0 errores. Ingest: [[feed-vertical-video]], [[pro
 **Deuda levantada como tarea, no dejada en el chat:** #92 (revocar TRUNCATE en todo `public`), #93 (el registro por `/auth/v1/signup` con la anon key crea cuentas incompletas §5.1, y los errores crudos de Postgres llegan sin filtrar a un llamante anónimo), #94 (el consentimiento de WhatsApp no se verifica en el punto de contacto).
 
 **Verificación:** pgTAP 312/312 · Jest 785/785 · `pnpm tsc --noEmit` 0 · `pnpm lint` 0 errores. Ingest: [[legal-consentimientos]], [[mapa-codebase]].
+
+## [2026-07-30] tarea | #93 Registro server-side atómico — EF register + RPC register_user_atomic; signup público cerrado (local); errores sanitizados (fin del oráculo de enumeración por errores crudos)
