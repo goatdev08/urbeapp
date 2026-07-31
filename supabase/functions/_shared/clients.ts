@@ -185,7 +185,10 @@ export function make_register_auth_admin(
       const { data, error } = await client.auth.admin.createUser(params);
       return {
         data: data?.user ? { user: { id: data.user.id } } : null,
-        error: error ? { message: error.message } : null,
+        // code viaja junto al message: la rama email_exists del handler lo
+        // necesita (versiones nuevas de GoTrue identifican por code, no por
+        // el texto del mensaje).
+        error: error ? { message: error.message, code: error.code } : null,
       };
     },
     async deleteUser(uid: string) {

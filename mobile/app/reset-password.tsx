@@ -138,7 +138,7 @@ export default function ResetPasswordScreen() {
                 secureTextEntry={!show_password}
                 autoComplete="new-password"
                 textContentType="newPassword"
-                placeholder="Mínimo 6 caracteres"
+                placeholder="Mínimo 8 caracteres"
                 returnKeyType="next"
                 error={touched.password ? errors.password?.message : undefined}
                 editable={!is_submitting}

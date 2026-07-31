@@ -2,11 +2,11 @@
 // Regenerar con:  supabase gen types typescript --project-id mvpvqmyhrrkwbnpctpuq > supabase/types/database.types.ts
 // (o vía el MCP de Supabase: generate_typescript_types). NO editar a mano.
 //
-// ⚠️ #72 (2026-07-27): esta versión se generó con `--local`, contra el stack de
+// ⚠️ #72/#93 (2026-07-30): esta versión se generó con `--local`, contra el stack de
 // desarrollo, porque las migraciones 20260727000001/2/3 (catálogo INEGI, constraints de
-// registro y gate legal) TODAVÍA NO están desplegadas al remoto. O sea: este archivo
-// describe un esquema que aún no existe en urbea-app. Al desplegar esas migraciones,
-// regenerar contra --project-id para volver a la fuente canónica.
+// registro y gate legal) y 20260729000001 (RPC register_user_atomic, #93) TODAVÍA NO
+// están desplegadas al remoto. Al desplegar esas migraciones, regenerar contra
+// --project-id para volver a la fuente canónica.
 //
 // Gotcha de entorno: `gen types --local` necesita el credential helper de Docker en el
 // PATH → export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"
@@ -1380,6 +1380,10 @@ export type Database = {
           agency_id: string
           agency_member_id: string
         }[]
+      }
+      register_user_atomic: {
+        Args: { p_ip?: unknown; p_user_id: string }
+        Returns: undefined
       }
     }
     Enums: {

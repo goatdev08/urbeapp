@@ -114,6 +114,16 @@ describe('validate_password', () => {
   it('acepta exactamente 6 caracteres', () => {
     expect(validate_password('123456')).toBeUndefined();
   });
+
+  // Review pre-merge #93: contraseñas NUEVAS exigen 8 (paridad con la EF
+  // `register`, que rechaza <8 con 400). El login se queda en 6 (cuentas
+  // viejas pueden tener contraseñas más cortas).
+  it('con min_length 8 rechaza 7 caracteres y acepta 8', () => {
+    expect(validate_password('1234567', 8)).toEqual({
+      message: expect.stringContaining('8'),
+    });
+    expect(validate_password('12345678', 8)).toBeUndefined();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -388,6 +398,19 @@ describe('validate_register_form', () => {
     expect(result.full_name).toBeUndefined();
   });
 
+  // Review pre-merge #93: la EF `register` exige 8; el gate local debe
+  // atrapar 6-7 caracteres ANTES de llamarla (si no, el usuario ve el
+  // banner genérico de INVALID_INPUT sin campo marcado).
+  it('rechaza contraseña de 7 caracteres (mínimo 8 para contraseñas nuevas)', () => {
+    const result = validate_register_form({ ...valid_values, password: '1234567' });
+    expect(result.password).toEqual({ message: expect.stringContaining('8') });
+  });
+
+  it('acepta contraseña de exactamente 8 caracteres', () => {
+    const result = validate_register_form({ ...valid_values, password: '12345678' });
+    expect(result.password).toBeUndefined();
+  });
+
   it('incluye error de birthdate cuando el usuario es menor de edad, resto válido', () => {
     const result = validate_register_form({
       ...valid_values,
@@ -468,8 +491,10 @@ describe('validate_reset_password_form', () => {
   });
 
   it('reporta el error de validate_password cuando la contraseña es muy corta', () => {
+    // Review pre-merge #93: reset fija una contraseña NUEVA → mínimo 8,
+    // igual que el registro (paridad con la EF `register`).
     const errors = validate_reset_password_form({ password: '123', confirm: '123' });
-    expect(errors.password?.message).toBe('La contraseña debe tener al menos 6 caracteres');
+    expect(errors.password?.message).toBe('La contraseña debe tener al menos 8 caracteres');
     expect(errors.confirm).toBeUndefined();
   });
 

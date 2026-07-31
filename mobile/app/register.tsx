@@ -5,7 +5,7 @@
  *   'user'  (default) — registro libre (§5.1): nombre completo, teléfono,
  *           fecha de nacimiento, estado, municipio, correo + contraseña
  *           (+confirmar). register_user (EF `register`, 93.2) crea la cuenta,
- *           el perfil (role='user') y los 3 consentimientos en un solo paso
+ *           el perfil (role='user') y los 4 consentimientos en un solo paso
  *           server-side; el cliente hace signIn(email, password) justo
  *           después — mismo patrón de auto-login que el modo 'agent' (93.3).
  *   'agent' — registro de agente por código de invitación (flujo original 5.7/5.8):
@@ -229,7 +229,7 @@ export default function RegisterScreen() {
       }
 
       // Auto-login con las credenciales recién creadas — la EF `register` ya
-      // dejó la cuenta, el perfil y los 3 consentimientos listos server-side
+      // dejó la cuenta, el perfil y los 4 consentimientos listos server-side
       // (mismo patrón que el modo 'agent' tras redeem_invitation).
       await signIn(email, password);
       router.replace('/');
@@ -443,7 +443,7 @@ export default function RegisterScreen() {
                 secureTextEntry={!show_password}
                 autoComplete="new-password"
                 textContentType="newPassword"
-                placeholder="Mínimo 6 caracteres"
+                placeholder="Mínimo 8 caracteres"
                 error={u_errors.password?.message}
                 editable={!is_submitting}
                 right_addon={password_toggle}
