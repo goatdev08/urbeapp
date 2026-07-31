@@ -1,11 +1,17 @@
 ---
 tipo: estado
-actualizado: 2026-07-28
+actualizado: 2026-07-30
 ---
 
 # Estado actual
 
 > Narrativa de "dónde estamos hoy". El **qué sigue / qué está hecho** vive en **Taskmaster** (`task-master list`), no aquí.
+
+## Hoy (2026-07-30)
+
+- **✅ #93 — Registro server-side atómico CERRADO en local (5/5 subtareas, TDD estricto en 3).** El registro libre ya no confía en el cliente: nueva **RPC `register_user_atomic`** (migración `20260729000001`, espejo de `redeem_invitation_atomic`: valida completitud §5.1 + inserta los **4 consentimientos** atómicos, solo `service_role`) + **EF `register`** (valida los 8 campos, `createUser` con metadata exacta de `handle_new_user`, compensación `deleteUser` en TODOS los caminos de fallo, errores SIEMPRE sanitizados) + **mobile vía la EF** (`features/auth/api.ts`; `record-consents.ts` **eliminado**, `signUp` retirado del contexto) + **`/auth/v1/signup` cerrado a anon en local** (`[auth] enable_signup=false`; agentes/seeds/login verificados intactos). Suites: pgTAP 336 · Deno 681 · Jest 798 · tsc/lint 0.
+- **🔍 El hallazgo de la tarea lo dio el guardián probando contra el stack REAL:** el mapeo de errores por strings de Postgres era **código muerto** — GoTrue sanitiza los errores de DB (`"Database error creating new user"`) y el nombre del índice jamás llega. Rediseño más simple: **UNDERAGE se valida del payload** (sin tocar DB), **PHONE_TAKEN por pre-check** (`phone_exists`, fail-open con el índice único de backstop), email por `code`/mensaje real. Lección durable: los fakes de tests DI deben imitar la superficie REAL del error, no la imaginada.
+- **⏳ Pendiente del cierre (runbook en bitácora 93.4, requiere decisión de Abraham):** merge del PR → **deploy de la EF `register` al remoto** → **OTA** del cambio móvil → **flip `disable_signup` en `urbea-app`** (¡no antes del OTA! los builds viejos aún llaman `auth.signUp` directo) → sonda remota (¿el gateway remoto enmascara el detail? — pregunta abierta). Deuda nueva agendada: **#95** (rate limiting de la EF pública: `PHONE_TAKEN`/`EMAIL_ALREADY_EXISTS` son un oráculo de enumeración sin límite de tasa).
 
 ## Hoy (2026-07-28)
 
