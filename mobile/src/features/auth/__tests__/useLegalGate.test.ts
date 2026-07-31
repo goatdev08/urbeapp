@@ -112,7 +112,6 @@ beforeEach(() => {
     user: { id: TEST_USER_ID } as unknown as UserProfile,
     isLoading: false,
     signIn: jest.fn(),
-    signUp: jest.fn(),
     signOut: jest.fn(),
     requestPasswordReset: jest.fn(),
     updatePassword: jest.fn(),

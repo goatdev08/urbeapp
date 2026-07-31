@@ -11,12 +11,19 @@
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PASSWORD_MIN_LENGTH = 6;
+// Contraseñas NUEVAS (registro §5.1 y reset §5.3) exigen 8 — mismo mínimo que
+// la EF `register` (_shared/validation.ts) y que el modo agente. El login se
+// queda en 6: cuentas existentes pueden tener contraseñas más cortas y el
+// gate local no debe bloquearles la entrada.
+export const NEW_PASSWORD_MIN_LENGTH = 8;
 
 // Registro (§5.1). Las claves son las de INEGI sembradas en 72.1: el estado son 2
 // dígitos con cero a la izquierda ('09') y el municipio es el cvegeo de 5 ('14039').
 const STATE_ID_REGEX = /^\d{2}$/;
 const MUNICIPALITY_ID_REGEX = /^\d{5}$/;
-const MINIMUM_AGE = 18;
+// Exportado: register.tsx (93.3) reusa el mismo número al construir el
+// mensaje UNDERAGE que devuelve la EF `register`, en vez de hardcodear "18".
+export const MINIMUM_AGE = 18;
 const FULL_NAME_MIN_LENGTH = 3;
 
 // ---------------------------------------------------------------------------
@@ -80,13 +87,16 @@ export function validate_email(email: string): FieldError | undefined {
   return undefined;
 }
 
-export function validate_password(password: string): FieldError | undefined {
+export function validate_password(
+  password: string,
+  min_length: number = PASSWORD_MIN_LENGTH
+): FieldError | undefined {
   if (password.length === 0) {
     return { message: 'La contraseña es requerida' };
   }
-  if (password.length < PASSWORD_MIN_LENGTH) {
+  if (password.length < min_length) {
     return {
-      message: `La contraseña debe tener al menos ${PASSWORD_MIN_LENGTH} caracteres`,
+      message: `La contraseña debe tener al menos ${min_length} caracteres`,
     };
   }
   return undefined;
@@ -229,6 +239,15 @@ export function validate_full_name(full_name: string): FieldError | undefined {
   if (trimmed.length < FULL_NAME_MIN_LENGTH) {
     return { message: `El nombre debe tener al menos ${FULL_NAME_MIN_LENGTH} caracteres` };
   }
+  // 93.3 (hallazgo del guardián): la EF `register` exige last_name no vacío
+  // (supabase/functions/_shared/validation.ts) y el submit manda `last_name`
+  // incondicional (el resto de las palabras tras la primera) — sin este gate,
+  // un nombre de una sola palabra pasaba local y tronaba en el servidor con
+  // un 400 INVALID_INPUT genérico. Se exige nombre Y apellido aquí, antes de
+  // llamar a la EF.
+  if (trimmed.split(/\s+/).length < 2) {
+    return { message: 'Escribe tu nombre y apellido' };
+  }
   return undefined;
 }
 
@@ -242,7 +261,7 @@ export function validate_register_form(values: RegisterFormValues): RegisterForm
   const checks: [keyof RegisterFormErrors, FieldError | undefined][] = [
     ['full_name', validate_full_name(values.full_name)],
     ['email', validate_email(values.email)],
-    ['password', validate_password(values.password)],
+    ['password', validate_password(values.password, NEW_PASSWORD_MIN_LENGTH)],
     ['phone', validate_phone(values.phone)],
     ['birthdate', validate_birthdate(values.birthdate)],
     ['state_id', validate_state(values.state_id)],
@@ -316,7 +335,7 @@ export function validate_reset_password_form(
 ): ResetPasswordFormErrors {
   const errors: ResetPasswordFormErrors = {};
 
-  const password_error = validate_password(values.password);
+  const password_error = validate_password(values.password, NEW_PASSWORD_MIN_LENGTH);
   if (password_error !== undefined) {
     errors.password = password_error;
   }

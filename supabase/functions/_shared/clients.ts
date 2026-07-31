@@ -28,6 +28,13 @@ import type {
   RedeemParams,
   RedeemResult,
 } from "./redeem.ts";
+import type {
+  CreateUserParams as RegisterCreateUserParams,
+  RegisterAtomicParams,
+  RegisterAtomicResult,
+  RegisterAtomicRunner,
+  RegisterAuthAdmin,
+} from "../register/types.ts";
 import type { AdminVerifier, AdminVerifyResult } from "./admin_auth.ts";
 import type {
   AgencyCreateParams,
@@ -51,7 +58,10 @@ import type {
 } from "../stream-webhook/types.ts";
 import type { HlsSignerConfig } from "../mint-video-url/types.ts";
 import type { ThumbnailUrlSigner } from "../mint-thumbnail-url/types.ts";
-import type { MintedPoster, PosterUrlMinter } from "../mint-poster-urls/types.ts";
+import type {
+  MintedPoster,
+  PosterUrlMinter,
+} from "../mint-poster-urls/types.ts";
 import type {
   ArchivableVideoRow,
   ArchiveUploader,
@@ -141,7 +151,12 @@ export function make_auth_admin(client: SupabaseClient): AuthAdminClient {
         options: { data: params.data },
       });
       if (error || !data) {
-        return { data: null, error: error ? { message: error.message } : { message: "generateLink devolvió sin data" } };
+        return {
+          data: null,
+          error: error
+            ? { message: error.message }
+            : { message: "generateLink devolvió sin data" },
+        };
       }
       return {
         data: {
@@ -150,6 +165,95 @@ export function make_auth_admin(client: SupabaseClient): AuthAdminClient {
         },
         error: null,
       };
+    },
+  };
+}
+
+/**
+ * Adaptador real de RegisterAuthAdmin (subtarea 93.2) sobre supabase.auth.admin.
+ * Mismo wrapping que make_auth_admin (createUser/deleteUser): se separa como
+ * función hermana en vez de reusar AuthAdminClient porque su user_metadata
+ * (register/types.ts, 6 campos §5.1) es un tipo distinto y más rico que el de
+ * la invitación de agente (solo first_name/last_name) — ningún cambio en
+ * auth_user.ts, cero riesgo de romper redeem-invitation.
+ */
+export function make_register_auth_admin(
+  client: SupabaseClient,
+): RegisterAuthAdmin {
+  return {
+    async createUser(params: RegisterCreateUserParams) {
+      const { data, error } = await client.auth.admin.createUser(params);
+      return {
+        data: data?.user ? { user: { id: data.user.id } } : null,
+        // code viaja junto al message: la rama email_exists del handler lo
+        // necesita (versiones nuevas de GoTrue identifican por code, no por
+        // el texto del mensaje).
+        error: error ? { message: error.message, code: error.code } : null,
+      };
+    },
+    async deleteUser(uid: string) {
+      await client.auth.admin.deleteUser(uid);
+    },
+  };
+}
+
+/**
+ * Adaptador real de RegisterDeps.phone_exists (renegociación 2026-07-30):
+ * pre-check ANTES de createUser que replica la semántica del índice parcial
+ * users_phone_unique_active (migración 20260727000002) — solo cuentas activas
+ * (deleted_at IS NULL). GoTrue nunca expone ese índice violado (colapsa en un
+ * 500 genérico), así que este SELECT es la única señal utilizable para dar
+ * PHONE_TAKEN en vez de un 500 opaco.
+ * Fail-open a propósito: si la query falla, se deja pasar (false) — el índice
+ * único de la DB sigue siendo el backstop real (createUser fallaría con el
+ * 500 genérico AUTH_CREATE_FAILED, sin fuga). Sin esto un error de red en el
+ * pre-check bloquearía registros legítimos con un falso PHONE_TAKEN.
+ */
+export function make_phone_exists(
+  client: SupabaseClient,
+): (phone: string) => Promise<boolean> {
+  return async (phone: string): Promise<boolean> => {
+    const { data, error } = await client
+      .from("users")
+      .select("id")
+      .eq("phone", phone)
+      .is("deleted_at", null)
+      .maybeSingle();
+    if (error) {
+      console.error("register: phone_exists falló, fail-open (false)", error);
+      return false;
+    }
+    return data !== null;
+  };
+}
+
+// Códigos de negocio que register_user_atomic levanta con SQLSTATE P0001
+// (migración 20260729000001, subtarea 93.1).
+const REGISTER_ERROR_CODES = [
+  "FIELDS_INCOMPLETE",
+  "NO_ACTIVE_TERMS",
+  "NO_ACTIVE_PRIVACY",
+];
+
+function extract_register_code(message: string): string {
+  return REGISTER_ERROR_CODES.find((c) => message.includes(c)) ??
+    "REGISTER_FAILED";
+}
+
+/** Adaptador real de RegisterAtomicRunner sobre la RPC register_user_atomic (subtarea 93.1). */
+export function make_registrar(client: SupabaseClient): RegisterAtomicRunner {
+  return {
+    async register_atomic(
+      params: RegisterAtomicParams,
+    ): Promise<RegisterAtomicResult> {
+      const { error } = await client.rpc("register_user_atomic", {
+        p_user_id: params.user_id,
+        p_ip: params.ip ?? null,
+      });
+      if (error) {
+        return { ok: false, error_code: extract_register_code(error.message) };
+      }
+      return { ok: true };
     },
   };
 }
@@ -209,7 +313,12 @@ export function make_admin_verifier(client: SupabaseClient): AdminVerifier {
 }
 
 // Códigos de negocio que la RPC admin_create_agency_atomic levanta con SQLSTATE P0001.
-const AGENCY_ERROR_CODES = ["SLUG_DUPLICATE", "NAME_DUPLICATE", "CREATED_BY_REQUIRED", "ALREADY_ACTIVE_MEMBER"];
+const AGENCY_ERROR_CODES = [
+  "SLUG_DUPLICATE",
+  "NAME_DUPLICATE",
+  "CREATED_BY_REQUIRED",
+  "ALREADY_ACTIVE_MEMBER",
+];
 
 function extract_agency_error_code(message: string): string {
   return AGENCY_ERROR_CODES.find((c) => message.includes(c)) ?? "DB_ERROR";
@@ -359,7 +468,9 @@ export function make_video_url_minter(
   hlsConfig?: HlsSignerConfig,
 ): VideoUrlMinter {
   return {
-    async mint_signed_urls(property_ids: string[]): Promise<import("../mint-video-url/types.ts").MintedVideo[]> {
+    async mint_signed_urls(
+      property_ids: string[],
+    ): Promise<import("../mint-video-url/types.ts").MintedVideo[]> {
       // Defensa: array vacío → no tocar la red
       if (property_ids.length === 0) return [];
 
@@ -394,7 +505,10 @@ export function make_video_url_minter(
           try {
             // Un solo JWT (sub=cloudflare_uid) firma AMBOS endpoints — manifest
             // HLS y thumbnail — evitando una segunda llamada de firmado por fila.
-            const { token, domain } = await sign_stream_token(row.cloudflare_uid, hlsConfig);
+            const { token, domain } = await sign_stream_token(
+              row.cloudflare_uid,
+              hlsConfig,
+            );
             const signed_url = build_hls_url(domain, token);
             const posterUrl = build_poster_url(
               domain,
@@ -480,7 +594,10 @@ export function make_r2_url_minter(): R2UrlMinter {
     const secret_access_key = Deno.env.get("R2_SECRET_ACCESS_KEY");
     const bucket = Deno.env.get("R2_BUCKET");
     const endpoint = Deno.env.get("R2_ENDPOINT");
-    if (!account_id || !access_key_id || !secret_access_key || !bucket || !endpoint) {
+    if (
+      !account_id || !access_key_id || !secret_access_key || !bucket ||
+      !endpoint
+    ) {
       throw new Error(
         "Faltan variables de entorno R2_ACCOUNT_ID/R2_ACCESS_KEY_ID/R2_SECRET_ACCESS_KEY/R2_BUCKET/R2_ENDPOINT",
       );
@@ -488,7 +605,11 @@ export function make_r2_url_minter(): R2UrlMinter {
     return { access_key_id, secret_access_key, bucket, endpoint };
   }
 
-  async function sign(key: string, method: "PUT" | "GET", ttl_seconds: number): Promise<string> {
+  async function sign(
+    key: string,
+    method: "PUT" | "GET",
+    ttl_seconds: number,
+  ): Promise<string> {
     const { access_key_id, secret_access_key, bucket, endpoint } = r2_config();
     const aws = new AwsClient({
       accessKeyId: access_key_id,
@@ -531,7 +652,9 @@ export function make_r2_url_minter(): R2UrlMinter {
  * (soft-delete excluido). El WHERE ... IN (...) es la barrera real: al fake de
  * los tests solo le importa el count agregado.
  */
-export function make_active_upload_checker(client: SupabaseClient): ActiveUploadChecker {
+export function make_active_upload_checker(
+  client: SupabaseClient,
+): ActiveUploadChecker {
   return {
     async count_active_uploads(agent_id: string): Promise<number> {
       const { count, error } = await client
@@ -565,7 +688,9 @@ export function make_stream_upload_creator(): StreamUploadCreator {
       const account_id = Deno.env.get("STREAM_ACCOUNT_ID");
       const api_token = Deno.env.get("STREAM_API_TOKEN");
       if (!account_id || !api_token) {
-        throw new Error("Faltan variables de entorno STREAM_ACCOUNT_ID/STREAM_API_TOKEN");
+        throw new Error(
+          "Faltan variables de entorno STREAM_ACCOUNT_ID/STREAM_API_TOKEN",
+        );
       }
 
       const res = await fetch(
@@ -587,7 +712,9 @@ export function make_stream_upload_creator(): StreamUploadCreator {
       const json = await res.json();
       if (!res.ok || json.success === false) {
         throw new Error(
-          `Cloudflare Stream direct_upload falló: ${res.status} ${JSON.stringify(json.errors ?? json)}`,
+          `Cloudflare Stream direct_upload falló: ${res.status} ${
+            JSON.stringify(json.errors ?? json)
+          }`,
         );
       }
 
@@ -605,7 +732,9 @@ export function make_stream_upload_creator(): StreamUploadCreator {
  */
 export function make_video_registrar(client: SupabaseClient): VideoRegistrar {
   return {
-    async register_uploading_video(params: RegisterUploadingVideoParams): Promise<void> {
+    async register_uploading_video(
+      params: RegisterUploadingVideoParams,
+    ): Promise<void> {
       const { error } = await client.from("property_videos").insert({
         agent_id: params.agent_id,
         property_id: params.property_id,
@@ -629,7 +758,9 @@ export function make_video_registrar(client: SupabaseClient): VideoRegistrar {
  * re-entrega de una transición ya aplicada) — la idempotencia vive en el conteo,
  * no en un error: el handler responde 200 aunque affected_rows sea 0.
  */
-export function make_video_status_updater(client: SupabaseClient): VideoStatusUpdater {
+export function make_video_status_updater(
+  client: SupabaseClient,
+): VideoStatusUpdater {
   return {
     async mark_ready(params: MarkVideoReadyParams): Promise<number> {
       const { data, error } = await client
@@ -644,7 +775,9 @@ export function make_video_status_updater(client: SupabaseClient): VideoStatusUp
         .is("deleted_at", null)
         .select("id");
       if (error) {
-        throw new Error(`UPDATE property_videos (mark_ready) falló: ${error.message}`);
+        throw new Error(
+          `UPDATE property_videos (mark_ready) falló: ${error.message}`,
+        );
       }
       return data?.length ?? 0;
     },
@@ -656,7 +789,9 @@ export function make_video_status_updater(client: SupabaseClient): VideoStatusUp
         .is("deleted_at", null)
         .select("id");
       if (error) {
-        throw new Error(`UPDATE property_videos (mark_failed) falló: ${error.message}`);
+        throw new Error(
+          `UPDATE property_videos (mark_failed) falló: ${error.message}`,
+        );
       }
       return data?.length ?? 0;
     },
@@ -672,8 +807,13 @@ export function make_video_status_updater(client: SupabaseClient): VideoStatusUp
  */
 export function make_video_event_notifier(): VideoEventNotifier {
   return {
-    notify_video_event(event: VideoNotifyEvent, cloudflare_uid: string): Promise<void> {
-      console.log(JSON.stringify({ event, cloudflare_uid, at: new Date().toISOString() }));
+    notify_video_event(
+      event: VideoNotifyEvent,
+      cloudflare_uid: string,
+    ): Promise<void> {
+      console.log(
+        JSON.stringify({ event, cloudflare_uid, at: new Date().toISOString() }),
+      );
       return Promise.resolve();
     },
   };
@@ -728,7 +868,9 @@ export function make_stream_archiver(): StreamArchiver {
   }
 
   return {
-    async enable_download(cloudflare_uid: string): Promise<EnableDownloadResult> {
+    async enable_download(
+      cloudflare_uid: string,
+    ): Promise<EnableDownloadResult> {
       const res = await fetch(
         `https://api.cloudflare.com/client/v4/accounts/${account_id()}/stream/${cloudflare_uid}/downloads`,
         { method: "POST", headers: stream_headers() },
@@ -736,7 +878,9 @@ export function make_stream_archiver(): StreamArchiver {
       const json = await res.json();
       if (!res.ok || json.success === false) {
         throw new Error(
-          `Cloudflare Stream enable_download falló: ${res.status} ${JSON.stringify(json.errors ?? json)}`,
+          `Cloudflare Stream enable_download falló: ${res.status} ${
+            JSON.stringify(json.errors ?? json)
+          }`,
         );
       }
       const default_download = json.result?.default ?? {};
@@ -751,7 +895,9 @@ export function make_stream_archiver(): StreamArchiver {
     async fetch_mp4(url: string): Promise<Uint8Array> {
       const res = await fetch(url);
       if (!res.ok) {
-        throw new Error(`Descarga del MP4 de Cloudflare Stream falló: ${res.status}`);
+        throw new Error(
+          `Descarga del MP4 de Cloudflare Stream falló: ${res.status}`,
+        );
       }
       return new Uint8Array(await res.arrayBuffer());
     },
@@ -778,8 +924,14 @@ export function make_archive_uploader(): ArchiveUploader {
 
   return {
     async upload(key: string, body: Uint8Array): Promise<ArchiveUploadResult> {
-      const put_url = await make_r2_url_minter().sign_put(key, R2_ARCHIVE_PUT_TTL_SECONDS);
-      const res = await fetch(put_url, { method: "PUT", body: body as BodyInit });
+      const put_url = await make_r2_url_minter().sign_put(
+        key,
+        R2_ARCHIVE_PUT_TTL_SECONDS,
+      );
+      const res = await fetch(put_url, {
+        method: "PUT",
+        body: body as BodyInit,
+      });
       if (!res.ok) {
         throw new Error(`PUT a R2 falló: ${res.status}`);
       }
@@ -806,7 +958,9 @@ export function make_video_archiver(client: SupabaseClient): VideoArchiver {
         })
         .eq("id", params.property_video_id);
       if (error) {
-        throw new Error(`UPDATE property_videos (mark_archived) falló: ${error.message}`);
+        throw new Error(
+          `UPDATE property_videos (mark_archived) falló: ${error.message}`,
+        );
       }
     },
   };
@@ -821,9 +975,13 @@ export function make_video_archiver(client: SupabaseClient): VideoArchiver {
  * a un JWK RSA válido — el handler lo traduce a 500 INTERNAL_ERROR (fail-closed,
  * nunca una URL/token a medias).
  */
-export function make_thumbnail_url_signer(hlsConfig: HlsSignerConfig): ThumbnailUrlSigner {
+export function make_thumbnail_url_signer(
+  hlsConfig: HlsSignerConfig,
+): ThumbnailUrlSigner {
   return {
-    async sign(cloudflare_uid: string): Promise<import("../mint-thumbnail-url/types.ts").ThumbnailSignResult> {
+    async sign(
+      cloudflare_uid: string,
+    ): Promise<import("../mint-thumbnail-url/types.ts").ThumbnailSignResult> {
       const jwk = JSON.parse(atob(hlsConfig.streamSigningJwk));
       const private_key = await importJWK(jwk, "RS256");
 
@@ -894,7 +1052,10 @@ export function make_poster_url_minter(
   hlsConfig?: HlsSignerConfig,
 ): PosterUrlMinter {
   return {
-    async mint_posters(property_ids: string[], caller_id: string): Promise<MintedPoster[]> {
+    async mint_posters(
+      property_ids: string[],
+      caller_id: string,
+    ): Promise<MintedPoster[]> {
       if (property_ids.length === 0) return [];
 
       const { data, error } = await client
@@ -924,20 +1085,37 @@ export function make_poster_url_minter(
       const results: MintedPoster[] = [];
       for (const row of first_by_property.values()) {
         const raw_properties = row.properties;
-        const properties = (Array.isArray(raw_properties) ? raw_properties[0] : raw_properties) as
-          | { owner_user_id: string; status: string }
-          | undefined
-          | null;
-        if (!properties) continue;
+        const properties = (Array.isArray(raw_properties)
+          ? raw_properties[0]
+          : raw_properties) as
+            | { owner_user_id: string; status: string }
+            | undefined
+            | null;
+        if (!properties) {
+          continue;
+        }
 
-        const authorized = properties.owner_user_id === caller_id || properties.status === "active";
-        if (!authorized) continue;
+        const authorized = properties.owner_user_id === caller_id ||
+          properties.status === "active";
+        if (!authorized) {
+          continue;
+        }
 
-        if (!row.cloudflare_uid || !hlsConfig) continue;
+        if (!row.cloudflare_uid || !hlsConfig) {
+          continue;
+        }
 
         try {
-          const { token, domain } = await sign_stream_token(row.cloudflare_uid, hlsConfig);
-          const posterUrl = build_poster_url(domain, token, row.thumbnail_pct, row.duration_seconds);
+          const { token, domain } = await sign_stream_token(
+            row.cloudflare_uid,
+            hlsConfig,
+          );
+          const posterUrl = build_poster_url(
+            domain,
+            token,
+            row.thumbnail_pct,
+            row.duration_seconds,
+          );
           results.push({ property_id: row.property_id, posterUrl });
         } catch {
           // fail-closed: JWK inválido u otro error de firmado → excluir solo esta fila

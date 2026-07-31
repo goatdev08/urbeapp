@@ -4,9 +4,10 @@
  * Dos modos en una pantalla:
  *   'user'  (default) — registro libre (§5.1): nombre completo, teléfono,
  *           fecha de nacimiento, estado, municipio, correo + contraseña
- *           (+confirmar). supabase.auth.signUp → trigger handle_new_user crea
- *           el perfil con role='user'. Con autoconfirm activo la sesión entra
- *           directa y el listener del AuthProvider redirige (Redirect abajo).
+ *           (+confirmar). register_user (EF `register`, 93.2) crea la cuenta,
+ *           el perfil (role='user') y los 4 consentimientos en un solo paso
+ *           server-side; el cliente hace signIn(email, password) justo
+ *           después — mismo patrón de auto-login que el modo 'agent' (93.3).
  *   'agent' — registro de agente por código de invitación (flujo original 5.7/5.8):
  *           validate-invitation → datos → redeem-invitation → auto-login → onboarding.
  *
@@ -34,13 +35,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Link, Redirect, useRouter } from 'expo-router';
 
 import { useAuth } from '@/features/auth/context';
-import { map_auth_error } from '@/features/auth/auth-errors';
+import { MSG_PHONE_TAKEN } from '@/features/auth/auth-errors';
+import { register_user } from '@/features/auth/api';
 import { FormField } from '@/features/auth/components/form-field';
 import { LocationFields } from '@/features/auth/components/location-fields';
-import { supabase } from '@/lib/supabase/client';
 import { ConsentCheckbox } from '@/features/auth/components/consent-checkbox';
-import { record_signup_consents } from '@/features/auth/record-consents';
 import {
+  MINIMUM_AGE,
   to_e164_mx,
   validate_register_form as validate_user_register_form,
   type FieldError,
@@ -89,8 +90,22 @@ function format_birthdate_input(raw: string): string {
   return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6)}`;
 }
 
+/**
+ * Mapea el error_code de la EF `register` (§5.1, 93.2) a mensajes en español
+ * YA definidos para otros flujos — evita duplicar los strings de
+ * PHONE_TAKEN/EMAIL_ALREADY_EXISTS que ya existían. UNDERAGE reusa el número
+ * MINIMUM_AGE de validation.ts en vez de hardcodear "18". Cualquier otro
+ * código (FIELDS_INCOMPLETE, AUTH_CREATE_FAILED, INTERNAL_ERROR, undefined…)
+ * cae en el fallback genérico ya existente en registration-errors.ts.
+ */
+function map_register_user_error(code: string | undefined): string {
+  if (code === 'PHONE_TAKEN') return MSG_PHONE_TAKEN;
+  if (code === 'UNDERAGE') return `Debes tener al menos ${MINIMUM_AGE} años para registrarte`;
+  return map_registration_error_code(code);
+}
+
 export default function RegisterScreen() {
-  const { signIn, signUp, session, isLoading } = useAuth();
+  const { signIn, session, isLoading } = useAuth();
   const router = useRouter();
 
   // Modo del flujo: registro libre (default) o agente por código.
@@ -149,7 +164,7 @@ export default function RegisterScreen() {
 
   const code_validated = agency_name !== null;
 
-  // ── Registro libre: validar + signUp (§5.1) ─────────────────────────────────
+  // ── Registro libre: validar + register_user (§5.1) ──────────────────────────
   const validate_user_form = (): UserFormErrors => {
     const values: UserRegisterFormValues = {
       full_name: u_name_ref.current,
@@ -182,7 +197,8 @@ export default function RegisterScreen() {
     try {
       // §5.1: el formulario captura un solo campo "nombre completo" — se
       // parte en first_name (primera palabra) / last_name (el resto) al
-      // enviar, que es como lo persiste handle_new_user.
+      // enviar, igual que lo esperaba handle_new_user antes de 93.3 (la EF
+      // `register` mantiene el mismo contrato de metadata server-side).
       const full_name = u_name_ref.current.trim();
       const name_parts = full_name.split(/\s+/);
       // noUncheckedIndexedAccess tipa name_parts[0] como string|undefined aun
@@ -190,9 +206,14 @@ export default function RegisterScreen() {
       // el `?? full_name` solo satisface al compilador, nunca se usa en runtime.
       const first_name_part = name_parts[0] ?? full_name;
       const last_name_part = name_parts.slice(1).join(' ');
+      const email = u_email_ref.current.trim();
+      const password = u_password_ref.current;
 
-      await signUp(u_email_ref.current.trim(), u_password_ref.current, {
+      const result = await register_user({
+        email,
+        password,
         first_name: first_name_part,
+        last_name: last_name_part,
         // E.164 SIEMPRE: users_phone_unique_active es un índice único sobre el
         // texto crudo, así que guardar lo tecleado dejaría que '3312345678' y
         // '+523312345678' convivan como cuentas distintas de la misma persona.
@@ -200,41 +221,20 @@ export default function RegisterScreen() {
         date_of_birth: u_birthdate_ref.current.trim(),
         state_id: u_state_id_ref.current.trim(),
         municipality_id: u_municipality_id_ref.current.trim(),
-        // exactOptionalPropertyTypes: la clave solo se incluye cuando hay
-        // apellido — asignar `undefined` explícito rompería el tipo.
-        ...(last_name_part.length > 0 ? { last_name: last_name_part } : {}),
       });
 
-      // Consentimientos (72.6 terms+privacy §5.5, 72.7 whatsapp §5.4). DESPUÉS del
-      // signUp a propósito: la policy consents_insert exige user_id = auth.uid(), o sea
-      // que sin sesión el INSERT devuelve 42501.
-      // Si esto falla NO se aborta el registro — la cuenta ya existe y tumbarla aquí
-      // dejaría al usuario sin cuenta y sin explicación. En su lugar entra sin
-      // consentimientos registrados, y el gate legal del ProtectedLayout lo detecta en
-      // el siguiente render y le pide aceptarlos. Ese gate es justamente la red.
-      const { data: session_data } = await supabase.auth.getSession();
-      const new_user_id = session_data.session?.user.id;
-      if (new_user_id !== undefined) {
-        const { error: consent_error } = await record_signup_consents(new_user_id);
-        if (consent_error !== null) {
-          console.warn('[register] No se pudieron guardar los consentimientos:', consent_error);
-        }
+      if (!result.ok) {
+        set_general_error(map_register_user_error(result.code));
+        return;
       }
 
-      // La sesión llega por onAuthStateChange; el Redirect de arriba (o este
-      // replace) lleva a la home. El usuario libre no pasa por onboarding.
+      // Auto-login con las credenciales recién creadas — la EF `register` ya
+      // dejó la cuenta, el perfil y los 4 consentimientos listos server-side
+      // (mismo patrón que el modo 'agent' tras redeem_invitation).
+      await signIn(email, password);
       router.replace('/');
     } catch (err) {
-      // Caso más común: correo ya registrado → mensaje accionable.
-      const err_code =
-        typeof err === 'object' && err !== null
-          ? (err as { code?: string }).code
-          : undefined;
-      if (err_code === 'user_already_exists') {
-        set_general_error('Ya existe una cuenta con este correo. Inicia sesión.');
-      } else {
-        set_general_error(map_auth_error(err));
-      }
+      set_general_error(map_network_error(err));
     } finally {
       set_is_submitting(false);
     }
@@ -443,7 +443,7 @@ export default function RegisterScreen() {
                 secureTextEntry={!show_password}
                 autoComplete="new-password"
                 textContentType="newPassword"
-                placeholder="Mínimo 6 caracteres"
+                placeholder="Mínimo 8 caracteres"
                 error={u_errors.password?.message}
                 editable={!is_submitting}
                 right_addon={password_toggle}

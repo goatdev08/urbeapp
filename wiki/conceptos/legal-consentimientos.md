@@ -3,8 +3,8 @@ tipo: concepto
 dominio: legal
 estado: vivo
 fuentes: [docs/PRD.md, docs/PRD-MVP-demo.md]
-codigo: [supabase/migrations/20260604000004_user_profile_legal.sql, supabase/migrations/20260604000009_seed_terms.sql, supabase/migrations/20260727000003_legal_gate.sql, supabase/tests/18_legal_gate_test.sql, mobile/src/features/auth/hooks/useLegalGate.ts, mobile/src/features/auth/components/legal-gate-boundary.tsx, mobile/src/features/auth/components/legal-wall.tsx, mobile/src/features/auth/record-consents.ts]
-actualizado: 2026-07-28
+codigo: [supabase/migrations/20260604000004_user_profile_legal.sql, supabase/migrations/20260604000009_seed_terms.sql, supabase/migrations/20260727000003_legal_gate.sql, supabase/migrations/20260729000001_register_user_atomic_rpc.sql, supabase/tests/18_legal_gate_test.sql, supabase/tests/19_register_user_atomic_test.sql, supabase/functions/register/, mobile/src/features/auth/hooks/useLegalGate.ts, mobile/src/features/auth/components/legal-gate-boundary.tsx, mobile/src/features/auth/components/legal-wall.tsx, mobile/src/features/auth/api.ts]
+actualizado: 2026-07-30
 ---
 
 # Legal y consentimientos
@@ -17,7 +17,14 @@ actualizado: 2026-07-28
 - **`account_deletion_requests`** — baja con gracia. `status` (pending, confirmed, completed, cancelled); 15 días de gracia (soft→hard delete).
 
 ## Flujo (demo)
-En el registro/canje de código se aceptan **terms + privacy + whatsapp** (consentimiento de contacto) → filas en `user_consents`. La **baja de cuenta** (15 días) → **diferido**.
+En el registro/canje de código se aceptan **terms + privacy + age + whatsapp** (4 consentimientos) → filas en `user_consents`. La **baja de cuenta** (15 días) → **diferido**.
+
+### Registro libre: ahora atómico y del lado servidor (#93, 2026-07-30)
+Hasta la tarea #93 el registro libre (modo `user` de `app/register.tsx`) llamaba `supabase.auth.signUp` directo desde el cliente y luego grababa los consentimientos con `record-consents.ts` (ya retirado). Dos huecos con la anon key en el bundle: (1) un `curl` a `/auth/v1/signup` con solo email+password creaba una cuenta con `phone`/`date_of_birth`/`state_id`/`municipality_id` en NULL — la obligatoriedad de §5.1 solo vivía en el cliente, que no es frontera de confianza; (2) los CHECK/índices de #72.2 hacían que Postgres devolviera su error crudo (teléfono en conflicto, o la FILA COMPLETA en el caso de menor de edad) directo a un llamante `anon`.
+
+Ahora el registro libre pasa por la **EF pública `register`** (`supabase/functions/register/`, sin JWT — usa la API admin, no `/signup`): valida §5.1 → `authAdmin.createUser` (con `email_confirm:true`) → RPC `register_user_atomic` (`supabase/migrations/20260729000001_register_user_atomic_rpc.sql`, SECURITY DEFINER, mismo patrón que `redeem_invitation_atomic`) inserta los **4 consentimientos en la misma transacción** que valida que el perfil no quedó incompleto → compensación `deleteUser` si la RPC falla. Todo error visible a `anon` es un código sanitizado (`PHONE_TAKEN`, `EMAIL_ALREADY_EXISTS`, `UNDERAGE`, `FIELDS_INCOMPLETE`, …) — nunca `message`/`detail` crudo de Postgres, verificado empíricamente (ver bitácora 93.5). El cliente (`mobile/src/features/auth/api.ts`, `register_user`) solo llama a la EF y, si `ok`, hace `signIn(email,password)` — la EF no autologuea. `/auth/v1/signup` a `anon` queda cerrado con `[auth] enable_signup=false` en `supabase/config.toml` (#93.4; local verificado, remoto pendiente del runbook de deploy).
+
+El flujo de **agente** (canje de código) ya era atómico del lado servidor desde antes (`redeem_invitation_atomic`) — #93 alinea el registro libre al mismo patrón.
 
 ## Reglas / gotchas
 - `user_consents` es append-only (auditoría); si cambia una versión de términos, se requiere re-aceptación.

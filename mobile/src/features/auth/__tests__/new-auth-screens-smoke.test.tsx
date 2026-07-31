@@ -23,7 +23,6 @@ jest.mock('@/features/auth/context', () => ({
     user: null,
     isLoading: false,
     signIn: jest.fn(),
-    signUp: jest.fn(),
     signOut: jest.fn().mockResolvedValue(undefined),
     requestPasswordReset: jest.fn().mockResolvedValue(undefined),
     updatePassword: jest.fn().mockResolvedValue(undefined),
