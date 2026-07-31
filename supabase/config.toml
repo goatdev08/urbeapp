@@ -14,3 +14,9 @@ sql_paths = ["./seed.sql"]
 
 [db.migrations]
 schema_paths = []
+
+[auth]
+# Cierra /auth/v1/signup a anon (#93.4): el único alta libre queda por la EF
+# register (usa la API admin, no /signup). No afecta redeem-invitation
+# (authAdmin.createUser) ni seed.sql (INSERT directo a auth.users).
+enable_signup = false
