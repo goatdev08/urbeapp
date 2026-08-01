@@ -60,3 +60,19 @@ export async function register_user(
   }
   return { ok: true, user_id: data.user_id };
 }
+
+/**
+ * Dispara el correo de confirmación de una cuenta recién creada (subtarea
+ * 72.3, verificación real de email). `admin.createUser` (EF `register`) NO
+ * envía correo — este wrapper es quien lo hace, desde el cliente, vía
+ * `supabase.auth.resend`.
+ *
+ * STUB fase RED — lanza. La fase GREEN llama
+ * `supabase.auth.resend({ type: 'signup', email, options: { emailRedirectTo:
+ * Linking.createURL('verify-email') } })` y es fail-soft: nunca lanza al
+ * caller (el usuario tiene botón "reenviar" en /verify-email); los errores
+ * se registran con console.warn.
+ */
+export async function send_verification_email(_email: string): Promise<void> {
+  throw new Error('not_implemented');
+}

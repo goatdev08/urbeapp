@@ -57,7 +57,8 @@
 //          state_id, municipality_id } — TODOS obligatorios.
 //   Happy path: authAdmin.createUser(...) con user_metadata EXACTA a lo que
 //   lee handle_new_user (first_name, last_name, phone, date_of_birth,
-//   state_id, municipality_id) y email_confirm:true → registrar.register_atomic
+//   state_id, municipality_id) y email_confirm:false (72.3 — verificación
+//   real de email, el correo lo dispara el cliente) → registrar.register_atomic
 //   (user_id, ip) EXACTAMENTE UNA VEZ → 200 { user_id }.
 //   Si register_atomic falla → compensación deleteUser(user_id); si la
 //   compensación también falla, el error ORIGINAL de register_atomic sigue
@@ -75,7 +76,7 @@
 // ### Happy path
 // - POST payload completo válido → 200 { user_id } Content-Type application/json
 // - createUser llamado 1 vez con user_metadata EXACTA (first_name, last_name,
-//   phone, date_of_birth, state_id, municipality_id) + email_confirm:true
+//   phone, date_of_birth, state_id, municipality_id) + email_confirm:false (72.3)
 // - register_atomic llamado EXACTAMENTE 1 vez con { user_id, ip }
 // - deleteUser NO se llama en happy path
 //
@@ -391,7 +392,12 @@ Deno.test("happy_path_create_user_recibe_metadata_exacta_de_handle_new_user", as
   const call = authAdmin.create_calls[0];
   assertEquals(call.email, PAYLOAD_VALIDO.email);
   assertEquals(call.password, PAYLOAD_VALIDO.password);
-  assertEquals(call.email_confirm, true);
+  // 72.3 (verificación real de email): el registro libre YA NO auto-confirma
+  // — el correo de confirmación lo dispara el CLIENTE (mobile/src/features/
+  // auth/api.ts, send_verification_email) después de un 200 exitoso. El resto
+  // del contrato (200 {user_id}, compensación deleteUser, errores
+  // sanitizados) NO cambia — ver los demás tests de este archivo.
+  assertEquals(call.email_confirm, false);
   assertEquals(call.user_metadata.first_name, PAYLOAD_VALIDO.first_name);
   assertEquals(call.user_metadata.last_name, PAYLOAD_VALIDO.last_name);
   assertEquals(call.user_metadata.phone, PAYLOAD_VALIDO.phone);
