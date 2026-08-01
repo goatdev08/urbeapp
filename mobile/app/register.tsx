@@ -4,10 +4,12 @@
  * Dos modos en una pantalla:
  *   'user'  (default) — registro libre (§5.1): nombre completo, teléfono,
  *           fecha de nacimiento, estado, municipio, correo + contraseña
- *           (+confirmar). register_user (EF `register`, 93.2) crea la cuenta,
- *           el perfil (role='user') y los 4 consentimientos en un solo paso
- *           server-side; el cliente hace signIn(email, password) justo
- *           después — mismo patrón de auto-login que el modo 'agent' (93.3).
+ *           (+confirmar). register_user (EF `register`, 93.2) crea la cuenta
+ *           (email_confirm:false, 72.3), el perfil (role='user') y los 4
+ *           consentimientos en un solo paso server-side; SIN auto-login —
+ *           GoTrue rechazaría el password grant sin correo confirmado, así
+ *           que el cliente dispara send_verification_email y navega a
+ *           /verify-email en su lugar (72.3, verificación real de email).
  *   'agent' — registro de agente por código de invitación (flujo original 5.7/5.8):
  *           validate-invitation → datos → redeem-invitation → auto-login → onboarding.
  *
@@ -36,7 +38,7 @@ import { Link, Redirect, useRouter } from 'expo-router';
 
 import { useAuth } from '@/features/auth/context';
 import { MSG_PHONE_TAKEN } from '@/features/auth/auth-errors';
-import { register_user } from '@/features/auth/api';
+import { register_user, send_verification_email } from '@/features/auth/api';
 import { FormField } from '@/features/auth/components/form-field';
 import { LocationFields } from '@/features/auth/components/location-fields';
 import { ConsentCheckbox } from '@/features/auth/components/consent-checkbox';
@@ -228,11 +230,15 @@ export default function RegisterScreen() {
         return;
       }
 
-      // Auto-login con las credenciales recién creadas — la EF `register` ya
-      // dejó la cuenta, el perfil y los 4 consentimientos listos server-side
-      // (mismo patrón que el modo 'agent' tras redeem_invitation).
-      await signIn(email, password);
-      router.replace('/');
+      // Sin auto-login (72.3): la EF `register` crea la cuenta con
+      // email_confirm:false, así que GoTrue rechazaría el password grant con
+      // email_not_confirmed. El correo de verificación lo dispara el
+      // cliente (admin.createUser no lo envía) y el usuario espera en
+      // /verify-email hasta abrir el enlace.
+      // El boolean de éxito/fallo se ignora aquí a propósito: verify-email.tsx
+      // ya tiene su propio botón "reenviar" si este primer envío falló.
+      await send_verification_email(email);
+      router.replace({ pathname: '/verify-email', params: { email } });
     } catch (err) {
       set_general_error(map_network_error(err));
     } finally {

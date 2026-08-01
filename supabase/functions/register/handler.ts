@@ -17,7 +17,10 @@
 //     que contengan "already been registered" / "already registered".
 //
 // Orquestación: validar payload (§5.1) → UNDERAGE → phone_exists → createUser
-// (metadata EXACTA a lo que lee handle_new_user, email_confirm:true) →
+// (metadata EXACTA a lo que lee handle_new_user, email_confirm:false — 72.3:
+// el usuario queda sin confirmar; el CLIENTE dispara el correo de verificación
+// vía auth.resend post-registro, porque admin.createUser NO envía correo
+// automático. GoTrue rechazará el login hasta que confirme) →
 // register_atomic (RPC 93.1, append-only, UNA sola vez) → 200 { user_id }.
 // Si register_atomic falla → compensación deleteUser(user_id); si la
 // compensación también falla, se registra con console.error (sin enmascarar)
@@ -182,7 +185,7 @@ export async function handler(
     const create_result = await authAdmin.createUser({
       email: input.email,
       password: input.password,
-      email_confirm: true,
+      email_confirm: false,
       user_metadata: {
         first_name: input.first_name,
         last_name: input.last_name,

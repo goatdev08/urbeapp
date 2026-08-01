@@ -1,12 +1,20 @@
 /**
- * Tests fase RED — register.tsx modo 'user' (registro libre §5.1), subtarea 93.3.
+ * Tests fase RED — register.tsx modo 'user' (registro libre §5.1), subtareas
+ * 93.3 + 72.3 (verificación real de email).
  * Archivo SUT: mobile/app/register.tsx
  *
- * Cambio bajo prueba: handle_user_submit debe dejar de llamar `signUp` (context)
- * + `record_signup_consents` y en su lugar llamar `register_user` (nueva EF
- * `register`, 93.2) y, si resuelve ok, `signIn(email, password)` — mismo patrón
- * de auto-login que ya usa el modo 'agent' (handle_submit → redeem_invitation +
- * signIn). El modo 'agent' NO cambia (EC-6, no-regresión).
+ * Cambio bajo prueba (93.3, base): handle_user_submit debe dejar de llamar
+ * `signUp` (context) + `record_signup_consents` y en su lugar llamar
+ * `register_user` (EF `register`, 93.2).
+ *
+ * Cambio bajo prueba (72.3 — RENEGOCIADO, reemplaza el contrato post-éxito de
+ * 93.3): GoTrue ya NO auto-confirma la cuenta (email_confirm:false en la EF),
+ * así que el auto-login (`signIn`) tras el éxito de `register_user` YA NO
+ * ocurre (GoTrue rechazaría el password grant con email_not_confirmed). El
+ * flujo correcto es: éxito → `send_verification_email(email)` →
+ * `router.replace({ pathname: '/verify-email', params: { email } })`. El modo
+ * 'agent' (invitación, auto-login SÍ vigente porque redeem_invitation
+ * confirma el email a propósito) NO cambia (EC-6, no-regresión).
  *
  * Reusa el armazón de mocks de login-submit.test.tsx (useAuth, expo-router,
  * SafeAreaView) — misma convención RNTL v14 + React 19 (render async, act,
@@ -22,8 +30,9 @@
  * - EC-1: submit válido (todo lleno, 3 consentimientos aceptados) → register_user
  *   llamado UNA vez con el payload EXACTO (email trim, phone E.164, date_of_birth
  *   YYYY-MM-DD, state_id/municipality_id del picker, first_name/last_name
- *   partidos del nombre completo) y, tras éxito, signIn llamado con
- *   (email trim, password); signUp (context) NUNCA llamado.
+ *   partidos del nombre completo) y, tras éxito, send_verification_email
+ *   llamado con el email trim + router.replace hacia /verify-email con param
+ *   email; signIn y signUp (context) NUNCA se llaman.
  *
  * ### Validación local (gate antes de llamar a la red)
  * - EC-2: falta un consentimiento (whatsapp) → register_user NO se llama (0 veces)
@@ -68,12 +77,14 @@ jest.mock('@/features/auth/context', () => ({
 }));
 
 // ---------------------------------------------------------------------------
-// Mock de register_user (SUT nuevo — 93.3, ver ../api.ts)
+// Mock de register_user / send_verification_email (../api.ts — 93.3 + 72.3)
 // ---------------------------------------------------------------------------
 const mock_register_user = jest.fn();
+const mock_send_verification_email = jest.fn();
 
 jest.mock('@/features/auth/api', () => ({
   register_user: (...args: unknown[]) => mock_register_user(...args),
+  send_verification_email: (...args: unknown[]) => mock_send_verification_email(...args),
 }));
 
 // ---------------------------------------------------------------------------
@@ -207,6 +218,7 @@ async function fill_valid_user_form(
 beforeEach(() => {
   jest.clearAllMocks();
   mock_sign_in.mockResolvedValue(undefined);
+  mock_send_verification_email.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -214,11 +226,12 @@ afterEach(() => {
 });
 
 // ===========================================================================
-// EC-1: submit válido → register_user con el payload exacto, luego signIn;
-//       signUp (context) nunca se llama.
+// EC-1: submit válido → register_user con el payload exacto, luego
+//       send_verification_email + router.replace a /verify-email (72.3);
+//       signIn/signUp (context) nunca se llaman.
 // ===========================================================================
-describe('EC-1: submit_valido_llama_register_user_y_luego_signIn', () => {
-  it('register_user recibe el payload normalizado y signIn se llama después con las credenciales; signUp NO se usa', async () => {
+describe('EC-1: submit_valido_llama_register_user_y_luego_send_verification_email', () => {
+  it('register_user recibe el payload normalizado; tras éxito llama send_verification_email(email) y navega a /verify-email con el email; signIn/signUp NO se usan', async () => {
     mock_register_user.mockResolvedValue({ ok: true, user_id: 'uuid-93' });
 
     let q!: RenderResult;
@@ -245,10 +258,18 @@ describe('EC-1: submit_valido_llama_register_user_y_luego_signIn', () => {
       municipality_id: '14039',
     });
 
-    expect(mock_sign_in).toHaveBeenCalledTimes(1);
-    expect(mock_sign_in).toHaveBeenCalledWith(VALID.email_trimmed, VALID.password);
+    expect(mock_send_verification_email).toHaveBeenCalledTimes(1);
+    expect(mock_send_verification_email).toHaveBeenCalledWith(VALID.email_trimmed);
 
-    // El wiring viejo (signUp de context) ya NO debe usarse en el modo 'user'.
+    expect(mock_router_replace).toHaveBeenCalledWith({
+      pathname: '/verify-email',
+      params: { email: VALID.email_trimmed },
+    });
+
+    // GoTrue rechazaría el password grant sin email confirmado (72.3) — ya no
+    // hay auto-login en el modo 'user'. El wiring viejo (signUp de context)
+    // tampoco debe usarse.
+    expect(mock_sign_in).not.toHaveBeenCalled();
     expect(mock_sign_up).not.toHaveBeenCalled();
   });
 });

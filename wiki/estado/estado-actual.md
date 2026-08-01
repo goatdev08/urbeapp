@@ -1,11 +1,18 @@
 ---
 tipo: estado
-actualizado: 2026-07-30
+actualizado: 2026-07-31
 ---
 
 # Estado actual
 
 > Narrativa de "dónde estamos hoy". El **qué sigue / qué está hecho** vive en **Taskmaster** (`task-master list`), no aquí.
+
+## Hoy (2026-07-31)
+
+- **✅ #72 (Ola 1 — Auth) CERRADA: 7/7 subtareas.** Las 3 diferidas (72.3 verificación de email, 72.4 Google OAuth, 72.5 reset de contraseña) se destrabaron con el descubrimiento de que **Mailpit** (bandeja local `:54324`) permite probar TODO el flujo de correos sin Resend: los tres ciclos corrieron TDD completo (RED→GREEN→guardian, 1 FAIL de cobertura corregido en 72.3) y **72.3/72.5 quedaron verificadas E2E por API contra el stack local** (registro → correo → link → `302 urbea://…#access_token` → sesión; recover → nueva contraseña → login). Patrón nuevo reutilizable: `parse_session_from_url` + `useSessionFromDeepLink` (lo consumen verify-email, reset-password y el hook de Google). Guard de navegación: sesión sin `email_confirmed_at` → `/verify-email` (antes del gate legal).
+- **🔧 Cambio de contrato del registro (#72.3 sobre #93):** la EF `register` ahora crea el usuario **sin confirmar** (`email_confirm:false`) y el cliente dispara el correo (`send_verification_email`); **ya no hay auto-login post-registro** (GoTrue rechaza no-confirmados). `redeem-invitation` NO cambió (la invitación reemplaza la verificación, a propósito).
+- **⚠️ Módulo nativo nuevo:** 72.4 instaló `expo-web-browser` (única dep nueva; ponytail: NO expo-auth-session — flow implícito + reuso del parser) → **fingerprint cambia → rebuild del dev client (`expo run:android`) y de los builds de testers; no viaja por OTA**. El flag `GOOGLE_OAUTH_ENABLED` sigue apagado hasta que exista el client de Google Cloud (candado EC-B5 protege el gate App Store 4.8).
+- **📋 Lo único pendiente de #72 es CONFIG, no código** — vive en `docs/TODO-pendientes.md`: API key de Resend + dominio (SMTP remoto + flip de confirmations en `urbea-app`), client OAuth de Google, y el runbook remoto de #93 (producción sigue pausada por los pagos, sin prisa). Suites: Jest **842** (75 suites) · Deno 681 · pgTAP 336 · tsc/lint 0.
 
 ## Hoy (2026-07-30)
 

@@ -24,22 +24,44 @@
  *
  * ### Boundary / error de red
  * - RU-5: error que NO es FunctionsHttpError (TypeError de red) → {ok:false, code:undefined}
+ *
+ * ### send_verification_email (subtarea 72.3 — verificación real de email)
+ * Seam: la firma pública `send_verification_email(email)`. Frontera de
+ * sistema mockeada: `supabase.auth.resend` (llamada HTTP real a GoTrue) y
+ * `expo-linking` (deep link nativo — no hay scheme real bajo Jest).
+ * - SV-1: llama supabase.auth.resend con {type:'signup', email, options:{emailRedirectTo}}
+ *   EXACTO — emailRedirectTo es el valor que devuelve Linking.createURL('verify-email')
+ * - SV-2: resend devuelve {error: null} → resuelve void, NO lanza
+ * - SV-3: resend devuelve {error} → NO lanza (fail-soft) y hace console.warn
  */
 import { FunctionsHttpError } from '@supabase/supabase-js';
 
-import { register_user, type RegisterUserInput } from '../api';
+import { register_user, send_verification_email, type RegisterUserInput } from '../api';
 
 // ---------------------------------------------------------------------------
-// Mock de frontera — supabase.functions.invoke
+// Mock de frontera — supabase.functions.invoke / supabase.auth.resend
 // ---------------------------------------------------------------------------
 const mock_invoke = jest.fn();
+const mock_resend = jest.fn();
 
 jest.mock('@/lib/supabase/client', () => ({
   supabase: {
     functions: {
       invoke: (...args: unknown[]) => mock_invoke(...args),
     },
+    auth: {
+      resend: (...args: unknown[]) => mock_resend(...args),
+    },
   },
+}));
+
+// ---------------------------------------------------------------------------
+// Mock de frontera — expo-linking (deep link nativo, sin scheme real en Jest)
+// ---------------------------------------------------------------------------
+const mock_create_url = jest.fn();
+
+jest.mock('expo-linking', () => ({
+  createURL: (...args: unknown[]) => mock_create_url(...args),
 }));
 
 function make_http_error(code: string): FunctionsHttpError {
@@ -112,5 +134,46 @@ describe('register_user', () => {
     const result = await register_user(INPUT);
 
     expect(result).toEqual({ ok: false, code: undefined });
+  });
+});
+
+describe('send_verification_email', () => {
+  it('SV-1: llama resend con type signup, el email exacto y emailRedirectTo de Linking.createURL("verify-email")', async () => {
+    mock_create_url.mockReturnValue('urbea://verify-email');
+    mock_resend.mockResolvedValue({ error: null });
+
+    await send_verification_email('nuevo@urbea.mx');
+
+    expect(mock_create_url).toHaveBeenCalledWith('verify-email');
+    expect(mock_resend).toHaveBeenCalledTimes(1);
+    expect(mock_resend).toHaveBeenCalledWith({
+      type: 'signup',
+      email: 'nuevo@urbea.mx',
+      options: { emailRedirectTo: 'urbea://verify-email' },
+    });
+  });
+
+  // SV-2/SV-3 renegociados post-guardian (O1, 72.3): el contrato pasó de
+  // Promise<void> a Promise<boolean> — verify-email.tsx necesita distinguir
+  // "se reenvió" de "falló" para no pintar "correo reenviado" sobre un envío
+  // que no ocurrió (antes el fail-soft ocultaba el fallo también al UI, no
+  // solo al caller). Renegociación aprobada por el orquestador tras el
+  // hallazgo del guardián (O1 — regresión de UX).
+  it('SV-2: resend sin error → resuelve true (no lanza)', async () => {
+    mock_create_url.mockReturnValue('urbea://verify-email');
+    mock_resend.mockResolvedValue({ error: null });
+
+    await expect(send_verification_email('nuevo@urbea.mx')).resolves.toBe(true);
+  });
+
+  it('SV-3: resend devuelve error → resuelve false (fail-soft, no lanza) y hace console.warn', async () => {
+    mock_create_url.mockReturnValue('urbea://verify-email');
+    mock_resend.mockResolvedValue({ error: new Error('rate limit exceeded') });
+    const warn_spy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await expect(send_verification_email('nuevo@urbea.mx')).resolves.toBe(false);
+
+    expect(warn_spy).toHaveBeenCalledTimes(1);
+    warn_spy.mockRestore();
   });
 });

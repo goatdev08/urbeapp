@@ -36,18 +36,20 @@ import {
   type LoginFormErrors,
 } from '@/features/auth/validation';
 import { APPLE_OAUTH_ENABLED, GOOGLE_OAUTH_ENABLED } from '@/features/auth/feature-flags';
+import { useGoogleOAuth } from '@/features/auth/hooks/useGoogleOAuth';
 import { UrbeaLockup } from '@/components/UrbeaLockup';
 import { brand, colors, fonts } from '@/theme/theme';
 
 // ---------------------------------------------------------------------------
-// Login social (72.4) — detrás de flag, ver feature-flags.ts. Sin
-// credenciales de proveedor (Google Cloud OAuth client / Apple) NO hay nada
-// que probar, así que el handler es un stub explícito: si algún día se
+// Login social Apple (72.4) — sigue detrás de flag, ver feature-flags.ts
+// (gate de release iOS, App Store Review Guideline 4.8). Sin credenciales de
+// Apple todavía, así que el handler es un stub explícito: si algún día se
 // llegara a invocar por error (flag prendido antes de tiempo), falla ruidoso
-// en vez de fingir que el login funcionó.
+// en vez de fingir que el login funcionó. Google ya no usa este stub — tiene
+// implementación real vía useGoogleOAuth (ver abajo).
 // ---------------------------------------------------------------------------
 
-function handle_social_login_stub(provider: 'Google' | 'Apple'): never {
+function handle_social_login_stub(provider: 'Apple'): never {
   throw new Error(
     `Falta configurar el proveedor de ${provider} (credenciales pendientes — ver subtarea 72.4).`
   );
@@ -60,6 +62,7 @@ function handle_social_login_stub(provider: 'Google' | 'Apple'): never {
 export default function LoginScreen() {
   const { signIn, session, isLoading } = useAuth();
   const router = useRouter();
+  const { sign_in_with_google, error_message: google_error_message } = useGoogleOAuth();
 
   // Estado del formulario
   const [email, set_email] = useState('');
@@ -291,14 +294,26 @@ export default function LoginScreen() {
                 </View>
 
                 {GOOGLE_OAUTH_ENABLED && (
-                  <Pressable
-                    style={styles.social_button}
-                    onPress={() => handle_social_login_stub('Google')}
-                    accessibilityRole="button"
-                    accessibilityLabel="Continuar con Google"
-                  >
-                    <Text style={styles.social_button_text}>Continuar con Google</Text>
-                  </Pressable>
+                  <>
+                    {google_error_message !== null && (
+                      <View
+                        style={styles.error_banner}
+                        accessible
+                        accessibilityRole="alert"
+                        accessibilityLiveRegion="assertive"
+                      >
+                        <Text style={styles.error_banner_text}>{google_error_message}</Text>
+                      </View>
+                    )}
+                    <Pressable
+                      style={styles.social_button}
+                      onPress={sign_in_with_google}
+                      accessibilityRole="button"
+                      accessibilityLabel="Continuar con Google"
+                    >
+                      <Text style={styles.social_button_text}>Continuar con Google</Text>
+                    </Pressable>
+                  </>
                 )}
 
                 {APPLE_OAUTH_ENABLED && (

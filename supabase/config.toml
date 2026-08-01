@@ -20,3 +20,17 @@ schema_paths = []
 # register (usa la API admin, no /signup). No afecta redeem-invitation
 # (authAdmin.createUser) ni seed.sql (INSERT directo a auth.users).
 enable_signup = false
+# Deep link de la app (72.3): destino del correo de verificación / reset
+# password que abre `urbea://verify-email#access_token=...` (ver
+# mobile/src/features/auth/deep-link-session.ts). Sin esto GoTrue rechaza el
+# redirect_to y cae al Site URL por default.
+additional_redirect_urls = ["urbea://*"]
+
+[auth.email]
+# Paridad LOCAL del flujo de verificación real de email (72.3): con
+# enable_confirmations=true, admin.createUser (EF register, email_confirm:
+# false) deja al usuario sin confirmar y GoTrue envía el correo vía Mailpit
+# ([inbucket], ya default local en localhost:54324) al llamar auth.resend
+# desde el cliente. El REMOTO se configura aparte con Resend como SMTP
+# custom — ver docs/TODO-pendientes.md (prereq externo, sigue bloqueante).
+enable_confirmations = true

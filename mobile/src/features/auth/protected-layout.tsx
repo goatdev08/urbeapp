@@ -25,6 +25,7 @@ import { Redirect, Stack } from 'expo-router';
 
 import { useAuth } from '@/features/auth/context';
 import { LegalGateBoundary } from '@/features/auth/components/legal-gate-boundary';
+import { should_redirect_to_verify_email } from '@/features/auth/deep-link-session';
 
 export default function ProtectedLayout(): React.ReactElement {
   const { session, isLoading } = useAuth();
@@ -41,6 +42,12 @@ export default function ProtectedLayout(): React.ReactElement {
   // Sin sesión confirmada — redirige a login
   if (session === null) {
     return <Redirect href="/login" />;
+  }
+
+  // Sesión con email todavía sin confirmar (72.3) — redirige a /verify-email,
+  // que vive FUERA de este grupo protegido (hermana en app/) para no crear loop.
+  if (should_redirect_to_verify_email(session)) {
+    return <Redirect href="/verify-email" />;
   }
 
   // Sesión activa — gate legal (#72.6) y luego el contenido protegido como Stack.

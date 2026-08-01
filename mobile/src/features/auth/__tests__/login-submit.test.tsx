@@ -96,6 +96,23 @@ jest.mock('react-native-safe-area-context', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Mock de @/lib/supabase/client — login.tsx importa useGoogleOAuth (72.4), que
+// importa el cliente real de Supabase de forma estática incluso con
+// GOOGLE_OAUTH_ENABLED=false; sin este mock, client.ts explota en Jest por
+// falta de env vars. No se ejercita en esta suite (el botón Google no se
+// renderiza aquí, el flag real sigue apagado).
+// ---------------------------------------------------------------------------
+
+jest.mock('@/lib/supabase/client', () => ({
+  supabase: {
+    auth: {
+      signInWithOAuth: jest.fn(),
+      setSession: jest.fn(),
+    },
+  },
+}));
+
+// ---------------------------------------------------------------------------
 // Constantes
 // ---------------------------------------------------------------------------
 
@@ -275,5 +292,21 @@ describe('EC-B4: signIn_ok_no_muestra_error', () => {
     // No debe haber ningún alerta de error visible tras éxito
     const error_alert = q.queryByRole('alert');
     expect(error_alert).toBeNull();
+  });
+});
+
+// ===========================================================================
+// EC-B5: candado del gate OAuth — con los feature-flags REALES (apagados)
+// los botones de social login NO se renderizan. La única barrera del gate
+// App Store 4.8 (Google sin Apple en iOS = rechazo) es ese false; este test
+// protesta si alguien quita el condicional del flag. (Guardian 72.4)
+// ===========================================================================
+
+describe('EC-B5: flags_oauth_apagados_no_renderizan_botones_sociales', () => {
+  it('sin GOOGLE_OAUTH_ENABLED ni APPLE_OAUTH_ENABLED no aparece ningún botón social', async () => {
+    let q!: RenderResult;
+    await act(async () => { q = await render(<LoginScreen />); });
+    expect(q.queryByText(/continuar con google/i)).toBeNull();
+    expect(q.queryByText(/continuar con apple/i)).toBeNull();
   });
 });

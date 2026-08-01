@@ -3,21 +3,20 @@
  * Subtarea 72.5 (PRD §5.3).
  *
  * Se llega aquí desde el enlace del correo de recuperación (deep link
- * `urbea://reset-password`, ver `requestPasswordReset` en
- * features/auth/context.tsx). Pide la contraseña nueva + confirmación y
- * llama `updatePassword` (wrapper de supabase.auth.updateUser).
- *
- * BLOQUEANTE (72.3): el enganche del deep link — parsear el link entrante y
- * establecer la sesión de recuperación que Supabase adjunta (setSession /
- * exchangeCodeForSession antes de montar esta pantalla) — NO está
- * implementado todavía porque sin el SMTP de Resend configurado no hay forma
- * de generar ni recibir un enlace real para probarlo end-to-end. Al
- * destrabarse 72.3: enganchar un listener de `Linking` (o
- * `Linking.useURL()`) que capture `urbea://reset-password#access_token=...`
- * y llame `supabase.auth.setSession(...)` antes de que el usuario llegue a
- * este formulario — hoy `updatePassword` asume que esa sesión ya existe.
+ * `urbea://reset-password#access_token=...&refresh_token=...`, ver
+ * `requestPasswordReset` en features/auth/context.tsx). El deep link ya está
+ * cableado: `useSessionFromDeepLink` (hooks/useSessionFromDeepLink.ts, 72.3)
+ * escucha la URL entrante y hace `setSession` con esos tokens ANTES de que
+ * el usuario capture la contraseña — a diferencia de verify-email.tsx, aquí
+ * `on_success` es quedarse en esta pantalla (no navega): la sesión de
+ * recovery debe quedar activa para que `updatePassword` funcione. Si el
+ * enlace expiró/es inválido, el hook expone `error_message` y esta pantalla
+ * muestra el mensaje inline + un CTA a /forgot-password.
+ * Pide la contraseña nueva + confirmación y llama `updatePassword` (wrapper
+ * de supabase.auth.updateUser); al éxito navega a '/' (el usuario ya tiene
+ * sesión, no requiere un tap manual a login).
  */
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -34,6 +33,7 @@ import { Link, useRouter } from 'expo-router';
 import { useAuth } from '@/features/auth/context';
 import { map_auth_error } from '@/features/auth/auth-errors';
 import { FormField } from '@/features/auth/components/form-field';
+import { useSessionFromDeepLink } from '@/features/auth/hooks/useSessionFromDeepLink';
 import {
   is_reset_password_form_valid,
   validate_reset_password_form,
@@ -55,6 +55,12 @@ export default function ResetPasswordScreen() {
   const [general_error, set_general_error] = useState<string | null>(null);
   const [done, set_done] = useState(false);
 
+  // on_success = no-op: a diferencia de verify-email.tsx, esta pantalla se
+  // queda quieta tras setSession — el usuario todavía tiene que capturar la
+  // contraseña nueva antes de que haya algo a dónde navegar.
+  const on_deep_link_success = useCallback(() => {}, []);
+  const { error_message: deep_link_error } = useSessionFromDeepLink(on_deep_link_success);
+
   const validate = () => validate_reset_password_form({ password, confirm });
 
   const handle_blur = (field: 'password' | 'confirm') => {
@@ -75,6 +81,7 @@ export default function ResetPasswordScreen() {
     try {
       await updatePassword(password);
       set_done(true);
+      router.replace('/');
     } catch (err) {
       set_general_error(map_auth_error(err));
     } finally {
@@ -118,17 +125,27 @@ export default function ResetPasswordScreen() {
               <Text style={styles.confirmation_text}>
                 Tu contraseña se actualizó correctamente. Ya puedes iniciar sesión con ella.
               </Text>
-              <Pressable
-                style={styles.submit_button}
-                onPress={() => router.replace('/login')}
-                accessibilityRole="button"
-                accessibilityLabel="Ir a iniciar sesión"
-              >
-                <Text style={styles.submit_text}>Ir a iniciar sesión</Text>
-              </Pressable>
             </View>
           ) : (
             <View style={styles.form}>
+              {deep_link_error !== null && (
+                <View
+                  style={styles.error_banner}
+                  accessibilityRole="alert"
+                  accessibilityLiveRegion="assertive"
+                >
+                  <Text style={styles.error_banner_text}>{deep_link_error}</Text>
+                  <Pressable
+                    onPress={() => router.push('/forgot-password')}
+                    accessibilityRole="button"
+                    accessibilityLabel="Pedir un nuevo enlace"
+                    hitSlop={8}
+                  >
+                    <Text style={styles.deep_link_cta_text}>Pedir un nuevo enlace</Text>
+                  </Pressable>
+                </View>
+              )}
+
               <FormField
                 testID="reset-password-new"
                 label="Contraseña nueva"
@@ -255,6 +272,14 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.danger,
     textAlign: 'center',
+  },
+  deep_link_cta_text: {
+    fontFamily: fonts.sans_semibold,
+    fontSize: 14,
+    color: colors.danger,
+    textAlign: 'center',
+    textDecorationLine: 'underline',
+    marginTop: 8,
   },
   back_link_row: { flexDirection: 'row', justifyContent: 'center', marginTop: 24 },
   back_link: { fontFamily: fonts.sans_semibold, fontSize: 14, color: brand.green, textAlign: 'center' },
