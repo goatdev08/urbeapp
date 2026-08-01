@@ -153,19 +153,25 @@ describe('send_verification_email', () => {
     });
   });
 
-  it('SV-2: resend sin error → resuelve void (no lanza)', async () => {
+  // SV-2/SV-3 renegociados post-guardian (O1, 72.3): el contrato pasó de
+  // Promise<void> a Promise<boolean> — verify-email.tsx necesita distinguir
+  // "se reenvió" de "falló" para no pintar "correo reenviado" sobre un envío
+  // que no ocurrió (antes el fail-soft ocultaba el fallo también al UI, no
+  // solo al caller). Renegociación aprobada por el orquestador tras el
+  // hallazgo del guardián (O1 — regresión de UX).
+  it('SV-2: resend sin error → resuelve true (no lanza)', async () => {
     mock_create_url.mockReturnValue('urbea://verify-email');
     mock_resend.mockResolvedValue({ error: null });
 
-    await expect(send_verification_email('nuevo@urbea.mx')).resolves.toBeUndefined();
+    await expect(send_verification_email('nuevo@urbea.mx')).resolves.toBe(true);
   });
 
-  it('SV-3: resend devuelve error → NO lanza (fail-soft) y hace console.warn', async () => {
+  it('SV-3: resend devuelve error → resuelve false (fail-soft, no lanza) y hace console.warn', async () => {
     mock_create_url.mockReturnValue('urbea://verify-email');
     mock_resend.mockResolvedValue({ error: new Error('rate limit exceeded') });
     const warn_spy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
 
-    await expect(send_verification_email('nuevo@urbea.mx')).resolves.toBeUndefined();
+    await expect(send_verification_email('nuevo@urbea.mx')).resolves.toBe(false);
 
     expect(warn_spy).toHaveBeenCalledTimes(1);
     warn_spy.mockRestore();

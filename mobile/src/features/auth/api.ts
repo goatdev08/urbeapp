@@ -21,6 +21,8 @@
  * EMAIL_ALREADY_EXISTS, AUTH_CREATE_FAILED, FIELDS_INCOMPLETE, NO_ACTIVE_TERMS,
  * NO_ACTIVE_PRIVACY, INTERNAL_ERROR).
  */
+import * as Linking from 'expo-linking';
+
 import { supabase } from '@/lib/supabase/client';
 import { extract_error_code } from '@/lib/supabase/edge-errors';
 
@@ -67,12 +69,22 @@ export async function register_user(
  * envía correo — este wrapper es quien lo hace, desde el cliente, vía
  * `supabase.auth.resend`.
  *
- * STUB fase RED — lanza. La fase GREEN llama
- * `supabase.auth.resend({ type: 'signup', email, options: { emailRedirectTo:
- * Linking.createURL('verify-email') } })` y es fail-soft: nunca lanza al
- * caller (el usuario tiene botón "reenviar" en /verify-email); los errores
- * se registran con console.warn.
+ * Fail-soft a propósito: nunca LANZA al caller. Sí devuelve `false` si el
+ * envío falló, para que el caller que tiene un botón "reenviar" visible
+ * (verify-email.tsx) pueda avisarle al usuario en vez de mostrar "correo
+ * reenviado" sobre un envío que no ocurrió (renegociación post-guardian,
+ * 72.3: `true` = enviado, `false` = falló; los errores se siguen
+ * registrando con console.warn).
  */
-export async function send_verification_email(_email: string): Promise<void> {
-  throw new Error('not_implemented');
+export async function send_verification_email(email: string): Promise<boolean> {
+  const { error } = await supabase.auth.resend({
+    type: 'signup',
+    email,
+    options: { emailRedirectTo: Linking.createURL('verify-email') },
+  });
+  if (error) {
+    console.warn('[send_verification_email]', error);
+    return false;
+  }
+  return true;
 }

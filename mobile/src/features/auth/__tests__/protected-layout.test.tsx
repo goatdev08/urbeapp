@@ -130,6 +130,30 @@ function make_session(user_id = 'uid-test-123'): Session {
       user_metadata: {},
       aud: 'authenticated',
       created_at: '2024-01-01T00:00:00Z',
+      // 72.3: estas fixtures representan sesiones ya autenticadas y con
+      // acceso al contenido protegido — confirmado, no el caso que
+      // should_redirect_to_verify_email debe atrapar.
+      email_confirmed_at: '2024-01-01T00:00:00Z',
+    },
+  } as unknown as Session;
+}
+
+/** Sesión con email SIN confirmar (72.3) — dispara should_redirect_to_verify_email. */
+function make_unconfirmed_session(user_id = 'uid-unconfirmed'): Session {
+  return {
+    access_token: 'access_token_fake',
+    refresh_token: 'refresh_token_fake',
+    token_type: 'bearer',
+    expires_in: 3600,
+    expires_at: Math.floor(Date.now() / 1000) + 3600,
+    user: {
+      id: user_id,
+      email: 'sin-confirmar@urbea.mx',
+      app_metadata: {},
+      user_metadata: {},
+      aud: 'authenticated',
+      created_at: '2024-01-01T00:00:00Z',
+      email_confirmed_at: null,
     },
   } as unknown as Session;
 }
@@ -440,5 +464,58 @@ describe('EC-PL12: precedencia_auth_sobre_gate_legal', () => {
 
     expect(q.queryByTestId('loading-indicator')).not.toBeNull();
     expect(q.queryByTestId('legal-wall')).toBeNull();
+  });
+});
+
+// ===========================================================================
+// #72.3 — Guard de email sin confirmar (should_redirect_to_verify_email).
+// Orden de gates elegido: isLoading → sesión (login) → email confirmado
+// (verify-email) → gate legal → contenido. El guard de verificación va ANTES
+// del legal porque no tiene sentido pedirle aceptar términos a una cuenta que
+// ni siquiera pudo demostrar ser dueña de su correo.
+// ===========================================================================
+
+describe('EC-PL13: sesion_sin_confirmar_redirige_a_verify_email', () => {
+  it('email_confirmed_at null → Redirect con href="/verify-email"; NO slot; NO muro legal', async () => {
+    mock_use_auth_state.isLoading = false;
+    mock_use_auth_state.session = make_unconfirmed_session();
+
+    const q = await render_layout();
+
+    expect(q.getByTestId('redirect-component')).toBeTruthy();
+    expect(captured_redirect_href).toBe('/verify-email');
+    expect(q.queryByTestId('stack-content')).toBeNull();
+    expect(q.queryByTestId('legal-wall')).toBeNull();
+  });
+
+  it('precedencia: sesión sin confirmar Y gate legal con pendientes → gana /verify-email', async () => {
+    mock_use_auth_state.isLoading = false;
+    mock_use_auth_state.session = make_unconfirmed_session();
+    mock_legal_gate_state.pending = PENDING_TERMS;
+
+    const q = await render_layout();
+
+    expect(captured_redirect_href).toBe('/verify-email');
+    expect(q.queryByTestId('legal-wall')).toBeNull();
+    expect(q.queryByTestId('stack-content')).toBeNull();
+  });
+
+  it('sin sesión sigue ganando /login, aunque el guard de verificación exista', async () => {
+    mock_use_auth_state.isLoading = false;
+    mock_use_auth_state.session = null;
+
+    const q = await render_layout();
+
+    expect(captured_redirect_href).toBe('/login');
+  });
+
+  it('sesión con email confirmado → NO redirige a verify-email (regresión, EC-PL1 ya lo cubre para el resto del árbol)', async () => {
+    mock_use_auth_state.isLoading = false;
+    mock_use_auth_state.session = make_session();
+
+    const q = await render_layout();
+
+    expect(captured_redirect_href).not.toBe('/verify-email');
+    expect(q.getByTestId('stack-content')).toBeTruthy();
   });
 });

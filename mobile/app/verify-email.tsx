@@ -1,33 +1,33 @@
 /**
- * Pantalla "verifica tu correo" — ruta /verify-email (Expo Router).
- * Subtarea 72.3 (verificación real de email, PRD — apagar mailer_autoconfirm
- * + Resend SMTP).
+ * Pantalla "verifica tu correo" — ruta /verify-email (Expo Router). Fuera del
+ * grupo `(protected)` a propósito (hermana de él en app/) — así el guard de
+ * ProtectedLayout puede redirigir aquí sin crear un loop.
+ * Subtarea 72.3 (verificación real de email): la EF `register` crea la
+ * cuenta con `email_confirm:false`, register.tsx navega aquí tras el submit
+ * (sin sesión, email por route param) y ProtectedLayout redirige aquí si una
+ * sesión existente tiene `email_confirmed_at` sin resolver
+ * (should_redirect_to_verify_email, deep-link-session.ts).
  *
- * ⚠️ NO enganchada a la navegación todavía. Hoy `mailer_autoconfirm=true` en
- * el proyecto remoto (memoria `remote_auth_autoconfirm_enabled`) — signUp
- * entrega sesión directa y NADIE queda con `email_confirmed_at: null`, así
- * que no existe ningún caso real que necesite este gate. La pantalla queda
- * lista para cuando 72.3 apague autoconfirm y configure el SMTP de Resend.
+ * El email a mostrar: route param (caso real post-registro, sin sesión)
+ * con fallback a session.user.email (por si la pantalla se alcanza con
+ * sesión activa). El reenvío usa `send_verification_email` (features/auth/api.ts)
+ * — el mismo camino que register.tsx tras el submit, sin duplicar la llamada
+ * a `supabase.auth.resend`.
  *
- * Dónde enganchar (al destrabarse 72.3): un guard análogo a
- * `LegalGateBoundary` (features/auth/components/legal-gate-boundary.tsx),
- * montado en `features/auth/protected-layout.tsx` ANTES del `<Stack>`
- * protegido — si `session.user.email_confirmed_at === null`, redirigir aquí
- * en vez de dejar pasar al feed. `session.user.email_confirmed_at` ya viene
- * en el objeto `Session` de supabase-js (v2), no requiere columna nueva.
- *
- * BLOQUEANTE (72.3): el reenvío (`supabase.auth.resend`) y el flujo completo
- * no se pueden probar end-to-end hasta que exista el SMTP real — con el
- * mailer default de Supabase el rate limit es demasiado bajo para iterar.
+ * Deep link de vuelta (click en el correo): `useSessionFromDeepLink`
+ * (hooks/useSessionFromDeepLink.ts) escucha la URL entrante, hace
+ * `setSession` con los tokens del fragment y navega a '/'; si el enlace
+ * expiró, muestra el mensaje inline. Parametrizado por `on_success` para que
+ * 72.5 (reset-password) lo reutilice con su propia navegación.
  */
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { useAuth } from '@/features/auth/context';
-import { map_auth_error } from '@/features/auth/auth-errors';
-import { supabase } from '@/lib/supabase/client';
+import { send_verification_email } from '@/features/auth/api';
+import { useSessionFromDeepLink } from '@/features/auth/hooks/useSessionFromDeepLink';
 import { UrbeaLockup } from '@/components/UrbeaLockup';
 import { brand, colors, fonts } from '@/theme/theme';
 
@@ -37,6 +37,7 @@ const RESEND_COOLDOWN_SECONDS = 60;
 export default function VerifyEmailScreen() {
   const { session, signOut } = useAuth();
   const router = useRouter();
+  const { email: email_param } = useLocalSearchParams<{ email?: string }>();
 
   const [cooldown, set_cooldown] = useState(0);
   const [is_resending, set_is_resending] = useState(false);
@@ -51,23 +52,31 @@ export default function VerifyEmailScreen() {
     return () => clearTimeout(id);
   }, [cooldown]);
 
-  const email = session?.user.email;
+  // Caso real post-registro: sin sesión, el email viaja por route param
+  // (register.tsx). Si la pantalla se alcanza con sesión activa, cae a esta.
+  const email = email_param ?? session?.user.email;
+
+  const on_deep_link_success = useCallback(() => {
+    router.replace('/');
+  }, [router]);
+  const { error_message: deep_link_error } = useSessionFromDeepLink(on_deep_link_success);
 
   const handle_resend = async () => {
     if (is_resending || cooldown > 0 || email === undefined) return;
 
     set_is_resending(true);
     set_resend_message(null);
-    try {
-      const { error } = await supabase.auth.resend({ type: 'signup', email });
-      if (error) throw error;
+    const sent = await send_verification_email(email);
+    if (sent) {
       set_resend_message('Correo reenviado. Revisa tu bandeja de entrada.');
       set_cooldown(RESEND_COOLDOWN_SECONDS);
-    } catch (err) {
-      set_resend_message(map_auth_error(err));
-    } finally {
-      set_is_resending(false);
+    } else {
+      // O1 (post-guardian): send_verification_email ahora devuelve boolean —
+      // sin esto, un reenvío fallido igual pintaba "Correo reenviado" y
+      // arrancaba el cooldown de 60s sobre un envío que nunca salió.
+      set_resend_message('No pudimos reenviar el correo. Inténtalo de nuevo.');
     }
+    set_is_resending(false);
   };
 
   const handle_sign_out = async () => {
@@ -88,6 +97,12 @@ export default function VerifyEmailScreen() {
             ? `Te enviamos un enlace de confirmación a ${email}. Ábrelo para activar tu cuenta.`
             : 'Te enviamos un enlace de confirmación a tu correo. Ábrelo para activar tu cuenta.'}
         </Text>
+
+        {deep_link_error !== null && (
+          <Text style={styles.resend_message} accessibilityRole="alert">
+            {deep_link_error}
+          </Text>
+        )}
 
         {resend_message !== null && (
           <Text style={styles.resend_message} accessibilityRole="alert">
