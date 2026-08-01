@@ -2,6 +2,10 @@
 
 Append-only. Prefijo: `## [YYYY-MM-DD] tipo | título`
 
+## [2026-07-31] tarea | #72 Ola 1 Auth CERRADA — verificación de email + reset + Google OAuth, E2E local vía Mailpit
+
+Las 3 subtareas diferidas por cuentas externas se destrabaron al notar que **Mailpit** (`:54324`) captura los correos del GoTrue local sin SMTP: 72.3 y 72.5 corrieron TDD completo (RED→GREEN→guardian; 1 FAIL de cobertura corregido con +11 tests) **y E2E por API** contra el stack local (registro → correo → link verify → `302 urbea://verify-email#access_token…` → confirmado; recover → `type=recovery` → nueva contraseña → login nueva 200/vieja 400). Cambio de contrato: la EF `register` crea usuarios **sin confirmar** y el cliente dispara el correo; adiós auto-login post-registro; guard `email_confirmed_at` en `protected-layout` antes del gate legal. Patrón reutilizable nuevo: `deep-link-session.ts` (`parse_session_from_url`) + `useSessionFromDeepLink` (on_success parametrizado) — lo consumen verify-email, reset-password y `useGoogleOAuth` (72.4: flow implícito + `expo-web-browser` [⚠️ nativo nuevo → rebuild, no OTA], flag apagado hasta el client de Google Cloud; candado EC-B5 protege el false del gate App Store 4.8). `redeem-invitation` intacto a propósito. Config local: `[auth.email] enable_confirmations=true` + `additional_redirect_urls=["urbea://*"]`. Pendiente SOLO config remota (Resend/Google/flip) → `docs/TODO-pendientes.md`. Jest 842 (75 suites) · Deno 681 · pgTAP 336 · tsc/lint 0.
+
 ## [2026-07-04] ingest | Documentación de cuentas demo (LOCAL/REMOTO) y arranque manual del emulador Android
 
 Nueva página [[entornos-y-cuentas]]: catálogo de las 11 cuentas del seed LOCAL (`supabase/seed.sql`, sin admin) vs las cuentas del REMOTO `urbea-app` (mismo set + `admin@urbea.demo` + las 2 cuentas históricas `@urbea.app`), cómo swapear `mobile/.env.local` entre entornos, y el código de invitación `DEMO2026` en ambos. `comandos.md` ganó la sección "Emulador Android" con el desglose manual paso a paso (env vars, `emulator -avd urbea`, `adb reverse`, deep link) detrás de `pnpm emu`. Sin cambios de código de app.
