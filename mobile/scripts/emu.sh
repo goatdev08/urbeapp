@@ -17,8 +17,11 @@ if ! adb devices | grep -q "emulator-"; then
 fi
 echo "✔ Emulador listo"
 
-# 2. Mapear el puerto de Metro al emulador (inmune a Wi-Fi/IP)
+# 2. Mapear puertos al emulador (inmune a Wi-Fi/IP): Metro + Supabase local
+#    (.env.local apunta a localhost:54321 — dentro del emulador localhost es el
+#    emulador mismo; sin este reverse la app no alcanza el stack local)
 adb reverse tcp:8081 tcp:8081 >/dev/null && echo "✔ adb reverse (localhost:8081 -> Metro)"
+adb reverse tcp:54321 tcp:54321 >/dev/null && echo "✔ adb reverse (localhost:54321 -> Supabase local)"
 
 # 3. Abrir la app apuntada a Metro (deep link del dev-client)
 adb shell am start -a android.intent.action.VIEW \
