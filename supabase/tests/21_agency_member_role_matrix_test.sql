@@ -60,7 +60,7 @@
 --              no un caso inventado.
 
 begin;
-select plan(34);
+select plan(37);
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- Fixtures
@@ -73,6 +73,7 @@ insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-000000712114', 'agent_a3@test.local'),
   ('00000000-0000-0000-0000-000000712115', 'viewer_a@test.local'),
   ('00000000-0000-0000-0000-000000712116', 'agent_a4_nuevo@test.local'),
+  ('00000000-0000-0000-0000-000000712117', 'agent_a5_sin_membresia@test.local'),
   ('00000000-0000-0000-0000-000000712120', 'owner_b@test.local'),
   ('00000000-0000-0000-0000-000000712121', 'admin_b@test.local'),
   ('00000000-0000-0000-0000-000000712122', 'agent_b@test.local'),
@@ -250,6 +251,43 @@ select is(
 ) from u;
 reset role;
 
+-- 13a) [INVARIANTE] admin_a NO puede promover a otro agente (agent_a, fila 712132) a owner.
+-- Guardian V1: sin este assert, debilitar el WITH CHECK de members_update a
+-- can_manage_agency_member(agency_id,'agent') (permitiendo cualquier member_role nuevo)
+-- deja la suite en verde por mutación -- §13 solo tocaba updated_at, nunca member_role.
+select pg_temp.act_as('00000000-0000-0000-0000-000000712111');
+select throws_ok(
+  $$ update public.agency_members set member_role = 'owner'
+      where id = '00000000-0000-0000-0000-000000712132' $$,
+  '42501', null,
+  'admin_no_puede_promover_a_otro_agente_a_owner'
+);
+reset role;
+
+-- 13b) [INVARIANTE] admin_a NO puede auto-promoverse a owner (vector realista de escalación:
+-- su propia fila 712131, ya admin, intenta subir a member_role='owner').
+select pg_temp.act_as('00000000-0000-0000-0000-000000712111');
+select throws_ok(
+  $$ update public.agency_members set member_role = 'owner'
+      where id = '00000000-0000-0000-0000-000000712131' $$,
+  '42501', null,
+  'admin_no_puede_auto_promoverse_a_owner'
+);
+reset role;
+
+-- 13c) [INVARIANTE] admin_a NO puede INSERTAR una fila nueva con member_role='owner' en su
+-- agencia (mismo WITH CHECK que 13a/13b, ahora por el lado INSERT). Usuario sin membresía
+-- activa previa (agency_members_one_active_per_user) para no chocar con el índice único.
+select pg_temp.act_as('00000000-0000-0000-0000-000000712111');
+select throws_ok(
+  $$ insert into public.agency_members (agency_id, user_id, member_role, status)
+     values ('00000000-0000-0000-0000-000000712100', '00000000-0000-0000-0000-000000712117',
+             'owner', 'active') $$,
+  '42501', null,
+  'admin_no_puede_insertar_una_fila_nueva_como_owner'
+);
+reset role;
+
 -- 14) [DELTA] admin_a elimina a agent_a3 (fila NO-owner) de su agencia.
 select pg_temp.act_as('00000000-0000-0000-0000-000000712111');
 with d as (
@@ -350,7 +388,7 @@ select pg_temp.act_as('00000000-0000-0000-0000-000000712115');
 select throws_ok(
   $$ insert into public.agency_members (agency_id, user_id, member_role, status)
      values ('00000000-0000-0000-0000-000000712100', '00000000-0000-0000-0000-000000712116', 'agent', 'active') $$,
-  null,
+  '42501', null,
   'viewer_no_puede_insertar_agency_members'
 );
 
@@ -358,7 +396,7 @@ select throws_ok(
   $$ insert into public.properties (owner_user_id, agency_id, property_type, operation_type, address, location, price, status)
      values ('00000000-0000-0000-0000-000000712115', '00000000-0000-0000-0000-000000712100', 'casa', 'sale',
              'Intento de viewer', extensions.ST_SetSRID(extensions.ST_MakePoint(-103.35, 20.67), 4326)::extensions.geography, 100, 'draft') $$,
-  null,
+  '42501', null,
   'viewer_no_puede_insertar_properties'
 );
 

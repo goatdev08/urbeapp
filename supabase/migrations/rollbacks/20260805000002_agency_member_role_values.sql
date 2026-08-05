@@ -1,0 +1,15 @@
+-- Rollback: 20260805000002_agency_member_role_values.sql
+-- Postgres NO permite eliminar un valor de un enum (no existe
+-- `ALTER TYPE ... DROP VALUE`); revertir 'admin'/'viewer' requeriría recrear el tipo
+-- agency_member_role completo (crear tipo nuevo, migrar la columna agency_members.member_role,
+-- dropear el tipo viejo) -- fuera de alcance de un rollback de una sola migración y
+-- peligroso si ya existen filas con esos roles (la migración 20260805000003 los usa
+-- en RLS activamente). No-op documentado, mismo criterio que
+-- supabase/migrations/rollbacks/20260720000001_stream_schema.sql (valor 'archived').
+--
+-- Si en el futuro se necesita revertir de verdad: primero revertir/dropear
+-- 20260805000003 (políticas + helper que dependen de los valores nuevos), confirmar
+-- que ninguna fila de agency_members tiene member_role en ('admin','viewer'), y luego
+-- recrear el tipo sin esos valores.
+
+-- (sin operación)
