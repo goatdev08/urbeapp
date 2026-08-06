@@ -1,0 +1,16 @@
+-- Rollback: 20260805000008_agency_member_status_values.sql
+-- Postgres NO permite eliminar un valor de un enum (no existe
+-- `ALTER TYPE ... DROP VALUE`); revertir 'suspended' requeriría recrear el tipo
+-- agency_member_status completo (crear tipo nuevo, migrar la columna
+-- agency_members.status, dropear el tipo viejo) -- fuera de alcance de un rollback
+-- de una sola migración y peligroso si ya existen filas con ese status (la
+-- migración 20260805000009 y la EF manage-agency-member lo usan activamente).
+-- No-op documentado, mismo criterio que
+-- supabase/migrations/rollbacks/20260805000002_agency_member_role_values.sql.
+--
+-- Si en el futuro se necesita revertir de verdad: primero revertir/dropear
+-- 20260805000009 (RPC + policy que dependen del valor nuevo) y la EF
+-- manage-agency-member, confirmar que ninguna fila de agency_members tiene
+-- status='suspended', y luego recrear el tipo sin ese valor.
+
+-- (sin operación)

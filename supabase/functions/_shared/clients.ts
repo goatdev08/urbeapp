@@ -86,6 +86,26 @@ export function service_client(): SupabaseClient {
 }
 
 /**
+ * Cliente supabase-js con ANON key + el JWT del caller reenviado en el header
+ * Authorization (subtarea 71.3, Camino B de request-agent-upgrade). A
+ * diferencia de service_client(), este cliente SÍ respeta RLS — auth.uid()
+ * dentro de las políticas resuelve al usuario dueño del JWT. Se usa cuando la
+ * lógica de negocio quiere delegar la autorización a una política RLS ya
+ * probada (agent_app_insert) en vez de reimplementar el chequeo en JS.
+ */
+export function user_client(authHeader: string): SupabaseClient {
+  const url = Deno.env.get("SUPABASE_URL");
+  const anon_key = Deno.env.get("SUPABASE_ANON_KEY");
+  if (!url || !anon_key) {
+    throw new Error("Faltan SUPABASE_URL / SUPABASE_ANON_KEY en el entorno");
+  }
+  return createClient(url, anon_key, {
+    auth: { persistSession: false },
+    global: { headers: { Authorization: authHeader } },
+  });
+}
+
+/**
  * Adaptador real de InvitationDb. Busca el token por su HASH y trae la agencia
  * por inner join. Descarta agencias soft-deleted (deleted_at IS NOT NULL) en JS
  * (follow-up de 5.2): una agencia borrada no debe permitir canjes aunque su
