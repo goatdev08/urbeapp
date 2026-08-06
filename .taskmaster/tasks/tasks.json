@@ -6614,30 +6614,94 @@
       {
         "id": "98",
         "title": "producto(71.6): agencia sin owner activo (remove propio / switch del owner)",
-        "description": "Origen: subtarea 71.6 · Detectado por: guardian (observación de negocio, requiere decisión de producto). Hallazgo del guardian en 71.6: (a) un owner puede remove-arse a sí mismo vía la EF manage-agency-member (caller_manages_agency cubre su propia fila); (b) switch_agency_atomic sobre un owner deja su agencia origen sin ningún owner activo (comportamiento probado y decidido a propósito en el RED de 71.6, sección D, tests 13-17). Ninguno tiene guard de 'la agencia no queda huérfana'. Falta decisión de producto: ¿se exige siempre ≥1 owner activo por agencia active?",
-        "details": "Si el PRD lo exige: trigger o chequeo en la EF/RPC que bloquee la última salida del owner (error tipado LAST_OWNER) o exija transferencia de ownership previa. Si no: documentar explícitamente en wiki/conceptos/inmobiliarias-y-agentes.md que una agencia puede quedar temporalmente sin owner y el admin global la gestiona. Revisar PRD §4.6-4.7 antes de decidir.",
-        "testStrategy": "pgTAP: owner único intenta remove/switch → error tipado (o comportamiento documentado); con 2 owners, la salida de uno sí procede.",
+        "description": "Origen: subtarea 71.6 · Detectado por: guardian (observación de negocio, requiere decisión de producto). Hallazgo del guardian en 71.6: (a) un owner puede remove-arse a sí mismo vía la EF manage-agency-member (caller_manages_agency cubre su propia fila); (b) switch_agency_atomic sobre un owner deja su agencia origen sin ningún owner activo (comportamiento probado y decidido a propósito en el RED de 71.6, sección D, tests 13-17). Ninguno tiene guard de 'la agencia no queda huérfana'. **Insumo de Abraham (2026-08-05)**: dirección preferida es bloquear con error tipado LAST_OWNER (no permitir remove/switch del último owner activo sin transferencia previa). Nueva pregunta abierta: flujo de baja completa de inmobiliaria (cascada sobre agentes, properties, notificación). **Candidata a /tm-explore antes de especificar** (requiere exploración de cascadas, no implementación directa).",
         "status": "pending",
         "dependencies": [
           "71"
         ],
         "priority": "low",
-        "subtasks": [],
-        "updatedAt": "2026-08-05T00:00:00.000Z"
+        "details": "## Dirección preferida (Abraham, 2026-08-05)\n\n**Bloquear con error tipado** (no permitir 'permitirlo y documentar'). No se debe poder eliminar/remover al owner (ni por remove propio vía manage-agency-member ni por switch_agency_atomic) si es el ÚLTIMO owner activo, salvo que se transfiera el ownership primero.\n\n**Formalizar flujo de transferencia de ownership** como precondición (promover otro admin/agent a owner antes de permitir la salida del owner actual).\n\n## Nueva pregunta abierta (terminología)\n\n**Aclaración terminología**: 'agencia' en la descripción original = la INMOBILIARIA (entidad organizacional `agencies`), NO el rol `agency_member_role`.\n\n**Pregunta**: ¿Qué pasa cuando la inmobiliaria completa se da de baja (soft-delete / desactivación) junto con TODOS sus agentes?\n\nFalta decidir el flujo de baja de inmobiliaria:\n- Cascada sobre agentes (¿todos pasan a `removed`? ¿`suspended`?)\n- Qué le pasa a sus properties publicadas (¿soft-delete? ¿unpublish?)\n- Notificación a miembros\n- Si esto es un flujo distinto al de 'owner huérfano' (98 original) o lo reemplaza\n\n## Requiere exploración/spec antes de picar código\n\n**Candidato a pasar por /tm-explore** en vez de implementarse directo como estaba planteado. La exploración debe cubrir:\n1. Revisar PRD §4.6-4.7 para decisión de producto sobre owner huérfano\n2. Analizar cascadas existentes en el esquema (supabase/migrations/20260604000003_agencies_and_agents.sql)\n3. Explorar flujos de baja de inmobiliaria y su relación con el problema de owner huérfano\n4. Diseñar el error tipado LAST_OWNER y dónde se aplica (member_manager.ts + switch_agency_atomic)\n5. Especificar flujo de transferencia de ownership (nueva acción en manage-agency-member o RPC separada)\n\n## Archivos relevantes identificados\n\n- `supabase/functions/manage-agency-member/member_manager.ts` (líneas 1-100+): lógica de gestión de miembros, aquí iría la validación LAST_OWNER para `remove`\n- `supabase/migrations/20260805000009_switch_agency_and_suspension.sql`: RPC `switch_agency_atomic` (líneas 42-100+), aquí iría la validación LAST_OWNER antes de desactivar la membresía vieja\n- `supabase/functions/manage-agency-member/types.ts`: tipos de error, aquí se agregaría `LAST_OWNER`\n- `wiki/conceptos/inmobiliarias-y-agentes.md` (línea 37): ya documenta el gap como abierto en #98\n- `docs/PRD.md` §4.6-4.7: fuente de verdad para decisión de producto\n\n## Estado\n\n**Tarea pendiente** (no se ejecuta en la sesión 2026-08-05 que sí ejecutó 99 y 100). Quedan registradas las directrices de Abraham para cuando se retome.",
+        "testStrategy": "pgTAP (crítica-TDD por footprint supabase/migrations/**, supabase/functions/**): (a) owner único intenta remove → error tipado LAST_OWNER; (b) owner único intenta switch_agency_atomic → error tipado LAST_OWNER; (c) con 2+ owners activos, la salida/switch de uno sí procede (no levanta LAST_OWNER). (d) transferencia de ownership previa permite que el ex-owner se remueva/cambie. Tests adicionales para cascada de baja de inmobiliaria completa (una vez especificado el flujo).",
+        "subtasks": []
       },
       {
         "id": "99",
         "title": "fix(71.5): deadlock de aprobación por membresía previa + degradación de admin",
         "description": "Origen: subtarea 71.5 (trigger 20260805000007), interacción con 71.3 · Detectado por: review PR #41 (lente SQL, repro empírica). Review PR #41, 2 hallazgos ALTO con repro empírica en 20260805000007: (1) aprobar una agencia cuyo creador ya tiene membresía activa en OTRA agencia (subió por token mientras esperaba) aborta con ALREADY_ACTIVE_MEMBER — no existe ningún camino para aprobarla jamás; (2) el trigger hace `update users set role='agent'` INCONDICIONAL — aprobar la agencia de un admin global lo degrada a agent en silencio (mismo defecto en el camino 'independent' de agent_applications).",
-        "details": "Fix (1): decisión de producto — auto-switch de agencia al aprobar, o error tipado MEMBER_OF_OTHER_AGENCY con guía operativa para el admin. Fix (2): guard `and role='user'` en la promoción (y decidir si un admin puede ser owner sin cambio de rol). TDD estricto: pgTAP en 25_admin_approvals_test.sql cubriendo ambos escenarios (los edge cases 9/10 del RED original no cubrieron admin-creador ni el camino sin salida).",
-        "testStrategy": "pgTAP: aprobar agencia de user con membresía activa en otra → comportamiento decidido (no deadlock permanente); aprobar agencia de admin → role sigue 'admin'; camino independent de applications igual.",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           "71"
         ],
         "priority": "high",
-        "subtasks": [],
-        "updatedAt": "2026-08-05T00:00:00.000Z"
+        "details": "## DECISIONES DE PRODUCTO (Abraham, 2026-08-05)\n\n**FIX (1): Error tipado + guía manual** (NO auto-switch)\nSe renombra el error de ALREADY_ACTIVE_MEMBER a MEMBER_OF_OTHER_AGENCY (mismo P0001, con HINT operativo) cuando el creador de la agencia aprobada ya tiene membresía activa en OTRA agencia. Sigue abortando la transacción completa (agencia queda pending_approval). El admin debe resolver manualmente vía manage-agency-member/Studio antes de reintentar.\n\n**NOTA:** NO se toca la semántica de switch_agency_atomic ni admin_create_agency_atomic (siguen usando ALREADY_ACTIVE_MEMBER, contexto distinto).\n\n**FIX (2): Guard de promoción para admin** (sin ambigüedad)\nGuard en ambos triggers para que un creador con role='admin' NUNCA sea degradado a 'agent':\n- **En agencies (handle_agency_status_change):** `role = case when role='admin' then role else 'agent' end` — agency_id SÍ se denormaliza siempre, y la fila agency_members(owner,active) SÍ se crea siempre (un admin puede ser owner de una agencia sin perder su rol admin).\n- **En agent_applications (handle_agent_application_status_change):** guard `and role <> 'admin'` en el UPDATE de promoción.\n\n## FOOTPRINT\n\n**Migración:** `supabase/migrations/20260805000010_admin_approval_fixes.sql`\n- CREATE OR REPLACE de handle_agency_status_change() y handle_agent_application_status_change() (mismas firmas)\n- Cambios específicos documentados en los bodies\n\n**Rollback:** `supabase/migrations/rollbacks/20260805000010_admin_approval_fixes.sql`\n- Restaura los bodies originales de 20260805000007\n\n**Tests:** `supabase/tests/25_admin_approvals_test.sql`\n- Renombrar el error esperado en §6 (MEMBER_OF_OTHER_AGENCY en vez de ALREADY_ACTIVE_MEMBER)\n- + 2 secciones nuevas: §X aprobar agencia de creador admin no degrada + §Y aprobar application independent de admin no degrada\n- plan(82) -> plan(91) aprox.\n\n## ARCHIVOS DE REFERENCIA\n\n- Migration original: `supabase/migrations/20260805000007_admin_approval_transitions.sql`\n- Rollback original: `supabase/migrations/rollbacks/20260805000007_admin_approval_transitions.sql`\n- Test suite actual: `supabase/tests/25_admin_approvals_test.sql` (82 tests, líneas 1-872)\n\n## AGENTE Y CRITICIDAD\n\n**Agente:** supabase (dominio backend)\n**Criticidad:** CRÍTICA (toca supabase/migrations/** y triggers de seguridad) → TDD estricto RED→GREEN→guardian\n**Bloqueantes:** ninguno — footprint autocontenido, no toca mobile/ ni EFs",
+        "testStrategy": "**TDD ESTRICTO:** RED → GREEN → guardian\n\n**pgTAP (supabase/tests/25_admin_approvals_test.sql):**\n\n1. **§6 (modificar existente):** Renombrar error esperado de ALREADY_ACTIVE_MEMBER a MEMBER_OF_OTHER_AGENCY — el assert debe seguir esperando P0001 y rollback completo, pero con el nuevo código de error.\n\n2. **§X (nueva sección — admin como creador de agencia):**\n   - Fixture: admin en public.users con role='admin'\n   - Crear agencia pending_approval con created_by_user_id = admin\n   - act_as_studio con admin válido → UPDATE agencies SET status='active'\n   - Asserts:\n     - status queda 'active'\n     - agency_members(owner,active) creado para el admin\n     - users.role sigue siendo 'admin' (NO degradado a 'agent')\n     - users.agency_id apunta a la nueva agencia\n     - admin_actions registra approve_agency\n     - approved_by_admin_id queda seteado\n\n3. **§Y (nueva sección — admin vía application independent):**\n   - Fixture: admin en public.users con role='admin'\n   - agent_application con application_type='independent', user_id=admin, status='pending'\n   - act_as con admin autenticado → UPDATE agent_applications SET status='approved'\n   - Asserts:\n     - status queda 'approved'\n     - users.role sigue siendo 'admin' (NO degradado a 'agent')\n     - reviewed_by_admin_id seteado\n     - reviewed_at seteado\n     - admin_actions registra approve_agent_application\n\n4. **§Z (opcional — HINT en el error):** Verificar que MEMBER_OF_OTHER_AGENCY incluye HINT operativo (puede requerir assert de exception_detail o manualmente validar el mensaje).\n\n**Cobertura objetivo:** plan(91) tests aprox. (82 actuales + ~9 nuevos)\n\n**Verificación adicional:**\n- `pnpm tsc --noEmit` (N/A, puro SQL)\n- Idempotencia: aplicar migración 2x sin error\n- Rollback + reaplica: sin error\n- Smoke test: supabase test db debe pasar todos los tests",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "RED: Escribir tests pgTAP para ambos hallazgos (admin-creador + MEMBER_OF_OTHER_AGENCY)",
+            "description": "Extender supabase/tests/25_admin_approvals_test.sql con las 3 modificaciones: (1) §6 renombrar error esperado a MEMBER_OF_OTHER_AGENCY, (2) §X nueva sección admin-creador de agencia no degrada, (3) §Y nueva sección admin vía application independent no degrada. Incrementar plan(82) → plan(91). Los tests DEBEN fallar hoy (RED): §6 falla por código de error distinto, §X/§Y fallan porque el admin SÍ es degradado por los triggers actuales.",
+            "dependencies": [],
+            "details": "Fixtures: agregar admin725119 (para §X) y admin725120 (para §Y) en la sección de fixtures existente. Seguir el patrón de los tests actuales (act_as_studio/act_as, lives_ok/throws_ok, is/isnt). El error MEMBER_OF_OTHER_AGENCY debe conservar el mismo errcode P0001 que ALREADY_ACTIVE_MEMBER (solo cambia el mensaje). Verificar con `supabase test db` que los nuevos tests FALLAN por las razones esperadas (no por sintaxis o fixture roto).",
+            "status": "done",
+            "testStrategy": "Ejecutar `cd supabase && supabase test db` — los tests nuevos deben fallar por aserción (admin degradado, o código de error no coincide), NO por función inexistente ni por fixture. Si falla por otra razón (sintaxis SQL, tabla no existe, etc.) → corregir el test antes de pasar a GREEN.",
+            "updatedAt": "2026-08-06T05:48:56.818Z",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "GREEN: Crear migración 20260805000010 con los dos fixes (error renombrado + guards de admin)",
+            "description": "Crear supabase/migrations/20260805000010_admin_approval_fixes.sql con CREATE OR REPLACE de handle_agency_status_change() y handle_agent_application_status_change(). FIX(1): en el exception handler de handle_agency_status_change, renombrar el raise exception a 'MEMBER_OF_OTHER_AGENCY' y agregar HINT operativo ('El creador ya tiene membresía activa en otra agencia. Resuélvelo manualmente antes de aprobar.'). FIX(2): en handle_agency_status_change cambiar el UPDATE users a `role = case when role='admin' then 'admin' else 'agent' end`, y en handle_agent_application_status_change agregar WHERE `and role <> 'admin'` al UPDATE users. NO tocar private.resolve_admin_actor() ni los CREATE TRIGGER (solo los function bodies).",
+            "dependencies": [
+              1
+            ],
+            "details": "La migración debe ser idempotente (CREATE OR REPLACE). Documentar en el header las decisiones de producto (Abraham) y el origen (review PR #41). Firmas y estructura del trigger se conservan iguales a 20260805000007, solo cambian los 3 puntos mencionados. Validar sintaxis SQL antes de aplicar. Archivo ~100 líneas (header + 2 function bodies sin cambios estructurales, solo los guards agregados).",
+            "status": "done",
+            "testStrategy": "Aplicar con `cd supabase && supabase migration up` (localmente). Verificar que no truena. Reaplicar (idempotencia) sin error. `supabase test db` debe pasar los 91 tests (82 anteriores + 9 nuevos).",
+            "parentId": "undefined",
+            "updatedAt": "2026-08-06T05:48:58.537Z"
+          },
+          {
+            "id": 3,
+            "title": "GREEN: Crear rollback 20260805000010 que restaure los bodies de 20260805000007",
+            "description": "Crear supabase/migrations/rollbacks/20260805000010_admin_approval_fixes.sql que haga CREATE OR REPLACE de handle_agency_status_change() y handle_agent_application_status_change() con los bodies ORIGINALES de 20260805000007 (sin los guards de admin, y con el error ALREADY_ACTIVE_MEMBER). Copiar los bodies literales de 20260805000007:102-160 y :179-231. Documentar en el header que este rollback restaura el comportamiento previo (con los bugs conocidos de #99).",
+            "dependencies": [
+              2
+            ],
+            "details": "El rollback debe ser ejecutable sin error incluso si la migración 20260805000010 nunca se aplicó (CREATE OR REPLACE es idempotente). Validar que aplicar migración → rollback → reaplicar migración funciona sin error. Archivo ~80 líneas (header + 2 CREATE OR REPLACE function copiados del 0007 original).",
+            "status": "done",
+            "testStrategy": "Probar secuencia: (1) aplicar 20260805000010, (2) ejecutar rollback, (3) `supabase test db` — los tests §X/§Y DEBEN fallar de nuevo (admin degradado), y §6 debe esperar ALREADY_ACTIVE_MEMBER. (4) Reaplicar 20260805000010 → tests pasan. Si algún paso truena o los tests no cambian de estado como esperado → corregir rollback.",
+            "parentId": "undefined",
+            "updatedAt": "2026-08-06T05:49:00.233Z"
+          },
+          {
+            "id": 4,
+            "title": "GUARDIAN: Validar que los 91 tests pasan y que no hay regresiones en 71.5",
+            "description": "Ejecutar `cd supabase && supabase test db` con la migración 20260805000010 aplicada. Los 91 tests (82 de 71.5 + 9 nuevos de #99) deben pasar. Verificar específicamente: §6 (error MEMBER_OF_OTHER_AGENCY + rollback completo), §X (admin creador no degradado, agency_id seteado, membresía creada), §Y (admin independent no degradado, auditoría correcta). Si algún test falla → investigar si es un bug en la migración o en el test, corregir antes de cerrar.",
+            "dependencies": [
+              2,
+              3
+            ],
+            "details": "Ejecutar también los otros test files del repo (supabase test db corre TODOS los archivos .sql en supabase/tests/) para detectar regresiones no obvias. Si hay fallos en otros tests (02, 19, 21, 22, 23, 24, etc.) → investigar si 20260805000010 rompió algún invariante. Documentar cualquier hallazgo en las notas de la subtarea. Objetivo: 100% de tests verdes antes de cerrar.",
+            "status": "done",
+            "testStrategy": "Guardian automático: `cd supabase && supabase test db`. Salida esperada: `All tests successful` (o equivalente pgTAP). Si falla → logs completos en la bitácora de la subtarea, no cerrar hasta resolver.",
+            "parentId": "undefined",
+            "updatedAt": "2026-08-06T05:49:01.953Z"
+          },
+          {
+            "id": 5,
+            "title": "Documentar en la bitácora de 71.5 el origen y la resolución de los dos hallazgos",
+            "description": "Actualizar task-master con las notas finales de la tarea 99: origen (review PR #41, lente SQL), decisiones de producto (Abraham: error tipado manual, guards de admin), footprint (migración 0010 + rollback + tests §6/§X/§Y), resultado de guardian (91 tests verdes). Agregar backlink en los details de la tarea 71 (sección DERIVADAS) incluyendo #99 (review PR #41). Cerrar la subtarea con set-status done solo cuando los 4 pasos anteriores estén completos y documentados.",
+            "dependencies": [
+              4
+            ],
+            "details": "Bitácora esperada: `hecho: migración 20260805000010 creada (renombra error MEMBER_OF_OTHER_AGENCY + guards role='admin' en ambos triggers), rollback 20260805000010 creado (restaura bodies de 0007), tests 25_admin_approvals_test.sql extendidos (§6 modificado + §X/§Y nuevos, plan 91), guardian verde (91/91 tests pass), origen review PR #41 hallazgos ALTO, decisión producto Abraham 2026-08-05`. Backlink en tarea 71: agregar línea `DERIVADAS: #99 (review PR #41)`.\n<info added on 2026-08-06T05:51:00.981Z>\nCERRADO 2026-08-05. RED->GREEN->guardian completo:\n- RED: supabase/tests/25_admin_approvals_test.sql extendido (plan 82->90): §6 renombrado a MEMBER_OF_OTHER_AGENCY, §7-bis y §11-bis nuevos (admin no degradado). Confirmado RED exacto: fallaban tests 37/49/70 de 90, resto intacto.\n- GREEN: supabase/migrations/20260805000010_admin_approval_fixes.sql (CREATE OR REPLACE de los 2 triggers de 000007). Fix 1 (decisión Abraham: error tipado + guía manual, NO auto-switch): ALREADY_ACTIVE_MEMBER -> MEMBER_OF_OTHER_AGENCY con HINT operativo, transacción sigue abortando completo. Fix 2 (sin ambigüedad): guard CASE role='admin'->se conserva en AMBOS triggers (agencies Y agent_applications, mismo idioma tras ajuste post-guardian) -- agency_id y la membresía owner SÍ se siguen creando siempre para un admin.\n- Rollback supabase/migrations/rollbacks/20260805000010_admin_approval_fixes.sql: verificado como inverso real (aplicado -> re-RED exacto 3/90 -> reaplicado -> 600/600 verde).\n- Guardian: PASS (agente independiente). Encontró 2 observaciones de calidad, ambas resueltas antes de cerrar: (a) el catch de unique_violation podía en teoría remapear el índice equivocado -- confirmado INALCANZABLE por la máquina de estados D2, documentado con comentario; (b) idioma inconsistente entre los 2 guards (CASE vs WHERE) -- alineado a CASE en ambos para evitar que un futuro UPDATE con más columnas excluya la fila del admin en silencio.\n- Suite completa: supabase test db --local supabase/tests -> Files=27, Tests=600, 0 failed.\n- Efecto secundario detectado y corregido: el 'task-master update-task --id=99' (usado para registrar el plan) regeneró subtareas vía AI Y normalizó los ids de TODAS las tareas de string a int en tasks.json (drift de esquema, CLAUDE.md §4 exige id=string). Corregido con script manual (101 ids revertidos a string) + validate-dependencies OK (102 tasks, 407 subtasks, 549 deps válidas). Actualizar memoria: update-task es más invasivo de lo documentado, evitarlo salvo que se acepte revisar el diff completo después.\n- Footprint final: 1 migración nueva + 1 rollback + 1 test file modificado + tasks.json (plan/bitácora + fix de ids). Nada en mobile/, nada en EFs -- SQL puro.\n</info added on 2026-08-06T05:51:00.981Z>",
+            "status": "done",
+            "testStrategy": "Verificar con `task-master show 99` que la bitácora está completa y que `task-master show 71` incluye el backlink en details. No requiere test automatizado, solo inspección manual del JSON de tareas.",
+            "parentId": "undefined",
+            "updatedAt": "2026-08-06T05:49:03.630Z"
+          }
+        ],
+        "updatedAt": "2026-08-06T05:49:03.630Z"
       },
       {
         "id": "100",
@@ -6684,12 +6748,14 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-08-06T02:47:27.753Z",
-      "taskCount": 98,
-      "completedCount": 62,
+      "lastModified": "2026-08-06T05:49:03.630Z",
+      "taskCount": 102,
+      "completedCount": 63,
       "tags": [
         "master"
-      ]
+      ],
+      "created": "2026-08-06T05:50:27.566Z",
+      "description": "Tasks for master context"
     }
   }
 }
