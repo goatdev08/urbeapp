@@ -37,25 +37,34 @@
 //         real siempre fija 'independent', ver application_creator.ts)
 //
 // ### [RED] Rol ya-agente/admin — hallazgo del guardian, aún SIN implementar
-// - R-12: un caller cuyo public.users.role YA es 'agent' (o 'admin') debe
-//   rechazarse con 409 { error.code: 'ALREADY_AGENT' } ANTES de intentar
-//   crear la solicitud — no tiene sentido pedir volverse "independiente" si
-//   ya es agente. HOY el handler no consulta el rol en absoluto (ni
-//   CallerVerifier ni ApplicationCreator lo exponen) y la política RLS
-//   agent_app_insert (migración 20260604000008/0010) solo exige
-//   user_id=auth.uid() — el INSERT pasa igual. Este test simula la llegada
-//   futura de esa señal construyendo el caso con el ÚNICO seam que existe
-//   hoy (CallerVerifier + ApplicationCreator) y afirmando el resultado
-//   ESPERADO tras GREEN: como el handler ignora la señal, hoy sigue
-//   devolviendo 201 y llamando al creator → falla por aserción.
-//   NO se prescribe aquí DÓNDE debe vivir el chequeo (extender
-//   CallerVerifyResult con `role`, o agregar una dependencia nueva
-//   `roleChecker` a RequestAgentUpgradeDeps) — es una decisión de GREEN, no
-//   de este RED; documentarlo es la única forma de fijar el seam sin tocar
-//   producción (instrucción explícita: NO editar producción en este pase).
-//   Código/status elegidos por convención del repo: mismo par
-//   (409, 'ALREADY_AGENT') que usa Camino A en upgrade-to-agent/handler.ts
-//   para "el usuario ya es agente/admin" — mismo significado de negocio.
+// - R-12/R-12b: un caller cuyo public.users.role YA es 'agent' o 'admin'
+//   debe rechazarse con 409 { error.code: 'ALREADY_AGENT' } ANTES de
+//   intentar crear la solicitud — no tiene sentido pedir volverse
+//   "independiente" si ya es agente. HOY el handler no consulta el rol en
+//   absoluto (ni CallerVerifier ni ApplicationCreator lo exponen) y la
+//   política RLS agent_app_insert (migración 20260604000008/0010) solo
+//   exige user_id=auth.uid() — el INSERT pasa igual.
+//
+//   Seam v3.1 (checkpoint 2026-08-05, corrige v3): `verifier_ok` gana un
+//   parámetro `role` opcional (mismo patrón que `runner_error(code)` en
+//   upgrade-to-agent/handler.test.ts) para que el handler tenga ALGO que
+//   consultar — round-trip empírico con `deno check`/`deno test` (no solo
+//   teoría) confirmó que R-4/R-6/R-10/R-11 (esperan 201, sin rol) y
+//   R-12/R-12b (esperan 409, con rol) son distinguibles así SIN tocar
+//   producción: `CallerVerifyResultWithRole` (tipo LOCAL de este archivo,
+//   no de types.ts) es un superset estructural de `CallerVerifyResult` —
+//   el `role?: string | null` extra es asignable donde se espera el tipo
+//   real porque es opcional, así que `FakeVerifierWithRole` sigue
+//   satisfaciendo `CallerVerifier` en la firma de `RequestAgentUpgradeDeps`.
+//   HOY el handler ignora ese campo (no lo lee `types.ts` real), así que
+//   R-12/R-12b siguen devolviendo 201 y llamando al creator → fallan por
+//   aserción (201 !== 409), NO por error de compilación.
+//   NO se prescribe aquí DÓNDE debe vivir el chequeo en producción (¿GREEN
+//   agrega `role?` a `CallerVerifyResult` en types.ts como hace este fake,
+//   o usa una dependencia `roleChecker` separada?) — decisión de GREEN, no
+//   de este RED (instrucción explícita: NO editar producción en este pase).
+//   Código/status: mismo par (409, 'ALREADY_AGENT') que usa Camino A en
+//   upgrade-to-agent/handler.ts para "el usuario ya es agente/admin".
 //
 // ### Fuera de alcance de este archivo (documentado, no omisión)
 // - "request-agent-upgrade usa el client DEL USUARIO (anon key + JWT), no
@@ -81,26 +90,44 @@ import type {
 // ── Constantes ────────────────────────────────────────────────────────────────
 
 const USER_ID = "00000000-0000-0000-0000-000000000001";
-// Representa (solo por convención de nombre en el fixture — HOY el SUT no
-// distingue nada especial de este id) al caller cuyo users.role ya es
-// 'agent'. Ver R-12.
 const ALREADY_AGENT_USER_ID = "00000000-0000-0000-0000-0000000000a9";
+const ALREADY_ADMIN_USER_ID = "00000000-0000-0000-0000-0000000000aa";
 const APPLICATION_ID = "00000000-0000-0000-0000-00000000000c";
 
 // ── Fakes ─────────────────────────────────────────────────────────────────────
+
+// Extensión LOCAL (solo de este archivo de test) de CallerVerifyResult con
+// `role` opcional — ver comentario de seam v3.1 arriba. NO se importa de
+// types.ts: el tipo real de producción sigue sin `role` hasta que GREEN lo
+// decida. Estructuralmente sigue siendo un CallerVerifier válido porque
+// `role` es opcional (superset asignable donde se espera el tipo real).
+type CallerVerifyResultWithRole =
+  | { ok: true; user_id: string; role?: string | null }
+  | { ok: false; error_code: "UNAUTHENTICATED" };
 
 interface FakeVerifier extends CallerVerifier {
   calls: (string | null)[];
 }
 
-function verifier_ok(user_id = USER_ID): FakeVerifier {
+interface FakeVerifierWithRole {
+  calls: (string | null)[];
+  verify_caller(header: string | null): Promise<CallerVerifyResultWithRole>;
+}
+
+// `role` es opcional a propósito: los tests que esperan 201 (buscador/user
+// normal) NO lo pasan — undefined ⇒ se permite, un caller sin rol marcado
+// no debe bloquearse. Solo R-12/R-12b lo pasan explícito.
+function verifier_ok(
+  user_id = USER_ID,
+  role?: string | null,
+): FakeVerifierWithRole {
   return {
     calls: [],
-    verify_caller(header: string | null): Promise<CallerVerifyResult> {
+    verify_caller(header: string | null): Promise<CallerVerifyResultWithRole> {
       this.calls.push(header);
-      return Promise.resolve({ ok: true, user_id });
+      return Promise.resolve({ ok: true, user_id, role });
     },
-  } as FakeVerifier;
+  } as FakeVerifierWithRole;
 }
 
 function verifier_unauthenticated(): FakeVerifier {
@@ -281,12 +308,27 @@ Deno.test("R-11: user_id/application_type del payload se IGNORAN (JWT manda)", a
 // al inicio del archivo para el contrato completo y por qué no se prescribe
 // el mecanismo) ────────────────────────────────────────────────────────────
 
-Deno.test("R-12 [RED]: caller que ya es agente → 409 ALREADY_AGENT, creator NO se llama", async () => {
+Deno.test("R-12 [RED]: caller con role='agent' → 409 ALREADY_AGENT, creator NO se llama", async () => {
   const creator = creator_ok();
   const res = await handler(
     make_request(JSON.stringify({ reason: "Quiero ser independiente" })),
     {
-      callerVerifier: verifier_ok(ALREADY_AGENT_USER_ID),
+      callerVerifier: verifier_ok(ALREADY_AGENT_USER_ID, "agent"),
+      applicationCreator: creator,
+    },
+  );
+  assertEquals(res.status, 409);
+  const body = await res.json();
+  assertEquals(body.error.code, "ALREADY_AGENT");
+  assertEquals(creator.calls.length, 0);
+});
+
+Deno.test("R-12b [RED]: caller con role='admin' → 409 ALREADY_AGENT, creator NO se llama", async () => {
+  const creator = creator_ok();
+  const res = await handler(
+    make_request(JSON.stringify({ reason: "Quiero ser independiente" })),
+    {
+      callerVerifier: verifier_ok(ALREADY_ADMIN_USER_ID, "admin"),
       applicationCreator: creator,
     },
   );
