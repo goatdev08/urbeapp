@@ -6624,6 +6624,62 @@
         "priority": "low",
         "subtasks": [],
         "updatedAt": "2026-08-05T00:00:00.000Z"
+      },
+      {
+        "id": "99",
+        "title": "Fix trigger de aprobación: deadlock por membresía previa + degradación de admin",
+        "description": "Review PR #41, 2 hallazgos ALTO con repro empírica en 20260805000007: (1) aprobar una agencia cuyo creador ya tiene membresía activa en OTRA agencia (subió por token mientras esperaba) aborta con ALREADY_ACTIVE_MEMBER — no existe ningún camino para aprobarla jamás; (2) el trigger hace `update users set role='agent'` INCONDICIONAL — aprobar la agencia de un admin global lo degrada a agent en silencio (mismo defecto en el camino 'independent' de agent_applications).",
+        "details": "Fix (1): decisión de producto — auto-switch de agencia al aprobar, o error tipado MEMBER_OF_OTHER_AGENCY con guía operativa para el admin. Fix (2): guard `and role='user'` en la promoción (y decidir si un admin puede ser owner sin cambio de rol). TDD estricto: pgTAP en 25_admin_approvals_test.sql cubriendo ambos escenarios (los edge cases 9/10 del RED original no cubrieron admin-creador ni el camino sin salida).",
+        "testStrategy": "pgTAP: aprobar agencia de user con membresía activa en otra → comportamiento decidido (no deadlock permanente); aprobar agencia de admin → role sigue 'admin'; camino independent de applications igual.",
+        "status": "pending",
+        "dependencies": [
+          "71"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2026-08-05T00:00:00.000Z"
+      },
+      {
+        "id": "100",
+        "title": "Suspensión efectiva en el publish real + denormalizar properties.agency_id",
+        "description": "Review PR #41, 2 hallazgos ALTO relacionados: (1) la cláusula de suspensión de 20260805000009 solo tapa el INSERT directo por PostgREST — el flujo real (EF publish-property → RPC SECURITY DEFINER) no consulta agency_members.status y un agente suspendido publica normal; (2) properties.agency_id NUNCA se escribe al publicar (las RPCs de publish no la incluyen, pese al comment de 0005 'denorm al publicar') → las cláusulas por agency_role_of(agency_id) de 71.2 (properties_update admin, properties_select_agency_role) y la de suspensión son letra muerta sobre datos reales.",
+        "details": "Fix: denormalizar agency_id en publish_property_atomic (leyendo la membresía activa del agente al publicar) + chequear membresía activa (no suspended/removed) en la EF publish-property o en la RPC. Revisar también la asimetría owner/admin cross-agencia tras un switch (hallazgo MEDIO relacionado: is_agency_owner_of va por membresía compartida, no por la agencia de la property). TDD estricto (migración + EF).",
+        "testStrategy": "pgTAP+Deno: agente suspendido no publica vía EF; property publicada lleva agency_id de la membresía activa; admin de agencia puede editar properties de su agencia (matriz 71.2 operante); independiente (sin membresía) sigue publicando con agency_id null.",
+        "status": "pending",
+        "dependencies": [
+          "71"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2026-08-05T00:00:00.000Z"
+      },
+      {
+        "id": "101",
+        "title": "Hardening post-review PR #41: RLS de escritura, TOCTOU y denorm de agency_id en remove",
+        "description": "Hallazgos MEDIO del review del PR #41 agrupados: (a) properties_update WITH CHECK no replica la cláusula de membresía → suspendido inserta con agency_id null y luego se la pone por UPDATE; (b) viewer activo con role='agent' puede insertar properties con el agency_id de su agencia (la cláusula acepta cualquier membresía; matriz dice viewer=cero escritura); (c) INSERT directo de agent_applications con status='approved' esquiva el trigger BEFORE UPDATE y el índice one_pending (agregar with check status='pending'; ídem agencies, familia #97); (d) TOCTOU en member_manager.ts — el UPDATE no re-verifica el status leído (compare-and-swap: .in('status', from) + 0 filas → INVALID_TRANSITION); (e) remove/suspend no limpian users.agency_id (denorm inconsistente vs upgrade/switch/aprobación); (f) documentar orden de rollback 000009→000003→000002 en el header del rollback de 000003 (falla con dependencia de policy si se corre fuera de orden — repro empírica); (g) homologar sanitización del 500 DB_ERROR en manage-agency-member y request-agent-upgrade (fugan message crudo; convención heredada).",
+        "details": "Cada fix es chico; TDD donde toque migración/EF (todos los paths son críticos). Ver el review completo en el comentario del PR #41.",
+        "testStrategy": "pgTAP: (a)(b)(c) asserts de denegación; Deno: (d) CAS con 0 filas → 409, (g) mensaje genérico en 500. (e): remove deja users.agency_id null. (f) doc-only.",
+        "status": "pending",
+        "dependencies": [
+          "71"
+        ],
+        "priority": "medium",
+        "subtasks": [],
+        "updatedAt": "2026-08-05T00:00:00.000Z"
+      },
+      {
+        "id": "102",
+        "title": "Pulido móvil + consolidación ponytail post-review PR #41",
+        "description": "Hallazgos MEDIO/BAJO del tramo móvil del review: (a) members.tsx error_text hereda uppercase+tracking del caption (falta textTransform:'none' como en sus hermanas); (b) upgrade.tsx ignora el {error} de refreshSession → si falla, el cliente queda con role viejo sin aviso; (c) UNAUTHENTICATED sin mapear en upgrade.tsx (cae al fallback de conexión); (d) fetch_own_membership no distingue error de red de 'sin membresía' (oculta la entrada Miembros a un owner con red mala; 3ª pantalla con el patrón); (e) accessibilityRole='alert' en los error_box; (f) acting_id no deshabilita filas ajenas durante una acción. Ponytail: (g) extraer derive_slug/SLUG_REGEX/EMAIL_REGEX compartidos (register.tsx duplica ~55 líneas de admin/agencies/create.tsx); (h) ensanchar useAgencyRole a los 4 roles y eliminar fetch_own_membership paralelo (el union type actual miente desde 71.2); (i) ApiError definido 3 veces → exportar de lib/supabase/edge-errors.ts; (j) make_caller_verifier compartido en _shared (deuda del patrón, ~15 copias).",
+        "details": "Todo no crítico (componentes/pantallas) salvo (j) que toca EFs → verificación ligera excepto donde el path lo exija. Ver review completo en el PR #41.",
+        "testStrategy": "tsc + lint verdes; smoke visual de members/upgrade/register; Jest de useAgencyRole si se ensancha.",
+        "status": "pending",
+        "dependencies": [
+          "71"
+        ],
+        "priority": "low",
+        "subtasks": [],
+        "updatedAt": "2026-08-05T00:00:00.000Z"
       }
     ],
     "metadata": {
