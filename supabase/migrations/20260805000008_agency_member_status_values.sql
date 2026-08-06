@@ -1,0 +1,23 @@
+-- Migración 20260805000008 — agency_member_status: agrega 'suspended' (subtarea 71.6)
+-- PRD §4.7 (MVP inmobiliaria: alta, baja Y SUSPENSIÓN de agentes asociados). El enum
+-- pasa de {active,removed} a {active,removed,suspended}. Esta migración SOLO extiende
+-- el enum -- NINGÚN código en este archivo compara, castea ni referencia el valor nuevo.
+--
+-- 🔒 GOTCHA (mismo precedente que 20260805000002_agency_member_role_values.sql):
+-- `ALTER TYPE ... ADD VALUE` no puede convivir en la misma transacción con código que
+-- USE el valor nuevo (comparaciones, casts, políticas RLS, ni siquiera dentro de un
+-- bloque plpgsql que lo mencione). Supabase corre cada archivo de migración en su
+-- propia transacción, así que esta migración va SOLA; la RPC switch_agency_atomic y
+-- el cierre del gap de RLS en properties_insert viven en la migración siguiente
+-- (20260805000009_switch_agency_and_suspension.sql), que corre después y por lo
+-- tanto ve el enum ya committeado con los 3 valores. La EF manage-agency-member
+-- (fuera de Postgres, TS puro) sí puede usar el literal 'suspended' porque solo
+-- corre después de que esta migración -- y por lo tanto GREEN completo -- ya
+-- aplicó.
+--
+-- Idempotente: ADD VALUE IF NOT EXISTS (mismo patrón que 20260805000002 y
+-- 20260720000001_stream_schema.sql).
+-- Rollback: supabase/migrations/rollbacks/20260805000008_agency_member_status_values.sql
+--   (no-op documentado -- un valor de enum no se puede eliminar en Postgres).
+
+alter type agency_member_status add value if not exists 'suspended';
