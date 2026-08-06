@@ -628,6 +628,34 @@ Deno.test("fallo_del_publisher_publisher_fue_llamado_una_vez", async () => {
   );
 });
 
+// ── Suspensión de agencia (fix 100) — 403, no 500 ─────────────────────────────
+//
+// El publisher (RPC publish_property_atomic) lanza AGENCY_MEMBERSHIP_SUSPENDED
+// cuando el agente tiene una membresía 'suspended' en su agencia. Es un error de
+// AUTORIZACIÓN (mismo espíritu que FORBIDDEN), no un fallo de servidor — debe
+// mapear a 403, distinto del catch-all 500 que usan los demás DB_ERROR.
+
+Deno.test("agencia_suspendida_retorna_403_no_500", async () => {
+  const publisher = publisher_error("AGENCY_MEMBERSHIP_SUSPENDED");
+  const res = await handler(post_agente(PAYLOAD_VALIDO), deps_validos(publisher));
+  assertEquals(res.status, 403, "AGENCY_MEMBERSHIP_SUSPENDED es un 403 tipado, no un 500 genérico");
+});
+
+Deno.test("agencia_suspendida_error_code_correcto", async () => {
+  const publisher = publisher_error("AGENCY_MEMBERSHIP_SUSPENDED");
+  const res = await handler(post_agente(PAYLOAD_VALIDO), deps_validos(publisher));
+  const body = await res.json();
+  assertEquals(body.error.code, "AGENCY_MEMBERSHIP_SUSPENDED");
+});
+
+Deno.test("otro_error_del_publisher_sigue_siendo_500", async () => {
+  // No-regresión: el mapeo nuevo es específico a AGENCY_MEMBERSHIP_SUSPENDED,
+  // cualquier otro error_code (p.ej. DB_ERROR genérico) sigue cayendo en 500.
+  const publisher = publisher_error("ALGUN_OTRO_ERROR_DESCONOCIDO");
+  const res = await handler(post_agente(PAYLOAD_VALIDO), deps_validos(publisher));
+  assertEquals(res.status, 500);
+});
+
 // ── Atomicidad — propiedad + video en tx única ────────────────────────────────
 //
 // CONTRATO:

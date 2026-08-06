@@ -6707,15 +6707,105 @@
         "id": "100",
         "title": "fix(71.2/71.6): suspensión efectiva en el publish real + denormalizar properties.agency_id",
         "description": "Origen: subtareas 71.2 (matriz sobre agency_id) y 71.6 (cláusula de suspensión) · Detectado por: review PR #41 (lente SQL). Review PR #41, 2 hallazgos ALTO relacionados: (1) la cláusula de suspensión de 20260805000009 solo tapa el INSERT directo por PostgREST — el flujo real (EF publish-property → RPC SECURITY DEFINER) no consulta agency_members.status y un agente suspendido publica normal; (2) properties.agency_id NUNCA se escribe al publicar (las RPCs de publish no la incluyen, pese al comment de 0005 'denorm al publicar') → las cláusulas por agency_role_of(agency_id) de 71.2 (properties_update admin, properties_select_agency_role) y la de suspensión son letra muerta sobre datos reales.",
-        "details": "Fix: denormalizar agency_id en publish_property_atomic (leyendo la membresía activa del agente al publicar) + chequear membresía activa (no suspended/removed) en la EF publish-property o en la RPC. Revisar también la asimetría owner/admin cross-agencia tras un switch (hallazgo MEDIO relacionado: is_agency_owner_of va por membresía compartida, no por la agencia de la property). TDD estricto (migración + EF).",
-        "testStrategy": "pgTAP+Deno: agente suspendido no publica vía EF; property publicada lleva agency_id de la membresía activa; admin de agencia puede editar properties de su agencia (matriz 71.2 operante); independiente (sin membresía) sigue publicando con agency_id null.",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           "71"
         ],
         "priority": "high",
-        "subtasks": [],
-        "updatedAt": "2026-08-05T00:00:00.000Z"
+        "details": "## Análisis del Problema\n\n**ALTO-1: Suspensión no efectiva en publish_property_atomic**\n- `supabase/migrations/20260625000001_publish_property_rpc.sql` (líneas 32-140) define la RPC `publish_property_atomic` con `SECURITY DEFINER` que bypasea RLS\n- La RPC inserta directamente en `properties` sin consultar `agency_members.status`\n- La cláusula de suspensión en `properties_insert` (20260805000009:144-150) solo aplica a INSERT directo vía PostgREST, NO a la RPC\n- Resultado: un agente `status='suspended'` puede publicar normalmente vía EF → RPC\n\n**ALTO-2: agency_id nunca se denormaliza**\n- La RPC `publish_property_atomic` no incluye `agency_id` en el INSERT de properties (líneas 80-114)\n- `supabase/functions/publish-property/index.ts` (líneas 60-76) tampoco pasa `p_agency_id` al llamar la RPC\n- Las políticas `properties_update` admin (20260805000003:100-113) y `properties_select_agency_role` (líneas 115-117) usan `agency_role_of(agency_id)`, pero `agency_id` es NULL en properties publicadas → políticas letra muerta\n\n**MEDIO: Asimetría owner/admin cross-agencia**\n- `properties_update` (20260805000003:100-113) usa dos helpers distintos:\n  - `is_agency_owner_of(owner_user_id)` para el owner → chequea membresía compartida ACTIVA, SIN escapar a la agencia de la property\n  - `agency_role_of(agency_id)` para el admin → SÍ escapa a la property\n- Tras `switch_agency_atomic`, el owner de agencia B puede editar properties viejas de agencia A del agente (ambos compartían agencia A antes del switch, ahora el owner sigue pasando `is_agency_owner_of` pese a que la property es de otra agencia)\n\n## Solución\n\n**FIX 1 (ALTO-1): Bloquear suspendidos en publish_property_atomic**\n- Agregar `SELECT agency_id, status FROM agency_members WHERE user_id=p_user_id AND status IN ('active','suspended') LIMIT 1` al inicio de la RPC\n- Si `status='suspended'` → `RAISE EXCEPTION 'AGENCY_MEMBERSHIP_SUSPENDED' USING ERRCODE='P0001'` (bloquea el INSERT completo)\n- Invariante de negocio: a lo más 1 fila (switch_agency_atomic exige status='active' para moverse, un suspendido no puede switch)\n\n**FIX 2 (ALTO-2): Denormalizar agency_id al publicar**\n- El mismo SELECT de FIX 1 alimenta el INSERT de `properties.agency_id`\n- `agency_id = NULL` si independiente (sin membresía), `agency_id = <agencia activa>` si tiene membresía\n- Activa las políticas `agency_role_of(agency_id)` de 71.2\n\n**FIX 3 (MEDIO): Unificar properties_update a agency_role_of**\n- Reemplazar en `properties_update` las cláusulas del owner (`is_agency_owner_of(owner_user_id)`) y admin (`agency_role_of(agency_id)`) por UNA sola: `agency_role_of(agency_id) IN ('owner','admin')`\n- Escapado a la property real, NO a membresía compartida cross-agencia\n- `is_agency_owner_of` NO se toca (sigue usándose en leads/otras tablas)\n\n**FIX 4: Adapter EF para AGENCY_MEMBERSHIP_SUSPENDED → 403**\n- `supabase/functions/publish-property/index.ts` (líneas 78-84) HOY mapea todos los errores de RPC a `DB_ERROR` / 500\n- Agregar extracción del error_code del mensaje P0001 (mismo patrón que `extract_agency_error_code` en `_shared/clients.ts:343-345`)\n- `AGENCY_MEMBERSHIP_SUSPENDED` → 403 (forbidden), no 500\n- Tests Deno actualizados\n\n## Footprint\n\n**Nueva migración:** `supabase/migrations/20260805000011_publish_agency_denorm_and_suspension.sql`\n- `CREATE OR REPLACE FUNCTION public.publish_property_atomic` (agregar SELECT agency_members + RAISE suspended + INSERT agency_id)\n- `DROP POLICY IF EXISTS properties_update` + `CREATE POLICY properties_update` (unificar a `agency_role_of(agency_id) IN ('owner','admin')`)\n\n**Rollback:** `supabase/migrations/rollbacks/20260805000011_publish_agency_denorm_and_suspension.sql`\n\n**Tests pgTAP:** `supabase/tests/06_publish_property_rpc_test.sql`\n- Nuevo: agente con membresía activa → agency_id denormalizado\n- Nuevo: agente independiente (sin membresía) → agency_id NULL\n- Nuevo: agente suspendido → RAISE AGENCY_MEMBERSHIP_SUSPENDED + atomicidad (properties + property_videos ambos rollback)\n\n**Tests pgTAP:** `supabase/tests/21_agency_member_role_matrix_test.sql`\n- Nuevo §35: owner de agencia B NO edita property vieja de agencia A tras switch del agente\n\n**Tests Deno:** `supabase/functions/publish-property/handler.test.ts`\n- Mock propertyPublisher que regresa `{ ok: false, error_code: 'AGENCY_MEMBERSHIP_SUSPENDED' }` → handler regresa 403\n\n**EF adapter:** `supabase/functions/publish-property/index.ts`\n- Agregar `extract_publish_error_code(error.message)` (patrón `_shared/clients.ts`)\n- Mapeo `AGENCY_MEMBERSHIP_SUSPENDED` → 403\n\n## Fuera de Alcance (pertenece a #101, NO tocar)\n\n- properties_update/insert WITH CHECK vs membresía (rediseño profundo de 71.2)\n- agent_applications INSERT bypass\n- TOCTOU member_manager\n- remove no limpia users.agency_id\n- orden de rollback\n- sanitización de 500",
+        "testStrategy": "**TDD Criticality:** ❌ CRÍTICA (migración + RLS + EF) → TDD estricto RED → GREEN → Guardian\n\n## Phase RED (Tests Failing)\n\n### pgTAP: `supabase/tests/06_publish_property_rpc_test.sql`\n1. **agency_id denormalizado para miembro activo**: agente con membresía activa publica → `SELECT agency_id FROM properties WHERE id=<insertado>` = su agencia\n2. **agency_id NULL para independiente**: agente sin membresía publica → agency_id IS NULL\n3. **suspendido bloqueado con AGENCY_MEMBERSHIP_SUSPENDED**: agente suspendido llama RPC → RAISE con mensaje 'AGENCY_MEMBERSHIP_SUSPENDED'\n4. **atomicidad suspendido**: tras RAISE, ni properties ni property_videos tienen filas nuevas (rollback completo)\n\n### pgTAP: `supabase/tests/21_agency_member_role_matrix_test.sql`\n5. **§35 owner cross-agencia bloqueado**: agente A publica en agencia X → owner de agencia X puede editar → switch_agency_atomic(A, Y) → owner de X NO puede editar la property vieja (owner de Y tampoco) → solo A puede editar\n\n### Deno: `supabase/functions/publish-property/handler.test.ts`\n6. **AGENCY_MEMBERSHIP_SUSPENDED → 403**: mock `propertyPublisher.publish` regresa `{ ok: false, error_code: 'AGENCY_MEMBERSHIP_SUSPENDED', message: '...' }` → handler regresa 403 con error_code AGENCY_MEMBERSHIP_SUSPENDED (NO 500 DB_ERROR)\n\n## Phase GREEN (Implementation)\n\n1. Migración `20260805000011_publish_agency_denorm_and_suspension.sql`\n2. Rollback `rollbacks/20260805000011_...sql`\n3. Adapter EF `index.ts` (extract_publish_error_code)\n\n## Phase Guardian\n\n`pnpm --filter supabase test` → guardian verifica:\n- Tests no deshabilitados\n- Aserciones no debilitadas\n- Cobertura de edge cases (suspendido, independiente, miembro activo, cross-agencia)\n- pgTAP + Deno todos GREEN",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "RED: pgTAP — agency_id denormalizado + suspendido bloqueado",
+            "description": "Escribir tests FAILING en `supabase/tests/06_publish_property_rpc_test.sql` para los 3 casos ALTO: (1) agente con membresía activa → agency_id denormalizado, (2) agente independiente → agency_id NULL, (3) agente suspendido → RAISE AGENCY_MEMBERSHIP_SUSPENDED + atomicidad (ni properties ni property_videos insertados tras RAISE).",
+            "dependencies": [],
+            "details": "Enumerar edge cases desde el plan:\n\n1. **Miembro activo denormaliza agency_id**: fixture agente con membresía `status='active'` en agencia X → RPC publish → `SELECT agency_id FROM properties WHERE id=<insertado>` = X (HOY es NULL → falla)\n\n2. **Independiente publica con agency_id NULL**: fixture agente SIN fila en agency_members → RPC publish → agency_id IS NULL (HOY pasa, INVARIANTE que el fix NO rompe)\n\n3. **Suspendido bloqueado**: fixture agente con membresía `status='suspended'` → RPC publish → RAISE con mensaje 'AGENCY_MEMBERSHIP_SUSPENDED' (HOY pasa sin error → falla)\n\n4. **Atomicidad suspendido**: tras el RAISE del caso 3, `SELECT COUNT(*) FROM properties WHERE owner_user_id=<suspendido>` = 0 Y `SELECT COUNT(*) FROM property_videos WHERE id=<video_uid>` = 0 (rollback completo, HOY podría dejar residuos → falla)\n\nEscribir los 4 tests envueltos en `begin; ... select plan(N+4); ... rollback;` (stubs mínimos si la RPC no existe, fallan por aserción NO por import).\n\nVerificar que FALLAN: `pnpm --filter supabase test` → 4 de 4 RED.",
+            "status": "done",
+            "testStrategy": "Fase RED de TDD: tests fallan por aserción (agency_id es NULL cuando debería ser la agencia, RAISE no ocurre, atomicidad no se respeta). No por import/sintaxis.",
+            "updatedAt": "2026-08-06T06:20:04.072Z",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "RED: pgTAP — owner cross-agencia bloqueado tras switch",
+            "description": "Escribir test FAILING en `supabase/tests/21_agency_member_role_matrix_test.sql` §35 para el hallazgo MEDIO: owner de agencia B NO debe editar property vieja de agencia A tras switch_agency_atomic del agente.",
+            "dependencies": [],
+            "details": "Edge case desde el plan:\n\n**§35 asimetría is_agency_owner_of cross-agencia**:\n\n1. Agencia A, agencia B (ambas `status='active'`)\n2. Agente `alice` publica property P1 en agencia A (tiene membresía activa en A, agency_id denormalizado = A tras FIX 2)\n3. Owner `owner_A` de agencia A puede UPDATE P1 (membresía compartida activa)\n4. `switch_agency_atomic(alice, B)` → alice ahora en agencia B, su membresía en A pasa a `status='removed'`\n5. **Esperado**: `owner_A` ya NO puede UPDATE P1 (la policy debe ir por `agency_role_of(agency_id)` de la property, NO por membresía compartida histórica)\n6. **HOY (con is_agency_owner_of)**: `owner_A` SÍ puede UPDATE P1 (membresía compartida aunque sea removed → FALLA, es el bug)\n7. Owner `owner_B` de agencia B tampoco puede UPDATE P1 (property es de agencia A, no B)\n8. Solo `alice` puede UPDATE P1 (owner_user_id)\n\nEscribir el test con fixtures aisladas (agencias + agentes + membresías + property + switch). Verificar que HOY FALLA (owner_A pasa cuando debería bloquearse).\n\n`pnpm --filter supabase test` → test RED.",
+            "status": "done",
+            "testStrategy": "Fase RED de TDD: test falla porque la policy properties_update actual usa is_agency_owner_of (membresía compartida histórica) en vez de agency_role_of(agency_id) escapado a la property.",
+            "parentId": "undefined",
+            "updatedAt": "2026-08-06T06:20:05.961Z"
+          },
+          {
+            "id": 3,
+            "title": "RED: Deno — AGENCY_MEMBERSHIP_SUSPENDED → 403",
+            "description": "Escribir test FAILING en `supabase/functions/publish-property/handler.test.ts` para el adapter EF: mock propertyPublisher que regresa `{ ok: false, error_code: 'AGENCY_MEMBERSHIP_SUSPENDED', message: '...' }` → handler debe regresar 403 con error_code AGENCY_MEMBERSHIP_SUSPENDED (NO 500 DB_ERROR).",
+            "dependencies": [],
+            "details": "Edge case desde el plan:\n\n**Adapter EF mapea AGENCY_MEMBERSHIP_SUSPENDED a 403**:\n\n1. Mock `propertyPublisher.publish` (inyectado en handler) que regresa `{ ok: false, error_code: 'AGENCY_MEMBERSHIP_SUSPENDED', message: 'El agente está suspendido' }`\n2. Llamar `handler(req, { callerVerifier, propertyPublisher })` con payload válido y JWT válido\n3. **Esperado**: `Response` con status 403, body `{ error_code: 'AGENCY_MEMBERSHIP_SUSPENDED', message: '...' }`\n4. **HOY**: handler.ts:217-222 mapea TODOS los errores de publish a 500 DB_ERROR (no distingue códigos de negocio → FALLA)\n\nPatrón: `supabase/functions/_shared/clients.ts:343-345` `extract_agency_error_code` extrae códigos de una lista conocida del mensaje de error P0001. Replicar para publish (agregar `AGENCY_MEMBERSHIP_SUSPENDED` a la lista).\n\nEscribir el test, verificar que HOY FALLA (regresa 500, no 403).\n\n`deno test supabase/functions/publish-property/handler.test.ts` → test RED.",
+            "status": "done",
+            "testStrategy": "Fase RED de TDD: test falla porque handler.ts no extrae error_code del propertyPublisher.publish, mapea todo a 500 DB_ERROR.",
+            "parentId": "undefined",
+            "updatedAt": "2026-08-06T06:20:07.727Z"
+          },
+          {
+            "id": 4,
+            "title": "GREEN: migración 20260805000011 — publish_property_atomic + properties_update",
+            "description": "Crear `supabase/migrations/20260805000011_publish_agency_denorm_and_suspension.sql`: (1) CREATE OR REPLACE publish_property_atomic (SELECT agency_members + RAISE suspended + INSERT agency_id), (2) DROP + CREATE properties_update (unificar a agency_role_of(agency_id) IN ('owner','admin')).",
+            "dependencies": [
+              1,
+              2
+            ],
+            "details": "Implementar migración GREEN con los 3 fixes:\n\n**Parte 1: publish_property_atomic (FIX 1 + FIX 2)**\n- Agregar SELECT agency_members antes del INSERT properties\n- Declarar `v_agency_id uuid` y `v_member_status text`\n- `SELECT agency_id, status INTO v_agency_id, v_member_status FROM agency_members WHERE user_id=p_user_id AND status IN ('active','suspended') LIMIT 1`\n- Si `v_member_status = 'suspended'` → `RAISE EXCEPTION 'AGENCY_MEMBERSHIP_SUSPENDED' USING ERRCODE='P0001'`\n- Agregar `agency_id` a columnas del INSERT properties con valor `v_agency_id` (NULL si independiente)\n\n**Parte 2: properties_update (FIX 3)**\n- `DROP POLICY IF EXISTS properties_update ON properties`\n- `CREATE POLICY properties_update ... USING (owner_user_id = auth.uid() OR agency_role_of(agency_id) IN ('owner','admin') OR is_admin()) WITH CHECK (...same...)`\n\nVerificar: `pnpm --filter supabase db reset && pnpm --filter supabase test` → tests RED ahora GREEN",
+            "status": "done",
+            "testStrategy": "Fase GREEN de TDD: migración implementa los 3 fixes, tests RED ahora pasan. Verificar con `pnpm --filter supabase test`.",
+            "parentId": "undefined",
+            "updatedAt": "2026-08-06T06:20:09.501Z"
+          },
+          {
+            "id": 5,
+            "title": "GREEN: rollback 20260805000011",
+            "description": "Crear `supabase/migrations/rollbacks/20260805000011_publish_agency_denorm_and_suspension.sql`: restaurar publish_property_atomic a firma/lógica de 20260721000001 (sin agency_id, sin check suspended) y properties_update a 20260805000003 (is_agency_owner_of).",
+            "dependencies": [
+              4
+            ],
+            "details": "Rollback idempotente:\n\n1. Copiar `CREATE OR REPLACE FUNCTION public.publish_property_atomic` de `20260721000001_publish_property_link_video.sql` (versión sin v_agency_id, sin v_member_status, sin INSERT agency_id)\n\n2. Copiar `DROP POLICY IF EXISTS properties_update` + `CREATE POLICY properties_update` de `20260805000003_agency_role_matrix.sql` líneas 100-113 (versión con `is_agency_owner_of(owner_user_id)` + `agency_role_of(agency_id) = 'admin'` separados)\n\nVerificar round-trip: migración → rollback → migración sin errores",
+            "status": "done",
+            "testStrategy": "Rollback restaura estado anterior: tests RED vuelven a fallar (esperado). Idempotencia: aplicar rollback → migración → rollback sin errores.",
+            "parentId": "undefined",
+            "updatedAt": "2026-08-06T06:20:11.277Z"
+          },
+          {
+            "id": 6,
+            "title": "GREEN: adapter EF — extract_publish_error_code + handler mapeo 403",
+            "description": "Modificar `supabase/functions/publish-property/index.ts` para extraer error_code del mensaje P0001 y `handler.ts` para mapear AGENCY_MEMBERSHIP_SUSPENDED a 403.",
+            "dependencies": [
+              3,
+              4
+            ],
+            "details": "**index.ts cambios:**\n\n1. Agregar helper `extract_publish_error_code` (patrón `_shared/clients.ts:343-345`):\n```typescript\nconst PUBLISH_ERROR_CODES = ['AGENCY_MEMBERSHIP_SUSPENDED'];\nfunction extract_publish_error_code(message: string): string {\n  return PUBLISH_ERROR_CODES.find(c => message.includes(c)) ?? 'DB_ERROR';\n}\n```\n\n2. Modificar propertyPublisher.publish líneas 78-84:\n```typescript\nif (error) {\n  const error_code = extract_publish_error_code(error.message);\n  return { ok: false, error_code, message: error.message };\n}\n```\n\n**handler.ts cambios:**\n\n1. Agregar mapeo después de línea 33:\n```typescript\nconst PUBLISH_ERROR_STATUS: Record<string, number> = {\n  AGENCY_MEMBERSHIP_SUSPENDED: 403,\n};\n```\n\n2. Modificar líneas 217-222:\n```typescript\nif (!publishResult.ok) {\n  const status = PUBLISH_ERROR_STATUS[publishResult.error_code] ?? 500;\n  return error_response(publishResult.error_code, publishResult.message ?? 'Error al publicar', status);\n}\n```\n\nVerificar: `deno test supabase/functions/publish-property/handler.test.ts` → test de subtarea 3 GREEN",
+            "status": "done",
+            "testStrategy": "Fase GREEN de TDD: adapter extrae error_code, handler mapea a 403. Test Deno RED ahora pasa.",
+            "parentId": "undefined",
+            "updatedAt": "2026-08-06T06:20:13.054Z"
+          },
+          {
+            "id": 7,
+            "title": "Guardian: verificar TDD estricto (no trampa + cobertura edge cases)",
+            "description": "Correr guardian: verificar que los tests de 06 + 21 + handler.test.ts NO fueron deshabilitados, aserciones NO debilitadas, cobertura alcanza los edge cases enumerados en RED (suspendido, independiente, miembro activo, cross-agencia switch).",
+            "dependencies": [
+              4,
+              5,
+              6
+            ],
+            "details": "Guardian verifica:\n\n1. **Tests no deshabilitados**: todos los tests de subtareas 1, 2, 3 siguen ejecutándose (no comentados, no skip)\n\n2. **Aserciones no debilitadas**: los asserts siguen siendo los originales de RED (no cambiados a genéricos)\n\n3. **Cobertura edge cases**:\n   - Suspendido bloqueado (FIX 1)\n   - Independiente publica con agency_id NULL (INVARIANTE no roto)\n   - Miembro activo denormaliza agency_id (FIX 2)\n   - Owner cross-agencia bloqueado tras switch (FIX 3)\n   - EF adapter mapea 403 (FIX 4)\n\n4. **Atomicidad**: test de subtarea 1 caso 4 verifica que RAISE suspendido NO deja residuos\n\n5. **Tipos + lint**: `pnpm tsc --noEmit && pnpm lint` GREEN\n\nEjecutar: `pnpm --filter supabase test && deno test supabase/functions/publish-property/`\n\nSi guardian PASS → todos GREEN sin trampas → tarea lista\n\nSi guardian FALLA → reportar violaciones, no cerrar\n<info added on 2026-08-06T06:20:48.476Z>\nBased on the user request and the current subtask details, here is the new information to be added:\n\nPASS. Ejecución completa: `pnpm --filter supabase test` (06_publish_property_rpc_test.sql 34/34 OK, 21_agency_member_role_matrix_test.sql 41/41 OK, suite completa pgTAP 612/612) + `deno test supabase/functions/publish-property/` (handler.test.ts 3/3 OK, total Deno 775+3) + `pnpm tsc --noEmit && pnpm lint` (0 errores). Todos los tests originales de RED ejecutándose sin skip/comentarios, aserciones originales sin debilitar. Cobertura verificada de los 5 edge cases: (1) suspendido bloqueado con AGENCY_MEMBERSHIP_SUSPENDED, (2) independiente publica con agency_id NULL preservado, (3) miembro activo denormaliza agency_id con desempate ACTIVE-primero, (4) owner cross-agencia bloqueado tras switch en SELECT y UPDATE, (5) EF adapter mapea 403 correctamente. Atomicidad verificada (caso 4 de subtarea 1 confirma no residuos en rollback de suspendido). Guardian detectó 2 observaciones ALTAS resueltas pre-cierre: faltaba desempate explícito LIMIT 1 en query de agency_id (corregido) y backfill de agency_id para properties existentes (agregado en GREEN). 3 observaciones informativas aceptadas: tests no-discriminantes pero legítimos, adapter sin unit test propio consistente con patrón repo, tests sin assert de err_message consistente con archivo. Ciclo TDD completo sin trampas.\n</info added on 2026-08-06T06:20:48.476Z>",
+            "status": "done",
+            "testStrategy": "Guardian verifica que GREEN no hizo trampa: tests ejecutados, aserciones fuertes, edge cases cubiertos. PASS = TDD estricto cumplido.",
+            "parentId": "undefined",
+            "updatedAt": "2026-08-06T06:21:23.880Z"
+          }
+        ],
+        "updatedAt": "2026-08-06T06:21:23.880Z"
       },
       {
         "id": "101",
@@ -6748,14 +6838,12 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-08-06T05:49:03.630Z",
+      "lastModified": "2026-08-06T06:21:23.880Z",
       "taskCount": 102,
-      "completedCount": 63,
+      "completedCount": 64,
       "tags": [
         "master"
-      ],
-      "created": "2026-08-06T05:50:27.566Z",
-      "description": "Tasks for master context"
+      ]
     }
   }
 }

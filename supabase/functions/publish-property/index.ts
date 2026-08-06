@@ -52,7 +52,8 @@ Deno.serve((req: Request) => {
     },
   };
 
-  // PropertyPublisher real: llama RPC publish_property_atomic (migración 0017)
+  // PropertyPublisher real: llama RPC publish_property_atomic (migración 0017,
+  // fix 100 en 20260805000011)
   const propertyPublisher: PropertyPublisher = {
     async publish(
       params: PropertyPublishParams,
@@ -76,9 +77,15 @@ Deno.serve((req: Request) => {
       });
 
       if (error) {
+        // Fix 100: distinguir AGENCY_MEMBERSHIP_SUSPENDED (P0001 tipado del RPC)
+        // del resto de fallas de DB — mismo patrón que extract_agency_error_code
+        // en _shared/clients.ts. El handler mapea ese código a 403.
+        const error_code = error.message.includes("AGENCY_MEMBERSHIP_SUSPENDED")
+          ? "AGENCY_MEMBERSHIP_SUSPENDED"
+          : "DB_ERROR";
         return {
           ok: false,
-          error_code: "DB_ERROR",
+          error_code,
           message: error.message,
         };
       }

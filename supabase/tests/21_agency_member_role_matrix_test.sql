@@ -60,7 +60,7 @@
 --              no un caso inventado.
 
 begin;
-select plan(37);
+select plan(41);
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- Fixtures
@@ -493,6 +493,73 @@ with u as (
    returning id
 )
 select is(count(*)::int, 0, 'admin_de_agencia_b_no_puede_actualizar_property_de_agencia_a') from u;
+reset role;
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 35-38) Fix #100 — asimetría owner/admin cross-agencia tras un switch [DELTA]
+-- ════════════════════════════════════════════════════════════════════════════
+-- HOY properties_update le da al owner private.is_agency_owner_of(owner_user_id)
+-- (chequea SOLO membresía compartida activa, ignorando la agency_id real de la
+-- property) mientras que al admin le da private.agency_role_of(agency_id) (SÍ
+-- escapado a la property). Tras un switch_agency_atomic, el agent_a3 deja una
+-- property vieja tageada a la agencia A pero ahora comparte membresía activa con
+-- el owner de la agencia B -- is_agency_owner_of(owner_user_id) para owner_b
+-- devolvía true sobre esa property, aunque NO es su agencia. El fix reemplaza
+-- ambas cláusulas por agency_role_of(agency_id) in ('owner','admin') -- una
+-- sola fuente de verdad, escapada siempre a la agencia REAL de la property.
+
+insert into public.properties (id, owner_user_id, agency_id, property_type, operation_type, address, location, price, status) values
+  ('00000000-0000-0000-0000-000000712153', '00000000-0000-0000-0000-000000712114', '00000000-0000-0000-0000-000000712100',
+   'departamento', 'rent', 'Fixture matriz — property de agent_a3 previa al switch', extensions.ST_SetSRID(extensions.ST_MakePoint(-103.37, 20.69), 4326)::extensions.geography, 15000, 'draft');
+
+-- Simula el efecto de switch_agency_atomic sobre agent_a3 (712114): sale de A,
+-- entra ACTIVO a B. La property 712153 NO se re-tagea (igual que en producción
+-- -- el switch nunca toca properties, solo agency_members/users).
+update public.agency_members set status = 'removed', removed_at = now()
+ where id = '00000000-0000-0000-0000-000000712134';
+insert into public.agency_members (id, agency_id, user_id, member_role, status) values
+  ('00000000-0000-0000-0000-000000712144', '00000000-0000-0000-0000-000000712101', '00000000-0000-0000-0000-000000712114', 'agent', 'active');
+
+-- 35) owner_b (agencia B, ahora comparte membresía activa con agent_a3) NO ve
+--     (SELECT) la property vieja de agent_a3 -- sigue siendo de la agencia A.
+--     Cubre properties_select directamente (antes solo se probaba indirecto vía
+--     UPDATE...RETURNING, que en Postgres aplica políticas de SELECT y UPDATE).
+select pg_temp.act_as('00000000-0000-0000-0000-000000712120');
+select ok(
+  not exists (select 1 from public.properties where id = '00000000-0000-0000-0000-000000712153'),
+  'owner_de_agencia_b_no_ve_property_de_agente_que_switcheo_desde_agencia_a'
+);
+reset role;
+
+-- 36) sanity: owner_a SÍ ve (SELECT) esa misma property -- sigue siendo la
+--     agencia real dueña de la fila.
+select pg_temp.act_as('00000000-0000-0000-0000-000000712110');
+select ok(
+  exists (select 1 from public.properties where id = '00000000-0000-0000-0000-000000712153'),
+  'owner_de_agencia_a_sigue_viendo_la_property_que_realmente_es_de_su_agencia'
+);
+reset role;
+
+-- 37) owner_b (agencia B, ahora comparte membresía activa con agent_a3) NO puede
+--     editar la property vieja de agent_a3 -- sigue siendo de la agencia A.
+select pg_temp.act_as('00000000-0000-0000-0000-000000712120');
+with u as (
+  update public.properties set price = 1
+   where id = '00000000-0000-0000-0000-000000712153'
+   returning id
+)
+select is(count(*)::int, 0, 'owner_de_agencia_b_no_puede_actualizar_property_de_agente_que_switcheo_desde_agencia_a') from u;
+reset role;
+
+-- 38) sanity: owner_a (dueño REAL de la agencia A, donde la property sigue
+--     tageada) SÍ puede editarla -- el fix no rompió el caso legítimo.
+select pg_temp.act_as('00000000-0000-0000-0000-000000712110');
+with u as (
+  update public.properties set price = 999000
+   where id = '00000000-0000-0000-0000-000000712153'
+   returning id
+)
+select is(count(*)::int, 1, 'owner_de_agencia_a_sigue_pudiendo_actualizar_la_property_que_realmente_es_de_su_agencia') from u;
 reset role;
 
 select * from finish();
