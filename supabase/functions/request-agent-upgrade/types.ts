@@ -24,10 +24,19 @@ export interface RequestAgentUpgradeInput {
 }
 
 // ── CallerVerifier ────────────────────────────────────────────────────────────
-// Contrato idéntico al de create-invitation/upgrade-to-agent.
+// Contrato base idéntico al de create-invitation/upgrade-to-agent, MÁS `role`
+// (opcional — GREEN v2, hallazgo del guardian): un agente/admin no debe poder
+// crear una solicitud para "volverse independiente" — no tiene sentido pedir
+// lo que ya se tiene. El rol se resuelve SERVER-SIDE (nunca del cliente, ver
+// index.ts: mismo patrón que _shared/clients.ts:make_admin_verifier —
+// getUser(jwt) + SELECT users.role) y viaja aquí para que el handler decida
+// ANTES de invocar al ApplicationCreator (ver R-12/R-12b en handler.test.ts:
+// el creator NO debe llamarse cuando el caller ya es agente/admin).
+// Opcional a propósito: undefined/null (rol no resuelto, o resuelto como
+// 'user') no bloquea — solo 'agent'/'admin' explícitos lo hacen.
 
 export type CallerVerifyResult =
-  | { ok: true; user_id: string }
+  | { ok: true; user_id: string; role?: string | null }
   | { ok: false; error_code: "UNAUTHENTICATED" };
 
 export interface CallerVerifier {

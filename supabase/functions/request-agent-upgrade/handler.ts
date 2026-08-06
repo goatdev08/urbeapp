@@ -93,6 +93,18 @@ export async function handler(
     return error_response("UNAUTHENTICATED", "Se requiere autenticación", 401);
   }
 
+  // 5.5 Un caller que YA es agente/admin no puede solicitar volverse
+  // "independiente" — se corta ANTES de llamar al creator (nunca se intenta
+  // el INSERT). role viene resuelto server-side por el CallerVerifier real
+  // (ver index.ts); undefined/null/'user' no bloquea.
+  if (verifyResult.role === "agent" || verifyResult.role === "admin") {
+    return error_response(
+      "ALREADY_AGENT",
+      "Tu cuenta ya tiene privilegios de agente",
+      409,
+    );
+  }
+
   // 6. Delegar al creator: INSERT vía cliente del usuario (RLS agent_app_insert)
   const createResult = await deps!.applicationCreator.create({
     user_id: verifyResult.user_id,

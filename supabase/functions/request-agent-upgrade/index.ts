@@ -19,9 +19,12 @@ import type { CallerVerifier, CallerVerifyResult } from "./types.ts";
 Deno.serve((req: Request) => {
   const authHeader = req.headers.get("Authorization");
 
-  // CallerVerifier real: JWT → getUser → usuario autenticado.
-  // Usa service_client() solo para RESOLVER la identidad (getUser no escribe
-  // ni lee tablas con RLS); el INSERT en sí va por el user_client (RLS).
+  // CallerVerifier real: JWT → getUser → usuario autenticado → SELECT
+  // users.role (mismo patrón que _shared/clients.ts:make_admin_verifier).
+  // Usa service_client() solo para RESOLVER identidad+rol (getUser/SELECT no
+  // escriben ni dependen de RLS); el INSERT en sí va por el user_client (RLS).
+  // role viaja SIEMPRE resuelto server-side — nunca del cliente — para que el
+  // handler pueda cortar con 409 ALREADY_AGENT antes de llamar al creator.
   const verifier_client = service_client();
   const callerVerifier: CallerVerifier = {
     async verify_caller(
@@ -36,7 +39,12 @@ Deno.serve((req: Request) => {
       if (auth_error || !user) {
         return { ok: false, error_code: "UNAUTHENTICATED" };
       }
-      return { ok: true, user_id: user.id };
+      const { data: user_row } = await verifier_client
+        .from("users")
+        .select("role")
+        .eq("id", user.id)
+        .maybeSingle();
+      return { ok: true, user_id: user.id, role: user_row?.role ?? null };
     },
   };
 
