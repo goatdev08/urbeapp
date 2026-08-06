@@ -134,7 +134,7 @@
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(82);
+select plan(90);
 
 create or replace function pg_temp.act_as(p_uid uuid, p_role text default 'authenticated')
 returns void language plpgsql as $$
@@ -177,11 +177,17 @@ insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-000000725115', 'app_selfupdate@test.local'),
   ('00000000-0000-0000-0000-000000725116', 'app_actor_gate@test.local'),
   ('00000000-0000-0000-0000-000000725117', 'admin2_71x5@test.local'),
-  ('00000000-0000-0000-0000-000000725118', 'app_precedencia_jwt_guc@test.local');
+  ('00000000-0000-0000-0000-000000725118', 'app_precedencia_jwt_guc@test.local'),
+  ('00000000-0000-0000-0000-000000725119', 'admin_creador_agencia@test.local'),
+  ('00000000-0000-0000-0000-000000725120', 'admin_app_independent@test.local');
 
 update public.users set role = 'admin' where id = '00000000-0000-0000-0000-000000725101';
 -- Segundo admin (D4-ancla §16): existe SOLO para probar que el GUC pierde frente al JWT.
 update public.users set role = 'admin' where id = '00000000-0000-0000-0000-000000725117';
+-- Fix 99: admins que además son creadores de una agencia/application (edge cases
+-- nuevos §7-bis/§11-bis -- la aprobación NUNCA debe degradarlos a 'agent').
+update public.users set role = 'admin' where id = '00000000-0000-0000-0000-000000725119';
+update public.users set role = 'admin' where id = '00000000-0000-0000-0000-000000725120';
 -- El creador de ag_pending_already_agent YA es agent (independiente, sin membresía
 -- ni agencia) -- fixture del edge case (D5/§6).
 update public.users set role = 'agent', agency_id = null
@@ -194,7 +200,8 @@ insert into public.agencies (id, name, slug, status, created_by_user_id) values
   ('00000000-0000-0000-0000-000000725204', 'Inmobiliaria 71.5 Pendiente Main', 'inmo-715-pendiente-main', 'pending_approval', '00000000-0000-0000-0000-000000725105'),
   ('00000000-0000-0000-0000-000000725205', 'Inmobiliaria 71.5 Pendiente Reject', 'inmo-715-pendiente-reject', 'pending_approval', '00000000-0000-0000-0000-000000725106'),
   ('00000000-0000-0000-0000-000000725206', 'Inmobiliaria 71.5 Pendiente Conflicto', 'inmo-715-pendiente-conflicto', 'pending_approval', '00000000-0000-0000-0000-000000725104'),
-  ('00000000-0000-0000-0000-000000725207', 'Inmobiliaria 71.5 Pendiente Ya Agente', 'inmo-715-pendiente-ya-agente', 'pending_approval', '00000000-0000-0000-0000-000000725107');
+  ('00000000-0000-0000-0000-000000725207', 'Inmobiliaria 71.5 Pendiente Ya Agente', 'inmo-715-pendiente-ya-agente', 'pending_approval', '00000000-0000-0000-0000-000000725107'),
+  ('00000000-0000-0000-0000-000000725208', 'Inmobiliaria 71.5 Pendiente Admin', 'inmo-715-pendiente-admin', 'pending_approval', '00000000-0000-0000-0000-000000725119');
 
 -- owner activo de la agencia YA activa (para probar el gap de actor D3).
 insert into public.agency_members (id, agency_id, user_id, member_role, status) values
@@ -219,7 +226,8 @@ insert into public.agent_applications (id, user_id, application_type, agency_id,
   ('00000000-0000-0000-0000-000000725407', '00000000-0000-0000-0000-000000725114', 'independent', null, 'pending'),
   ('00000000-0000-0000-0000-000000725408', '00000000-0000-0000-0000-000000725115', 'independent', null, 'pending'),
   ('00000000-0000-0000-0000-000000725409', '00000000-0000-0000-0000-000000725116', 'independent', null, 'pending'),
-  ('00000000-0000-0000-0000-000000725410', '00000000-0000-0000-0000-000000725118', 'independent', null, 'pending');
+  ('00000000-0000-0000-0000-000000725410', '00000000-0000-0000-0000-000000725118', 'independent', null, 'pending'),
+  ('00000000-0000-0000-0000-000000725411', '00000000-0000-0000-0000-000000725120', 'independent', null, 'pending');
 update public.agent_applications set rejection_reason = 'motivo previo del rechazo final'
   where id = '00000000-0000-0000-0000-000000725406';
 
@@ -504,8 +512,8 @@ select pg_temp.act_as_studio('00000000-0000-0000-0000-000000725101');
 select throws_ok(
   $$ update public.agencies set status = 'active'
      where id = '00000000-0000-0000-0000-000000725206' $$,
-  'P0001', 'ALREADY_ACTIVE_MEMBER',
-  '§6 aprobar una agencia cuyo creador ya es owner/agent activo en OTRA agencia truena tipado'
+  'P0001', 'MEMBER_OF_OTHER_AGENCY',
+  '§6 aprobar una agencia cuyo creador ya es owner/agent activo en OTRA agencia truena tipado (fix 99: antes ALREADY_ACTIVE_MEMBER, sin guía; ahora nombre + hint operativo — el admin debe removerlo/cambiarlo de la otra agencia antes de reintentar, no hay auto-switch)'
 );
 select is(
   (select status::text from public.agencies where id = '00000000-0000-0000-0000-000000725206'),
@@ -563,6 +571,41 @@ select is(
   (select agency_id from public.users where id = '00000000-0000-0000-0000-000000725107'),
   '00000000-0000-0000-0000-000000725207'::uuid,
   '§7 users.agency_id se actualiza a la nueva agencia (antes era NULL, independiente)'
+);
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- §7-bis) AGENCIAS — aprobar la agencia de un creador que YA es admin NO lo
+--         degrada a 'agent' (DELTA, fix 99 — hallazgo del review PR #41)
+-- ════════════════════════════════════════════════════════════════════════════
+
+select pg_temp.act_as_studio('00000000-0000-0000-0000-000000725101');
+select lives_ok(
+  $$ update public.agencies set status = 'active'
+     where id = '00000000-0000-0000-0000-000000725208' $$,
+  '§7-bis admin aprueba la agencia de un creador que YA es admin sin error'
+);
+select is(
+  (select status::text from public.agencies where id = '00000000-0000-0000-0000-000000725208'),
+  'active',
+  '§7-bis la agencia queda active'
+);
+select is(
+  (select role::text from public.users where id = '00000000-0000-0000-0000-000000725119'),
+  'admin',
+  '§7-bis (fix 99) el creador admin CONSERVA role=admin -- antes se degradaba a agent en silencio'
+);
+select is(
+  (select agency_id from public.users where id = '00000000-0000-0000-0000-000000725119'),
+  '00000000-0000-0000-0000-000000725208'::uuid,
+  '§7-bis users.agency_id SÍ se denormaliza a la nueva agencia aunque el rol no cambie'
+);
+select is(
+  (select count(*)::int from public.agency_members
+    where agency_id = '00000000-0000-0000-0000-000000725208'
+      and user_id = '00000000-0000-0000-0000-000000725119'
+      and member_role = 'owner' and status = 'active'),
+  1,
+  '§7-bis se crea la membresía owner igual -- un admin SÍ puede ser owner de una agencia sin perder su rol'
 );
 
 -- ════════════════════════════════════════════════════════════════════════════
@@ -687,6 +730,31 @@ select is(
       and action_type = 'approve_agent_application'),
   1,
   '§11 se registra exactamente 1 admin_actions de approve_agent_application'
+);
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- §11-bis) AGENT_APPLICATIONS — aprobar independent de un solicitante que YA es
+--          admin NO lo degrada (DELTA, fix 99 — mismo defecto que §7-bis)
+-- ════════════════════════════════════════════════════════════════════════════
+
+select pg_temp.act_as('00000000-0000-0000-0000-000000725101', 'authenticated');
+select lives_ok(
+  $$ update public.agent_applications set status = 'approved'
+     where id = '00000000-0000-0000-0000-000000725411' $$,
+  '§11-bis admin aprueba application independent de un solicitante que YA es admin sin error'
+);
+reset role;
+select is(
+  (select role::text from public.users where id = '00000000-0000-0000-0000-000000725120'),
+  'admin',
+  '§11-bis (fix 99) el solicitante admin CONSERVA role=admin -- antes se degradaba a agent en silencio'
+);
+select is(
+  (select count(*)::int from public.admin_actions
+    where entity_type = 'agent_application' and entity_id = '00000000-0000-0000-0000-000000725411'
+      and action_type = 'approve_agent_application'),
+  1,
+  '§11-bis igual se audita aunque no haya degradación'
 );
 
 -- ════════════════════════════════════════════════════════════════════════════
