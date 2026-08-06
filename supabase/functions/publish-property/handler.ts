@@ -215,6 +215,16 @@ export async function handler(
   });
 
   if (!publishResult.ok) {
+    // Fix 100: AGENCY_MEMBERSHIP_SUSPENDED es un error de AUTORIZACIÓN (el
+    // publisher/RPC bloqueó a un agente suspendido en su agencia), no un fallo
+    // de servidor — 403, no el 500 catch-all del resto de errores del publisher.
+    if (publishResult.error_code === "AGENCY_MEMBERSHIP_SUSPENDED") {
+      return error_response(
+        publishResult.error_code,
+        "Tu cuenta está suspendida en tu inmobiliaria — no puedes publicar mientras tanto",
+        403,
+      );
+    }
     return error_response(
       publishResult.error_code,
       publishResult.message ?? "Error al publicar la propiedad",

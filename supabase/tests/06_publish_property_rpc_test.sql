@@ -13,7 +13,7 @@
 -- en vez del INSERT.
 
 begin;
-select plan(26);
+select plan(34);
 
 -- ── Fixtures: agentes (uno por escenario, aislados) ───────────────────────────
 -- El trigger handle_new_user (migración 0002) crea public.users al insertar en auth.users.
@@ -297,6 +297,13 @@ select is(
   '18) enlace feliz: el property_id devuelto por el RPC coincide con la propiedad realmente creada'
 );
 
+select is(
+  (select agency_id from public.properties
+    where owner_user_id = '00000000-0000-0000-0000-000000000c01'),
+  null,
+  '18-bis) (fix 100) AGENT_HAPPY es independiente (sin agency_members) -- agency_id queda NULL, no letra muerta por default erróneo'
+);
+
 -- ── Rechazo cross-agent: el video en vuelo pertenece a OTRO agente (seguridad) ──
 
 insert into public.property_videos
@@ -448,6 +455,198 @@ select is(
     where owner_user_id = '00000000-0000-0000-0000-000000000c06'),
   0,
   '26) rechazo cloudflare_uid inexistente: atomicidad — no se creó propiedad huérfana'
+);
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- Fix #100 — denormalización de agency_id + suspensión efectiva en el publish
+-- real (RPC SECURITY DEFINER, bypasea RLS -- por eso el guard vive AQUÍ, no solo
+-- en la policy properties_insert de 20260805000009 que solo cubre el INSERT
+-- directo por PostgREST). Origen: review PR #41, hallazgos ALTO.
+-- ════════════════════════════════════════════════════════════════════════════
+
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-000000000c30', 'agente_miembro_activo@urbea.mx'),
+  ('00000000-0000-0000-0000-000000000c31', 'agente_suspendido@urbea.mx');
+update public.users set role = 'agent'
+ where id in (
+   '00000000-0000-0000-0000-000000000c30',
+   '00000000-0000-0000-0000-000000000c31'
+ );
+
+insert into public.agencies (id, name, slug, status, created_by_user_id) values
+  ('00000000-0000-0000-0000-000000000c40', 'Inmobiliaria RPC Denorm', 'inmo-rpc-denorm', 'active', '00000000-0000-0000-0000-000000000c30');
+
+insert into public.agency_members (id, agency_id, user_id, member_role, status) values
+  ('00000000-0000-0000-0000-000000000c41', '00000000-0000-0000-0000-000000000c40', '00000000-0000-0000-0000-000000000c30', 'agent', 'active'),
+  ('00000000-0000-0000-0000-000000000c42', '00000000-0000-0000-0000-000000000c40', '00000000-0000-0000-0000-000000000c31', 'agent', 'suspended');
+
+-- ── 27-28) Miembro ACTIVO: agency_id se denormaliza a su agencia ──────────────
+
+insert into public.property_videos
+  (id, property_id, agent_id, status, position, cloudflare_uid, tus_upload_url)
+values (
+  '00000000-0000-0000-0000-000000000c50',
+  null,
+  '00000000-0000-0000-0000-000000000c30',
+  'ready',
+  1,
+  'cfuid-miembro-activo-01',
+  'https://upload.example/miembro-activo'
+);
+
+create temp table result_miembro_activo (
+  ok           boolean,
+  property_id  uuid,
+  err_sqlstate text,
+  err_message  text
+);
+
+do $$
+declare
+  v_property_id uuid;
+begin
+  select property_id into v_property_id
+    from public.publish_property_atomic(
+      p_user_id             => '00000000-0000-0000-0000-000000000c30'::uuid,
+      p_operation_type      => 'rent',
+      p_property_type       => 'departamento',
+      p_price               => 9500.00,
+      p_address             => 'Calle Miembro Activo 1',
+      p_lat                 => 19.5,
+      p_lng                 => -99.5,
+      p_cloudflare_uid      => 'cfuid-miembro-activo-01'
+    );
+  insert into result_miembro_activo values (true, v_property_id, null, null);
+exception when others then
+  insert into result_miembro_activo values (false, null, sqlstate, sqlerrm);
+end $$;
+
+select is(
+  (select ok from result_miembro_activo),
+  true,
+  '27) (fix 100) un agente con membresía ACTIVA sí puede publicar sin excepción'
+);
+
+select is(
+  (select agency_id from public.properties
+    where owner_user_id = '00000000-0000-0000-0000-000000000c30'),
+  '00000000-0000-0000-0000-000000000c40'::uuid,
+  '28) (fix 100) properties.agency_id se denormaliza a la agencia de la membresía ACTIVA del publicante'
+);
+
+-- ── 29-31) Miembro SUSPENDIDO: bloqueado, con atomicidad total ────────────────
+
+insert into public.property_videos
+  (id, property_id, agent_id, status, position, cloudflare_uid, tus_upload_url)
+values (
+  '00000000-0000-0000-0000-000000000c51',
+  null,
+  '00000000-0000-0000-0000-000000000c31',
+  'ready',
+  1,
+  'cfuid-suspendido-01',
+  'https://upload.example/suspendido'
+);
+
+select throws_ok(
+  $$
+    select * from public.publish_property_atomic(
+      p_user_id             => '00000000-0000-0000-0000-000000000c31'::uuid,
+      p_operation_type      => 'rent',
+      p_property_type       => 'departamento',
+      p_price               => 8500.00,
+      p_address             => 'Calle Suspendido 1',
+      p_lat                 => 19.6,
+      p_lng                 => -99.6,
+      p_cloudflare_uid      => 'cfuid-suspendido-01'
+    )
+  $$,
+  'P0001', 'AGENCY_MEMBERSHIP_SUSPENDED',
+  '29) (fix 100) agente SUSPENDIDO en su agencia no puede publicar vía el RPC real (antes: bypaseaba la RLS de properties_insert por ser SECURITY DEFINER)'
+);
+
+select is(
+  (select count(*)::int from public.properties
+    where owner_user_id = '00000000-0000-0000-0000-000000000c31'),
+  0,
+  '30) suspendido bloqueado: atomicidad -- no se creó ninguna propiedad'
+);
+
+select is(
+  (select property_id from public.property_videos
+    where id = '00000000-0000-0000-0000-000000000c51'),
+  null,
+  '31) suspendido bloqueado: atomicidad -- el video en vuelo sigue SIN enlazar (property_id NULL)'
+);
+
+-- ── 32) Doble membresía (active en X + suspended vieja en Y): el desempate
+--        prioriza la fila ACTIVE -- NO bloquea a un agente realmente activo ──
+-- Alcanzable: redeem_invitation_atomic/upgrade_to_agent_atomic solo chequean
+-- unique_violation sobre el índice de status='active' (0003), nunca bloquean
+-- el redeem por una fila 'suspended' preexistente en OTRA agencia.
+
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-000000000c33', 'agente_doble_membresia@urbea.mx');
+update public.users set role = 'agent' where id = '00000000-0000-0000-0000-000000000c33';
+
+insert into public.agencies (id, name, slug, status, created_by_user_id) values
+  ('00000000-0000-0000-0000-000000000c43', 'Inmobiliaria RPC Vieja Suspendida', 'inmo-rpc-vieja-suspendida', 'active', '00000000-0000-0000-0000-000000000c30');
+
+insert into public.agency_members (id, agency_id, user_id, member_role, status) values
+  ('00000000-0000-0000-0000-000000000c44', '00000000-0000-0000-0000-000000000c43', '00000000-0000-0000-0000-000000000c33', 'agent', 'suspended'),
+  ('00000000-0000-0000-0000-000000000c45', '00000000-0000-0000-0000-000000000c40', '00000000-0000-0000-0000-000000000c33', 'agent', 'active');
+
+insert into public.property_videos
+  (id, property_id, agent_id, status, position, cloudflare_uid, tus_upload_url)
+values (
+  '00000000-0000-0000-0000-000000000c52',
+  null,
+  '00000000-0000-0000-0000-000000000c33',
+  'ready',
+  1,
+  'cfuid-doble-membresia-01',
+  'https://upload.example/doble-membresia'
+);
+
+create temp table result_doble_membresia (
+  ok           boolean,
+  property_id  uuid,
+  err_sqlstate text,
+  err_message  text
+);
+
+do $$
+declare
+  v_property_id uuid;
+begin
+  select property_id into v_property_id
+    from public.publish_property_atomic(
+      p_user_id             => '00000000-0000-0000-0000-000000000c33'::uuid,
+      p_operation_type      => 'rent',
+      p_property_type       => 'departamento',
+      p_price               => 7500.00,
+      p_address             => 'Calle Doble Membresia 1',
+      p_lat                 => 19.7,
+      p_lng                 => -99.7,
+      p_cloudflare_uid      => 'cfuid-doble-membresia-01'
+    );
+  insert into result_doble_membresia values (true, v_property_id, null, null);
+exception when others then
+  insert into result_doble_membresia values (false, null, sqlstate, sqlerrm);
+end $$;
+
+select is(
+  (select ok from result_doble_membresia),
+  true,
+  '32) (fix 100) doble membresía: el desempate ACTIVE-primero no bloquea a un agente realmente activo por una fila suspended vieja de otra agencia -- ' ||
+  coalesce((select err_message from result_doble_membresia), '')
+);
+
+select is(
+  (select agency_id from public.properties
+    where owner_user_id = '00000000-0000-0000-0000-000000000c33'),
+  '00000000-0000-0000-0000-000000000c40'::uuid,
+  '33) (fix 100) doble membresía: agency_id denormalizado es el de la fila ACTIVE (c40), NO el de la suspended (c43)'
 );
 
 select * from finish();
