@@ -134,7 +134,7 @@
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(78);
+select plan(82);
 
 create or replace function pg_temp.act_as(p_uid uuid, p_role text default 'authenticated')
 returns void language plpgsql as $$
@@ -175,9 +175,13 @@ insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-000000725113', 'app_final_rejected@test.local'),
   ('00000000-0000-0000-0000-000000725114', 'app_noop@test.local'),
   ('00000000-0000-0000-0000-000000725115', 'app_selfupdate@test.local'),
-  ('00000000-0000-0000-0000-000000725116', 'app_actor_gate@test.local');
+  ('00000000-0000-0000-0000-000000725116', 'app_actor_gate@test.local'),
+  ('00000000-0000-0000-0000-000000725117', 'admin2_71x5@test.local'),
+  ('00000000-0000-0000-0000-000000725118', 'app_precedencia_jwt_guc@test.local');
 
 update public.users set role = 'admin' where id = '00000000-0000-0000-0000-000000725101';
+-- Segundo admin (D4-ancla §16): existe SOLO para probar que el GUC pierde frente al JWT.
+update public.users set role = 'admin' where id = '00000000-0000-0000-0000-000000725117';
 -- El creador de ag_pending_already_agent YA es agent (independiente, sin membresía
 -- ni agencia) -- fixture del edge case (D5/§6).
 update public.users set role = 'agent', agency_id = null
@@ -214,7 +218,8 @@ insert into public.agent_applications (id, user_id, application_type, agency_id,
   ('00000000-0000-0000-0000-000000725406', '00000000-0000-0000-0000-000000725113', 'independent', null, 'rejected'),
   ('00000000-0000-0000-0000-000000725407', '00000000-0000-0000-0000-000000725114', 'independent', null, 'pending'),
   ('00000000-0000-0000-0000-000000725408', '00000000-0000-0000-0000-000000725115', 'independent', null, 'pending'),
-  ('00000000-0000-0000-0000-000000725409', '00000000-0000-0000-0000-000000725116', 'independent', null, 'pending');
+  ('00000000-0000-0000-0000-000000725409', '00000000-0000-0000-0000-000000725116', 'independent', null, 'pending'),
+  ('00000000-0000-0000-0000-000000725410', '00000000-0000-0000-0000-000000725118', 'independent', null, 'pending');
 update public.agent_applications set rejection_reason = 'motivo previo del rechazo final'
   where id = '00000000-0000-0000-0000-000000725406';
 
@@ -363,6 +368,26 @@ select is(
     where entity_type = 'agency' and entity_id = '00000000-0000-0000-0000-000000725201'),
   0,
   '§3 el no-op no generó ninguna fila de auditoría'
+);
+
+-- 3-bis) [DELTA-ANCLA, simetría opcional] mismo no-op pero CON un admin resuelto
+--        (Studio identificado vía GUC): tampoco debe auditar -- el WHEN clause debe
+--        saltarse el trigger por completo independientemente de si hay actor o no,
+--        no solo "cuando conviene". Mata un mutante que quitara/debilitara el WHEN
+--        y dependiera de un chequeo interno "if old=new then return" post-resolve
+--        (que sí llamaría a resolve_admin_actor y, con un actor real, podría colarse
+--        a insertar auditoría igual).
+select pg_temp.act_as_studio('00000000-0000-0000-0000-000000725101');
+select lives_ok(
+  $$ update public.agencies set status = 'active'
+     where id = '00000000-0000-0000-0000-000000725201' $$,
+  '§3-bis UPDATE que reescribe el mismo status (active->active) no lanza error CON admin identificado'
+);
+select is(
+  (select count(*)::int from public.admin_actions
+    where entity_type = 'agency' and entity_id = '00000000-0000-0000-0000-000000725201'),
+  0,
+  '§3-bis el no-op tampoco audita aunque el actor SÍ sea un admin resuelto'
 );
 
 -- ════════════════════════════════════════════════════════════════════════════
@@ -755,6 +780,34 @@ select is(
     where entity_type = 'agent_application' and entity_id = '00000000-0000-0000-0000-000000725407'),
   0,
   '§14 el no-op no generó ninguna fila de auditoría'
+);
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- §16) [DELTA-ANCLA] precedencia JWT > GUC en private.resolve_admin_actor() (D4)
+-- ════════════════════════════════════════════════════════════════════════════
+-- Mata el mutante: invertir el coalesce de resolve_admin_actor() (que el GUC gane
+-- sobre auth.uid(), en vez de al revés) pasaría igual las 559 pruebas anteriores,
+-- porque ninguna sección ejercita JWT y GUC A LA VEZ con dos admins DISTINTOS --
+-- todas usan uno u otro, nunca los dos simultáneos. Sin este anclaje, un admin real
+-- autenticado (JWT) podría atribuirle la auditoría a OTRO admin con solo dejar un
+-- GUC de sesión con valor ajeno (o restos de una llamada anterior) -- justo lo que
+-- D4 dice defender.
+--
+-- Escenario: JWT del admin1 (725101) + GUC apuntando al admin2 (725117) al mismo
+-- tiempo -> reviewed_by_admin_id (y, si el mutante ganara, también admin_actions.
+-- admin_id) DEBE quedar en el admin1 (JWT), nunca en el admin2 (GUC).
+select pg_temp.act_as('00000000-0000-0000-0000-000000725101', 'authenticated');
+select set_config('urbea.admin_actor_id', '00000000-0000-0000-0000-000000725117', true);
+select lives_ok(
+  $$ update public.agent_applications set status = 'approved'
+     where id = '00000000-0000-0000-0000-000000725410' $$,
+  '§16 [DELTA-ANCLA] JWT admin1 + GUC admin2 simultáneos -> aprobar no lanza error'
+);
+reset role;
+select is(
+  (select reviewed_by_admin_id from public.agent_applications where id = '00000000-0000-0000-0000-000000725410'),
+  '00000000-0000-0000-0000-000000725101'::uuid,
+  '§16 [DELTA-ANCLA] reviewed_by_admin_id queda en el admin del JWT (725101), NUNCA el del GUC (725117) -- ancla la precedencia D4'
 );
 
 -- ════════════════════════════════════════════════════════════════════════════
