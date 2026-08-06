@@ -28,6 +28,7 @@ import { useRouter } from 'expo-router';
 import {
   Bookmarks,
   Briefcase,
+  Buildings,
   DotsThreeVertical,
   PencilSimple,
   SignOut,
@@ -95,6 +96,10 @@ export function ProfileScreen({ agent_id, is_own_profile, under_floating_tab_bar
     router.push('/upgrade');
   }
 
+  function handle_register_agency() {
+    router.push('/agency/register');
+  }
+
   async function handle_sign_out() {
     Alert.alert(
       'Cerrar sesión',
@@ -120,8 +125,11 @@ export function ProfileScreen({ agent_id, is_own_profile, under_floating_tab_bar
   // Items del menú "⋯" — orden: navegación primero, cerrar sesión al final.
   // "Invitar agentes" solo para owners de agencia (#34).
   // "Guardados" vive aquí desde que salió de la tab bar (composición del mockup).
-  // "Convertirme en agente" solo para buscadores (#71.3) — un agent/admin no
-  // tiene nada que canjear ni solicitar.
+  // "Convertirme en agente" y "Registrar mi inmobiliaria" solo para
+  // buscadores (#71.3 / #71.4) — un agent/admin no tiene nada que canjear,
+  // solicitar o fundar. Son caminos DISTINTOS: el primero une la cuenta a
+  // una inmobiliaria EXISTENTE; el segundo funda una NUEVA (pending_approval,
+  // sin cambio de rol hasta 71.5).
   const menu_items: ProfileMenuItem[] = [
     { key: 'saved', label: 'Guardados', icon: Bookmarks, onPress: () => router.push('/saved') },
     { key: 'listings', label: 'Mis publicaciones', icon: Storefront, onPress: handle_my_listings },
@@ -129,7 +137,10 @@ export function ProfileScreen({ agent_id, is_own_profile, under_floating_tab_bar
       ? [{ key: 'invite', label: 'Invitar agentes', icon: UserPlus, onPress: handle_invite_agents }]
       : []),
     ...(user?.role === 'user'
-      ? [{ key: 'upgrade', label: 'Convertirme en agente', icon: Briefcase, onPress: handle_upgrade_to_agent }]
+      ? [
+          { key: 'upgrade', label: 'Convertirme en agente', icon: Briefcase, onPress: handle_upgrade_to_agent },
+          { key: 'register_agency', label: 'Registrar mi inmobiliaria', icon: Buildings, onPress: handle_register_agency },
+        ]
       : []),
     { key: 'edit', label: 'Editar perfil', icon: PencilSimple, onPress: handle_edit_profile },
     {
