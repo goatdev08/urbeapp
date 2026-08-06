@@ -27,6 +27,7 @@ import {
 import { useRouter } from 'expo-router';
 import {
   Bookmarks,
+  Briefcase,
   DotsThreeVertical,
   PencilSimple,
   SignOut,
@@ -69,7 +70,7 @@ export interface ProfileScreenProps {
 export function ProfileScreen({ agent_id, is_own_profile, under_floating_tab_bar = false }: ProfileScreenProps) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { signOut } = useAuth();
+  const { signOut, user } = useAuth();
   const { loading, error, data } = useAgentProfile(agent_id);
   const { loading: stats_loading, stats } = useAgentStats(agent_id);
   // Owner de agencia → opción "Invitar agentes" en el menú (tarea #34)
@@ -88,6 +89,10 @@ export function ProfileScreen({ agent_id, is_own_profile, under_floating_tab_bar
 
   function handle_invite_agents() {
     router.push('/agency/invitations');
+  }
+
+  function handle_upgrade_to_agent() {
+    router.push('/upgrade');
   }
 
   async function handle_sign_out() {
@@ -115,11 +120,16 @@ export function ProfileScreen({ agent_id, is_own_profile, under_floating_tab_bar
   // Items del menú "⋯" — orden: navegación primero, cerrar sesión al final.
   // "Invitar agentes" solo para owners de agencia (#34).
   // "Guardados" vive aquí desde que salió de la tab bar (composición del mockup).
+  // "Convertirme en agente" solo para buscadores (#71.3) — un agent/admin no
+  // tiene nada que canjear ni solicitar.
   const menu_items: ProfileMenuItem[] = [
     { key: 'saved', label: 'Guardados', icon: Bookmarks, onPress: () => router.push('/saved') },
     { key: 'listings', label: 'Mis publicaciones', icon: Storefront, onPress: handle_my_listings },
     ...(isOwner
       ? [{ key: 'invite', label: 'Invitar agentes', icon: UserPlus, onPress: handle_invite_agents }]
+      : []),
+    ...(user?.role === 'user'
+      ? [{ key: 'upgrade', label: 'Convertirme en agente', icon: Briefcase, onPress: handle_upgrade_to_agent }]
       : []),
     { key: 'edit', label: 'Editar perfil', icon: PencilSimple, onPress: handle_edit_profile },
     {
