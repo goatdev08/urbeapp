@@ -1,11 +1,18 @@
 ---
 tipo: estado
-actualizado: 2026-07-31
+actualizado: 2026-08-05
 ---
 
 # Estado actual
 
 > Narrativa de "dónde estamos hoy". El **qué sigue / qué está hecho** vive en **Taskmaster** (`task-master list`), no aquí.
+
+## Hoy (2026-08-05)
+
+- **✅ #71 (Ola 1 — Roles y multi-tenant) CERRADA: 7/7 subtareas, TDD estricto en 5, guardian PASS ×5.** El multi-tenant completo quedó vivo en local: jerarquía de agencia a **4 niveles** (owner/admin/agent/viewer con matriz RLS), **upgrade de buscador a agente** (wizard móvil con Camino A token → `upgrade_to_agent_atomic` inmediato, y Camino B solicitud → `agent_applications`), **registro self-service de inmobiliaria** (nace `pending_approval`, sin operar), **aprobaciones del super-admin por Studio** (triggers de máquina de estados + auditoría `admin_actions` inmutable — aprobar una agencia crea la membresía owner y promueve el rol), y **gestión de miembros** (suspend/reactivate/remove con anti-IDOR; suspendido ya NO publica — gap real que destapó el RED). Rama local `tarea/71-roles-multitenant`, ~24 commits, **PR pendiente de decisión de Abraham**.
+- **🔍 Los hallazgos que más valieron los dieron los REDs y el guardian:** (a) `agent_applications` existía desde 0003, latente e idéntica a la tabla que el plan pedía crear — se **reusó** (Abraham aprobó en checkpoint); (b) un agente suspendido seguía publicando (la RLS nunca miraba `agency_members.status`) — cerrado; (c) tres módulos de seguridad quedaron sin red en su primer pase (rol en request-agent-upgrade, precedencia JWT>GUC del actor de auditoría, `member_manager.ts` completo) — los tres tienen ahora **tests ancla que matan los mutantes** que los demostraron.
+- **🧾 Deuda nueva agendada, no dejada en el chat:** **#96** (EXECUTE a PUBLIC en `private.*`), **#97** (INSERT directo de `agencies` por authenticated salta la validación de la EF), **#98** (un owner puede irse y dejar la agencia sin owner activo — decisión de producto). Followers al cambiar de agencia → **#78** (tabla `follows` no existe).
+- **📊 Suites: 592 pgTAP (27 archivos) · 772 Deno · tsc/lint 0.** Nada desplegado al remoto todavía (deploy-day sigue gateado por #90).
 
 ## Hoy (2026-07-31)
 

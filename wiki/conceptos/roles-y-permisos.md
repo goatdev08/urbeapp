@@ -3,8 +3,8 @@ tipo: concepto
 dominio: producto
 estado: vivo
 fuentes: [docs/PRD.md §4, docs/PRD-MVP-demo.md]
-codigo: [supabase/migrations/20260604000002_identity_users.sql, supabase/migrations/20260708000001_signup_default_buscador.sql, supabase/migrations/20260729000001_register_user_atomic_rpc.sql, supabase/functions/register/, mobile/app/register.tsx, mobile/src/features/auth/context.tsx, mobile/src/features/auth/api.ts]
-actualizado: 2026-07-30
+codigo: [supabase/migrations/20260604000002_identity_users.sql, supabase/migrations/20260708000001_signup_default_buscador.sql, supabase/migrations/20260729000001_register_user_atomic_rpc.sql, supabase/functions/register/, mobile/app/register.tsx, mobile/src/features/auth/context.tsx, mobile/src/features/auth/api.ts, supabase/migrations/20260805000001_premium_derived_helper.sql, supabase/migrations/20260805000004_upgrade_to_agent_rpc.sql, supabase/functions/upgrade-to-agent/, supabase/functions/request-agent-upgrade/, mobile/app/(protected)/upgrade.tsx, mobile/src/features/upgrade/]
+actualizado: 2026-08-05
 ---
 
 # Roles y permisos
@@ -21,6 +21,13 @@ actualizado: 2026-07-30
 - **Modo `agent` (código de invitación):** valida/canjea el código → `redeem_invitation_atomic` sube a `role='agent'` + `agency_id` **explícitos** → `/onboarding`. Alta de agente = SOLO por invitación de un owner. Mismo patrón atómico que #93 tomó como espejo para el registro libre.
 - ⚠️ **Linaje del default:** `0002` sembró `role='user'` default. `20260707000001_signup_default_agent` (regresión del flash de demo, PR #15) forzó `role='agent'` para TODO registro. **`20260708000001_signup_default_buscador` (tarea #50) revierte** a la delegación al default. `pg_get_functiondef(handle_new_user)` ya no contiene `'agent'`. Verificado por pgTAP `supabase/tests/10_signup_default_role_test.sql` (signup→user + no-regresión invitación→agent).
 - ⚠️ **`/auth/v1/signup` público cerrado a `anon`** (#93.4): `[auth] enable_signup=false` en `supabase/config.toml`, local verificado (`422 signup_disabled`), remoto pendiente del runbook de deploy (bitácora de 93.4). Ni el registro libre (EF `register`, API admin) ni `redeem_invitation_atomic` (también API admin) pasan por `/signup`, así que no se ven afectados.
+
+## Subida de rol post-registro (Ola 1, #71 · 2026-08-05)
+Un buscador (`role='user'`) puede subir a agente DESPUÉS de registrarse, desde el ProfileMenu:
+- **"Convertirme en agente"** (`mobile/app/(protected)/upgrade.tsx`, wizard 2 caminos):
+  - **Camino A (token):** valida con `validate-invitation` (reusada) → EF `upgrade-to-agent` → RPC **`upgrade_to_agent_atomic(p_user_id, p_token)`** (20260805000004, espejo de `redeem_invitation_atomic` para usuario YA existente — NO se refactorizó la original a propósito; sin `user_consents` nuevos, ya consintió al registrarse). 8 errores P0001 tipados (`TOKEN_NOT_FOUND/EXPIRED/REVOKED/MAX_USES`, `AGENCY_INACTIVE`, `ALREADY_AGENT`, `ALREADY_ACTIVE_MEMBER`, `USER_NOT_FOUND`). Tras el 200 el cliente hace `auth.refreshSession()` → el AuthProvider recarga el perfil con el rol nuevo.
+  - **Camino B (solicitud):** EF `request-agent-upgrade` inserta en **`agent_applications`** (tabla de 0003 REUSADA — estaba latente; solo se añadió la col `reason`, 20260805000005) con el client del usuario (RLS activa). El rol NO cambia hasta que un admin aprueba ([[inmobiliarias-y-agentes]] §aprobaciones). 🔒 chequeo server-side: un `agent`/`admin` recibe 409 `ALREADY_AGENT` (el rol se resuelve por SELECT con service key, nunca del cliente).
+- **Premium derivado** (`private.is_premium(uid)`, 20260805000001): premium NO es rol — se deriva de "tiene ≥1 property viva"; la rama compras llega con #76.
 
 ## Actores en la demo
 - **admin** — equipo Urbea; da de alta inmobiliarias y owners (panel admin).

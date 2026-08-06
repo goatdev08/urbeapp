@@ -4955,7 +4955,7 @@
         "description": "Modelo de roles completo del PRD §4: visitante→registrado→premium→agente→inmobiliaria→admin, inmobiliaria como entidad organizacional, y upgrade self-service (A/B).",
         "details": "PRD §4 (4.1–4.8). Hoy todo entra como `agent`. Falta: jerarquía de roles con permisos, entidad inmobiliaria (owner+members), flujos de cambio de rol (§4.2), premium (§4.5), upgrade self-service.  Toca RLS, migraciones, EF y UI de perfil/config. Épica del camino a producción (ADR 0008 / docs/PRD-beta.md). Spec detallado (modelo de datos, RLS, EF, pantallas, estados, edge cases, tests, subtareas) se redacta SECUENCIAL al entrar su ola, con aprobación de Abraham; add-task roto → subtareas por escritura directa en tasks.json.",
         "testStrategy": "TDD estricto en lógica crítica (supabase/functions/**, migrations/**, lib/hooks/validation): RED→GREEN→guardian. Verificación ligera (tsc/lint/smoke) en UI. Se detalla al specificar la ola.",
-        "status": "in-progress",
+        "status": "done",
         "dependencies": [
           "66",
           "72"
@@ -5049,17 +5049,18 @@
             "id": 7,
             "title": "Ingest al vault (roles/multi-tenant)",
             "description": "Documentar el modelo de roles/agencia y flujos de upgrade en el vault.",
-            "details": "mapa-codebase (helpers premium, agent_request, transiciones), concepto roles-y-permisos / inmobiliaria (estado vivo), log.md. Enlazar invitaciones existentes.\n<info added on 2026-08-05T21:07:06.706Z>\nBased on the user request, this is a plan for the ingest phase that should occur after subtask 71.6 is completed. Let me analyze the codebase structure to provide specific guidance.After closing subtask 71.6 (agent management and agency switching), update wiki/codebase/mapa-codebase.md with references to helpers for premium/agent management and agent_request transitions. Update wiki/conceptos/roles-y-permisos.md to mark estado: vivo and add codigo: entries with real file paths from 71.6 implementation (helpers, RLS policies, Edge Functions, mobile screens/components). Update wiki/conceptos/inmobiliarias-y-agentes.md similarly (estado: vivo, codigo: with paths for agency switching logic, agent listing, invitation linking). Add entry to wiki/log.md following the append-only format: ## [YYYY-MM-DD] tarea | #71.6 … with summary of what was implemented. Evaluate whether agent_request table or permission matrix warrants a new vault page (create only if the scope justifies it; otherwise incorporate into existing concept pages). Verify existing invitation flow linkage is documented in inmobiliarias-y-agentes.md. All paths must be real file system paths from the implementation, not placeholders.\n</info added on 2026-08-05T21:07:06.706Z>",
+            "details": "mapa-codebase (helpers premium, agent_request, transiciones), concepto roles-y-permisos / inmobiliaria (estado vivo), log.md. Enlazar invitaciones existentes.\n<info added on 2026-08-05T21:07:06.706Z>\nBased on the user request, this is a plan for the ingest phase that should occur after subtask 71.6 is completed. Let me analyze the codebase structure to provide specific guidance.After closing subtask 71.6 (agent management and agency switching), update wiki/codebase/mapa-codebase.md with references to helpers for premium/agent management and agent_request transitions. Update wiki/conceptos/roles-y-permisos.md to mark estado: vivo and add codigo: entries with real file paths from 71.6 implementation (helpers, RLS policies, Edge Functions, mobile screens/components). Update wiki/conceptos/inmobiliarias-y-agentes.md similarly (estado: vivo, codigo: with paths for agency switching logic, agent listing, invitation linking). Add entry to wiki/log.md following the append-only format: ## [YYYY-MM-DD] tarea | #71.6 … with summary of what was implemented. Evaluate whether agent_request table or permission matrix warrants a new vault page (create only if the scope justifies it; otherwise incorporate into existing concept pages). Verify existing invitation flow linkage is documented in inmobiliarias-y-agentes.md. All paths must be real file system paths from the implementation, not placeholders.\n</info added on 2026-08-05T21:07:06.706Z>\n<info added on 2026-08-06T02:47:21.159Z>\nCompleted vault ingest for Ola 1 roles/multi-tenant (task 71): wiki/conceptos/roles-y-permisos.md updated with upgrade post-registro section and is_premium field; wiki/conceptos/inmobiliarias-y-agentes.md expanded with 4-level permission enum, permission matrix, and complete Ola 1 section covering register-agency, trigger-based approvals, and member management; wiki/codebase/mapa-codebase.md added row \"Roles/Multi-tenant Ola 1 #71\" listing 9 migrations (0001-0010 range, roles/permissions/agencies/members/invites/agent_request) plus 4 Edge Functions (register-agency, redeem-invitation, request-agent-upgrade, manage-agency-member); wiki/log.md entry added for 2026-08-05; wiki/estado/estado-actual.md narrative updated with session completion status. Technical debt items referenced in documentation: task 96 (remove email/password from users table), task 97 (migrate agency denorm to view), task 98 (handle orphaned owner scenario). Followers feature (task 78) cross-referenced as next multi-tenant wave. All paths verified against actual file system locations from 71.1-71.6 implementation.\n</info added on 2026-08-06T02:47:21.159Z>",
             "testStrategy": "Revisión de enlaces del vault; sin test de código.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               6
             ],
             "priority": "low",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-08-06T02:47:27.752Z"
           }
         ],
-        "updatedAt": "2026-08-06T02:44:13.416Z"
+        "updatedAt": "2026-08-06T02:47:27.752Z"
       },
       {
         "id": "72",
@@ -6627,9 +6628,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-08-06T02:44:13.416Z",
+      "lastModified": "2026-08-06T02:47:27.753Z",
       "taskCount": 98,
-      "completedCount": 61,
+      "completedCount": 62,
       "tags": [
         "master"
       ]
