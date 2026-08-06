@@ -14,7 +14,7 @@
  *
  * Subtarea 16.6.
  */
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -34,6 +34,7 @@ import {
   SignOut,
   Storefront,
   UserPlus,
+  Users,
 } from 'phosphor-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -41,6 +42,7 @@ import { colors, spacing, type_scale } from '@/theme/theme';
 import { BackButton } from '@/components/BackButton';
 import { useAuth } from '@/features/auth/context';
 import { useAgencyRole } from '@/features/leads/hooks/useAgencyRole';
+import { fetch_own_membership } from '@/features/agency/api';
 import { useAgentProfile } from './hooks/useAgentProfile';
 import { useAgentStats } from './hooks/useAgentStats';
 import { ProfileHeader } from './components/ProfileHeader';
@@ -78,6 +80,37 @@ export function ProfileScreen({ agent_id, is_own_profile, under_floating_tab_bar
   const { isOwner } = useAgencyRole();
   const [menu_visible, set_menu_visible] = useState(false);
 
+  // Owner O admin de agencia → opción "Miembros" (gestión de agentes, #71.6).
+  // useAgencyRole() no distingue 'admin' (union type angosta, tarea #28.1,
+  // previa a que el rol existiera — #71.2). Chequeo propio y liviano, sin
+  // tocar ese hook (fuera del footprint de esta subtarea).
+  const [can_manage_members, set_can_manage_members] = useState(false);
+
+  useEffect(() => {
+    if (!user?.id) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- guard "sin usuario"; resetea estado, no deriva UI (patrón useMyProperties.ts).
+      set_can_manage_members(false);
+      return;
+    }
+
+    let ignore = false;
+    const resolved_user_id = user.id;
+
+    async function load_own_role(): Promise<void> {
+      const membership = await fetch_own_membership(resolved_user_id);
+      if (ignore) return;
+      set_can_manage_members(
+        membership?.member_role === 'owner' || membership?.member_role === 'admin',
+      );
+    }
+
+    void load_own_role();
+
+    return () => {
+      ignore = true;
+    };
+  }, [user?.id]);
+
   // ── Handlers ──────────────────────────────────────────────────────────────
 
   function handle_edit_profile() {
@@ -90,6 +123,10 @@ export function ProfileScreen({ agent_id, is_own_profile, under_floating_tab_bar
 
   function handle_invite_agents() {
     router.push('/agency/invitations');
+  }
+
+  function handle_manage_members() {
+    router.push('/agency/members');
   }
 
   function handle_upgrade_to_agent() {
@@ -124,6 +161,7 @@ export function ProfileScreen({ agent_id, is_own_profile, under_floating_tab_bar
 
   // Items del menú "⋯" — orden: navegación primero, cerrar sesión al final.
   // "Invitar agentes" solo para owners de agencia (#34).
+  // "Miembros" para owner Y admin de agencia (#71.6 — gestión delegada §4.10).
   // "Guardados" vive aquí desde que salió de la tab bar (composición del mockup).
   // "Convertirme en agente" y "Registrar mi inmobiliaria" solo para
   // buscadores (#71.3 / #71.4) — un agent/admin no tiene nada que canjear,
@@ -135,6 +173,9 @@ export function ProfileScreen({ agent_id, is_own_profile, under_floating_tab_bar
     { key: 'listings', label: 'Mis publicaciones', icon: Storefront, onPress: handle_my_listings },
     ...(isOwner
       ? [{ key: 'invite', label: 'Invitar agentes', icon: UserPlus, onPress: handle_invite_agents }]
+      : []),
+    ...(can_manage_members
+      ? [{ key: 'members', label: 'Miembros', icon: Users, onPress: handle_manage_members }]
       : []),
     ...(user?.role === 'user'
       ? [
