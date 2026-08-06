@@ -212,10 +212,18 @@ select is(
 -- 14-16) Duplicados: slug/name (contra agencia YA activa) -> error tipado, atómico
 -- ════════════════════════════════════════════════════════════════════════════
 
+-- Escopado por created_by_user_id de los 3 usuarios de este fixture (7101/7102/7103)
+-- -- NO count(*) global: seed.sql siembra 3 agencias demo (status=active,
+-- ids 20000000-...) en cada `supabase db reset`, que contaminarían un conteo sin scope.
 select is(
-  (select count(*)::int from public.agencies),
+  (select count(*)::int from public.agencies
+    where created_by_user_id in (
+      '00000000-0000-0000-0000-000000007101',
+      '00000000-0000-0000-0000-000000007102',
+      '00000000-0000-0000-0000-000000007103'
+    )),
   3,
-  'pre-condición: 3 agencias existen antes de los intentos de duplicado (fixture + 2 happy path)'
+  'pre-condición: 3 agencias de este fixture existen antes de los intentos de duplicado (fixture + 2 happy path)'
 );
 
 select pg_temp.act_as(null, 'service_role');
@@ -243,9 +251,14 @@ select throws_ok(
 reset role;
 
 select is(
-  (select count(*)::int from public.agencies),
+  (select count(*)::int from public.agencies
+    where created_by_user_id in (
+      '00000000-0000-0000-0000-000000007101',
+      '00000000-0000-0000-0000-000000007102',
+      '00000000-0000-0000-0000-000000007103'
+    )),
   3,
-  'atomicidad: los intentos de duplicado NO agregan filas (siguen siendo 3)'
+  'atomicidad: los intentos de duplicado NO agregan filas (siguen siendo 3 de este fixture)'
 );
 
 -- ════════════════════════════════════════════════════════════════════════════
@@ -295,9 +308,14 @@ select throws_ok(
 reset role;
 
 select is(
-  (select count(*)::int from public.agencies),
+  (select count(*)::int from public.agencies
+    where created_by_user_id in (
+      '00000000-0000-0000-0000-000000007101',
+      '00000000-0000-0000-0000-000000007102',
+      '00000000-0000-0000-0000-000000007103'
+    )),
   3,
-  'atomicidad: cero filas nuevas tras los 3 intentos por FIELDS_INCOMPLETE (siguen siendo 3)'
+  'atomicidad: cero filas nuevas tras los 3 intentos por FIELDS_INCOMPLETE (siguen siendo 3 de este fixture)'
 );
 
 -- ════════════════════════════════════════════════════════════════════════════
