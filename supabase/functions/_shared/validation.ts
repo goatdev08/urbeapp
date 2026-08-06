@@ -267,6 +267,71 @@ export function parse_create_agency_input(
   };
 }
 
+// ── register-agency (subtarea 71.4, PRD §4.7) ────────────────────────────────
+// Mismas reglas name/slug que parse_create_agency_input (EMAIL_REGEX/SLUG_REGEX
+// reusados), pero contact_name/contact_phone/contact_email son OBLIGATORIOS
+// aquí (delta vs admin-create-agency, donde son opcionales) — PRD §4.7 "se
+// capturan datos de empresa: razón social, contacto, logotipo" en el registro
+// self-service. logo_url sigue opcional (mint-r2-url resuelve la subida aparte).
+
+/**
+ * Valida y parsea el payload de register-agency (§4.7). Campos extra son
+ * ignorados silenciosamente.
+ */
+export function parse_register_agency_input(
+  raw: unknown,
+): ParseResult<import("../register-agency/types.ts").RegisterAgencyInput> {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+    return invalid_input("El payload debe ser un objeto JSON");
+  }
+
+  const obj = raw as Record<string, unknown>;
+
+  if (typeof obj.name !== "string" || obj.name.length < 2) {
+    return invalid_input("name debe tener al menos 2 caracteres");
+  }
+
+  if (typeof obj.slug !== "string" || !SLUG_REGEX.test(obj.slug)) {
+    return invalid_input(
+      "slug debe contener solo letras minúsculas, dígitos y guiones (ej: mi-agencia)",
+    );
+  }
+
+  if (
+    typeof obj.contact_name !== "string" || obj.contact_name.trim().length === 0
+  ) {
+    return invalid_input("contact_name es requerido");
+  }
+
+  if (
+    typeof obj.contact_phone !== "string" ||
+    obj.contact_phone.trim().length === 0
+  ) {
+    return invalid_input("contact_phone es requerido");
+  }
+
+  if (
+    typeof obj.contact_email !== "string" || obj.contact_email.length === 0
+  ) {
+    return invalid_input("contact_email es requerido");
+  }
+  if (!EMAIL_REGEX.test(obj.contact_email)) {
+    return invalid_input("contact_email no tiene un formato válido");
+  }
+
+  return {
+    success: true,
+    data: {
+      name: obj.name,
+      slug: obj.slug,
+      contact_name: obj.contact_name,
+      contact_phone: obj.contact_phone,
+      contact_email: obj.contact_email,
+      logo_url: typeof obj.logo_url === "string" ? obj.logo_url : null,
+    },
+  };
+}
+
 // ── register (subtarea 93.2, PRD §5.1) ──────────────────────────────────────
 
 // E.164 México: '+52' + 10 dígitos. Mismo criterio que el CHECK users_phone_e164_mx
