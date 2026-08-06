@@ -1,11 +1,19 @@
 ---
 tipo: estado
-actualizado: 2026-08-05
+actualizado: 2026-08-06
 ---
 
 # Estado actual
 
 > Narrativa de "dónde estamos hoy". El **qué sigue / qué está hecho** vive en **Taskmaster** (`task-master list`), no aquí.
+
+## Hoy (2026-08-06)
+
+- **✅ #99 y #100 CERRADAS — 2 de las 7 tareas derivadas de #71/PR #41, las de prioridad ALTA.** Ambas con TDD estricto (RED→GREEN→guardian) y PR squash-merge a `main` (#42, #43). **#99** (migración `20260805000010`): el trigger de aprobación de agencia truena `MEMBER_OF_OTHER_AGENCY` (antes un error genérico sin salida) cuando el creador ya tiene membresía activa en otra agencia — decisión de Abraham: sin auto-switch, el admin resuelve manual; y ambos triggers de aprobación (agencies/agent_applications) ya NO degradan en silencio a un creador/solicitante que ya era `admin`. **#100** (migración `20260805000011`): `publish_property_atomic` (RPC SECURITY DEFINER) ahora bloquea a un agente SUSPENDIDO en su agencia (antes bypaseaba la RLS del INSERT directo, que nunca corría en el flujo real) y denormaliza `properties.agency_id` al publicar (antes letra muerta desde 0005) con backfill para lo ya publicado; `properties_select`/`properties_update` dejaron de usar `is_agency_owner_of` (membresía compartida hoy, ignoraba la agencia real de la fila) por `agency_role_of(agency_id)` — cerraba un leak cross-agencia Y un falso-bloqueo del owner legítimo tras un `switch_agency_atomic`.
+- **🔍 El guardian volvió a encontrar hallazgos reales en ambas rondas, resueltos antes de cerrar** (no quedaron como deuda nueva): en #99, un remap de índice único potencialmente ambiguo (documentado como inalcanzable) + idioma inconsistente entre los 2 guards de admin (unificado a `CASE`). En #100, dos ALTOS: el `LIMIT 1` sin desempate ante doble membresía (active+suspended en paralelo, alcanzable porque `redeem_invitation_atomic` solo chequea el índice de `active`) — resuelto con `ORDER BY status='active' DESC` + test dedicado; y la falta de backfill de `agency_id` para properties ya publicadas — resuelto con un `UPDATE` idempotente en la misma migración.
+- **⏸️ Quedan pendientes #96, #97, #98, #101, #102** (hardening/producto/polish, prioridad media-baja) — explícitamente NO se tocaron esta sesión por decisión de Abraham. **#98 se amplió con una pregunta nueva**: la descripción original ("agencia sin owner activo") en realidad apuntaba a la INMOBILIARIA, no a `agency_member_role`; Abraham quiere bloquear con error tipado la salida del último owner (exigir transferencia previa) y **explorar el flujo completo de baja de una inmobiliaria** (cascada sobre agentes, properties publicadas) antes de picar código — candidato a pasar por `/tm-explore` en vez de implementarse directo.
+- **🧾 Gotcha de Taskmaster confirmado más grave de lo documentado:** `update-task` **Y** `update-subtask` (ambos, no solo el primero) corrompen `tasks.json` — re-tipan TODOS los `task.id` de string a int en cada llamada AI, aunque solo se toque una tarea. Pasó 4 veces esta sesión; se reparó cada vez con un script Python (`t['id']=str(t['id'])` + `validate-dependencies`). Memoria actualizada — revisar `git diff --stat .taskmaster/tasks/tasks.json` tras cualquier escritura AI.
+- **📊 Suites al cierre: 612 pgTAP (27 archivos) · 778 Deno · tsc/lint 0.** Nada desplegado al remoto todavía.
 
 ## Hoy (2026-08-05)
 
