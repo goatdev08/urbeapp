@@ -84,6 +84,7 @@ La criticidad **no se juzga**: se **deriva** del footprint de la subtarea. El an
 - Log paso-a-paso → en la **subtarea** (Taskmaster). Conocimiento durable (decisión, patrón, mapeo) → **vault**.
 - Cambió el alcance/diseño de una tarea → `task-master update-task <id> "qué cambió y por qué"`.
 - Apareció trabajo nuevo no previsto → `add-task` / `add-subtask` (no lo dejes solo en el chat).
+- ⭐ **Tareas DERIVADAS (trazabilidad, regla 2026-08-05):** un bug/deuda/hallazgo que nace de una tarea ya `done` NO se agrega como subtarea de esa tarea (tarea=rama=PR; reabrirla desincroniza `next`). Se crea tarea NUEVA con las 4 marcas: (1) título `fix(<subtarea-origen>): …` / `hardening(<origen>): …` / `producto(<origen>): …` / `polish(<origen>): …` — p.ej. `fix(71.5): deadlock de aprobación…`; (2) la descripción ABRE con `Origen: subtarea <id.n> · Detectado por: <guardian|review PR #N|RED|usuario>`; (3) `dependencies` incluye la tarea origen; (4) **backlink** en los `details` de la tarea origen: línea `DERIVADAS: #x (fuente) · #y (fuente)` — así `task-master show <origen>` lista su descendencia. Ejemplo vivo: tarea 71 → #96–#102.
 
 ## 6. Cierre de sesión
 - Asegura el estado en Taskmaster (`set-status`).
