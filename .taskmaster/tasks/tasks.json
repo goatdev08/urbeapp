@@ -4608,7 +4608,7 @@
         "id": "68",
         "title": "Épica B — Migrar el video del feed a Cloudflare Stream",
         "description": "Migrar el video del feed a Cloudflare Stream (HLS adaptativo). Resuelve de raíz el cap global de 50 MB del plan Free de Supabase Y el OOM #57, y da thumbnails automáticos.",
-        "details": "## Contexto\nExploración 036 (épica B). Decisión de storage híbrido (ADR 0008).\n\n## Clave: el schema YA está listo\n`property_videos.cloudflare_uid` coexiste con `storage_path`; el CHECK `property_videos_ready_requires_storage` (migración 0012) acepta cualquiera de las dos refs → migrar = poblar `cloudflare_uid`, migración **aditiva** (expand·migrate·contract, apps viejas conviven).\n\n## Reusar patrón EF-minter\n`mint-video-url` / `make_video_url_minter`: mismo contrato hacia el feed, cambia el minter por dentro para devolver signed HLS de Stream (el vault ya anotaba este patrón como el de la futura migración).\n\n## Pipeline\nEF entrega URL de subida directa resumible (tus) a Stream → device sube directo (sin pasar por Supabase) → webhook de Stream marca `ready` + dispara la push 'video listo'. Archivar el original en R2 (dep épica C).\n\n## Footprint (CRÍTICA-TDD estricto)\nsupabase/functions/** (contrato de EF) · mobile hooks/useVideoUpload.ts (lógica) · posible migración. Requiere provisionar cuenta Cloudflare Stream.",
+        "details": "## Contexto\nExploración 036 (épica B). Decisión de storage híbrido (ADR 0008).\n\n## Clave: el schema YA está listo\n`property_videos.cloudflare_uid` coexiste con `storage_path`; el CHECK `property_videos_ready_requires_storage` (migración 0012) acepta cualquiera de las dos refs → migrar = poblar `cloudflare_uid`, migración **aditiva** (expand·migrate·contract, apps viejas conviven).\n\n## Reusar patrón EF-minter\n`mint-video-url` / `make_video_url_minter`: mismo contrato hacia el feed, cambia el minter por dentro para devolver signed HLS de Stream (el vault ya anotaba este patrón como el de la futura migración).\n\n## Pipeline\nEF entrega URL de subida directa resumible (tus) a Stream → device sube directo (sin pasar por Supabase) → webhook de Stream marca `ready` + dispara la push 'video listo'. Archivar el original en R2 (dep épica C).\n\n## Footprint (CRÍTICA-TDD estricto)\nsupabase/functions/** (contrato de EF) · mobile hooks/useVideoUpload.ts (lógica) · posible migración. Requiere provisionar cuenta Cloudflare Stream.\n\nDERIVADAS: #103 (E2E remoto 90 — falso negativo del upload en useVideoUpload) · #104 (smoke remoto 90 — fetch_mp4 sin token firmado en archive-video)",
         "testStrategy": "TDD estricto (RED→GREEN→guardian): Deno tests del contrato de la EF (subida + minter HLS + webhook ready, fail-closed), pgTAP si hay migración, tests del hook. Smoke E2E Maestro con video real en emulador (CLI).",
         "status": "done",
         "dependencies": [
@@ -4841,7 +4841,7 @@
             "parentId": "undefined"
           }
         ],
-        "updatedAt": "2026-07-25T17:09:39.115Z"
+        "updatedAt": "2026-08-07T04:58:18.904Z"
       },
       {
         "id": "69",
@@ -6441,14 +6441,15 @@
         "id": "90",
         "title": "E2E de deploy-day: publicar → tus → webhook ready → feed (remoto)",
         "description": "E2E de la Épica B contra el REMOTO: publicar desde la app → subida directa a Cloudflare Stream → el webhook marca ready → el video aparece y reproduce en el feed. Incluye el deploy de las EFs pendientes y el smoke Stream→R2 del archivado. Bloqueada por externos (402, webhook sin registrar, par R2, rotar credenciales). La verificación LOCAL ya se cerró en 68.10 — no repetirla.",
-        "details": "<info added on 2026-07-25T17:07:04.865Z>\nI'll analyze the codebase to understand the deployment context and then generate the subtask details.Based on my analysis of the codebase, I can now generate the subtask details for 68.17:\n\nSCOPE (what 68.10 could NOT close locally, separated 2026-07-25). HARD EXTERNAL BLOCKERS, all requiring Abraham action: (a) lift 402 gateway-remote (upgrade to Pro or reset billing) to invoke Edge Functions in production; (b) register Stream webhook in Cloudflare (PUT /stream/webhook) → generates STREAM_WEBHOOK_SECRET → load it as remote project secret; (c) fix R2 access pair (403 today) for cold-store archival; (d) ROTATE exposed Cloudflare credentials before production. STEPS: 1) Deploy pending EFs (mint-thumbnail-url, mint-poster-urls, stream-webhook) with --import-map supabase/functions/deno.json --use-api. Deploy commands per index.ts headers: supabase functions deploy stream-webhook --import-map supabase/functions/deno.json --no-verify-jwt --use-api (public webhook, HMAC-only auth), supabase functions deploy mint-thumbnail-url --import-map supabase/functions/deno.json --use-api, supabase functions deploy mint-poster-urls --import-map supabase/functions/deno.json --use-api. 2) Full E2E against remote: publish from app → direct upload to Stream → webhook marks ready → video appears and plays in feed. 3) Visual smoke of poster with real Stream frames. 4) Smoke Stream→R2 archival (68.8). WHY NOT POSSIBLE LOCALLY: Cloudflare cannot deliver webhook to localhost, so a locally-uploaded video stays in processing forever; can simulate by signing POST with HMAC-SHA256(STREAM_WEBHOOK_SECRET, '<time>.<rawBody>') but that tests our handler, not Cloudflare's real delivery. ALREADY VERIFIED LOCALLY (68.10, DO NOT REPEAT): signed HLS playback on Android and iOS, signed poster with intact origin, memory smoke closing OOM #57 at root (heap 40→46 MB with 4 live players, vs 107-117 MB from MP4 era and 192 MB ceiling). COST RULE: feed plays in loop and every delivered minute bills in Stream — verify and stop, never leave emulator with feed open.\n</info added on 2026-07-25T17:07:04.865Z>",
-        "status": "pending",
+        "details": "<info added on 2026-07-25T17:07:04.865Z>\nI'll analyze the codebase to understand the deployment context and then generate the subtask details.Based on my analysis of the codebase, I can now generate the subtask details for 68.17:\n\nSCOPE (what 68.10 could NOT close locally, separated 2026-07-25). HARD EXTERNAL BLOCKERS, all requiring Abraham action: (a) lift 402 gateway-remote (upgrade to Pro or reset billing) to invoke Edge Functions in production; (b) register Stream webhook in Cloudflare (PUT /stream/webhook) → generates STREAM_WEBHOOK_SECRET → load it as remote project secret; (c) fix R2 access pair (403 today) for cold-store archival; (d) ROTATE exposed Cloudflare credentials before production. STEPS: 1) Deploy pending EFs (mint-thumbnail-url, mint-poster-urls, stream-webhook) with --import-map supabase/functions/deno.json --use-api. Deploy commands per index.ts headers: supabase functions deploy stream-webhook --import-map supabase/functions/deno.json --no-verify-jwt --use-api (public webhook, HMAC-only auth), supabase functions deploy mint-thumbnail-url --import-map supabase/functions/deno.json --use-api, supabase functions deploy mint-poster-urls --import-map supabase/functions/deno.json --use-api. 2) Full E2E against remote: publish from app → direct upload to Stream → webhook marks ready → video appears and plays in feed. 3) Visual smoke of poster with real Stream frames. 4) Smoke Stream→R2 archival (68.8). WHY NOT POSSIBLE LOCALLY: Cloudflare cannot deliver webhook to localhost, so a locally-uploaded video stays in processing forever; can simulate by signing POST with HMAC-SHA256(STREAM_WEBHOOK_SECRET, '<time>.<rawBody>') but that tests our handler, not Cloudflare's real delivery. ALREADY VERIFIED LOCALLY (68.10, DO NOT REPEAT): signed HLS playback on Android and iOS, signed poster with intact origin, memory smoke closing OOM #57 at root (heap 40→46 MB with 4 live players, vs 107-117 MB from MP4 era and 192 MB ceiling). COST RULE: feed plays in loop and every delivered minute bills in Stream — verify and stop, never leave emulator with feed open.\n</info added on 2026-07-25T17:07:04.865Z>\n\n=== BITÁCORA 2026-08-06 (deploy-day ejecutado) ===\nEXTERNOS DESTRABADOS: 402 levantado (stream-smoke 200, stream_api_ok). Webhook de Stream registrado vía PUT /stream/webhook → notificationUrl=.../functions/v1/stream-webhook, STREAM_WEBHOOK_SECRET generado y cargado a secrets (el .env local quedó con el secret viejo — solo afecta simulación local). Par R2 re-capturado por Abraham (Roll del token) → r2-smoke verde en AMBAS vías de firma (header 200 + presigned 404-esperado); EF r2-smoke borrada tras el smoke. PENDIENTE de (d): rotar el STREAM_API_TOKEN expuesto (el actual funciona; la rotación sigue abierta).\n\nSYNC REMOTO: 15 migraciones aplicadas vía MCP apply_migration en orden (20260727000001..20260805000011 — catálogo INEGI 32/2478 con seed vía EF desechable seed-muni, registro §5.1, legal gate, register RPC, toda la ola 71 + fixes 99/100). Verificación por schema probes: RPCs/enums/policies/triggers todos presentes; fix99 (MEMBER_OF_OTHER_AGENCY) y fix100 (AGENCY_MEMBERSHIP_SUSPENDED + denorm agency_id) confirmados en los bodies vivos. EFs desplegadas: register (--no-verify-jwt), register-agency, request-agent-upgrade, manage-agency-member, upgrade-to-agent, publish-property (fix 100). Smoke register: 400 tipado correcto.\n\nE2E: app del emulador apuntada al remoto (mobile/.env.local — bloque remoto activo). Gate legal (migración nueva) apareció y aceptó en vivo (user_consents escritos). Publicación: mint-upload-url → subida real a Stream → webhook marcó ready en <30s (2 veces). BUG CLIENTE → #103 (la UI marca error pese al éxito). Paso final ejecutado como la app: POST publish-property con JWT real de Vlad → 201, property 860ea68b activa, properties.agency_id DENORMALIZADO a Tu Casa con Vlad (fix 100 vivo), video enlazado position=1. Verificado en la app: perfil 6 publicaciones, tarjeta $15,500/mes con poster real de Stream, detalle REPRODUCE el video (HLS firmado) — verificar y parar cumplido. Smoke Stream→R2: BLOQUEADO por bug real → #104 (fetch_mp4 sin token firmado, 401). Huérfano del intento 1 limpiado (Stream DELETE + fila DB).\n\n--- SESIÓN 2026-08-07 (cierre del deploy-day) ---\nOTA 2026-08-06 verificado como NO-OP: los builds instalados (2026-07-24, v1.0.2) tienen runtime iOS 1e7836e9 / Android 36277651, pero el OTA se publicó para 4f7fcdc4 / e91240a7 — fingerprint cambiado por expo-web-browser (módulo nativo, #72, merge 2026-07-31). Regla aplicada: módulo nativo nuevo = version bump + rebuild, no OTA.\nResolución: version 1.0.3 (app.config.js, patrón de comentarios 1.0.1/1.0.2) + builds EAS nuevos AMBOS FINISHED — Android preview APK (build 0a73f16b, artefacto expo.dev/artifacts/eas/k71bxRTw50JplQw1WSjLpHTBkBOvhwRO3p6vohh-hWY.apk) e iOS production (build 6056e8bf). Submit a TestFlight lo corre Abraham (el clasificador bloqueó eas submit). Con el fingerprint nuevo los OTA futuros SÍ llegan.\nVerificación iOS (simulador): dev-client recompilado (el instalado, ~jul-25, tronaba con \"Cannot find native module ExpoWebBrowser\"). E2E manual de Abraham OK contra el remoto. Descartada regresión de UI con evidencia: íconos de la NativeTabs ausentes SOLO en modo dev (los PNG por Metro no los carga la UITabBar nativa); build Release-config en 2º simulador + login vía Maestro → íconos perfectos (Feed verde activo, resto blancos). Gotcha del simulador: teclado por-app en español (Shift+2 = comillas); Option+2 o Cmd+Shift+K.\nenvs EAS verificados: preview == production (misma Supabase remota mvpvqmyhrrkwbnpctpuq + mismas keys) — el stage de testing replica producción 1:1.\nDERIVADAS: #105 (deploy-day — rotación STREAM_API_TOKEN)\n\nPENDIENTES al cierre: TestFlight submit (Abraham) · #103 (falso negativo upload, high) · #104 (archive sin token firmado) · #105 (rotar STREAM_API_TOKEN, Abraham).",
+        "status": "done",
         "dependencies": [
           "68"
         ],
         "priority": "high",
         "subtasks": [],
-        "testStrategy": "Publicación real end-to-end contra urbea-app con un video nuevo; portada con frames reales de Stream; round-trip de archivado a R2. Emulador/simulador por CLI (adb/simctl/Maestro), nunca computer-use. 💰 Verificar y PARAR: el feed reproduce en loop y cada minuto entregado se cobra en Stream."
+        "testStrategy": "Publicación real end-to-end contra urbea-app con un video nuevo; portada con frames reales de Stream; round-trip de archivado a R2. Emulador/simulador por CLI (adb/simctl/Maestro), nunca computer-use. 💰 Verificar y PARAR: el feed reproduce en loop y cada minuto entregado se cobra en Stream.",
+        "updatedAt": "2026-08-07T22:21:20.715Z"
       },
       {
         "id": "91",
@@ -6834,13 +6835,57 @@
         "priority": "low",
         "subtasks": [],
         "updatedAt": "2026-08-05T00:00:00.000Z"
+      },
+      {
+        "id": "103",
+        "title": "fix(68.4): subida de video marca error pese a subir bien — falso negativo de FileSystemUploadTask contra Stream",
+        "description": "Origen: subtarea 68.4 · Detectado por: E2E remoto deploy-day (tarea 90). El upload del wizard (useVideoUpload → expo-file-system FileSystemUploadTask, POST multipart al Direct Creator Upload) sube el archivo COMPLETO a Cloudflare Stream (el video llega, procesa y el webhook lo marca ready en <30s), pero uploadAsync() lanza \"Unable to upload a file: Failed to read response\" al leer la respuesta → la UI muestra \"Error al subir el video\" y cada Reintentar crea OTRO video huérfano en Stream + property_videos. Reproducido 2/2 veces en emulador Android contra el remoto (44MB y 4.3MB — no depende del tamaño). El publish desde la app queda bloqueado pese a que el pipeline server-side está verde.",
+        "details": "Evidencia (2026-08-06, E2E #90): logs Metro [useVideoUpload] upload failed: FileSystemUploadTask.start rejected → Caused by: Unable to upload a file: Failed to read response. Ambos intentos crearon filas ready con uid (9f604bbf borrado como huérfano; 4da3b474 quedó enlazado a la property 860ea68b publicada vía EF con el JWT real). Nota del propio hook: el E2E real contra Stream estaba pendiente por el 402 — este es el primer run real del path.\n\nDIRECCIONES A EVALUAR (no decidido): (a) resiliencia — capturar el error de lectura de respuesta y VERIFICAR el resultado antes de marcar error (poll de property_videos por uid: si status uploading→processing/ready, tratar como éxito; cubre cualquier fallo post-bytes); (b) reemplazar FileSystemUploadTask por fetch+FormData de RN; (c) investigar si es quirk del emulador (probar en device físico antes de decidir). La opción (a) además elimina la clase entera de huérfanos por retry.\n\nFootprint: mobile/src/features/publish/hooks/useVideoUpload.ts (+ tests useVideoUpload.test.tsx) → CRÍTICA (hooks/** = lógica) → TDD estricto RED→GREEN→guardian.",
+        "testStrategy": "RED: test del hook con un uploader fake que lanza \"Failed to read response\" DESPUÉS de reportar progreso completo + un checker fake que confirma el video ready → el hook debe terminar en processing (no error) y escribir cloudflare_uid al form. Caso opuesto: checker dice que el video NO existe → error legítimo. Verificación manual en emulador contra remoto (publicar end-to-end desde la UI).",
+        "status": "pending",
+        "dependencies": [
+          "68",
+          "90"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2026-08-07T04:58:18.904Z"
+      },
+      {
+        "id": "104",
+        "title": "fix(68.8): archive-video no puede bajar el mp4 — requireSignedURLs exige token firmado en la descarga",
+        "description": "Origen: subtarea 68.8 · Detectado por: smoke remoto deploy-day (tarea 90). El smoke Stream→R2 contra el remoto falla SIEMPRE con STREAM_DOWNLOAD_FAILED (502): make_stream_archiver.fetch_mp4 baja downloads/default.mp4 del subdominio customer-*.cloudflarestream.com SIN token firmado, y como los videos se suben con requireSignedURLs=true, Cloudflare responde 401 (verificado con curl: 401 pelón y 401 con Authorization Bearer del API token — el endpoint del customer subdomain solo acepta token FIRMADO en el path, mismo gotcha que el playback en 68.16). El diseño anti-pérdida funcionó: nada se borró ni se marcó archived.",
+        "details": "Evidencia (2026-08-06, E2E #90): POST /downloads del API responde success con url y percentComplete=100, pero GET a esa url → 401; con Authorization header → 401. Fix: firmar un token de Stream para el uid (mismo mecanismo/JWK que mint-video-url, token en el PATH — ver [[68.16]] y stream_e2e_local_sin_402) y usarlo en fetch_mp4 antes del GET. Footprint: supabase/functions/_shared/clients.ts (make_stream_archiver.fetch_mp4 o la construcción de la URL en archive-video), tests Deno de archive-video → CRÍTICA (supabase/functions/**) → TDD estricto. Tras el fix, re-correr el smoke completo Stream→R2 contra el remoto (el par R2 ya está verde — r2-smoke 2026-08-06).",
+        "testStrategy": "RED: test Deno del archiver donde el fetcher del mp4 exige que la URL contenga un token firmado (no el uid pelón) — hoy falla porque la URL va sin firmar. GREEN: firma con STREAM_SIGNING_JWK. Smoke real: POST archive-video contra el remoto con un video ready desechable → 200, objeto en R2 (archive/<uid>.mp4), video borrado de Stream, fila archived con r2_archive_key.",
+        "status": "pending",
+        "dependencies": [
+          "68",
+          "90"
+        ],
+        "priority": "medium",
+        "subtasks": [],
+        "updatedAt": "2026-08-07T04:58:18.904Z"
+      },
+      {
+        "id": "105",
+        "title": "hardening(90): rotar STREAM_API_TOKEN expuesto en Cloudflare",
+        "description": "Origen: tarea 90 (E2E deploy-day) · Detectado por: usuario. El token de la API de Stream quedó expuesto en una sesión previa; el par de R2 ya se rotó (2026-08-06), Stream sigue pendiente. Rotarlo en el dashboard de Cloudflare y actualizar el secret en Supabase.",
+        "details": "Acción del usuario: Cloudflare dashboard → API Tokens → Roll del token de Stream. Después, sin imprimir el valor: `supabase secrets set STREAM_API_TOKEN=...` (proyecto urbea-app) y actualizar supabase/functions/.env local. El webhook de Stream NO depende de este token (firma propia) — no hay que tocarlo.",
+        "testStrategy": "Tras rotar: mint-upload-url responde 200 con upload_url firmada; una subida de prueba llega a ready vía webhook; el token viejo rechazado (401 en la API de Stream).",
+        "status": "pending",
+        "dependencies": [
+          "90"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2026-08-07T22:30:00.000Z"
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-08-06T06:21:23.880Z",
-      "taskCount": 102,
-      "completedCount": 64,
+      "lastModified": "2026-08-07T22:21:20.715Z",
+      "taskCount": 105,
+      "completedCount": 65,
       "tags": [
         "master"
       ]

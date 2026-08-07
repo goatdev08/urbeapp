@@ -31,6 +31,8 @@ Solo el **código nativo** obliga a recompilar. El resto va por OTA, llega al re
 
 ✅ **Hecho (#67, 2026-07-13):** `runtimeVersion.policy` migrado de `appVersion` a **`fingerprint`** → EAS calcula la huella del código nativo y decide solo si un cambio cabe por OTA o exige rebuild (se acabó el adivinar y el subir `version` a mano). Un cambio nativo genera huella distinta → EAS lo separa del canal OTA viejo automáticamente. En la práctica de la beta, ~80–90% de las iteraciones (UI/copy/lógica) van por OTA. ⚠️ El corte invalidó el emparejamiento OTA de los builds `appVersion` previos: los testers reinstalan **una vez** un build nuevo (huella fingerprint) para volver a recibir OTAs.
 
+🔴 **El fingerprint también muerde al revés — OTA publicado a un runtime que NADIE tiene = no-op silencioso (lección #90, 2026-08-07).** `eas update` publica al runtime del código ACTUAL sin avisar si ningún build instalado lo tiene: el OTA del deploy-day (06-ago) salió para `4f7fcdc4`(iOS)/`e91240a7`(Android), pero los builds en la calle (v1.0.2, 2026-07-24) eran `1e7836e9`/`36277651` — `expo-web-browser` (#72, módulo nativo) había movido la huella y el OTA no le llegó a nadie. **Regla: tras publicar un OTA que siga a CUALQUIER dep/cambio nativo, comparar el runtime del update contra `eas build:list` (columna `runtimeVersion` de los builds entregados). Si difieren → version bump + `eas build` (así nacieron los builds v1.0.3).** Síntoma del lado del tester: "abrí y cerré dos veces y no veo nada nuevo".
+
 ## No romper la DB/backend: expand · migrate · contract
 Con apps viejas y nuevas conviviendo contra la MISMA base:
 - **Aditivo no rompe:** columnas nuevas con default, tablas nuevas → una app vieja las ignora y sigue funcionando.

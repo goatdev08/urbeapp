@@ -8,7 +8,9 @@ module.exports = ({ config }) => ({
   // 1.0.1: expo-image + expo-splash-screen (módulos nativos) → nuevo runtime
   // OTA; los builds 1.0.0 ya no reciben updates (instalar el APK nuevo).
   // 1.0.2: expo-glass-effect (módulo nativo, tab bar glass) → nuevo runtime OTA.
-  version: '1.0.2',
+  // 1.0.3: expo-web-browser (módulo nativo, Google OAuth #72) → nuevo runtime OTA;
+  // los builds 1.0.2 (2026-07-24) ya no reciben updates (instalar build nuevo).
+  version: '1.0.3',
   orientation: 'portrait',
   scheme: 'urbea',
   userInterfaceStyle: 'automatic',

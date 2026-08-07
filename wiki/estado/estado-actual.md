@@ -1,11 +1,19 @@
 ---
 tipo: estado
-actualizado: 2026-08-06
+actualizado: 2026-08-07
 ---
 
 # Estado actual
 
 > Narrativa de "dónde estamos hoy". El **qué sigue / qué está hecho** vive en **Taskmaster** (`task-master list`), no aquí.
+
+## Hoy (2026-08-07)
+
+- **✅ #90 — E2E deploy-day CERRADA (sesión 06→07-ago): el backend remoto quedó sincronizado con `main` y el pipeline completo verificado en vivo.** 15 migraciones aplicadas a `urbea-app` vía MCP `apply_migration` (catálogo INEGI con seed de 2,478 municipios por EF desechable, constraints §5.1, gate legal, RPC de registro atómico, y TODA la ola #71 de roles/multi-tenant + fixes #99/#100 — sondas en vivo confirmaron `MEMBER_OF_OTHER_AGENCY` y `AGENCY_MEMBERSHIP_SUSPENDED` en los bodies reales), 6 EFs desplegadas, webhook de Stream registrado (secret por pipe, sin imprimir) y par R2 rotado+verificado. E2E real desde el emulador contra el remoto: gate legal aceptado en vivo → subida de video real a Stream (webhook `ready` en 27 s) → `publish-property` 201 con `properties.agency_id` denormalizado a "Tu Casa con Vlad" (fix #100 vivo) → el detalle REPRODUCE por HLS firmado. 2 bugs reales quedaron como derivadas: **#103** (falso negativo del upload en `useVideoUpload` — la UI marca error aunque el video sube bien; ALTO, bloquea publicar desde la UI real) y **#104** (`archive-video` no baja el mp4: la descarga exige token firmado en el PATH — el mismo gotcha de 68.16, ahora en el archiver).
+- **⚠️ Lección de release cazada con datos duros: el OTA del 06-ago fue un NO-OP silencioso.** Los builds instalados (v1.0.2, 2026-07-24) tienen runtime `1e7836e9`(iOS)/`36277651`(Android); el OTA salió para `4f7fcdc4`/`e91240a7` — `expo-web-browser` (#72, módulo nativo) movió el fingerprint y EAS publica al runtime nuevo sin avisar que ningún dispositivo lo tiene. Regla nueva en [[estrategia-releases]]: tras cualquier dep nativa, comparar el runtime del update vs `eas build:list` ANTES de confiar en un OTA.
+- **🚀 Builds v1.0.3 generados y en verde (ambos FINISHED):** Android APK canal `preview` (link directo listo para repartir) + iOS canal `production` (submit a TestFlight = comando de Abraham; el clasificador bloquea `eas submit`). envs de EAS verificados: **`preview` == `production`** (misma Supabase remota + mismas keys) — el stage de testing replica producción 1:1, como pidió Abraham. Con el fingerprint nuevo, los OTA vuelven a fluir hacia estos builds.
+- **🔍 Verificación iOS en simulador (dev-client recompilado — el instalado, ~jul-25, tronaba con `Cannot find native module 'ExpoWebBrowser'`):** E2E manual de Abraham OK contra el remoto. Falsa regresión descartada con evidencia: los íconos de la **NativeTabs desaparecen SOLO en modo dev** (la UITabBar nativa no carga los PNG servidos por Metro); build Release-config en 2º simulador + login vía Maestro → íconos perfectos (Feed verde activo, resto blancos). Gotcha extra del simulador: el teclado de iOS se recuerda POR APP (en Urbea quedó el español: Shift+2 = `"`); salida: `Option+2` o `Cmd+Shift+K`.
+- **🧾 Derivada nueva #105 (`hardening(90)`):** rotar el `STREAM_API_TOKEN` expuesto (acción de Abraham en Cloudflare; el par de R2 ya se rotó el 06-ago). **Pendientes al cierre:** TestFlight submit (Abraham) · #103 (high) · #104 · #105.
 
 ## Hoy (2026-08-06)
 
