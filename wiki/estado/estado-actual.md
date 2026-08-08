@@ -1,11 +1,21 @@
 ---
 tipo: estado
-actualizado: 2026-08-07
+actualizado: 2026-08-08
 ---
 
 # Estado actual
 
 > Narrativa de "dónde estamos hoy". El **qué sigue / qué está hecho** vive en **Taskmaster** (`task-master list`), no aquí.
+
+## Hoy (2026-08-08) — sesión de noche: #113, #114 y 75.3
+
+- **✅ #113 — el detalle del lead abría VACÍO, y el diagnóstico anterior estaba mal.** El dueño reportó dos veces *"no me aparece ninguna opción"*; en #112 se atribuyó a **permisos** y era **layout**. El sheet mostraba cabecera y botones y **nada en medio**: ni Actividad, ni Cambiar estado, ni notas, ni historial — en TODAS las cuentas, incluida la suya. FIX2 de 75.6 había puesto un `ScrollView` con `flex: 1` dentro de un contenedor sin altura definida (solo `maxHeight`): `flex: 1` implica `flexBasis: 0`, el contenido deja de contar para la altura del padre y Yoga le asigna **0**. `flexShrink: 1` lo arregla con una propiedad. ⚠️ **Los 99 tests de leads pasaban igual antes y después** — RNTL no calcula layout. **Ya salió por OTA** (runtime `0becbdc1…`, verificado idéntico al del build 1.0.3 instalado, iOS y Android).
+- **✅ #114 — el splash abría con un cuadro blanco.** `android-icon-foreground.png` estaba guardado con **fondo blanco opaco**; la config siempre estuvo bien. En Android era peor: tapaba el verde del adaptive icon dejando un ícono distinto al de iOS. Resuelto con des-composite exacto del blanco (error ≤6/255 contra `icon.png`) y `imageWidth` 220→360. **Es nativo: NO viaja por OTA, necesita build nuevo.** Verificado en un simulador limpio (el simulador en uso mostraba el splash viejo con el binario nuevo, por el caché de launch image de iOS).
+- **✅ 75.3 CERRADA (PR #50) — privacidad del lead: registrar no es exponer.** Se cerró una fuga **viva** que abrió #112 hace un día: `events_raw_select` pedía solo ser dueño de la propiedad, **sin mencionar el lead**. Medido en producción con un JWT real: un agente leyó el historial de video de una persona que nunca lo contactó (contradice §19.1 de frente). El helper nuevo `private.can_view_user_events` exige **lead ACTIVO** y que la propiedad sea del agente de ese lead — así, borrar el lead **revoca** el acceso sin código extra. De regalo cerró un hueco de #75.5: el **admin de inmobiliaria no veía ningún evento** del equipo.
+- **📄 Documentación de datos personales (la pidió el dueño):** [[privacidad-datos]] es el inventario **medido** contra `pg_policy` (dato → tabla → quién lo lee → qué lo desbloquea) y `docs/aviso-privacidad.md` el aviso completo redactado contra el esquema real. ⚠️ **No se activó**: lo vigente es un **placeholder de 113 caracteres** que cuentas reales ya aceptaron, publicarlo **fuerza re-consentimiento a todos** y necesita revisión legal.
+- **🔴 Deuda nueva #116 (ALTA, privacidad):** el sistema comparte hoy **más de lo que el aviso promete**. `users_select` expone correo, teléfono y fecha de nacimiento de **todo agente verificado a cualquier autenticado** (comprobado: un agente leyó el teléfono real de otro), y el agente con lead ve la **fecha de nacimiento exacta** cuando §19.4 pide *edad calculada*. No se arregló aquí porque el grant es a nivel de **columna**: revocarlo rompe el `select('*')` del login en las apps ya instaladas → exige expand·migrate·contract, con el cambio de cliente por OTA **primero**.
+- **📊 Suites: 750 pgTAP (36 archivos) · 939 Jest · tsc/lint 0.** Migración desplegada y verificada en el remoto. **Derivadas nuevas: #113, #114, #115** (FilterSheet: primo del mismo patrón flex, sin verificar) **y #116**. **Pendiente de Abraham:** build nuevo para ver el splash/ícono, SMTP de Resend, TestFlight, rotar token de Stream (#105), y decidir sobre el aviso de privacidad.
+
 
 ## Hoy (2026-08-07) — sesión de tarde: #103 + tramo urgente del CRM
 
