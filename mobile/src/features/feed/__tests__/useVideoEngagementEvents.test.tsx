@@ -118,6 +118,22 @@ function make_insert_builder(result: { error: { message: string; code?: string }
 }
 
 /**
+ * Builder thenable que RECHAZA (a diferencia de make_insert_builder, que
+ * siempre resuelve con {error}) — simula un fallo fatal del transporte
+ * (network, cliente no inicializado) en vez de un error de negocio devuelto
+ * por PostgREST. M4 (guardian): sin esto, quitar el try/catch de insert_event
+ * deja la suite en verde porque ningún test hacía que el await realmente lanzara.
+ */
+function make_rejecting_insert_builder(error: Error) {
+  return {
+    then: (
+      onFulfilled: (v: never) => unknown,
+      onRejected?: (e: unknown) => unknown,
+    ) => Promise.reject(error).then(onFulfilled, onRejected),
+  };
+}
+
+/**
  * Mock del cliente Supabase para useVideoEngagementEvents.
  * Expone _mock_from, _mock_insert para aserciones.
  */
@@ -523,6 +539,144 @@ describe('useVideoEngagementEvents', () => {
     });
 
     expect(mock_supabase._mock_from).not.toHaveBeenCalled();
+  });
+
+  // ── (M4) try/catch del fire-and-forget — insert() lanza síncrono ─────────
+
+  it('(M4-a) insert_lanza_sincrono_no_rompe_y_loggea: .insert() lanza una excepción SÍNCRONA (p.ej. get_client() truena porque faltan env vars) → report_view() NO propaga, el error se loggea', async () => {
+    const console_error_spy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const mock_insert = jest.fn(() => {
+      throw new Error('cliente supabase no inicializado');
+    });
+    const mock_supabase = { from: jest.fn().mockReturnValue({ insert: mock_insert }) };
+
+    const { result } = await renderHook(() =>
+      useVideoEngagementEvents({
+        property_id: TEST_PROPERTY_ID,
+        property_video_id: TEST_PROPERTY_VIDEO_ID,
+        session_id: TEST_SESSION_ID,
+        supabase: mock_supabase,
+      })
+    );
+
+    await act(async () => {
+      await result.current.report_view();
+    });
+
+    expect(console_error_spy).toHaveBeenCalled();
+    console_error_spy.mockRestore();
+  });
+
+  // ── (M4) try/catch del fire-and-forget — el thenable de insert() rechaza ──
+
+  it('(M4-b) insert_thenable_rechaza_no_rompe_y_loggea: el builder de .insert() RECHAZA la promesa (fallo fatal de red, no un {error} de PostgREST) → report_time_update() NO propaga, el error se loggea', async () => {
+    const console_error_spy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const mock_insert = jest
+      .fn()
+      .mockReturnValue(make_rejecting_insert_builder(new Error('network fatal')));
+    const mock_supabase = { from: jest.fn().mockReturnValue({ insert: mock_insert }) };
+
+    const { result } = await renderHook(() =>
+      useVideoEngagementEvents({
+        property_id: TEST_PROPERTY_ID,
+        property_video_id: TEST_PROPERTY_VIDEO_ID,
+        session_id: TEST_SESSION_ID,
+        supabase: mock_supabase,
+      })
+    );
+
+    await act(async () => {
+      await result.current.report_time_update(40, 40);
+    });
+
+    expect(console_error_spy).toHaveBeenCalled();
+    console_error_spy.mockRestore();
+  });
+
+  // ── (M12) mark_seen ANTES del await insert — protección de concurrencia ──
+
+  it('(M12) dos_report_view_sin_await_entre_ellas_una_sola_insercion: 2 llamadas a report_view() SIN await entre ellas (como en producción — fire-and-forget a 2 ticks/seg) → UNA sola fila video_view; solo pasa si mark_seen ocurre ANTES del await al insert', async () => {
+    const mock_supabase = make_mock_supabase_events();
+    const { result } = await renderHook(() =>
+      useVideoEngagementEvents({
+        property_id: TEST_PROPERTY_ID,
+        property_video_id: TEST_PROPERTY_VIDEO_ID,
+        session_id: TEST_SESSION_ID,
+        supabase: mock_supabase,
+      })
+    );
+
+    await act(async () => {
+      const first = result.current.report_view();
+      const second = result.current.report_view();
+      await Promise.all([first, second]);
+    });
+
+    expect(insert_calls_of_type(mock_supabase._mock_insert, 'video_view')).toHaveLength(1);
+  });
+
+  it('(M12-completed) dos_report_time_update_sin_await_entre_ellas_una_sola_insercion: 2 llamadas a report_time_update() (currentTime ya completo) SIN await entre ellas → UNA sola fila video_completed', async () => {
+    const mock_supabase = make_mock_supabase_events();
+    const { result } = await renderHook(() =>
+      useVideoEngagementEvents({
+        property_id: TEST_PROPERTY_ID,
+        property_video_id: TEST_PROPERTY_VIDEO_ID,
+        session_id: TEST_SESSION_ID,
+        supabase: mock_supabase,
+      })
+    );
+
+    await act(async () => {
+      const first = result.current.report_time_update(40, 40);
+      const second = result.current.report_time_update(40, 40);
+      await Promise.all([first, second]);
+    });
+
+    expect(insert_calls_of_type(mock_supabase._mock_insert, 'video_completed')).toHaveLength(1);
+  });
+
+  // ── (M9/M14 guard) session_id inválido — NO se escribe ────────────────────
+
+  it('(guard + V3) sin_session_id_valido_report_view_no_escribe: session_id vacío (simula Crypto.randomUUID() devolviendo algo falsy por un fallo del módulo nativo, ver appSession.test.ts) → report_view() NO llama from("events_raw"), no lanza, y loggea con console.error (V3: diagnosticable, no un fallo silencioso)', async () => {
+    const console_error_spy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const mock_supabase = make_mock_supabase_events();
+    const { result } = await renderHook(() =>
+      useVideoEngagementEvents({
+        property_id: TEST_PROPERTY_ID,
+        property_video_id: TEST_PROPERTY_VIDEO_ID,
+        session_id: '',
+        supabase: mock_supabase,
+      })
+    );
+
+    await act(async () => {
+      await result.current.report_view();
+    });
+
+    expect(mock_supabase._mock_from).not.toHaveBeenCalled();
+    expect(console_error_spy).toHaveBeenCalled();
+    console_error_spy.mockRestore();
+  });
+
+  it('(guard + V3) sin_session_id_valido_report_time_update_no_escribe: session_id vacío, video completo (currentTime=duration) → report_time_update() NO llama from("events_raw"), no lanza, y loggea con console.error', async () => {
+    const console_error_spy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const mock_supabase = make_mock_supabase_events();
+    const { result } = await renderHook(() =>
+      useVideoEngagementEvents({
+        property_id: TEST_PROPERTY_ID,
+        property_video_id: TEST_PROPERTY_VIDEO_ID,
+        session_id: '',
+        supabase: mock_supabase,
+      })
+    );
+
+    await act(async () => {
+      await result.current.report_time_update(40, 40);
+    });
+
+    expect(mock_supabase._mock_from).not.toHaveBeenCalled();
+    expect(console_error_spy).toHaveBeenCalled();
+    console_error_spy.mockRestore();
   });
 
 });

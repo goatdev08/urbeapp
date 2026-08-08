@@ -22,6 +22,13 @@ jest.mock('react-native-reanimated', () => {
     Image: RN.Image,
     ScrollView: RN.ScrollView,
     FlatList: RN.FlatList,
+    // react-native-gesture-handler's GestureDetector (usado por VideoFeedItem,
+    // 112.2) lee esto en Reanimated.default.createAnimatedComponent para envolver
+    // su <Wrap> interno: `Reanimated?.default?.createAnimatedComponent(Wrap) ?? Wrap`
+    // (Wrap.tsx). El `?.` solo cubre Reanimated/Reanimated.default siendo nullish,
+    // NO que createAnimatedComponent falte — sin esto, undefined(Wrap) truena.
+    // Identity passthrough: bajo test no hace falta animación real.
+    createAnimatedComponent: (Component) => Component,
   };
 
   return {
@@ -31,6 +38,12 @@ jest.mock('react-native-reanimated', () => {
 
     // Shared values — objeto simple con .value mutable
     useSharedValue: (init) => ({ value: init }),
+
+    // react-native-gesture-handler's useAnimatedGesture (GestureDetector, usado por
+    // VideoFeedItem, 112.2) llama Reanimated.useEvent(callback, eventNames, rebuild)
+    // para armar su handler animado — bajo test nunca se dispara un evento nativo
+    // real, así que basta con no tronar y devolver ALGO asignable.
+    useEvent: () => undefined,
 
     // Animated style — devuelve objeto vacío; el componente renderiza igual
     useAnimatedStyle: () => ({}),

@@ -26,11 +26,21 @@ import { PropertyOverlay } from './PropertyOverlay';
 import { HeartAnimation } from './HeartAnimation';
 import { useLikeProperty } from '../hooks/useLikeProperty';
 import { useSaveProperty } from '../hooks/useSaveProperty';
+import { useVideoEngagementEvents } from '../hooks/useVideoEngagementEvents';
+import { create_video_engagement_store } from '../lib/videoEngagementDedupe';
+import { get_app_session_id } from '../lib/appSession';
 import { open_whatsapp } from '@/features/property-detail/utils/whatsapp';
 import { share_property } from '@/lib/shareProperty';
 
 import { colors, type_scale } from '@/theme/theme';
 import type { FeedPropertyWithUrl } from '../types';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Store de dedupe de engagement — singleton de MÓDULO (no de componente): debe
+// sobrevivir el reciclaje de ítems de FlashList (unmount/remount de
+// VideoFeedItem), igual que get_app_session_id. Ver useVideoEngagementEvents.ts.
+// ─────────────────────────────────────────────────────────────────────────────
+const video_engagement_store = create_video_engagement_store();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tipos
@@ -71,6 +81,16 @@ function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedIte
 
   const { isSaved, toggleSave } = useSaveProperty({
     property_id: property.id,
+  });
+
+  // ── Telemetría de engagement (112.2) ───────────────────────────────────────
+  // session_id + store son singletons de módulo (arriba) — sobreviven el
+  // reciclaje de VideoFeedItem por FlashList dentro de la MISMA sesión de app.
+  const { report_view, report_time_update } = useVideoEngagementEvents({
+    property_id: property.id,
+    property_video_id: property.video_id,
+    session_id: get_app_session_id(),
+    store: video_engagement_store,
   });
 
   // Like desde el rail — mismo feedback que el doble-tap: corazón grande +
@@ -136,6 +156,14 @@ function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedIte
       preferredForwardBufferDuration: 10,
       maxBufferBytes: 25 * 1024 * 1024,
     };
+    // 112.2: playToEnd NUNCA dispara con loop=true (ver comentario más abajo),
+    // así que la compleción se detecta comparando currentTime/duration en cada
+    // tick de `timeUpdate`. 0.5s balancea precisión vs batería: bastante fino
+    // para no perder el cruce del 95% incluso en los videos cortos del demo
+    // (~15s → la cola del 5% son ~0.75s, más que el propio intervalo) sin
+    // disparar el listener con una frecuencia innecesaria (2/seg, nada costoso
+    // — el INSERT real solo ocurre una vez gracias al dedupe del store).
+    p.timeUpdateEventInterval = 0.5;
   });
 
   // isActive en ref — el .then() de replaceAsync decide si reanudar sin meter
@@ -153,7 +181,6 @@ function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedIte
   useEffect(() => {
     if (property.signed_url === applied_source_ref.current) return;
     applied_source_ref.current = property.signed_url;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- resetea estado UI heredado del ítem reciclado antes de cargar la fuente nueva.
     set_has_error(false);
     set_is_paused(false);
     void player
@@ -220,19 +247,53 @@ function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedIte
     return () => sub.remove();
   }, [player, onVideoEnd]);
 
+  // 112.2: compleción de video — playToEnd NO sirve con loop=true (ver arriba),
+  // así que se detecta en cada tick de `timeUpdate` (intervalo fijado en
+  // timeUpdateEventInterval, arriba). report_time_update es fire-and-forget
+  // (no se propaga error) y deduplica internamente, así que es seguro llamarlo
+  // en cada tick sin condicionarlo a isActive.
+  //
+  // 🔴 fix guardian 112.2: property.id EN DEPS es obligatorio, no cosmético.
+  // report_time_update cierra sobre property_id (vía el hook de arriba). `player`
+  // es ESTABLE durante toda la vida de la instancia (fix #61, replaceAsync más
+  // abajo) — con deps=[player] a secas este efecto NUNCA se re-ejecutaba cuando
+  // FlashList reciclaba la celda hacia otra property: el listener seguía atado
+  // al report_time_update de la property VIEJA, así que video_completed se
+  // insertaba con el property_id EQUIVOCADO (falso positivo en la vieja, falso
+  // negativo en la nueva — el store ya la marcaba "vista" sin que el usuario la
+  // hubiera visto). property.id fuerza el cleanup (sub.remove()) + re-suscripción
+  // con el closure correcto en cada reciclaje.
+  useEffect(() => {
+    const sub = player.addListener('timeUpdate', ({ currentTime }) => {
+      report_time_update(currentTime, player.duration);
+    });
+    return () => sub.remove();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- report_time_update en sí no está memoizado (nueva identidad cada render) y por eso NO se lista directo — property.id ya fuerza la re-suscripción cuando importa (ver comentario arriba); listar report_time_update además re-suscribiría en CADA render sin necesidad.
+  }, [player, property.id]);
+
   // play / pause según visibilidad del ítem en el feed.
+  //
+  // 🔴 fix guardian 112.2: mismo patrón que el efecto de arriba, versión menos
+  // grave — property.id en deps para que un reciclaje de FlashList que NO
+  // cambia isActive (p.ej. refetch de filtros sobre la celda activa) SÍ
+  // dispare report_view() de la property nueva, en vez de quedarse callado
+  // porque isActive no cambió.
   useEffect(() => {
     if (isActive) {
       player.play();
       // eslint-disable-next-line react-hooks/set-state-in-effect -- sincroniza el override manual de pausa con isActive (ver comentario arriba).
       set_is_paused(false);
+      // 112.2: registra la vista al activarse. Fire-and-forget + dedupe interno
+      // (por session_id+property_id) — seguro aunque el efecto se repita.
+      report_view();
     } else {
       player.pause();
     }
     // ponytail: sin cleanup con player.pause() — useVideoPlayer libera el player
     // al desmontar y pausar un objeto liberado truena ("shared object already
     // released"). El else de arriba ya pausa al desactivarse.
-  }, [isActive, player]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- report_view en sí no está memoizado (nueva identidad cada render) y por eso NO se lista directo — property.id ya fuerza la re-ejecución cuando importa (ver comentario arriba).
+  }, [isActive, player, property.id]);
 
   // ── Fallback de error ──────────────────────────────────────────────────────
   if (has_error) {

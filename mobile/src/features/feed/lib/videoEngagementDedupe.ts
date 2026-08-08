@@ -2,17 +2,14 @@
  * videoEngagementDedupe.ts — lógica pura de compleción de video y dedupe de
  * eventos de engagement (video_view / video_completed) por (sesión, propiedad).
  *
- * Subtarea Taskmaster: 112.2 — captura en el feed (fase RED)
- *
- * STUB fase RED — sin lógica de negocio. Lanza `not_implemented` para que los
- * tests fallen por aserción/excepción, no por import. Contrato completo (a
- * implementar en GREEN): ver
+ * Subtarea Taskmaster: 112.2 — captura en el feed. Implementación completa
+ * (GREEN); contrato verificado en
  * mobile/src/features/feed/__tests__/videoEngagementDedupe.test.ts
  *
  * Por qué existe (contexto verificado en la subtarea 112):
- *   - expo-video con `loop=true` (VideoFeedItem.tsx:126) NUNCA dispara
- *     `playToEnd` (VideoFeedItem.tsx:213) → la compleción se detecta
- *     comparando `currentTime` contra `duration` en cada tick de `timeUpdate`.
+ *   - expo-video con `loop=true` (VideoFeedItem.tsx) NUNCA dispara
+ *     `playToEnd` → la compleción se detecta comparando `currentTime` contra
+ *     `duration` en cada tick de `timeUpdate`.
  *   - El feed reproduce en BUCLE: sin dedupe, `timeUpdate` generaría cientos
  *     de filas en events_raw por un solo video olvidado en pantalla, e
  *     inflaría las estadísticas del agente con actividad falsa.
@@ -53,6 +50,12 @@ export function is_video_completed(
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type VideoEngagementEventType = 'video_view' | 'video_completed';
+
+// ponytail: única fuente para estos 2 literales — la RPC de estadísticas del
+// lead (112.3) filtra events_raw.event_type por estos MISMOS strings; un typo
+// en cualquiera de los dos lados daría 0 filas sin ningún síntoma visible.
+export const VIDEO_VIEW_EVENT_TYPE: VideoEngagementEventType = 'video_view';
+export const VIDEO_COMPLETED_EVENT_TYPE: VideoEngagementEventType = 'video_completed';
 
 export interface VideoEngagementStore {
   /** true si ya se registró este (session_id, event_type, property_id). */
