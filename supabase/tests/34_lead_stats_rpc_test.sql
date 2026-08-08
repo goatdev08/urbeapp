@@ -82,10 +82,37 @@
 --   AISLA1: un agente SIN relación con el lead (ni dueño, ni agencia) no obtiene nada.
 --   AISLA2: el owner de OTRA agencia (no la del agente dueño del lead) no obtiene nada --
 --        el mutante clásico de #100 (membresía compartida vs. agencia REAL del lead).
+--
+-- ── Endurecimiento post-GREEN (guardian dio PASS; estos asserts cierran huecos reales,
+--    NO tocan la implementación) ────────────────────────────────────────────────────────
+--   Q2 [assert estrella, fuga de producto]: el gate del like es POR LA PROPIEDAD DE ORIGEN,
+--        no "cualquier like" -- un usuario cuyo lead tiene origen en P pero que likeó una
+--        propiedad DISTINTA Q (y no P) NO debe calificar. Sin este assert, borrar
+--        `and lk.property_id = o.property_id` del gate sobrevive con la suite en verde:
+--        mostraría estadísticas al agente de un lead que nunca dio like al video de origen.
+--   Q3: `guardo` también está atado a la propiedad de origen, no "cualquier save" -- un
+--        usuario que guardó una propiedad DISTINTA a la de origen debe dar guardo=false.
+--   Q4: `veces_visto`/`vio_completo` no se duplican cuando el usuario likeó DOS videos
+--        distintos de la MISMA propiedad de origen (likes_user_video_unique es
+--        (user_id, property_video_id), no (user_id, property_id) -- 2 likes válidos sobre
+--        la misma propiedad son posibles). El gate usa EXISTS, no JOIN, precisamente para
+--        evitar el fanout que duplicaría los agregados de events_raw en el group by.
+--   Q6: superficie de la función pineada -- anon NO puede ejecutar get_lead_stats (fail-
+--        closed, revoke/grant explícito) y la función es SECURITY DEFINER con
+--        search_path = '' fijo (protección contra search_path hijacking, mismo criterio
+--        que 33_events_raw_rls_test.sql y private.compute_lead_level).
+--   (Q1, fixture-only): EDGE4 se fortalece dándole a U5 -- que no tiene fila en
+--        lead_origin_properties -- un like sobre CUALQUIER propiedad. Antes, la ausencia de
+--        fila para L5 era AMBIGUA (¿por origen faltante o por like faltante?) porque U5 no
+--        tenía tampoco ningún like; con el like presente, la única explicación válida de
+--        que EDGE4 siga en 0 filas es el filtro de origen. El assert de EDGE4 no cambia,
+--        solo el fixture -- ver el bloque 6) más abajo.
+-- (Q5 -- múltiples orígenes por lead -- queda FUERA a propósito, mismo rationale del RED
+--  original: líneas 33-41 arriba.)
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(9);
+select plan(15);
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- Fixtures — UUIDs prefijo '...0000001123XX' (subtarea 112.3, sin colisión con
@@ -98,9 +125,18 @@ select plan(9);
 --   U2  buscador: like SIN ningún evento de video, SIN save sobre P2     (-> L2)
 --   U3  buscador: like + 1 video_view sobre P3                          (-> L3)
 --   U4  buscador: 2 video_view + save sobre P4, SIN like                (-> L4, EDGE1)
---   U5  buscador: SIN lead_origin_properties (lead sin origen)          (-> L5, EDGE4)
---   P1..P4 propiedades de GA (agencia AG1); V1..V4 su primer video.
---   L1..L5 leads de GA (agent_id=GA), uno por buscador U1..U5.
+--   U5  buscador: SIN lead_origin_properties, PERO con like sobre P2    (-> L5, EDGE4 --
+--       el like sobre P2 es una propiedad AJENA al origen -- que no existe -- de L5;
+--       fuerza a que la ausencia de fila solo se explique por el origen faltante, Q1)
+--   U6  buscador: origen=P1, like sobre P2 (propiedad AJENA al origen)  (-> L6, Q2)
+--   U7  buscador: origen=P3, like sobre P3 (califica) + save sobre P4  (-> L7, Q3)
+--       (propiedad AJENA al origen -- guardo debe dar false)
+--   U8  buscador: origen=P1, 2 likes sobre P1 (2 videos DISTINTOS,     (-> L8, Q4)
+--       V1 y V1b) + 2 video_view sobre P1 -- veces_visto NO debe duplicarse
+--   P1..P4 propiedades de GA (agencia AG1); V1..V4 su primer video; V1b un SEGUNDO
+--       video de P1 (Q4 -- likes_user_video_unique es (user_id, property_video_id), un
+--       usuario puede likear 2 videos de la MISMA propiedad).
+--   L1..L8 leads de GA (agent_id=GA), uno por buscador U1..U8.
 -- ════════════════════════════════════════════════════════════════════════════
 
 insert into auth.users (id, email) values
@@ -112,7 +148,10 @@ insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-000000112312', 'u2.1123@test.local'),
   ('00000000-0000-0000-0000-000000112313', 'u3.1123@test.local'),
   ('00000000-0000-0000-0000-000000112314', 'u4.1123@test.local'),
-  ('00000000-0000-0000-0000-000000112315', 'u5.1123@test.local');
+  ('00000000-0000-0000-0000-000000112315', 'u5.1123@test.local'),
+  ('00000000-0000-0000-0000-000000112316', 'u6.1123@test.local'),
+  ('00000000-0000-0000-0000-000000112317', 'u7.1123@test.local'),
+  ('00000000-0000-0000-0000-000000112318', 'u8.1123@test.local');
 
 update public.users set role = 'agent', is_verified_agent = true
   where id in (
@@ -143,7 +182,8 @@ insert into public.properties (id, owner_user_id, agency_id, property_type, oper
 insert into public.property_videos (id, property_id, status, position) values
   ('00000000-0000-0000-0000-000000112331', '00000000-0000-0000-0000-000000112321', 'uploading', 1), -- V1 de P1
   ('00000000-0000-0000-0000-000000112332', '00000000-0000-0000-0000-000000112322', 'uploading', 1), -- V2 de P2
-  ('00000000-0000-0000-0000-000000112333', '00000000-0000-0000-0000-000000112323', 'uploading', 1); -- V3 de P3
+  ('00000000-0000-0000-0000-000000112333', '00000000-0000-0000-0000-000000112323', 'uploading', 1), -- V3 de P3
+  ('00000000-0000-0000-0000-000000112335', '00000000-0000-0000-0000-000000112321', 'uploading', 2); -- V1b, SEGUNDO video de P1 (Q4)
 -- P4 no necesita video para EDGE1 (U4 nunca da like, así que likes.property_video_id nunca se usa para P4).
 
 insert into public.leads (id, agent_id, user_id, status) values
@@ -151,13 +191,19 @@ insert into public.leads (id, agent_id, user_id, status) values
   ('00000000-0000-0000-0000-000000112352', '00000000-0000-0000-0000-000000112302', '00000000-0000-0000-0000-000000112312', 'contacted'), -- L2 (GA, U2)
   ('00000000-0000-0000-0000-000000112353', '00000000-0000-0000-0000-000000112302', '00000000-0000-0000-0000-000000112313', 'contacted'), -- L3 (GA, U3)
   ('00000000-0000-0000-0000-000000112354', '00000000-0000-0000-0000-000000112302', '00000000-0000-0000-0000-000000112314', 'contacted'), -- L4 (GA, U4) -- EDGE1
-  ('00000000-0000-0000-0000-000000112355', '00000000-0000-0000-0000-000000112302', '00000000-0000-0000-0000-000000112315', 'contacted'); -- L5 (GA, U5) -- EDGE4
+  ('00000000-0000-0000-0000-000000112355', '00000000-0000-0000-0000-000000112302', '00000000-0000-0000-0000-000000112315', 'contacted'), -- L5 (GA, U5) -- EDGE4
+  ('00000000-0000-0000-0000-000000112356', '00000000-0000-0000-0000-000000112302', '00000000-0000-0000-0000-000000112316', 'contacted'), -- L6 (GA, U6) -- Q2
+  ('00000000-0000-0000-0000-000000112357', '00000000-0000-0000-0000-000000112302', '00000000-0000-0000-0000-000000112317', 'contacted'), -- L7 (GA, U7) -- Q3
+  ('00000000-0000-0000-0000-000000112358', '00000000-0000-0000-0000-000000112302', '00000000-0000-0000-0000-000000112318', 'contacted'); -- L8 (GA, U8) -- Q4
 
 insert into public.lead_origin_properties (lead_id, property_id) values
   ('00000000-0000-0000-0000-000000112351', '00000000-0000-0000-0000-000000112321'), -- L1 -> P1
   ('00000000-0000-0000-0000-000000112352', '00000000-0000-0000-0000-000000112322'), -- L2 -> P2
   ('00000000-0000-0000-0000-000000112353', '00000000-0000-0000-0000-000000112323'), -- L3 -> P3
-  ('00000000-0000-0000-0000-000000112354', '00000000-0000-0000-0000-000000112324'); -- L4 -> P4
+  ('00000000-0000-0000-0000-000000112354', '00000000-0000-0000-0000-000000112324'), -- L4 -> P4
+  ('00000000-0000-0000-0000-000000112356', '00000000-0000-0000-0000-000000112321'), -- L6 -> P1 (Q2: U6 likea P2, AJENA)
+  ('00000000-0000-0000-0000-000000112357', '00000000-0000-0000-0000-000000112323'), -- L7 -> P3 (Q3: U7 guarda P4, AJENA)
+  ('00000000-0000-0000-0000-000000112358', '00000000-0000-0000-0000-000000112321'); -- L8 -> P1 (Q4: doble like sobre P1)
 -- L5 NO recibe fila en lead_origin_properties a propósito -- EDGE4 (origen NULL).
 
 -- ── U1: like + 2 video_view + 1 video_completed + save sobre P1 (HP1) ────────────────────
@@ -186,25 +232,50 @@ insert into public.saves (user_id, property_id, created_at) values
 insert into public.events_raw (event_type, user_id, property_id, payload, created_at) values
   ('video_view', '00000000-0000-0000-0000-000000112314', '00000000-0000-0000-0000-000000112324', '{}'::jsonb, '2026-08-02 08:00:00+00'),
   ('video_view', '00000000-0000-0000-0000-000000112314', '00000000-0000-0000-0000-000000112324', '{}'::jsonb, '2026-08-04 08:00:00+00');
--- U5 no necesita ningún dato -- EDGE4 es sobre la AUSENCIA de lead_origin_properties, nada más.
+-- ── U5: like sobre P2 -- SIN lead_origin_properties (Q1 -- refuerzo de EDGE4) ────────────
+-- P2 es una propiedad AJENA a cualquier origen de L5 (L5 no tiene NINGUNA fila en
+-- lead_origin_properties). El propósito de este like NO es que L5 califique -- L5 sigue sin
+-- origen, así que sigue sin fila -- sino volver inequívoca la razón de esa ausencia: antes
+-- de este like, U5 no tenía NINGÚN like, así que un mutante que quite el requisito de origen
+-- (LEFT JOIN en vez de INNER, gate "algún like del usuario" sin exigir property_id) también
+-- pasaba con 0 filas, por casualidad (ni origen ni like). Con el like presente, la ÚNICA
+-- explicación de que EDGE4 siga en 0 filas es el filtro de origen -- el assert de EDGE4 no
+-- cambia, mata el mutante.
+insert into public.likes (user_id, property_video_id, property_id, created_at) values
+  ('00000000-0000-0000-0000-000000112315', '00000000-0000-0000-0000-000000112332', '00000000-0000-0000-0000-000000112322', '2026-08-01 11:00:00+00');
+
+-- ── U6: origen=P1, like sobre P2 -- propiedad AJENA al origen (Q2, assert estrella) ──────
+-- El gate del like debe ser "likeó la propiedad DE ORIGEN", no "likeó algo". U6 SÍ dio like
+-- (a P2), pero NO a P1 (el origen real de L6) -- L6 no debe calificar.
+insert into public.likes (user_id, property_video_id, property_id, created_at) values
+  ('00000000-0000-0000-0000-000000112316', '00000000-0000-0000-0000-000000112332', '00000000-0000-0000-0000-000000112322', '2026-08-01 12:00:00+00');
+
+-- ── U7: origen=P3, like sobre P3 (califica) + save sobre P4 -- AJENA al origen (Q3) ──────
+-- `guardo` debe estar atado a la propiedad de origen igual que el gate del like -- un save
+-- sobre una propiedad distinta a P3 (aquí P4) NO debe contar como "guardó" para este lead.
+insert into public.likes (user_id, property_video_id, property_id, created_at) values
+  ('00000000-0000-0000-0000-000000112317', '00000000-0000-0000-0000-000000112333', '00000000-0000-0000-0000-000000112323', '2026-08-01 13:00:00+00');
+insert into public.saves (user_id, property_id, created_at) values
+  ('00000000-0000-0000-0000-000000112317', '00000000-0000-0000-0000-000000112324', '2026-08-02 13:00:00+00');
+
+-- ── U8: origen=P1, 2 likes sobre P1 (V1 Y V1b, videos DISTINTOS) + 2 video_view (Q4) ─────
+-- likes_user_video_unique es (user_id, property_video_id) -- U8 puede likear V1 Y V1b (ambos
+-- de P1) sin violar la unicidad. El gate usa EXISTS (no JOIN) precisamente para que 2 likes
+-- sobre la MISMA propiedad no dupliquen el group by contra events_raw -> veces_visto debe
+-- seguir siendo 2 (los 2 video_view reales), NUNCA 4.
+insert into public.likes (user_id, property_video_id, property_id, created_at) values
+  ('00000000-0000-0000-0000-000000112318', '00000000-0000-0000-0000-000000112331', '00000000-0000-0000-0000-000000112321', '2026-08-01 14:00:00+00'),
+  ('00000000-0000-0000-0000-000000112318', '00000000-0000-0000-0000-000000112335', '00000000-0000-0000-0000-000000112321', '2026-08-01 14:05:00+00');
+insert into public.events_raw (event_type, user_id, property_id, payload, created_at) values
+  ('video_view', '00000000-0000-0000-0000-000000112318', '00000000-0000-0000-0000-000000112321', '{}'::jsonb, '2026-08-02 14:00:00+00'),
+  ('video_view', '00000000-0000-0000-0000-000000112318', '00000000-0000-0000-0000-000000112321', '{}'::jsonb, '2026-08-03 14:00:00+00');
 
 -- ════════════════════════════════════════════════════════════════════════════
--- 0) STUB transaccional del SUT (RED) -- ver "Estrategia RED" arriba. Nunca persiste.
+-- 0) GREEN: el stub transaccional de la fase RED se retiró (migración
+-- 20260808000002_get_lead_stats_rpc.sql crea la función real y persistente). Los asserts
+-- de abajo corren contra esa función, no contra un stub -- ver "Estrategia RED" arriba
+-- para el porqué del stub durante la fase RED.
 -- ════════════════════════════════════════════════════════════════════════════
-create or replace function public.get_lead_stats(p_lead_ids uuid[])
-returns table (
-  lead_id          uuid,
-  vio_completo     boolean,
-  veces_visto      integer,
-  guardo           boolean,
-  ultima_actividad timestamptz
-)
-language plpgsql
-as $$
-begin
-  raise exception 'not_implemented: public.get_lead_stats es un STUB de la fase RED (subtarea 112.3) -- la fase GREEN debe reemplazarlo con la migracion real en supabase/migrations/';
-end;
-$$;
 
 -- Helper de impersonación inline (mismo patrón que 02/08/18/21/25/27/28/29/30/31/33_*).
 create or replace function pg_temp.act_as(p_uid uuid, p_role text default 'authenticated')
@@ -371,7 +442,10 @@ reset role;
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- 6) EDGE4 [DELTA] -- lead sin propiedad de origen (lead_origin_properties vacío): NO
---    truena y NO devuelve fila.
+--    truena y NO devuelve fila. Fixture reforzado (Q1): U5 SÍ tiene un like (sobre P2,
+--    ajena) -- así la única explicación posible de 0 filas es el origen faltante, no la
+--    ausencia de like (antes de este refuerzo un mutante que quitara la exigencia de
+--    origen (LEFT JOIN) pasaba igual, por casualidad, porque U5 tampoco tenía like).
 -- ════════════════════════════════════════════════════════════════════════════
 select pg_temp.act_as('00000000-0000-0000-0000-000000112302'); -- GA
 select lives_ok(
@@ -453,6 +527,120 @@ select lives_ok(
   'AISLA2_owner_de_otra_agencia_no_obtiene_nada_cross_agencia'
 );
 reset role;
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 10) Q2 [DELTA, assert estrella, fuga de producto] -- el gate del like es POR LA
+--     PROPIEDAD DE ORIGEN: L6 tiene origen en P1, pero U6 solo dio like a P2 (AJENA) --
+--     NO debe calificar. Mata el mutante que borra `and lk.property_id = o.property_id`.
+-- ════════════════════════════════════════════════════════════════════════════
+select pg_temp.act_as('00000000-0000-0000-0000-000000112302'); -- GA
+select lives_ok(
+  $$
+  do $do$
+  declare v_count int;
+  begin
+    select count(*) into v_count from public.get_lead_stats(array['00000000-0000-0000-0000-000000112356']::uuid[]);
+    if v_count is distinct from 0 then
+      raise exception 'un lead cuyo usuario likeó una propiedad DISTINTA a la de origen (P1) NO debe calificar aunque haya dado like a OTRA propiedad (P2) -- el gate es por la propiedad de origen, no "cualquier like" (fuga de producto: mostraría estadísticas de un lead que nunca dio like al video de origen); devolvió % filas', v_count;
+    end if;
+  end
+  $do$;
+  $$,
+  'Q2_like_en_propiedad_distinta_al_origen_no_califica_fuga_de_producto'
+);
+reset role;
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 11) Q3 [DELTA] -- `guardo` también está atado a la propiedad de origen: L7 califica
+--     (like sobre P3, su origen), pero el save de U7 es sobre P4 (AJENA) -- guardo debe
+--     ser false, no true. Mata el mutante que quita `and sv.property_id = ...` del exists.
+-- ════════════════════════════════════════════════════════════════════════════
+select pg_temp.act_as('00000000-0000-0000-0000-000000112302'); -- GA
+select lives_ok(
+  $$
+  do $do$
+  declare
+    v_count  int;
+    v_guardo boolean;
+  begin
+    select count(*), bool_or(guardo) into v_count, v_guardo
+      from public.get_lead_stats(array['00000000-0000-0000-0000-000000112357']::uuid[]);
+    if v_count is distinct from 1 then
+      raise exception 'L7 califica (like sobre P3, su origen) y debe devolver EXACTAMENTE 1 fila; devolvió %', v_count;
+    end if;
+    if v_guardo is distinct from false then
+      raise exception 'guardo debe ser false cuando el save es de una propiedad (P4) DISTINTA a la de origen (P3) -- guardo está atado a la propiedad de origen igual que el gate del like; fue %', v_guardo;
+    end if;
+  end
+  $do$;
+  $$,
+  'Q3_guardo_es_false_cuando_el_save_es_de_una_propiedad_distinta_al_origen'
+);
+reset role;
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 12) Q4 [DELTA] -- 2 likes de U8 sobre P1 (videos V1 y V1b, DISTINTOS -- válido bajo
+--     likes_user_video_unique) no deben duplicar veces_visto: hay 2 video_view reales,
+--     el resultado debe ser 2, NUNCA 4 (fanout si el gate usara JOIN en vez de EXISTS).
+-- ════════════════════════════════════════════════════════════════════════════
+select pg_temp.act_as('00000000-0000-0000-0000-000000112302'); -- GA
+select lives_ok(
+  $$
+  do $do$
+  declare
+    v_count       int;
+    v_veces_visto integer;
+  begin
+    select count(*) into v_count from public.get_lead_stats(array['00000000-0000-0000-0000-000000112358']::uuid[]);
+    if v_count is distinct from 1 then
+      raise exception 'L8 califica (like sobre P1, su origen) y debe devolver EXACTAMENTE 1 fila pese a tener 2 likes sobre esa propiedad; devolvió %', v_count;
+    end if;
+    select veces_visto into v_veces_visto
+      from public.get_lead_stats(array['00000000-0000-0000-0000-000000112358']::uuid[])
+      where lead_id = '00000000-0000-0000-0000-000000112358';
+    if v_veces_visto is distinct from 2 then
+      raise exception 'veces_visto debe ser 2 (los 2 video_view reales) -- un usuario con 2 likes sobre 2 videos DISTINTOS de la MISMA propiedad NO debe duplicar el agregado (el gate usa EXISTS, no JOIN, precisamente para evitar el fanout); fue %', v_veces_visto;
+    end if;
+  end
+  $do$;
+  $$,
+  'Q4_doble_like_misma_propiedad_distintos_videos_no_duplica_veces_visto'
+);
+reset role;
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 13) Q6a [INVARIANTE] -- anon (sin autenticar) NO puede ejecutar get_lead_stats (fail-
+--     closed, mismo criterio que 33_events_raw_rls_test.sql SEL4). Un
+--     `grant execute ... to anon` futuro rompe este assert.
+-- ════════════════════════════════════════════════════════════════════════════
+select pg_temp.act_as(null, 'anon');
+select throws_ok(
+  $$ select * from public.get_lead_stats(array[]::uuid[]) $$,
+  null,
+  'Q6a_anon_no_puede_ejecutar_get_lead_stats'
+);
+reset role;
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 14-15) Q6b/Q6c [metadata pura sobre pg_proc -- segura aunque la función no exista,
+--     mismo patrón que 05/09/19/20_*] -- get_lead_stats es SECURITY DEFINER con
+--     search_path = '' fijo (protección contra search_path hijacking; las RLS de
+--     likes/saves solo dejan leer al propio usuario, así que la autorización real vive
+--     en el cuerpo de la función, no en RLS -- ver comentario de la migración).
+-- ════════════════════════════════════════════════════════════════════════════
+select is(
+  (select prosecdef from pg_proc join pg_namespace ns on pg_proc.pronamespace = ns.oid
+    where ns.nspname = 'public' and pg_proc.proname = 'get_lead_stats' limit 1),
+  true,
+  'Q6b_get_lead_stats_debe_ser_security_definer'
+);
+
+select is(
+  (select proconfig from pg_proc join pg_namespace ns on pg_proc.pronamespace = ns.oid
+    where ns.nspname = 'public' and pg_proc.proname = 'get_lead_stats' limit 1),
+  array['search_path=""']::text[],
+  'Q6c_get_lead_stats_debe_fijar_search_path_vacio'
+);
 
 select * from finish();
 rollback;

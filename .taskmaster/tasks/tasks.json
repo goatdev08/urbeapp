@@ -7033,11 +7033,11 @@
             "id": 3,
             "title": "Lectura agregada por lead, con el LIKE como filtro",
             "description": "Devuelve por lead: vio_completo, veces_visto, guardó, última actividad — SOLO si existe like de ese usuario a esa propiedad.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               1
             ],
-            "details": "",
+            "details": "hecho: supabase/migrations/20260808000002_get_lead_stats_rpc.sql + rollback.\npublic.get_lead_stats(p_lead_ids uuid[]) -> lead_id, vio_completo, veces_visto, guardo,\nultima_actividad. stable security definer set search_path=''. 3 CTEs: candidate_leads\n(autoriza con private.can_view_lead REUSADO, sin helper nuevo), origin (distinct on ...\norder by contacted_at asc = primer contacto), gated (exists sobre likes por la propiedad\nDE ORIGEN). Batch para evitar N+1. ultima_actividad = greatest entre eventos/like/save.\nrevoke de public+anon, grant execute solo a authenticated.\n\nDECISIÓN: EXISTS y no JOIN en el gate. likes_user_video_unique es (user_id,\nproperty_video_id), así que un usuario PUEDE likear 2 videos de la misma propiedad; con\nJOIN el fanout duplicaba veces_visto (medido: 4 donde lo correcto es 2).\n\nTests: supabase/tests/34_lead_stats_rpc_test.sql. plan 9 -> 15 tras el endurecimiento.\nSuite: 35 archivos, 735/735 verdes.\n\nGUARDIAN: PASS. Verificó el retiro del stub aplicando el rollback (los 9 asserts mueren con\n42883 -> el verde depende 100% de la migración, no de un stub local). 6 mutantes muertos\n(quitar gate del like -> cae EDGE1; can_view_lead->true -> caen AISLA1/AISLA2 cross-agencia;\nultima_actividad solo del like -> cae EDGE3; count sin filter -> cae HP1; left join->join ->\ncae EDGE2; autorización por agent_id -> cae RAMA1). No desplegado al remoto (verificado por\nprobe HTTP discriminante).\n\nENDURECIMIENTO posterior (5 huecos que el guardian marcó como asserts que pasaban por la\nrazón equivocada, todos cerrados y verificados por mutación):\nQ1 EDGE4 era ambiguo (U5 no tenía ni origen ni like) -> se le da un like para que la única\n   explicación sea el origen faltante.\nQ2 el gate por propiedad DE ORIGEN no lo vigilaba nadie -> fuga de producto: estadísticas de\n   un lead que nunca dio like al video de origen. Fixture U6/L6 (origen P1, like a P2).\nQ3 guardo tampoco estaba atado a la propiedad -> fixture U7/L7 (guarda P4, origen P3).\nQ4 EXISTS vs JOIN sin red -> fixture U8/L8 con doble like sobre la misma propiedad.\nQ6 superficie sin pinnear -> 3 asserts: anon no ejecuta, prosecdef, search_path vacío.\nQ5 (múltiples orígenes por lead) queda FUERA con RATIONALE escrito en el RED.",
             "parentId": "undefined"
           },
           {

@@ -96,10 +96,17 @@
 -- Shape:
 --   · Índices nuevos para las agregaciones (user_id, property_id) y
 --     (property_id, event_type) existen.
+-- Append-only [INVARIANTE, pin de regresión — agregado en subtarea 112.3, deuda
+-- detectada por el guardian de 112.1]:
+--   · authenticated NO puede UPDATE su propio evento (hoy solo se sostiene por
+--     ausencia de grant, no por un assert explícito — un grant de más a futuro
+--     dejaría al usuario alterar la evidencia de su propio comportamiento).
+--   · authenticated NO puede DELETE su propio evento (mismo razonamiento — el dato
+--     que el agente necesita poder creer).
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(16);
+select plan(18);
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- Fixtures — UUIDs prefijo '...0000001121XX' (subtarea 112.1, sin colisión con
@@ -433,6 +440,45 @@ select lives_ok(
   $do$;
   $$,
   'ISO3_tercero_sin_relacion_no_ve_eventos_de_ninguna_propiedad'
+);
+reset role;
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 5) APPEND-ONLY [INVARIANTE, pin de regresión] — authenticated NO puede UPDATE ni
+--    DELETE sobre events_raw, ni siquiera SUS PROPIAS filas. events_raw está
+--    documentada como append-only (20260604000007:19-20), pero hoy eso se sostiene
+--    SOLO por ausencia de grant (20260808000001 concede insert, select — nunca
+--    update/delete). Estos 2 asserts fijan esa garantía como PIN: deben pasar DE
+--    INMEDIATO con la migración actual (no son un RED) — si algún día un grant de
+--    más habilita update/delete, este archivo lo caza antes de que un usuario pueda
+--    borrar la evidencia de su propio comportamiento (deuda detectada por el
+--    guardian de 112.1, cerrada en la subtarea 112.3).
+-- ════════════════════════════════════════════════════════════════════════════
+
+-- APPEND1 [INVARIANTE] U1 no puede UPDATE su propio evento (E1, sobre PA).
+select pg_temp.act_as('00000000-0000-0000-0000-000000112101'); -- U1
+select throws_ok(
+  $$
+  update public.events_raw
+     set payload = '{"tampered": true}'::jsonb
+   where user_id = '00000000-0000-0000-0000-000000112101'
+     and property_id = '00000000-0000-0000-0000-000000112121'
+  $$,
+  null,
+  'APPEND1_authenticated_no_puede_actualizar_ni_su_propio_evento'
+);
+reset role;
+
+-- APPEND2 [INVARIANTE] U1 no puede DELETE su propio evento (E1, sobre PA).
+select pg_temp.act_as('00000000-0000-0000-0000-000000112101'); -- U1
+select throws_ok(
+  $$
+  delete from public.events_raw
+   where user_id = '00000000-0000-0000-0000-000000112101'
+     and property_id = '00000000-0000-0000-0000-000000112121'
+  $$,
+  null,
+  'APPEND2_authenticated_no_puede_borrar_ni_su_propio_evento'
 );
 reset role;
 
