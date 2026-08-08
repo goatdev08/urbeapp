@@ -2,26 +2,30 @@
 // Regenerar con:  supabase gen types typescript --project-id mvpvqmyhrrkwbnpctpuq > supabase/types/database.types.ts
 // (o vía el MCP de Supabase: generate_typescript_types). NO editar a mano.
 //
-// ⚠️ #75.5/#75.6 (2026-08-07): regen COMPLETO contra `--local` (CLI global de
-// brew, `supabase gen types typescript --local`) — el stack local ya tenía
-// aplicadas TODAS las migraciones (incluida 0805 Ola 1 #71 y 0807 #75.1-#75.4),
-// así que este regen resuelve de una vez:
-//   - El parche manual y quirúrgico de #75.1 (leads.score/level, lead_temperature,
-//     lead_status ampliado, lead_status_history) — ya no es un parche, es la
-//     fuente real generada.
-//   - El drift heredado de #71 (2026-08-05): agency_member_role pasa de
-//     {owner,agent} a {owner,agent,admin,viewer}; agency_member_status suma
-//     'suspended'. Esto es lo que useAgencyRole.ts (75.5) necesita para
-//     distinguir admin/viewer en tiempo de ejecución.
-//   - RPCs de Ola 1 antes ausentes de este archivo: register_agency_atomic,
-//     switch_agency_atomic, upgrade_to_agent_atomic.
-// Migraciones 20260727000001-3 (catálogo INEGI) y 20260729000001 (RPC
-// register_user_atomic) SÍ estaban ya incorporadas desde el regen anterior.
-// Al desplegar 20260807000002-5 al remoto, regenerar contra --project-id para
-// volver a la fuente canónica (mismo aviso que versiones previas de este header).
+// ⚠️ #112 (2026-08-08): regen COMPLETO contra `--local` (CLI global de brew,
+// `supabase gen types typescript --local`), con las migraciones 20260808000001
+// (RLS de events_raw) y 20260808000002 (RPC get_lead_stats) ya aplicadas — ambas
+// desplegadas también al remoto ese mismo día, así que local y remoto coinciden.
+// Este regen incorpora:
+//   - La RPC `get_lead_stats(p_lead_ids uuid[])` de 112.3, que consume el hook
+//     useLeadStats. Sin ella había que usar el escape hatch `client: any` (mismo
+//     truco que mapProperties.ts / feedProperties.ts para RPC no modeladas).
+//   - `leads.agency_id` + su FK a agencies: DRIFT heredado de #75.5
+//     (20260807000006, el fix de fuga de PII cross-agencia). La columna existía en
+//     la base desde el 2026-08-07 pero nunca había llegado a este archivo.
 //
-// Gotcha de entorno: `gen types --local` necesita el credential helper de Docker en el
-// PATH → export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"
+// El regen anterior (#75.5/#75.6, 2026-08-07) ya había resuelto: leads.score/level,
+// lead_temperature, lead_status ampliado, lead_status_history, el drift de #71
+// (agency_member_role con admin/viewer, agency_member_status con suspended) y las
+// RPC de Ola 1 (register_agency_atomic, switch_agency_atomic, upgrade_to_agent_atomic).
+//
+// Gotchas de entorno para `gen types --local`:
+//   - Necesita el credential helper de Docker en el PATH →
+//     export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"
+//   - Exportar SUPABASE_ACCESS_TOKEN con un valor dummy, o la CLI se cuelga esperando
+//     el Keychain en sesiones no interactivas (ver memoria supabase_cli_use_brew_global).
+//     🔴 NUNCA escribas ese valor literal en un archivo versionado: GitHub Push
+//     Protection reconoce el prefijo y rechaza el push entero.
 
 export type Json =
   | string
@@ -623,6 +627,7 @@ export type Database = {
       }
       leads: {
         Row: {
+          agency_id: string | null
           agent_id: string
           closed_at: string | null
           created_at: string
@@ -639,6 +644,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          agency_id?: string | null
           agent_id: string
           closed_at?: string | null
           created_at?: string
@@ -655,6 +661,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          agency_id?: string | null
           agent_id?: string
           closed_at?: string | null
           created_at?: string
@@ -671,6 +678,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "leads_agency_id_fkey"
+            columns: ["agency_id"]
+            isOneToOne: false
+            referencedRelation: "agencies"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "leads_agent_id_fkey"
             columns: ["agent_id"]
@@ -1401,6 +1415,16 @@ export type Database = {
           agency_id: string
           agency_member_id: string
           token_id: string
+        }[]
+      }
+      get_lead_stats: {
+        Args: { p_lead_ids: string[] }
+        Returns: {
+          guardo: boolean
+          lead_id: string
+          ultima_actividad: string
+          veces_visto: number
+          vio_completo: boolean
         }[]
       }
       pending_legal_consents: {

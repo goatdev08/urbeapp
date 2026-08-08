@@ -6,7 +6,7 @@
 -- una API más robusta de impersonación. Aquí se usa el patrón nativo.
 
 begin;
-select plan(17);
+select plan(16);
 
 -- ── Fixtures ────────────────────────────────────────────────────────────────
 insert into auth.users (id, email) values
@@ -139,10 +139,17 @@ select is(count(*)::int, 0, 'B no puede actualizar el perfil de A') from u;
 select is((select count(*) from public.notifications)::int, 0, 'B no ve notificaciones de A');
 reset role;
 
--- 13) Un usuario autenticado NO puede leer events_raw (sin grant ni policy).
-select pg_temp.act_as('00000000-0000-0000-0000-0000000000a1');
-select throws_ok($$ select 1 from public.events_raw $$, null, 'authenticated no puede leer events_raw');
+-- 13) [RETIRADO 20260808000001] Antes: "un usuario autenticado NO puede leer events_raw
+-- (sin grant ni policy)". Dejó de ser cierto a propósito -- la migración 20260808000001
+-- (subtarea 112.1) abre events_raw a authenticated con policies (el usuario lee SUS
+-- propios eventos, el agente/owner de agencia/admin lee los de SUS propiedades vía
+-- private.can_manage_property). Este archivo no tiene fixtures de events_raw (A1 no es
+-- dueño de ningún evento ni propiedad aquí), así que no hay una aserción "sigue siendo
+-- verdad" barata que agregar sin sumar fixtures nuevas fuera del alcance de este smoke
+-- genérico de RLS. El reemplazo preciso (propio sí / ajeno no / aislamiento cross-agencia)
+-- vive en supabase/tests/33_events_raw_rls_test.sql (SEL1-4, OWN1-3, ISO1-3).
 -- 14) Un no-admin NO puede insertar en admin_actions.
+select pg_temp.act_as('00000000-0000-0000-0000-0000000000a1');
 select throws_ok(
   $$ insert into public.admin_actions (admin_id, action_type, entity_type, entity_id)
      values ('00000000-0000-0000-0000-0000000000a1', 'x', 'user', '00000000-0000-0000-0000-0000000000a2') $$,

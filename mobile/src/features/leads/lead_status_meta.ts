@@ -9,7 +9,7 @@
 
 import { colors } from '@/theme/theme';
 
-import type { LeadStatus, LeadTemperature } from './types';
+import type { LeadStatus } from './types';
 
 // ---------------------------------------------------------------------------
 // Tipos
@@ -67,21 +67,10 @@ export function get_status_meta(status: LeadStatus): StatusMeta {
 }
 
 // ---------------------------------------------------------------------------
-// Nivel de actividad (frío/tibio/caliente) — subtarea 75.6, §19.9
+// Nivel de actividad (frío/tibio/caliente) — RETIRADO en tarea #112 (decisión
+// del dueño: el puntaje/temperatura salen de la UI, reemplazados por la barra
+// de acciones tangible — ver ActionStatsBar.tsx). `leads.score`/`leads.level`
+// siguen vivos en DB/tipos (AgentLead.score/level, apps v1.0.3 + el OTA del
+// mismo día allá afuera leyéndolas) — solo este mapeo visual (LEVEL_META/
+// get_level_meta), sin consumidores tras el retiro de LeadCard, se elimina.
 // ---------------------------------------------------------------------------
-//
-// Escala de intensidad en un solo tono (Arcilla) — frío en gris neutro, tibio
-// y caliente en Arcilla creciente. Deliberadamente NO reusa los tokens exactos
-// del status badge más cercano visualmente (closed_lost/interested) para que
-// nivel y estado sigan siendo dos badges distinguibles a simple vista.
-
-export const LEVEL_META: Record<LeadTemperature, StatusMeta> = {
-  frio:     { label: 'Frío',     bg: colors.silver,      text: colors.gray_3 },
-  tibio:    { label: 'Tibio',    bg: colors.accent_tint,  text: colors.accent_deep },
-  caliente: { label: 'Caliente', bg: colors.accent,       text: '#FFFFFF' },
-};
-
-/** Fallback seguro: si el nivel es desconocido devuelve neutro. */
-export function get_level_meta(level: LeadTemperature): StatusMeta {
-  return LEVEL_META[level] ?? { label: level, bg: colors.paper_3, text: colors.gray_3 };
-}
