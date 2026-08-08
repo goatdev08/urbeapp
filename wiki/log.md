@@ -2,6 +2,34 @@
 
 Append-only. Prefijo: `## [YYYY-MM-DD] tipo | título`
 
+## [2026-08-08] tarea | #113 El detalle del lead abría VACÍO — un `flex: 1` colapsado a altura 0
+
+Segundo reporte del dueño (*"en la cuenta de vladimir aún no puedo configurar los estados"*) tras un primer diagnóstico **equivocado** en #112: se atribuyó a permisos y era **layout**. El sheet abría con la cabecera y los botones, y nada en medio: ni Actividad, ni Cambiar estado, ni notas, ni historial — en TODAS las cuentas.
+
+FIX2 de 75.6 había cambiado el ScrollView acotado del picker (`maxHeight: 280`, altura definida, funcionaba) por uno solo con `flex: 1`. `styles.sheet` no tiene altura definida (solo `maxHeight`) y su padre `KeyboardAvoidingView` no tiene estilo: la altura la fija el contenido. `flex: 1` implica `flexBasis: 0` → el contenido del ScrollView deja de contar para esa altura y, sin espacio libre que repartir, **Yoga le asigna 0**. `flexShrink: 1` lo arregla con una propiedad, y encima se comporta mejor con contenido corto.
+
+⚠️ **Los 99 tests de leads pasaban igual antes y después.** RNTL no calcula layout: un colapso de flexbox le es literalmente invisible. Este sheet nunca se había verificado en pantalla. **Técnica que lo destapó y que conviene reusar**: parche temporal en `CRMScreen` que auto-selecciona `leads[0]` → Fast Refresh → `xcrun simctl io booted screenshot` → revertir. Es la forma de "tocar" la UI por CLI en el simulador de iOS sin secuestrar el mouse del usuario (Maestro no corre aquí: falta Java). Derivada #115: `FilterSheet` tiene un primo del mismo patrón, sin verificar.
+
+## [2026-08-08] tarea | #114 El splash abría con un cuadro blanco — el isotipo había perdido la transparencia
+
+*"No quiero que al abrir salga el cuadro beige con la U."* `assets/android-icon-foreground.png` estaba guardado con **fondo blanco opaco** (canal alfa presente, todo en 255). La config siempre estuvo bien: sin `backgroundColor` ni `removeTransparency`, `@expo/image-utils` **preserva** el alfa — el defecto estaba en el asset. En Android era peor: ese foreground opaco tapaba el background verde del adaptive icon, dejando un ícono blanco distinto del de iOS.
+
+Fix por **des-composite exacto**, no chroma key: el PNG es crema `#EEE4D0` sobre blanco, así que `a = (255-B)/47` despeja el alfa y se reconstruye con crema plana. Error máximo 1.20/255; compuesto sobre `#1A5E44` difiere del ícono de iOS en ≤6/255 → las dos plataformas quedan con el mismo logo.
+
+Dos gotchas que costaron tiempo: (1) el asset **entra en la huella del fingerprint** como `expoConfigExternalFile`, así que tocarlo cambia el runtime — por eso el OTA de #113 se publicó ANTES, sobre la huella del build instalado; (2) el simulador seguía mostrando el splash viejo con el binario nuevo, por el **caché de launch image de iOS** — se verificó instalando en un simulador limpio.
+
+## [2026-08-08] tarea | #75.3 Privacidad del lead (§19.2) — registrar no es exponer
+
+Cerrada una fuga **viva** que abrió #112 hace un día. `events_raw_select` nació como `user_id = auth.uid() OR can_manage_property(property_id)`: **sin mencionar el lead**. Bastaba con ser dueño de la propiedad para leer el comportamiento de cualquiera sobre ella. Medido en producción con un JWT real —no deducido—: un agente leyó filas `video_view` de otra persona que jamás lo contactó. Contradecía §19.1 de frente.
+
+La regla del PRD cabe en una expresión: `private.can_view_user_events(user_id, property_id)` exige lead **ACTIVO** de esa persona, propiedad **del agente de ese lead** (de ahí "todas las publicaciones del agente") y que quien pregunta sea ese agente o el owner/admin de su agencia. Al derivarse del lead, **borrar el lead revoca el acceso** — sin código extra.
+
+Al cerrarla apareció gratis un hueco de #75.5: el **admin de inmobiliaria no veía NINGÚN evento** del equipo (`can_manage_property` compone dueño + owner + admin de plataforma, pero no a él). Era el único punto del CRM donde el admin seguía ciego.
+
+pgTAP `35_` (plan 15) + 3 asserts de `33_` reencuadrados con leads de fixture — no borrados: fijaban justo el comportamiento con fuga. **750/750 en 36 archivos.** Verificado por mutación: quitar "la propiedad es del agente del lead" mata 4 asserts; quitar "lead activo" mata el de la revocación.
+
+**Documentación (lo que pidió el dueño):** [[privacidad-datos]] es el inventario **medido** (dato → tabla → quién lo lee → qué lo desbloquea) y `docs/aviso-privacidad.md` el aviso completo redactado contra el esquema real. ⚠️ **No se activó**: lo vigente es un placeholder de 113 caracteres que gente real ya aceptó, y publicarlo fuerza re-consentimiento a todas las cuentas + necesita revisión legal. Además **el sistema comparte hoy más de lo que ese texto promete** → deuda #116: `users_select` expone correo y teléfono de todo agente verificado a cualquier autenticado (comprobado), y el agente con lead ve la fecha de nacimiento exacta cuando §19.4 pide edad calculada. Ambas exigen expand·migrate·contract porque el grant es a nivel de columna y romperían el `select('*')` del login en las apps ya instaladas.
+
 ## [2026-08-08] tarea | #112 Estadísticas tangibles del lead — fuera el puntaje y el tibio/caliente, entra una barra de acciones
 
 Pedido del dueño: *"para el marcador del puntaje no lo clasifiques como tibio/caliente, hay que separarlo en estadísticas tangibles… una barra como de acciones que hizo el usuario y que se vaya rellenando según la actividad"*, con el **like como filtro de entrada** para que ver unos segundos de video no genere ficha. Decisiones tomadas: registrar **siempre**, mostrar **solo tras el like** (si solo se registrara después se perdería el dato del video que *provocó* el like); fuera puntaje **y** temperatura; **no** se amplían permisos (owner/admin siguen de solo lectura, solo se explica mejor). 4 subtareas, 2 migraciones desplegadas al remoto, 3 rondas de guardian y **2 FAIL** que valieron cada minuto. **Reuso antes que invención:** `events_raw` ya existía con el esquema exacto (0 filas, **0 escritores**) y `private.can_manage_property`/`can_view_lead` ya resolvían la autorización — no se escribió un solo helper nuevo, y eso trajo gratis la corrección cross-agencia de #100 en vez de repetirla. **112.1** RLS de `events_raw` (tenía RLS activo con **0 policies y 0 grants**: nadie podía escribir ni leer). **112.2** captura en el feed. **112.3** `get_lead_stats(uuid[])`, batch para no hacer N+1, `security definer` porque las RLS de `likes`/`saves` solo dejan leer al propio usuario. **112.4** la barra + el banner de solo lectura.

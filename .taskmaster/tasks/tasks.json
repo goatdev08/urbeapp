@@ -5464,7 +5464,7 @@
         "id": "75",
         "title": "Ola 1 — CRM completo (9 estados + scoring frío/tibio/caliente)",
         "description": "Embudo de leads del PRD §19: 9 estados, scoring por puntaje (frío/tibio/caliente), unificación de leads, export CSV, historial retroactivo y retención.",
-        "details": "PRD §19 (19.5 unificación, 19.6 scoring, 19.8 estados, 19.9 CRM visual, 19.10 retención). Hoy: 7 estados, lead auto. Toca lógica de scoring (crítico), migraciones (estados), EF, UI del CRM. Épica del camino a producción (ADR 0008 / docs/PRD-beta.md). Spec detallado (modelo de datos, RLS, EF, pantallas, estados, edge cases, tests, subtareas) se redacta SECUENCIAL al entrar su ola, con aprobación de Abraham; add-task roto → subtareas por escritura directa en tasks.json.\n\n[2026-08-07] ALCANCE DEL TRAMO URGENTE (decidido por Abraham): se ejecutan 75.1, 75.2, 75.5 y 75.6 RECORTADAS. FUERA: 75.3 (privacidad §19.2), 75.4 (template WhatsApp + unificación) salvo el default de estado, 75.7 (export CSV + retención). Decisiones: (1) TRANSICIONES LIBRES — el agente mueve el lead a cualquier estado, incluido reabrir uno cerrado; se elimina VALID_TRANSITIONS de update-lead-status; el historial guarda todo. (2) SCORING desde señales EXISTENTES (contacto 10 + guardado 4 + like 1), NO desde events_raw (0 escritores, 0 filas en remoto); umbrales en app_config. (3) admin de inmobiliaria ve el pipeline del equipo (requiere helper private.is_agency_admin_of + OR en leads_select, can_view_lead y can_view_user_as_lead_searcher). (4) B1: la realineación mínima de cliente (types/lead_status_meta/tabs de CRMScreen) va DENTRO de 75.1 para que nunca exista una ventana con los estados rotos. (5) B2: contact-agent/index.ts pasa a crear el lead en whatsapp_opened (una palabra; el resto de 75.4 sigue fuera). (6) B3: los 2 leads legacy en closed_won NO se migran a rent/sale — adivinar es peor; el agente los reclasifica con la transición libre. (7) B4: is_follow_up se agrega a update-lead-note (aditivo) en vez de crear una 4ª EF. (8) B5: umbrales se calibran editando app_config a mano; sin pantalla admin en este tramo. Compatibilidad: TODO aditivo (ALTER TYPE ADD VALUE, columnas con default, tabla nueva, RLS que solo amplía SELECT) — las apps v1.0.3 en la calle no se rompen; get_status_meta ya tiene fallback para un estado que no conoce.\n\nDERIVADAS: #108 (guardian del tramo CRM — score/level escribibles por REST + changed_by NULL)\nDERIVADAS: #109 (E2E bloqueado — el muro de ubicación cubre TODA ruta protegida)\nDERIVADAS: #110 (hallazgos MEDIA/BAJA del code review final)\n\nDERIVADAS: #112 (usuario — estadísticas tangibles en vez de puntaje/temperatura)\n\nDERIVADAS: #113 (usuario — el sheet del lead abria vacio: flex:1 colapsado a altura 0) · #115 (barrido — mismo patron flex en FilterSheet)",
+        "details": "PRD §19 (19.5 unificación, 19.6 scoring, 19.8 estados, 19.9 CRM visual, 19.10 retención). Hoy: 7 estados, lead auto. Toca lógica de scoring (crítico), migraciones (estados), EF, UI del CRM. Épica del camino a producción (ADR 0008 / docs/PRD-beta.md). Spec detallado (modelo de datos, RLS, EF, pantallas, estados, edge cases, tests, subtareas) se redacta SECUENCIAL al entrar su ola, con aprobación de Abraham; add-task roto → subtareas por escritura directa en tasks.json.\n\n[2026-08-07] ALCANCE DEL TRAMO URGENTE (decidido por Abraham): se ejecutan 75.1, 75.2, 75.5 y 75.6 RECORTADAS. FUERA: 75.3 (privacidad §19.2), 75.4 (template WhatsApp + unificación) salvo el default de estado, 75.7 (export CSV + retención). Decisiones: (1) TRANSICIONES LIBRES — el agente mueve el lead a cualquier estado, incluido reabrir uno cerrado; se elimina VALID_TRANSITIONS de update-lead-status; el historial guarda todo. (2) SCORING desde señales EXISTENTES (contacto 10 + guardado 4 + like 1), NO desde events_raw (0 escritores, 0 filas en remoto); umbrales en app_config. (3) admin de inmobiliaria ve el pipeline del equipo (requiere helper private.is_agency_admin_of + OR en leads_select, can_view_lead y can_view_user_as_lead_searcher). (4) B1: la realineación mínima de cliente (types/lead_status_meta/tabs de CRMScreen) va DENTRO de 75.1 para que nunca exista una ventana con los estados rotos. (5) B2: contact-agent/index.ts pasa a crear el lead en whatsapp_opened (una palabra; el resto de 75.4 sigue fuera). (6) B3: los 2 leads legacy en closed_won NO se migran a rent/sale — adivinar es peor; el agente los reclasifica con la transición libre. (7) B4: is_follow_up se agrega a update-lead-note (aditivo) en vez de crear una 4ª EF. (8) B5: umbrales se calibran editando app_config a mano; sin pantalla admin en este tramo. Compatibilidad: TODO aditivo (ALTER TYPE ADD VALUE, columnas con default, tabla nueva, RLS que solo amplía SELECT) — las apps v1.0.3 en la calle no se rompen; get_status_meta ya tiene fallback para un estado que no conoce.\n\nDERIVADAS: #108 (guardian del tramo CRM — score/level escribibles por REST + changed_by NULL)\nDERIVADAS: #109 (E2E bloqueado — el muro de ubicación cubre TODA ruta protegida)\nDERIVADAS: #110 (hallazgos MEDIA/BAJA del code review final)\n\nDERIVADAS: #112 (usuario — estadísticas tangibles en vez de puntaje/temperatura)\n\nDERIVADAS: #113 (usuario — el sheet del lead abria vacio: flex:1 colapsado a altura 0) · #115 (barrido — mismo patron flex en FilterSheet)\n\nDERIVADAS: #116 (barrido de privacidad de 75.3 — users_select filtra correo/telefono de todo agente verificado y la fecha de nacimiento exacta del lead; exige expand·migrate·contract)",
         "testStrategy": "TDD estricto en lógica crítica (supabase/functions/**, migrations/**, lib/hooks/validation): RED→GREEN→guardian. Verificación ligera (tsc/lint/smoke) en UI. Se detalla al specificar la ola.",
         "status": "in-progress",
         "dependencies": [
@@ -5505,12 +5505,13 @@
             "description": "El agente ve datos del usuario + historial retroactivo SOLO tras crear el lead; construir sobre rls_lead_searcher_identity.",
             "details": "Verificar/extender rls_lead_searcher_identity (20260702000001): antes de contactar, el agente NO ve datos del usuario. Al crear lead: acceso a nombre, foto, edad calculada, estado/ciudad, correo, teléfono (§19.4) + historial retroactivo de interacciones del usuario con TODAS las publicaciones del agente (§19.2). Las interacciones se registran SIEMPRE (events_raw) y se exponen por RLS solo si existe lead. CRÍTICA (privacidad/RLS).",
             "testStrategy": "pgTAP por impersonación: sin lead el agente no lee datos del usuario; con lead lee datos + historial retroactivo; otro agente no.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               1
             ],
             "priority": "high",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-08-08T22:19:47.113Z"
           },
           {
             "id": 4,
@@ -5582,7 +5583,7 @@
             "parentId": "undefined"
           }
         ],
-        "updatedAt": "2026-08-08T03:58:52.376Z"
+        "updatedAt": "2026-08-08T22:19:47.113Z"
       },
       {
         "id": "76",
@@ -7093,13 +7094,26 @@
         ],
         "priority": "low",
         "subtasks": []
+      },
+      {
+        "id": "116",
+        "title": "hardening(75.3): users_select filtra correo/telefono de TODO agente verificado y la fecha de nacimiento exacta del lead",
+        "description": "Origen: subtarea 75.3 · Detectado por: barrido de privacidad con JWT real (2026-08-08). Dos sobre-exposiciones en public.users que 75.3 NO pudo cerrar sin romper las apps ya instaladas. (1) La rama `role='agent' and is_verified_agent` de users_select expone la fila COMPLETA — correo, telefono y date_of_birth — a CUALQUIER usuario autenticado: comprobado, el agente Ramos leyo el telefono real de Vladimir. Contradice PRD §19.1 ('el telefono no se muestra publicamente en perfil'). (2) El agente con lead activo lee date_of_birth EXACTA, cuando §19.4 pide 'edad calculada (no fecha de nacimiento exacta)'. Hoy todas las filas la tienen en null, pero el registro SI la escribe (app/register.tsx): la fuga se activa con el primer alta nueva.",
+        "details": "POR QUE NO ENTRO EN 75.3: el grant de SELECT sobre public.users es a nivel de TABLA (todas las columnas). Postgres no permite restar una columna de un grant de tabla — hay que `revoke select on public.users from authenticated` y volver a otorgar columna por columna. En cuanto date_of_birth deja de estar en el grant, el `select('*')` de load_user_profile (mobile/src/features/auth/context.tsx:61) truena con permission denied y el perfil queda en null. Las apps 1.0.3 ya instaladas hacen ese `select('*')`: revocar hoy les rompe el login. Ironicamente el sintoma seria el mismo que #113 (user null -> readOnly -> sin opciones).\n\nSECUENCIA CORRECTA (expand -> migrate -> contract), en este orden:\n  1. EXPAND (cliente, viaja por OTA): cambiar `select('*')` por lista explicita de columnas sin date_of_birth en load_user_profile; tipar como Omit<Row,'date_of_birth'> (nada lo consume — verificado por grep, solo se ESCRIBE en el registro). Publicar OTA y esperar adopcion.\n  2. MIGRATE (backend): revoke select on public.users from authenticated + grant select (<columnas>) sin date_of_birth. Para la rama publica de agente verificado, exponer solo el perfil publico (nombre, avatar, bio, is_verified_agent) — via vista o RPC security definer — y sacar correo/telefono de ahi. ⚠️ El telefono del agente lo usa el CTA de WhatsApp: hoy llega por la EF contact-agent (verificar tambien AgentCard/usePropertyDetail:212, que lo lee del embed de users) — si algun camino lo lee directo hay que moverlo a la EF ANTES de revocar.\n  3. CONTRACT: si §19.4 sigue pidiendo mostrar la edad en el detalle del lead, exponerla CALCULADA (no la fecha) por get_lead_stats o un RPC hermano. Hoy la UI no muestra edad en ninguna parte, asi que no mostrarla no es una regresion — es alcance de producto pendiente.\n\nCRITICA (RLS + privacidad) -> TDD estricto. Pinear con pgTAP: un authenticated cualquiera NO lee correo/telefono/date_of_birth de un agente verificado; el agente con lead SI lee nombre y telefono de su lead pero NO su date_of_birth.\n\nContexto y evidencia: wiki/conceptos/privacidad-datos.md (seccion 'Deuda viva') y el anexo tecnico de docs/aviso-privacidad.md, que lista las dos contradicciones entre lo que el aviso promete y lo que el sistema hace hoy.",
+        "testStrategy": "pgTAP por impersonacion (patron de 35_lead_privacy_test.sql): agente cualquiera vs agente verificado (correo/telefono/DOB ocultos), agente con lead vs su lead (nombre y telefono visibles, DOB oculta), y el propio usuario sobre su fila. Ademas verificacion end-to-end del login con la lista explicita de columnas ANTES de revocar, y del CTA de WhatsApp con el telefono del agente.",
+        "status": "pending",
+        "dependencies": [
+          "75"
+        ],
+        "priority": "high",
+        "subtasks": []
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-08-08T18:57:10.729Z",
-      "taskCount": 112,
-      "completedCount": 68,
+      "lastModified": "2026-08-08T22:19:47.113Z",
+      "taskCount": 116,
+      "completedCount": 70,
       "tags": [
         "master"
       ]

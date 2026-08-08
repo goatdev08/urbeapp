@@ -14,9 +14,10 @@ La base de datos de Urbea. Detalle completo en [[db-schema-map]].
 - **Inmobiliarias/Agentes:** agencies, agency_members, agency_invitation_tokens, agent_applications, agent_interest_submissions → [[inmobiliarias-y-agentes]]
 - **Propiedades/Video:** properties, property_videos → [[propiedades-y-video]]
 - **Engagement/CRM:** likes, saves, leads, lead_origin_properties → [[feed-vertical-video]], [[crm-leads]]
-- **Analítica/Moderación/Auditoría:** events_raw, property_reports, notifications, admin_actions → [[moderacion]], [[notificaciones]], [[rls-seguridad]]
+- **Analítica/Moderación/Auditoría:** events_raw, property_reports, notifications, admin_actions → [[moderacion]], [[notificaciones]], [[rls-seguridad]], [[privacidad-datos]]
 
 ## Seguridad
 - [[rls-seguridad]] — helpers en schema `private`, grants column-level.
+- [[privacidad-datos]] — inventario medido: qué dato vive dónde, quién puede leerlo y qué lo desbloquea (§19.1/§19.2).
 
 Ver también: [[MOC-arquitectura]] · [[MOC-producto]]
