@@ -65,11 +65,43 @@
  */
 import { NativeTabs } from 'expo-router/unstable-native-tabs';
 import { useRouter } from 'expo-router';
+import { useAssets } from 'expo-asset';
+import { useMemo } from 'react';
+import { Image, type ImageSourcePropType } from 'react-native';
 
 import { colors } from '@/theme/theme';
 import { useAuth } from '@/features/auth/context';
 
-const icons = {
+/**
+ * Íconos "se ven a veces sí, a veces no" en dev (fix 2026-08-08) — POR QUÉ este
+ * archivo resuelve los PNG a archivo local en vez de pasar el `require` directo.
+ *
+ * `NativeTabs.Trigger.Icon src={...}` termina en
+ * `convertOptionsIconToScreensPropsIcon` (expo-router/build/native-tabs/utils/
+ * optionsIconConverter.ios.js) como `{ type: 'templateSource', templateSource:
+ * <ImageSource> }`, que react-native-screens le entrega a la `UITabBar`. En un
+ * dev-client ese ImageSource es una **URL http del asset server de Metro**, así
+ * que la barra NATIVA tiene que salir a bajar cada ícono por red —
+ * asíncronamente y **sin reintento**. Si esa descarga falla o pierde la carrera
+ * contra el primer render (Metro reiniciando, la IP LAN vieja que el dev-client
+ * cachea, un hipo de red), el slot se queda vacío PARA SIEMPRE: tab bar con
+ * puros textos. De ahí que el síntoma sea intermitente y que "se arregle solo"
+ * al relanzar. En un build Release no pasa: ahí el ImageSource ya es un archivo
+ * del bundle.
+ *
+ * Fix: `useAssets` (expo-asset) descarga/resuelve los 12 PNG a `localUri`
+ * (`file://…`) EN JS, y a la barra le entregamos `{ uri: <archivo local> }`. La
+ * `UITabBar` deja de depender de una petición http propia. Funciona igual en
+ * dev y en release (en release `localUri` ya apunta al recurso embebido), es
+ * cambio solo de JS (viaja por OTA, sin recompilar) y **conserva los íconos
+ * Phosphor** — decisión del dueño 2026-08-08 frente a la alternativa de migrar
+ * a SF Symbols.
+ *
+ * Mientras `useAssets` resuelve (y si falla), se cae al `require` original: el
+ * comportamiento de hoy, nunca peor. Android no necesita nada de esto — su
+ * GlassTabBar dibuja componentes React de Phosphor, sin descargar nada.
+ */
+const ICON_SOURCES = {
   feed: {
     default: require('../../assets/tab-icons/house-line-regular.png'),
     selected: require('../../assets/tab-icons/house-line-fill.png'),
@@ -96,10 +128,59 @@ const icons = {
   },
 } as const;
 
+type IconKey = keyof typeof ICON_SOURCES;
+type IconPair = { default: ImageSourcePropType; selected: ImageSourcePropType };
+
+// El orden de la lista plana se DERIVA de ICON_SOURCES (no se escribe a mano)
+// para que no pueda desincronizarse al agregar o mover un tab.
+const ICON_KEYS = Object.keys(ICON_SOURCES) as IconKey[];
+const ICON_MODULES = ICON_KEYS.flatMap((key) => [
+  ICON_SOURCES[key].default,
+  ICON_SOURCES[key].selected,
+]);
+
+function useLocalTabIcons(): Record<IconKey, IconPair> {
+  const [assets, error] = useAssets(ICON_MODULES);
+
+  if (error) {
+    // No es fatal (abajo caemos al require original), pero silenciarlo dejaría
+    // el síntoma "sin íconos" otra vez sin rastro en los logs — que es justo lo
+    // que costó diagnosticar esto.
+    console.warn('tab-icons: useAssets falló, se usa el require directo', error);
+  }
+
+  return useMemo(() => {
+    const pairs = {} as Record<IconKey, IconPair>;
+    ICON_KEYS.forEach((key, i) => {
+      const fallback = ICON_SOURCES[key];
+      pairs[key] = {
+        default: to_local(fallback.default, assets?.[i * 2]?.localUri),
+        selected: to_local(fallback.selected, assets?.[i * 2 + 1]?.localUri),
+      };
+    });
+    return pairs;
+  }, [assets]);
+}
+
+/**
+ * Cambia SOLO la uri del source, conservando `width`/`height`/`scale` que RN ya
+ * calculó para el módulo. Pasar un `{ uri }` pelón parece funcionar pero
+ * **rompe el tamaño**: sin `scale`, iOS dibuja el PNG a su tamaño en píxeles
+ * (un @3x sale 3× más grande, encima de las etiquetas) — visto en el smoke del
+ * 2026-08-08 antes de este helper.
+ */
+function to_local(module_source: ImageSourcePropType, local_uri?: string | null): ImageSourcePropType {
+  if (!local_uri) return module_source;
+  const resolved = Image.resolveAssetSource(module_source);
+  if (!resolved) return module_source;
+  return { ...resolved, uri: local_uri };
+}
+
 export function IosNativeTabsLayout() {
   const { user } = useAuth();
   const router = useRouter();
   const is_agent = user?.role === 'agent';
+  const icons = useLocalTabIcons();
 
   return (
     <NativeTabs tintColor={colors.primary} minimizeBehavior="onScrollDown">
