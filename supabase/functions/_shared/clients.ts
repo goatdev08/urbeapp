@@ -667,26 +667,37 @@ export function make_r2_url_minter(): R2UrlMinter {
 }
 
 /**
- * Adaptador real de ActiveUploadChecker (subtarea 68.3, invariante §13.2).
- * Cuenta, con service_role, los videos del agente en 'uploading' o 'processing'
- * (soft-delete excluido). El WHERE ... IN (...) es la barrera real: al fake de
- * los tests solo le importa el count agregado.
+ * Adaptador real de ActiveUploadChecker (subtarea 68.3, invariante §13.2;
+ * ventana de expiración — reaper — añadida en 103.1 parte B).
+ * Cuenta, con service_role, los videos activos del agente:
+ *   - 'processing' SIEMPRE bloquea (si Stream ya recibió los bytes y está
+ *     transcodificando, el webhook lo resuelve solo — no hay fila colgada).
+ *   - 'uploading' SOLO bloquea si es reciente (created_at > stale_before). Una
+ *     fila 'uploading' más vieja que stale_before es un upload que nunca llegó
+ *     a Stream (bug #103 derivado de 68.4/90) y no debe bloquear reintentos.
+ * Soft-delete excluido. El fake de los tests del handler solo le importa el
+ * count agregado y el argumento stale_before capturado.
  */
 export function make_active_upload_checker(
   client: SupabaseClient,
 ): ActiveUploadChecker {
   return {
-    async count_active_uploads(agent_id: string): Promise<number> {
+    async count_active_uploads(agent_id: string, stale_before: string): Promise<number> {
       const { count, error } = await client
         .from("property_videos")
         .select("id", { count: "exact", head: true })
         .eq("agent_id", agent_id)
-        .in("status", ["uploading", "processing"])
-        .is("deleted_at", null);
+        .is("deleted_at", null)
+        .or(`status.eq.processing,and(status.eq.uploading,created_at.gt.${stale_before})`);
 
       if (error) {
         // Fail-closed: un error de red/DB al chequear concurrencia no debe
         // permitir un upload que quizás sí colisione — se trata como "hay 1".
+        // O3 (guardian, 103.1): logueado para que un PGRST100 (p.ej. sintaxis
+        // del .or() interpolado) no se confunda con concurrencia real — sin
+        // esto, un 409 permanente para todos los agentes sería indistinguible
+        // del camino normal y mudo en los logs de la Edge Function.
+        console.error("count_active_uploads: query falló, fail-closed (1)", error);
         return 1;
       }
       return count ?? 0;
