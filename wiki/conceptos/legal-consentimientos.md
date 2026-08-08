@@ -62,3 +62,10 @@ El flujo de **agente** (canje de código) ya era atómico del lado servidor desd
 2. **Si el insert falla, se pierde en silencio.** El gate recupera `terms` y `privacy`, pero **no** `whatsapp` — esa RPC solo mira `terms_versions`.
 
 Cerrarlo bien = verificarlo **en el punto de contacto**. Ver [[crm-leads]].
+
+## Aviso de privacidad: placeholder aceptado por gente real (75.3)
+
+Lo vigente en `terms_versions` (`doc_type='privacy'`, v1.0) es un **placeholder de 113 caracteres** — el seed de `20260604000009`, que nunca se reemplazó. Las cuentas reales ya lo aceptaron. §19.2 del PRD exige que la lógica de privacidad del lead quede **explícita** ahí y en el consentimiento del registro.
+
+El borrador completo, redactado contra el esquema real, vive en `docs/aviso-privacidad.md`. ⚠️ **No se activó**: publicarlo como versión vigente **fuerza re-consentimiento a todas las cuentas**, necesita revisión legal (LFPDPPP: responsable, domicilio, procedimiento ARCO) y hoy el sistema **comparte más de lo que ese texto promete** (deuda #116). El inventario de qué ve quién está en [[privacidad-datos]].
+

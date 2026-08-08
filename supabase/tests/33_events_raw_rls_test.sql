@@ -152,6 +152,20 @@ insert into public.properties (id, owner_user_id, agency_id, property_type, oper
    'casa', 'sale', 'Fixture events_raw 1121 — PB (de GB, independiente)',
    extensions.ST_SetSRID(extensions.ST_MakePoint(-103.36, 20.68), 4326)::extensions.geography, 2500000, 'active');
 
+-- ⚠️ ACTUALIZADO POR 75.3 (migración 20260809000001) — leads de fixture.
+-- Cuando se escribió este archivo, events_raw_select solo pedía ser dueño de la
+-- propiedad, así que la sección 3 pasaba sin ningún lead. §19.2 exige además que
+-- exista un lead ACTIVO: "las interacciones de un usuario que nunca contactó al
+-- agente NO generan registro accesible al agente". Sin estos leads, OWN1/OWN2/
+-- OWN3 pasaban a 0 y dejaban de probar lo que este archivo quiere probar (que el
+-- agente lee los eventos de SUS propiedades). Se agregan aquí como PRECONDICIÓN,
+-- no como cambio de expectativa: los conteos de la sección 3 siguen siendo 2/2/1.
+-- El caso "usuario SIN lead" ahora vive, explícito, en 35_lead_privacy_test.sql.
+insert into public.leads (agent_id, user_id, status) values
+  ('00000000-0000-0000-0000-000000112102', '00000000-0000-0000-0000-000000112101', 'whatsapp_opened'), -- U1 contactó a GA
+  ('00000000-0000-0000-0000-000000112102', '00000000-0000-0000-0000-000000112105', 'whatsapp_opened'), -- U2 contactó a GA
+  ('00000000-0000-0000-0000-000000112103', '00000000-0000-0000-0000-000000112101', 'whatsapp_opened'); -- U1 contactó a GB
+
 -- Eventos crudos sembrados directo (bypass RLS, como superusuario) — la escritura
 -- vía RLS se prueba aparte en la sección INSERT.
 --   E1: U1 sobre PA (de GA)
@@ -308,8 +322,10 @@ select throws_ok(
 reset role;
 
 -- ════════════════════════════════════════════════════════════════════════════
--- 3) SELECT del agente dueño (y del owner de su agencia) — reusa
---    private.can_manage_property, no se reescribe.
+-- 3) SELECT del agente dueño (y del owner de su agencia).
+--    ⚠️ 75.3: desde 20260809000001 la puerta ya NO es private.can_manage_property
+--    sino private.can_view_user_events, que además exige lead ACTIVO (§19.2).
+--    Por eso arriba hay leads de fixture; los conteos esperados no cambiaron.
 -- ════════════════════════════════════════════════════════════════════════════
 
 -- OWN1 [DELTA] GA (dueño de PA) ve los eventos de TODOS los usuarios sobre PA (E1+E2 = 2).
