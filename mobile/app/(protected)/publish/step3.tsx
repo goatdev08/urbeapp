@@ -63,22 +63,29 @@ export default function Step3Screen() {
   // create mode por pérdida del param → fin de la duplicación (#53).
   const is_edit_mode = state.edit_mode;
   const property_id = state.property_id;
-  const hook = useVideoUpload();
-  // Edit mode: UPDATE directo sin EF; create mode: invoca EF (sin cambios).
-  const publish_hook = usePublish({
-    editMode: is_edit_mode,
-    propertyId: property_id,
-  });
 
   // ── Local state para reactivity en la UI ──────────────────────────────────
   // useVideoUpload usa refs (sin useState) → el screen gestiona sus propios
-  // estados de UI que reflejan el resultado del upload.
+  // estados de UI que reflejan el resultado del upload. Declarado ANTES del
+  // hook: set_ui_status se le pasa como on_status_change (defecto O2 — ver
+  // abajo).
   const [local_uri, set_local_uri] = useState<string | null>(null);
   const [ui_status, set_ui_status] = useState<UploadStatus>('idle');
   const [ui_error, set_ui_error] = useState<string | null>(null);
   // Estados de publicación (usePublish también usa refs — espejamos aquí para reactivity).
   const [publish_status, set_publish_status] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle');
   const [publish_error, set_publish_error] = useState<string | null>(null);
+
+  // O2 (guardian, tras 103.2): sin on_status_change, ui_status solo se leía
+  // DESPUÉS de `await hook.upload(...)` — el estado transitorio 'verifying'
+  // (hasta ~27s de poll silencioso) nunca llegaba a la pantalla. set_ui_status
+  // es estable (useState) → no rompe la memoización de `upload` en el hook.
+  const hook = useVideoUpload({ on_status_change: set_ui_status });
+  // Edit mode: UPDATE directo sin EF; create mode: invoca EF (sin cambios).
+  const publish_hook = usePublish({
+    editMode: is_edit_mode,
+    propertyId: property_id,
+  });
 
   // ── Video player (expo-video) ──────────────────────────────────────────────
   // ponytail: nativeControls=true → expo-video maneja play/pause, sin boilerplate.
@@ -169,6 +176,9 @@ export default function Step3Screen() {
   // ── Derivados de estado ────────────────────────────────────────────────────
 
   const is_uploading = ui_status === 'uploading';
+  // #103.2: uploadAsync() puede fallar leyendo la respuesta aunque el video
+  // SÍ haya llegado a Stream — el hook verifica antes de marcar error.
+  const is_verifying = ui_status === 'verifying';
   // Contrato 68.4: el binario terminó de subir y quedó 'processing' en
   // Cloudflare Stream (transcodificando) — nunca llega a 'success' en el
   // cliente; 'ready' se resuelve por webhook (68.5). Se trata como el estado
@@ -241,7 +251,7 @@ export default function Step3Screen() {
         <TouchableOpacity
           style={styles.change_video_btn}
           onPress={handle_pick_video}
-          disabled={is_uploading}
+          disabled={is_uploading || is_verifying}
           accessibilityLabel="Cambiar video"
         >
           <Text style={styles.change_video_text}>Cambiar video</Text>
@@ -254,6 +264,12 @@ export default function Step3Screen() {
           <View style={styles.status_row}>
             <ActivityIndicator size="small" color={COLOR_ACCENT} />
             <Text style={styles.status_text}>Subiendo video…</Text>
+          </View>
+        )}
+        {is_verifying && (
+          <View style={styles.status_row}>
+            <ActivityIndicator size="small" color={COLOR_ACCENT} />
+            <Text style={styles.status_text}>Verificando que el video llegó…</Text>
           </View>
         )}
         {is_success && (

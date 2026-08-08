@@ -70,6 +70,41 @@
  *
  * ### Sanidad de estado inicial
  * - (EC0) estado_inicial_es_idle.
+ *
+ * ─────────────────────────────────────────────────────────────────────────
+ * EXTENSIÓN — Subtarea 103.2 (fix(103.2), tarea #103): "verificar antes de
+ * fallar". Bug: uploadAsync() PUEDE lanzar/devolver no-2xx aunque el archivo
+ * SÍ haya llegado completo a Stream (falso negativo, error de lectura de la
+ * respuesta HTTP tras el envío del binario). Contrato nuevo: cuando el
+ * upload falla, en vez de marcar error de inmediato, se consulta el estado
+ * real del video vía `check_video_status(cloudflare_uid)` (colaborador
+ * inyectado, NUNCA se lee `property_videos` por canal lateral):
+ *   - 'ready' | 'processing' → ÉXITO (mismo desenlace que el 2xx feliz).
+ *   - 'failed' → error propio de procesamiento, corta de inmediato (no
+ *     agota verify_attempts).
+ *   - 'uploading' | 'missing' agotados verify_attempts → error neutro.
+ *   - excepción del propio checker → error neutro, fail-closed.
+ *   - status='verifying' expuesto mientras se consulta (progress=0.99).
+ *   - En el camino feliz 2xx normal, el checker NUNCA se invoca (EC20).
+ *
+ * ### Happy path (falso negativo — el bug exacto de #103)
+ * - (EC12) falso_negativo_uploadasync_lanza_checker_ready_status_processing.
+ * - (EC13) falso_negativo_checker_processing_tambien_exito.
+ * - (EC14) falso_negativo_status_500_checker_ready_tambien_exito — mismo
+ *   contrato mediante el camino de status no-2xx (resuelto, no excepción).
+ *
+ * ### Ramas de reglas no obvias (verificación acotada)
+ * - (EC15) checker_uploading_agotados_los_intentos_error_neutro.
+ * - (EC16) checker_failed_corta_de_inmediato_sin_agotar_intentos.
+ * - (EC17) checker_lanza_excepcion_fail_closed_sin_update.
+ * - (EC18) reintentos_uploading_luego_ready_verify_attempts_2_dos_llamadas.
+ * - (EC19) checker_llamado_con_el_uid_devuelto_por_mint_upload_url.
+ *
+ * ### No regresión (guard-rail — deben seguir en VERDE)
+ * - (EC20) exito_2xx_no_llama_al_checker_ni_una_vez.
+ *
+ * ### Boundary / estado transitorio
+ * - (EC21) estado_pasa_por_verifying_antes_del_desenlace.
  */
 
 import { renderHook, act } from '@testing-library/react-native';
@@ -548,5 +583,367 @@ describe('useVideoUpload', () => {
 
     expect(result.current.status).toBe('processing');
     expect(result.current.status as string).not.toBe('success');
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Subtarea 103.2 — "verificar antes de fallar" (falso negativo de
+  // FileSystemUploadTask contra Cloudflare Stream, ver tarea #103). El
+  // checker (`check_video_status`) es un colaborador INYECTADO — nunca se
+  // lee `property_videos` por canal lateral en estos tests.
+  // ═══════════════════════════════════════════════════════════════════════
+
+  const UPLOAD_READ_RESPONSE_ERROR_MESSAGE = 'Unable to upload a file: Failed to read response';
+
+  /** uploadAsync que RECHAZA con el error exacto reproducido en #103. */
+  function make_failing_upload_task(): MockUploadTask {
+    return { uploadAsync: jest.fn().mockRejectedValue(new Error(UPLOAD_READ_RESPONSE_ERROR_MESSAGE)) };
+  }
+
+  // ── (EC12/EC13) Falso negativo por excepción — checker confirma el video ─
+
+  async function assert_falso_negativo_exito(checker_status: 'ready' | 'processing'): Promise<void> {
+    const upload_task = make_failing_upload_task();
+    const file_instance = make_mock_file({ upload_task });
+    MockFile.mockImplementation(() => file_instance as never);
+    const mock_supabase = make_mock_supabase({});
+    const mock_check_video_status = jest.fn().mockResolvedValue(checker_status);
+
+    const { result } = await renderHook(() =>
+      useVideoUpload({
+        supabase: mock_supabase as never,
+        check_video_status: mock_check_video_status,
+        verify_attempts: 2,
+        verify_interval_ms: 0,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.upload(TEST_LOCAL_URI);
+    });
+
+    expect(result.current.status).toBe('processing');
+    expect(result.current.progress).toBe(1);
+    expect(result.current.error).toBeNull();
+    expect(mock_update).toHaveBeenCalledTimes(1);
+    expect(mock_update).toHaveBeenCalledWith({ video_id: STREAM_UID, cloudflare_uid: STREAM_UID });
+  }
+
+  it("(EC12) falso_negativo_uploadasync_lanza_checker_ready_status_processing: uploadAsync rechaza 'Failed to read response' + checker='ready' → status=processing, progress=1, update() UNA vez, error=null", async () => {
+    await assert_falso_negativo_exito('ready');
+  });
+
+  it("(EC13) falso_negativo_checker_processing_tambien_exito: mismo reject + checker='processing' → mismo resultado de éxito", async () => {
+    await assert_falso_negativo_exito('processing');
+  });
+
+  // ── (EC14) Falso negativo por status no-2xx (resuelto, no excepción) ─────
+
+  it("(EC14) falso_negativo_status_500_checker_ready_tambien_exito: uploadAsync RESUELVE status=500 (sin rechazar) + checker='ready' → también éxito", async () => {
+    const upload_task = make_mock_upload_task({ status: 500 });
+    const file_instance = make_mock_file({ upload_task });
+    MockFile.mockImplementation(() => file_instance as never);
+    const mock_supabase = make_mock_supabase({});
+    const mock_check_video_status = jest.fn().mockResolvedValue('ready');
+
+    const { result } = await renderHook(() =>
+      useVideoUpload({
+        supabase: mock_supabase as never,
+        check_video_status: mock_check_video_status,
+        verify_attempts: 2,
+        verify_interval_ms: 0,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.upload(TEST_LOCAL_URI);
+    });
+
+    expect(result.current.status).toBe('processing');
+    expect(result.current.progress).toBe(1);
+    expect(result.current.error).toBeNull();
+    expect(mock_update).toHaveBeenCalledTimes(1);
+    expect(mock_update).toHaveBeenCalledWith({ video_id: STREAM_UID, cloudflare_uid: STREAM_UID });
+  });
+
+  // ── (EC15) Checker 'uploading' agotando todos los intentos ───────────────
+
+  it("(EC15) checker_uploading_agotados_los_intentos_error_neutro: checker='uploading' en TODOS los intentos → status=error, mensaje neutro, update NO llamado, checker llamado exactamente verify_attempts veces", async () => {
+    const upload_task = make_failing_upload_task();
+    const file_instance = make_mock_file({ upload_task });
+    MockFile.mockImplementation(() => file_instance as never);
+    const mock_supabase = make_mock_supabase({});
+    const mock_check_video_status = jest.fn().mockResolvedValue('uploading');
+    const VERIFY_ATTEMPTS = 3;
+
+    const { result } = await renderHook(() =>
+      useVideoUpload({
+        supabase: mock_supabase as never,
+        check_video_status: mock_check_video_status,
+        verify_attempts: VERIFY_ATTEMPTS,
+        verify_interval_ms: 0,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.upload(TEST_LOCAL_URI);
+    });
+
+    expect(result.current.status).toBe('error');
+    expect(result.current.error).toBe(NEUTRAL_ERROR_MESSAGE);
+    expect(mock_update).not.toHaveBeenCalled();
+    expect(mock_check_video_status).toHaveBeenCalledTimes(VERIFY_ATTEMPTS);
+  });
+
+  // ── (EC16) Checker 'failed' — corta de inmediato ──────────────────────────
+
+  it("(EC16) checker_failed_corta_de_inmediato_sin_agotar_intentos: checker='failed' → status=error con mensaje propio de procesamiento fallido, update NO llamado, checker llamado EXACTAMENTE 1 vez (no agota verify_attempts)", async () => {
+    const upload_task = make_failing_upload_task();
+    const file_instance = make_mock_file({ upload_task });
+    MockFile.mockImplementation(() => file_instance as never);
+    const mock_supabase = make_mock_supabase({});
+    const mock_check_video_status = jest.fn().mockResolvedValue('failed');
+
+    const { result } = await renderHook(() =>
+      useVideoUpload({
+        supabase: mock_supabase as never,
+        check_video_status: mock_check_video_status,
+        verify_attempts: 5,
+        verify_interval_ms: 0,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.upload(TEST_LOCAL_URI);
+    });
+
+    expect(result.current.status).toBe('error');
+    expect(result.current.error).not.toBeNull();
+    expect(result.current.error).not.toBe(NEUTRAL_ERROR_MESSAGE);
+    expect(result.current.error).toMatch(/no se pudo procesar/i);
+    expect(mock_update).not.toHaveBeenCalled();
+    expect(mock_check_video_status).toHaveBeenCalledTimes(1);
+  });
+
+  // ── (EC17) Excepción del propio checker — fail-closed ─────────────────────
+
+  it('(EC17) checker_lanza_excepcion_fail_closed_sin_update: check_video_status rechaza → status=error, mensaje neutro (fail-closed), update NO llamado', async () => {
+    const upload_task = make_failing_upload_task();
+    const file_instance = make_mock_file({ upload_task });
+    MockFile.mockImplementation(() => file_instance as never);
+    const mock_supabase = make_mock_supabase({});
+    const mock_check_video_status = jest.fn().mockRejectedValue(new Error('db unreachable'));
+
+    const { result } = await renderHook(() =>
+      useVideoUpload({
+        supabase: mock_supabase as never,
+        check_video_status: mock_check_video_status,
+        verify_attempts: 2,
+        verify_interval_ms: 0,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.upload(TEST_LOCAL_URI);
+    });
+
+    expect(result.current.status).toBe('error');
+    expect(result.current.error).toBe(NEUTRAL_ERROR_MESSAGE);
+    expect(mock_update).not.toHaveBeenCalled();
+    // Distingue "fail-closed tras invocar el checker" de "el checker nunca
+    // se llamó" (el viejo camino de error inmediato produce el MISMO
+    // desenlace observable — sin esta aserción el test no sería RED).
+    expect(mock_check_video_status).toHaveBeenCalledTimes(1);
+  });
+
+  // ── (EC18) Reintentos: 'uploading' → 'ready' en el 2º intento ─────────────
+
+  it("(EC18) reintentos_uploading_luego_ready_verify_attempts_2_dos_llamadas: checker='uploading' la 1ra vez y 'ready' la 2da (verify_attempts=2) → éxito, checker llamado EXACTAMENTE 2 veces", async () => {
+    const upload_task = make_failing_upload_task();
+    const file_instance = make_mock_file({ upload_task });
+    MockFile.mockImplementation(() => file_instance as never);
+    const mock_supabase = make_mock_supabase({});
+    const mock_check_video_status = jest
+      .fn()
+      .mockResolvedValueOnce('uploading')
+      .mockResolvedValueOnce('ready');
+
+    const { result } = await renderHook(() =>
+      useVideoUpload({
+        supabase: mock_supabase as never,
+        check_video_status: mock_check_video_status,
+        verify_attempts: 2,
+        verify_interval_ms: 0,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.upload(TEST_LOCAL_URI);
+    });
+
+    expect(result.current.status).toBe('processing');
+    expect(result.current.error).toBeNull();
+    expect(mock_check_video_status).toHaveBeenCalledTimes(2);
+  });
+
+  // ── (EC19) El checker se llama con el uid devuelto por mint-upload-url ───
+
+  it('(EC19) checker_llamado_con_el_uid_devuelto_por_mint_upload_url: check_video_status se invoca con el mismo uid que devolvió mint-upload-url', async () => {
+    const DISTINCT_UID = 'stream-uid-checker-arg-test-xyz789';
+    const upload_task = make_failing_upload_task();
+    const file_instance = make_mock_file({ upload_task });
+    MockFile.mockImplementation(() => file_instance as never);
+    const mock_supabase = make_mock_supabase({
+      invoke_result: { data: { uploadUrl: SIGNED_UPLOAD_URL, uid: DISTINCT_UID }, error: null },
+    });
+    const mock_check_video_status = jest.fn().mockResolvedValue('ready');
+
+    const { result } = await renderHook(() =>
+      useVideoUpload({
+        supabase: mock_supabase as never,
+        check_video_status: mock_check_video_status,
+        verify_attempts: 2,
+        verify_interval_ms: 0,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.upload(TEST_LOCAL_URI);
+    });
+
+    expect(mock_check_video_status).toHaveBeenCalledWith(DISTINCT_UID);
+    expect(mock_update).toHaveBeenCalledWith({ video_id: DISTINCT_UID, cloudflare_uid: DISTINCT_UID });
+  });
+
+  // ── (EC20) No regresión — el camino feliz 2xx NUNCA consulta el checker ──
+
+  it('(EC20) exito_2xx_no_llama_al_checker_ni_una_vez: upload normal 2xx → status=processing sin invocar check_video_status ni una vez (guard-rail no-regresión)', async () => {
+    const upload_task = make_mock_upload_task({ status: 200 });
+    const file_instance = make_mock_file({ upload_task });
+    MockFile.mockImplementation(() => file_instance as never);
+    const mock_supabase = make_mock_supabase({});
+    const mock_check_video_status = jest.fn().mockResolvedValue('ready');
+
+    const { result } = await renderHook(() =>
+      useVideoUpload({
+        supabase: mock_supabase as never,
+        check_video_status: mock_check_video_status,
+        verify_attempts: 2,
+        verify_interval_ms: 0,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.upload(TEST_LOCAL_URI);
+    });
+
+    expect(result.current.status).toBe('processing');
+    expect(mock_check_video_status).not.toHaveBeenCalled();
+  });
+
+  // ── (EC21) Estado transitorio 'verifying' antes del desenlace ────────────
+
+  it("(EC21) estado_pasa_por_verifying_antes_del_desenlace: tras el reject de uploadAsync, status='verifying' con progress=0.99 ANTES de resolver el checker; al resolver 'ready' termina en 'processing'/progress=1", async () => {
+    const upload_task = make_failing_upload_task();
+    const file_instance = make_mock_file({ upload_task });
+    MockFile.mockImplementation(() => file_instance as never);
+    const mock_supabase = make_mock_supabase({});
+
+    let resolve_checker!: (v: string) => void;
+    const pending_check = new Promise<string>((res) => {
+      resolve_checker = res;
+    });
+    const mock_check_video_status = jest.fn().mockReturnValue(pending_check);
+
+    const { result } = await renderHook(() =>
+      useVideoUpload({
+        supabase: mock_supabase as never,
+        check_video_status: mock_check_video_status,
+        verify_attempts: 2,
+        verify_interval_ms: 0,
+      }),
+    );
+
+    act(() => {
+      void result.current.upload(TEST_LOCAL_URI);
+    });
+
+    await act(async () => {
+      await flush_microtasks(8);
+    });
+
+    expect(mock_check_video_status).toHaveBeenCalledTimes(1);
+    expect(result.current.status).toBe('verifying');
+    expect(result.current.progress).toBe(0.99);
+
+    await act(async () => {
+      resolve_checker('ready');
+      await flush_microtasks(5);
+    });
+
+    expect(result.current.status).toBe('processing');
+    expect(result.current.progress).toBe(1);
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Defecto O2 (guardian, tras el GREEN de 103.2) — 'verifying' era una rama
+  // muerta: step3.tsx solo lee hook.status DESPUÉS de `await upload()`
+  // (patrón de refs), así que el texto "Verificando que el video llegó…"
+  // nunca se renderizaba durante el poll. Fix: `on_status_change` notifica
+  // CADA transición en vivo, para que la UI pueda espejarla sin esperar el
+  // await completo.
+  // ═══════════════════════════════════════════════════════════════════════
+
+  it("(EC22) on_status_change_recibe_verifying_antes_del_desenlace: con un falso negativo que el checker termina resolviendo, el callback recibe 'verifying' ANTES que 'processing'", async () => {
+    const upload_task = make_failing_upload_task();
+    const file_instance = make_mock_file({ upload_task });
+    MockFile.mockImplementation(() => file_instance as never);
+    const mock_supabase = make_mock_supabase({});
+    const mock_check_video_status = jest.fn().mockResolvedValue('ready');
+    const mock_on_status_change = jest.fn();
+
+    const { result } = await renderHook(() =>
+      useVideoUpload({
+        supabase: mock_supabase as never,
+        check_video_status: mock_check_video_status,
+        verify_attempts: 2,
+        verify_interval_ms: 0,
+        on_status_change: mock_on_status_change,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.upload(TEST_LOCAL_URI);
+    });
+
+    const statuses = mock_on_status_change.mock.calls.map((call) => call[0]);
+
+    expect(statuses).toContain('verifying');
+    expect(statuses.indexOf('verifying')).toBeLessThan(statuses.lastIndexOf('processing'));
+    expect(result.current.status).toBe('processing');
+  });
+
+  it('(EC23) on_status_change_2xx_no_emite_verifying: el camino feliz 2xx nunca notifica el estado transitorio (guard-rail, mismo criterio que EC20)', async () => {
+    const upload_task = make_mock_upload_task({ status: 200 });
+    const file_instance = make_mock_file({ upload_task });
+    MockFile.mockImplementation(() => file_instance as never);
+    const mock_supabase = make_mock_supabase({});
+    const mock_on_status_change = jest.fn();
+
+    const { result } = await renderHook(() =>
+      useVideoUpload({
+        supabase: mock_supabase as never,
+        on_status_change: mock_on_status_change,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.upload(TEST_LOCAL_URI);
+    });
+
+    const statuses = mock_on_status_change.mock.calls.map((call) => call[0]);
+
+    expect(statuses).not.toContain('verifying');
+    expect(statuses).toContain('processing');
+    expect(result.current.status).toBe('processing');
   });
 });

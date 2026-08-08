@@ -58,19 +58,45 @@
 //
 // ### Forma invariante de errores
 // - toda respuesta de error sigue { error: { code: string, message: string } }
+//
+// ── EDGE CASES (RED) — 103.1 parte B: reaper de subidas colgadas ──────────────
+// Bug derivado de #103: count_active_uploads() (hoy) cuenta CUALQUIER fila
+// 'uploading'/'processing' del agente sin ventana de expiración. Si el binario
+// nunca llega (falla real, no falso negativo), la fila queda 'uploading' PARA
+// SIEMPRE → 409 UPLOAD_IN_PROGRESS eterno, el agente no puede volver a publicar
+// jamás. Diseño acordado: el HANDLER calcula `stale_before` (ISO, ahora - 15 min,
+// constante exportada STALE_UPLOAD_MS) y se lo pasa al checker; el filtro
+// `created_at > stale_before` para 'uploading' vive en el adapter (_shared/clients.ts,
+// fuera de alcance de este archivo — no se testea aquí, solo el contrato del handler).
+//
+// SEAM adicional: ActiveUploadChecker.count_active_uploads(agent_id, stale_before) —
+// el segundo argumento capturado por el fake es la interfaz bajo test aquí.
+//
+// ### DELTA (falla hoy — el handler NO calcula ni pasa stale_before)
+// - el handler llama al checker con un stale_before ISO ≈ 15 minutos en el pasado
+//   (tolerancia de unos segundos) — aserción sobre el argumento capturado por el fake
+// - STALE_UPLOAD_MS está exportado y vale 15 minutos en ms (900000) — aserción directa
+//   contra el valor; hoy es un stub placeholder (0), así que falla por ASERCIÓN
+//
+// ### INVARIANTE / no-regresión (el shape de retorno del checker ya determina el
+//     flujo hoy, independientemente de si stale_before viaja o no — no debe romperse
+//     cuando GREEN empiece a pasarlo)
+// - checker devuelve 0 → sigue el flujo feliz (Stream + insert + 200)
+// - checker devuelve 1 → 409 UPLOAD_IN_PROGRESS sin llamar a Stream ni insertar
 
 import { assertEquals, assertExists } from "@std/assert";
 import { handler } from "./handler.ts";
-import type {
-  ActiveUploadChecker,
-  CallerVerifier,
-  CallerVerifyResult,
-  MintUploadUrlDeps,
-  RegisterUploadingVideoParams,
-  StreamDirectUploadParams,
-  StreamDirectUploadResult,
-  StreamUploadCreator,
-  VideoRegistrar,
+import {
+  STALE_UPLOAD_MS,
+  type ActiveUploadChecker,
+  type CallerVerifier,
+  type CallerVerifyResult,
+  type MintUploadUrlDeps,
+  type RegisterUploadingVideoParams,
+  type StreamDirectUploadParams,
+  type StreamDirectUploadResult,
+  type StreamUploadCreator,
+  type VideoRegistrar,
 } from "./types.ts";
 
 // ── Constantes ────────────────────────────────────────────────────────────────
@@ -134,6 +160,24 @@ function checker_count(
       return Promise.resolve(count_by_agent[agent_id] ?? default_count);
     },
   } as FakeActiveUploadChecker;
+}
+
+// ── Fake — ActiveUploadChecker que además captura stale_before (103.1 parte B) ──
+// Distinto del fake de arriba: aquí nos importa el SEGUNDO argumento tal cual el
+// handler lo invoca (o no lo invoca — hoy no lo pasa, por eso queda undefined).
+
+interface FakeActiveUploadCheckerWithArgs extends ActiveUploadChecker {
+  calls: Array<{ agent_id: string; stale_before?: string }>;
+}
+
+function checker_count_capturing_args(count = 0): FakeActiveUploadCheckerWithArgs {
+  return {
+    calls: [],
+    count_active_uploads(agent_id: string, stale_before?: string): Promise<number> {
+      this.calls.push({ agent_id, stale_before });
+      return Promise.resolve(count);
+    },
+  } as FakeActiveUploadCheckerWithArgs;
 }
 
 // ── Fakes — StreamUploadCreator ───────────────────────────────────────────────
@@ -410,3 +454,95 @@ Deno.test("error_respuesta_sigue_forma_error_code_message", async () => {
   assertEquals(typeof body.error.code, "string", "error.code debe ser string");
   assertEquals(typeof body.error.message, "string", "error.message debe ser string");
 });
+
+// ════════════════════════════════════════════════════════════════════════════
+// 103.1 (parte B) — Reaper de subidas colgadas: count_active_uploads necesita
+// ventana de expiración (bug derivado de #103, ver comentario EDGE CASES arriba).
+// ════════════════════════════════════════════════════════════════════════════
+
+// Literal independiente (15 minutos en ms) — NO se deriva de STALE_UPLOAD_MS: el
+// propósito de esta constante en el test es servir de oráculo fijo, para que un
+// futuro GREEN que deje STALE_UPLOAD_MS con un valor incorrecto (p.ej. 5 min) siga
+// haciendo fallar este test, en vez de "pasar por construcción" contra sí mismo.
+const FIFTEEN_MINUTES_MS = 15 * 60 * 1000;
+
+// ── DELTA — el handler HOY no calcula ni pasa stale_before al checker ─────────
+
+Deno.test("reaper_handler_llama_checker_con_stale_before_15_min_atras", async () => {
+  const checker = checker_count_capturing_args(0);
+  const deps = make_deps({ activeUploadChecker: checker });
+
+  const before_call_ms = Date.now();
+  await handler(post_request(), deps);
+  const after_call_ms = Date.now();
+
+  assertEquals(checker.calls.length, 1, "el checker debe consultarse exactamente una vez");
+  const { agent_id, stale_before } = checker.calls[0];
+  assertEquals(agent_id, AGENT_UID, "el checker debe seguir consultándose con el uid del caller");
+  assertExists(
+    stale_before,
+    "el handler debe pasar un stale_before al checker (hoy NO lo pasa — RED)",
+  );
+
+  const stale_before_ms = Date.parse(stale_before as string);
+  assertEquals(Number.isNaN(stale_before_ms), false, "stale_before debe ser una fecha ISO parseable");
+
+  // Tolerancia de unos segundos para absorber el tiempo de ejecución del propio test,
+  // NO una condición de carrera real: stale_before debe caer en la ventana
+  // [antes_de_llamar - 15min - tolerancia, después_de_llamar - 15min + tolerancia].
+  const TOLERANCE_MS = 5000;
+  const expected_min_ms = before_call_ms - FIFTEEN_MINUTES_MS - TOLERANCE_MS;
+  const expected_max_ms = after_call_ms - FIFTEEN_MINUTES_MS + TOLERANCE_MS;
+  const within_window = stale_before_ms >= expected_min_ms && stale_before_ms <= expected_max_ms;
+  assertEquals(
+    within_window,
+    true,
+    `stale_before (${stale_before}) debe ser ~15 minutos antes de "ahora" (ventana esperada ` +
+      `${new Date(expected_min_ms).toISOString()}..${new Date(expected_max_ms).toISOString()})`,
+  );
+});
+
+Deno.test("stale_upload_ms_exportado_vale_15_minutos_en_milisegundos", () => {
+  assertEquals(
+    STALE_UPLOAD_MS,
+    FIFTEEN_MINUTES_MS,
+    "STALE_UPLOAD_MS debe ser exactamente 15 minutos en ms (900000) — hoy es un stub placeholder",
+  );
+});
+
+// ── INVARIANTE / no-regresión — el shape de retorno del checker sigue mandando ─
+
+Deno.test("reaper_no_regresion_checker_en_0_sigue_flujo_feliz_200", async () => {
+  const checker = checker_count_capturing_args(0);
+  const uploader = uploader_ok(STREAM_RESULT);
+  const registrar = registrar_ok();
+  const deps = make_deps({
+    activeUploadChecker: checker,
+    streamUploadCreator: uploader,
+    videoRegistrar: registrar,
+  });
+  const res = await handler(post_request(), deps);
+  assertEquals(res.status, 200, "checker en 0 no debe bloquear el flujo feliz (no regresión)");
+  assertEquals(uploader.calls.length, 1);
+  assertEquals(registrar.calls.length, 1);
+});
+
+Deno.test(
+  "reaper_no_regresion_checker_en_1_sigue_409_sin_llamar_stream_ni_insertar",
+  async () => {
+    const checker = checker_count_capturing_args(1);
+    const uploader = uploader_ok(STREAM_RESULT);
+    const registrar = registrar_ok();
+    const deps = make_deps({
+      activeUploadChecker: checker,
+      streamUploadCreator: uploader,
+      videoRegistrar: registrar,
+    });
+    const res = await handler(post_request(), deps);
+    assertEquals(res.status, 409);
+    const body = await res.json();
+    assertEquals(body.error.code, "UPLOAD_IN_PROGRESS");
+    assertEquals(uploader.calls.length, 0, "no regresión: sigue sin llamar a Stream con >=1 activo");
+    assertEquals(registrar.calls.length, 0, "no regresión: sigue sin insertar con >=1 activo");
+  },
+);

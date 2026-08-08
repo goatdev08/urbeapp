@@ -6,7 +6,11 @@
 import type { MintUploadUrlDeps, MintUploadUrlResponse } from "./types.ts";
 import { handle_cors_preflight } from "../_shared/cors.ts";
 import { error_response, json_response } from "../_shared/response.ts";
-import { STREAM_MAX_DURATION_SECONDS, STREAM_REQUIRE_SIGNED_URLS } from "./types.ts";
+import {
+  STALE_UPLOAD_MS,
+  STREAM_MAX_DURATION_SECONDS,
+  STREAM_REQUIRE_SIGNED_URLS,
+} from "./types.ts";
 
 export async function handler(req: Request, deps?: MintUploadUrlDeps): Promise<Response> {
   // 1. Preflight CORS
@@ -38,8 +42,11 @@ export async function handler(req: Request, deps?: MintUploadUrlDeps): Promise<R
   const uid = caller.user_id;
 
   // 5. Concurrencia por agente (§13.2, fail-closed): 1 video propio en
-  //    uploading/processing → 409, sin llamar a Stream ni insertar.
-  const active_count = await deps.activeUploadChecker.count_active_uploads(uid);
+  //    uploading/processing → 409, sin llamar a Stream ni insertar. `stale_before`
+  //    (reaper, 103.1 parte B) descarta 'uploading' colgados hace más de
+  //    STALE_UPLOAD_MS — 'processing' nunca expira aquí (lo resuelve el webhook).
+  const stale_before = new Date(Date.now() - STALE_UPLOAD_MS).toISOString();
+  const active_count = await deps.activeUploadChecker.count_active_uploads(uid, stale_before);
   if (active_count >= 1) {
     return error_response(
       "UPLOAD_IN_PROGRESS",

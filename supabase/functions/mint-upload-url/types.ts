@@ -20,6 +20,20 @@
 export const STREAM_MAX_DURATION_SECONDS = 120;
 export const STREAM_REQUIRE_SIGNED_URLS = true;
 
+// ── STALE_UPLOAD_MS — ventana de expiración del reaper (subtarea 103.1, parte B) ─
+// Bug #103 derivado: count_active_uploads() contaba TODAS las filas en
+// ('uploading','processing') sin ventana de tiempo → si el binario nunca llega
+// (falla real, no falso negativo), la fila quedaba 'uploading' PARA SIEMPRE y el
+// agente no podía volver a publicar jamás (409 UPLOAD_IN_PROGRESS eterno).
+// El handler calcula `new Date(Date.now() - STALE_UPLOAD_MS).toISOString()` y lo
+// pasa como `stale_before` al checker; el filtro `created_at > stale_before`
+// (solo para 'uploading'; 'processing' no tiene ventana porque el webhook lo
+// resuelve solo) vive en el adapter real (_shared/clients.ts).
+// ponytail: 15 min fijo, no configurable — una subida legítima en red muy mala
+// (>15 min para <200 MB) podría abrir un segundo slot antes de que la primera
+// termine; el tope de tamaño (200 MB) hace ese escenario improbable en la demo.
+export const STALE_UPLOAD_MS = 15 * 60 * 1000;
+
 // ── CallerVerifier — mismo contrato que mint-r2-url (solo autenticación) ─────
 // No hay chequeo de rol aquí: cualquier agente autenticado puede pedir un upload slot;
 // la invariante de negocio real es la de concurrencia (ActiveUploadChecker).
@@ -33,13 +47,20 @@ export interface CallerVerifier {
 }
 
 // ── ActiveUploadChecker — invariante de concurrencia por agente (§13.2) ──────
-// El adapter real (GREEN) hace:
+// El adapter real (_shared/clients.ts) hace:
 //   SELECT count(*) FROM property_videos
-//   WHERE agent_id = $1 AND status IN ('uploading','processing') AND deleted_at IS NULL
+//   WHERE agent_id = $1 AND deleted_at IS NULL
+//     AND (status = 'processing' OR (status = 'uploading' AND created_at > $2))
 // count >= 1 → el handler responde 409 sin tocar Stream ni la tabla.
+//
+// subtarea 103.1 (parte B, reaper): `stale_before` ($2, ISO) es el corte de
+// expiración — sin ventana, una fila 'uploading' que nunca recibió el binario
+// bloqueaba al agente PARA SIEMPRE (bug #103 derivado). El handler calcula
+// `stale_before` a partir de STALE_UPLOAD_MS y lo pasa siempre; 'processing' no
+// tiene ventana porque el webhook lo resuelve solo.
 
 export interface ActiveUploadChecker {
-  count_active_uploads(agent_id: string): Promise<number>;
+  count_active_uploads(agent_id: string, stale_before: string): Promise<number>;
 }
 
 // ── StreamUploadCreator — adapter de Direct Creator Upload de Cloudflare Stream ─
