@@ -1,7 +1,13 @@
 // supabase/functions/update-lead-status/lead_status_updater.ts
 // Fábrica del LeadStatusUpdater real. Separado de index.ts para ser testeable.
-// La lógica de dominio (valid_transitions, ownership, UPDATE shape) vive aquí
-// y es ejercitada por lead_status_updater.test.ts con un fake client.
+// La lógica de dominio (ownership, UPDATE shape) vive aquí y es ejercitada por
+// lead_status_updater.test.ts con un fake client.
+//
+// Transiciones LIBRES (subtarea 75.1, PRD §19.8): ya no existe una tabla de
+// transiciones válidas — cualquier estado → cualquier estado, incluido reabrir un
+// lead cerrado. El código INVALID_TRANSITION dejó de emitirse. El timeline completo
+// queda registrado en public.lead_status_history vía trigger DB (migración
+// 20260807000003) — no hace falta que esta Edge Function lo escriba a mano.
 
 import type {
   LeadStatusEnum,
@@ -10,27 +16,13 @@ import type {
   UpdateLeadStatusResult,
 } from "./types.ts";
 
-// Tabla de transiciones válidas (fuente: dominio del funnel de CRM).
-// Estados terminales (closed_won, closed_lost, discarded) no tienen transiciones salientes.
-// Los saltos de etapa (new→visit_scheduled, contacted→closed_won) tampoco son válidos.
-const VALID_TRANSITIONS: Record<LeadStatusEnum, LeadStatusEnum[]> = {
-  new: ["contacted", "discarded"],
-  contacted: ["in_progress", "closed_lost", "discarded"],
-  in_progress: ["visit_scheduled", "closed_won", "closed_lost", "discarded"],
-  visit_scheduled: ["in_progress", "closed_won", "closed_lost", "discarded"],
-  closed_won: [],
-  closed_lost: [],
-  discarded: [],
-};
-
 /**
  * Construye el LeadStatusUpdater real contra un cliente supabase-js.
- * Responsabilidades (en tres queries máximo):
+ * Responsabilidades (en dos queries máximo):
  *   1. Verificar existencia + ownership (query con agent_id filter).
  *   2. Distinguir not-found vs unauthorized (segunda query sin agent filter).
- *   3. Validar transición de estado contra VALID_TRANSITIONS.
- *   4. Aplicar UPDATE (status, updated_at, internal_notes solo si note presente).
- *   5. Retornar el lead actualizado.
+ *   3. Aplicar UPDATE (status, updated_at, internal_notes solo si note presente).
+ *   4. Retornar el lead actualizado.
  *
  * El parámetro `client` es duck-typed para facilitar el testing con fakes.
  */
@@ -41,7 +33,7 @@ export function make_lead_status_updater(client: { from(table: string): any }): 
       // 1. Verificar existencia + ownership en una query
       const { data: existing, error: find_error } = await client
         .from("leads")
-        .select("id, status")
+        .select("id")
         .eq("id", params.lead_id)
         .eq("agent_id", params.user_id)
         .maybeSingle();
@@ -68,18 +60,8 @@ export function make_lead_status_updater(client: { from(table: string): any }): 
         };
       }
 
-      // 3. Validar transición de estado
-      const current = existing.status as LeadStatusEnum;
-      const next = params.new_status;
-      if (!VALID_TRANSITIONS[current]?.includes(next)) {
-        return {
-          ok: false,
-          error_code: "INVALID_TRANSITION",
-          message: `Transición ${current}→${next} no está permitida`,
-        };
-      }
-
-      // 4. Aplicar UPDATE — ownership en .eq garantiza RLS de backup
+      // 3. Aplicar UPDATE — transiciones libres (75.1): ningún gate de estado aquí.
+      // ownership en .eq garantiza RLS de backup
       // ponytail: internal_notes se omite del payload si note es undefined (no sobreescribir)
       const update_payload: Record<string, unknown> = {
         status: params.new_status,

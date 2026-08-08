@@ -2,11 +2,23 @@
 // Regenerar con:  supabase gen types typescript --project-id mvpvqmyhrrkwbnpctpuq > supabase/types/database.types.ts
 // (o vía el MCP de Supabase: generate_typescript_types). NO editar a mano.
 //
-// ⚠️ #72/#93 (2026-07-30): esta versión se generó con `--local`, contra el stack de
-// desarrollo, porque las migraciones 20260727000001/2/3 (catálogo INEGI, constraints de
-// registro y gate legal) y 20260729000001 (RPC register_user_atomic, #93) TODAVÍA NO
-// están desplegadas al remoto. Al desplegar esas migraciones, regenerar contra
-// --project-id para volver a la fuente canónica.
+// ⚠️ #75.5/#75.6 (2026-08-07): regen COMPLETO contra `--local` (CLI global de
+// brew, `supabase gen types typescript --local`) — el stack local ya tenía
+// aplicadas TODAS las migraciones (incluida 0805 Ola 1 #71 y 0807 #75.1-#75.4),
+// así que este regen resuelve de una vez:
+//   - El parche manual y quirúrgico de #75.1 (leads.score/level, lead_temperature,
+//     lead_status ampliado, lead_status_history) — ya no es un parche, es la
+//     fuente real generada.
+//   - El drift heredado de #71 (2026-08-05): agency_member_role pasa de
+//     {owner,agent} a {owner,agent,admin,viewer}; agency_member_status suma
+//     'suspended'. Esto es lo que useAgencyRole.ts (75.5) necesita para
+//     distinguir admin/viewer en tiempo de ejecución.
+//   - RPCs de Ola 1 antes ausentes de este archivo: register_agency_atomic,
+//     switch_agency_atomic, upgrade_to_agent_atomic.
+// Migraciones 20260727000001-3 (catálogo INEGI) y 20260729000001 (RPC
+// register_user_atomic) SÍ estaban ya incorporadas desde el regen anterior.
+// Al desplegar 20260807000002-5 al remoto, regenerar contra --project-id para
+// volver a la fuente canónica (mismo aviso que versiones previas de este header).
 //
 // Gotcha de entorno: `gen types --local` necesita el credential helper de Docker en el
 // PATH → export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"
@@ -329,6 +341,7 @@ export type Database = {
           created_at: string
           id: string
           invitation_token_id: string | null
+          reason: string | null
           rejection_reason: string | null
           reviewed_at: string | null
           reviewed_by_admin_id: string | null
@@ -342,6 +355,7 @@ export type Database = {
           created_at?: string
           id?: string
           invitation_token_id?: string | null
+          reason?: string | null
           rejection_reason?: string | null
           reviewed_at?: string | null
           reviewed_by_admin_id?: string | null
@@ -355,6 +369,7 @@ export type Database = {
           created_at?: string
           id?: string
           invitation_token_id?: string | null
+          reason?: string | null
           rejection_reason?: string | null
           reviewed_at?: string | null
           reviewed_by_admin_id?: string | null
@@ -564,6 +579,48 @@ export type Database = {
           },
         ]
       }
+      lead_status_history: {
+        Row: {
+          changed_at: string
+          changed_by: string | null
+          id: string
+          lead_id: string
+          new_status: Database["public"]["Enums"]["lead_status"]
+          old_status: Database["public"]["Enums"]["lead_status"] | null
+        }
+        Insert: {
+          changed_at?: string
+          changed_by?: string | null
+          id?: string
+          lead_id: string
+          new_status: Database["public"]["Enums"]["lead_status"]
+          old_status?: Database["public"]["Enums"]["lead_status"] | null
+        }
+        Update: {
+          changed_at?: string
+          changed_by?: string | null
+          id?: string
+          lead_id?: string
+          new_status?: Database["public"]["Enums"]["lead_status"]
+          old_status?: Database["public"]["Enums"]["lead_status"] | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_status_history_changed_by_fkey"
+            columns: ["changed_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_status_history_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       leads: {
         Row: {
           agent_id: string
@@ -573,7 +630,10 @@ export type Database = {
           first_contact_at: string
           id: string
           internal_notes: string | null
+          is_follow_up: boolean
           last_contact_at: string | null
+          level: Database["public"]["Enums"]["lead_temperature"]
+          score: number
           status: Database["public"]["Enums"]["lead_status"]
           updated_at: string
           user_id: string
@@ -586,7 +646,10 @@ export type Database = {
           first_contact_at?: string
           id?: string
           internal_notes?: string | null
+          is_follow_up?: boolean
           last_contact_at?: string | null
+          level?: Database["public"]["Enums"]["lead_temperature"]
+          score?: number
           status?: Database["public"]["Enums"]["lead_status"]
           updated_at?: string
           user_id: string
@@ -599,7 +662,10 @@ export type Database = {
           first_contact_at?: string
           id?: string
           internal_notes?: string | null
+          is_follow_up?: boolean
           last_contact_at?: string | null
+          level?: Database["public"]["Enums"]["lead_temperature"]
+          score?: number
           status?: Database["public"]["Enums"]["lead_status"]
           updated_at?: string
           user_id?: string
@@ -1381,14 +1447,41 @@ export type Database = {
           agency_member_id: string
         }[]
       }
+      register_agency_atomic: {
+        Args: {
+          p_contact_email: string
+          p_contact_name: string
+          p_contact_phone: string
+          p_created_by_user_id: string
+          p_logo_url?: string
+          p_name: string
+          p_slug: string
+        }
+        Returns: string
+      }
       register_user_atomic: {
         Args: { p_ip?: unknown; p_user_id: string }
         Returns: undefined
       }
+      switch_agency_atomic: {
+        Args: { p_target_agency_id: string; p_user_id: string }
+        Returns: {
+          agency_member_id: string
+          new_agency_id: string
+          old_agency_id: string
+        }[]
+      }
+      upgrade_to_agent_atomic: {
+        Args: { p_token: string; p_user_id: string }
+        Returns: {
+          agency_id: string
+          agency_member_id: string
+        }[]
+      }
     }
     Enums: {
-      agency_member_role: "owner" | "agent"
-      agency_member_status: "active" | "removed"
+      agency_member_role: "owner" | "agent" | "admin" | "viewer"
+      agency_member_status: "active" | "removed" | "suspended"
       agency_status:
         | "pending_approval"
         | "approved"
@@ -1420,6 +1513,11 @@ export type Database = {
         | "closed_won"
         | "closed_lost"
         | "discarded"
+        | "whatsapp_opened"
+        | "interested"
+        | "closed_won_rent"
+        | "closed_won_sale"
+      lead_temperature: "frio" | "tibio" | "caliente"
       operation_type: "rent" | "sale" | "both"
       property_closed_reason: "rented" | "sold" | "withdrawn" | "expired"
       property_report_reason:
@@ -1577,8 +1675,8 @@ export const Constants = {
   },
   public: {
     Enums: {
-      agency_member_role: ["owner", "agent"],
-      agency_member_status: ["active", "removed"],
+      agency_member_role: ["owner", "agent", "admin", "viewer"],
+      agency_member_status: ["active", "removed", "suspended"],
       agency_status: [
         "pending_approval",
         "approved",
@@ -1613,7 +1711,12 @@ export const Constants = {
         "closed_won",
         "closed_lost",
         "discarded",
+        "whatsapp_opened",
+        "interested",
+        "closed_won_rent",
+        "closed_won_sale",
       ],
+      lead_temperature: ["frio", "tibio", "caliente"],
       operation_type: ["rent", "sale", "both"],
       property_closed_reason: ["rented", "sold", "withdrawn", "expired"],
       property_report_reason: [

@@ -1,7 +1,8 @@
 // supabase/functions/update-lead-status/lead_status_updater.test.ts
 // Tests del LeadStatusUpdater REAL (make_lead_status_updater).
 // Ejerce la lógica de dominio que los tests DI del handler nunca pueden ver:
-//   - tabla VALID_TRANSITIONS (closed_won→*, discarded→*, skip-steps rechazados)
+//   - transiciones LIBRES (subtarea 75.1 — VALID_TRANSITIONS desaparece; ver bloque
+//     "Transiciones LIBRES" más abajo; RED hoy porque el gate viejo sigue activo)
 //   - diferenciación LEAD_NOT_FOUND vs UNAUTHORIZED_AGENT (las dos queries reales)
 //   - shape exacto del UPDATE payload (status, updated_at, internal_notes, eq de agent_id)
 //
@@ -9,7 +10,9 @@
 // Cada `from()` consume el siguiente response de la cola y captura lo que se pasa
 // a `.update()` y `.eq()` para verificar el contrato con la DB.
 //
-// Fuente de verdad del enum: migración 0001:
+// Fuente de verdad del enum HOY (migración 0001), 7 valores — el GREEN de 75.1 le
+// agrega 4 (whatsapp_opened, interested, closed_won_rent, closed_won_sale) sin
+// quitar ninguno (Postgres no puede vaciar un enum; ver pgTAP 28_lead_status_reconcile):
 //   lead_status = ('new', 'contacted', 'in_progress', 'visit_scheduled',
 //                  'closed_won', 'closed_lost', 'discarded')
 
@@ -86,84 +89,123 @@ function make_params(new_status: string, note?: string): any {
   return { user_id: AGENT_ID, lead_id: LEAD_ID, new_status, note };
 }
 
-// ── Transiciones inválidas — verifica la tabla real VALID_TRANSITIONS ─────────
-// Los estados terminal (closed_won, closed_lost, discarded) no tienen transiciones salientes.
-// Los saltos de etapa (new→visit_scheduled, contacted→closed_won) también deben rechazarse.
+// ── Transiciones LIBRES — subtarea 75.1 (RED) ──────────────────────────────────
+// Decisión del usuario: VALID_TRANSITIONS desaparece. Cualquier estado → cualquier
+// estado, INCLUIDO reabrir un lead cerrado. El historial (pgTAP 28_*) registra cada
+// cambio; el enforcement de "pasos" ya no vive en la DB ni en esta Edge Function.
+// Los 4 casos con prefijo `_ejemplo_` son EXACTAMENTE los del enunciado de 75.1;
+// los 3 con prefijo `_legacy_` repiten escenarios que ANTES estaban bloqueados
+// (con valores del enum viejo) para probar que el gate realmente desapareció, no
+// que solo se relajó para los estados nuevos.
+//
+// NOTA: "closed_won_rent"/"closed_won_sale"/"interested"/"whatsapp_opened" aún NO
+// existen en el enum real de Postgres (eso lo agrega la migración GREEN, ver pgTAP
+// 28_lead_status_reconcile_test.sql) — pero el fake client tipa sus respuestas como
+// `unknown` y `make_params()` devuelve `any`, así que estos tests corren hoy sin
+// error de compilación: fallan por ASERCIÓN (ok:false/INVALID_TRANSITION), no por
+// tipos ni por import. `result.lead.status` se compara casteado a `string` porque
+// el tipo actual de LeadStatusEnum (types.ts) todavía no incluye los 4 valores
+// nuevos — ese archivo de tipos no se toca en RED (es contrato de producción).
 
-Deno.test("updater_real_closed_won_a_contacted_devuelve_INVALID_TRANSITION", async () => {
+Deno.test("updater_real_ejemplo_closed_won_rent_a_contacted_permite_la_transicion", async () => {
   const { client } = make_fake_client([
-    { data: { id: LEAD_ID, status: "closed_won" }, error: null },
-    // UPDATE nunca se llama — la transición se rechaza antes
+    { data: { id: LEAD_ID, status: "closed_won_rent" }, error: null },
+    { data: { id: LEAD_ID, status: "contacted", internal_notes: null }, error: null },
   ]);
   const updater = make_lead_status_updater(client);
   const result = await updater.update(make_params("contacted"));
 
-  assertEquals(result.ok, false);
-  if (!result.ok) assertEquals(result.error_code, "INVALID_TRANSITION");
+  assertEquals(result.ok, true, "closed_won_rent→contacted debe aceptarse (transiciones libres)");
+  if (result.ok) assertEquals(result.lead.status as string, "contacted");
 });
 
-Deno.test("updater_real_discarded_a_in_progress_devuelve_INVALID_TRANSITION", async () => {
-  // discarded es terminal — ninguna transición saliente permitida
-  const { client } = make_fake_client([
-    { data: { id: LEAD_ID, status: "discarded" }, error: null },
-  ]);
-  const updater = make_lead_status_updater(client);
-  const result = await updater.update(make_params("in_progress"));
-
-  assertEquals(result.ok, false);
-  if (!result.ok) assertEquals(result.error_code, "INVALID_TRANSITION");
-});
-
-Deno.test("updater_real_closed_lost_a_new_devuelve_INVALID_TRANSITION", async () => {
-  // closed_lost es terminal — no se puede reabrir directamente
+Deno.test("updater_real_ejemplo_closed_lost_a_interested_permite_la_transicion", async () => {
   const { client } = make_fake_client([
     { data: { id: LEAD_ID, status: "closed_lost" }, error: null },
+    { data: { id: LEAD_ID, status: "interested", internal_notes: null }, error: null },
   ]);
   const updater = make_lead_status_updater(client);
-  const result = await updater.update(make_params("new"));
+  const result = await updater.update(make_params("interested"));
 
-  assertEquals(result.ok, false);
-  if (!result.ok) assertEquals(result.error_code, "INVALID_TRANSITION");
+  assertEquals(result.ok, true, "closed_lost→interested debe aceptarse (reabrir un lead cerrado)");
+  if (result.ok) assertEquals(result.lead.status as string, "interested");
 });
 
-Deno.test("updater_real_new_a_visit_scheduled_salta_pasos_devuelve_INVALID_TRANSITION", async () => {
-  // new → visit_scheduled salta 'contacted' e 'in_progress' — no permitido
+Deno.test("updater_real_ejemplo_discarded_a_whatsapp_opened_permite_la_transicion", async () => {
   const { client } = make_fake_client([
-    { data: { id: LEAD_ID, status: "new" }, error: null },
+    { data: { id: LEAD_ID, status: "discarded" }, error: null },
+    { data: { id: LEAD_ID, status: "whatsapp_opened", internal_notes: null }, error: null },
+  ]);
+  const updater = make_lead_status_updater(client);
+  const result = await updater.update(make_params("whatsapp_opened"));
+
+  assertEquals(result.ok, true, "discarded→whatsapp_opened debe aceptarse (discarded ya no es terminal)");
+  if (result.ok) assertEquals(result.lead.status as string, "whatsapp_opened");
+});
+
+Deno.test("updater_real_ejemplo_whatsapp_opened_a_visit_scheduled_permite_la_transicion", async () => {
+  const { client } = make_fake_client([
+    { data: { id: LEAD_ID, status: "whatsapp_opened" }, error: null },
+    { data: { id: LEAD_ID, status: "visit_scheduled", internal_notes: null }, error: null },
   ]);
   const updater = make_lead_status_updater(client);
   const result = await updater.update(make_params("visit_scheduled"));
 
-  assertEquals(result.ok, false);
-  if (!result.ok) assertEquals(result.error_code, "INVALID_TRANSITION");
+  assertEquals(result.ok, true, "whatsapp_opened→visit_scheduled debe aceptarse (salto de pasos permitido)");
+  if (result.ok) assertEquals(result.lead.status as string, "visit_scheduled");
 });
 
-Deno.test("updater_real_contacted_a_closed_won_salta_pasos_devuelve_INVALID_TRANSITION", async () => {
-  // contacted → closed_won salta 'in_progress' y 'visit_scheduled' — no permitido
+Deno.test("updater_real_legacy_closed_won_a_contacted_ya_no_es_INVALID_TRANSITION", async () => {
+  // Antes de 75.1 este caso exacto devolvía INVALID_TRANSITION (closed_won era terminal).
   const { client } = make_fake_client([
-    { data: { id: LEAD_ID, status: "contacted" }, error: null },
+    { data: { id: LEAD_ID, status: "closed_won" }, error: null },
+    { data: { id: LEAD_ID, status: "contacted", internal_notes: null }, error: null },
   ]);
   const updater = make_lead_status_updater(client);
-  const result = await updater.update(make_params("closed_won"));
+  const result = await updater.update(make_params("contacted"));
 
-  assertEquals(result.ok, false);
-  if (!result.ok) assertEquals(result.error_code, "INVALID_TRANSITION");
+  assertEquals(result.ok, true);
 });
 
-Deno.test("updater_real_invalid_transition_no_llama_query_update", async () => {
-  // Transición inválida: el updater retorna antes del UPDATE
-  // → solo 1 llamada a `.from()` (la de existencia+ownership), nunca la de UPDATE
+Deno.test("updater_real_legacy_discarded_a_in_progress_ya_no_es_INVALID_TRANSITION", async () => {
+  // Antes de 75.1: discarded era terminal — cero transiciones salientes.
+  const { client } = make_fake_client([
+    { data: { id: LEAD_ID, status: "discarded" }, error: null },
+    { data: { id: LEAD_ID, status: "in_progress", internal_notes: null }, error: null },
+  ]);
+  const updater = make_lead_status_updater(client);
+  const result = await updater.update(make_params("in_progress"));
+
+  assertEquals(result.ok, true);
+});
+
+Deno.test("updater_real_legacy_new_a_visit_scheduled_salto_de_pasos_ya_no_es_INVALID_TRANSITION", async () => {
+  // Antes de 75.1: new→visit_scheduled saltaba 'contacted' e 'in_progress' → rechazado.
+  const { client } = make_fake_client([
+    { data: { id: LEAD_ID, status: "new" }, error: null },
+    { data: { id: LEAD_ID, status: "visit_scheduled", internal_notes: null }, error: null },
+  ]);
+  const updater = make_lead_status_updater(client);
+  const result = await updater.update(make_params("visit_scheduled"));
+
+  assertEquals(result.ok, true);
+});
+
+Deno.test("updater_real_cualquier_transicion_siempre_llama_la_query_de_update", async () => {
+  // Antes: una transición "inválida" cortaba camino tras 1 sola llamada a `.from()`.
+  // Ahora: SIEMPRE hay 2 llamadas (existencia+ownership, luego UPDATE) sin importar
+  // el estado actual — no queda ningún gate que corte antes del UPDATE.
   const { client, captured_calls } = make_fake_client([
     { data: { id: LEAD_ID, status: "closed_won" }, error: null },
-    { data: { id: LEAD_ID, status: "contacted" }, error: null }, // nunca debería usarse
+    { data: { id: LEAD_ID, status: "contacted", internal_notes: null }, error: null },
   ]);
   const updater = make_lead_status_updater(client);
   await updater.update(make_params("contacted"));
 
   assertEquals(
     captured_calls.length,
-    1,
-    "solo debe haber 1 llamada a .from() cuando la transición es inválida (no llama al UPDATE)",
+    2,
+    "debe haber 2 llamadas a .from() (existencia+ownership y UPDATE) incluso partiendo de un estado antes terminal",
   );
 });
 

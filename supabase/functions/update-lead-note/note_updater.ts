@@ -10,8 +10,11 @@ import type { NoteUpdater, UpdateLeadNoteParams, UpdateLeadNoteResult } from "./
  * Responsabilidades (en dos queries máximo):
  *   1. Verificar existencia + ownership (query con agent_id filter).
  *   2. Distinguir not-found vs unauthorized (segunda query sin agent filter).
- *   3. Aplicar UPDATE (internal_notes = note || null, updated_at). Status intacto.
- *   4. Retornar el lead actualizado.
+ *   3. Aplicar UPDATE (spread condicional, 75.6): internal_notes solo si
+ *      params.note !== undefined (note || null); is_follow_up solo si
+ *      params.is_follow_up !== undefined (valor TAL CUAL, incluido `false` —
+ *      nunca se omite por ser falsy). updated_at siempre. Status intacto.
+ *   4. Retornar el lead actualizado (incluye is_follow_up si la DB lo devolvió).
  *
  * El parámetro `client` es duck-typed para facilitar el testing con fakes.
  */
@@ -50,16 +53,26 @@ export function make_note_updater(client: { from(table: string): any }): NoteUpd
       }
 
       // 3. Aplicar UPDATE — ownership en .eq garantiza RLS de backup
-      // NUNCA incluye status: esta función solo edita internal_notes.
+      // NUNCA incluye status: esta función solo edita internal_notes/is_follow_up.
+      // Spread condicional (75.6): cada campo viaja SOLO si vino en params, y
+      // `is_follow_up` viaja con su valor literal (incluido `false`) — el bug
+      // clásico sería usar `if (params.is_follow_up)` y perder el `false`.
+      const update_payload: Record<string, unknown> = {
+        updated_at: new Date().toISOString(),
+      };
+      if (params.note !== undefined) {
+        update_payload.internal_notes = params.note || null;
+      }
+      if (params.is_follow_up !== undefined) {
+        update_payload.is_follow_up = params.is_follow_up;
+      }
+
       const { data: updated, error: update_error } = await client
         .from("leads")
-        .update({
-          internal_notes: params.note || null,
-          updated_at: new Date().toISOString(),
-        })
+        .update(update_payload)
         .eq("id", params.lead_id)
         .eq("agent_id", params.user_id)
-        .select("id, internal_notes")
+        .select("id, internal_notes, is_follow_up")
         .maybeSingle();
 
       if (update_error || !updated) {
@@ -75,6 +88,7 @@ export function make_note_updater(client: { from(table: string): any }): NoteUpd
         lead: {
           id: updated.id,
           internal_notes: updated.internal_notes ?? null,
+          ...(updated.is_follow_up !== undefined ? { is_follow_up: updated.is_follow_up } : {}),
         },
       };
     },

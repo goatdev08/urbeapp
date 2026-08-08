@@ -1,11 +1,12 @@
 // supabase/functions/update-lead-note/handler.test.ts
-// Tests RED — subtareas 29.2/29.3 (fusionadas)
+// Tests RED — subtareas 29.2/29.3 (fusionadas) + 75.6
 // Edge Function: update-lead-note/handler.ts
 // Framework: Deno.test + @std/assert
 // Runner: deno test --allow-net --allow-env supabase/functions/update-lead-note/handler.test.ts
 //
 // Mirror directo de update-lead-status/handler.test.ts, pero SIN validación de
-// new_status/transiciones: solo lead_id + note. note="" es válido (limpia la nota).
+// new_status/transiciones: solo lead_id + note + is_follow_up (75.6).
+// note="" es válido (limpia la nota).
 //
 // EDGE CASES (RED) — 29.2/29.3:
 //
@@ -17,7 +18,11 @@
 // - EC-3: JSON inválido en body → 400
 // - EC-4: falta lead_id → 400
 // - EC-5: lead_id vacío "" → 400
-// - EC-6: falta note (key ausente) → 400
+// - EC-6: falta note Y falta is_follow_up (ninguno de los dos) → 400
+//   (75.6: este caso hoy se llama "falta note" porque note era el único campo;
+//   con is_follow_up opcional, el payload de este test — solo {lead_id} — es
+//   EXACTAMENTE el caso "ninguno de los dos presente" del PRD §19.7. Sigue
+//   siendo el mismo test, no se duplica — INVARIANTE tras 75.6.)
 // - EC-7: note no es string (número) → 400
 //
 // ### Edge case del PRD — nota vacía permitida
@@ -35,6 +40,25 @@
 //
 // ### Happy path
 // - EC-13: éxito → 200 con body { lead: { id, internal_notes } }
+//
+// EDGE CASES (RED) — 75.6 (§19.7, bandera "en seguimiento" desde la app):
+// SEAM: contrato HTTP de POST /update-lead-note (request → status code → body).
+//
+// ### Happy path — is_follow_up
+// - EC-14: solo is_follow_up:true (SIN note) → 200, NO envía `note` al
+//   noteUpdater (no toca internal_notes), body.lead.is_follow_up === true
+// - EC-15 [INVARIANTE]: solo note (SIN is_follow_up, contrato v1.0.3) sigue
+//   dando 200 y NO envía `is_follow_up` al noteUpdater (no-regresión)
+// - EC-16: note E is_follow_up presentes → 200, ambos se envían al
+//   noteUpdater y ambos aparecen en el body de respuesta
+//
+// ### Frontera de confianza — is_follow_up con tipo inválido
+// - EC-18: is_follow_up es un string ("true") → 400 INVALID_INPUT
+// - EC-19: is_follow_up es un número (1) → 400 INVALID_INPUT
+//
+// ### Regla no obvia — false NO es "ausente"
+// - EC-20: is_follow_up:false (SIN note) → 200 (NO 400), body.lead.is_follow_up
+//   es estrictamente `false` (no `undefined`, no omitido)
 
 import { assertEquals, assertExists } from "@std/assert";
 import { handler } from "./handler.ts";
@@ -322,5 +346,119 @@ Deno.test("EC-13_exito_retorna_200_con_lead_id_e_internal_notes", async () => {
   assertEquals(
     body.lead.internal_notes,
     "Cliente interesado, llamar la próxima semana",
+  );
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// 75.6 — is_follow_up (§19.7): contrato HTTP de POST /update-lead-note
+// ════════════════════════════════════════════════════════════════════════════
+
+const PAYLOAD_SOLO_FOLLOW_UP_TRUE = { lead_id: LEAD_ID, is_follow_up: true };
+const PAYLOAD_SOLO_FOLLOW_UP_FALSE = { lead_id: LEAD_ID, is_follow_up: false };
+const PAYLOAD_NOTE_Y_FOLLOW_UP = {
+  lead_id: LEAD_ID,
+  note: "Muy interesado, dar seguimiento",
+  is_follow_up: true,
+};
+const PAYLOAD_FOLLOW_UP_STRING_INVALIDO = { lead_id: LEAD_ID, note: "x", is_follow_up: "true" };
+const PAYLOAD_FOLLOW_UP_NUMERO_INVALIDO = { lead_id: LEAD_ID, note: "x", is_follow_up: 1 };
+
+const LEAD_CON_FOLLOW_UP_TRUE: UpdatedLead = {
+  id: LEAD_ID,
+  internal_notes: null,
+  is_follow_up: true,
+};
+const LEAD_CON_FOLLOW_UP_FALSE: UpdatedLead = {
+  id: LEAD_ID,
+  internal_notes: null,
+  is_follow_up: false,
+};
+const LEAD_CON_NOTA_Y_FOLLOW_UP: UpdatedLead = {
+  id: LEAD_ID,
+  internal_notes: "Muy interesado, dar seguimiento",
+  is_follow_up: true,
+};
+
+// ── EC-14: solo is_follow_up:true (SIN note) — 200, NO toca internal_notes ───
+
+Deno.test("EC-14_solo_is_follow_up_true_sin_note_retorna_200_sin_tocar_internal_notes", async () => {
+  const u = updater_ok(LEAD_CON_FOLLOW_UP_TRUE);
+  const res = await handler(post_auth(PAYLOAD_SOLO_FOLLOW_UP_TRUE), deps(u));
+
+  assertEquals(res.status, 200, "mandar solo is_follow_up:true debe ser aceptado, nunca 400");
+  const body = await res.json();
+  assertEquals(body.lead.is_follow_up, true);
+
+  assertEquals(u.calls.length, 1, "el handler debe delegar al noteUpdater");
+  assertEquals(
+    "note" in u.calls[0],
+    false,
+    "sin note en el body, el handler NO debe forwardear la clave note al noteUpdater (no tocar internal_notes)",
+  );
+  assertEquals(u.calls[0].is_follow_up, true);
+});
+
+// ── EC-15 [INVARIANTE]: solo note (contrato v1.0.3) — 200, NO envía
+//    is_follow_up al noteUpdater (no-regresión, defensa a nivel handler) ─────
+
+Deno.test("EC-15_solo_note_contrato_v1_0_3_sigue_funcionando_sin_enviar_is_follow_up", async () => {
+  const u = updater_ok(LEAD_CON_NOTA);
+  const res = await handler(post_auth(PAYLOAD_CON_NOTA), deps(u));
+
+  assertEquals(res.status, 200);
+  assertEquals(u.calls.length, 1);
+  assertEquals(
+    "is_follow_up" in u.calls[0],
+    false,
+    "una app v1.0.3 que solo manda note NO debe hacer que el handler envíe is_follow_up (evita resetear la bandera sin querer)",
+  );
+});
+
+// ── EC-16: note E is_follow_up presentes — 200, ambos viajan y ambos vuelven ─
+
+Deno.test("EC-16_note_e_is_follow_up_presentes_actualiza_ambos", async () => {
+  const u = updater_ok(LEAD_CON_NOTA_Y_FOLLOW_UP);
+  const res = await handler(post_auth(PAYLOAD_NOTE_Y_FOLLOW_UP), deps(u));
+
+  assertEquals(res.status, 200);
+  const body = await res.json();
+  assertEquals(body.lead.internal_notes, "Muy interesado, dar seguimiento");
+  assertEquals(body.lead.is_follow_up, true);
+
+  assertEquals(u.calls[0].note, "Muy interesado, dar seguimiento");
+  assertEquals(u.calls[0].is_follow_up, true);
+});
+
+// ── EC-18/EC-19: is_follow_up con tipo inválido — 400 INVALID_INPUT ──────────
+
+Deno.test("EC-18_is_follow_up_string_retorna_400_invalid_input", async () => {
+  const res = await handler(post_auth(PAYLOAD_FOLLOW_UP_STRING_INVALIDO), deps());
+  assertEquals(res.status, 400);
+  const body = await res.json();
+  assertEquals(body.error.code, "INVALID_INPUT");
+});
+
+Deno.test("EC-19_is_follow_up_numero_retorna_400_invalid_input", async () => {
+  const res = await handler(post_auth(PAYLOAD_FOLLOW_UP_NUMERO_INVALIDO), deps());
+  assertEquals(res.status, 400);
+  const body = await res.json();
+  assertEquals(body.error.code, "INVALID_INPUT");
+});
+
+// ── EC-20: is_follow_up:false (SIN note) — 200, NUNCA 400; el body refleja
+//    `false` estricto (no confundir con ausente/undefined) ──────────────────
+
+Deno.test("EC-20_is_follow_up_false_sin_note_retorna_200_y_el_body_refleja_false_estricto", async () => {
+  const res = await handler(post_auth(PAYLOAD_SOLO_FOLLOW_UP_FALSE), deps(updater_ok(LEAD_CON_FOLLOW_UP_FALSE)));
+  assertEquals(
+    res.status,
+    200,
+    "is_follow_up:false debe ser aceptado (desactiva la bandera), NUNCA 400",
+  );
+  const body = await res.json();
+  assertEquals(
+    body.lead.is_follow_up,
+    false,
+    "el body debe reflejar is_follow_up=false EXACTO — no undefined, no omitido",
   );
 });

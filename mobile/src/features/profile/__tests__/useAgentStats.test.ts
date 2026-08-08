@@ -22,8 +22,12 @@
  *   3. closed = leads
  *        .select('id', { count: 'exact', head: true })
  *        .eq('agent_id', agent_id)
- *        .in('status', ['closed_won', 'closed_lost'])
+ *        .in('status', ['closed_won', 'closed_won_rent', 'closed_won_sale', 'closed_lost'])
  *        .is('deleted_at', null)
+ *      (#75.1: el enum lead_status se partió — closed_won queda como legacy,
+ *      closed_won_rent/closed_won_sale son los estados vigentes de cierre
+ *      ganado. El count de "cerrados" debe cubrir los 3 + closed_lost para
+ *      no perder los leads viejos ni los nuevos.)
  *
  * PATRÓN DE MOCK: igual que useAgentProfile.test.tsx — holder mutable
  * `mock_supabase_holder` con getter en @/lib/supabase/client (nombre con
@@ -48,6 +52,9 @@
  * ### Boundary / error
  * - EC-4: error_en_alguna_query_degrada_a_ceros_sin_throw
  * - EC-5: ignore_flag_evita_setState_tras_unmount
+ *
+ * ### #75.1 — split de closed_won en closed_won_rent/closed_won_sale
+ * - EC-6: query_cerrados_incluye_closed_won_rent_y_closed_won_sale_y_legacy
  */
 
 import { renderHook, act } from '@testing-library/react-native';
@@ -201,7 +208,7 @@ describe('useAgentStats', () => {
 
   // ── EC-3: Filtros correctos por query ─────────────────────────────────────
 
-  it('(EC-3) queries_usan_filtros_correctos_status_y_deleted_at: properties filtra owner_user_id + status in active/paused + deleted_at null; leads filtra agent_id + deleted_at null (sin status); closed agrega status in closed_won/closed_lost — las 3 con count exact head true', async () => {
+  it('(EC-3) queries_usan_filtros_correctos_status_y_deleted_at: properties filtra owner_user_id + status in active/paused + deleted_at null; leads filtra agent_id + deleted_at null (sin status); closed agrega status in closed_won/closed_won_rent/closed_won_sale/closed_lost — las 3 con count exact head true', async () => {
     await renderHook(() => useAgentStats(TEST_AGENT_ID));
 
     const calls = mock_supabase_holder.client._calls;
@@ -214,9 +221,13 @@ describe('useAgentStats', () => {
     expect(calls.eq).toContainEqual(['owner_user_id', TEST_AGENT_ID]);
     expect(calls.eq.filter(([col, val]) => col === 'agent_id' && val === TEST_AGENT_ID).length).toBe(2);
 
-    // status in correctos (publications: active/paused; closed: closed_won/closed_lost)
+    // status in correctos (publications: active/paused; closed: los 2 nuevos +
+    // el legacy closed_won + closed_lost — #75.1)
     expect(calls.in).toContainEqual(['status', ['active', 'paused']]);
-    expect(calls.in).toContainEqual(['status', ['closed_won', 'closed_lost']]);
+    expect(calls.in).toContainEqual([
+      'status',
+      ['closed_won', 'closed_won_rent', 'closed_won_sale', 'closed_lost'],
+    ]);
 
     // deleted_at is null se usó en las 3 queries
     expect(calls.is.filter(([col, val]) => col === 'deleted_at' && val === null).length).toBe(3);
@@ -226,6 +237,28 @@ describe('useAgentStats', () => {
       expect(opts).toEqual({ count: 'exact', head: true });
     }
     expect(calls.select.length).toBe(3);
+  });
+
+  // ── EC-6: closed_won se partió — el count debe cubrir rent/sale + legacy ──
+
+  it('(EC-6) query_cerrados_incluye_closed_won_rent_y_closed_won_sale_y_legacy: la query de cerrados filtra status in [closed_won, closed_won_rent, closed_won_sale, closed_lost]', async () => {
+    await renderHook(() => useAgentStats(TEST_AGENT_ID));
+
+    const calls = mock_supabase_holder.client._calls;
+
+    // Busca la llamada .in('status', [...]) que NO es la de publications
+    // (active/paused) — es decir, la de closed.
+    const closed_in_call = calls.in.find(
+      ([col, val]) => col === 'status' && Array.isArray(val) && (val as string[]).includes('closed_lost'),
+    );
+
+    expect(closed_in_call).toBeDefined();
+    expect(closed_in_call?.[1]).toEqual([
+      'closed_won',
+      'closed_won_rent',
+      'closed_won_sale',
+      'closed_lost',
+    ]);
   });
 
   // ── EC-4: Error en alguna query degrada a ceros ───────────────────────────

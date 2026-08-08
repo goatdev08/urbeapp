@@ -4,7 +4,7 @@ dominio: producto
 estado: vivo
 fuentes: [docs/PRD.md §4, docs/PRD-MVP-demo.md]
 codigo: [supabase/migrations/20260604000002_identity_users.sql, supabase/migrations/20260708000001_signup_default_buscador.sql, supabase/migrations/20260729000001_register_user_atomic_rpc.sql, supabase/functions/register/, mobile/app/register.tsx, mobile/src/features/auth/context.tsx, mobile/src/features/auth/api.ts, supabase/migrations/20260805000001_premium_derived_helper.sql, supabase/migrations/20260805000004_upgrade_to_agent_rpc.sql, supabase/functions/upgrade-to-agent/, supabase/functions/request-agent-upgrade/, mobile/app/(protected)/upgrade.tsx, mobile/src/features/upgrade/]
-actualizado: 2026-08-05
+actualizado: 2026-08-07
 ---
 
 # Roles y permisos
@@ -31,7 +31,7 @@ Un buscador (`role='user'`) puede subir a agente DESPUÉS de registrarse, desde 
 
 ## Actores en la demo
 - **admin** — equipo Urbea; da de alta inmobiliarias y owners (panel admin).
-- **owner** / **agente** — se modelan vía `agency_members` ([[inmobiliarias-y-agentes]]); `users.role` es `'agent'` incluso para owners (el rol de agencia vive en `agency_members.member_role`).
+- **owner** / **admin de agencia** / **agente** / **viewer** — se modelan vía `agency_members` ([[inmobiliarias-y-agentes]]); `users.role` es `'agent'` incluso para owners (el rol de agencia vive en `agency_members.member_role`). ⭐ **El `admin` de inmobiliaria ve el pipeline de leads del equipo desde #75.5** (helper `private.is_agency_admin_of` + OR en los 3 puntos de lectura, migración `20260807000005`) — antes quedaba como agente raso porque el único helper de gestor era `is_agency_owner_of`. **Solo lectura**: la escritura del lead sigue siendo del agente dueño (ver [[crm-leads]], [[rls-seguridad]]). En cliente lo expone `useAgencyRole().canViewTeam` (= owner o admin).
 - **buscador** (`role='user'`) — usuario final público que llega por registro libre; consume el feed y contacta agentes.
 
 ## Reglas / gotchas

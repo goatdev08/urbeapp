@@ -1,12 +1,19 @@
 /**
- * useUpdateLeadNote — hook de mutación de internal_notes de lead. Fase GREEN (29.5).
+ * useUpdateLeadNote — hook de mutación de internal_notes / is_follow_up de
+ * lead. Fase GREEN (29.5 + 75.6).
  *
  * Contrato:
- *   update_note(lead_id, note)
- *     → invoca EF 'update-lead-note' con { lead_id, note }; note="" es válido
- *       (limpia la nota en DB, lo maneja el backend).
+ *   update_note(lead_id, note?, is_follow_up?)
+ *     → invoca EF 'update-lead-note' con { lead_id, note?, is_follow_up? };
+ *       note="" es válido (limpia la nota en DB, lo maneja el backend).
+ *       Ambos campos son opcionales pero INDEPENDIENTES: cada uno solo viaja
+ *       en el body si vino `!== undefined` (75.6 — `is_follow_up:false` NO es
+ *       "ausente", es una desactivación explícita; usar truthiness lo perdería).
+ *       La EF exige al menos uno de los dos presente — responsabilidad del
+ *       llamador, el hook no lo valida.
  *   is_updating: true de forma SÍNCRONA al disparar (patrón ref+force_update EC-9).
- *   error: null en éxito; string en fallo (EF o red).
+ *   error: null en éxito; MENSAJE EN ESPAÑOL en fallo (75.6 — nunca el texto
+ *     crudo de supabase-js/Postgres).
  *   onSuccess: llamado solo en caso de éxito (EC-2, EC-6).
  *
  * Patrón de implementación: espejo exacto de useUpdateLeadStatus.ts (is_working_ref +
@@ -16,6 +23,9 @@
 import { useCallback, useMemo, useReducer, useRef } from 'react';
 
 import { useAuth } from '@/features/auth/context';
+import { extract_error_code } from '@/lib/supabase/edge-errors';
+
+import { map_lead_ef_error } from '../lead_error_messages';
 
 // ---------------------------------------------------------------------------
 // Tipos públicos
@@ -30,11 +40,14 @@ export interface UseUpdateLeadNoteDeps {
 
 export interface UseUpdateLeadNoteReturn {
   /**
-   * Invoca la EF update-lead-note con lead_id y note.
-   * note="" es válido (limpia la nota). Llama onSuccess si la operación
-   * es exitosa.
+   * Invoca la EF update-lead-note con lead_id y, opcionalmente, note y/o
+   * is_follow_up. note="" es válido (limpia la nota). Cada campo viaja en el
+   * body solo si se pasó explícitamente (`!== undefined`) — omitir un
+   * argumento NO es lo mismo que pasar `false`/`""` (75.6, toggle de
+   * "en seguimiento" en LeadExpandedView llama update_note(id, undefined, next)).
+   * Llama onSuccess si la operación es exitosa.
    */
-  update_note(lead_id: string, note: string): Promise<void>;
+  update_note(lead_id: string, note?: string, is_follow_up?: boolean): Promise<void>;
   /** true mientras la invocación está en vuelo, false en reposo. */
   is_updating: boolean;
   /** null tras éxito; string con descripción en fallo. */
@@ -98,8 +111,11 @@ export function useUpdateLeadNote(deps?: UseUpdateLeadNoteDeps): UseUpdateLeadNo
         force_update();
         return result;
       },
+      // 75.6: error de red/timeout (invoke rechazado) — SIEMPRE el mensaje
+      // neutro en español, nunca err.message crudo.
       (err: unknown) => {
-        const msg = err instanceof Error ? err.message : 'Error inesperado';
+        void err;
+        const msg = map_lead_ef_error(undefined);
         is_working_ref.current = false;
         error_ref.current = msg;
         force_update();
@@ -117,11 +133,12 @@ export function useUpdateLeadNote(deps?: UseUpdateLeadNoteDeps): UseUpdateLeadNo
     return (
       client.functions.invoke('update-lead-note', { body }) as Promise<{
         data: unknown;
-        error: { message?: string } | null;
+        error: unknown | null;
       }>
-    ).then(({ error }) => {
+    ).then(async ({ error }) => {
       if (error) {
-        return { ok: false as const, error: error.message ?? 'Error al actualizar la nota' };
+        const code = await extract_error_code(error);
+        return { ok: false as const, error: map_lead_ef_error(code) };
       }
       return { ok: true as const, error: null };
     });
@@ -130,8 +147,14 @@ export function useUpdateLeadNote(deps?: UseUpdateLeadNoteDeps): UseUpdateLeadNo
   // ── Acción pública ────────────────────────────────────────────────────────
 
   const update_note = useCallback(
-    (lead_id: string, note: string): Promise<void> => {
-      const body: Record<string, unknown> = { lead_id, note };
+    (lead_id: string, note?: string, is_follow_up?: boolean): Promise<void> => {
+      // 75.6: cada campo viaja SOLO si vino explícito — `!== undefined`, nunca
+      // truthiness (is_follow_up=false es una desactivación real, no "ausente").
+      const body: Record<string, unknown> = {
+        lead_id,
+        ...(note !== undefined ? { note } : {}),
+        ...(is_follow_up !== undefined ? { is_follow_up } : {}),
+      };
 
       return run_action(() => invoke_lead_note(body)).then((result) => {
         // EC-2: onSuccess solo en éxito. EC-6: no llamado si error.

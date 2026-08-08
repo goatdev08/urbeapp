@@ -2,15 +2,29 @@
  * LeadExpandedView — vista expandida de un lead en modal bottom-sheet.
  *
  * Subtarea 15.4 — parte presentacional.
+ * Subtarea 75.6 (§19.7/§19.8) — toggle "en seguimiento" + timeline de solo
+ *   lectura del embudo (useLeadStatusHistory).
+ * Corrección code review (rama tarea/75-crm-estados-scoring):
+ *   - FIX1: el toggle "en seguimiento" ya NO comparte instancia de hook con
+ *     "Guardar nota" (esa compartía onSuccess cerraba el sheet y tiraba la
+ *     nota sin guardar). Instancia propia + estado local optimista.
+ *   - FIX2: el contenido (estado/notas/historial) ahora vive en un
+ *     ScrollView acotado por SHEET_MAX_HEIGHT; "Ver propiedad"/"WhatsApp"
+ *     quedan FIJOS fuera del scroll — siempre visibles.
+ *   - FIX3: el badge del estado actual se muestra SIEMPRE arriba del picker
+ *     (antes solo en readOnly) — cubre leads legacy fuera de ALL_LEAD_STATUSES.
  *
  * Contenido:
- *   - Lead header: avatar, nombre y dirección de propiedad de origen.
- *   - Selector de estado: 7 opciones con etiqueta y badge; resalta estado actual.
+ *   - Lead header (fijo): avatar, nombre, dirección de propiedad de origen y
+ *     toggle de "en seguimiento" (bookmark).
+ *   - Selector de estado: 8 opciones vigentes con etiqueta y badge; badge del
+ *     estado actual SIEMPRE visible arriba (aunque sea legacy). El backend no
+ *     impone transiciones (75.1), así que el picker no valida ninguna.
  *   - Spinner / disabled durante is_updating.
- *   - Error inline si la EF rechaza.
- *
- * Fuera de alcance (subtarea 15.5):
- *   textarea de notas, botón "Ver propiedad", botón WhatsApp.
+ *   - Error inline si la EF rechaza — SIEMPRE en español (los hooks ya lo
+ *     garantizan, esta vista solo lo muestra).
+ *   - Timeline: historial de cambios de estado (lead_status_history),
+ *     más reciente primero, capado a HISTORY_DISPLAY_CAP entradas.
  *
  * ponytail: Modal nativo de RN — sin dependencia de bottom-sheet externa.
  */
@@ -30,6 +44,7 @@ import {
   View,
 } from 'react-native';
 import { Image } from 'expo-image';
+import { BookmarkSimple } from 'phosphor-react-native';
 
 import { router } from 'expo-router';
 
@@ -40,6 +55,14 @@ import { ALL_LEAD_STATUSES, get_status_meta } from '../lead_status_meta';
 import type { AgentLead, LeadStatus } from '../types';
 import { useUpdateLeadStatus } from '../hooks/useUpdateLeadStatus';
 import { useUpdateLeadNote } from '../hooks/useUpdateLeadNote';
+import { useLeadStatusHistory } from '../hooks/useLeadStatusHistory';
+import { format_relative_time } from '../utils/relative_time';
+
+// ─── Constantes ───────────────────────────────────────────────────────────────
+
+/** FIX2 — el timeline muestra solo las entradas más recientes; el historial
+ * completo sigue en DB, esto es un vistazo rápido dentro del sheet acotado. */
+const HISTORY_DISPLAY_CAP = 5;
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -54,6 +77,14 @@ export interface LeadExpandedViewProps {
    * el refetch antes de desmontar.
    */
   onSuccess: () => void;
+  /**
+   * FIX1 (code review) — llamado tras un toggle de "en seguimiento" exitoso.
+   * A diferencia de onSuccess, NO debe cerrar el sheet: el toggle es una
+   * acción rápida que el agente hace sin salir del detalle, muchas veces con
+   * una nota sin guardar en curso. El padre solo debe refrescar la lista
+   * subyacente (p.ej. pasar `refetch` de useAgentLeads). Default: no-op.
+   */
+  onFollowUpChange?: () => void;
   /**
    * Modo solo lectura: oculta el selector de estado y las notas editables.
    * Se activa cuando el owner de la agencia abre un lead de OTRO agente — puede
@@ -79,6 +110,7 @@ export function LeadExpandedView({
   visible,
   onClose,
   onSuccess,
+  onFollowUpChange = () => {},
   readOnly = false,
 }: LeadExpandedViewProps): React.JSX.Element {
   const { update_status, is_updating, error } = useUpdateLeadStatus({ onSuccess });
@@ -88,18 +120,40 @@ export function LeadExpandedView({
     error: note_error,
   } = useUpdateLeadNote({ onSuccess });
 
+  // FIX1 (code review) — instancia INDEPENDIENTE del hook de notas para el
+  // toggle "en seguimiento". Comparte la misma EF (update-lead-note) pero con
+  // su propio onSuccess (onFollowUpChange, NO cierra el sheet). Si el toggle
+  // reusara la instancia de "Guardar nota", su onSuccess (que sí cierra el
+  // sheet vía onSuccess del padre) se disparía al tocar el bookmark y tiraría
+  // cualquier nota sin guardar en el textarea.
+  const follow_up_hook = useUpdateLeadNote({ onSuccess: onFollowUpChange });
+
+  const { history, loading: history_loading, error: history_error } = useLeadStatusHistory(lead.id);
+
   // ── Nota interna ─────────────────────────────────────────────────────────────
   const [note, set_note] = useState(lead.internal_notes ?? '');
 
-  // Reset cuando cambia el lead (el modal abre un lead distinto)
+  // FIX1 — estado LOCAL optimista de "en seguimiento". El sheet permanece
+  // abierto tras el toggle, así que `lead.is_follow_up` (prop) nunca se
+  // actualiza mientras el modal sigue montado (el padre no re-sincroniza
+  // `selected_lead` en cada refetch) — sin este estado local el ícono del
+  // bookmark quedaría congelado en el valor con el que se abrió el lead.
+  const [is_follow_up, set_is_follow_up] = useState(lead.is_follow_up);
+
+  // Reset cuando cambia el lead (el modal abre un lead distinto). Deliberado:
+  // solo debe re-sincronizar en el cambio de lead.id, NO en cada cambio de
+  // internal_notes/is_follow_up (eso pisaría lo que el agente esté editando
+  // localmente) — de ahí los deps incompletos a propósito.
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- resincroniza el input local (note) con lead cuando cambia lead.id.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- resincroniza note/is_follow_up (estado local) con lead cuando cambia lead.id.
     set_note(lead.internal_notes ?? '');
+    set_is_follow_up(lead.is_follow_up);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- ver comentario arriba: solo lead.id dispara el resync.
   }, [lead.id]);
 
   async function handle_status_select(new_status: LeadStatus): Promise<void> {
     if (readOnly) return; // el owner viendo un lead ajeno no puede editar
-    if (is_updating) return;
+    if (is_updating || follow_up_hook.is_updating) return;
     if (new_status === lead.status) return; // ya está en ese estado
     // EC-8: note omitido del body si vacío (el hook controla el spread condicional)
     const trimmed = note.trim();
@@ -112,12 +166,28 @@ export function LeadExpandedView({
 
   async function handle_save_note(): Promise<void> {
     if (readOnly) return;
-    if (is_saving_note || is_updating) return;
+    if (is_saving_note || is_updating || follow_up_hook.is_updating) return;
     await update_note(lead.id, note.trim());
+  }
+
+  // Toggle "en seguimiento" (75.6, §19.7 + FIX1) — solo is_follow_up en el
+  // body, sin tocar la nota. Optimista: refleja el cambio de inmediato (sin
+  // esperar la EF ni cerrar el sheet) y revierte si la EF rechaza.
+  async function handle_toggle_follow_up(): Promise<void> {
+    if (readOnly) return;
+    if (is_saving_note || is_updating || follow_up_hook.is_updating) return;
+    const next = !is_follow_up;
+    set_is_follow_up(next);
+    await follow_up_hook.update_note(lead.id, undefined, next);
+    if (follow_up_hook.error !== null) {
+      set_is_follow_up(!next); // la EF rechazó el cambio — revierte el ícono
+    }
   }
 
   const display_name = lead.full_name ?? 'Usuario sin nombre';
   const current_meta = get_status_meta(lead.status);
+  const visible_history = history.slice(0, HISTORY_DISPLAY_CAP);
+  const any_note_action_busy = is_saving_note || is_updating || follow_up_hook.is_updating;
 
   return (
     <Modal
@@ -144,7 +214,8 @@ export function LeadExpandedView({
           <View style={styles.handle} />
         </View>
 
-        {/* Cabecera: avatar + nombre + propiedad de origen */}
+        {/* Cabecera (FIJA, fuera del scroll — FIX2): avatar + nombre +
+            propiedad de origen + toggle de "en seguimiento" */}
         <View style={styles.lead_header}>
 
           {/* Avatar */}
@@ -175,6 +246,30 @@ export function LeadExpandedView({
             )}
           </View>
 
+          {/* Toggle "en seguimiento" (75.6 + FIX1) — oculto en readOnly */}
+          {!readOnly && (
+            <Pressable
+              onPress={() => { void handle_toggle_follow_up(); }}
+              disabled={any_note_action_busy}
+              style={({ pressed }) => [
+                styles.follow_up_btn,
+                is_follow_up && styles.follow_up_btn_active,
+                follow_up_hook.is_updating && styles.follow_up_btn_busy,
+                pressed && styles.action_btn_pressed,
+              ]}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityState={{ selected: is_follow_up, disabled: any_note_action_busy }}
+              accessibilityLabel={is_follow_up ? 'Quitar de seguimiento' : 'Marcar en seguimiento'}
+            >
+              <BookmarkSimple
+                size={18}
+                weight={is_follow_up ? 'fill' : 'regular'}
+                color={is_follow_up ? colors.accent_deep : colors.gray_2}
+              />
+            </Pressable>
+          )}
+
           {/* Botón cerrar */}
           <Pressable
             onPress={onClose}
@@ -188,14 +283,39 @@ export function LeadExpandedView({
 
         </View>
 
+        {/* Error del toggle "en seguimiento" — separado del error de nota/estado */}
+        {follow_up_hook.error !== null && (
+          <View style={styles.error_row}>
+            <Text style={styles.error_text}>{follow_up_hook.error}</Text>
+          </View>
+        )}
+
         {/* Divisor */}
         <View style={styles.divider} />
 
-        {/* Sección de estado — read-only (owner viendo lead ajeno) o selector editable */}
-        <Text style={styles.section_title}>{readOnly ? 'Estado' : 'Cambiar estado'}</Text>
+        {/* ── Contenido scrollable (FIX2): estado, notas, historial ──────────
+            El sheet tiene maxHeight fijo (SHEET_MAX_HEIGHT); este bloque es el
+            ÚNICO que scrollea (flex:1 dentro de un contenedor con maxHeight)
+            para que "Ver propiedad"/"WhatsApp" — fuera de este ScrollView, más
+            abajo — SIEMPRE queden visibles sin importar cuánto crezcan las
+            notas o el historial. El picker de estados dejó de tener su propio
+            ScrollView interno: dos ScrollView verticales anidados producen
+            scroll conflictivo; ahora el scroll lo controla únicamente este
+            contenedor. */}
+        <ScrollView
+          style={styles.scroll_content}
+          contentContainerStyle={styles.scroll_content_container}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
 
-        {readOnly ? (
-          <View style={styles.readonly_status_wrap}>
+          {/* Sección de estado — título varía en readOnly, badge SIEMPRE visible */}
+          <Text style={styles.section_title}>{readOnly ? 'Estado' : 'Cambiar estado'}</Text>
+
+          {/* Badge del estado actual — SIEMPRE visible (FIX3): un lead legacy
+              (in_progress/closed_won) no aparece en ALL_LEAD_STATUSES, así que
+              sin esto el picker no mostraría NINGÚN indicador de estado actual. */}
+          <View style={styles.current_status_wrap}>
             <View style={styles.status_row}>
               <View style={[styles.status_dot, { backgroundColor: current_meta.bg }]} />
               <View style={[styles.status_badge, { backgroundColor: current_meta.bg }]}>
@@ -204,151 +324,186 @@ export function LeadExpandedView({
                 </Text>
               </View>
             </View>
-            <Text style={styles.readonly_hint}>
-              Solo lectura · este lead pertenece a otro agente de tu equipo
-            </Text>
+            {readOnly && (
+              <Text style={styles.readonly_hint}>
+                Solo lectura · este lead pertenece a otro agente de tu equipo
+              </Text>
+            )}
           </View>
-        ) : (
-        <>
-        <ScrollView
-          style={styles.status_list}
-          contentContainerStyle={styles.status_list_content}
-          showsVerticalScrollIndicator={false}
-          scrollEnabled={!is_updating}
-        >
-          {ALL_LEAD_STATUSES.map((s) => {
-            const meta       = get_status_meta(s);
-            const is_current = s === lead.status;
-            const is_active  = !is_updating;
 
-            return (
+          {!readOnly && (
+          <>
+          <View style={styles.status_list_content}>
+            {ALL_LEAD_STATUSES.map((s) => {
+              const meta       = get_status_meta(s);
+              const is_current = s === lead.status;
+              const is_active  = !is_updating && !follow_up_hook.is_updating;
+
+              return (
+                <Pressable
+                  key={s}
+                  onPress={() => { void handle_status_select(s); }}
+                  disabled={!is_active}
+                  accessibilityRole="radio"
+                  accessibilityState={{ checked: is_current, disabled: !is_active }}
+                  accessibilityLabel={`Estado: ${meta.label}${is_current ? ', seleccionado' : ''}`}
+                  style={({ pressed }) => [
+                    styles.status_row,
+                    is_current && styles.status_row_current,
+                    pressed && is_active && styles.status_row_pressed,
+                  ]}
+                >
+                  {/* Dot de color del estado */}
+                  <View style={[styles.status_dot, { backgroundColor: meta.bg }]} />
+
+                  {/* Badge de etiqueta */}
+                  <View style={[styles.status_badge, { backgroundColor: meta.bg }]}>
+                    <Text style={[styles.status_badge_text, { color: meta.text }]}>
+                      {meta.label}
+                    </Text>
+                  </View>
+
+                  {/* Indicador de estado actual o spinner */}
+                  {is_updating && is_current ? (
+                    <ActivityIndicator size="small" color={colors.primary} style={styles.status_indicator} />
+                  ) : is_current ? (
+                    <Text style={styles.status_check}>✓</Text>
+                  ) : null}
+
+                </Pressable>
+              );
+            })}
+          </View>
+
+          {/* Spinner global mientras actualiza */}
+          {is_updating && (
+            <View style={styles.updating_row}>
+              <ActivityIndicator size="small" color={colors.primary} />
+              <Text style={styles.updating_text}>Actualizando estado…</Text>
+            </View>
+          )}
+
+          {/* Error inline */}
+          {error !== null && (
+            <View style={styles.error_row}>
+              <Text style={styles.error_text}>{error}</Text>
+            </View>
+          )}
+          </>
+          )}
+
+          {/* ── Notas internas ─────────────────────────────────────────────── */}
+          <View style={styles.divider_bottom} />
+          <Text style={styles.section_title}>Notas internas</Text>
+          <TextInput
+            style={[styles.notes_input, readOnly && styles.notes_input_readonly]}
+            value={readOnly ? (lead.internal_notes ?? '') : note}
+            onChangeText={set_note}
+            placeholder={readOnly ? 'Sin notas' : 'Añadir nota…'}
+            placeholderTextColor={colors.gray_1}
+            multiline
+            numberOfLines={3}
+            editable={!readOnly && !any_note_action_busy}
+            textAlignVertical="top"
+            accessibilityLabel="Notas internas del lead"
+          />
+
+          {/* Botón "Guardar nota" — visible solo si hay cambios sin guardar;
+              oculto en readOnly (owner viendo lead ajeno, consistente con #28) */}
+          {!readOnly && note_has_changes && (
+            <View style={styles.save_note_row}>
               <Pressable
-                key={s}
-                onPress={() => { void handle_status_select(s); }}
-                disabled={!is_active}
-                accessibilityRole="radio"
-                accessibilityState={{ checked: is_current, disabled: !is_active }}
-                accessibilityLabel={`Estado: ${meta.label}${is_current ? ', seleccionado' : ''}`}
+                onPress={() => { void handle_save_note(); }}
+                disabled={any_note_action_busy}
                 style={({ pressed }) => [
-                  styles.status_row,
-                  is_current && styles.status_row_current,
-                  pressed && is_active && styles.status_row_pressed,
+                  styles.save_note_btn,
+                  any_note_action_busy && styles.save_note_btn_disabled,
+                  pressed && !any_note_action_busy && styles.action_btn_pressed,
                 ]}
+                accessibilityRole="button"
+                accessibilityLabel="Guardar nota"
               >
-                {/* Dot de color del estado */}
-                <View style={[styles.status_dot, { backgroundColor: meta.bg }]} />
-
-                {/* Badge de etiqueta */}
-                <View style={[styles.status_badge, { backgroundColor: meta.bg }]}>
-                  <Text style={[styles.status_badge_text, { color: meta.text }]}>
-                    {meta.label}
-                  </Text>
-                </View>
-
-                {/* Indicador de estado actual o spinner */}
-                {is_updating && is_current ? (
-                  <ActivityIndicator size="small" color={colors.primary} style={styles.status_indicator} />
-                ) : is_current ? (
-                  <Text style={styles.status_check}>✓</Text>
-                ) : null}
-
+                <Text style={styles.save_note_btn_text}>
+                  {is_saving_note ? 'Guardando…' : 'Guardar nota'}
+                </Text>
               </Pressable>
-            );
-          })}
+            </View>
+          )}
+
+          {/* Error inline de la nota — separado del error de status */}
+          {note_error !== null && (
+            <View style={styles.error_row}>
+              <Text style={styles.error_text}>{note_error}</Text>
+            </View>
+          )}
+
+          {/* ── Historial del lead (75.6, §19.8) — capado (FIX2) ─────────────── */}
+          <View style={styles.divider_bottom} />
+          <Text style={styles.section_title}>Historial</Text>
+          {history_loading && history.length === 0 ? (
+            <ActivityIndicator size="small" color={colors.primary} style={styles.history_loading} />
+          ) : history_error !== null ? (
+            <Text style={[styles.error_text, styles.history_error]}>{history_error}</Text>
+          ) : history.length === 0 ? (
+            <Text style={styles.history_empty}>Sin cambios registrados todavía.</Text>
+          ) : (
+            <View style={styles.history_list}>
+              {visible_history.map((entry) => {
+                const entry_meta = get_status_meta(entry.new_status);
+                return (
+                  <View key={entry.id} style={styles.history_row}>
+                    <View style={[styles.status_dot, { backgroundColor: entry_meta.bg }]} />
+                    <Text style={styles.history_status} numberOfLines={1}>
+                      {entry_meta.label}
+                    </Text>
+                    <Text style={styles.history_date}>{format_relative_time(entry.changed_at)}</Text>
+                  </View>
+                );
+              })}
+              {history.length > HISTORY_DISPLAY_CAP && (
+                <Text style={styles.history_more}>
+                  +{history.length - HISTORY_DISPLAY_CAP} cambios más antiguos
+                </Text>
+              )}
+            </View>
+          )}
+
         </ScrollView>
 
-        {/* Spinner global mientras actualiza (sobre toda la lista) */}
-        {is_updating && (
-          <View style={styles.updating_row}>
-            <ActivityIndicator size="small" color={colors.primary} />
-            <Text style={styles.updating_text}>Actualizando estado…</Text>
-          </View>
-        )}
-
-        {/* Error inline */}
-        {error !== null && (
-          <View style={styles.error_row}>
-            <Text style={styles.error_text}>{error}</Text>
-          </View>
-        )}
-        </>
-        )}
-
-        {/* ── Notas internas ─────────────────────────────────────────────────── */}
-        <View style={styles.divider_bottom} />
-        <Text style={styles.section_title}>Notas internas</Text>
-        <TextInput
-          style={[styles.notes_input, readOnly && styles.notes_input_readonly]}
-          value={readOnly ? (lead.internal_notes ?? '') : note}
-          onChangeText={set_note}
-          placeholder={readOnly ? 'Sin notas' : 'Añadir nota…'}
-          placeholderTextColor={colors.gray_1}
-          multiline
-          numberOfLines={3}
-          editable={!readOnly && !is_saving_note && !is_updating}
-          textAlignVertical="top"
-          accessibilityLabel="Notas internas del lead"
-        />
-
-        {/* Botón "Guardar nota" — visible solo si hay cambios sin guardar;
-            oculto en readOnly (owner viendo lead ajeno, consistente con #28) */}
-        {!readOnly && note_has_changes && (
-          <View style={styles.save_note_row}>
-            <Pressable
-              onPress={() => { void handle_save_note(); }}
-              disabled={is_saving_note || is_updating}
-              style={({ pressed }) => [
-                styles.save_note_btn,
-                (is_saving_note || is_updating) && styles.save_note_btn_disabled,
-                pressed && !(is_saving_note || is_updating) && styles.action_btn_pressed,
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel="Guardar nota"
-            >
-              <Text style={styles.save_note_btn_text}>
-                {is_saving_note ? 'Guardando…' : 'Guardar nota'}
-              </Text>
-            </Pressable>
-          </View>
-        )}
-
-        {/* Error inline de la nota — separado del error de status */}
-        {note_error !== null && (
-          <View style={styles.error_row}>
-            <Text style={styles.error_text}>{note_error}</Text>
-          </View>
-        )}
-
-        {/* ── Acciones: Ver propiedad + WhatsApp ─────────────────────────────── */}
-        <View style={styles.action_row}>
-          {lead.origin_property_id !== null && (
+        {/* ── Acciones: Ver propiedad + WhatsApp — FIJAS fuera del scroll
+            (FIX2): es la acción principal del CRM, nunca debe quedar
+            recortada ni requerir scroll para encontrarla. ─────────────────── */}
+        <View style={styles.action_row_wrap}>
+          <View style={styles.action_row}>
+            {lead.origin_property_id !== null && (
+              <Pressable
+                style={({ pressed }) => [
+                  styles.action_btn,
+                  styles.action_btn_property,
+                  pressed && styles.action_btn_pressed,
+                ]}
+                onPress={() => { router.push(`/property/${lead.origin_property_id}`); }}
+                accessibilityRole="button"
+                accessibilityLabel="Ver propiedad de origen"
+              >
+                <Text style={styles.action_btn_text_dark}>Ver propiedad</Text>
+              </Pressable>
+            )}
             <Pressable
               style={({ pressed }) => [
                 styles.action_btn,
-                styles.action_btn_property,
+                styles.action_btn_wa,
                 pressed && styles.action_btn_pressed,
+                lead.phone === null && styles.action_btn_disabled,
               ]}
-              onPress={() => { router.push(`/property/${lead.origin_property_id}`); }}
+              onPress={() => { open_whatsapp(lead.phone, lead.origin_property_address ?? ''); }}
+              disabled={lead.phone === null}
               accessibilityRole="button"
-              accessibilityLabel="Ver propiedad de origen"
+              accessibilityLabel="Contactar por WhatsApp"
             >
-              <Text style={styles.action_btn_text_dark}>Ver propiedad</Text>
+              <Text style={styles.action_btn_text_light}>WhatsApp</Text>
             </Pressable>
-          )}
-          <Pressable
-            style={({ pressed }) => [
-              styles.action_btn,
-              styles.action_btn_wa,
-              pressed && styles.action_btn_pressed,
-              lead.phone === null && styles.action_btn_disabled,
-            ]}
-            onPress={() => { open_whatsapp(lead.phone, lead.origin_property_address ?? ''); }}
-            disabled={lead.phone === null}
-            accessibilityRole="button"
-            accessibilityLabel="Contactar por WhatsApp"
-          >
-            <Text style={styles.action_btn_text_light}>WhatsApp</Text>
-          </Pressable>
+          </View>
         </View>
 
       </View>
@@ -442,6 +597,19 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
 
+  // ── Toggle "en seguimiento" (75.6) ───────────────────────────────────────────
+  follow_up_btn: {
+    padding: spacing.s_4,
+    borderRadius: radii.r_pill,
+    flexShrink: 0,
+  },
+  follow_up_btn_active: {
+    backgroundColor: colors.accent_tint,
+  },
+  follow_up_btn_busy: {
+    opacity: 0.4,
+  },
+
   close_btn: {
     padding: spacing.s_4,
     flexShrink: 0,
@@ -459,6 +627,14 @@ const styles = StyleSheet.create({
     marginBottom: spacing.s_12,
   },
 
+  // ── Contenido scrollable (FIX2) ────────────────────────────────────────────
+  scroll_content: {
+    flex: 1,
+  },
+  scroll_content_container: {
+    paddingBottom: spacing.s_8,
+  },
+
   // ── Sección título ───────────────────────────────────────────────────────────
   section_title: {
     fontFamily: fonts.sans_semibold,
@@ -471,9 +647,6 @@ const styles = StyleSheet.create({
   },
 
   // ── Lista de estados ─────────────────────────────────────────────────────────
-  status_list: {
-    maxHeight: 280,
-  },
   status_list_content: {
     paddingHorizontal: spacing.s_12,
     gap: 4,
@@ -526,8 +699,8 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
 
-  // ── Estado solo lectura (owner viendo lead ajeno) ────────────────────────────
-  readonly_status_wrap: {
+  // ── Badge del estado actual — SIEMPRE visible (FIX3) ─────────────────────────
+  current_status_wrap: {
     paddingHorizontal: spacing.s_16,
     gap: spacing.s_8,
     marginBottom: spacing.s_4,
@@ -615,7 +788,55 @@ const styles = StyleSheet.create({
     color: colors.on_primary,
   },
 
-  // ── Fila de acciones ─────────────────────────────────────────────────────────
+  // ── Historial (75.6) ──────────────────────────────────────────────────────────
+  history_loading: {
+    marginBottom: spacing.s_12,
+  },
+  history_error: {
+    paddingHorizontal: spacing.s_16,
+    marginBottom: spacing.s_12,
+  },
+  history_empty: {
+    fontFamily: fonts.sans,
+    fontSize: 13,
+    color: colors.gray_2,
+    paddingHorizontal: spacing.s_16,
+    marginBottom: spacing.s_12,
+  },
+  history_list: {
+    paddingHorizontal: spacing.s_16,
+    marginBottom: spacing.s_12,
+    gap: spacing.s_8,
+  },
+  history_row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.s_8,
+  },
+  history_status: {
+    flex: 1,
+    fontFamily: fonts.sans_semibold,
+    fontSize: 13,
+    color: colors.ink,
+  },
+  history_date: {
+    fontFamily: fonts.sans,
+    fontSize: 12,
+    color: colors.gray_2,
+  },
+  history_more: {
+    fontFamily: fonts.sans,
+    fontSize: 11,
+    color: colors.gray_2,
+    marginTop: 2,
+  },
+
+  // ── Fila de acciones (FIJA fuera del scroll, FIX2) ───────────────────────────
+  action_row_wrap: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.silver,
+    paddingTop: spacing.s_12,
+  },
   action_row: {
     flexDirection: 'row',
     gap: spacing.s_8,

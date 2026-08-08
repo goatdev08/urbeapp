@@ -1,8 +1,9 @@
 /**
- * useAgentLeads — carga los leads del agente autenticado con datos del buscador
- * y propiedad de origen.
+ * useAgentLeads — carga los leads del agente autenticado con datos del buscador,
+ * propiedad de origen y scoring/actividad (score/level/is_follow_up).
  *
- * Query: from('leads').select(<embedded>).is('deleted_at', null).order('updated_at', {ascending:false})
+ * Query: from('leads').select(<embedded+score+level+is_follow_up>).eq('agent_id',agentId)?
+ *   .is('deleted_at', null).order(<primario>, {...}).order('updated_at', {ascending:false})
  *   - RLS (migración 0008) filtra agent_id = auth.uid() — sin filtro explícito aquí.
  *   - Embeds: users!leads_user_id_fkey(first_name, last_name, avatar_url, phone)
  *     (FK explícita: leads tiene DOS FKs a users — user_id/buscador y agent_id)
@@ -13,6 +14,13 @@
  * el user_preferences ajeno del buscador vía RLS (`user_prefs_select` = fila
  * propia), pero SÍ puede leer su fila `users` (RLS `users_select`).
  *
+ * Orden (75.6, §19.9): DOS .order() encadenados, primario + desempate SIEMPRE
+ * updated_at DESC.
+ *   - sortBy='score' (default): .order('score',{ascending:false})
+ *   - sortBy='last_contact': .order('last_contact_at',{ascending:false,nullsFirst:false})
+ *     — nullsFirst:false para que un lead sin seguimiento posterior al primer
+ *     contacto no aparezca arriba.
+ *
  * Transformación raw → AgentLead:
  *   - phone: users.phone (null si null)
  *   - full_name: build_full_name(users.first_name, users.last_name) — util
@@ -20,6 +28,11 @@
  *   - profile_photo_url: users.avatar_url (null si null)
  *   - origin_*: lead_origin_properties[0] (null si array vacío / LEFT JOIN vacío)
  *   - origin_property_thumbnail_url: video con menor position (null si sin videos)
+ *   - score/level/is_follow_up: mapeo directo (75.6) — no-null en la fila real,
+ *     los mantienen triggers (ver types.ts AgentLead).
+ *
+ * Errores (75.6, defecto #1/#3 del usuario): mensaje NEUTRO en español, nunca
+ * el texto crudo de PostgREST/Postgres.
  *
  * Patrón: useState/useEffect/useCallback (sin useFocusEffect — hook general, no pantalla).
  * ponytail: flag `ignore` + tick counter para refetch — sin AbortController.
@@ -29,7 +42,7 @@ import { useState, useEffect, useCallback } from 'react';
 
 import { supabase } from '@/lib/supabase/client';
 import { useAuth } from '@/features/auth/context';
-import type { AgentLead } from '../types';
+import type { AgentLead, LeadSortMode } from '../types';
 import { build_full_name } from '../utils/full_name';
 
 // ---------------------------------------------------------------------------
@@ -75,6 +88,11 @@ type RawLead = {
   updated_at: string;
   created_at: string;
   deleted_at: string | null;
+  // Scoring/actividad (migración 20260807000004, subtarea 75.6) — not-null en
+  // el schema real (triggers los mantienen siempre poblados).
+  score: number;
+  level: AgentLead['level'];
+  is_follow_up: boolean;
   users: {
     phone: string | null;
     first_name: string | null;
@@ -123,6 +141,10 @@ function transform_raw_to_agent_lead(raw: RawLead): AgentLead {
     origin_property_id: origin?.property_id ?? null,
     origin_property_address: origin?.properties?.address ?? null,
     origin_property_thumbnail_url: pick_thumbnail(videos),
+    // Scoring/actividad (75.6) — mapeo directo, no-null en runtime.
+    score: raw.score,
+    level: raw.level,
+    is_follow_up: raw.is_follow_up,
   };
 }
 
@@ -140,8 +162,15 @@ function transform_raw_to_agent_lead(raw: RawLead): AgentLead {
  *     (agente normal ve solo los suyos, owner ve todos los de su agencia).
  *
  * Expone refetch() para re-disparar la query (p.ej. tras cambiar estado de un lead).
+ *
+ * sortBy (subtarea 75.6, §19.9): 'score' (default) ordena por leads.score DESC;
+ * 'last_contact' ordena por leads.last_contact_at DESC (nulls al final). Ambos
+ * modos desempatan por updated_at DESC — ver header del archivo.
  */
-export function useAgentLeads(agentId?: string | null): UseAgentLeadsState {
+export function useAgentLeads(
+  agentId?: string | null,
+  sortBy: LeadSortMode = 'score',
+): UseAgentLeadsState {
   // Consumimos useAuth para alinear el patrón del repo (contexto de sesión activa).
   // El filtro real de agent_id lo hace RLS (o el .eq condicional de abajo) —
   // no necesitamos el id de sesión aquí.
@@ -173,7 +202,8 @@ export function useAgentLeads(agentId?: string | null): UseAgentLeadsState {
           // Queremos el BUSCADOR (leads.user_id), no el agente.
           // Identidad del buscador desde `users` (subtarea 30.3): first_name/
           // last_name/avatar_url, NO user_preferences (RLS no lo permite).
-          'id, user_id, agent_id, status, internal_notes, first_contact_at, last_contact_at, updated_at, created_at, deleted_at, users!leads_user_id_fkey(first_name, last_name, avatar_url, phone), lead_origin_properties(property_id, properties(address, property_videos(thumbnail_url, position)))' as never
+          // score/level/is_follow_up (75.6): clasificación por actividad visible en el CRM.
+          'id, user_id, agent_id, status, internal_notes, first_contact_at, last_contact_at, updated_at, created_at, deleted_at, score, level, is_follow_up, users!leads_user_id_fkey(first_name, last_name, avatar_url, phone), lead_origin_properties(property_id, properties(address, property_videos(thumbnail_url, position)))' as never
         );
 
       // agentId string → filtra por ese agente (caso owner viendo a un agente
@@ -181,14 +211,30 @@ export function useAgentLeads(agentId?: string | null): UseAgentLeadsState {
       const filtered_query =
         typeof agentId === 'string' ? base_query.eq('agent_id', agentId) : base_query;
 
-      const { data, error: query_error } = await filtered_query
-        .is('deleted_at', null)
-        .order('updated_at', { ascending: false });
+      const filtered_and_deleted_query = filtered_query.is('deleted_at', null);
+
+      // 75.6: primario según sortBy + desempate SIEMPRE por updated_at DESC.
+      // Dos .order() sobre la MISMA referencia del builder (no encadenados
+      // desde el valor de retorno): en supabase-js real, PostgrestFilterBuilder
+      // .order() muta y retorna `this`, así que ambas formas son equivalentes
+      // — esta evita asumir que el retorno del primer .order() siga siendo
+      // "chainable" (el segundo .order() y el await final van sobre
+      // filtered_and_deleted_query en ambos casos).
+      if (sortBy === 'last_contact') {
+        filtered_and_deleted_query.order('last_contact_at', { ascending: false, nullsFirst: false });
+      } else {
+        filtered_and_deleted_query.order('score', { ascending: false });
+      }
+
+      const { data, error: query_error } = await filtered_and_deleted_query.order('updated_at', {
+        ascending: false,
+      });
 
       if (ignore) return;
 
       if (query_error) {
-        set_error(query_error.message);
+        // 75.6: mensaje NEUTRO en español — nunca el texto crudo de PostgREST.
+        set_error('No se pudieron cargar los leads. Intenta de nuevo.');
         set_leads([]);
         set_loading(false);
         return;
@@ -205,7 +251,7 @@ export function useAgentLeads(agentId?: string | null): UseAgentLeadsState {
     return () => {
       ignore = true;
     };
-  }, [tick, agentId]);
+  }, [tick, agentId, sortBy]);
 
   // ponytail: useCallback sin deps — set_tick es estable (React garantía)
   const refetch = useCallback(() => set_tick((t) => t + 1), []);
