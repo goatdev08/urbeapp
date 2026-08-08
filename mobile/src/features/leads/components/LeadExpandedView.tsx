@@ -663,9 +663,19 @@ const styles = StyleSheet.create({
     marginBottom: spacing.s_12,
   },
 
-  // ── Contenido scrollable (FIX2) ────────────────────────────────────────────
+  // ── Contenido scrollable (FIX2; corregido en #113) ─────────────────────────
+  // 🔴 flexShrink, NO `flex: 1`. `styles.sheet` NO tiene altura definida (solo
+  // `maxHeight`) y su padre (KeyboardAvoidingView) tampoco, así que la altura
+  // del sheet la determina su contenido. `flex: 1` implica `flexBasis: 0`: el
+  // contenido del ScrollView deja de contar para esa altura y, como no hay
+  // espacio libre que repartir, Yoga le asigna **altura 0** — el sheet salía
+  // con la cabecera y los botones y NADA en medio (ni estado, ni notas, ni
+  // historial). Con `flexShrink: 1` la base es `auto`: el contenido sí cuenta,
+  // el sheet crece hasta `maxHeight` y el sobrante se le resta SOLO a este
+  // bloque (los demás hijos son flexShrink: 0 por defecto en RN), que entonces
+  // scrollea. Los tests con RNTL no ven layout: esto solo se caza en pantalla.
   scroll_content: {
-    flex: 1,
+    flexShrink: 1,
   },
   scroll_content_container: {
     paddingBottom: spacing.s_8,
