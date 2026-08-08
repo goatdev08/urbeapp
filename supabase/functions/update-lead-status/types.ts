@@ -6,10 +6,13 @@
 //   - Handler: parse input, validación en-memoria (lead_id, new_status enum).
 //   - LeadStatusUpdater: existencia del lead, ownership (agent_id), transición, UPDATE.
 
-// ── Enum del dominio — valores reales de lead_status (migración 0001) ─────────
+// ── Enum del dominio — valores reales de lead_status (migración 0001 + 75.1) ──
 //
-// Fuente de verdad: create type lead_status as enum
-//   ('new', 'contacted', 'in_progress', 'visit_scheduled', 'closed_won', 'closed_lost', 'discarded')
+// Fuente de verdad: create type lead_status as enum (...) + 20260807000002 (ADD VALUE):
+//   ('new', 'contacted', 'in_progress', 'visit_scheduled', 'closed_won', 'closed_lost',
+//    'discarded', 'whatsapp_opened', 'interested', 'closed_won_rent', 'closed_won_sale')
+// Los 7 primeros son legacy (Postgres no puede vaciar un enum); los 4 últimos son el
+// embudo real del PRD §19.8, agregados por la subtarea 75.1.
 // ⚠️ Los valores 'qualified', 'visit_done', 'negotiation', 'closed' NO existen en el schema.
 
 export type LeadStatusEnum =
@@ -19,7 +22,11 @@ export type LeadStatusEnum =
   | "visit_scheduled"
   | "closed_won"
   | "closed_lost"
-  | "discarded";
+  | "discarded"
+  | "whatsapp_opened"
+  | "interested"
+  | "closed_won_rent"
+  | "closed_won_sale";
 
 // ── Input validado ────────────────────────────────────────────────────────────
 
@@ -48,23 +55,17 @@ export interface CallerVerifier {
 // Responsabilidades (minimiza round-trips):
 //   1. Buscar el lead filtrando por id + agent_id (existencia + ownership juntos).
 //   2. Si no encontrado: segunda query sin agent_id para distinguir not-found vs unauthorized.
-//   3. Validar transición de estado (VALID_TRANSITIONS vs current status en DB).
-//   4. Aplicar UPDATE (status, updated_at, internal_notes si note presente).
-//   5. Retornar el lead actualizado.
+//   3. Aplicar UPDATE (status, updated_at, internal_notes si note presente).
+//   4. Retornar el lead actualizado.
 //
-// Transiciones válidas (tabla VALID_TRANSITIONS en lead_status_updater.ts):
-//   new            → contacted, discarded
-//   contacted      → in_progress, closed_lost, discarded
-//   in_progress    → visit_scheduled, closed_won, closed_lost, discarded
-//   visit_scheduled→ in_progress, closed_won, closed_lost, discarded
-//   closed_won     → [] (terminal)
-//   closed_lost    → [] (terminal)
-//   discarded      → [] (terminal)
+// Transiciones LIBRES (subtarea 75.1, PRD §19.8): cualquier estado → cualquier estado,
+// incluido reabrir un lead cerrado. Ya no existe una tabla de transiciones válidas — el
+// enforcement de "pasos" no vive en la DB ni en esta Edge Function. El historial completo
+// de cada cambio queda en public.lead_status_history (trigger, migración 20260807000003).
 //
 // Error codes:
 //   LEAD_NOT_FOUND     → handler devuelve 404
 //   UNAUTHORIZED_AGENT → handler devuelve 403 (el caller no es agent_id del lead)
-//   INVALID_TRANSITION → handler devuelve 400 (transición no permitida)
 //   DB_ERROR           → handler devuelve 500
 
 export interface UpdateLeadStatusParams {
@@ -87,7 +88,6 @@ export type UpdateLeadStatusResult =
     error_code:
       | "LEAD_NOT_FOUND"
       | "UNAUTHORIZED_AGENT"
-      | "INVALID_TRANSITION"
       | "DB_ERROR";
     message?: string;
   };

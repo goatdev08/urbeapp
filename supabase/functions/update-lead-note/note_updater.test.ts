@@ -1,5 +1,5 @@
 // supabase/functions/update-lead-note/note_updater.test.ts
-// Tests RED — subtareas 29.2/29.3 (fusionadas)
+// Tests RED — subtareas 29.2/29.3 (fusionadas) + 75.6
 // Edge Function: update-lead-note/note_updater.ts
 // Framework: Deno.test + @std/assert
 // Runner: deno test --allow-net --allow-env supabase/functions/update-lead-note/note_updater.test.ts
@@ -27,9 +27,26 @@
 // - NU-6: DB error en el UPDATE → DB_ERROR
 // - NU-7: UPDATE devuelve 0 filas (updated null) → DB_ERROR
 // - NU-10: updated_at se envía en el UPDATE payload
+//
+// EDGE CASES (RED) — 75.6 (§19.7, bandera "en seguimiento" desde la app):
+// SEAM: NoteUpdater.update() — mismo patrón "spread condicional" ya usado por
+// lead_status_updater.ts:66-72 para `note`, replicado aquí para `is_follow_up`.
+//
+// ### Happy path — is_follow_up
+// - NU-12: solo is_follow_up:true (sin note) → ok:true, activa la bandera,
+//   el payload del UPDATE NO incluye la clave internal_notes (no la toca)
+// - NU-13 [INVARIANTE]: solo note (sin is_follow_up) sigue funcionando igual
+//   que antes — el payload del UPDATE NO incluye la clave is_follow_up
+//   (no-regresión del contrato viejo, apps v1.0.3 en la calle)
+// - NU-14: note E is_follow_up presentes a la vez → ambos se actualizan
+//
+// ### Regla no obvia — false NO es "ausente" (bug clásico del spread condicional)
+// - NU-15: is_follow_up:false (sin note) → el payload SÍ incluye la clave
+//   is_follow_up con el valor false explícito (nunca omitida por ser falsy)
 
 import { assertEquals, assertExists } from "@std/assert";
 import { make_note_updater } from "./note_updater.ts";
+import type { UpdateLeadNoteParams } from "./types.ts";
 
 // ── Fake client (mismo patrón que lead_status_updater.test.ts) ────────────────
 
@@ -275,5 +292,115 @@ Deno.test("NU-11_update_payload_no_incluye_status", async () => {
     "status" in (captured_calls[1].update_payload ?? {}),
     false,
     "update-lead-note NUNCA debe tocar la columna status — solo internal_notes/updated_at",
+  );
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// 75.6 — is_follow_up (§19.7): spread condicional, mismo patrón que
+// lead_status_updater.ts:66-72 para `note`.
+// ════════════════════════════════════════════════════════════════════════════
+
+function make_follow_up_params(
+  is_follow_up: boolean,
+  note?: string,
+): { user_id: string; lead_id: string; note?: string; is_follow_up: boolean } {
+  return { user_id: AGENT_ID, lead_id: LEAD_ID, note, is_follow_up };
+}
+
+// ── NU-12: solo is_follow_up:true (sin note) — activa la bandera SIN tocar
+//    internal_notes (el payload del UPDATE no debe incluir esa clave) ────────
+
+Deno.test("NU-12_solo_is_follow_up_true_activa_la_bandera_sin_tocar_internal_notes", async () => {
+  const { client, captured_calls } = make_fake_client([
+    { data: { id: LEAD_ID }, error: null }, // ownership query
+    { data: { id: LEAD_ID, internal_notes: null, is_follow_up: true }, error: null }, // UPDATE query
+  ]);
+  const updater = make_note_updater(client);
+  const params: UpdateLeadNoteParams = { user_id: AGENT_ID, lead_id: LEAD_ID, is_follow_up: true };
+  const result = await updater.update(params);
+
+  assertEquals(result.ok, true);
+  if (result.ok) {
+    assertEquals(result.lead.is_follow_up, true, "el lead retornado debe reflejar is_follow_up=true");
+  }
+  assertEquals(
+    "internal_notes" in (captured_calls[1].update_payload ?? {}),
+    false,
+    "mandar solo is_follow_up NO debe incluir internal_notes en el payload del UPDATE (no tocarla)",
+  );
+  assertEquals(
+    captured_calls[1].update_payload?.is_follow_up,
+    true,
+    ".update() debe recibir is_follow_up=true cuando params.is_follow_up es true",
+  );
+});
+
+// ── NU-13 [INVARIANTE]: solo note (sin is_follow_up) sigue funcionando igual
+//    que antes — el payload NO debe incluir is_follow_up (no-regresión del
+//    contrato viejo; hay apps v1.0.3 en la calle que solo mandan `note`) ─────
+
+Deno.test("NU-13_solo_note_sin_is_follow_up_no_incluye_is_follow_up_en_el_payload", async () => {
+  const { client, captured_calls } = make_fake_client([
+    { data: { id: LEAD_ID }, error: null },
+    { data: { id: LEAD_ID, internal_notes: "nota vieja" }, error: null },
+  ]);
+  const updater = make_note_updater(client);
+  const result = await updater.update(make_params("nota vieja"));
+
+  assertEquals(result.ok, true);
+  assertEquals(
+    "is_follow_up" in (captured_calls[1].update_payload ?? {}),
+    false,
+    "mandar solo note (contrato v1.0.3) NO debe incluir is_follow_up en el payload del UPDATE",
+  );
+});
+
+// ── NU-14: note E is_follow_up presentes a la vez — ambos se actualizan ──────
+
+Deno.test("NU-14_note_e_is_follow_up_presentes_actualiza_ambos", async () => {
+  const nota = "Cliente pidió que le marquemos la próxima semana";
+  const { client, captured_calls } = make_fake_client([
+    { data: { id: LEAD_ID }, error: null },
+    { data: { id: LEAD_ID, internal_notes: nota, is_follow_up: true }, error: null },
+  ]);
+  const updater = make_note_updater(client);
+  const result = await updater.update(make_follow_up_params(true, nota));
+
+  assertEquals(result.ok, true);
+  if (result.ok) {
+    assertEquals(result.lead.internal_notes, nota);
+    assertEquals(result.lead.is_follow_up, true);
+  }
+  assertEquals(captured_calls[1].update_payload?.internal_notes, nota);
+  assertEquals(captured_calls[1].update_payload?.is_follow_up, true);
+});
+
+// ── NU-15: is_follow_up:false (sin note) — `false` NO es "ausente"; el
+//    payload debe incluir la clave con el valor false EXPLÍCITO. Este es el
+//    test que mata el bug clásico de `if (params.is_follow_up)` en vez de
+//    `if (params.is_follow_up !== undefined)` ──────────────────────────────
+
+Deno.test("NU-15_is_follow_up_false_desactiva_la_bandera_no_se_confunde_con_ausente", async () => {
+  const { client, captured_calls } = make_fake_client([
+    { data: { id: LEAD_ID }, error: null },
+    { data: { id: LEAD_ID, internal_notes: null, is_follow_up: false }, error: null },
+  ]);
+  const updater = make_note_updater(client);
+  const params: UpdateLeadNoteParams = { user_id: AGENT_ID, lead_id: LEAD_ID, is_follow_up: false };
+  const result = await updater.update(params);
+
+  assertEquals(result.ok, true);
+  if (result.ok) {
+    assertEquals(result.lead.is_follow_up, false, "el lead retornado debe reflejar is_follow_up=false");
+  }
+  assertEquals(
+    "is_follow_up" in (captured_calls[1].update_payload ?? {}),
+    true,
+    "is_follow_up=false debe viajar EXPLÍCITO en el payload del UPDATE — omitirla sería el bug clásico del spread condicional con `if (value)`",
+  );
+  assertEquals(
+    captured_calls[1].update_payload?.is_follow_up,
+    false,
+    "el valor en el payload debe ser exactamente false, no true ni undefined",
   );
 });

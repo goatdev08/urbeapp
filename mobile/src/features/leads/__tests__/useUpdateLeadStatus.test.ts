@@ -1,7 +1,7 @@
 /**
  * Tests fase RED — useUpdateLeadStatus hook
  * Archivo SUT: mobile/src/features/leads/hooks/useUpdateLeadStatus.ts
- * Subtarea Taskmaster: 15.4 — hook de mutación de estado de lead
+ * Subtarea Taskmaster: 15.4 (original) + 75.6 (mensajes de error en español)
  *
  * SUT: useUpdateLeadStatus(deps?) → { update_status, is_updating, error }
  *
@@ -12,21 +12,41 @@
  *   - Llama onSuccess (si fue inyectado) solo en caso de éxito.
  *   - note es opcional: si no se pasa, NO se incluye en el body (no body.note=undefined).
  *   - is_updating: true durante la invocación, false en reposo.
- *   - error: null en éxito; string con descripción en fallo.
+ *   - error: null en éxito; MENSAJE EN ESPAÑOL en fallo (75.6 — antes era
+ *     error.message crudo de supabase-js, literalmente en inglés).
  *
  * PATRÓN DE MOCK:
  *   - supabase inyectado como dep: useUpdateLeadStatus({ supabase: mock, onSuccess? })
  *   - useAuth() mockeado via jest.mock (mantiene el patrón del repo)
+ *   - Errores de la EF: FunctionsHttpError REAL con Response {error:{code,message}},
+ *     mismo patrón que mobile/src/features/auth/__tests__/api.test.ts (make_http_error).
+ *     `extract_error_code` (mobile/src/lib/supabase/edge-errors.ts) es un colaborador
+ *     interno propio — NO se mockea, se ejercita con FunctionsHttpError reales.
  *
- * ENUM lead_status (fuente: migración 0001):
- *   'new' | 'contacted' | 'in_progress' | 'visit_scheduled' |
- *   'closed_won' | 'closed_lost' | 'discarded'
+ * ENUM lead_status (fuente: migración 0001 + 75.1 — ver types.ts LeadStatus)
  *
- * CÓDIGOS DE ERROR DE LA EF (types.ts de update-lead-status):
- *   INVALID_INPUT | INVALID_TRANSITION | UNAUTHENTICATED |
- *   UNAUTHORIZED_AGENT | LEAD_NOT_FOUND | DB_ERROR
+ * CÓDIGOS DE ERROR DE LA EF (supabase/functions/update-lead-status/{handler,types}.ts,
+ * verificados leyendo el handler — no asumidos):
+ *   INVALID_INPUT (400) | UNAUTHENTICATED (401) | UNAUTHORIZED_AGENT (403) |
+ *   LEAD_NOT_FOUND (404) | DB_ERROR (500)
+ *   (INVALID_TRANSITION YA NO EXISTE — 75.1: transiciones libres, cualquiera → cualquiera)
  *
- * EDGE CASES CUBIERTOS (13 casos):
+ * MAPA código → mensaje ES asumido para el GREEN (75.6, mismo patrón que
+ * ContactAgentButton.tsx EF_ERROR_MESSAGES/map_ef_error — código desconocido y
+ * fallo de red caen a un mensaje neutro, NUNCA al texto crudo de supabase-js):
+ *   INVALID_INPUT      → 'Datos incorrectos. Intenta de nuevo.'
+ *   UNAUTHENTICATED    → 'Debes iniciar sesión de nuevo para continuar.'
+ *   UNAUTHORIZED_AGENT → 'No tienes permiso para modificar este lead.'
+ *   LEAD_NOT_FOUND     → 'Este lead ya no existe o fue eliminado.'
+ *   DB_ERROR           → 'Error interno. Intenta de nuevo.'
+ *   (código desconocido)      → 'Ocurrió un error. Intenta de nuevo.'
+ *   (sin código — error de red) → 'No se pudo conectar. Verifica tu conexión e intenta de nuevo.'
+ *
+ * Los literales de este archivo son INDEPENDIENTES del SUT (no se importan de
+ * ningún mapa de la implementación) — si el GREEN usa otro texto, este test
+ * lo detecta como regresión real.
+ *
+ * EDGE CASES CUBIERTOS:
  *
  * ### Happy path
  * - (EC-1) update_status_exitoso_invoca_ef_retorna_ok_true
@@ -43,13 +63,22 @@
  * ### Estado is_updating
  * - (EC-9) is_updating_false_inicial_luego_true_durante_accion_pendiente
  *
- * ### Errores de la EF (no se tragan — propagación correcta)
- * - (EC-10) error_ef_invalid_transition_ok_false_error_propagado_invoke_llamado
+ * ### Errores de la EF — mensajes en español (75.6, defecto #1 del usuario)
+ * - (EC-10) error_ef_invalid_input_mensaje_espanol_exacto
  * - (EC-11) error_ef_on_success_no_llamado_invoke_si_llamado
- * - (EC-12) error_ef_unauthorized_agent_ok_false_error_propagado
- * - (EC-13) error_red_reject_ok_false_error_no_nulo_invoke_llamado
+ * - (EC-12) error_ef_unauthorized_agent_mensaje_espanol_exacto
+ * - (EC-13) error_red_reject_mensaje_neutro_espanol_no_raw_message
+ * - (EC-14) error_ef_lead_not_found_mensaje_espanol_exacto
+ * - (EC-15) error_ef_db_error_mensaje_espanol_exacto
+ * - (EC-16) error_ef_unauthenticated_mensaje_espanol_exacto
+ * - (EC-17) error_ef_codigo_desconocido_mensaje_neutro
+ * - (EC-18) ninguna_rama_expone_el_texto_crudo_de_supabase_js_en_ingles
+ *
+ * ### Boundary / no-regresión
+ * - (EC-19) error_no_muta_estado_local_is_updating_false_y_on_success_no_invocado
  */
 
+import { FunctionsHttpError } from '@supabase/supabase-js';
 import { renderHook, act } from '@testing-library/react-native';
 
 // ---------------------------------------------------------------------------
@@ -76,25 +105,33 @@ jest.mock('@/features/auth/context', () => ({
 const TEST_AGENT_ID = 'agente-uuid-lead-status-15';
 const TEST_LEAD_ID = 'lead-uuid-update-status-001';
 
+// Literal EXACTO de @supabase/functions-js (FunctionsHttpError) — fuente
+// independiente del SUT, ver node_modules/@supabase/functions-js/src/types.ts:91.
+const RAW_SUPABASE_JS_MESSAGE = 'Edge Function returned a non-2xx status code';
+
 // ---------------------------------------------------------------------------
 // Helper — cast tipado de mock
 // ---------------------------------------------------------------------------
 
 const mock_use_auth = useAuth as jest.MockedFunction<typeof useAuth>;
 
+/** FunctionsHttpError real con body {error:{code,message}} — mismo patrón que auth/api.test.ts. */
+function make_ef_http_error(code: string): FunctionsHttpError {
+  return new FunctionsHttpError(
+    new Response(JSON.stringify({ error: { code, message: 'mensaje interno de la EF' } }), {
+      status: 400,
+    }),
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Factory del mock de supabase — solo functions.invoke
-//
-// La EF 'update-lead-status' se invoca vía:
-//   supabase.functions.invoke('update-lead-status', { body: { lead_id, new_status, note? } })
-// supabase-js v2 devuelve { data, error } donde error es FunctionsHttpError si !2xx.
-// En los tests se simula directamente con { data, error } resolviendo la Promise.
 // ---------------------------------------------------------------------------
 
 function make_mock_supabase(opts: {
   invoke_result?: {
     data: Record<string, unknown> | null;
-    error: { message: string } | null;
+    error: unknown | null;
   };
 } = {}) {
   const {
@@ -120,7 +157,7 @@ function make_mock_supabase(opts: {
 beforeEach(() => {
   jest.clearAllMocks();
   mock_use_auth.mockReturnValue({
-     
+
     user: { id: TEST_AGENT_ID } as any,
     session: null,
     isLoading: false,
@@ -276,9 +313,6 @@ describe('useUpdateLeadStatus', () => {
   });
 
   // ── (EC-8) Sin note — body.note ausente ──────────────────────────────────
-  //
-  // Regla: note es estrictamente opcional. Si no se pasa, el campo NO debe estar
-  // presente en el body (ni como undefined), para no contaminar el payload de la EF.
 
   it('(EC-8) update_status_sin_note_body_omite_campo_note: sin note, body NO contiene el campo note (ni como undefined)', async () => {
     const mock_supabase = make_mock_supabase();
@@ -296,18 +330,13 @@ describe('useUpdateLeadStatus', () => {
       body: Record<string, unknown>;
     };
     // note debe estar ausente del body, no solo undefined
-     
+
     expect(Object.prototype.hasOwnProperty.call(call_body.body, 'note')).toBe(false);
   });
 
   // ── (EC-9) is_updating=false inicial, luego true durante acción ──────────
-  //
-  // Regla: is_updating pasa a true de forma SÍNCRONA al disparar update_status
-  // (antes del primer await), igual que isWorking en usePropertyActions (patrón ref).
-  // Luego vuelve a false al resolver.
 
   it('(EC-9) is_updating_false_inicial_luego_true_durante_accion_pendiente: is_updating=false inicial; true mientras la Promise está pendiente', async () => {
-    // Invoke que nunca resuelve en este test — simula vuelo en progreso
     let resolve_invoke!: (v: {
       data: Record<string, unknown>;
       error: null;
@@ -326,18 +355,14 @@ describe('useUpdateLeadStatus', () => {
       useUpdateLeadStatus({ supabase: mock_supabase_pending as never }),
     );
 
-    // Estado inicial antes de cualquier acción
     expect(result.current.is_updating).toBe(false);
 
-    // Dispara la acción SIN awaitar — la Promise queda pendiente
     act(() => {
       void result.current.update_status(TEST_LEAD_ID, 'contacted');
     });
 
-    // is_updating debe ser true mientras la Promise no resuelve
     expect(result.current.is_updating).toBe(true);
 
-    // Limpieza: resolver para no dejar Promise pendiente colgada
     await act(async () => {
       resolve_invoke({
         data: { id: TEST_LEAD_ID, status: 'contacted', internal_notes: null },
@@ -346,15 +371,11 @@ describe('useUpdateLeadStatus', () => {
     });
   });
 
-  // ── (EC-10) Error EF INVALID_TRANSITION — propagado, invoke fue llamado ───
+  // ── (EC-10) Error EF INVALID_INPUT — mensaje en español exacto ──────────
 
-  it('(EC-10) error_ef_invalid_transition_ok_false_error_propagado_invoke_llamado: EF retorna INVALID_TRANSITION → invoke fue llamado, {ok:false, error contiene el message}', async () => {
-    const EF_ERROR_MSG = 'INVALID_TRANSITION: new → closed_won no está permitido';
+  it('(EC-10) error_ef_invalid_input_mensaje_espanol_exacto: EF retorna INVALID_INPUT → invoke fue llamado, error === "Datos incorrectos. Intenta de nuevo." (literal exacto)', async () => {
     const mock_supabase = make_mock_supabase({
-      invoke_result: {
-        data: null,
-        error: { message: EF_ERROR_MSG },
-      },
+      invoke_result: { data: null, error: make_ef_http_error('INVALID_INPUT') },
     });
     const { result } = await renderHook(() =>
       useUpdateLeadStatus({ supabase: mock_supabase as never }),
@@ -362,16 +383,12 @@ describe('useUpdateLeadStatus', () => {
 
     let action_result: ActionResult | undefined;
     await act(async () => {
-      action_result = await result.current.update_status(TEST_LEAD_ID, 'closed_won');
+      action_result = await result.current.update_status(TEST_LEAD_ID, 'closed_won_rent');
     });
 
-    // La EF sí fue invocada (el error vino de la EF, no de un guard previo)
     expect(mock_supabase._mock_invoke).toHaveBeenCalledTimes(1);
-    // El hook reporta fallo
     expect(action_result!.ok).toBe(false);
-    // El mensaje de error de la EF debe estar accesible (no se traga)
-    expect(action_result!.error).not.toBeNull();
-    expect(action_result!.error).toContain('INVALID_TRANSITION');
+    expect(action_result!.error).toBe('Datos incorrectos. Intenta de nuevo.');
   });
 
   // ── (EC-11) Error EF — onSuccess NO llamado, invoke SÍ llamado ───────────
@@ -380,7 +397,7 @@ describe('useUpdateLeadStatus', () => {
     const mock_supabase = make_mock_supabase({
       invoke_result: {
         data: null,
-        error: { message: 'LEAD_NOT_FOUND: lead no existe o no pertenece al agente' },
+        error: make_ef_http_error('LEAD_NOT_FOUND'),
       },
     });
     const mock_on_success = jest.fn();
@@ -398,13 +415,13 @@ describe('useUpdateLeadStatus', () => {
     expect(mock_on_success).not.toHaveBeenCalled();
   });
 
-  // ── (EC-12) Error EF UNAUTHORIZED_AGENT — propagado ──────────────────────
+  // ── (EC-12) Error EF UNAUTHORIZED_AGENT — mensaje en español exacto ──────
 
-  it('(EC-12) error_ef_unauthorized_agent_ok_false_error_propagado: EF retorna UNAUTHORIZED_AGENT → invoke llamado, {ok:false, error!=null}', async () => {
+  it('(EC-12) error_ef_unauthorized_agent_mensaje_espanol_exacto: EF retorna UNAUTHORIZED_AGENT → invoke llamado, error === "No tienes permiso para modificar este lead." (literal exacto)', async () => {
     const mock_supabase = make_mock_supabase({
       invoke_result: {
         data: null,
-        error: { message: 'UNAUTHORIZED_AGENT: el agente no es dueño del lead' },
+        error: make_ef_http_error('UNAUTHORIZED_AGENT'),
       },
     });
     const { result } = await renderHook(() =>
@@ -418,17 +435,12 @@ describe('useUpdateLeadStatus', () => {
 
     expect(mock_supabase._mock_invoke).toHaveBeenCalledTimes(1);
     expect(action_result!.ok).toBe(false);
-    expect(action_result!.error).not.toBeNull();
-    expect(action_result!.error).toContain('UNAUTHORIZED_AGENT');
+    expect(action_result!.error).toBe('No tienes permiso para modificar este lead.');
   });
 
-  // ── (EC-13) Error de red — invoke rechaza (FunctionsHttpError o Network) ──
-  //
-  // Cuando supabase-js lanza una excepción al invocar la EF (timeout, network
-  // error, etc.), el hook NO debe crashear: captura el error y devuelve
-  // {ok:false, error!=null}, manteniendo is_updating=false.
+  // ── (EC-13) Error de red — invoke rechaza → mensaje neutro, no el raw ────
 
-  it('(EC-13) error_red_reject_ok_false_error_no_nulo_invoke_llamado: invoke rechazado (network/timeout) → invoke fue llamado, {ok:false, error!=null}, is_updating=false', async () => {
+  it('(EC-13) error_red_reject_mensaje_neutro_espanol_no_raw_message: invoke rechazado (network/timeout) → invoke fue llamado, error es el mensaje neutro en español, is_updating=false, NUNCA el mensaje crudo de la excepción', async () => {
     const NETWORK_ERROR_MSG = 'Failed to fetch: conexión rechazada por timeout';
     const mock_invoke_reject = jest
       .fn()
@@ -447,13 +459,138 @@ describe('useUpdateLeadStatus', () => {
       action_result = await result.current.update_status(TEST_LEAD_ID, 'contacted');
     });
 
-    // La EF fue intentada (invoke fue llamado)
     expect(mock_invoke_reject).toHaveBeenCalledTimes(1);
-    // El hook no crashea — retorna {ok:false, error!=null}
     expect(action_result!.ok).toBe(false);
-    expect(action_result!.error).not.toBeNull();
-    // is_updating vuelve a false tras el error (no queda "colgado")
+    expect(action_result!.error).toBe(
+      'No se pudo conectar. Verifica tu conexión e intenta de nuevo.',
+    );
+    // NUNCA el mensaje crudo de la excepción de red
+    expect(action_result!.error).not.toBe(NETWORK_ERROR_MSG);
     expect(result.current.is_updating).toBe(false);
+  });
+
+  // ── (EC-14) Error EF LEAD_NOT_FOUND — mensaje en español exacto ──────────
+
+  it('(EC-14) error_ef_lead_not_found_mensaje_espanol_exacto: EF retorna LEAD_NOT_FOUND → error === "Este lead ya no existe o fue eliminado." (literal exacto)', async () => {
+    const mock_supabase = make_mock_supabase({
+      invoke_result: { data: null, error: make_ef_http_error('LEAD_NOT_FOUND') },
+    });
+    const { result } = await renderHook(() =>
+      useUpdateLeadStatus({ supabase: mock_supabase as never }),
+    );
+
+    let action_result: ActionResult | undefined;
+    await act(async () => {
+      action_result = await result.current.update_status(TEST_LEAD_ID, 'contacted');
+    });
+
+    expect(action_result!.error).toBe('Este lead ya no existe o fue eliminado.');
+  });
+
+  // ── (EC-15) Error EF DB_ERROR — mensaje en español exacto ────────────────
+
+  it('(EC-15) error_ef_db_error_mensaje_espanol_exacto: EF retorna DB_ERROR → error === "Error interno. Intenta de nuevo." (literal exacto)', async () => {
+    const mock_supabase = make_mock_supabase({
+      invoke_result: { data: null, error: make_ef_http_error('DB_ERROR') },
+    });
+    const { result } = await renderHook(() =>
+      useUpdateLeadStatus({ supabase: mock_supabase as never }),
+    );
+
+    let action_result: ActionResult | undefined;
+    await act(async () => {
+      action_result = await result.current.update_status(TEST_LEAD_ID, 'contacted');
+    });
+
+    expect(action_result!.error).toBe('Error interno. Intenta de nuevo.');
+  });
+
+  // ── (EC-16) Error EF UNAUTHENTICATED — mensaje en español exacto ─────────
+
+  it('(EC-16) error_ef_unauthenticated_mensaje_espanol_exacto: EF retorna UNAUTHENTICATED → error === "Debes iniciar sesión de nuevo para continuar." (literal exacto)', async () => {
+    const mock_supabase = make_mock_supabase({
+      invoke_result: { data: null, error: make_ef_http_error('UNAUTHENTICATED') },
+    });
+    const { result } = await renderHook(() =>
+      useUpdateLeadStatus({ supabase: mock_supabase as never }),
+    );
+
+    let action_result: ActionResult | undefined;
+    await act(async () => {
+      action_result = await result.current.update_status(TEST_LEAD_ID, 'contacted');
+    });
+
+    expect(action_result!.error).toBe('Debes iniciar sesión de nuevo para continuar.');
+  });
+
+  // ── (EC-17) Código desconocido — mensaje neutro (no crashea, no lo inventa) ──
+
+  it('(EC-17) error_ef_codigo_desconocido_mensaje_neutro: EF retorna un código NO mapeado → error === "Ocurrió un error. Intenta de nuevo." (fallback neutro, no crashea)', async () => {
+    const mock_supabase = make_mock_supabase({
+      invoke_result: { data: null, error: make_ef_http_error('FUTURE_CODE_NO_MAPEADO') },
+    });
+    const { result } = await renderHook(() =>
+      useUpdateLeadStatus({ supabase: mock_supabase as never }),
+    );
+
+    let action_result: ActionResult | undefined;
+    await act(async () => {
+      action_result = await result.current.update_status(TEST_LEAD_ID, 'contacted');
+    });
+
+    expect(action_result!.ok).toBe(false);
+    expect(action_result!.error).toBe('Ocurrió un error. Intenta de nuevo.');
+  });
+
+  // ── (EC-18) Ninguna rama expone el texto crudo de supabase-js en inglés ──
+
+  it('(EC-18) ninguna_rama_expone_el_texto_crudo_de_supabase_js_en_ingles: en NINGUNA rama de error el mensaje es el literal en inglés de FunctionsHttpError ni contiene texto no traducido', async () => {
+    const codes_conocidos = [
+      'INVALID_INPUT',
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_AGENT',
+      'LEAD_NOT_FOUND',
+      'DB_ERROR',
+      'CODIGO_INVENTADO_SIN_MAPEO',
+    ];
+
+    for (const code of codes_conocidos) {
+      const mock_supabase = make_mock_supabase({
+        invoke_result: { data: null, error: make_ef_http_error(code) },
+      });
+      const { result } = await renderHook(() =>
+        useUpdateLeadStatus({ supabase: mock_supabase as never }),
+      );
+
+      let action_result: ActionResult | undefined;
+      await act(async () => {
+        action_result = await result.current.update_status(TEST_LEAD_ID, 'contacted');
+      });
+
+      expect(action_result!.error).not.toBe(RAW_SUPABASE_JS_MESSAGE);
+      expect(action_result!.error).not.toBeNull();
+      expect(action_result!.error).toMatch(/^[A-ZÁÉÍÓÚÑ]/); // frase en español, con mayúscula inicial
+    }
+  });
+
+  // ── (EC-19) No-regresión — error no muta estado local incorrectamente ────
+
+  it('(EC-19) error_no_muta_estado_local_is_updating_false_y_on_success_no_invocado: tras un error de la EF, is_updating vuelve a false y onSuccess nunca se invoca (no queda estado "colgado")', async () => {
+    const mock_on_success = jest.fn();
+    const mock_supabase = make_mock_supabase({
+      invoke_result: { data: null, error: make_ef_http_error('DB_ERROR') },
+    });
+    const { result } = await renderHook(() =>
+      useUpdateLeadStatus({ supabase: mock_supabase as never, onSuccess: mock_on_success }),
+    );
+
+    await act(async () => {
+      await result.current.update_status(TEST_LEAD_ID, 'contacted');
+    });
+
+    expect(result.current.is_updating).toBe(false);
+    expect(result.current.error).not.toBeNull();
+    expect(mock_on_success).not.toHaveBeenCalled();
   });
 
 });

@@ -6,12 +6,19 @@
 //   1. CORS preflight (OPTIONS → 200)
 //   2. Solo POST (otros métodos → 405)
 //   3. Parsear JSON body → 400 INVALID_INPUT si falla
-//   4. Validar payload en-memoria (lead_id no vacío, note string) → 400 si falla
+//   4. Validar payload en-memoria (lead_id no vacío; note y/o is_follow_up con
+//      el tipo correcto cuando vienen; AL MENOS UNO de los dos presente) → 400
 //   5. callerVerifier.verify_caller(authHeader) → 401 si falla
 //   6. noteUpdater.update(params) — delega existencia, ownership y UPDATE
 //   7. Mapear resultado del updater → HTTP (403/404/500/200)
 //
 // note="" es válido (limpia la nota) — NO debe ser rechazado con 400.
+//
+// 75.6 (§19.7): is_follow_up es opcional y ADITIVO al contrato viejo. Un body
+// que solo manda `note` (apps v1.0.3 en la calle) sigue funcionando exacto
+// igual — el handler NUNCA forwardea `is_follow_up` al updater si no vino en
+// el body, y viceversa para `note`. `is_follow_up: false` es una desactivación
+// EXPLÍCITA, nunca se confunde con "ausente".
 
 import { handle_cors_preflight } from "../_shared/cors.ts";
 import { error_response, json_response } from "../_shared/response.ts";
@@ -44,21 +51,28 @@ function parse_input(raw: unknown): ParseResult {
     return invalid("lead_id es requerido y no puede ser vacío");
   }
 
-  // note: requerida como string. "" es válido (limpia la nota).
-  if (!("note" in obj) || obj.note === undefined || obj.note === null) {
-    return invalid("note es requerida");
-  }
-  if (typeof obj.note !== "string") {
+  // note e is_follow_up (75.6): AMBOS opcionales, pero cada uno que venga debe
+  // tener el tipo correcto. "" es un string válido (limpia la nota).
+  const has_note = obj.note !== undefined;
+  const has_follow_up = obj.is_follow_up !== undefined;
+
+  if (has_note && typeof obj.note !== "string") {
     return invalid("note debe ser un string");
   }
+  if (has_follow_up && typeof obj.is_follow_up !== "boolean") {
+    return invalid("is_follow_up debe ser boolean");
+  }
 
-  return {
-    success: true,
-    data: {
-      lead_id: obj.lead_id,
-      note: obj.note,
-    },
-  };
+  // AL MENOS UNO de los dos debe estar presente (§19.7).
+  if (!has_note && !has_follow_up) {
+    return invalid("Debe enviarse al menos uno de: note, is_follow_up");
+  }
+
+  const data: UpdateLeadNoteInput = { lead_id: obj.lead_id };
+  if (has_note) data.note = obj.note as string;
+  if (has_follow_up) data.is_follow_up = obj.is_follow_up as boolean;
+
+  return { success: true, data };
 }
 
 // ── Handler exportado ─────────────────────────────────────────────────────────
@@ -104,11 +118,15 @@ export async function handler(
     return error_response("UNAUTHENTICATED", "Se requiere autenticación", 401);
   }
 
-  // 6. Delegar al updater: existencia, ownership, UPDATE de internal_notes
+  // 6. Delegar al updater: existencia, ownership, UPDATE de internal_notes/is_follow_up.
+  // Spread condicional (75.6): forwardear una clave solo si vino en el body —
+  // así el contrato viejo (solo `note`) nunca dispara un reset accidental de
+  // is_follow_up, y viceversa.
   const updateResult = await deps!.noteUpdater.update({
     user_id: verifyResult.user_id,
     lead_id: input.lead_id,
-    note: input.note,
+    ...(input.note !== undefined ? { note: input.note } : {}),
+    ...(input.is_follow_up !== undefined ? { is_follow_up: input.is_follow_up } : {}),
   });
 
   // 7. Mapear resultado del updater a HTTP

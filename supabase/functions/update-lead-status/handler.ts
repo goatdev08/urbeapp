@@ -8,8 +8,9 @@
 //   3. Parsear JSON body → 400 INVALID_INPUT si falla
 //   4. Validar payload en-memoria (lead_id, new_status enum) → 400 si falla
 //   5. callerVerifier.verify_caller(authHeader) → 401 si falla
-//   6. leadStatusUpdater.update(params) — delega existencia, ownership, transición y UPDATE
-//   7. Mapear resultado del updater → HTTP (403/404/400/500/200)
+//   6. leadStatusUpdater.update(params) — delega existencia, ownership y UPDATE (transiciones
+//      libres desde 75.1: el updater ya no valida "pasos" del embudo, PRD §19.8)
+//   7. Mapear resultado del updater → HTTP (403/404/500/200)
 
 import { handle_cors_preflight } from "../_shared/cors.ts";
 import { error_response, json_response } from "../_shared/response.ts";
@@ -19,9 +20,12 @@ import type {
   UpdateLeadStatusInput,
 } from "./types.ts";
 
-// ── Enum real de lead_status (migración 0001) ──────────────────────────────────
-// Valores: new, contacted, in_progress, visit_scheduled, closed_won, closed_lost, discarded.
-// 'qualified', 'closed', 'visit_done', 'negotiation' NO existen en el schema.
+// ── Enum real de lead_status (migración 0001 + 75.1/20260807000002) ────────────
+// Valores: new, contacted, in_progress, visit_scheduled, closed_won, closed_lost,
+// discarded (legacy) + whatsapp_opened, interested, closed_won_rent, closed_won_sale
+// (embudo real, PRD §19.8). 'qualified', 'closed', 'visit_done', 'negotiation' NO
+// existen en el schema — siguen siendo 400 INVALID_INPUT (frontera de confianza:
+// transiciones libres no es lo mismo que aceptar basura).
 
 const VALID_LEAD_STATUSES = new Set<string>([
   "new",
@@ -31,6 +35,10 @@ const VALID_LEAD_STATUSES = new Set<string>([
   "closed_won",
   "closed_lost",
   "discarded",
+  "whatsapp_opened",
+  "interested",
+  "closed_won_rent",
+  "closed_won_sale",
 ]);
 
 // ── Validación del payload ────────────────────────────────────────────────────
@@ -66,7 +74,7 @@ function parse_input(raw: unknown): ParseResult {
   }
   if (typeof obj.new_status !== "string" || !VALID_LEAD_STATUSES.has(obj.new_status)) {
     return invalid(
-      "new_status debe ser un valor válido del enum lead_status (new, contacted, in_progress, visit_scheduled, closed_won, closed_lost, discarded)",
+      "new_status debe ser un valor válido del enum lead_status (new, contacted, in_progress, visit_scheduled, closed_won, closed_lost, discarded, whatsapp_opened, interested, closed_won_rent, closed_won_sale)",
     );
   }
 
@@ -126,7 +134,7 @@ export async function handler(
     return error_response("UNAUTHENTICATED", "Se requiere autenticación", 401);
   }
 
-  // 6. Delegar al updater: existencia, ownership, transición de estado, UPDATE
+  // 6. Delegar al updater: existencia, ownership, UPDATE (transiciones libres, 75.1)
   const updateResult = await deps!.leadStatusUpdater.update({
     user_id: verifyResult.user_id,
     lead_id: input.lead_id,
@@ -148,12 +156,6 @@ export async function handler(
           "LEAD_NOT_FOUND",
           updateResult.message ?? "Lead no encontrado",
           404,
-        );
-      case "INVALID_TRANSITION":
-        return error_response(
-          "INVALID_TRANSITION",
-          updateResult.message ?? "Transición de estado no permitida",
-          400,
         );
       case "DB_ERROR":
       default:

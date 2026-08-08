@@ -1,14 +1,19 @@
 /**
  * Tests fase RED — useAgentLeads hook
  * Archivo SUT: mobile/src/features/leads/hooks/useAgentLeads.ts
- * Subtarea Taskmaster: 15.2 — Implement leads query with user info and property origin
+ * Subtarea Taskmaster: 15.2 (original) + 28.3 + 30.3 + 75.6 (scoring/actividad visible + mensaje en español)
  *
- * SUT: useAgentLeads() → { leads: AgentLead[], loading: boolean, error: string | null, refetch: () => void }
+ * SUT: useAgentLeads(agentId?, sortBy?) → { leads: AgentLead[], loading, error, refetch }
  *
- * Contrato (schema migraciones 0001 + 0006 + 0015 + subtarea 30.3):
- *   - Consulta tabla `leads` con embedded selects (usuarios + origin).
+ * Contrato (schema migraciones 0001 + 0006 + 0015 + 20260807000004 + subtareas 30.3/75.6):
+ *   - Consulta tabla `leads` con embedded selects (usuarios + origin) + score/level/is_follow_up.
  *   - Filtra: deleted_at IS NULL. RLS (migración 0008) filtra agent_id = auth.uid().
- *   - Ordena: updated_at DESC.
+ *   - Ordena (75.6, §19.9): sortBy='score' (DEFAULT) → leads.score DESC, desempate
+ *     leads.updated_at DESC. sortBy='last_contact' (botón secundario del PRD) →
+ *     leads.last_contact_at DESC con nulls al final (un lead nunca contactado de
+ *     vuelta no debe salir arriba), MISMO desempate updated_at DESC.
+ *   - select pide también score/level/is_follow_up (75.6) — clasificación por
+ *     actividad visible en el CRM (frío/tibio/caliente + bandera de seguimiento).
  *   - Datos del buscador — TODOS desde `users` (subtarea 30.3; antes full_name/
  *     profile_photo_url venían de `user_preferences`, pero el agente NO puede
  *     leer el user_preferences del buscador vía RLS — solo su propia fila):
@@ -19,15 +24,22 @@
  *   - Propiedad de origen: `lead_origin_properties` (LEFT JOIN) → `properties`
  *     → thumbnail de `property_videos`. Nullable si el lead no tiene origin.
  *   - Estado inicial: loading=true antes de resolver.
- *   - Error de Supabase: expuesto en error, leads=[].
+ *   - Error de Supabase (75.6, defecto #1/#3 del usuario): mensaje NEUTRO en
+ *     español, NUNCA el texto crudo de PostgREST/Postgres — mismo criterio que
+ *     useUpdateLeadStatus/useUpdateLeadNote.
  *
  * PATRÓN DE MOCK:
  *   - `@/lib/supabase/client`: mock de módulo con getter sobre objeto mutable
  *     `mock_supabase_holder` (patrón de useAgentProfile.test.tsx).
  *   - `@/features/auth/context` (useAuth): provee el usuario agente autenticado.
  *   - La cadena de query es: from('leads').select(...).is(...).order(...) → Promise.
+ *     El extremo `.order(...)` es un objeto CHAINABLE + THENABLE (75.6): soporta
+ *     tanto un solo `.order()` (comportamiento histórico, EC-1..10) como una
+ *     cadena `.order(primario).order(desempate)` (75.6) sin romper ninguno de
+ *     los dos — `await` en cualquier punto de la cadena resuelve al mismo
+ *     `query_result`. Ver make_order_chain().
  *
- * EDGE CASES CUBIERTOS (10 casos originales + 4 de la subtarea 28.3 + 3 de la 30.3):
+ * EDGE CASES CUBIERTOS:
  *
  * ### Happy path
  * - (EC-1) mapea_lead_completo_a_AgentLead
@@ -39,13 +51,14 @@
  * ### Ramas de reglas no obvias
  * - (EC-4) phone_null_en_usuarios_no_rompe
  * - (EC-5) filtra_deleted_at_es_null
- * - (EC-6) ordena_por_updated_at_desc
+ * - (EC-6) ordena_por_score_desc_por_defecto_con_desempate_updated_at [75.6, REESCRITO]
+ * - (EC-6b) modo_last_contact_ordena_por_last_contact_at_desc_nulls_last_con_desempate [75.6, NUEVO]
  * - (EC-7) consulta_tabla_leads
  *
  * ### Boundary / error
  * - (EC-8) estado_loading_inicial_true
  * - (EC-9) estado_loading_false_con_leads_tras_resolver
- * - (EC-10) error_cliente_expone_error_leads_vacio
+ * - (EC-10) error_cliente_mensaje_en_espanol_no_crudo_leads_vacio [75.6, REESCRITO]
  *
  * ### Subtarea 28.3 — filtro por agentId (semántica AGREGADO, RLS-driven)
  * - (EC-nuevo-1) agentId_string_agrega_filtro_eq_agent_id
@@ -58,11 +71,17 @@
  * - (EC-30_3-2) avatar_url_null_profile_photo_url_null_con_nombre_presente
  * - (EC-30_3-3) select_lee_first_name_last_name_avatar_url_de_users_no_user_preferences
  *
+ * ### Subtarea 75.6 — scoring/actividad visible en el CRM (defecto #3 del usuario)
+ * - (EC-nuevo-5) select_pide_score_level_is_follow_up
+ * - (EC-nuevo-6) mapea_score_level_is_follow_up_al_agent_lead
+ *
  * ORDEN DE ENCADENAMIENTO ASUMIDO PARA EL GREEN (documentado aquí para que la
  * implementación lo respete):
- *   from('leads').select(<embeds>).eq('agent_id', agentId)?.is('deleted_at', null).order(...)
- *   — .eq() se inserta SOLO si agentId es string; si es null/undefined se omite
- *   y la cadena queda igual que hoy: select().is().order().
+ *   from('leads').select(<embeds+score+level+is_follow_up>).eq('agent_id', agentId)?
+ *     .is('deleted_at', null).order(<campo primario>, {ascending:false, nullsFirst?}).order('updated_at', {ascending:false})
+ *   — .eq() se inserta SOLO si agentId es string; si es null/undefined se omite.
+ *   — El PRIMER .order() es 'score' (default) o 'last_contact_at' (sortBy='last_contact',
+ *     con nullsFirst:false); el SEGUNDO .order() es SIEMPRE 'updated_at' desc (desempate).
  */
 
 import { renderHook, act } from '@testing-library/react-native';
@@ -94,11 +113,12 @@ jest.mock('@/features/auth/context', () => ({
 //
 // Cadena de query esperada (sin agentId — comportamiento histórico, EC-1..10):
 //   supabase.from('leads')
-//     .select(<embeds>)          ← selects con joins embedded de users (first_name,
-//                                   last_name, avatar_url), lead_origin_properties,
-//                                   properties, property_videos
+//     .select(<embeds+score+level+is_follow_up>) ← selects con joins embedded de
+//                                   users (first_name, last_name, avatar_url),
+//                                   lead_origin_properties, properties,
+//                                   property_videos + score/level/is_follow_up (75.6)
 //     .is('deleted_at', null)    ← EC-5: filtra leads no borrados
-//     .order('updated_at', { ascending: false })  ← EC-6: más reciente primero
+//     .order(<primario>, {...}).order('updated_at', {ascending:false})  ← EC-6/EC-6b (75.6)
 //
 // El agente_id NO se filtra explícitamente aquí (RLS lo hace, migración 0008).
 //
@@ -107,11 +127,12 @@ jest.mock('@/features/auth/context', () => ({
 //     .select(<embeds>)
 //     .eq('agent_id', agentId)   ← SOLO si agentId es string (no null/undefined)
 //     .is('deleted_at', null)
-//     .order('updated_at', { ascending: false })
+//     .order(<primario>, {...}).order('updated_at', {ascending:false})
 //
 // El mock de .select() retorna un objeto con AMBOS `is` y `eq` para soportar
 // las dos cadenas (con y sin filtro). `.eq()` a su vez retorna `{ is }` para
-// que la cadena pueda seguir con `.is().order()` tras el filtro.
+// que la cadena pueda seguir con `.is().order()...` tras el filtro. El extremo
+// `.order(...)` es CHAINABLE+THENABLE (75.6, ver make_order_chain()).
 // ---------------------------------------------------------------------------
 
 /** Holder mutable — beforeEach lo reemplaza con el mock apropiado por test. */
@@ -190,6 +211,11 @@ interface RawLeadRow {
   updated_at: string;
   created_at: string;
   deleted_at: string | null;
+  // Scoring/actividad (migración 20260807000004, subtarea 75.6) — not-null en el
+  // schema real (triggers los mantienen siempre poblados).
+  score: number;
+  level: 'frio' | 'tibio' | 'caliente';
+  is_follow_up: boolean;
   users: {
     phone: string | null;
     first_name: string | null;
@@ -211,6 +237,9 @@ const RAW_LEAD_COMPLETO: RawLeadRow = {
   updated_at: '2026-06-28T14:30:00Z',
   created_at: '2026-06-01T10:00:00Z',
   deleted_at: null,
+  score: 10,
+  level: 'frio',
+  is_follow_up: false,
   // Embedded: users (many-to-one vía leads.user_id FK) — subtarea 30.3:
   // full_name/profile_photo_url YA NO vienen de user_preferences.
   users: {
@@ -310,6 +339,28 @@ const RAW_LEAD_AVATAR_NULL = {
 // La cadena resuelve directamente a { data, error } (PostgREST/supabase-js v2).
 // ---------------------------------------------------------------------------
 
+/**
+ * make_order_chain — extremo final de la cadena de query, CHAINABLE + THENABLE
+ * (75.6). `.order(...)` puede llamarse UNA vez (comportamiento histórico,
+ * EC-1..10 — se awaitea directo) o ENCADENADO dos veces (75.6, primario +
+ * desempate) sin que ninguno de los dos caminos rompa al otro: cada llamada
+ * a `.order()` se registra en el MISMO jest.fn (`order`) y retorna el propio
+ * objeto `chain`; `await chain` resuelve siempre a `query_result` vía `.then`.
+ */
+function make_order_chain(query_result: {
+  data: RawLeadRow[] | null;
+  error: { message: string } | null;
+}) {
+  const chain: {
+    order: jest.Mock;
+    then: (resolve: (v: typeof query_result) => void) => void;
+  } = {
+    order: jest.fn(() => chain),
+    then: (resolve) => resolve(query_result),
+  };
+  return chain;
+}
+
 function make_supabase_mock_leads(opts: {
   query_result?: { data: RawLeadRow[] | null; error: { message: string } | null };
 } = {}) {
@@ -317,10 +368,10 @@ function make_supabase_mock_leads(opts: {
     query_result = { data: [RAW_LEAD_COMPLETO], error: null },
   } = opts;
 
-  // Extremo final de la cadena: .order(...) → Promise<{ data, error }>
-  const mock_order = jest.fn().mockResolvedValue(query_result);
-  // .is('deleted_at', null) → retorna { order }
-  const mock_is = jest.fn().mockReturnValue({ order: mock_order });
+  // Extremo final de la cadena: .order(...) [.order(...)] → thenable (75.6)
+  const order_chain = make_order_chain(query_result);
+  // .is('deleted_at', null) → retorna el order_chain directo
+  const mock_is = jest.fn().mockReturnValue(order_chain);
   // .eq('agent_id', id) → retorna { is } (subtarea 28.3 — solo si agentId es string)
   const mock_eq = jest.fn().mockReturnValue({ is: mock_is });
   // .select(...) → retorna { is, eq } — soporta ambas cadenas (con y sin filtro)
@@ -335,7 +386,9 @@ function make_supabase_mock_leads(opts: {
     _mock_select: mock_select,
     _mock_eq: mock_eq,
     _mock_is: mock_is,
-    _mock_order: mock_order,
+    // jest.fn compartido por TODAS las llamadas a .order() de la cadena —
+    // .mock.calls[0]/[1] da los argumentos de la 1ª/2ª llamada (75.6).
+    _mock_order: order_chain.order,
   };
 }
 
@@ -577,19 +630,49 @@ describe('useAgentLeads', () => {
     expect(mock_supabase_holder.client._mock_is).toHaveBeenCalledWith('deleted_at', null);
   });
 
-  // ── (EC-6) Orden por updated_at DESC ─────────────────────────────────────
+  // ── (EC-6) Orden por SCORE DESC por defecto, con desempate por updated_at ──
   //
-  // Regla del contrato: ORDER BY updated_at DESC — el lead más recientemente
-  // actualizado aparece primero en la lista CRM.
+  // §19.9 (75.6, defecto #3 del usuario: "la clasificación por actividad no se
+  // ve"): el orden por defecto de la lista CRM cambia de updated_at DESC a
+  // score DESC — el lead más "caliente" aparece primero. Desempate ESTABLE
+  // (decisión documentada para el GREEN): updated_at DESC — dos leads con el
+  // mismo score muestran primero el tocado más recientemente. La query llama
+  // .order() DOS veces: primero el campo primario, luego el desempate.
 
-  it('(EC-6) ordena_por_updated_at_desc: la query llama .order("updated_at", { ascending: false })', async () => {
+  it('(EC-6) ordena_por_score_desc_por_defecto_con_desempate_updated_at: sin sortBy explícito, la query llama .order("score",{ascending:false}) y LUEGO .order("updated_at",{ascending:false}) como desempate', async () => {
     await renderHook(() => useAgentLeads());
 
-    // Verifica que el orden es exactamente updated_at DESC
-    expect(mock_supabase_holder.client._mock_order).toHaveBeenCalledWith(
+    expect(mock_supabase_holder.client._mock_order).toHaveBeenCalledTimes(2);
+    expect(mock_supabase_holder.client._mock_order.mock.calls[0]).toEqual([
+      'score',
+      { ascending: false },
+    ]);
+    expect(mock_supabase_holder.client._mock_order.mock.calls[1]).toEqual([
       'updated_at',
-      { ascending: false }
-    );
+      { ascending: false },
+    ]);
+  });
+
+  // ── (EC-6b) Modo alternativo — orden por fecha de último contacto ────────
+  //
+  // §19.9 ("botón secundario"): un modo de orden alternativo por actividad
+  // reciente de contacto — leads.last_contact_at DESC. nullsFirst:false
+  // (decisión documentada): un lead sin seguimiento posterior al contacto
+  // inicial (last_contact_at aún null) NO debe aparecer arriba de la lista.
+  // Mismo desempate que el modo score: updated_at DESC.
+
+  it('(EC-6b) modo_last_contact_ordena_por_last_contact_at_desc_nulls_last_con_desempate: useAgentLeads(undefined,"last_contact") llama .order("last_contact_at",{ascending:false,nullsFirst:false}) y LUEGO .order("updated_at",{ascending:false})', async () => {
+    await renderHook(() => useAgentLeads(undefined, 'last_contact'));
+
+    expect(mock_supabase_holder.client._mock_order).toHaveBeenCalledTimes(2);
+    expect(mock_supabase_holder.client._mock_order.mock.calls[0]).toEqual([
+      'last_contact_at',
+      { ascending: false, nullsFirst: false },
+    ]);
+    expect(mock_supabase_holder.client._mock_order.mock.calls[1]).toEqual([
+      'updated_at',
+      { ascending: false },
+    ]);
   });
 
   // ── (EC-7) Consulta la tabla leads ───────────────────────────────────────
@@ -656,23 +739,28 @@ describe('useAgentLeads', () => {
     expect(result.current.error).toBeNull();
   });
 
-  // ── (EC-10) Error del cliente Supabase ───────────────────────────────────
+  // ── (EC-10) Error del cliente Supabase — mensaje en español, no crudo ────
   //
-  // Si Supabase retorna error (red, RLS, etc.), el hook debe exponerlo en
-  // error (string), no tragar el error, y leads debe ser [] (no null/undefined).
+  // 75.6 (defecto #1/#3 del usuario): si Supabase retorna error (red, RLS,
+  // etc.), el hook debe exponer un mensaje NEUTRO EN ESPAÑOL (nunca el texto
+  // crudo de PostgREST/Postgres, que suele venir en inglés o con jerga de
+  // base de datos) y leads debe ser [] (no null/undefined). Mismo criterio
+  // que useUpdateLeadStatus/useUpdateLeadNote (punto 1).
 
-  it('(EC-10) error_cliente_expone_error_leads_vacio: query devuelve {error:{message}} → error!=null, leads=[], no crashea', async () => {
+  it('(EC-10) error_cliente_mensaje_en_espanol_no_crudo_leads_vacio: query devuelve {error:{message}} → error es un mensaje neutro en español (NO el texto crudo de PostgREST), leads=[], no crashea', async () => {
+    const RAW_PG_MESSAGE = 'RLS policy violation: no tienes acceso a estos leads';
     mock_supabase_holder.client = make_supabase_mock_leads({
       query_result: {
         data: null,
-        error: { message: 'RLS policy violation: no tienes acceso a estos leads' },
+        error: { message: RAW_PG_MESSAGE },
       },
     });
 
     const { result } = await renderHook(() => useAgentLeads());
 
-    // El error debe estar expuesto, no tragado
-    expect(result.current.error).toBe('RLS policy violation: no tienes acceso a estos leads');
+    // El error debe estar expuesto en ESPAÑOL, nunca el texto crudo
+    expect(result.current.error).toBe('No se pudieron cargar los leads. Intenta de nuevo.');
+    expect(result.current.error).not.toBe(RAW_PG_MESSAGE);
     // leads debe ser array vacío (no null ni undefined) para no romper el render
     expect(result.current.leads).toEqual([]);
     // loading resuelto
@@ -801,6 +889,46 @@ describe('useAgentLeads', () => {
     expect(lead.origin_property_id).toBe(TEST_PROPERTY_ID);
     expect(lead.origin_property_address).toBe('Av. Insurgentes Sur 1602, Col. Florida, CDMX');
     expect(result.current.error).toBeNull();
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // 75.6 — scoring/actividad visible en el CRM (defecto #3 del usuario)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  // ── (EC-nuevo-5) El select pide score/level/is_follow_up ─────────────────
+
+  it('(EC-nuevo-5) select_pide_score_level_is_follow_up: el string de select() pide explícitamente score, level e is_follow_up', async () => {
+    await renderHook(() => useAgentLeads());
+
+    const select_arg = mock_supabase_holder.client._mock_select.mock.calls[0]?.[0] as string;
+    expect(select_arg).toContain('score');
+    expect(select_arg).toContain('level');
+    expect(select_arg).toContain('is_follow_up');
+  });
+
+  // ── (EC-nuevo-6) Mapea score/level/is_follow_up al AgentLead ─────────────
+
+  it('(EC-nuevo-6) mapea_score_level_is_follow_up_al_agent_lead: un lead con score=42/level="caliente"/is_follow_up=true se mapea 1:1 al AgentLead resultante', async () => {
+    const RAW_LEAD_CALIENTE: RawLeadRow = {
+      ...RAW_LEAD_COMPLETO,
+      id: 'lead-uuid-caliente-75-6',
+      score: 42,
+      level: 'caliente',
+      is_follow_up: true,
+    };
+
+    mock_supabase_holder.client = make_supabase_mock_leads({
+      query_result: { data: [RAW_LEAD_CALIENTE], error: null },
+    });
+
+    const { result } = await renderHook(() => useAgentLeads());
+
+    expect(result.current.leads).toHaveLength(1);
+    const lead = result.current.leads[0] as AgentLead;
+
+    expect(lead.score).toBe(42);
+    expect(lead.level).toBe('caliente');
+    expect(lead.is_follow_up).toBe(true);
   });
 
 });

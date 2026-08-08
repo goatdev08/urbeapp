@@ -5464,9 +5464,9 @@
         "id": "75",
         "title": "Ola 1 — CRM completo (9 estados + scoring frío/tibio/caliente)",
         "description": "Embudo de leads del PRD §19: 9 estados, scoring por puntaje (frío/tibio/caliente), unificación de leads, export CSV, historial retroactivo y retención.",
-        "details": "PRD §19 (19.5 unificación, 19.6 scoring, 19.8 estados, 19.9 CRM visual, 19.10 retención). Hoy: 7 estados, lead auto. Toca lógica de scoring (crítico), migraciones (estados), EF, UI del CRM. Épica del camino a producción (ADR 0008 / docs/PRD-beta.md). Spec detallado (modelo de datos, RLS, EF, pantallas, estados, edge cases, tests, subtareas) se redacta SECUENCIAL al entrar su ola, con aprobación de Abraham; add-task roto → subtareas por escritura directa en tasks.json.",
+        "details": "PRD §19 (19.5 unificación, 19.6 scoring, 19.8 estados, 19.9 CRM visual, 19.10 retención). Hoy: 7 estados, lead auto. Toca lógica de scoring (crítico), migraciones (estados), EF, UI del CRM. Épica del camino a producción (ADR 0008 / docs/PRD-beta.md). Spec detallado (modelo de datos, RLS, EF, pantallas, estados, edge cases, tests, subtareas) se redacta SECUENCIAL al entrar su ola, con aprobación de Abraham; add-task roto → subtareas por escritura directa en tasks.json.\n\n[2026-08-07] ALCANCE DEL TRAMO URGENTE (decidido por Abraham): se ejecutan 75.1, 75.2, 75.5 y 75.6 RECORTADAS. FUERA: 75.3 (privacidad §19.2), 75.4 (template WhatsApp + unificación) salvo el default de estado, 75.7 (export CSV + retención). Decisiones: (1) TRANSICIONES LIBRES — el agente mueve el lead a cualquier estado, incluido reabrir uno cerrado; se elimina VALID_TRANSITIONS de update-lead-status; el historial guarda todo. (2) SCORING desde señales EXISTENTES (contacto 10 + guardado 4 + like 1), NO desde events_raw (0 escritores, 0 filas en remoto); umbrales en app_config. (3) admin de inmobiliaria ve el pipeline del equipo (requiere helper private.is_agency_admin_of + OR en leads_select, can_view_lead y can_view_user_as_lead_searcher). (4) B1: la realineación mínima de cliente (types/lead_status_meta/tabs de CRMScreen) va DENTRO de 75.1 para que nunca exista una ventana con los estados rotos. (5) B2: contact-agent/index.ts pasa a crear el lead en whatsapp_opened (una palabra; el resto de 75.4 sigue fuera). (6) B3: los 2 leads legacy en closed_won NO se migran a rent/sale — adivinar es peor; el agente los reclasifica con la transición libre. (7) B4: is_follow_up se agrega a update-lead-note (aditivo) en vez de crear una 4ª EF. (8) B5: umbrales se calibran editando app_config a mano; sin pantalla admin en este tramo. Compatibilidad: TODO aditivo (ALTER TYPE ADD VALUE, columnas con default, tabla nueva, RLS que solo amplía SELECT) — las apps v1.0.3 en la calle no se rompen; get_status_meta ya tiene fallback para un estado que no conoce.\n\nDERIVADAS: #108 (guardian del tramo CRM — score/level escribibles por REST + changed_by NULL)\nDERIVADAS: #109 (E2E bloqueado — el muro de ubicación cubre TODA ruta protegida)\nDERIVADAS: #110 (hallazgos MEDIA/BAJA del code review final)",
         "testStrategy": "TDD estricto en lógica crítica (supabase/functions/**, migrations/**, lib/hooks/validation): RED→GREEN→guardian. Verificación ligera (tsc/lint/smoke) en UI. Se detalla al specificar la ola.",
-        "status": "pending",
+        "status": "in-progress",
         "dependencies": [
           "66",
           "74"
@@ -5477,25 +5477,27 @@
             "id": 1,
             "title": "Reconciliar lead_status (§19.8) + bandera follow-up",
             "description": "Extender lead_status a la semántica §19.8; in_follow_up como columna booleana, no estado.",
-            "details": "ALTER TYPE lead_status ADD: whatsapp_opened, interested, closed_won_rent, closed_won_sale. Mapear new→whatsapp_opened (inicial automático al contactar), split closed_won→rent/sale. Añadir leads.is_follow_up boolean (convive con contacted/interested/visit_scheduled, §19.8). Historial de cambios de estado (timeline, §19.8). CRÍTICA (migración).",
+            "details": "ALTER TYPE lead_status ADD: whatsapp_opened, interested, closed_won_rent, closed_won_sale. Mapear new→whatsapp_opened (inicial automático al contactar), split closed_won→rent/sale. Añadir leads.is_follow_up boolean (convive con contacted/interested/visit_scheduled, §19.8). Historial de cambios de estado (timeline, §19.8). CRÍTICA (migración).\n\n[2026-08-07] hecho: DOS migraciones (el enum y su uso NO caben en la misma transacción — ALTER TYPE ADD VALUE no deja usar el valor nuevo hasta el commit): 20260807000002 añade whatsapp_opened/interested/closed_won_rent/closed_won_sale; 20260807000003 hace el data-fix new→whatsapp_opened, agrega leads.is_follow_up (bandera ortogonal), crea lead_status_history (append-only, patrón admin_actions) + trigger AFTER INSERT OR UPDATE OF status (el guard de no-op va DENTRO del trigger con TG_OP: un WHEN que referencia OLD truena si INSERT está entre los eventos) + RLS solo-lectura con can_view_lead y sin grants de escritura a authenticated. Ambas con rollback. EFs: update-lead-status pierde VALID_TRANSITIONS (transiciones libres, INVALID_TRANSITION ya no se emite) pero conserva ownership/JWT/enum-válido; contact-agent extrae make_lead_repo (el insert vivía inline en el closure de Deno.serve, no era testeable) y crea el lead en whatsapp_opened. Cliente realineado en el MISMO paso para que no exista ventana rota: types.ts 11 valores, lead_status_meta con labels de los 4 nuevos y ALL_LEAD_STATUSES recortado a los 8 vigentes (los 3 legacy se ven pero no se pueden elegir), CRMScreen con los grupos de tabs realineados (sin esto TODO lead nuevo caía en el tab Cerrados), useAgentStats cuenta los dos closed_won_* (TDD: RED confirmado antes del fix). Verificación: supabase test db 29 archivos/642 subtests, deno 781/781, pnpm test 855/855, tsc y lint limpios. PENDIENTE: deploy al remoto de las 2 migraciones + EFs (se hace al cerrar el tramo). HALLAZGO: supabase/types/database.types.ts arrastra drift desde #71 (agency_member_role/status y 3 RPCs sin regenerar); se parchearon a mano solo los campos de lead para no arrastrar el resto.\n\nEDGE CASES (RED) 75.1: enum gana los 4 valores nuevos y CONSERVA los 7 legacy (Postgres no vacía enums; apps v1.0.3 en la calle) · is_follow_up boolean not null default false ORTOGONAL al estado (convive con contacted/interested/visit_scheduled) · lead_status_history: 1 fila al crear el lead + 1 por cada cambio real de status, con old/new correctos · UPDATE que no toca status NO genera fila · UPDATE al MISMO status tampoco (guard de no-op, agregado tras el guardian) · reabrir un lead cerrado (closed_lost→contacted) se permite y queda registrado · RLS del historial: dueño ve, otro agente no, NADIE escribe directo (solo el trigger SECURITY DEFINER) · no quedan leads en estado new tras el data-fix · EF: cualquier transición se acepta (closed_won_rent→contacted, discarded→whatsapp_opened, saltos) y INVALID_TRANSITION ya no se emite · el allowlist de entrada acepta los 4 estados nuevos con 200 (agregado tras el guardian — su ausencia era el bug del usuario reencarnado) · NO se relajan: ownership, LEAD_NOT_FOUND, UNAUTHENTICATED, ni un new_status fuera del enum (400 INVALID_INPUT) · contact-agent crea el lead en whatsapp_opened.",
             "testStrategy": "pgTAP: enum tiene los nuevos; is_follow_up ortogonal al estado; timeline registra cada cambio.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "priority": "high",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-08-08T01:39:51.344Z"
           },
           {
             "id": 2,
             "title": "Scoring denormalizado + nivel automático",
             "description": "lead.score se actualiza al escribir interacción en events_raw; nivel frío/tibio/caliente derivado de umbrales.",
-            "details": "EF/trigger sobre events_raw: al registrar interacción contable suma peso (contacto 10, compartido 5, guardado 4, comentario 3, video_completo 2, like 1, §19.6) con guard \"una vez por (usuario,video,acción)\". lead.score denormalizado. Nivel (frío/tibio/caliente) = derivado del score vía umbrales en app_config (calibrables sin deploy, §19.6). El ESTADO no cambia por actividad (eso es manual del agente); solo score/nivel. CRÍTICA (lógica).",
+            "details": "EF/trigger sobre events_raw: al registrar interacción contable suma peso (contacto 10, compartido 5, guardado 4, comentario 3, video_completo 2, like 1, §19.6) con guard \"una vez por (usuario,video,acción)\". lead.score denormalizado. Nivel (frío/tibio/caliente) = derivado del score vía umbrales en app_config (calibrables sin deploy, §19.6). El ESTADO no cambia por actividad (eso es manual del agente); solo score/nivel. CRÍTICA (lógica).\n\n[2026-08-07] REORIENTADA: el diseño original sumaba desde events_raw, pero events_raw NO TIENE ESCRITORES (0 referencias en código, 0 filas en el remoto) — era un pipeline inexistente. Nuevo diseño con las señales que YA existen: score = 10 (contacto) + 4×saves + 1×likes del usuario sobre publicaciones del agente. El guard \"una vez por (usuario,video,acción)\" ya lo dan los unique index likes_user_video_unique y saves_user_property_unique (migración 0006) — no hay que reinventarlo. Patrón: triggers AFTER INSERT OR DELETE sobre likes/saves (calco de 20260701000001_engagement_count_triggers.sql) + trigger AFTER INSERT en leads que inicializa el score retroactivo (cubre al usuario que ya había dado like ANTES de contactar). Nivel frío/tibio/caliente denormalizado en leads.level, umbrales en app_config. Las señales que faltan (compartido, comentario, video completo) se suman después sin rehacer la fórmula — llegan con el pipeline de eventos de la Ola 3 (#80).\n\n[2026-08-07] hecho: migración 20260807000004_lead_scoring.sql (+rollback). Enum lead_temperature (frio/tibio/caliente) + leads.score/leads.level denormalizados. private.compute_lead_level lee los umbrales de app_config con fallback COALESCE 15/30 — NO se sembraron filas a propósito: el RED hace INSERT crudo de esas claves (chocaría con la PK y abortaría las 22 aserciones) y 12_stream_schema_test.sql fija count(*)=3 en app_config. Triggers: trg_init_lead_score (BEFORE INSERT en leads, calcula el score RETROACTIVO 10+4×saves+1×likes previos — el caso que más fácil se olvida); trg_lead_score_likes/saves (AFTER INSERT OR DELETE, comparten private.adjust_lead_score, resuelven el dueño REAL vía properties.owner_user_id → ahí está el aislamiento por agente); trg_recompute_lead_levels (AFTER UPDATE en app_config, WHEN sobre las 2 claves, recalcula level de todos los leads sin tocar score = la recalibración sin deploy es verdad, no un comentario). Backfill al final. Verificación: supabase test db 30 archivos/664 asserts PASS; deno 781/781; migración re-aplicada a mano sobre DB ya migrada sin error (idempotencia real). HUECO ANOTADO (no implementado, no estaba en el RED): leads_update permite al agente dueño escribir score/level directo por REST — se puede inflar su propio puntaje. Candidato a hardening con el patrón column-level de users.role (0008/0010).\n\nEDGE CASES (RED) 75.2: shape de score/level y enum lead_temperature · lead nuevo sin actividad nace en 10 · RETROACTIVIDAD: likes/saves previos al contacto ya vienen sumados al nacer el lead · like nuevo +1, guardado nuevo +4 · like repetido NO infla (lo impiden los unique index existentes) · DELETE del like resta · AISLAMIENTO POR AGENTE: actividad sobre publicaciones de otro agente no afecta este lead · actividad de quien no tiene lead no crea lead ni truena (§19.1) · el nivel cruza a tibio/caliente por umbrales y baja si baja el score (cortes inclusivos) · cambiar los umbrales en app_config recalcula el nivel de leads EXISTENTES sin tocar el score · el status NUNCA cambia por actividad y lead_status_history no recibe filas por score/nivel · no-regresión: properties.like_count/save_count siguen funcionando.\n\n[2026-08-07] GUARDIAN: FAIL inicial por 2 huecos de cobertura (el allowlist de la EF y el guard de no-op del trigger sobrevivían a su mutante) — cerrados con tests que se verificaron aplicando el mutante, viendo el rojo y revirtiendo. Suites finales: pgTAP 30 archivos/665, deno 785/785.",
             "testStrategy": "pgTAP: pesos correctos; misma acción/video no re-suma; nivel cambia al cruzar umbral; estado intacto.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               1
             ],
             "priority": "high",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-08-08T02:05:01.926Z"
           },
           {
             "id": 3,
@@ -5527,27 +5529,29 @@
             "id": 5,
             "title": "Acciones del agente sobre el lead (§19.7)",
             "description": "Cambiar estado, destacar follow-up, cerrar (rent/sale/lost), notas internas, eliminar (soft 30d), abrir WhatsApp.",
-            "details": "mobile + EFs (update-lead-status, update-lead-note ya existen, extender): cambio de estado con timeline; toggle is_follow_up; cerrar con tipo (§19.7); notas internas libres no visibles al usuario; eliminar = soft delete retención 30d (§19.10); abrir WhatsApp desde detalle. NO crítica salvo transición/borrado (verificación reforzada).",
+            "details": "mobile + EFs (update-lead-status, update-lead-note ya existen, extender): cambio de estado con timeline; toggle is_follow_up; cerrar con tipo (§19.7); notas internas libres no visibles al usuario; eliminar = soft delete retención 30d (§19.10); abrir WhatsApp desde detalle. NO crítica salvo transición/borrado (verificación reforzada).\n\n[2026-08-07] hecho (RECORTADA al tramo urgente; eliminar/soft-delete queda en 75.7): migración 20260807000005 con private.is_agency_admin_of (calco de is_agency_owner_of con member_role=admin; exige que AMBOS estén active en la MISMA agencia — precedente #100) + cláusula OR en los 3 puntos de LECTURA (leads_select, can_view_lead, can_view_user_as_lead_searcher). La ESCRITURA no se tocó (sigue solo el agente dueño; extenderla es #31, diferida) y hay 2 asserts que lo custodian. update-lead-note extendido con is_follow_up opcional (aditivo, no rompe el contrato v1.0.3 que solo manda note); false != ausente resuelto con !== undefined en los 3 puntos del flujo. Cliente: mapa lead_error_messages.ts (código EF → español) cableado con extract_error_code en useUpdateLeadStatus/useUpdateLeadNote — se acabó el \"Edge Function returned a non-2xx status code\" en pantalla. Verificación: pgTAP 31 archivos/680, deno 795/795, jest 881/881.",
             "testStrategy": "Deno/smoke: cada acción persiste + timeline; soft delete oculta pero conserva 30d.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               4
             ],
             "priority": "medium",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-08-08T03:58:50.599Z"
           },
           {
             "id": 6,
             "title": "CRM UI (§19.9)",
             "description": "Lista por score desc, sección follow-up fija arriba, filtros, buscador, card y detalle con timeline/notas/acciones.",
-            "details": "mobile/leads: lista ordenada por score desc (toggle por fecha de último contacto); sección superior fija de is_follow_up; filtros (estado, propiedad, fechas, nivel); buscador por nombre/teléfono; card (nombre, foto, score, nivel, estado, último contacto); detalle con datos §19.4 + timeline + notas + acciones. Sin kanban ni recordatorios (post-MVP). NO crítica (UI).",
+            "details": "mobile/leads: lista ordenada por score desc (toggle por fecha de último contacto); sección superior fija de is_follow_up; filtros (estado, propiedad, fechas, nivel); buscador por nombre/teléfono; card (nombre, foto, score, nivel, estado, último contacto); detalle con datos §19.4 + timeline + notas + acciones. Sin kanban ni recordatorios (post-MVP). NO crítica (UI).\n\n[2026-08-07] hecho (RECORTADA: filtros por propiedad/fecha/nivel y buscador por teléfono quedan fuera del tramo urgente): useAgencyRole a 4 roles con isAdmin/canViewTeam y error booleano que distingue \"falló la query\" de \"sin membresía\"; useAgentLeads pide score/level/is_follow_up y ordena por score desc con desempate updated_at (+modo last_contact); useLeadStatusHistory nuevo (timeline). UI: LeadCard muestra puntaje y nivel con la escala Salvia/Arcilla, CRMScreen usa canViewTeam y tiene sección fija EN SEGUIMIENTO deduplicada de la lista, LeadExpandedView tiene toggle de bookmark y sección Historial. De paso se regeneró supabase/types/database.types.ts contra el stack local, saldando el drift que arrastrábamos desde la #71 (agency_member_role/status + 3 RPCs).\n\n[2026-08-07] VERIFICACIÓN E2E: el emulador Android quedó BLOQUEADO por el muro de ubicación (Fused Location Provider del AVD no resuelve fix ni con geo fix en bucle; de paso se halló DNS roto del AVD, arreglado con -dns-server). NO se pudo verificar la UI. En su lugar se verificó el comportamiento crítico DIRECTO contra el remoto con JWT real del agente dueño: reabrir un lead cerrado (closed_lost→interested) HTTP 200 — antes era 400 INVALID_TRANSITION; salto a estado nuevo (interested→closed_won_rent) 200; is_follow_up 200; new_status inventado rechazado con INVALID_INPUT; el timeline registró ambos cambios con old/new correctos; y el owner de la agencia VE pero NO puede editar el lead de su compañero (403 UNAUTHORIZED_AGENT) = la invariante de solo-lectura viva en producción. Datos del cliente restaurados a su estado original. PENDIENTE: verificación visual de la UI del CRM (ver #109).",
             "testStrategy": "pnpm tsc/lint; smoke: orden por score; follow-up arriba; filtros y buscador funcionan.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               5
             ],
             "priority": "medium",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-08-08T03:58:52.376Z"
           },
           {
             "id": 7,
@@ -5578,7 +5582,7 @@
             "parentId": "undefined"
           }
         ],
-        "updatedAt": "2026-07-13T00:00:00.000Z"
+        "updatedAt": "2026-08-08T03:58:52.376Z"
       },
       {
         "id": "76",
@@ -6939,12 +6943,51 @@
         ],
         "priority": "medium",
         "subtasks": []
+      },
+      {
+        "id": "108",
+        "title": "hardening(75.2): score/level escribibles por REST + changed_by siempre NULL en el historial",
+        "description": "Origen: subtareas 75.1 y 75.2 · Detectado por: guardian del tramo CRM (2026-08-07). (a) La policy leads_update deja al agente dueño escribir leads.score y leads.level directo por PostgREST — confirmado por impersonación: UPDATE leads SET score=9999 persiste. No es fuga ni escalación (RLS corta los leads ajenos) pero rompe la integridad de la métrica, y como leads_select incluye is_agency_owner_of, un agente puede fabricarle leads caliente a su inmobiliaria. El comment on column dice \"nunca escrito a mano\" — hoy es aspiracional, no enforced. (b) lead_status_history.changed_by va a ser NULL SIEMPRE en producción: update-lead-status y contact-agent usan service_client(), así que auth.uid() dentro del trigger es null. El timeline registra qué y cuándo, nunca quién — la columna es peso muerto y el §19.8 pierde valor.",
+        "details": "(a) Patrón column-level de users.role (migraciones 0008/0010): REVOKE UPDATE (score, level) ON public.leads FROM authenticated, dejando el resto de columnas escribibles. Verificar que los triggers SECURITY DEFINER siguen escribiendo. pgTAP con dientes: el dueño NO puede subir su propio score por REST; el trigger sí lo actualiza al dar like. (b) Propagar el actor real al historial: la EF conoce el uid del JWT (verify_caller) — pasarlo explícito (patrón private.resolve_admin_actor) o hacer que el trigger lo lea de una GUC seteada por la EF. Decidir si vale la pena o si se borra la columna. (c) Extra del mismo guardian: las funciones nuevas de private (compute_lead_level, adjust_lead_score…) quedaron con EXECUTE a PUBLIC por el default de Postgres — mismo hueco de familia que ya cubre la tarea #96; considerar cerrarlas ahí en vez de duplicar.",
+        "testStrategy": "pgTAP por impersonación: UPDATE directo de score/level por el dueño → 0 filas afectadas o error; el trigger de likes SÍ actualiza. Si se implementa (b): el historial guarda el uid del agente que hizo el cambio vía la EF.",
+        "status": "pending",
+        "dependencies": [
+          "75"
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": "109",
+        "title": "hardening(75.6): el muro de ubicación bloquea TODA ruta protegida — impide E2E y deja sin CRM a quien tenga GPS apagado",
+        "description": "Origen: subtarea 75.6 · Detectado por: E2E bloqueado (2026-08-07). El LocationWall de mobile/app/(protected)/_layout.tsx envuelve TODAS las rutas protegidas, incluido /crm. Dos consecuencias: (a) TESTING — no se puede verificar por CLI ninguna pantalla que no sea el feed en el emulador, porque el Fused Location Provider del AVD no resuelve un fix ni con adb emu geo fix en bucle (se probó location_mode 3, location_providers_allowed, cmd location set-location-enabled, force-stop de GMS: solo funcionó una vez y por segundos); (b) PRODUCTO — un agente con el GPS apagado no puede llegar a su CRM ni a su perfil, aunque esas pantallas no necesiten ubicación para nada. La ubicación la necesita el feed/mapa, no el CRM.",
+        "details": "(a) Producto: decidir si el muro debe aplicar por RUTA en vez de a todo el grupo protegido (el feed y el mapa la necesitan; CRM, perfil y publicar no). Es la causa raíz de ambos síntomas y probablemente lo correcto. (b) Testing: si el muro se mantiene global, montar una salida para E2E — device físico por Wi-Fi (evita el Fused Provider), cold boot con wipe-data, GPX por Extended Controls, o un bypass explícito bajo __DEV__ documentado. Hallazgo adicional del mismo intento: el AVD arrancó con DNS roto para apps nativas (UnknownHostException contra supabase.co mientras Chrome sí resolvía) — se arregla lanzando el emulador con -dns-server 8.8.8.8,8.8.4.4; vale documentarlo en el vault junto a android_emulator_mac_setup. También se vio un JWT issued at future por drift del reloj del AVD al bootear.",
+        "testStrategy": "Smoke por CLI: con el GPS apagado, /crm y /perfil deben abrir; el feed y el mapa siguen pidiendo ubicación. Y que la suite Maestro pueda llegar al CRM sin depender de un fix de GPS.",
+        "status": "pending",
+        "dependencies": [
+          "75"
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": "110",
+        "title": "polish(75): hallazgos MEDIA/BAJA del code review del tramo CRM (no bloqueantes)",
+        "description": "Origen: tarea 75 · Detectado por: code review final del tramo CRM (2026-08-07, lentes backend/seguridad y móvil/producto). Los hallazgos ALTA y los MEDIA baratos ya se corrigieron en las migraciones 20260807000006/7 y en el tramo móvil. Aquí quedan los que no bloquean el merge.",
+        "details": "BACKEND: (a) Borrar una propiedad deja el score del lead INFLADO para siempre — al borrarse la propiedad, likes/saves caen en cascada y sus AFTER DELETE ya no encuentran el padre (el return null cuando v_owner is null no es defensivo, es justo ese caso). Verificado: score 15 → borro la propiedad → sigue 15 cuando debería ser 10. Fix: recalcular con la subconsulta del backfill en vez de aplicar delta, o un AFTER DELETE on properties. (b) leads.status sigue con DEFAULT new pese a que ya no es un estado vigente — un INSERT directo por PostgREST recupera el valor legacy; alter column set default whatsapp_opened. (c) Carrera estrecha: un like que commitea en una transacción abierta ANTES de que exista el lead pierde su punto (ni el AFTER INSERT lo ve ni el count del BEFORE INSERT). (d) Los 500 siguen devolviendo el mensaje crudo de Postgres/PostgREST al cliente (lead_status_updater.ts:42,86 y note_updater.ts:34,82) — preexistente, sobrevivió a la refactorización. (e) PONYTAIL: leads.level es un caché denormalizado de una función pura de score y 2 números; el revisor mostró que su justificación era circular (cero consumidores previos). Borrarlo — con el enum, compute_lead_level, recompute_lead_levels y el UPDATE masivo — y derivar el nivel en lead_status_meta.ts elimina de raíz varios de estos hallazgos. Evaluar antes de que crezcan los consumidores. MOBILE: (f) sortBy/LeadSortMode es flexibilidad muerta: el modo last_contact existe y está testeado pero ninguna UI lo pasa — es el botón secundario del §19.9 que no se construyó; construir el control o borrar el parámetro. (g) ProfileScreen.tsx:80-88 duplica la consulta de rol con su propio fetch_own_membership y un comentario que dice que useAgencyRole no distingue admin — YA NO ES CIERTO desde este tramo; son 2 queries a agency_members en la misma pantalla y un comentario que va a desorientar. (h) property-detail/utils/whatsapp.ts:26 hace void Linking.openURL sin catch: si falla, el botón principal no hace nada y no avisa (su gemelo open_whatsapp_ef sí tiene Alert) — preexistente. COMPAT: las apps v1.0.3 en la calle ven los estados nuevos como etiqueta cruda (whatsapp_opened, closed_won_rent) porque su get_status_meta cae al fallback; NO truena, pero se resuelve con el OTA de este tramo.",
+        "testStrategy": "Cada fix con la criticidad que le toque por path. (a) pgTAP: borrar la propiedad recalcula el score del lead. (b) pgTAP del default. (f)(g) verificación ligera + tsc/lint.",
+        "status": "pending",
+        "dependencies": [
+          "75"
+        ],
+        "priority": "low",
+        "subtasks": []
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-08-08T00:12:10.645Z",
-      "taskCount": 107,
+      "lastModified": "2026-08-08T03:58:52.376Z",
+      "taskCount": 109,
       "completedCount": 66,
       "tags": [
         "master"

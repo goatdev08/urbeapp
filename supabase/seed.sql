@@ -350,10 +350,14 @@ begin
   -- 10. leads — un par (agent_id, user_id); CHECK agent_id <> user_id
   --     UNIQUE (agent_id, user_id) WHERE deleted_at IS NULL
   -- ────────────────────────────────────────────────────────────────────────────
+  -- status: 'whatsapp_opened' es el estado inicial real tras contactar (75.1, PRD §19.8).
+  -- 'new' queda legacy (migración 20260807000003 ya no puede tocar estas filas: el seed
+  -- corre DESPUÉS de las migraciones) — sembrar directo en 'whatsapp_opened' mantiene el
+  -- seed coherente con el contrato vigente sin depender del data-fix de una migración pasada.
   insert into public.leads (id, agent_id, user_id, status) values
-    (lead1, agent1, bus1, 'new'),        -- Sofía contactó a Ana Flores (prop01)
-    (lead2, agent3, bus2, 'contacted'),  -- Andrés contactó a Miguel Herrera (prop07)
-    (lead3, agent4, bus3, 'new');        -- Laura contactó a Diego Ramírez (prop08)
+    (lead1, agent1, bus1, 'whatsapp_opened'),  -- Sofía contactó a Ana Flores (prop01)
+    (lead2, agent3, bus2, 'contacted'),        -- Andrés contactó a Miguel Herrera (prop07)
+    (lead3, agent4, bus3, 'whatsapp_opened');  -- Laura contactó a Diego Ramírez (prop08)
 
   -- ────────────────────────────────────────────────────────────────────────────
   -- 11. lead_origin_properties

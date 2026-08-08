@@ -2,12 +2,19 @@
  * LeadCard — card presentacional de un lead en la lista CRM del agente.
  *
  * Layout horizontal:
- *   [Avatar 44px] · [Info flex:1 — nombre, dirección origen, badge + tiempo] · [Thumbnail 56px]
+ *   [Avatar 44px] · [Info flex:1 — nombre, dirección origen, badge de estado +
+ *   tiempo, badge de nivel + puntaje] · [Thumbnail 56px]
+ *
+ * Nivel/puntaje (75.6, §19.9, defecto #3 del usuario: "la clasificación por
+ * actividad no se ve"): fila propia debajo del estado — un pill de color
+ * (LEVEL_META, escala Salvia/Arcilla) + el número de puntos, para que se
+ * lean de un vistazo sin competir por espacio con el badge de estado.
  *
  * Paleta: gestión clara (paper/white). Sin lógica de fetching — puramente presentacional.
  *
- * ponytail: tiempo relativo inline (sin dependencia nueva); íconos Text unicode;
- *   placeholder de thumbnail = View paper_2 (sin expo-linear-gradient).
+ * ponytail: íconos Text unicode; placeholder de thumbnail = View paper_2 (sin
+ *   expo-linear-gradient); tiempo relativo en utils/relative_time.ts (compartido
+ *   con el timeline de LeadExpandedView, 75.6).
  */
 
 import React from 'react';
@@ -16,8 +23,9 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 
 import { colors, fonts, radii, shadows, spacing } from '@/theme/theme';
-import { get_status_meta } from '../lead_status_meta';
+import { get_level_meta, get_status_meta } from '../lead_status_meta';
 import type { AgentLead } from '../types';
+import { format_relative_time } from '../utils/relative_time';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -29,26 +37,6 @@ function get_initial(full_name: string | null): string {
   if (!full_name) return '?';
   // noUncheckedIndexedAccess: full_name[0] puede ser undefined
   return (full_name[0] ?? '?').toUpperCase();
-}
-
-/**
- * Tiempo relativo desde una fecha ISO hasta ahora ("hace 2 h", "hace 3 d", etc.).
- * ponytail: función inline — sin dependencia nueva (no hay util de fechas en el repo).
- * Techo conocido: granularidad en minutos/horas/días/meses (demo suficiente).
- */
-function format_relative_time(iso_string: string): string {
-  const diff_ms = Date.now() - new Date(iso_string).getTime();
-  // Protección ante relojes desincronizados (diff negativo)
-  if (diff_ms < 0) return 'ahora';
-  const minutes = Math.floor(diff_ms / 60_000);
-  if (minutes < 1)  return 'ahora';
-  if (minutes < 60) return `hace ${minutes} min`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24)   return `hace ${hours} h`;
-  const days = Math.floor(hours / 24);
-  if (days < 30)    return `hace ${days} d`;
-  const months = Math.floor(days / 30);
-  return `hace ${months} mes${months > 1 ? 'es' : ''}`;
 }
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -70,9 +58,12 @@ export const LeadCard = React.memo(function LeadCard({ lead, onPress }: LeadCard
     origin_property_address,
     origin_property_thumbnail_url,
     updated_at,
+    score,
+    level,
   } = lead;
 
   const badge        = get_status_meta(status);
+  const level_badge  = get_level_meta(level);
   const display_name = full_name ?? 'Usuario sin nombre';
   const time_label   = format_relative_time(updated_at);
 
@@ -80,7 +71,7 @@ export const LeadCard = React.memo(function LeadCard({ lead, onPress }: LeadCard
     <Pressable
       onPress={() => onPress(lead)}
       accessibilityRole="button"
-      accessibilityLabel={`Lead: ${display_name}, ${badge.label}`}
+      accessibilityLabel={`Lead: ${display_name}, ${badge.label}, ${level_badge.label}, ${score} puntos`}
       style={({ pressed }) => [
         styles.row,
         pressed && styles.row_pressed,
@@ -131,6 +122,16 @@ export const LeadCard = React.memo(function LeadCard({ lead, onPress }: LeadCard
             </Text>
           </View>
           <Text style={styles.time}>{time_label}</Text>
+        </View>
+
+        {/* Fila nivel + puntaje — de un vistazo (75.6, §19.9) */}
+        <View style={styles.score_row}>
+          <View style={[styles.badge, { backgroundColor: level_badge.bg }]}>
+            <Text style={[styles.badge_text, { color: level_badge.text }]}>
+              {level_badge.label}
+            </Text>
+          </View>
+          <Text style={styles.score_text}>{score} pts</Text>
         </View>
 
       </View>
@@ -251,6 +252,19 @@ const styles = StyleSheet.create({
     fontFamily: fonts.sans,
     fontSize: 11,
     color: colors.gray_1,
+  },
+
+  // Nivel + puntaje (75.6)
+  score_row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 4,
+  },
+  score_text: {
+    fontFamily: fonts.sans_semibold,
+    fontSize: 11,
+    color: colors.gray_2,
   },
 
   // ── Thumbnail de propiedad ─────────────────────────────────────────────────

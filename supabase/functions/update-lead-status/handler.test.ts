@@ -17,6 +17,17 @@
 // - updater llamado exactamente una vez en happy path
 // - respuesta 200 contiene lead con nuevo status
 //
+// ### Allowlist de entrada — los 4 valores nuevos del embudo real (75.1/§19.8)
+// (V1, guardian de tarea 75: VALID_LEAD_STATUSES tenía las 4 líneas nuevas sin
+// NINGÚN test que las ejercitara — un mutante que las borrara dejaba 781/781 en
+// verde. Estos son los únicos tests de este archivo que cruzan de verdad el gate
+// del handler.ts:29-45 con cada uno de los 4 valores que el picker de la app ya
+// ofrece: mobile/src/features/leads/lead_status_meta.ts → ALL_LEAD_STATUSES.)
+// - new_status='whatsapp_opened' → 200
+// - new_status='interested' → 200
+// - new_status='closed_won_rent' → 200
+// - new_status='closed_won_sale' → 200
+//
 // ### Shape exacto (riesgo mock-vs-prod)
 // - updater recibe lead_id correcto
 // - updater recibe new_status correcto
@@ -43,9 +54,13 @@
 // - new_status='unknown_xyz' → 400 INVALID_INPUT
 // - new_status=número (42) → 400 INVALID_INPUT
 //
-// ### Transiciones inválidas (updater devuelve INVALID_TRANSITION → handler → 400)
-// - updater retorna INVALID_TRANSITION → handler responde 400 INVALID_TRANSITION
-// - updater llamado exactamente una vez cuando rechaza transición
+// ### Transiciones — subtarea 75.1: YA NO EXISTEN "transiciones inválidas" a nivel
+// EF (VALID_TRANSITIONS desapareció del updater real, ver lead_status_updater.test.ts).
+// El código INVALID_TRANSITION ya no se emite nunca — por eso los 2 tests que antes
+// vivían aquí (mapeo del fake updater→400) se retiraron: documentarían un contrato
+// que ya no existe. Cobertura de "transiciones libres" real está en
+// lead_status_updater.test.ts (el updater real es el único que decide esto; el
+// handler solo mapea códigos de error que el updater pueda devolver).
 //
 // ### Auth — CallerVerifier DI
 // - Sin Authorization header → 401 UNAUTHENTICATED
@@ -122,6 +137,31 @@ const LEAD_CON_NOTA: UpdatedLead = {
   internal_notes: "Primera llamada exitosa",
 };
 
+// Fixtures de los 4 valores nuevos del enum (75.1/§19.8) — V1 del guardian.
+const LEAD_WHATSAPP_OPENED: UpdatedLead = {
+  id: LEAD_ID,
+  status: "whatsapp_opened",
+  internal_notes: null,
+};
+
+const LEAD_INTERESADO: UpdatedLead = {
+  id: LEAD_ID,
+  status: "interested",
+  internal_notes: null,
+};
+
+const LEAD_CERRADO_RENTA: UpdatedLead = {
+  id: LEAD_ID,
+  status: "closed_won_rent",
+  internal_notes: null,
+};
+
+const LEAD_CERRADO_VENTA: UpdatedLead = {
+  id: LEAD_ID,
+  status: "closed_won_sale",
+  internal_notes: null,
+};
+
 // ── Factories de fakes — CallerVerifier ───────────────────────────────────────
 
 interface FakeCallerVerifier extends CallerVerifier {
@@ -188,20 +228,6 @@ function updater_not_found(): FakeLeadStatusUpdater {
   } as FakeLeadStatusUpdater;
 }
 
-function updater_transicion_invalida(): FakeLeadStatusUpdater {
-  return {
-    calls: [],
-    update(params: UpdateLeadStatusParams): Promise<UpdateLeadStatusResult> {
-      this.calls.push({ ...params });
-      return Promise.resolve({
-        ok: false,
-        error_code: "INVALID_TRANSITION",
-        message: "Transición de estado no permitida",
-      });
-    },
-  } as FakeLeadStatusUpdater;
-}
-
 function updater_db_error(): FakeLeadStatusUpdater {
   return {
     calls: [],
@@ -261,6 +287,12 @@ const PAYLOAD_CON_NOTE = {
   note: "Primera llamada exitosa",
 };
 
+// Payloads de los 4 valores nuevos del enum (75.1/§19.8) — V1 del guardian.
+const PAYLOAD_A_WHATSAPP_OPENED = { lead_id: LEAD_ID, new_status: "whatsapp_opened" };
+const PAYLOAD_A_INTERESTED = { lead_id: LEAD_ID, new_status: "interested" };
+const PAYLOAD_A_CLOSED_WON_RENT = { lead_id: LEAD_ID, new_status: "closed_won_rent" };
+const PAYLOAD_A_CLOSED_WON_SALE = { lead_id: LEAD_ID, new_status: "closed_won_sale" };
+
 // ── Happy path ────────────────────────────────────────────────────────────────
 
 Deno.test("happy_path_new_a_contacted_sin_note_retorna_200", async () => {
@@ -316,6 +348,55 @@ Deno.test("happy_path_respuesta_contiene_lead_con_nuevo_status", async () => {
     "contacted",
     "lead.status debe ser el nuevo status",
   );
+});
+
+// ── Allowlist de entrada — los 4 valores nuevos del embudo real (V1) ─────────
+//
+// El bug que reencarnaría: si alguien borra una línea de VALID_LEAD_STATUSES
+// (handler.ts:30-42), el picker de la app (mobile ALL_LEAD_STATUSES) le manda
+// ese valor a la EF y esta responde 400 INVALID_INPUT — el mismo bug original.
+// Cada test aquí cruza el allowlist real (no el updater, que ya acepta
+// transiciones libres) y verifica que el body de la respuesta trae el status
+// correcto (fuente independiente: el literal del fixture, no un recompute).
+
+Deno.test("happy_path_a_whatsapp_opened_retorna_200", async () => {
+  const res = await handler(
+    post_auth(PAYLOAD_A_WHATSAPP_OPENED),
+    deps(updater_ok(LEAD_WHATSAPP_OPENED)),
+  );
+  assertEquals(res.status, 200);
+  const body = await res.json();
+  assertEquals(body.lead.status, "whatsapp_opened");
+});
+
+Deno.test("happy_path_a_interested_retorna_200", async () => {
+  const res = await handler(
+    post_auth(PAYLOAD_A_INTERESTED),
+    deps(updater_ok(LEAD_INTERESADO)),
+  );
+  assertEquals(res.status, 200);
+  const body = await res.json();
+  assertEquals(body.lead.status, "interested");
+});
+
+Deno.test("happy_path_a_closed_won_rent_retorna_200", async () => {
+  const res = await handler(
+    post_auth(PAYLOAD_A_CLOSED_WON_RENT),
+    deps(updater_ok(LEAD_CERRADO_RENTA)),
+  );
+  assertEquals(res.status, 200);
+  const body = await res.json();
+  assertEquals(body.lead.status, "closed_won_rent");
+});
+
+Deno.test("happy_path_a_closed_won_sale_retorna_200", async () => {
+  const res = await handler(
+    post_auth(PAYLOAD_A_CLOSED_WON_SALE),
+    deps(updater_ok(LEAD_CERRADO_VENTA)),
+  );
+  assertEquals(res.status, 200);
+  const body = await res.json();
+  assertEquals(body.lead.status, "closed_won_sale");
 });
 
 // ── Shape exacto (riesgo mock-vs-prod) ───────────────────────────────────────
@@ -502,30 +583,6 @@ Deno.test("new_status_numero_retorna_400_invalid_input", async () => {
   assertEquals(res.status, 400);
   const body = await res.json();
   assertEquals(body.error.code, "INVALID_INPUT");
-});
-
-// ── Transiciones inválidas (updater devuelve INVALID_TRANSITION → handler → 400) ──
-// El updater conoce el estado actual (lo consulta en DB) y valida la transición.
-// El handler mapea INVALID_TRANSITION → 400.
-
-Deno.test("transicion_invalida_retorna_400_invalid_transition", async () => {
-  // Simula que el updater rechaza la transición (e.g., closed_won→contacted)
-  const u = updater_transicion_invalida();
-  const res = await handler(post_auth(PAYLOAD_A_CONTACTED), deps(u));
-  assertEquals(res.status, 400);
-  const body = await res.json();
-  assertEquals(body.error.code, "INVALID_TRANSITION");
-});
-
-Deno.test("transicion_invalida_updater_fue_llamado_exactamente_una_vez", async () => {
-  // El handler delegó al updater; el updater es quien rechaza la transición
-  const u = updater_transicion_invalida();
-  await handler(post_auth(PAYLOAD_A_CONTACTED), deps(u));
-  assertEquals(
-    u.calls.length,
-    1,
-    "updater debe ser llamado exactamente una vez incluso al rechazar la transición",
-  );
 });
 
 // ── Auth — CallerVerifier ─────────────────────────────────────────────────────

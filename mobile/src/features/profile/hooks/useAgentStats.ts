@@ -11,7 +11,12 @@
  *   2. leads        = leads .select('id', { count:'exact', head:true })
  *        .eq('agent_id', agent_id).is('deleted_at', null)
  *   3. closed       = leads .select('id', { count:'exact', head:true })
- *        .eq('agent_id', agent_id).in('status', ['closed_won','closed_lost']).is('deleted_at', null)
+ *        .eq('agent_id', agent_id)
+ *        .in('status', ['closed_won','closed_won_rent','closed_won_sale','closed_lost'])
+ *        .is('deleted_at', null)
+ *      (#75.1: lead_status se partió — closed_won queda como legacy para no
+ *      perder leads viejos; closed_won_rent/closed_won_sale son los estados
+ *      vigentes de cierre ganado.)
  *
  * Error handling: degradación graceful — si cualquier query falla (error !=
  * null o el try/catch atrapa una excepción), expone
@@ -73,7 +78,7 @@ export function useAgentStats(agent_id: string): UseAgentStatsState {
             .from('leads')
             .select('id', { count: 'exact', head: true })
             .eq('agent_id', agent_id)
-            .in('status', ['closed_won', 'closed_lost'])
+            .in('status', ['closed_won', 'closed_won_rent', 'closed_won_sale', 'closed_lost'])
             .is('deleted_at', null),
         ]);
 

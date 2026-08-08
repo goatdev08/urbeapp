@@ -23,13 +23,28 @@
 // STUB mínimo — subtarea 15.2 RED phase.
 // La fase GREEN añadirá los tipos derivados de Database['public']['Tables']['leads']['Row'].
 
-/** Estados posibles del lead (enum lead_status, migración 0001). */
+/**
+ * Estados posibles del lead (enum lead_status, migración 0001 +
+ * 20260807000002_lead_status_reconcile_enum — #75.1).
+ *
+ * Los primeros 7 son legacy: Postgres no puede vaciar un enum y hay apps
+ * v1.0.3 en la calle que aún los escriben/leen. Los últimos 4 son los
+ * vigentes desde #75.1 (`new`→`whatsapp_opened`, `closed_won` se partió en
+ * `closed_won_rent`/`closed_won_sale`, `interested` es nuevo). Ver
+ * ALL_LEAD_STATUSES en lead_status_meta.ts para el set que el picker ofrece.
+ */
 export type LeadStatus =
+  // ── Legacy (solo lectura — no se pueden volver a elegir) ─────────────────
   | 'new'
-  | 'contacted'
   | 'in_progress'
-  | 'visit_scheduled'
   | 'closed_won'
+  // ── Vigentes ──────────────────────────────────────────────────────────────
+  | 'whatsapp_opened'
+  | 'contacted'
+  | 'interested'
+  | 'visit_scheduled'
+  | 'closed_won_rent'
+  | 'closed_won_sale'
   | 'closed_lost'
   | 'discarded';
 
@@ -69,6 +84,46 @@ export interface AgentLead {
   origin_property_address: string | null;
   /** Thumbnail del primer video de la propiedad de origen. Null si no hay origin o sin video. */
   origin_property_thumbnail_url: string | null;
+
+  // ── Scoring/actividad (migración 20260807000004, subtarea 75.5/75.6) ──────
+  // Obligatorios: los triggers de la migración mantienen score/level/is_follow_up
+  // siempre poblados en la fila real de `leads` (nunca null) — useAgentLeads.ts
+  // (GREEN 75.6) los pide en el select y los mapea 1:1, sin fallback.
+  /** Score denormalizado (leads.score) — 10 contacto + 4×saves + 1×likes. */
+  score: number;
+  /** Nivel frío/tibio/caliente derivado del score (leads.level). */
+  level: LeadTemperature;
+  /** Bandera de seguimiento pendiente, ortogonal al status (leads.is_follow_up). */
+  is_follow_up: boolean;
+}
+
+/** Nivel de actividad del lead (enum lead_temperature, migración 20260807000004). */
+export type LeadTemperature = 'frio' | 'tibio' | 'caliente';
+
+/**
+ * Modo de orden de useAgentLeads (§19.9, subtarea 75.6):
+ *   - 'score': orden por defecto — leads.score DESC, desempate por updated_at DESC.
+ *   - 'last_contact': modo alternativo ("botón secundario") — leads.last_contact_at
+ *     DESC (nulls al final — un lead sin seguimiento posterior al contacto inicial
+ *     no debe aparecer arriba), desempate por updated_at DESC.
+ */
+export type LeadSortMode = 'score' | 'last_contact';
+
+/**
+ * LeadStatusHistoryEntry — fila del timeline append-only de un lead
+ * (tabla lead_status_history, migración 20260807000003, subtarea 75.1/75.6).
+ * Solo lectura: la tabla la puebla EXCLUSIVAMENTE el trigger
+ * trg_lead_status_history — ningún cliente ni Edge Function escribe aquí.
+ */
+export interface LeadStatusHistoryEntry {
+  id: string;
+  lead_id: string;
+  /** NULL en la fila de creación del lead (no hay "estado anterior"). */
+  old_status: LeadStatus | null;
+  new_status: LeadStatus;
+  /** NULL si el usuario que hizo el cambio fue borrado (ON DELETE SET NULL). */
+  changed_by: string | null;
+  changed_at: string;
 }
 
 /**

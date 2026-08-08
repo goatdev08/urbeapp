@@ -11,12 +11,20 @@
  *
  * Patrón de implementación: replica usePropertyActions (is_working_ref +
  * force_update síncrono ANTES del primer await, DI del cliente, run_action).
+ *
+ * Errores (75.6, defecto #1 del usuario): el mensaje SIEMPRE es español y
+ * NUNCA el texto crudo de supabase-js/Postgres — extract_error_code
+ * (mobile/src/lib/supabase/edge-errors.ts, reusado de auth/registration/
+ * agency/publish) + map_lead_ef_error (lead_error_messages.ts, compartido
+ * con useUpdateLeadNote — misma EF, mismos 5 códigos).
  */
 
 import { useCallback, useMemo, useReducer, useRef } from 'react';
 
 import { useAuth } from '@/features/auth/context';
+import { extract_error_code } from '@/lib/supabase/edge-errors';
 
+import { map_lead_ef_error } from '../lead_error_messages';
 import type { LeadStatus } from '../types';
 
 // ---------------------------------------------------------------------------
@@ -88,8 +96,12 @@ export function useUpdateLeadStatus(deps?: UseUpdateLeadStatusDeps): UseUpdateLe
         force_update();
         return result;
       },
+      // 75.6: error de red/timeout (invoke rechazado) — SIEMPRE el mensaje
+      // neutro en español, nunca err.message crudo (map_lead_ef_error(undefined)
+      // es exactamente ese mensaje — mismo camino que un código no parseable).
       (err: unknown) => {
-        const msg = err instanceof Error ? err.message : 'Error inesperado';
+        void err;
+        const msg = map_lead_ef_error(undefined);
         is_working_ref.current = false;
         error_ref.current = msg;
         force_update();
@@ -107,11 +119,12 @@ export function useUpdateLeadStatus(deps?: UseUpdateLeadStatusDeps): UseUpdateLe
     return (
       client.functions.invoke('update-lead-status', { body }) as Promise<{
         data: unknown;
-        error: { message?: string } | null;
+        error: unknown | null;
       }>
-    ).then(({ error }) => {
+    ).then(async ({ error }) => {
       if (error) {
-        return { ok: false as const, error: error.message ?? 'Error al actualizar el lead' };
+        const code = await extract_error_code(error);
+        return { ok: false as const, error: map_lead_ef_error(code) };
       }
       return { ok: true as const, error: null };
     });

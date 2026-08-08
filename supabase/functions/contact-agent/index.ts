@@ -1,17 +1,15 @@
 // supabase/functions/contact-agent/index.ts
-// Entry point de producción — GREEN 14.9.
+// Entry point de producción — GREEN 14.9, leadRepo extraído a lead_repo.ts en 75.1.
 // Reemplaza los 4 stubs not_implemented con adapters reales (service_role client, RLS bypass).
 // Deploy + smoke E2E pendientes de autorización.
 
 import { make_contact_agent_handler } from "./handler.ts";
+import { make_lead_repo } from "./lead_repo.ts";
 import type {
   CallerVerifier,
   CallerVerifyResult,
-  FindActiveLeadResult,
   IncrementContactCountResult,
-  InsertLeadResult,
   InsertOriginResult,
-  LeadRepo,
   OriginRepo,
   PropertyResolver,
   PropertyResolveResult,
@@ -88,56 +86,9 @@ Deno.serve((req: Request) => {
 
   // ── 3. leadRepo — SELECT + INSERT idempotente sobre leads ─────────────────
   // Índice único parcial leads_agent_user_unique_active (WHERE deleted_at IS NULL)
-  // garantiza 1 lead activo por par (agent_id, user_id).
-  // SQLSTATE 23505 (unique_violation) → error.code === "23505" en supabase-js.
-  const leadRepo: LeadRepo = {
-    async find_active_lead(agent_id: string, user_id: string): Promise<FindActiveLeadResult> {
-      const { data, error } = await client
-        .from("leads")
-        .select("id, status, first_contact_at")
-        .eq("agent_id", agent_id)
-        .eq("user_id", user_id)
-        .is("deleted_at", null)
-        .maybeSingle();
-
-      if (error) return { ok: false, error_code: "DB_ERROR" };
-      if (!data) return { ok: true, found: false };
-
-      return {
-        ok: true,
-        found: true,
-        lead: {
-          id: data.id,
-          status: data.status,
-          first_contact_at: data.first_contact_at,
-        },
-      };
-    },
-
-    async insert_lead(agent_id: string, user_id: string): Promise<InsertLeadResult> {
-      const { data, error } = await client
-        .from("leads")
-        .insert({ agent_id, user_id, status: "new" })
-        // first_contact_at: DEFAULT now() en schema; no hace falta pasarlo.
-        .select("id, status, first_contact_at")
-        .single();
-
-      if (error) {
-        // supabase-js mapea SQLSTATE 23505 (unique_violation) a error.code === "23505"
-        if (error.code === "23505") return { ok: false, error_code: "CONFLICT_23505" };
-        return { ok: false, error_code: "DB_ERROR" };
-      }
-
-      return {
-        ok: true,
-        lead: {
-          id: data.id,
-          status: data.status,
-          first_contact_at: data.first_contact_at,
-        },
-      };
-    },
-  };
+  // garantiza 1 lead activo por par (agent_id, user_id). Implementación real en
+  // lead_repo.ts (75.1) — extraída de aquí para ser testeable con un fake client.
+  const leadRepo = make_lead_repo(client);
 
   // ── 4. originRepo — lead_origin_properties + contact_count ─────────────────
   // insert_origin: upsert con ignoreDuplicates=true implementa ON CONFLICT DO NOTHING.

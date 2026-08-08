@@ -1,0 +1,15 @@
+-- Rollback: 20260807000002_lead_status_reconcile_enum.sql
+-- Postgres NO permite eliminar un valor de un enum (no existe `ALTER TYPE ... DROP
+-- VALUE`); revertir whatsapp_opened/interested/closed_won_rent/closed_won_sale
+-- requeriría recrear el tipo lead_status completo (crear tipo nuevo, migrar la columna
+-- leads.status, dropear el tipo viejo) -- fuera de alcance de un rollback de una sola
+-- migración y peligroso: la migración 20260807000003 ya usa 'whatsapp_opened' para el
+-- data-fix y el trigger de historial referencia el enum completo. No-op documentado,
+-- mismo criterio que supabase/migrations/rollbacks/20260805000002_agency_member_role_values.sql.
+--
+-- Si en el futuro se necesita revertir de verdad: primero revertir/dropear
+-- 20260807000003 (data-fix + lead_status_history + trigger que dependen de los valores
+-- nuevos), confirmar que ninguna fila de leads tiene status en los 4 valores nuevos, y
+-- luego recrear el tipo sin ellos.
+
+-- (sin operación)
