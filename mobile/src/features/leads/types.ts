@@ -101,6 +101,31 @@ export interface AgentLead {
 export type LeadTemperature = 'frio' | 'tibio' | 'caliente';
 
 /**
+ * LeadStats — estadísticas tangibles de actividad de un lead (RPC
+ * `get_lead_stats`, migración 20260808000002, subtarea 112.3/112.4).
+ *
+ * Reemplaza `score`/`level` en la UI (decisión del dueño, tarea #112): en vez
+ * de un puntaje opaco o una etiqueta de temperatura, hechos concretos de lo
+ * que el buscador hizo con la propiedad de origen.
+ *
+ * 🔴 El RPC solo devuelve fila para leads cuyo usuario YA dio like a la
+ * propiedad de origen (el like es el filtro de entrada). Un lead sin like no
+ * tiene fila — se representa como key AUSENTE en el mapa que devuelve
+ * useLeadStats, nunca como este tipo con ceros/false. La UI debe tratar esa
+ * ausencia como "todavía sin señales", no como error.
+ */
+export interface LeadStats {
+  /** true si el usuario terminó de ver el video de origen (event_type='video_completed'). */
+  vio_completo: boolean;
+  /** Número de veces que vio el video de origen (event_type='video_view', deduplicado por sesión). */
+  veces_visto: number;
+  /** true si guardó la propiedad de origen (tabla `saves`). */
+  guardo: boolean;
+  /** Máximo entre eventos/like/save — timestamp de la señal de actividad más reciente. */
+  ultima_actividad: string;
+}
+
+/**
  * Modo de orden de useAgentLeads (§19.9, subtarea 75.6):
  *   - 'score': orden por defecto — leads.score DESC, desempate por updated_at DESC.
  *   - 'last_contact': modo alternativo ("botón secundario") — leads.last_contact_at

@@ -17,6 +17,16 @@
  * Contenido:
  *   - Lead header (fijo): avatar, nombre, dirección de propiedad de origen y
  *     toggle de "en seguimiento" (bookmark).
+ *   - Aviso de solo lectura (#112, FIJO justo debajo del header): antes vivía
+ *     enterrado como texto gris chico dentro del contenido scrolleable, tan
+ *     poco visible que el dueño reportó "no me aparece ninguna opción" al
+ *     abrir el lead de otro agente — la pantalla parecía rota. Los permisos
+ *     NO se amplían (decisión del dueño); esto solo lo explica mejor, como
+ *     banner con ícono, mismo lenguaje que role_error_banner de CRMScreen.
+ *   - Actividad (#112): ActionStatsBar — reemplaza el puntaje/temperatura de
+ *     la 75.6 por los 4 hechos tangibles (like/video completo/guardó/volvió
+ *     a ver) + última actividad. `stats` llega ya resuelto por prop (batch
+ *     de CRMScreen vía useLeadStats) — sin fetch propio aquí.
  *   - Selector de estado: 8 opciones vigentes con etiqueta y badge; badge del
  *     estado actual SIEMPRE visible arriba (aunque sea legacy). El backend no
  *     impone transiciones (75.1), así que el picker no valida ninguna.
@@ -44,7 +54,7 @@ import {
   View,
 } from 'react-native';
 import { Image } from 'expo-image';
-import { BookmarkSimple } from 'phosphor-react-native';
+import { BookmarkSimple, Info } from 'phosphor-react-native';
 
 import { router } from 'expo-router';
 
@@ -52,11 +62,12 @@ import { colors, fonts, radii, spacing } from '@/theme/theme';
 import { open_whatsapp } from '../../property-detail/utils/whatsapp';
 
 import { ALL_LEAD_STATUSES, get_status_meta } from '../lead_status_meta';
-import type { AgentLead, LeadStatus } from '../types';
+import type { AgentLead, LeadStats, LeadStatus } from '../types';
 import { useUpdateLeadStatus } from '../hooks/useUpdateLeadStatus';
 import { useUpdateLeadNote } from '../hooks/useUpdateLeadNote';
 import { useLeadStatusHistory } from '../hooks/useLeadStatusHistory';
 import { format_relative_time } from '../utils/relative_time';
+import { ActionStatsBar } from './ActionStatsBar';
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
@@ -94,6 +105,12 @@ export interface LeadExpandedViewProps {
    * es solo UX. Default false → comportamiento del agente sin cambios.
    */
   readOnly?: boolean;
+  /**
+   * Estadísticas tangibles de actividad (#112) — undefined = el usuario aún
+   * no dio like a la propiedad de origen (ver ActionStatsBar/useLeadStats).
+   * Resuelto por el padre en batch, esta vista NO hace fetch propio.
+   */
+  stats?: LeadStats | undefined;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -112,6 +129,7 @@ export function LeadExpandedView({
   onSuccess,
   onFollowUpChange = () => {},
   readOnly = false,
+  stats,
 }: LeadExpandedViewProps): React.JSX.Element {
   const { update_status, is_updating, error } = useUpdateLeadStatus({ onSuccess });
   const {
@@ -283,6 +301,19 @@ export function LeadExpandedView({
 
         </View>
 
+        {/* Aviso de solo lectura (#112) — FIJO, justo debajo del header, con
+            ícono: antes era un texto gris enterrado en el scroll (el dueño
+            reportó "no me aparece ninguna opción"). Permisos sin cambios —
+            solo se explica mejor. */}
+        {readOnly && (
+          <View style={styles.readonly_banner}>
+            <Info size={16} color={colors.accent_deep} weight="fill" />
+            <Text style={styles.readonly_banner_text}>
+              Solo lectura · este lead pertenece a otro agente de tu equipo
+            </Text>
+          </View>
+        )}
+
         {/* Error del toggle "en seguimiento" — separado del error de nota/estado */}
         {follow_up_hook.error !== null && (
           <View style={styles.error_row}>
@@ -309,12 +340,22 @@ export function LeadExpandedView({
           keyboardShouldPersistTaps="handled"
         >
 
+          {/* Actividad (#112) — barra de acciones tangible, reemplaza el
+              puntaje/temperatura de la 75.6. */}
+          <Text style={styles.section_title}>Actividad</Text>
+          <View style={styles.stats_wrap}>
+            <ActionStatsBar stats={stats} />
+          </View>
+          <View style={styles.divider_bottom} />
+
           {/* Sección de estado — título varía en readOnly, badge SIEMPRE visible */}
           <Text style={styles.section_title}>{readOnly ? 'Estado' : 'Cambiar estado'}</Text>
 
           {/* Badge del estado actual — SIEMPRE visible (FIX3): un lead legacy
               (in_progress/closed_won) no aparece en ALL_LEAD_STATUSES, así que
-              sin esto el picker no mostraría NINGÚN indicador de estado actual. */}
+              sin esto el picker no mostraría NINGÚN indicador de estado actual.
+              El aviso de solo lectura ya no vive aquí (#112) — ver el banner
+              fijo debajo del header, más visible. */}
           <View style={styles.current_status_wrap}>
             <View style={styles.status_row}>
               <View style={[styles.status_dot, { backgroundColor: current_meta.bg }]} />
@@ -324,11 +365,6 @@ export function LeadExpandedView({
                 </Text>
               </View>
             </View>
-            {readOnly && (
-              <Text style={styles.readonly_hint}>
-                Solo lectura · este lead pertenece a otro agente de tu equipo
-              </Text>
-            )}
           </View>
 
           {!readOnly && (
@@ -699,17 +735,37 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
 
+  // ── Aviso de solo lectura (#112) — FIJO debajo del header ────────────────────
+  readonly_banner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.s_8,
+    backgroundColor: colors.accent_tint,
+    borderRadius: radii.r_8,
+    marginHorizontal: spacing.s_16,
+    marginBottom: spacing.s_12,
+    paddingVertical: spacing.s_8,
+    paddingHorizontal: spacing.s_12,
+  },
+  readonly_banner_text: {
+    flex: 1,
+    fontFamily: fonts.sans_semibold,
+    fontSize: 12,
+    color: colors.accent_deep,
+    lineHeight: 16,
+  },
+
+  // ── Actividad (#112) — ActionStatsBar ────────────────────────────────────────
+  stats_wrap: {
+    paddingHorizontal: spacing.s_16,
+    marginBottom: spacing.s_4,
+  },
+
   // ── Badge del estado actual — SIEMPRE visible (FIX3) ─────────────────────────
   current_status_wrap: {
     paddingHorizontal: spacing.s_16,
     gap: spacing.s_8,
     marginBottom: spacing.s_4,
-  },
-  readonly_hint: {
-    fontFamily: fonts.sans,
-    fontSize: 12,
-    color: colors.gray_2,
-    lineHeight: 16,
   },
 
   // ── Actualizando ─────────────────────────────────────────────────────────────

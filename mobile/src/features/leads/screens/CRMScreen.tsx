@@ -40,6 +40,13 @@
  *
  * El mapeo de grupos es inline en esta pantalla (presentacional; sin utils/).
  *
+ * Estadísticas de actividad (#112, decisión del dueño: fuera puntaje/temperatura):
+ * useLeadStats se llama UNA sola vez aquí con TODOS los lead_ids visibles
+ * (batch, evita N+1 — LeadCard/LeadExpandedView reciben `stats` ya resuelto
+ * por prop, sin fetch propio). `lead_ids` va memoizado (useMemo sobre
+ * `leads`, cuya referencia solo cambia con un fetch real) para no disparar
+ * un refetch de estadísticas en cada render.
+ *
  * Paleta: gestión clara (paper) — misma que MyListings / ProfileScreen.
  */
 import React, { useCallback, useMemo, useState } from 'react';
@@ -68,6 +75,7 @@ import { LeadExpandedView } from '../components/LeadExpandedView';
 import { useAgencyAgents } from '../hooks/useAgencyAgents';
 import { useAgencyRole } from '../hooks/useAgencyRole';
 import { useAgentLeads } from '../hooks/useAgentLeads';
+import { useLeadStats } from '../hooks/useLeadStats';
 import type { AgentLead, LeadStatus } from '../types';
 
 // ─── Tipos de filtro ──────────────────────────────────────────────────────────
@@ -140,6 +148,13 @@ export function CRMScreen(): React.ReactElement {
   const [filter, set_filter] = useState<CrmFilter>('all');
   const [search, set_search] = useState('');
   const [selected_lead, set_selected_lead] = useState<AgentLead | null>(null);
+
+  // Estadísticas de actividad (#112) — batch ÚNICO para todos los leads
+  // visibles, nunca uno por tarjeta. `leads` referencia estable entre
+  // renders (solo cambia con un fetch real de useAgentLeads) → lead_ids
+  // memoizado no dispara refetch de estadísticas en cada render.
+  const lead_ids = useMemo(() => leads.map((l) => l.id), [leads]);
+  const { statsByLeadId } = useLeadStats(lead_ids);
 
   const search_query = search.trim().toLowerCase();
   // ponytail: null-safe — leads sin full_name no matchean cuando hay query
@@ -311,7 +326,7 @@ export function CRMScreen(): React.ReactElement {
           data={filtered_leads}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
-            <LeadCard lead={item} onPress={handle_lead_press} />
+            <LeadCard lead={item} onPress={handle_lead_press} stats={statsByLeadId[item.id]} />
           )}
           ItemSeparatorComponent={() => <View style={styles.separator} />}
           ListHeaderComponent={
@@ -325,7 +340,7 @@ export function CRMScreen(): React.ReactElement {
                 </View>
                 {follow_up_leads.map((lead) => (
                   <View key={lead.id} style={styles.follow_up_item}>
-                    <LeadCard lead={lead} onPress={handle_lead_press} />
+                    <LeadCard lead={lead} onPress={handle_lead_press} stats={statsByLeadId[lead.id]} />
                   </View>
                 ))}
                 {follow_up_leads_all.length > FOLLOW_UP_SECTION_CAP && (
@@ -380,6 +395,7 @@ export function CRMScreen(): React.ReactElement {
           // pipeline del equipo). La EF solo autoriza al agente dueño a editar;
           // sin este gate el cambio de estado devolvería UNAUTHORIZED_AGENT.
           readOnly={selected_lead.agent_id !== user?.id}
+          stats={statsByLeadId[selected_lead.id]}
         />
       )}
 

@@ -3,18 +3,23 @@
  *
  * Layout horizontal:
  *   [Avatar 44px] · [Info flex:1 — nombre, dirección origen, badge de estado +
- *   tiempo, badge de nivel + puntaje] · [Thumbnail 56px]
+ *   tiempo, barra de acciones compacta] · [Thumbnail 56px]
  *
- * Nivel/puntaje (75.6, §19.9, defecto #3 del usuario: "la clasificación por
- * actividad no se ve"): fila propia debajo del estado — un pill de color
- * (LEVEL_META, escala Salvia/Arcilla) + el número de puntos, para que se
- * lean de un vistazo sin competir por espacio con el badge de estado.
+ * Barra de acciones (tarea #112, decisión del dueño): reemplaza el badge de
+ * nivel (frío/tibio/caliente) + puntaje de la 75.6 — el dueño no entiende un
+ * índice opaco ni una etiqueta de temperatura, quiere HECHOS. Ver
+ * ActionStatsBar.tsx para los 4 tramos y la regla `stats===undefined` = "sin
+ * señales todavía" (el usuario no ha dado like a la propiedad de origen).
+ * `leads.score`/`leads.level` NO se borran de la base/tipos (apps v1.0.3 +
+ * OTA del mismo día allá afuera leyéndolas) — solo dejan de pintarse aquí.
  *
  * Paleta: gestión clara (paper/white). Sin lógica de fetching — puramente presentacional.
+ * El batch de estadísticas (useLeadStats) vive en CRMScreen, UNA sola llamada
+ * para todos los leads visibles — `stats` llega ya resuelto por prop, sin N+1.
  *
  * ponytail: íconos Text unicode; placeholder de thumbnail = View paper_2 (sin
  *   expo-linear-gradient); tiempo relativo en utils/relative_time.ts (compartido
- *   con el timeline de LeadExpandedView, 75.6).
+ *   con el timeline de LeadExpandedView, 75.6, y con ActionStatsBar).
  */
 
 import React from 'react';
@@ -23,9 +28,10 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 
 import { colors, fonts, radii, shadows, spacing } from '@/theme/theme';
-import { get_level_meta, get_status_meta } from '../lead_status_meta';
-import type { AgentLead } from '../types';
+import { get_status_meta } from '../lead_status_meta';
+import type { AgentLead, LeadStats } from '../types';
 import { format_relative_time } from '../utils/relative_time';
+import { ActionStatsBar } from './ActionStatsBar';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -44,13 +50,15 @@ function get_initial(full_name: string | null): string {
 export interface LeadCardProps {
   lead: AgentLead;
   onPress: (lead: AgentLead) => void;
+  /** undefined = sin señales todavía (el usuario no dio like). Ver ActionStatsBar. */
+  stats?: LeadStats | undefined;
 }
 
 // ─── Componente ───────────────────────────────────────────────────────────────
 
 // React.memo: la lista del CRM filtra client-side; sin memo cada cambio de
 // filtro/búsqueda re-renderizaba todas las cards.
-export const LeadCard = React.memo(function LeadCard({ lead, onPress }: LeadCardProps): React.JSX.Element {
+export const LeadCard = React.memo(function LeadCard({ lead, onPress, stats }: LeadCardProps): React.JSX.Element {
   const {
     full_name,
     profile_photo_url,
@@ -58,12 +66,9 @@ export const LeadCard = React.memo(function LeadCard({ lead, onPress }: LeadCard
     origin_property_address,
     origin_property_thumbnail_url,
     updated_at,
-    score,
-    level,
   } = lead;
 
   const badge        = get_status_meta(status);
-  const level_badge  = get_level_meta(level);
   const display_name = full_name ?? 'Usuario sin nombre';
   const time_label   = format_relative_time(updated_at);
 
@@ -71,7 +76,7 @@ export const LeadCard = React.memo(function LeadCard({ lead, onPress }: LeadCard
     <Pressable
       onPress={() => onPress(lead)}
       accessibilityRole="button"
-      accessibilityLabel={`Lead: ${display_name}, ${badge.label}, ${level_badge.label}, ${score} puntos`}
+      accessibilityLabel={`Lead: ${display_name}, ${badge.label}`}
       style={({ pressed }) => [
         styles.row,
         pressed && styles.row_pressed,
@@ -124,14 +129,9 @@ export const LeadCard = React.memo(function LeadCard({ lead, onPress }: LeadCard
           <Text style={styles.time}>{time_label}</Text>
         </View>
 
-        {/* Fila nivel + puntaje — de un vistazo (75.6, §19.9) */}
-        <View style={styles.score_row}>
-          <View style={[styles.badge, { backgroundColor: level_badge.bg }]}>
-            <Text style={[styles.badge_text, { color: level_badge.text }]}>
-              {level_badge.label}
-            </Text>
-          </View>
-          <Text style={styles.score_text}>{score} pts</Text>
+        {/* Barra de acciones compacta — de un vistazo (#112, reemplaza nivel/puntaje) */}
+        <View style={styles.stats_row}>
+          <ActionStatsBar stats={stats} compact />
         </View>
 
       </View>
@@ -254,17 +254,9 @@ const styles = StyleSheet.create({
     color: colors.gray_1,
   },
 
-  // Nivel + puntaje (75.6)
-  score_row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
+  // Barra de acciones compacta (#112)
+  stats_row: {
     marginTop: 4,
-  },
-  score_text: {
-    fontFamily: fonts.sans_semibold,
-    fontSize: 11,
-    color: colors.gray_2,
   },
 
   // ── Thumbnail de propiedad ─────────────────────────────────────────────────
