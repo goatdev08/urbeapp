@@ -66,9 +66,20 @@ module.exports = ({ config }) => ({
     // Splash de marca: isotipo carnita sobre el verde del logo (misma cara que
     // el ícono de app) — elimina el flash blanco del arranque. El JS lo suelta
     // con hideAsync() cuando las fuentes cargaron (app/_layout.tsx).
+    //
+    // #114 — `image` DEBE tener alfa real. Hasta 2026-08-08 el PNG venía con el
+    // fondo BLANCO OPACO horneado, así que el splash salía como un cuadro blanco
+    // de 220pt sobre el verde (y en Android ese mismo foreground tapaba el
+    // background verde del adaptive icon). El plugin no aplana nada: sin
+    // backgroundColor ni removeTransparency, @expo/image-utils preserva el alfa
+    // — el defecto estaba en el asset. Si alguien vuelve a exportarlo, verificar
+    // el canal alfa ANTES de commitear.
+    //
+    // imageWidth 360 (antes 220): la U ocupa solo ~30% del ancho del asset, así
+    // que sin el cuadro blanco quedaba en ~65pt. Con 360 mide ~106x147pt.
     ['expo-splash-screen', {
       image: './assets/android-icon-foreground.png',
-      imageWidth: 220,
+      imageWidth: 360,
       resizeMode: 'contain',
       backgroundColor: '#1A5E44',
     }],
