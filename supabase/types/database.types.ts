@@ -2,19 +2,25 @@
 // Regenerar con:  supabase gen types typescript --project-id mvpvqmyhrrkwbnpctpuq > supabase/types/database.types.ts
 // (o vía el MCP de Supabase: generate_typescript_types). NO editar a mano.
 //
-// ⚠️ #73.2 (2026-08-09): regen contra `--local` (CLI global de brew,
-// `supabase gen types typescript --local`), con la migración 20260809000003
-// (property_revisions: tabla snapshot doble-versión §15.6 + enum
-// property_revision_status pending/needs_changes/rejected/approved) ya
-// aplicada localmente. Diff mínimo y verificado contra el regen anterior:
-// SOLO agrega la tabla `property_revisions` + el enum nuevo; nada más se
-// movió. Esta migración NO se ha desplegado al remoto (`urbea-app`) todavía
-// -- local y remoto quedan desalineados hasta que una subtarea posterior
-// (§13.9/despliegue de la ola) la aplique allá y regenere de nuevo contra
-// `--project-id`.
+// ⚠️ #73.4 (2026-08-09): regen contra `--local`, con las migraciones
+// 20260809000004/20260809000005 ya aplicadas localmente. Dos regens dentro de
+// la misma subtarea: (1) 20260809000004 -- tabla nueva `property_video_slots`
+// (abstracción de vigencia del slot de video, semilla #76/pagos, PRD
+// §2.2/§17.1); (2) 20260809000005, tras el fix crítico detectado por el
+// coordinador (property_status hardcodeado a 'active' en la RPC pese a que el
+// handler ya mandaba 'pending_review') -- agrega `p_property_status?: string`
+// a los Args de `publish_property_atomic`. Diff mínimo verificado byte-a-byte
+// contra el regen fresco en ambos casos; nada más se movió. Estas migraciones
+// NO se han desplegado al remoto (`urbea-app`) todavía -- local y remoto
+// quedan desalineados hasta que una subtarea posterior (§13.9/despliegue de
+// la ola) las aplique allá y regenere de nuevo contra `--project-id`.
 //
-// El regen anterior (#73.1, 2026-08-09) ya había resuelto: property_status
-// +10 estados operativos del PRD §15.4 (uploading_media, media_failed,
+// El regen anterior (#73.2, 2026-08-09) ya había resuelto: tabla
+// `property_revisions` (snapshot doble-versión §15.6) + enum
+// property_revision_status pending/needs_changes/rejected/approved.
+//
+// El regen de #73.1 (2026-08-09) ya había resuelto: property_status +10
+// estados operativos del PRD §15.4 (uploading_media, media_failed,
 // pending_payment, approved, expired, rented, sold, rejected, deleted_soft,
 // deleted_hard).
 //
@@ -1100,6 +1106,38 @@ export type Database = {
           },
         ]
       }
+      property_video_slots: {
+        Row: {
+          created_at: string
+          id: string
+          is_free: boolean
+          property_id: string
+          started_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_free?: boolean
+          property_id: string
+          started_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_free?: boolean
+          property_id?: string
+          started_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "property_video_slots_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: true
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       property_videos: {
         Row: {
           agent_id: string | null
@@ -1515,6 +1553,7 @@ export type Database = {
           p_operation_type: string
           p_pet_friendly?: boolean
           p_price: number
+          p_property_status?: string
           p_property_type: string
           p_square_meters?: number
           p_student_friendly?: boolean

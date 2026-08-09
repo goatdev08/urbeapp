@@ -1,4 +1,5 @@
--- Tests pgTAP — RPC publish_property_atomic (migración 0017 + 20260721000001)
+-- Tests pgTAP — RPC publish_property_atomic (migración 0017 + 20260721000001 +
+-- 20260809000005)
 -- Subtarea 68.12: upload-first — publicar ENLAZA (UPDATE) el video ya subido a
 -- Cloudflare Stream en vez de INSERTAR una fila nueva. Nueva referencia del
 -- video en el contrato: p_cloudflare_uid (reemplaza p_video_id + p_storage_path).
@@ -11,9 +12,20 @@
 -- toda invocación falla ahora mismo, incluida la del "happy path". El GREEN
 -- crea la migración 20260721000001 con la nueva firma y el enlace (UPDATE)
 -- en vez del INSERT.
+--
+-- 🔴 ACTUALIZADO (73.4, fix crítico detectado por el coordinador antes de
+-- guardian): el RPC ya NO hardcodea status='active' en el INSERT. Recibe
+-- `p_property_status text default 'active'` y lo usa TAL CUAL. La sección
+-- "Enlace feliz" de abajo ahora pasa `p_property_status => 'pending_review'`
+-- explícitamente (el valor real que handler.ts manda en producción, PRD
+-- §14.2) y la asserción #12 verifica ESE status en la fila real -- ya no
+-- 'active'. Se agregó una sección nueva (asserts 34-36) que prueba
+-- explícitamente que el RPC respeta CUALQUIER p_property_status válido
+-- recibido (no que simplemente cambió el hardcode de un valor fijo a otro) y
+-- que el default se preserva si se omite el parámetro.
 
 begin;
-select plan(34);
+select plan(37);
 
 -- ── Fixtures: agentes (uno por escenario, aislados) ───────────────────────────
 -- El trigger handle_new_user (migración 0002) crea public.users al insertar en auth.users.
@@ -235,7 +247,8 @@ begin
       p_allows_no_guarantor => true,
       p_student_friendly    => false,
       p_description         => 'Depto luminoso con balcón.',
-      p_cloudflare_uid      => 'cfuid-happy-01'  -- NUEVO: reemplaza p_video_id + p_storage_path
+      p_cloudflare_uid      => 'cfuid-happy-01',  -- NUEVO: reemplaza p_video_id + p_storage_path
+      p_property_status     => 'pending_review'   -- 73.4: el valor real que manda handler.ts en producción (PRD §14.2)
     );
   insert into result_happy values (true, v_property_id, null, null);
 exception when others then
@@ -250,9 +263,9 @@ select is(
 
 select is(
   (select count(*)::int from public.properties
-    where owner_user_id = '00000000-0000-0000-0000-000000000c01' and status = 'active'),
+    where owner_user_id = '00000000-0000-0000-0000-000000000c01' and status = 'pending_review'),
   1,
-  '12) enlace feliz: se creó exactamente 1 propiedad active para el agente'
+  '12) enlace feliz: se creó exactamente 1 propiedad pending_review para el agente (73.4 -- ya NO active hardcodeado; PRD §14.2)'
 );
 
 select isnt(
@@ -514,7 +527,8 @@ begin
       p_address             => 'Calle Miembro Activo 1',
       p_lat                 => 19.5,
       p_lng                 => -99.5,
-      p_cloudflare_uid      => 'cfuid-miembro-activo-01'
+      p_cloudflare_uid      => 'cfuid-miembro-activo-01',
+      p_property_status     => 'pending_review'  -- 73.4: consistente con lo que manda producción
     );
   insert into result_miembro_activo values (true, v_property_id, null, null);
 exception when others then
@@ -628,7 +642,8 @@ begin
       p_address             => 'Calle Doble Membresia 1',
       p_lat                 => 19.7,
       p_lng                 => -99.7,
-      p_cloudflare_uid      => 'cfuid-doble-membresia-01'
+      p_cloudflare_uid      => 'cfuid-doble-membresia-01',
+      p_property_status     => 'pending_review'  -- 73.4: consistente con lo que manda producción
     );
   insert into result_doble_membresia values (true, v_property_id, null, null);
 exception when others then
@@ -647,6 +662,136 @@ select is(
     where owner_user_id = '00000000-0000-0000-0000-000000000c33'),
   '00000000-0000-0000-0000-000000000c40'::uuid,
   '33) (fix 100) doble membresía: agency_id denormalizado es el de la fila ACTIVE (c40), NO el de la suspended (c43)'
+);
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- Fix derivado 73.4 — p_property_status YA NO hardcodeado a 'active'. Origen:
+-- el coordinador detectó, revisando index.ts directamente (no el reporte del
+-- GREEN), que la primera versión de esta RPC seguía insertando 'active' fijo
+-- pese a que handler.ts ya mandaba 'pending_review' a
+-- propertyPublisher.publish() -- el adapter real en index.ts nunca reenviaba
+-- ese campo, así que en producción NINGUNA propiedad iría jamás a
+-- pending_review. Estos 3 asserts prueban el comportamiento REAL end-to-end
+-- (RPC -> fila en `properties`), no un mock del handler:
+--   34) el valor real que manda producción (pending_review) se persiste.
+--   35) un valor distinto explícito (active) también se persiste TAL CUAL --
+--       prueba que el RPC de verdad RESPETA el parámetro recibido, no que
+--       solo se cambió el hardcode de un literal fijo por otro.
+--   36) si se omite el parámetro, el default de columna ('active') se
+--       preserva -- backward-compat para cualquier caller que no lo pase.
+-- ════════════════════════════════════════════════════════════════════════════
+
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-000000000c60', 'agente_status_pending_review@urbea.mx'),
+  ('00000000-0000-0000-0000-000000000c61', 'agente_status_active_explicito@urbea.mx'),
+  ('00000000-0000-0000-0000-000000000c62', 'agente_status_default@urbea.mx');
+update public.users set role = 'agent'
+ where id in (
+   '00000000-0000-0000-0000-000000000c60',
+   '00000000-0000-0000-0000-000000000c61',
+   '00000000-0000-0000-0000-000000000c62'
+ );
+
+-- 34) p_property_status => 'pending_review' (el valor real de producción)
+
+insert into public.property_videos
+  (id, property_id, agent_id, status, position, cloudflare_uid, tus_upload_url)
+values (
+  '00000000-0000-0000-0000-000000000c60',
+  null,
+  '00000000-0000-0000-0000-000000000c60',
+  'processing',
+  1,
+  'cfuid-status-pending-review-01',
+  'https://upload.example/status-pending-review'
+);
+
+select public.publish_property_atomic(
+  p_user_id             => '00000000-0000-0000-0000-000000000c60'::uuid,
+  p_operation_type      => 'rent',
+  p_property_type       => 'departamento',
+  p_price               => 5000.00,
+  p_address             => 'Calle Status Pending Review 1',
+  p_lat                 => 19.8,
+  p_lng                 => -99.8,
+  p_cloudflare_uid      => 'cfuid-status-pending-review-01',
+  p_property_status     => 'pending_review'
+);
+
+select is(
+  (select status::text from public.properties
+    where owner_user_id = '00000000-0000-0000-0000-000000000c60'),
+  'pending_review',
+  '34) p_property_status=''pending_review'' (el que manda handler.ts en producción) deja la fila real en pending_review -- ya NO hardcodeado a active (fix derivado 73.4)'
+);
+
+-- 35) p_property_status => 'active' explícito -- prueba que el RPC RESPETA
+-- cualquier valor válido recibido (no que el hardcode simplemente se movió de
+-- 'active' a 'pending_review').
+
+insert into public.property_videos
+  (id, property_id, agent_id, status, position, cloudflare_uid, tus_upload_url)
+values (
+  '00000000-0000-0000-0000-000000000c61',
+  null,
+  '00000000-0000-0000-0000-000000000c61',
+  'processing',
+  1,
+  'cfuid-status-active-explicito-01',
+  'https://upload.example/status-active-explicito'
+);
+
+select public.publish_property_atomic(
+  p_user_id             => '00000000-0000-0000-0000-000000000c61'::uuid,
+  p_operation_type      => 'rent',
+  p_property_type       => 'departamento',
+  p_price               => 5000.00,
+  p_address             => 'Calle Status Active Explicito 1',
+  p_lat                 => 19.9,
+  p_lng                 => -99.9,
+  p_cloudflare_uid      => 'cfuid-status-active-explicito-01',
+  p_property_status     => 'active'
+);
+
+select is(
+  (select status::text from public.properties
+    where owner_user_id = '00000000-0000-0000-0000-000000000c61'),
+  'active',
+  '35) p_property_status=''active'' explícito deja la fila real en active -- el RPC respeta CUALQUIER status válido recibido, no está fijo a pending_review'
+);
+
+-- 36) Sin p_property_status (omitido) -- el default del parámetro sigue
+-- siendo 'active', backward-compat para cualquier caller que no lo pase.
+
+insert into public.property_videos
+  (id, property_id, agent_id, status, position, cloudflare_uid, tus_upload_url)
+values (
+  '00000000-0000-0000-0000-000000000c62',
+  null,
+  '00000000-0000-0000-0000-000000000c62',
+  'processing',
+  1,
+  'cfuid-status-default-01',
+  'https://upload.example/status-default'
+);
+
+select public.publish_property_atomic(
+  p_user_id             => '00000000-0000-0000-0000-000000000c62'::uuid,
+  p_operation_type      => 'rent',
+  p_property_type       => 'departamento',
+  p_price               => 5000.00,
+  p_address             => 'Calle Status Default 1',
+  p_lat                 => 20.0,
+  p_lng                 => -100.0,
+  p_cloudflare_uid      => 'cfuid-status-default-01'
+  -- p_property_status omitido a propósito
+);
+
+select is(
+  (select status::text from public.properties
+    where owner_user_id = '00000000-0000-0000-0000-000000000c62'),
+  'active',
+  '36) p_property_status omitido usa el default ''active'' del parámetro -- backward-compat para cualquier caller que no lo pase'
 );
 
 select * from finish();

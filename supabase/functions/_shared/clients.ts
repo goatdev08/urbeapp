@@ -16,6 +16,12 @@ import type {
   SignedGetItem,
 } from "../mint-r2-url/types.ts";
 
+import type {
+  DuplicateCheckResult,
+  DuplicatePropertyChecker,
+  VideoStatusCheckResult,
+  VideoStatusChecker,
+} from "../publish-property/types.ts";
 import type { InvitationDb, InvitationTokenRow } from "./invitation.ts";
 import type {
   AuthAdminClient,
@@ -1154,6 +1160,97 @@ export function make_poster_url_minter(
       }
 
       return results;
+    },
+  };
+}
+
+/**
+ * Adaptador real de VideoStatusChecker (73.4, pipeline de moderación PRD §15.2).
+ * Consulta property_videos por (cloudflare_uid, agent_id) — el video en vuelo
+ * upload-first (68.12): agent_id es el dueño del video, cloudflare_uid la
+ * referencia a Cloudflare Stream que el payload de publish-property manda a
+ * enlazar. Sin fila (uid ajeno, inexistente o soft-deleted) → VIDEO_NOT_FOUND.
+ * status != 'ready' → VIDEO_NOT_READY. duration_seconds fuera de [60,120]
+ * (inclusive, PRD §14 paso 5) → VIDEO_DURATION_INVALID.
+ */
+export function make_video_status_checker(
+  client: SupabaseClient,
+): VideoStatusChecker {
+  return {
+    async check(
+      cloudflare_uid: string,
+      agent_id: string,
+    ): Promise<VideoStatusCheckResult> {
+      const { data, error } = await client
+        .from("property_videos")
+        .select("status, duration_seconds")
+        .eq("cloudflare_uid", cloudflare_uid)
+        .eq("agent_id", agent_id)
+        .is("deleted_at", null)
+        .maybeSingle();
+
+      if (error || !data) {
+        return { ok: false, error_code: "VIDEO_NOT_FOUND" };
+      }
+      if (data.status !== "ready") {
+        return { ok: false, error_code: "VIDEO_NOT_READY" };
+      }
+      const duration = data.duration_seconds as number | null;
+      if (duration === null || duration < 60 || duration > 120) {
+        return { ok: false, error_code: "VIDEO_DURATION_INVALID" };
+      }
+      return { ok: true, duration_seconds: duration };
+    },
+  };
+}
+
+// Estados de properties que NO cuentan como duplicado (73.4, regla exacta en
+// publish-property/types.ts): una publicación rechazada o eliminada del mismo
+// owner+dirección no bloquea — el agente puede resubir.
+const DUPLICATE_EXCLUDED_STATUSES = ["rejected", "deleted_soft", "deleted_hard"];
+
+/**
+ * Adaptador real de DuplicatePropertyChecker (73.4, pipeline de moderación PRD
+ * §15.2). Trae las direcciones NO borradas del mismo owner_user_id cuyo status
+ * no esté en DUPLICATE_EXCLUDED_STATUSES, y compara en JS con
+ * lower(trim(...)) en AMBOS lados — evita depender de ilike (trata % y _ como
+ * comodines, inseguro con direcciones arbitrarias) para una comparación que en
+ * realidad es de igualdad normalizada, no de patrón.
+ * Fail-open (isDuplicate: false) ante error de red/DB — mismo criterio que
+ * make_phone_exists: un falso bloqueo por un timeout transitorio es peor que
+ * dejar pasar una publicación que, en el peor caso, un admin revisa en el
+ * pipeline de moderación de todas formas (pending_review, nunca auto-active).
+ */
+export function make_duplicate_property_checker(
+  client: SupabaseClient,
+): DuplicatePropertyChecker {
+  return {
+    async check(user_id: string, address: string): Promise<DuplicateCheckResult> {
+      const normalized_address = address.trim().toLowerCase();
+
+      const { data, error } = await client
+        .from("properties")
+        .select("address")
+        .eq("owner_user_id", user_id)
+        .is("deleted_at", null)
+        .not(
+          "status",
+          "in",
+          `(${DUPLICATE_EXCLUDED_STATUSES.join(",")})`,
+        );
+
+      if (error || !data) {
+        console.error(
+          "duplicate_property_checker: query falló, fail-open (isDuplicate=false)",
+          error,
+        );
+        return { isDuplicate: false };
+      }
+
+      const isDuplicate = (data as Array<{ address: string }>).some(
+        (row) => row.address.trim().toLowerCase() === normalized_address,
+      );
+      return { isDuplicate };
     },
   };
 }
