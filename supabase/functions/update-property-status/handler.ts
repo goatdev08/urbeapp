@@ -21,9 +21,17 @@ import type {
 } from "./types.ts";
 
 // ── Enums válidos para esta EF ────────────────────────────────────────────────
-// Solo draft|active|paused|closed. pending_review/needs_changes/suspended → moderación (EF distinta).
+// draft|active|paused|closed|rented|sold. pending_review/needs_changes/suspended → moderación
+// (EF distinta). rented/sold (§16, 73.8): cierre y baja — new_status DIRECTO, sin closed_reason.
 
-const VALID_STATUSES = new Set<string>(["draft", "active", "paused", "closed"]);
+const VALID_STATUSES = new Set<string>([
+  "draft",
+  "active",
+  "paused",
+  "closed",
+  "rented",
+  "sold",
+]);
 const VALID_CLOSED_REASONS = new Set<string>(["rented", "sold", "withdrawn", "expired"]);
 
 // ── Validación del payload ────────────────────────────────────────────────────
@@ -59,7 +67,7 @@ function parse_input(raw: unknown): ParseResult {
   }
   if (typeof obj.new_status !== "string" || !VALID_STATUSES.has(obj.new_status)) {
     return invalid(
-      "new_status debe ser 'draft', 'active', 'paused' o 'closed'",
+      "new_status debe ser 'draft', 'active', 'paused', 'closed', 'rented' o 'sold'",
     );
   }
 
@@ -85,8 +93,21 @@ function parse_input(raw: unknown): ParseResult {
         "closed_reason debe ser 'rented', 'sold', 'withdrawn' o 'expired'",
       );
     }
+  } else if (new_status === "rented" || new_status === "sold") {
+    // Cierre y baja (§16, 73.8): rented/sold ya son autodescriptivos — closed_reason sobra.
+    // DECISIÓN (test-author, 73.8): rechazar con 400 CLOSED_REASON_NOT_ALLOWED, no ignorar.
+    if (
+      has_closed_reason &&
+      closed_reason_value !== null &&
+      closed_reason_value !== undefined
+    ) {
+      return invalid(
+        "closed_reason no debe enviarse cuando new_status es 'rented' o 'sold'",
+        "CLOSED_REASON_NOT_ALLOWED",
+      );
+    }
   } else {
-    // En transiciones no-cierre, closed_reason es inválido si tiene valor real
+    // En transiciones no-cierre (draft/active/paused), closed_reason es inválido si tiene valor real
     // DECISIÓN: rechazar (400), no ignorar — indica confusión del caller
     if (
       has_closed_reason &&
