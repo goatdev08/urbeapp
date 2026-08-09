@@ -1,20 +1,28 @@
 /**
  * Wizard layout de publicación de propiedades (Expo Router SDK 56).
  * Subtarea 8.1 — Create wizard layout with step indicator and navigation.
+ * 73.3 — pasa de 3 a 5 pasos (PRD §14) + autoguardado de borrador (§14.1).
  *
  * Estructura de rutas:
  *   app/(protected)/publish/_layout.tsx  ← este archivo
- *   app/(protected)/publish/step1.tsx
- *   app/(protected)/publish/step2.tsx
- *   app/(protected)/publish/step3.tsx
+ *   app/(protected)/publish/step1.tsx    (operación)
+ *   app/(protected)/publish/step2.tsx    (tipo de propiedad)
+ *   app/(protected)/publish/step3.tsx    (obligatorios: precio/dirección/mapa/price_visible)
+ *   app/(protected)/publish/step4.tsx    (opcionales: descripción/amenidades)
+ *   app/(protected)/publish/step5.tsx    (video)
  *
  * 17.8 — edit mode:
  *   Cuando se navega con params.propertyId, se activa modo edición:
  *   FormPrefiller carga la propiedad y pre-llena el PublishFormContext.
  *
+ * 73.3 — autoguardado de borrador (§14.1):
+ *   DraftAutosaver monta useDraftAutosave(state) dentro del Provider, SOLO en
+ *   modo creación (el hook mismo hace no-op en edit_mode, pero el guard aquí
+ *   evita instanciar el efecto/timer de más en edit mode).
+ *
  * El grupo (protected) ya aplica el guard de autenticación (ProtectedLayout).
  * Este layout añade:
- *   1. PublishFormProvider — estado compartido entre los 3 pasos.
+ *   1. PublishFormProvider — estado compartido entre los 5 pasos.
  *   2. WizardHeader        — StepIndicator persistente que lee la ruta activa.
  *   3. Stack               — navegación nativa entre pasos, sin header nativo.
  */
@@ -25,6 +33,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { PublishFormProvider, usePublishForm } from '@/features/publish/store/PublishFormContext';
 import { useLoadProperty } from '@/features/publish/hooks/useLoadProperty';
+import { useDraftAutosave } from '@/features/publish/hooks/useDraftAutosave';
 import { StepIndicator } from '@/components/StepIndicator';
 import { BackButton } from '@/components/BackButton';
 import { spacing } from '@/theme/theme';
@@ -33,10 +42,14 @@ import { spacing } from '@/theme/theme';
 // Mapa segmento → número de paso
 // ---------------------------------------------------------------------------
 
+const TOTAL_STEPS = 5;
+
 const STEP_MAP: Record<string, number> = {
   step1: 1,
   step2: 2,
   step3: 3,
+  step4: 4,
+  step5: 5,
 };
 
 // ---------------------------------------------------------------------------
@@ -52,7 +65,7 @@ function WizardHeader() {
   const last_segment = segments[segments.length - 1] ?? '';
   const current_step = STEP_MAP[last_segment] ?? 1;
 
-  // En step2/3 → back normal (paso anterior dentro del stack anidado de publish).
+  // En step2-5 → back normal (paso anterior dentro del stack anidado de publish).
   // En step1 → el stack anidado NO burbujea el back al padre, así que popeamos
   // explícitamente el Stack de (protected) para salir del wizard hacia el feed.
   function handle_back() {
@@ -65,13 +78,13 @@ function WizardHeader() {
     else if (router.canGoBack()) router.back();
   }
 
-  // Header persistente sobre los 3 pasos, con paddingTop del notch para que no
+  // Header persistente sobre los 5 pasos, con paddingTop del notch para que no
   // lo tape la Dynamic Island.
   return (
     <View style={[styles.wizard_header, { paddingTop: insets.top + spacing.s_8 }]}>
       <BackButton onPress={handle_back} />
       <View style={styles.wizard_indicator}>
-        <StepIndicator current={current_step} total={3} />
+        <StepIndicator current={current_step} total={TOTAL_STEPS} />
       </View>
       {/* Spacer del ancho del BackButton (40) para que el indicador quede
           centrado respecto a la pantalla, no respecto al espacio a la derecha. */}
@@ -92,8 +105,8 @@ function FormPrefiller({ property_id }: { property_id: string }) {
   // ponytail: ref (no state) — es solo un guard, no debe provocar re-render.
   const prefilled = useRef(false);
 
-  // Activa el modo edición en el contexto de inmediato. Al leerse en step3 desde
-  // el contexto (no de la URL), sobrevive a la navegación step1→step2→step3.
+  // Activa el modo edición en el contexto de inmediato. Al leerse en cada step
+  // desde el contexto (no de la URL), sobrevive a la navegación step1→…→step5.
   useEffect(() => {
     update({ edit_mode: true, property_id });
   }, [property_id, update]);
@@ -131,6 +144,20 @@ function CleanupOnUnmount() {
 }
 
 // ---------------------------------------------------------------------------
+// DraftAutosaver — engancha useDraftAutosave(state) al contexto del wizard
+// (73.3, §14.1). Solo se monta en modo creación (renderizado condicional en
+// el padre, igual que FormPrefiller) — el hook mismo también es un no-op en
+// edit_mode por diseño, pero evitamos instanciar el efecto/timer de más
+// cuando ya sabemos por el param de URL que esto es una edición.
+// ---------------------------------------------------------------------------
+
+function DraftAutosaver() {
+  const { state } = usePublishForm();
+  useDraftAutosave(state);
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // PublishWizardLayout
 // ---------------------------------------------------------------------------
 
@@ -146,6 +173,9 @@ export default function PublishWizardLayout() {
 
         {/* Pre-llena el form en edit mode (sin render visible) */}
         {property_id !== null && <FormPrefiller property_id={property_id} />}
+
+        {/* Autoguarda como draft mientras el usuario avanza — SOLO en creación */}
+        {property_id === null && <DraftAutosaver />}
 
         {/* Indicador de progreso persistente sobre todos los pasos */}
         <WizardHeader />

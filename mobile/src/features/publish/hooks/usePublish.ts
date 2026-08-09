@@ -100,6 +100,7 @@ export function usePublish(deps?: UsePublishDeps): UsePublishResult {
         ...(state.lat !== null && state.lng !== null
           ? { location: `SRID=4326;POINT(${state.lng} ${state.lat})` }
           : {}),
+        price_visible: state.price_visible,
         pet_friendly: state.pet_friendly,
         allows_no_guarantor: state.allows_no_guarantor,
         student_friendly: state.student_friendly,
