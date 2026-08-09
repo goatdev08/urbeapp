@@ -76,6 +76,26 @@ export function validate_step3(state: PublishFormState): ValidationResult {
 }
 
 // ---------------------------------------------------------------------------
+// Step 4 — detalles opcionales (73.3). STUB fase RED: la implementación real
+// (siempre {valid:true, errors:{}}) es responsabilidad del GREEN del agente
+// mobile. No tocar aquí — solo la firma para que el test-suite compile y
+// falle por excepción, no por import roto.
+// ---------------------------------------------------------------------------
+
+export function validate_step4(_state: PublishFormState): ValidationResult {
+  throw new Error('not_implemented');
+}
+
+// ---------------------------------------------------------------------------
+// Step 5 — video (73.3: renombrado 1:1 de lo que hoy es validate_step3).
+// STUB fase RED: el GREEN mueve el cuerpo de validate_step3 aquí. No tocar.
+// ---------------------------------------------------------------------------
+
+export function validate_step5(_state: PublishFormState): ValidationResult {
+  throw new Error('not_implemented');
+}
+
+// ---------------------------------------------------------------------------
 // getPropertyPayload — transforma el state al shape de la EF publish-property.
 // Precondición: los 3 pasos ya validaron (lanza si hay campos nulos obligatorios).
 // ---------------------------------------------------------------------------

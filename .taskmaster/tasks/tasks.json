@@ -5218,15 +5218,16 @@
             "id": 3,
             "title": "Wizard 5 pasos + autoguardado de borrador",
             "description": "Cliente del wizard (§14) con autosave a draft sin confirmación (§14.1); paso 5 integra la subida tus de Stream (tarea 68).",
-            "details": "mobile/: 5 pasos (operación, tipo, obligatorios con dirección en mapa + m2/rec/baños/precio/visibilidad, opcionales, video). Salir en cualquier punto → guarda draft (RPC/EF por paso, sin confirmar). Borrador en \"Mis publicaciones\". Paso 5 usa mint-upload-url + cliente tus (68). Dirección usa catálogo MX (72.1). Ubicación siempre con dirección exacta (§12.5). NO crítica de lógica pura → verificación reforzada.\n<info added on 2026-08-09T18:11:58.200Z>\nWizard refactor from 3→5 steps with two new steps plus useDraftAutosave.ts hook for persistence to status='draft' with debounce. PublishFormContext and validation.ts extended for steps 4-5. Exact content of steps 4-5 to be confirmed against urbea-identidad-visual.html mockup before coding UI. Agent=mobile, skills=urbea-expo+urbea-testing. Criticality=CRÍTICA (useDraftAutosave.ts hook and validation.ts extension fall under hooks/** and validation* paths triggering strict TDD; step JSX components themselves are non-critical). RED→GREEN→guardian flow required for useDraftAutosave.ts and validation.ts changes only. Footprint: mobile/app/(protected)/publish/{step1.tsx,step2.tsx,step3.tsx,step4.tsx(new),step5.tsx(new),_layout.tsx}, mobile/src/features/publish/{store/PublishFormContext.tsx,types.ts,hooks/useDraftAutosave.ts(new),validation.ts}.\n</info added on 2026-08-09T18:11:58.200Z>",
+            "details": "mobile/: 5 pasos (operación, tipo, obligatorios con dirección en mapa + m2/rec/baños/precio/visibilidad, opcionales, video). Salir en cualquier punto → guarda draft (RPC/EF por paso, sin confirmar). Borrador en \"Mis publicaciones\". Paso 5 usa mint-upload-url + cliente tus (68). Dirección usa catálogo MX (72.1). Ubicación siempre con dirección exacta (§12.5). NO crítica de lógica pura → verificación reforzada.\n<info added on 2026-08-09T18:11:58.200Z>\nWizard refactor from 3→5 steps with two new steps plus useDraftAutosave.ts hook for persistence to status='draft' with debounce. PublishFormContext and validation.ts extended for steps 4-5. Exact content of steps 4-5 to be confirmed against urbea-identidad-visual.html mockup before coding UI. Agent=mobile, skills=urbea-expo+urbea-testing. Criticality=CRÍTICA (useDraftAutosave.ts hook and validation.ts extension fall under hooks/** and validation* paths triggering strict TDD; step JSX components themselves are non-critical). RED→GREEN→guardian flow required for useDraftAutosave.ts and validation.ts changes only. Footprint: mobile/app/(protected)/publish/{step1.tsx,step2.tsx,step3.tsx,step4.tsx(new),step5.tsx(new),_layout.tsx}, mobile/src/features/publish/{store/PublishFormContext.tsx,types.ts,hooks/useDraftAutosave.ts(new),validation.ts}.\n</info added on 2026-08-09T18:11:58.200Z>\n<info added on 2026-08-09T19:51:31.855Z>\nPhase RED PASS: validation.ts extended with validate_step1/step2/step3/step4/step5 + get_property_payload rebase + useDraftAutosave.ts hook (new) covered by 50 tests (40 validation.test.ts + 10 useDraftAutosave.test.tsx). 32 failing by assertion (7 passing by design: 5 no-regression validate_video_size from 49.2, 2 no-regression get_property_payload cloudflare_uid from 68.12). pnpm tsc --noEmit clean, pnpm lint 0 errors.\n\nSeams under test: validate_step1..5(state): {valid, errors}, get_property_payload(state): PublishFormPayload, useDraftAutosave(state, deps?): void. Observable contracts via shape ValidationResult (unchanged) and injected Supabase client (from/insert/update). STUBs throw 'not_implemented' for step4/step5 validators and entire useDraftAutosave hook to force assertion failures.\n\nEdge cases enumerated (29 new/adapted): split operation_type (V1-1/1-2) vs property_type (V2-1/2-3) across steps 1-2, mandatory fields price/address/coords/price_visible step3 (V3-1..8), always-valid optional details step4 (V4-1/2/3), video cloudflare_uid step5 (V5-1..4), payload price_visible (P-1/2), autosave debounce/collapse/edit-mode-gate/min-fields (EC-1..6), regression-guard edit_mode from state not URL (EC-8), unmount cleanup (EC-9), flip to edit cancels (EC-10), fail-soft on error (EC-7). DRAFT_AUTOSAVE_DEBOUNCE_MS=1500 exported. Location payload EWKT 'SRID=4326;POINT(lng lat)' per usePublish.ts edit mode. Gate = NOT NULL quintet (operation_type, property_type, price, address, location).\n\nFootprint: mobile/src/features/publish/__tests__/{validation.test.ts (rewritten 40 tests), useDraftAutosave.test.tsx (new 10 tests)}, mobile/src/features/publish/{validation.ts (2 STUB validators added), hooks/useDraftAutosave.ts (new STUB throws)}. Zero implementation logic written. Ready for GREEN.\n</info added on 2026-08-09T19:51:31.855Z>",
             "testStrategy": "pnpm tsc/lint; smoke: salir a mitad → draft persiste y se reanuda; completar 5 pasos.",
-            "status": "pending",
+            "status": "in-progress",
             "dependencies": [
               1,
               2
             ],
             "priority": "high",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-08-09T19:37:47.259Z"
           },
           {
             "id": 4,
@@ -5324,7 +5325,7 @@
             "parentId": "undefined"
           }
         ],
-        "updatedAt": "2026-08-09T19:37:00.319Z"
+        "updatedAt": "2026-08-09T19:37:47.259Z"
       },
       {
         "id": "74",
@@ -7157,12 +7158,14 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-08-09T19:37:00.319Z",
+      "lastModified": "2026-08-09T19:37:47.259Z",
       "taskCount": 119,
       "completedCount": 71,
       "tags": [
         "master"
-      ]
+      ],
+      "created": "2026-08-09T19:51:04.535Z",
+      "description": "Tasks for master context"
     }
   }
 }
