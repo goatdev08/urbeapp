@@ -99,19 +99,32 @@ select plan(35);
 -- transacción revertida).
 --   OW1 dueño de P1 (sección FK restrict), P3 (sección FK cascade) y P4
 --       (sección índice único)                                       : ...073201
---   OW2 dueño de P2 (sección RLS/visibilidad)                        : ...073202
+--   OW2 dueño de P2 (sección RLS/visibilidad) y P5 (sección escritura): ...073202
 --   ADM admin global                                                 : ...073203
---   OTH usuario autenticado sin relación con P1/P2/P3/P4              : ...073204
+--   OTH usuario autenticado sin relación con P1/P2/P3/P4/P5           : ...073204
 --   SB  sometedor desechable (sección FK restrict on delete usuario) : ...073205
 --
--- ⚠️ CORRECCIÓN post-GREEN (guardian/orquestador, 2026-08-09): P1 originalmente
--- se reusaba en DOS secciones (FK2 le sometía una revisión pending vía SB, Y
--- la sección de índice único la reusaba como "primera pending") — con la
--- tabla ya viva, la fila de FK2 seguía existiendo cuando UQ1 corría, así que
--- "la primera pending" en realidad era la SEGUNDA y el índice único la
--- rechazaba correctamente, tumbando UQ1 por un bug del fixture, no de la
--- implementación. Se separó: P1 queda EXCLUSIVA de FK2; la sección de índice
--- único gana su propia propiedad dedicada, P4 (...073214).
+-- ⚠️ CORRECCIÓN post-GREEN #1 (guardian/orquestador, 2026-08-09): P1
+-- originalmente se reusaba en DOS secciones (FK2 le sometía una revisión
+-- pending vía SB, Y la sección de índice único la reusaba como "primera
+-- pending") — con la tabla ya viva, la fila de FK2 seguía existiendo cuando
+-- UQ1 corría, así que "la primera pending" en realidad era la SEGUNDA y el
+-- índice único la rechazaba correctamente, tumbando UQ1 por un bug del
+-- fixture, no de la implementación. Se separó: P1 queda EXCLUSIVA de FK2; la
+-- sección de índice único gana su propia propiedad dedicada, P4 (...073214).
+--
+-- ⚠️ CORRECCIÓN post-GREEN #2 (guardian, mutación real, 2026-08-09): WR1
+-- (sección de escritura) reusaba P2, que RLS_setup ya había cargado con una
+-- revisión pending — el INSERT de WR1 tronaba con 23505 (duplicate key del
+-- índice único parcial), NO con el 42501 (permission denied) que WR1 dice
+-- estar probando, y `throws_ok(sql, null, ...)` acepta CUALQUIER SQLSTATE, así
+-- que el assert pasaba por la razón incorrecta — el guardian abrió una policy
+-- de INSERT completamente permisiva y el archivo siguió en 35/35 verde, sin
+-- detectar la puerta de escritura abierta. Fix: WR1 gana su propia propiedad
+-- dedicada SIN NINGUNA revisión previa, P5 (...073215), y el throws_ok ahora
+-- exige el SQLSTATE explícito '42501' (permission denied — cubre tanto grant
+-- ausente como violación de policy RLS, y excluye el 23505 que enmascaraba
+-- el bug).
 -- ════════════════════════════════════════════════════════════════════════════
 
 insert into auth.users (id, email) values
@@ -135,7 +148,10 @@ insert into public.properties (id, owner_user_id, property_type, operation_type,
    extensions.ST_SetSRID(extensions.ST_MakePoint(-103.34, 20.66), 4326)::extensions.geography, 8000, 'active'),
   ('00000000-0000-0000-0000-000000073214', '00000000-0000-0000-0000-000000073201',
    'departamento', 'sale', 'Fixture property_revisions 7302 — P4 (indice unico parcial, DEDICADA, no reusa P1)',
-   extensions.ST_SetSRID(extensions.ST_MakePoint(-103.37, 20.69), 4326)::extensions.geography, 3200000, 'active');
+   extensions.ST_SetSRID(extensions.ST_MakePoint(-103.37, 20.69), 4326)::extensions.geography, 3200000, 'active'),
+  ('00000000-0000-0000-0000-000000073215', '00000000-0000-0000-0000-000000073202',
+   'local', 'sale', 'Fixture property_revisions 7302 — P5 (WR1 escritura, DEDICADA, SIN revision previa, no reusa P2)',
+   extensions.ST_SetSRID(extensions.ST_MakePoint(-103.38, 20.70), 4326)::extensions.geography, 1800000, 'active');
 
 -- Helper de impersonación inline (mismo patrón que 02/08/18/21/25/27/28/29/30/31/33_*).
 create or replace function pg_temp.act_as(p_uid uuid, p_role text default 'authenticated')
@@ -365,8 +381,9 @@ select lives_ok(
 reset role;
 
 -- RLS4 [DELTA] anon no ve NINGUNA revisión, aunque a estas alturas del archivo
--- ya existen varias filas (P1: pending+approved+rejected; P2: pending) — no es
--- "tabla vacía", es fail-closed real.
+-- ya existen varias filas (P1: pending de FK2; P4: pending+approved+rejected
+-- de la sección de índice único; P2: pending de RLS_setup) — no es "tabla
+-- vacía", es fail-closed real.
 select pg_temp.act_as(null, 'anon');
 select lives_ok(
   $$
@@ -388,16 +405,26 @@ reset role;
 -- 4) ESCRITURA [INVARIANTE] — authenticated (ni siquiera el dueño) puede
 --    escribir directo; la escritura es EXCLUSIVA de service_role/Edge Function
 --    (73.6, fuera de alcance de esta subtarea). Ya "falla" hoy (relación
---    inexistente); debe seguir fallando tras GREEN, pero por RLS (sin policy
---    de INSERT para authenticated) — el guardian debe re-verificar la razón.
+--    inexistente); debe seguir fallando tras GREEN, pero por RLS/grant (sin
+--    policy ni grant de INSERT para authenticated) — el guardian debe
+--    re-verificar la razón. Usa P5 — DEDICADA, SIN ninguna revisión previa
+--    (ni pending ni needs_changes), para que el INSERT solo pueda chocar con
+--    el guardado de escritura bajo prueba, nunca con el índice único parcial
+--    (de ahí el SQLSTATE explícito '42501' = permission denied, que excluye
+--    el 23505 = duplicate key de un fixture contaminado).
 -- ════════════════════════════════════════════════════════════════════════════
 
-select pg_temp.act_as('00000000-0000-0000-0000-000000073202'); -- OW2, dueño de P2
+select pg_temp.act_as('00000000-0000-0000-0000-000000073202'); -- OW2, dueño de P5
+-- ⚠️ GOTCHA pgTAP verificado en esta sesión: throws_ok(sql, errcode, X) de 3
+-- args trata X como el MENSAJE de error esperado (SQLERRM), NO como
+-- descripción — hay que usar la forma de 4 args con errmsg=NULL explícito
+-- para fijar el SQLSTATE sin acoplarse al texto exacto del mensaje.
 select throws_ok(
   $$
   insert into public.property_revisions (property_id, submitted_by, status, changed_fields)
-  values ('00000000-0000-0000-0000-000000073212', '00000000-0000-0000-0000-000000073202', 'pending', '{"price": 21000}'::jsonb)
+  values ('00000000-0000-0000-0000-000000073215', '00000000-0000-0000-0000-000000073202', 'pending', '{"price": 21000}'::jsonb)
   $$,
+  '42501',
   null,
   'WR1_authenticated_dueno_no_puede_insertar_una_revision_directo_solo_service_role_o_ef'
 );
