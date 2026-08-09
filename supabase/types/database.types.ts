@@ -2,23 +2,21 @@
 // Regenerar con:  supabase gen types typescript --project-id mvpvqmyhrrkwbnpctpuq > supabase/types/database.types.ts
 // (o vía el MCP de Supabase: generate_typescript_types). NO editar a mano.
 //
-// ⚠️ #73.1 (2026-08-09): regen contra `--local` (CLI global de brew,
-// `supabase gen types typescript --local`), con la migración 20260809000002
-// (property_status +10 estados operativos del PRD §15.4: uploading_media,
-// media_failed, pending_payment, approved, expired, rented, sold, rejected,
-// deleted_soft, deleted_hard) ya aplicada localmente. Diff mínimo y verificado
-// contra el regen anterior: SOLO cambia el enum `property_status` (7→17
-// valores); nada más se movió. Esta migración NO se ha desplegado al remoto
-// (`urbea-app`) todavía -- local y remoto quedan desalineados en este único
-// enum hasta que una subtarea posterior (§13.9/despliegue de la ola) la
-// aplique allá y regenere de nuevo contra `--project-id`.
+// ⚠️ #73.2 (2026-08-09): regen contra `--local` (CLI global de brew,
+// `supabase gen types typescript --local`), con la migración 20260809000003
+// (property_revisions: tabla snapshot doble-versión §15.6 + enum
+// property_revision_status pending/needs_changes/rejected/approved) ya
+// aplicada localmente. Diff mínimo y verificado contra el regen anterior:
+// SOLO agrega la tabla `property_revisions` + el enum nuevo; nada más se
+// movió. Esta migración NO se ha desplegado al remoto (`urbea-app`) todavía
+// -- local y remoto quedan desalineados hasta que una subtarea posterior
+// (§13.9/despliegue de la ola) la aplique allá y regenere de nuevo contra
+// `--project-id`.
 //
-// El regen anterior (#112, 2026-08-08) ya había resuelto: la RPC
-// `get_lead_stats`, `leads.agency_id` + su FK (drift heredado de #75.5),
-// leads.score/level, lead_temperature, lead_status ampliado,
-// lead_status_history, el drift de #71 (agency_member_role con
-// admin/viewer, agency_member_status con suspended) y las RPC de Ola 1
-// (register_agency_atomic, switch_agency_atomic, upgrade_to_agent_atomic).
+// El regen anterior (#73.1, 2026-08-09) ya había resuelto: property_status
+// +10 estados operativos del PRD §15.4 (uploading_media, media_failed,
+// pending_payment, approved, expired, rented, sold, rejected, deleted_soft,
+// deleted_hard).
 //
 // Gotchas de entorno para `gen types --local`:
 //   - Necesita el credential helper de Docker en el PATH →
@@ -1041,6 +1039,67 @@ export type Database = {
           },
         ]
       }
+      property_revisions: {
+        Row: {
+          changed_fields: Json
+          created_at: string
+          id: string
+          property_id: string
+          rejection_reason: string | null
+          reviewed_at: string | null
+          reviewed_by_admin_id: string | null
+          status: Database["public"]["Enums"]["property_revision_status"]
+          submitted_by: string
+          updated_at: string
+        }
+        Insert: {
+          changed_fields: Json
+          created_at?: string
+          id?: string
+          property_id: string
+          rejection_reason?: string | null
+          reviewed_at?: string | null
+          reviewed_by_admin_id?: string | null
+          status?: Database["public"]["Enums"]["property_revision_status"]
+          submitted_by: string
+          updated_at?: string
+        }
+        Update: {
+          changed_fields?: Json
+          created_at?: string
+          id?: string
+          property_id?: string
+          rejection_reason?: string | null
+          reviewed_at?: string | null
+          reviewed_by_admin_id?: string | null
+          status?: Database["public"]["Enums"]["property_revision_status"]
+          submitted_by?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "property_revisions_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "property_revisions_reviewed_by_admin_id_fkey"
+            columns: ["reviewed_by_admin_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "property_revisions_submitted_by_fkey"
+            columns: ["submitted_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       property_videos: {
         Row: {
           agent_id: string | null
@@ -1554,6 +1613,11 @@ export type Database = {
         | "duplicate"
         | "other"
       property_report_status: "new" | "reviewing" | "resolved" | "dismissed"
+      property_revision_status:
+        | "pending"
+        | "needs_changes"
+        | "rejected"
+        | "approved"
       property_status:
         | "draft"
         | "pending_review"
@@ -1764,6 +1828,12 @@ export const Constants = {
         "other",
       ],
       property_report_status: ["new", "reviewing", "resolved", "dismissed"],
+      property_revision_status: [
+        "pending",
+        "needs_changes",
+        "rejected",
+        "approved",
+      ],
       property_status: [
         "draft",
         "pending_review",
@@ -1795,3 +1865,4 @@ export const Constants = {
     },
   },
 } as const
+
