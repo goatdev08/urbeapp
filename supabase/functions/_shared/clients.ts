@@ -1325,11 +1325,53 @@ export function make_revision_finder(client: SupabaseClient): RevisionFinder {
 }
 
 /**
+ * Whitelist de columnas reales de `properties` que un snapshot de
+ * property_revisions.changed_fields puede escribir. MISMO conjunto exacto que
+ * edit-property/index.ts:98-115 (DirectPropertyUpdater.apply) — ambas rutas
+ * escriben el mismo EditPropertyInput a la misma tabla, así que deben
+ * proyectar idénticas columnas. Copiado deliberadamente en vez de importado
+ * (mismo criterio de edit-property/index.ts:7-12: cada adaptador es una sola
+ * query obvia, sin indirección, para minimizar la superficie sin test) — si
+ * agregas/quitas un campo editable aquí, replica el cambio en ambos lados.
+ *
+ * ⚠️ NO hacer spread crudo de changed_fields: ese objeto es el
+ * EditPropertyInput COMPLETO que property_revisions guardó (73.6), y
+ * `property_id` es una de sus keys (types.ts:30) — no es columna de
+ * `properties` (que usa `id`). Un spread directo rompe el UPDATE completo
+ * (PostgREST: "Could not find the 'property_id' column of 'properties'"),
+ * hallazgo del guardian en 73.9.
+ */
+function project_property_snapshot_fields(
+  changed_fields: Record<string, unknown>,
+): Record<string, unknown> {
+  const update_payload: Record<string, unknown> = {
+    operation_type: changed_fields.operation_type,
+    property_type: changed_fields.property_type,
+    price: changed_fields.price,
+    bedrooms: changed_fields.bedrooms,
+    bathrooms: changed_fields.bathrooms,
+    square_meters: changed_fields.square_meters,
+    address: changed_fields.address,
+    price_visible: changed_fields.price_visible,
+    pet_friendly: changed_fields.pet_friendly,
+    allows_no_guarantor: changed_fields.allows_no_guarantor,
+    student_friendly: changed_fields.student_friendly,
+    description: changed_fields.description,
+  };
+  // location: igual que edit-property/index.ts:112-113 — solo se incluye si
+  // el snapshot lo trae (EWKT); ausente = no tocar coordenadas.
+  if (changed_fields.location !== undefined) {
+    update_payload.location = changed_fields.location;
+  }
+  return update_payload;
+}
+
+/**
  * Adaptador real de PropertyUpdater (subtarea 73.9). Dos operaciones
  * separadas sobre `properties`, nunca combinadas en la misma llamada:
  *   - set_status: solo status (+ updated_at).
- *   - apply_revision_snapshot: aplica TODOS los campos de changed_fields (el
- *     snapshot completo que 73.6 guardó en property_revisions), sin tocar
+ *   - apply_revision_snapshot: proyecta changed_fields al whitelist de
+ *     columnas editables (ver project_property_snapshot_fields), sin tocar
  *     status.
  */
 export function make_property_updater(client: SupabaseClient): PropertyUpdater {
@@ -1348,9 +1390,12 @@ export function make_property_updater(client: SupabaseClient): PropertyUpdater {
       property_id: string,
       changed_fields: Record<string, unknown>,
     ) {
+      const update_payload = project_property_snapshot_fields(changed_fields);
+      update_payload.updated_at = new Date().toISOString();
+
       const { error } = await client
         .from("properties")
-        .update({ ...changed_fields, updated_at: new Date().toISOString() })
+        .update(update_payload)
         .eq("id", property_id);
       if (error) {
         return { ok: false, error_code: "DB_ERROR", message: error.message };
