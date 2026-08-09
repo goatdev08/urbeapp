@@ -16,6 +16,8 @@ Tercera subtarea del CRM. Lo que parecía "cambiar el texto del mensaje" destap�
 
 **Unificación §19.5:** ya funcionaba (índice único parcial + find/insert/recovery 23505) pero nada pineaba que la clave es **(agente, usuario) y NO la propiedad**; 4 tests nuevos mueren si alguien le agrega `property_id` al find. Suites: Deno **812** (98 en contact-agent, +27), Jest **952** (+8), tsc/lint 0. Los tests nuevos se verificaron **por mutación** (quitar el sort por `position` mató uno; quitar la zona del mensaje, otro).
 
+**Desplegada al remoto** (`--import-map --use-api`) y **smoke contra PostgREST real** — la parte que los tests con cliente falso no pueden cubrir: el embed `property_videos(id,position,deleted_at)` y las columnas `property_type`/`zone` resuelven contra datos vivos. El smoke destapó de paso que **`properties.zone` es NULL en todas las propiedades reales**: la columna existe desde 0005 y **nadie la escribe** (ni el wizard, ni la EF de publicación, ni la RPC). O sea el "[tipo + zona]" del §19.3 degrada a tipo + dirección por falta de **dato**, no de código — y la búsqueda por colonia de §11.2 (74.8) se quedaría sin nada que buscar. Derivada **#119**. Moraleja repetida: **el smoke contra el remoto encuentra lo que la suite no puede ver.**
+
 ## [2026-08-08] tarea | #113 El detalle del lead abría VACÍO — un `flex: 1` colapsado a altura 0
 
 Segundo reporte del dueño (*"en la cuenta de vladimir aún no puedo configurar los estados"*) tras un primer diagnóstico **equivocado** en #112: se atribuyó a permisos y era **layout**. El sheet abría con la cabecera y los botones, y nada en medio: ni Actividad, ni Cambiar estado, ni notas, ni historial — en TODAS las cuentas.

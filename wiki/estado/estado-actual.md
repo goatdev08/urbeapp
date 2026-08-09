@@ -1,11 +1,23 @@
 ---
 tipo: estado
-actualizado: 2026-08-08
+actualizado: 2026-08-09
 ---
 
 # Estado actual
 
 > Narrativa de "dónde estamos hoy". El **qué sigue / qué está hecho** vive en **Taskmaster** (`task-master list`), no aquí.
+
+## Hoy (2026-08-09) — 75.4: contacto WhatsApp, y el correo sigue esperando dominio
+
+- **📧 Decisión: se espera al dominio para los correos.** Se verificó que la organización **ya está en plan Pro** — pero **Supabase Pro no incluye servicio de correo**: el mailer de fábrica es 2/hora, sólo a miembros del equipo, y su límite **no se puede subir sin SMTP propio**. O sea Vlad hoy **no recibiría** un correo de recuperación. El gasto no es la suscripción (Resend gratis son 3,000/mes) sino el **dominio** (~$10-15 USD/año), que además hace falta para `/v/[id]` y para el aviso de privacidad. Se descartó el atajo de SMTP con Gmail: la demo puede esperar.
+- **✅ 75.4 CERRADA (PR #54) — un solo camino para contactar, y dos fugas de paso.** Lo que parecía "cambiar el texto del mensaje" destapó tres cosas:
+  1. **Se podía contactar al agente sin crear lead.** El botón de WhatsApp del **feed** y el de la **tarjeta del agente** abrían WhatsApp directo, saltándose la Edge Function: el agente recibía el mensaje y en Urbea **no quedaba nada** — sin lead, sin el acceso a datos que §19.2 concede *sólo* tras el contacto, sin scoring, sin fila en el CRM. Y el feed es **donde más se contacta**. Ahora los tres botones pasan por el hook `useContactAgent`; si la EF falla, WhatsApp **no** se abre.
+  2. **El precio se publicaba ignorando `price_visible`.** El template lo metía siempre: una propiedad con el precio oculto lo soltaba igual en el prellenado. Arreglado de raíz — la EF ya ni pide la columna.
+  3. **`property_video_id` era NULL en toda la producción** (§9.6). El resolver vivía **inline en el closure de `Deno.serve`**, o sea sin un solo test, y omitía el video con un `ponytail:`. Extraerlo lo destapó. **El patrón se repite: lo que vive dentro del entry point no lo mira nadie.**
+- **⚠️ El template §19.3 quedó a medias a propósito:** faltan `(#código)` y el `[deep link]` porque `public_code` lo crea la **74** y la página `/v/[id]` la **78.5** (que espera el dominio). La **dirección** ocupa el lugar del código — cumple su función: que el agente sepa **de cuál** propiedad le escriben. Derivada **#118**.
+- **🔎 El smoke contra el remoto encontró lo que la suite no puede ver:** `properties.zone` es **NULL en todas las propiedades reales** — la columna existe desde 0005 y **nadie la escribe** (ni el wizard, ni la EF de publicación, ni la RPC). El "[tipo + zona]" del PRD degrada a tipo + dirección por falta de **dato**, y la búsqueda por colonia de §11.2 se quedaría sin nada que buscar. Derivada **#119**.
+- **📊 Suites: 812 Deno (98 en contact-agent) · 952 Jest · tsc/lint 0.** EF `contact-agent` **desplegada al remoto**. **Ola 1 restante: #73 (10 subtareas), #74 (9), #76 (6) y 75.7/75.8.** **Pendiente de Abraham:** comprar el dominio (destraba correos + web + aviso), TestFlight, rotar token de Stream (#105), decidir sobre el aviso de privacidad.
+
 
 ## Hoy (2026-08-08) — sesión de noche: #113, #114 y 75.3
 
