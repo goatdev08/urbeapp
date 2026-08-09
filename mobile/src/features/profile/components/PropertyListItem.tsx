@@ -56,6 +56,11 @@ const STATUS_BADGE: Record<string, BadgeConfig> = {
   pending_review: { label: 'En revisión',         bg: colors.primary_tint, text: colors.primary },
   needs_changes:  { label: 'Cambios solicitados', bg: colors.accent_tint,  text: colors.accent  },
   rejected:       { label: 'Rechazada',           bg: colors.danger,       text: '#FFFFFF'       },
+  // #73.8 (§16) — rented/sold ahora son new_status DIRECTO (ya no pasan por
+  // closed+closed_reason); mismo tratamiento visual que "Cerrada" por ser
+  // terminales, pero con copy propio en vez del fallback humanizado en inglés.
+  rented: { label: 'Rentada', bg: colors.accent_deep, text: '#FFFFFF' },
+  sold:   { label: 'Vendida', bg: colors.accent_deep, text: '#FFFFFF' },
 };
 
 /**
@@ -67,6 +72,8 @@ const STATUS_THUMB_ICON: Record<string, string> = {
   paused: '⏸',
   closed: '✓',
   draft:  '○',
+  rented: '✓',
+  sold:   '✓',
 };
 
 /** Traducción de closed_reason a es-MX. */
@@ -164,10 +171,14 @@ export const PropertyListItem = React.memo(function PropertyListItem({
   const thumb_icon   = STATUS_THUMB_ICON[status] ?? '▷';
 
   const show_stats   = status === 'active' || status === 'draft';
+  // #73.8: rented/sold no llevan closed_reason (new_status ya es autodescriptivo)
+  // — el badge arriba ya dice "Rentada"/"Vendida", no hay fallback "Cerrada" errado.
   const closed_label =
-    closed_reason !== null && closed_reason !== undefined
-      ? (CLOSED_REASON_LABEL[closed_reason] ?? closed_reason)
-      : 'Cerrada';
+    status === 'rented' || status === 'sold'
+      ? badge.label
+      : closed_reason !== null && closed_reason !== undefined
+        ? (CLOSED_REASON_LABEL[closed_reason] ?? closed_reason)
+        : 'Cerrada';
   /** #73.7 — texto propio para pending_review/needs_changes/rejected; el resto
    *  de status (incluido closed) cae en `closed_label` más abajo. */
   const contextual_caption = CONTEXTUAL_SUBROW[status];
