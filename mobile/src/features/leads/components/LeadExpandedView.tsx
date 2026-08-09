@@ -43,6 +43,7 @@ import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
+  LayoutAnimation,
   Modal,
   Platform,
   Pressable,
@@ -54,7 +55,7 @@ import {
   View,
 } from 'react-native';
 import { Image } from 'expo-image';
-import { BookmarkSimple, Info } from 'phosphor-react-native';
+import { BookmarkSimple, CaretDown, Info } from 'phosphor-react-native';
 
 import { router } from 'expo-router';
 
@@ -158,6 +159,11 @@ export function LeadExpandedView({
   // bookmark quedaría congelado en el valor con el que se abrió el lead.
   const [is_follow_up, set_is_follow_up] = useState(lead.is_follow_up);
 
+  // Desplegable de estados (#117, pedido del dueño: una lista que se despliega
+  // en vez de 8 botones sueltos). Cerrado por defecto: los 8 estados ocupaban
+  // casi todo el alto del sheet y empujaban notas e historial fuera de vista.
+  const [is_status_open, set_is_status_open] = useState(false);
+
   // Reset cuando cambia el lead (el modal abre un lead distinto). Deliberado:
   // solo debe re-sincronizar en el cambio de lead.id, NO en cada cambio de
   // internal_notes/is_follow_up (eso pisaría lo que el agente esté editando
@@ -166,12 +172,24 @@ export function LeadExpandedView({
     // eslint-disable-next-line react-hooks/set-state-in-effect -- resincroniza note/is_follow_up (estado local) con lead cuando cambia lead.id.
     set_note(lead.internal_notes ?? '');
     set_is_follow_up(lead.is_follow_up);
+    set_is_status_open(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- ver comentario arriba: solo lead.id dispara el resync.
   }, [lead.id]);
+
+  /** Abre/cierra la lista de estados (#117). No-op en readOnly. */
+  function toggle_status_list(): void {
+    if (readOnly) return;
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    set_is_status_open((open) => !open);
+  }
 
   async function handle_status_select(new_status: LeadStatus): Promise<void> {
     if (readOnly) return; // el owner viendo un lead ajeno no puede editar
     if (is_updating || follow_up_hook.is_updating) return;
+    // Se cierra SIEMPRE, incluso al re-elegir el estado actual (que sale por el
+    // return de abajo): tocar una opción siempre colapsa la lista.
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    set_is_status_open(false);
     if (new_status === lead.status) return; // ya está en ese estado
     // EC-8: note omitido del body si vacío (el hook controla el spread condicional)
     const trimmed = note.trim();
@@ -351,23 +369,56 @@ export function LeadExpandedView({
           {/* Sección de estado — título varía en readOnly, badge SIEMPRE visible */}
           <Text style={styles.section_title}>{readOnly ? 'Estado' : 'Cambiar estado'}</Text>
 
-          {/* Badge del estado actual — SIEMPRE visible (FIX3): un lead legacy
+          {/* Disparador del desplegable (#117) — es TAMBIÉN el badge del estado
+              actual, que sigue SIEMPRE visible (FIX3): un lead legacy
               (in_progress/closed_won) no aparece en ALL_LEAD_STATUSES, así que
-              sin esto el picker no mostraría NINGÚN indicador de estado actual.
-              El aviso de solo lectura ya no vive aquí (#112) — ver el banner
-              fijo debajo del header, más visible. */}
+              sin esto no habría NINGÚN indicador del estado actual. En readOnly
+              no es tappable y no lleva caret — se ve como la etiqueta que es.
+              El aviso de solo lectura vive en el banner fijo debajo del header. */}
           <View style={styles.current_status_wrap}>
-            <View style={styles.status_row}>
+            <Pressable
+              onPress={toggle_status_list}
+              disabled={readOnly || is_updating || follow_up_hook.is_updating}
+              accessibilityRole={readOnly ? 'text' : 'button'}
+              accessibilityState={readOnly ? undefined : { expanded: is_status_open }}
+              accessibilityLabel={
+                readOnly
+                  ? `Estado: ${current_meta.label}`
+                  : `Estado actual: ${current_meta.label}. ${is_status_open ? 'Cerrar' : 'Abrir'} la lista de estados`
+              }
+              style={({ pressed }) => [
+                styles.status_trigger,
+                pressed && !readOnly && styles.status_row_pressed,
+              ]}
+            >
               <View style={[styles.status_dot, { backgroundColor: current_meta.bg }]} />
               <View style={[styles.status_badge, { backgroundColor: current_meta.bg }]}>
                 <Text style={[styles.status_badge_text, { color: current_meta.text }]}>
                   {current_meta.label}
                 </Text>
               </View>
-            </View>
+
+              {/* Empuja el caret al extremo derecho sin tocar el badge. */}
+              <View style={styles.status_trigger_spacer} />
+
+              {!readOnly && (
+                is_updating ? (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                ) : (
+                  <CaretDown
+                    size={16}
+                    weight="bold"
+                    color={colors.gray_2}
+                    style={{ transform: [{ rotate: is_status_open ? '180deg' : '0deg' }] }}
+                  />
+                )
+              )}
+            </Pressable>
           </View>
 
-          {!readOnly && (
+          {/* La lista solo se monta al desplegarse (#117): 8 filas ocupaban casi
+              todo el sheet y empujaban notas e historial fuera de vista. */}
+          {!readOnly && is_status_open && (
           <>
           <View style={styles.status_list_content}>
             {ALL_LEAD_STATUSES.map((s) => {
@@ -410,22 +461,23 @@ export function LeadExpandedView({
               );
             })}
           </View>
+          </>
+          )}
 
-          {/* Spinner global mientras actualiza */}
-          {is_updating && (
+          {/* ⚠️ Spinner y error van FUERA del desplegable: al elegir un estado la
+              lista se cierra de inmediato, así que dentro quedarían invisibles
+              justo cuando importan (mientras guarda, y si la EF falla). */}
+          {!readOnly && is_updating && (
             <View style={styles.updating_row}>
               <ActivityIndicator size="small" color={colors.primary} />
               <Text style={styles.updating_text}>Actualizando estado…</Text>
             </View>
           )}
 
-          {/* Error inline */}
-          {error !== null && (
+          {!readOnly && error !== null && (
             <View style={styles.error_row}>
               <Text style={styles.error_text}>{error}</Text>
             </View>
-          )}
-          </>
           )}
 
           {/* ── Notas internas ─────────────────────────────────────────────── */}
@@ -776,6 +828,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.s_16,
     gap: spacing.s_8,
     marginBottom: spacing.s_4,
+  },
+
+  // ── Disparador del desplegable de estados (#117) ───────────────────────────
+  // Se ve como un campo select: borde suave, el badge del estado a la izquierda
+  // y el caret a la derecha. En readOnly se renderiza igual pero sin caret y sin
+  // onPress, así que lee como etiqueta, no como control.
+  status_trigger: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.s_8,
+    paddingVertical: spacing.s_8,
+    paddingHorizontal: spacing.s_8,
+    borderRadius: radii.r_8,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.silver,
+    backgroundColor: colors.paper,
+  },
+  status_trigger_spacer: {
+    flex: 1,
   },
 
   // ── Actualizando ─────────────────────────────────────────────────────────────
