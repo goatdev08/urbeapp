@@ -5,14 +5,13 @@
 
 import { make_contact_agent_handler } from "./handler.ts";
 import { make_lead_repo } from "./lead_repo.ts";
+import { make_property_resolver } from "./property_resolver.ts";
 import type {
   CallerVerifier,
   CallerVerifyResult,
   IncrementContactCountResult,
   InsertOriginResult,
   OriginRepo,
-  PropertyResolver,
-  PropertyResolveResult,
 } from "./types.ts";
 import { service_client } from "../_shared/clients.ts";
 
@@ -36,53 +35,12 @@ Deno.serve((req: Request) => {
     },
   };
 
-  // ── 2. propertyResolver — SELECT properties + JOIN users (owner) ───────────
-  // Hint de FK: users!properties_owner_user_id_fkey (análogo a usePropertyDetail.ts:115).
-  // Columnas requeridas por handler: id, address, price, status, operation_type,
-  // owner_user_id, agent_id (= u.id), agent_name (CONCAT), agent_phone (u.phone).
-  const propertyResolver: PropertyResolver = {
-    async resolve(propertyId: string): Promise<PropertyResolveResult> {
-      const { data, error } = await client
-        .from("properties")
-        .select(
-          `id, address, price, status, operation_type, owner_user_id,
-           users!properties_owner_user_id_fkey(id, first_name, last_name, phone)`,
-        )
-        .eq("id", propertyId)
-        .is("deleted_at", null)
-        .maybeSingle();
-
-      if (error) return { ok: false, error_code: "DB_ERROR" };
-      if (!data) return { ok: false, error_code: "PROPERTY_NOT_FOUND" };
-
-      // PostgREST retorna to-one join como objeto; guard de array por robustez
-      // (mismo patrón que make_invitation_db en _shared/clients.ts).
-      const raw_user = data.users;
-      const agent_user = (Array.isArray(raw_user) ? raw_user[0] : raw_user) as
-        | { id: string; first_name: string; last_name: string; phone: string | null }
-        | undefined;
-
-      // Propiedad sin dueño en users → tratar como no encontrada
-      if (!agent_user) return { ok: false, error_code: "PROPERTY_NOT_FOUND" };
-
-      return {
-        ok: true,
-        data: {
-          id: data.id,
-          address: data.address,
-          price: data.price,
-          status: data.status,
-          operation_type: data.operation_type,
-          owner_user_id: data.owner_user_id,
-          agent_id: agent_user.id,
-          agent_name: `${agent_user.first_name} ${agent_user.last_name}`,
-          agent_phone: agent_user.phone,
-          // ponytail: video_id omitido — JOIN a property_videos complicaría la query;
-          // el mensaje no lo usa y handler lo pasa undefined a insert_origin (campo opcional).
-        },
-      };
-    },
-  };
+  // ── 2. propertyResolver — SELECT properties + JOIN users (owner) + videos ──
+  // Implementación real en property_resolver.ts (75.4) — extraída de aquí para ser
+  // testeable con un fake client, igual que leadRepo en 75.1. La versión inline que
+  // vivía en este closure omitía `video_id` con un `ponytail:` que resultó ser un
+  // hueco de §9.6: lead_origin_properties.property_video_id quedaba NULL siempre.
+  const propertyResolver = make_property_resolver(client);
 
   // ── 3. leadRepo — SELECT + INSERT idempotente sobre leads ─────────────────
   // Índice único parcial leads_agent_user_unique_active (WHERE deleted_at IS NULL)
