@@ -1,16 +1,252 @@
 // supabase/functions/edit-property/handler.ts
-// STUB — fase RED de la subtarea 73.6. Solo la firma exportada existe; la
-// orquestación real (CORS/método/parse/auth/ownership/diff §15.5/HTTP mapping,
-// ver handler.test.ts) es responsabilidad del GREEN (agente `supabase`).
+// Handler PURO con dependencias inyectables (DI). No importa supabase-js — eso vive
+// en index.ts (entry de producción). Esto mantiene los tests rápidos y offline.
 //
-// Deliberadamente lanza para que TODOS los tests de handler.test.ts fallen por
-// excepción (RED válido), no por "module not found".
+// Orquestación (PRD §15.5/§15.6 — reemplaza el UPDATE directo por RLS que
+// usePublish.ts hacía en editMode, decisión de #53):
+//   1. CORS preflight (OPTIONS → 200)
+//   2. Solo POST (otros métodos → 405)
+//   3. Parsear JSON body → 400 INVALID_INPUT si falla
+//   4. Validar payload en-memoria → 400 INVALID_INPUT si falla
+//   5. callerVerifier.verify_caller(authHeader) → 401 si falla
+//   6. propertyFetcher.fetch(property_id) → 404/500 si falla
+//   7. Ownership: owner_user_id del snapshot === caller, O caller es admin → 403 si no
+//   8. Diff campo-a-campo (§15.5) contra el snapshot actual:
+//      - AL MENOS un campo crítico cambió → revisionUpserter.upsert(...) con el
+//        payload COMPLETO como changed_fields; current_published NUNCA se toca.
+//      - Nada crítico cambió → directPropertyUpdater.apply(...) con el payload
+//        completo.
+//   9. Mapear resultado del seam invocado a HTTP (500 en DB_ERROR, 200 en éxito)
 
-import type { EditPropertyDeps } from "./types.ts";
+import { handle_cors_preflight } from "../_shared/cors.ts";
+import { error_response, json_response } from "../_shared/response.ts";
+import { location_changed } from "./location.ts";
+import type {
+  CurrentPropertySnapshot,
+  EditPropertyDeps,
+  EditPropertyInput,
+  OperationType,
+  PropertyType,
+} from "./types.ts";
 
-export function handler(
-  _req: Request,
-  _deps?: EditPropertyDeps,
+// ── Enums del dominio (para validación en memoria, sin DB) ─────────────────────
+
+const OPERATION_TYPES = new Set<string>(["rent", "sale", "both"]);
+const PROPERTY_TYPES = new Set<string>([
+  "casa",
+  "departamento",
+  "local",
+  "oficina",
+  "terreno",
+]);
+
+// ── Validación del payload ─────────────────────────────────────────────────────
+
+type ParseResult =
+  | { success: true; data: EditPropertyInput }
+  | { success: false; error: { code: string; message: string } };
+
+function invalid(message: string): ParseResult {
+  return { success: false, error: { code: "INVALID_INPUT", message } };
+}
+
+function parse_edit_property_input(raw: unknown): ParseResult {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+    return invalid("El payload debe ser un objeto JSON");
+  }
+
+  const obj = raw as Record<string, unknown>;
+
+  // property_id: string no vacío
+  if (
+    typeof obj.property_id !== "string" ||
+    obj.property_id.trim() === ""
+  ) {
+    return invalid("property_id es requerido y no puede ser vacío");
+  }
+
+  // operation_type: enum
+  if (
+    typeof obj.operation_type !== "string" ||
+    !OPERATION_TYPES.has(obj.operation_type)
+  ) {
+    return invalid("operation_type debe ser 'rent', 'sale' o 'both'");
+  }
+
+  // property_type: enum
+  if (
+    typeof obj.property_type !== "string" ||
+    !PROPERTY_TYPES.has(obj.property_type)
+  ) {
+    return invalid(
+      "property_type debe ser 'casa', 'departamento', 'local', 'oficina' o 'terreno'",
+    );
+  }
+
+  // price: número > 0
+  if (typeof obj.price !== "number" || obj.price <= 0) {
+    return invalid("price debe ser un número mayor a 0");
+  }
+
+  // address: string no vacío (ni solo espacios)
+  if (typeof obj.address !== "string" || obj.address.trim().length === 0) {
+    return invalid("address no puede ser vacío");
+  }
+
+  const data: EditPropertyInput = {
+    property_id: obj.property_id,
+    operation_type: obj.operation_type as OperationType,
+    property_type: obj.property_type as PropertyType,
+    price: obj.price,
+    bedrooms: typeof obj.bedrooms === "number" ? obj.bedrooms : null,
+    bathrooms: typeof obj.bathrooms === "number" ? obj.bathrooms : null,
+    square_meters: typeof obj.square_meters === "number"
+      ? obj.square_meters
+      : null,
+    address: obj.address,
+    price_visible: obj.price_visible === true,
+    pet_friendly: obj.pet_friendly === true,
+    allows_no_guarantor: obj.allows_no_guarantor === true,
+    student_friendly: obj.student_friendly === true,
+    description: typeof obj.description === "string" ? obj.description : "",
+  };
+
+  // location: OPCIONAL — ausente = "el usuario no tocó el mapa" (no se evalúa).
+  if (typeof obj.location === "string") {
+    data.location = obj.location;
+  }
+
+  return { success: true, data };
+}
+
+// ── Diff §15.5 ───────────────────────────────────────────────────────────────
+
+function normalize_address(address: string): string {
+  return address.trim().toLowerCase();
+}
+
+/**
+ * PRD §15.5: dirección/coordenadas, operación, tipo, precio y descripción
+ * disparan re-revisión si cambian; el resto (visibilidad de precio, recámaras/
+ * baños/m², amenidades) aplica directo sin importar cuánto cambien.
+ */
+function has_critical_change(
+  input: EditPropertyInput,
+  current: CurrentPropertySnapshot,
+): boolean {
+  if (input.operation_type !== current.operation_type) return true;
+  if (input.property_type !== current.property_type) return true;
+  if (
+    normalize_address(input.address) !== normalize_address(current.address)
+  ) {
+    return true;
+  }
+  if (location_changed(input.location, current.location)) return true;
+  if (input.price !== current.price) return true; // comparación exacta
+  if (input.description !== current.description) return true;
+  return false;
+}
+
+// ── Handler exportado ─────────────────────────────────────────────────────────
+
+export async function handler(
+  req: Request,
+  deps?: EditPropertyDeps,
 ): Promise<Response> {
-  throw new Error("not_implemented");
+  // 1. CORS preflight
+  if (req.method === "OPTIONS") {
+    return handle_cors_preflight(req);
+  }
+
+  // 2. Solo POST
+  if (req.method !== "POST") {
+    return error_response("METHOD_NOT_ALLOWED", "Método no permitido", 405);
+  }
+
+  // 3. Parse JSON body
+  let raw: unknown;
+  try {
+    raw = await req.json();
+  } catch {
+    return error_response(
+      "INVALID_INPUT",
+      "El cuerpo de la petición no es JSON válido",
+      400,
+    );
+  }
+
+  // 4. Validar payload en-memoria
+  const parsed = parse_edit_property_input(raw);
+  if (!parsed.success) {
+    return error_response(parsed.error.code, parsed.error.message, 400);
+  }
+  const input = parsed.data;
+
+  // 5. Verificar caller (JWT)
+  const authHeader = req.headers.get("Authorization");
+  const verifyResult = await deps!.callerVerifier.verify_caller(authHeader);
+  if (!verifyResult.ok) {
+    return error_response("UNAUTHENTICATED", "Se requiere autenticación", 401);
+  }
+
+  // 6. Traer el snapshot actual (current_published) — existencia + campos del diff
+  const fetchResult = await deps!.propertyFetcher.fetch(input.property_id);
+  if (!fetchResult.ok) {
+    if (fetchResult.error_code === "PROPERTY_NOT_FOUND") {
+      return error_response(
+        "PROPERTY_NOT_FOUND",
+        fetchResult.message ?? "Propiedad no encontrada",
+        404,
+      );
+    }
+    return error_response(
+      "DB_ERROR",
+      fetchResult.message ?? "Error de base de datos",
+      500,
+    );
+  }
+  const current = fetchResult.property;
+
+  // 7. Ownership: mismo criterio que la RLS properties_update que esta EF reemplaza
+  const is_owner = current.owner_user_id === verifyResult.user_id;
+  if (!is_owner && !verifyResult.is_admin) {
+    return error_response(
+      "UNAUTHORIZED_EDITOR",
+      "No autorizado: no eres el dueño de esta propiedad ni administrador",
+      403,
+    );
+  }
+
+  // 8. Diff §15.5 → ramifica a revisión (crítico) o aplicación directa
+  if (has_critical_change(input, current)) {
+    const upsertResult = await deps!.revisionUpserter.upsert(
+      input.property_id,
+      verifyResult.user_id,
+      input,
+    );
+    if (!upsertResult.ok) {
+      return error_response(
+        "DB_ERROR",
+        upsertResult.message ?? "Error al guardar la revisión",
+        500,
+      );
+    }
+    return json_response(
+      { ok: true, mode: "revision", revision_id: upsertResult.revision_id },
+      200,
+    );
+  }
+
+  const updateResult = await deps!.directPropertyUpdater.apply(
+    input.property_id,
+    input,
+  );
+  if (!updateResult.ok) {
+    return error_response(
+      "DB_ERROR",
+      updateResult.message ?? "Error al actualizar la propiedad",
+      500,
+    );
+  }
+  return json_response({ ok: true, mode: "direct" }, 200);
 }
