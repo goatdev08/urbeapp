@@ -247,3 +247,187 @@ Deno.test("updater_real_active_a_paused_update_eq_filtra_por_id_y_owner", async 
     "UPDATE debe incluir .eq('owner_user_id', user_id) — ownership como defensa en DB",
   );
 });
+
+// ── Cierre y baja (§16, subtarea 73.8) ────────────────────────────────────────
+// Diseño: rented/sold pasan a ser new_status DIRECTO (ya no closed+closed_reason).
+// Transición válida: active|paused|approved → rented|sold (el propio status ya es
+// autodescriptivo → el UPDATE payload debe llevar closed_reason=null, no duplicar
+// el motivo). Sin reapertura: ningún estado sale de rented/sold/closed (terminales).
+// 'approved' (73.1/PRD §15.4) = aprobada pero aún no activa; también es origen válido.
+
+// ── Happy path — active|paused|approved → rented|sold ────────────────────────
+
+Deno.test("updater_real_active_a_rented_ok_true", async () => {
+  const { client } = make_fake_client([
+    { data: { id: PROPERTY_ID, status: "active" }, error: null },
+    { data: { id: PROPERTY_ID, status: "rented", closed_reason: null }, error: null },
+  ]);
+  const updater = make_property_status_updater(client);
+  const result = await updater.update(make_params("rented"));
+
+  assertEquals(result.ok, true);
+});
+
+Deno.test("updater_real_active_a_rented_update_payload_status_rented", async () => {
+  const { client, captured_calls } = make_fake_client([
+    { data: { id: PROPERTY_ID, status: "active" }, error: null },
+    { data: { id: PROPERTY_ID, status: "rented", closed_reason: null }, error: null },
+  ]);
+  const updater = make_property_status_updater(client);
+  await updater.update(make_params("rented"));
+
+  assertEquals(
+    captured_calls[1].update_payload?.status,
+    "rented",
+    ".update() debe recibir status='rented'",
+  );
+});
+
+Deno.test("updater_real_active_a_rented_update_payload_closed_reason_null", async () => {
+  // El status 'rented' ya es autodescriptivo — closed_reason NO debe duplicar el motivo.
+  const { client, captured_calls } = make_fake_client([
+    { data: { id: PROPERTY_ID, status: "active" }, error: null },
+    { data: { id: PROPERTY_ID, status: "rented", closed_reason: null }, error: null },
+  ]);
+  const updater = make_property_status_updater(client);
+  await updater.update(make_params("rented", null));
+
+  assertEquals(
+    captured_calls[1].update_payload?.closed_reason,
+    null,
+    ".update() debe recibir closed_reason=null al pasar a 'rented'",
+  );
+});
+
+Deno.test("updater_real_active_a_sold_ok_true", async () => {
+  const { client } = make_fake_client([
+    { data: { id: PROPERTY_ID, status: "active" }, error: null },
+    { data: { id: PROPERTY_ID, status: "sold", closed_reason: null }, error: null },
+  ]);
+  const updater = make_property_status_updater(client);
+  const result = await updater.update(make_params("sold"));
+
+  assertEquals(result.ok, true);
+});
+
+Deno.test("updater_real_active_a_sold_update_payload_status_sold", async () => {
+  const { client, captured_calls } = make_fake_client([
+    { data: { id: PROPERTY_ID, status: "active" }, error: null },
+    { data: { id: PROPERTY_ID, status: "sold", closed_reason: null }, error: null },
+  ]);
+  const updater = make_property_status_updater(client);
+  await updater.update(make_params("sold"));
+
+  assertEquals(
+    captured_calls[1].update_payload?.status,
+    "sold",
+    ".update() debe recibir status='sold'",
+  );
+});
+
+Deno.test("updater_real_paused_a_rented_ok_true", async () => {
+  const { client } = make_fake_client([
+    { data: { id: PROPERTY_ID, status: "paused" }, error: null },
+    { data: { id: PROPERTY_ID, status: "rented", closed_reason: null }, error: null },
+  ]);
+  const updater = make_property_status_updater(client);
+  const result = await updater.update(make_params("rented"));
+
+  assertEquals(result.ok, true);
+});
+
+Deno.test("updater_real_paused_a_sold_ok_true", async () => {
+  const { client } = make_fake_client([
+    { data: { id: PROPERTY_ID, status: "paused" }, error: null },
+    { data: { id: PROPERTY_ID, status: "sold", closed_reason: null }, error: null },
+  ]);
+  const updater = make_property_status_updater(client);
+  const result = await updater.update(make_params("sold"));
+
+  assertEquals(result.ok, true);
+});
+
+Deno.test("updater_real_approved_a_rented_ok_true", async () => {
+  // 'approved' (73.1/PRD §15.4): aprobada pero aún no activa (por fecha o pago).
+  const { client } = make_fake_client([
+    { data: { id: PROPERTY_ID, status: "approved" }, error: null },
+    { data: { id: PROPERTY_ID, status: "rented", closed_reason: null }, error: null },
+  ]);
+  const updater = make_property_status_updater(client);
+  const result = await updater.update(make_params("rented"));
+
+  assertEquals(result.ok, true);
+});
+
+Deno.test("updater_real_approved_a_sold_ok_true", async () => {
+  const { client } = make_fake_client([
+    { data: { id: PROPERTY_ID, status: "approved" }, error: null },
+    { data: { id: PROPERTY_ID, status: "sold", closed_reason: null }, error: null },
+  ]);
+  const updater = make_property_status_updater(client);
+  const result = await updater.update(make_params("sold"));
+
+  assertEquals(result.ok, true);
+});
+
+// ── Ramas no obvias — no reapertura + no cierre prematuro ─────────────────────
+// GUARD tests: hoy ya devuelven INVALID_TRANSITION porque 'pending_review'/'rented'/
+// 'sold'/'draft' no son keys de VALID_TRANSITIONS (fallback undefined → rechazo).
+// Se fijan explícitamente aquí para que la extensión de la tabla en GREEN no los rompa.
+
+Deno.test("updater_real_pending_review_a_rented_devuelve_INVALID_TRANSITION", async () => {
+  // No se puede marcar rented/sold algo que aún no está activo/aprobado.
+  const { client } = make_fake_client([
+    { data: { id: PROPERTY_ID, status: "pending_review" }, error: null },
+  ]);
+  const updater = make_property_status_updater(client);
+  const result = await updater.update(make_params("rented"));
+
+  assertEquals(result.ok, false);
+  if (!result.ok) assertEquals(result.error_code, "INVALID_TRANSITION");
+});
+
+Deno.test("updater_real_draft_a_rented_devuelve_INVALID_TRANSITION", async () => {
+  // draft debe publicarse (draft→active) antes de poder cerrarse por renta/venta.
+  const { client } = make_fake_client([
+    { data: { id: PROPERTY_ID, status: "draft" }, error: null },
+  ]);
+  const updater = make_property_status_updater(client);
+  const result = await updater.update(make_params("rented"));
+
+  assertEquals(result.ok, false);
+  if (!result.ok) assertEquals(result.error_code, "INVALID_TRANSITION");
+});
+
+Deno.test("updater_real_rented_a_active_devuelve_INVALID_TRANSITION_no_reapertura", async () => {
+  const { client } = make_fake_client([
+    { data: { id: PROPERTY_ID, status: "rented" }, error: null },
+  ]);
+  const updater = make_property_status_updater(client);
+  const result = await updater.update(make_params("active"));
+
+  assertEquals(result.ok, false);
+  if (!result.ok) assertEquals(result.error_code, "INVALID_TRANSITION");
+});
+
+Deno.test("updater_real_rented_a_paused_devuelve_INVALID_TRANSITION_no_reapertura", async () => {
+  const { client } = make_fake_client([
+    { data: { id: PROPERTY_ID, status: "rented" }, error: null },
+  ]);
+  const updater = make_property_status_updater(client);
+  const result = await updater.update(make_params("paused"));
+
+  assertEquals(result.ok, false);
+  if (!result.ok) assertEquals(result.error_code, "INVALID_TRANSITION");
+});
+
+Deno.test("updater_real_sold_a_active_devuelve_INVALID_TRANSITION_no_reapertura", async () => {
+  const { client } = make_fake_client([
+    { data: { id: PROPERTY_ID, status: "sold" }, error: null },
+  ]);
+  const updater = make_property_status_updater(client);
+  const result = await updater.update(make_params("active"));
+
+  assertEquals(result.ok, false);
+  if (!result.ok) assertEquals(result.error_code, "INVALID_TRANSITION");
+});

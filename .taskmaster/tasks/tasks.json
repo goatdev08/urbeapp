@@ -5290,14 +5290,15 @@
             "id": 8,
             "title": "Cierre y baja (§16)",
             "description": "Marcar sold/rented manual desde Mis publicaciones; sale de feed/mapa, queda en Publicaciones cerradas, slot consumido.",
-            "details": "Premium/agente marca closed + closed_reason (rented/sold) manual (§16.1). Efectos: fuera de feed/mapa; visible en perfil \"Publicaciones cerradas\"; vigencia del slot consumida sin reembolso; métricas permanentes. No reapertura en MVP. EF de transición + UI.\n<info added on 2026-08-09T18:15:12.629Z>\nPLAN: la mayor parte de la UI YA EXISTE (my-listings.tsx, ClosePropertyDialog.tsx, usePropertyActions.ts ya soportan closed+closed_reason). Trabajo real = confirmar/extender VALID_TRANSITIONS de update-property-status para aceptar los estados operativos nuevos de 73.1 como origen (desde active/approved/paused operativos) hacia closed, sin permitir reapertura (fuera de MVP). agente=supabase (EF) con mobile (solo verificar, no debería requerir cambios) · skills=urbea-supabase,urbea-testing · criticidad=crítica (supabase/functions/update-property-status/**) · footprint=supabase/functions/update-property-status/{handler.ts,property_status_updater.ts,types.ts}.\n</info added on 2026-08-09T18:15:12.629Z>",
+            "details": "Premium/agente marca closed + closed_reason (rented/sold) manual (§16.1). Efectos: fuera de feed/mapa; visible en perfil \"Publicaciones cerradas\"; vigencia del slot consumida sin reembolso; métricas permanentes. No reapertura en MVP. EF de transición + UI.\n<info added on 2026-08-09T18:15:12.629Z>\nPLAN: la mayor parte de la UI YA EXISTE (my-listings.tsx, ClosePropertyDialog.tsx, usePropertyActions.ts ya soportan closed+closed_reason). Trabajo real = confirmar/extender VALID_TRANSITIONS de update-property-status para aceptar los estados operativos nuevos de 73.1 como origen (desde active/approved/paused operativos) hacia closed, sin permitir reapertura (fuera de MVP). agente=supabase (EF) con mobile (solo verificar, no debería requerir cambios) · skills=urbea-supabase,urbea-testing · criticidad=crítica (supabase/functions/update-property-status/**) · footprint=supabase/functions/update-property-status/{handler.ts,property_status_updater.ts,types.ts}.\n</info added on 2026-08-09T18:15:12.629Z>\n<info added on 2026-08-09T22:18:26.381Z>\n<info added on 2026-08-09T18:25:00.000Z>\nRED escrito y fallando por aserción (no por import/compilación). 17 tests Deno nuevos fallan expectedly en EF (8 handler, 9 updater); 4 tests Jest fallan en mobile hook. Ningún test de regresión roto (PropertyActionMenu y demás suites: 68 passed). tsc limpio mobile + deno check limpio backend.\n\nTests ejercitan seams públicos sin tocar DB/EF real: handler.ts con deps inyectadas (CallerVerifier + PropertyStatusUpdater fake), updater con fake supabase client chainable, mobile hook con renderHook + mock de supabase.functions.invoke.\n\nEdge cases cubiertos: happy path (active/paused/approved→rented/sold ok=true, UPDATE payload correcto), reglas (rented/sold CON closed_reason presente→400 CLOSED_REASON_NOT_ALLOWED, pending_review/draft→rented INVALID_TRANSITION, rented→active/sold→active no reapertura), no-regresión (closed+withdrawn/expired sigue 200). 9 tests \"guard\" YA PASAN HOY (fijan comportamiento correcto pre-GREEN: VALID_TRANSITIONS ausencia de 'rented'/'sold' cae a undefined→INVALID_TRANSITION, parse_input rechaza motivo inválido) — son cobertura válida vs §16.1 PRD, no tautología.\n\nFixtures de test no forzaron exhaustividad de production types: `as unknown as UpdatedProperty` confinado a archivos de test, types.ts intacto. Comandos: deno test handler+updater→62 passed/17 failed; cd mobile && pnpm jest usePropertyActions→26 passed/4 failed; pnpm jest profile→72 passed/4 failed; pnpm tsc→limpio.\n</info added on 2026-08-09T18:25:00.000Z>\n</info added on 2026-08-09T22:18:26.381Z>",
             "testStrategy": "pgTAP/Deno: closed sale del feed; aparece en cerradas; slot marcado consumido; métricas persisten.",
-            "status": "pending",
+            "status": "in-progress",
             "dependencies": [
               1
             ],
             "priority": "medium",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-08-09T22:08:09.476Z"
           },
           {
             "id": 9,
@@ -5329,7 +5330,7 @@
             "parentId": "undefined"
           }
         ],
-        "updatedAt": "2026-08-09T22:07:57.416Z"
+        "updatedAt": "2026-08-09T22:08:09.476Z"
       },
       {
         "id": "74",
@@ -7162,12 +7163,14 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-08-09T22:07:57.416Z",
+      "lastModified": "2026-08-09T22:08:09.476Z",
       "taskCount": 119,
       "completedCount": 71,
       "tags": [
         "master"
-      ]
+      ],
+      "created": "2026-08-09T22:17:58.948Z",
+      "description": "Tasks for master context"
     }
   }
 }

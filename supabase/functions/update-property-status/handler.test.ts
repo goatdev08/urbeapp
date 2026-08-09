@@ -112,6 +112,22 @@ const PROPIEDAD_CERRADA: UpdatedProperty = {
   closed_reason: "rented",
 };
 
+// ── Cierre y baja (§16, subtarea 73.8) ────────────────────────────────────────
+// 'rented'/'sold' aún NO están en PropertyStatusEnum (draft|active|paused|closed) —
+// el cast es deliberado: NO se toca types.ts (eso es GREEN). El cast confina el
+// ensanchamiento de tipo al archivo de test, sin tocar ningún archivo de producción.
+const PROPIEDAD_RENTADA = {
+  id: PROPERTY_ID,
+  status: "rented",
+  closed_reason: null,
+} as unknown as UpdatedProperty;
+
+const PROPIEDAD_VENDIDA = {
+  id: PROPERTY_ID,
+  status: "sold",
+  closed_reason: null,
+} as unknown as UpdatedProperty;
+
 // ── Factories de fakes — CallerVerifier ───────────────────────────────────────
 
 interface FakeCallerVerifier extends CallerVerifier {
@@ -243,6 +259,8 @@ const PAYLOAD_A_CLOSED = {
   new_status: "closed",
   closed_reason: "rented",
 };
+const PAYLOAD_A_RENTED = { property_id: PROPERTY_ID, new_status: "rented" };
+const PAYLOAD_A_SOLD = { property_id: PROPERTY_ID, new_status: "sold" };
 
 // ── Happy path ────────────────────────────────────────────────────────────────
 
@@ -682,4 +700,112 @@ Deno.test("error_401_tiene_forma_error_code_message", async () => {
   assertExists(body.error);
   assertEquals(typeof body.error.code, "string");
   assertEquals(typeof body.error.message, "string");
+});
+
+// ── Cierre y baja (§16, subtarea 73.8) ────────────────────────────────────────
+// Diseño: rented/sold pasan a ser new_status DIRECTO (ya no closed+closed_reason).
+// Esta EF (handler) solo valida el payload en-memoria — la transición real
+// (qué estado ORIGEN puede llegar a rented/sold) vive en property_status_updater.test.ts.
+
+// ── Happy path — parse_input debe aceptar 'rented'/'sold' como new_status ────
+
+Deno.test("happy_path_a_rented_sin_closed_reason_retorna_200", async () => {
+  const res = await handler(post_auth(PAYLOAD_A_RENTED), deps(updater_ok(PROPIEDAD_RENTADA)));
+  assertEquals(res.status, 200);
+});
+
+Deno.test("happy_path_a_sold_sin_closed_reason_retorna_200", async () => {
+  const res = await handler(post_auth(PAYLOAD_A_SOLD), deps(updater_ok(PROPIEDAD_VENDIDA)));
+  assertEquals(res.status, 200);
+});
+
+Deno.test("shape_rented_updater_recibe_new_status_rented", async () => {
+  const u = updater_ok(PROPIEDAD_RENTADA);
+  await handler(post_auth(PAYLOAD_A_RENTED), deps(u));
+  assertEquals(u.calls.length, 1, "updater debe ser llamado");
+  assertEquals(u.calls[0].new_status as string, "rented", "new_status debe llegar como 'rented' al updater");
+});
+
+Deno.test("shape_rented_updater_recibe_closed_reason_null", async () => {
+  // El status 'rented' ya es autodescriptivo — el handler no debe inyectar closed_reason.
+  const u = updater_ok(PROPIEDAD_RENTADA);
+  await handler(post_auth(PAYLOAD_A_RENTED), deps(u));
+  assertEquals(
+    u.calls[0].closed_reason,
+    null,
+    "closed_reason debe ser null cuando new_status='rented'",
+  );
+});
+
+Deno.test("shape_sold_updater_recibe_new_status_sold", async () => {
+  const u = updater_ok(PROPIEDAD_VENDIDA);
+  await handler(post_auth(PAYLOAD_A_SOLD), deps(u));
+  assertEquals(u.calls[0].new_status as string, "sold", "new_status debe llegar como 'sold' al updater");
+});
+
+Deno.test("shape_sold_updater_recibe_closed_reason_null", async () => {
+  const u = updater_ok(PROPIEDAD_VENDIDA);
+  await handler(post_auth(PAYLOAD_A_SOLD), deps(u));
+  assertEquals(
+    u.calls[0].closed_reason,
+    null,
+    "closed_reason debe ser null cuando new_status='sold'",
+  );
+});
+
+// ── Rama no obvia — closed_reason junto con new_status rented/sold ────────────
+// DECISIÓN (test-author, 73.8): rechazar con 400 y code='CLOSED_REASON_NOT_ALLOWED'
+// (más claro que ignorar en silencio) — status ya autodescriptivo, el campo sobra.
+
+Deno.test("rented_con_closed_reason_presente_retorna_400_closed_reason_not_allowed", async () => {
+  const res = await handler(
+    post_auth({ property_id: PROPERTY_ID, new_status: "rented", closed_reason: "rented" }),
+    deps(),
+  );
+  assertEquals(res.status, 400);
+  const body = await res.json();
+  assertEquals(body.error.code, "CLOSED_REASON_NOT_ALLOWED");
+});
+
+Deno.test("sold_con_closed_reason_presente_retorna_400_closed_reason_not_allowed", async () => {
+  const res = await handler(
+    post_auth({ property_id: PROPERTY_ID, new_status: "sold", closed_reason: "sold" }),
+    deps(),
+  );
+  assertEquals(res.status, 400);
+  const body = await res.json();
+  assertEquals(body.error.code, "CLOSED_REASON_NOT_ALLOWED");
+});
+
+Deno.test("rented_con_closed_reason_presente_updater_no_es_llamado", async () => {
+  const u = updater_ok(PROPIEDAD_RENTADA);
+  await handler(
+    post_auth({ property_id: PROPERTY_ID, new_status: "rented", closed_reason: "rented" }),
+    deps(u),
+  );
+  assertEquals(
+    u.calls.length,
+    0,
+    "updater NO debe ser llamado cuando closed_reason viene junto con new_status='rented'",
+  );
+});
+
+// ── No-regresión — withdrawn/expired SIGUEN el camino closed+closed_reason ────
+
+Deno.test("no_regresion_active_a_closed_con_reason_withdrawn_retorna_200", async () => {
+  const cerrada: UpdatedProperty = { id: PROPERTY_ID, status: "closed", closed_reason: "withdrawn" };
+  const res = await handler(
+    post_auth({ property_id: PROPERTY_ID, new_status: "closed", closed_reason: "withdrawn" }),
+    deps(updater_ok(cerrada)),
+  );
+  assertEquals(res.status, 200);
+});
+
+Deno.test("no_regresion_paused_a_closed_con_reason_expired_retorna_200", async () => {
+  const cerrada: UpdatedProperty = { id: PROPERTY_ID, status: "closed", closed_reason: "expired" };
+  const res = await handler(
+    post_auth({ property_id: PROPERTY_ID, new_status: "closed", closed_reason: "expired" }),
+    deps(updater_ok(cerrada)),
+  );
+  assertEquals(res.status, 200);
 });
