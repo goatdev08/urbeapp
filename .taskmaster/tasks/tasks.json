@@ -5179,7 +5179,7 @@
         "description": "Wizard de 5 pasos con autoguardado de borrador, máquina de 16 estados de publicación, pipeline de moderación manual, publicación rápida, re-revisión por edición y cierre/baja. PRD §14–16.",
         "details": "PRD §14 (wizard+autosave draft), §15 (moderación, pipeline, estados §15.4, re-revisión §15.5, visibilidad §15.6), §16 (cierre). Hoy: 3 pasos, auto-`active`, sin moderación. Es el corazón transaccional → CRÍTICO (EF publish-property, RPC atómica, RLS, máquina de estados). Cablear la abstracción de slot (vigencia) aunque sea gratis. Épica del camino a producción (ADR 0008 / docs/PRD-beta.md). Spec detallado (modelo de datos, RLS, EF, pantallas, estados, edge cases, tests, subtareas) se redacta SECUENCIAL al entrar su ola, con aprobación de Abraham; add-task roto → subtareas por escritura directa en tasks.json.",
         "testStrategy": "TDD estricto en lógica crítica (supabase/functions/**, migrations/**, lib/hooks/validation): RED→GREEN→guardian. Verificación ligera (tsc/lint/smoke) en UI. Se detalla al specificar la ola.",
-        "status": "in-progress",
+        "status": "done",
         "dependencies": [
           "66",
           "68",
@@ -5318,9 +5318,9 @@
             "id": 10,
             "title": "Ingest + E2E",
             "description": "Verificación E2E de publicación y ingest al vault.",
-            "details": "E2E: draft → wizard → tus upload → pending_review → (admin approve por Studio) → active en feed → editar precio → re-revisión con viva visible → aprobar → cerrar. Ingest: mapa-codebase (property_revisions, publish-property adaptado, moderación), concepto publicacion-moderacion (estado vivo, 16 estados mapeados), log.md.\n<info added on 2026-08-09T18:16:09.763Z>\nPLAN: última subtarea, cierra la ola. Ingest al vault (wiki/codebase/mapa-codebase.md, wiki/conceptos/moderacion.md estado:diferido→vivo con los 16 estados reales+codigo:, wiki/conceptos/propiedades-y-video.md si cambió el flujo, wiki/log.md) + E2E completo del ciclo draft→wizard 5 pasos→pending_review→approve→active→editar→re-revisión→aprobar→cerrar (Maestro si aplica, o smoke CLI contra remoto). agente=mobile (E2E cliente) apoyado en verificación supabase (estado server-side) · skills=urbea-testing · criticidad=no-crítica (documentación+verificación, no código de producción nuevo) · footprint=wiki/**, sin código app nuevo salvo fixtures de test si hicieran falta.\n</info added on 2026-08-09T18:16:09.763Z>",
+            "details": "E2E: draft → wizard → tus upload → pending_review → (admin approve por Studio) → active en feed → editar precio → re-revisión con viva visible → aprobar → cerrar. Ingest: mapa-codebase (property_revisions, publish-property adaptado, moderación), concepto publicacion-moderacion (estado vivo, 16 estados mapeados), log.md.\n<info added on 2026-08-09T18:16:09.763Z>\nPLAN: última subtarea, cierra la ola. Ingest al vault (wiki/codebase/mapa-codebase.md, wiki/conceptos/moderacion.md estado:diferido→vivo con los 16 estados reales+codigo:, wiki/conceptos/propiedades-y-video.md si cambió el flujo, wiki/log.md) + E2E completo del ciclo draft→wizard 5 pasos→pending_review→approve→active→editar→re-revisión→aprobar→cerrar (Maestro si aplica, o smoke CLI contra remoto). agente=mobile (E2E cliente) apoyado en verificación supabase (estado server-side) · skills=urbea-testing · criticidad=no-crítica (documentación+verificación, no código de producción nuevo) · footprint=wiki/**, sin código app nuevo salvo fixtures de test si hicieran falta.\n</info added on 2026-08-09T18:16:09.763Z>\n<info added on 2026-08-09T23:27:37.531Z>\nHECHO (2026-08-09, agente mobile + verificación supabase). E2E completo contra stack local (supabase db reset limpio, functions serve --import-map, sin Stream real): (1) sembrado agente+admin (POST /auth/v1/admin/users + token grant_type=password, roles en public.users vía docker exec psql); (2) video fixture (INSERT property_videos status=ready duration_seconds=90 cloudflare_uid dummy); (3) POST publish-property JWT agente -> 201, verificado properties.status='pending_review' + property_video_slots is_free=true + video enlazado; (4) POST moderate-property action=approve sin revisión JWT admin -> 200 status=active, admin_actions con old_values={status:pending_review} new_values={status:active}; (5) POST edit-property price 15000->18500 crítico -> 200 mode=revision, properties INTACTA (price=15000 status=active), property_revisions.status=pending changed_fields.price=18500; (6) POST moderate-property approve con revisión activa -> 200, properties.price=18500 snapshot aplicado status SIGUE active, property_revisions.status=approved con reviewed_by_admin_id/reviewed_at; (7) POST update-property-status new_status=rented -> 200 closed_reason=null, intento reapertura rented->active devuelve 400 INVALID_TRANSITION terminal confirmado. BONUS: needs_changes sobre propiedad B (200 status=needs_changes admin_actions con reason), reject sobre C (200 status=rejected), approve+suspend sobre D (200->active luego 200->suspended reason=fraude), suspend sobre A ya-rented (400 INVALID_TRANSITION confirma SUSPEND_BLOCKED_STATES). CERO hallazgos nuevos — las 3 correcciones ya documentadas en 73.4/73.6/73.9 sostenían el flujo completo end-to-end. Datos limpiados con supabase db reset final. Ingest vault: wiki/codebase/mapa-codebase.md (fila nueva 'Publicación completa Ola 1 (#73)' 4 migraciones + 2 EFs nuevas + wizard 5 pasos + 3 defectos, addendum fila Edge Functions, filas Tests/Tests EF-hooks con pgTAP 36-38 y Deno/Jest nuevos), wiki/conceptos/moderacion.md (diferido->vivo, reescrito: 17 estados pipeline video+duplicado property_revisions doble-versión moderate-property unificada cierre terminal, sección dedicada 3 defectos + heurística proceso), wiki/conceptos/propiedades-y-video.md (sección nueva 'Ola 1 — Publicación completa', actualizado modelo/flujo de 7 estados 3 pasos, frontmatter codigo/actualizado), wiki/log.md (entrada nueva al tope orden más-reciente-primero). Verificación final tarea #73: deno test supabase/functions/ 968/968 verde, supabase test db 39/39 archivos 831/831 asserts PASS, deno check (23 index.ts) limpio, deno lint 18 problemas PRE-EXISTENTES _shared/video_url_minter.test.ts documentados desde 73.9 ajenos a subtarea, pnpm tsc --noEmit mobile limpio, pnpm test mobile 85 suites/988 tests verde, pnpm lint mobile 0 errores 63 warnings pre-existentes baseline documentado 73.6. Conformidad spec: OK sin desviaciones — E2E cubrió 7 pasos pedidos + bonus completo. Sin commit. Rama git activa tarea/73-publicacion-completa dejada por sesión anterior orquestador.\n</info added on 2026-08-09T23:27:37.531Z>",
             "testStrategy": "Maestro/smoke del flujo completo; revisión del vault.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               3,
               6,
@@ -5328,10 +5328,11 @@
               9
             ],
             "priority": "high",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-08-09T23:27:49.211Z"
           }
         ],
-        "updatedAt": "2026-08-09T23:14:47.439Z"
+        "updatedAt": "2026-08-09T23:27:49.211Z"
       },
       {
         "id": "74",
@@ -7164,9 +7165,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-08-09T23:14:47.439Z",
+      "lastModified": "2026-08-09T23:27:49.211Z",
       "taskCount": 119,
-      "completedCount": 71,
+      "completedCount": 72,
       "tags": [
         "master"
       ]
