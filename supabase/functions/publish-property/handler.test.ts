@@ -211,7 +211,15 @@ function deps_validos(
   publisher: PropertyPublisher = publisher_ok(),
   verifier: CallerVerifier = verifier_agente_ok(),
 ): PublishPropertyDeps {
-  return { callerVerifier: verifier, propertyPublisher: publisher };
+  // 73.4: PublishPropertyDeps ahora exige videoStatusChecker/duplicatePropertyChecker.
+  // Los tests que NO ejercitan el pipeline (validación de payload, auth, DB
+  // failures) usan defaults "todo OK" para no interferir con lo que sí testean.
+  return {
+    callerVerifier: verifier,
+    propertyPublisher: publisher,
+    videoStatusChecker: video_checker_ok(),
+    duplicatePropertyChecker: duplicate_checker_result(false),
+  };
 }
 
 // ── Happy path ────────────────────────────────────────────────────────────────
@@ -229,13 +237,15 @@ Deno.test("happy_path_publisher_llamado_exactamente_una_vez", async () => {
   assertEquals(publisher.calls.length, 1, "publish debe ser llamado exactamente una vez");
 });
 
-Deno.test("happy_path_publisher_recibe_property_status_active", async () => {
+Deno.test("contrato_publisher_recibe_property_status_pending_review_ya_no_active", async () => {
+  // 73.4 — SUPERSEDE la expectativa vieja ('active', auto-aprobación PRD §12).
+  // PRD §14.2 (beta): TODA publicación va a pending_review, sin excepción de rol.
   const publisher = publisher_ok();
   await handler(post_agente(PAYLOAD_VALIDO), deps_validos(publisher));
   assertEquals(
     publisher.calls[0].property_status,
-    "active",
-    "property_status debe ser 'active' — la publicación activa directamente (auto-aprobación, PRD §12)",
+    "pending_review",
+    "property_status debe ser 'pending_review' — PRD §14.2: en beta TODA publicación va a revisión, ya no hay auto-aprobación a 'active'",
   );
 });
 
@@ -262,7 +272,12 @@ Deno.test("happy_path_publisher_recibe_cloudflare_uid_del_payload", async () => 
 Deno.test("happy_path_publisher_recibe_user_id_del_caller_verificado", async () => {
   const publisher = publisher_ok();
   const verifier = verifier_agente_ok();
-  await handler(post_agente(PAYLOAD_VALIDO), { callerVerifier: verifier, propertyPublisher: publisher });
+  await handler(post_agente(PAYLOAD_VALIDO), {
+    callerVerifier: verifier,
+    propertyPublisher: publisher,
+    videoStatusChecker: video_checker_ok(),
+    duplicatePropertyChecker: duplicate_checker_result(false),
+  });
   assertEquals(
     publisher.calls[0].user_id,
     AGENT_ID,
@@ -524,7 +539,12 @@ Deno.test("sin_authorization_header_retorna_401_unauthenticated", async () => {
   const verifier = verifier_unauthenticated();
   const res = await handler(
     post_sin_auth(PAYLOAD_VALIDO),
-    { callerVerifier: verifier, propertyPublisher: publisher_ok() },
+    {
+      callerVerifier: verifier,
+      propertyPublisher: publisher_ok(),
+      videoStatusChecker: video_checker_ok(),
+      duplicatePropertyChecker: duplicate_checker_result(false),
+    },
   );
   assertEquals(res.status, 401);
   const body = await res.json();
@@ -535,7 +555,12 @@ Deno.test("jwt_invalido_retorna_401_unauthenticated", async () => {
   const verifier = verifier_unauthenticated();
   const res = await handler(
     post_agente(PAYLOAD_VALIDO),
-    { callerVerifier: verifier, propertyPublisher: publisher_ok() },
+    {
+      callerVerifier: verifier,
+      propertyPublisher: publisher_ok(),
+      videoStatusChecker: video_checker_ok(),
+      duplicatePropertyChecker: duplicate_checker_result(false),
+    },
   );
   assertEquals(res.status, 401);
   const body = await res.json();
@@ -547,7 +572,12 @@ Deno.test("role_user_retorna_403_forbidden", async () => {
   const verifier = verifier_forbidden();
   const res = await handler(
     post_agente(PAYLOAD_VALIDO),
-    { callerVerifier: verifier, propertyPublisher: publisher_ok() },
+    {
+      callerVerifier: verifier,
+      propertyPublisher: publisher_ok(),
+      videoStatusChecker: video_checker_ok(),
+      duplicatePropertyChecker: duplicate_checker_result(false),
+    },
   );
   assertEquals(res.status, 403);
   const body = await res.json();
@@ -559,7 +589,12 @@ Deno.test("role_user_publisher_no_es_llamado", async () => {
   const publisher = publisher_ok();
   const res = await handler(
     post_agente(PAYLOAD_VALIDO),
-    { callerVerifier: verifier_forbidden(), propertyPublisher: publisher },
+    {
+      callerVerifier: verifier_forbidden(),
+      propertyPublisher: publisher,
+      videoStatusChecker: video_checker_ok(),
+      duplicatePropertyChecker: duplicate_checker_result(false),
+    },
   );
   // La aserción de status falla primero en RED (stub devuelve 500, no 403)
   assertEquals(res.status, 403, "status debe ser 403 cuando el caller tiene rol 'user'");
@@ -654,6 +689,342 @@ Deno.test("otro_error_del_publisher_sigue_siendo_500", async () => {
   const publisher = publisher_error("ALGUN_OTRO_ERROR_DESCONOCIDO");
   const res = await handler(post_agente(PAYLOAD_VALIDO), deps_validos(publisher));
   assertEquals(res.status, 500);
+});
+
+// ── 73.4 (absorbe 73.5) — pending_review + pipeline de moderación + slot ──────
+//
+// SEAM bajo prueba (comportamiento observable del contrato del handler, NO
+// internals): el shape del request/response HTTP y CUÁNDO se invoca cada dep
+// inyectada (videoStatusChecker, duplicatePropertyChecker, propertyPublisher).
+//
+// PRD §14.2: en beta, TODA publicación (registrado o agente/premium) va a
+// pending_review — ya NO existe el auto-aprobar a 'active'.
+// PRD §15.2 (pipeline de moderación): validar que el video exista, dure dentro
+// del límite permitido (60-120s) y se pueda reproducir (ready); evitar
+// duplicados obvios por misma dirección + mismo agente.
+//
+// EDGE CASES (RED) — 73.4:
+//
+// ### Contrato de estado
+// - publisher recibe property_status='pending_review' (ya NO 'active') — PRD §14.2
+//
+// ### Pipeline — videoStatusChecker (PRD §15.2)
+// - video checker responde VIDEO_NOT_READY → 409, publisher NUNCA llamado (no gastar el slot)
+// - duration < 60 (VIDEO_DURATION_INVALID) → 400
+// - duration > 120 (VIDEO_DURATION_INVALID) → 400
+// - duration = 60 EXACTO (boundary) → válido, publica normalmente
+// - duration = 120 EXACTO (boundary) → válido, publica normalmente
+// - video no encontrado (VIDEO_NOT_FOUND) → 404, publisher NUNCA llamado
+// - checker.check() recibe cloudflare_uid del payload + agent_id del caller verificado
+//
+// ### Pipeline — duplicatePropertyChecker (PRD §15.2, regla exacta en types.ts)
+// - mismo owner + misma dirección → 409 DUPLICATE_PROPERTY, publisher NUNCA llamado
+// - checker.check() recibe user_id del caller verificado + address del payload
+// - distinto owner + mismo address → NO es duplicado, permite publicar
+// - mismo owner + dirección distinta → NO es duplicado, permite publicar
+// - propiedad previa rechazada/eliminada del mismo owner+address → NO cuenta como duplicado
+//
+// ### Orden de ejecución (evita gastar el slot en una publicación rechazada)
+// - happy path: videoStatusChecker se invoca ANTES que duplicatePropertyChecker
+// - si el video falla su validación: duplicatePropertyChecker y propertyPublisher NUNCA se llaman
+
+import type {
+  DuplicateCheckResult,
+  DuplicatePropertyChecker,
+  VideoStatusCheckResult,
+  VideoStatusChecker,
+} from "./types.ts";
+
+// ── Factories de fakes — VideoStatusChecker ───────────────────────────────────
+
+interface FakeVideoStatusChecker extends VideoStatusChecker {
+  calls: { cloudflare_uid: string; agent_id: string }[];
+}
+
+function video_checker_ok(
+  duration_seconds = 90,
+  order_log?: string[],
+): FakeVideoStatusChecker {
+  return {
+    calls: [],
+    check(
+      cloudflare_uid: string,
+      agent_id: string,
+    ): Promise<VideoStatusCheckResult> {
+      order_log?.push("video_check");
+      this.calls.push({ cloudflare_uid, agent_id });
+      return Promise.resolve({ ok: true, duration_seconds });
+    },
+  } as FakeVideoStatusChecker;
+}
+
+function video_checker_error(
+  error_code: "VIDEO_NOT_READY" | "VIDEO_DURATION_INVALID" | "VIDEO_NOT_FOUND",
+): FakeVideoStatusChecker {
+  return {
+    calls: [],
+    check(
+      cloudflare_uid: string,
+      agent_id: string,
+    ): Promise<VideoStatusCheckResult> {
+      this.calls.push({ cloudflare_uid, agent_id });
+      return Promise.resolve({ ok: false, error_code });
+    },
+  } as FakeVideoStatusChecker;
+}
+
+// ── Factories de fakes — DuplicatePropertyChecker ─────────────────────────────
+
+interface FakeDuplicatePropertyChecker extends DuplicatePropertyChecker {
+  calls: { user_id: string; address: string }[];
+}
+
+function duplicate_checker_result(
+  isDuplicate: boolean,
+  order_log?: string[],
+): FakeDuplicatePropertyChecker {
+  return {
+    calls: [],
+    check(user_id: string, address: string): Promise<DuplicateCheckResult> {
+      order_log?.push("duplicate_check");
+      this.calls.push({ user_id, address });
+      return Promise.resolve({ isDuplicate });
+    },
+  } as FakeDuplicatePropertyChecker;
+}
+
+// ── deps_validos extendido: agrega los 2 checkers nuevos con defaults OK ──────
+// (Redeclarado localmente porque PublishPropertyDeps ahora exige ambos campos;
+// no se toca la factory original de arriba para no romper su firma histórica.)
+
+function deps_pipeline(opts: {
+  publisher?: PropertyPublisher;
+  verifier?: CallerVerifier;
+  videoChecker?: VideoStatusChecker;
+  duplicateChecker?: DuplicatePropertyChecker;
+} = {}): PublishPropertyDeps {
+  return {
+    callerVerifier: opts.verifier ?? verifier_agente_ok(),
+    propertyPublisher: opts.publisher ?? publisher_ok(),
+    videoStatusChecker: opts.videoChecker ?? video_checker_ok(),
+    duplicatePropertyChecker: opts.duplicateChecker ??
+      duplicate_checker_result(false),
+  };
+}
+
+// ── Pipeline — videoStatusChecker (PRD §15.2) ─────────────────────────────────
+
+Deno.test("pipeline_video_no_listo_retorna_409_y_bloquea_publisher", async () => {
+  const publisher = publisher_ok();
+  const videoChecker = video_checker_error("VIDEO_NOT_READY");
+  const res = await handler(
+    post_agente(PAYLOAD_VALIDO),
+    deps_pipeline({ publisher, videoChecker }),
+  );
+  assertEquals(res.status, 409, "video aún no listo (processing) debe bloquear con 409");
+  const body = await res.json();
+  assertEquals(body.error.code, "VIDEO_NOT_READY");
+  assertEquals(
+    publisher.calls.length,
+    0,
+    "publisher NO debe llamarse si el video no está listo (no gastar el slot en una publicación que se va a rechazar)",
+  );
+});
+
+Deno.test("pipeline_video_duracion_menor_a_60_retorna_400_duration_invalid", async () => {
+  // Simula un video de 45s: fuera del rango [60,120] del PRD §14 paso 5.
+  const videoChecker = video_checker_error("VIDEO_DURATION_INVALID");
+  const res = await handler(
+    post_agente(PAYLOAD_VALIDO),
+    deps_pipeline({ videoChecker }),
+  );
+  assertEquals(res.status, 400, "duration_seconds < 60 debe rechazarse con 400");
+  const body = await res.json();
+  assertEquals(body.error.code, "VIDEO_DURATION_INVALID");
+});
+
+Deno.test("pipeline_video_duracion_mayor_a_120_retorna_400_duration_invalid", async () => {
+  // Simula un video de 150s: fuera del rango [60,120] del PRD §14 paso 5.
+  const videoChecker = video_checker_error("VIDEO_DURATION_INVALID");
+  const res = await handler(
+    post_agente(PAYLOAD_VALIDO),
+    deps_pipeline({ videoChecker }),
+  );
+  assertEquals(res.status, 400, "duration_seconds > 120 debe rechazarse con 400");
+  const body = await res.json();
+  assertEquals(body.error.code, "VIDEO_DURATION_INVALID");
+});
+
+Deno.test("pipeline_video_duracion_exactamente_60_boundary_es_valida_y_publica", async () => {
+  const publisher = publisher_ok();
+  const videoChecker = video_checker_ok(60);
+  const res = await handler(
+    post_agente(PAYLOAD_VALIDO),
+    deps_pipeline({ publisher, videoChecker }),
+  );
+  assertEquals(res.status, 201, "duration_seconds = 60 es el límite INFERIOR inclusive — válido");
+  assertEquals(publisher.calls.length, 1);
+});
+
+Deno.test("pipeline_video_duracion_exactamente_120_boundary_es_valida_y_publica", async () => {
+  const publisher = publisher_ok();
+  const videoChecker = video_checker_ok(120);
+  const res = await handler(
+    post_agente(PAYLOAD_VALIDO),
+    deps_pipeline({ publisher, videoChecker }),
+  );
+  assertEquals(res.status, 201, "duration_seconds = 120 es el límite SUPERIOR inclusive — válido");
+  assertEquals(publisher.calls.length, 1);
+});
+
+Deno.test("pipeline_video_no_encontrado_retorna_404_y_bloquea_publisher", async () => {
+  const publisher = publisher_ok();
+  const videoChecker = video_checker_error("VIDEO_NOT_FOUND");
+  const res = await handler(
+    post_agente(PAYLOAD_VALIDO),
+    deps_pipeline({ publisher, videoChecker }),
+  );
+  assertEquals(res.status, 404, "cloudflare_uid sin video en vuelo correspondiente debe ser 404");
+  const body = await res.json();
+  assertEquals(body.error.code, "VIDEO_NOT_FOUND");
+  assertEquals(publisher.calls.length, 0);
+});
+
+Deno.test("pipeline_video_checker_recibe_cloudflare_uid_y_agent_id_correctos", async () => {
+  const videoChecker = video_checker_ok();
+  const verifier = verifier_agente_ok();
+  await handler(
+    post_agente(PAYLOAD_VALIDO),
+    deps_pipeline({ videoChecker, verifier }),
+  );
+  assertEquals(videoChecker.calls.length, 1);
+  assertEquals(
+    videoChecker.calls[0].cloudflare_uid,
+    CLOUDFLARE_UID,
+    "el checker debe recibir el cloudflare_uid del payload",
+  );
+  assertEquals(
+    videoChecker.calls[0].agent_id,
+    AGENT_ID,
+    "el checker debe recibir el agent_id del caller verificado, no del payload",
+  );
+});
+
+// ── Pipeline — duplicatePropertyChecker (PRD §15.2) ───────────────────────────
+
+Deno.test("pipeline_duplicado_mismo_owner_misma_direccion_retorna_409_y_bloquea_publisher", async () => {
+  const publisher = publisher_ok();
+  const duplicateChecker = duplicate_checker_result(true);
+  const res = await handler(
+    post_agente(PAYLOAD_VALIDO),
+    deps_pipeline({ publisher, duplicateChecker }),
+  );
+  assertEquals(res.status, 409, "duplicado obvio (mismo owner + misma dirección) debe bloquear con 409");
+  const body = await res.json();
+  assertEquals(body.error.code, "DUPLICATE_PROPERTY");
+  assertEquals(
+    publisher.calls.length,
+    0,
+    "publisher NO debe llamarse ante un duplicado (no gastar el slot)",
+  );
+});
+
+Deno.test("pipeline_duplicado_checker_recibe_user_id_del_caller_y_address_del_payload", async () => {
+  const duplicateChecker = duplicate_checker_result(false);
+  const verifier = verifier_agente_ok();
+  await handler(
+    post_agente(PAYLOAD_VALIDO),
+    deps_pipeline({ duplicateChecker, verifier }),
+  );
+  assertEquals(duplicateChecker.calls.length, 1);
+  assertEquals(
+    duplicateChecker.calls[0].user_id,
+    AGENT_ID,
+    "el checker debe recibir el user_id del caller verificado, no del payload",
+  );
+  assertEquals(
+    duplicateChecker.calls[0].address,
+    PAYLOAD_VALIDO.address,
+    "el checker debe recibir la dirección del payload",
+  );
+});
+
+Deno.test("pipeline_distinto_owner_mismo_address_no_es_duplicado_permite_publicar", async () => {
+  // Regla (types.ts): el duplicado exige MISMO owner_user_id. Dos agentes
+  // publicando la misma dirección (p.ej. copropietarios, o coincidencia) no es
+  // un duplicado obvio del mismo publicante.
+  const publisher = publisher_ok();
+  const duplicateChecker = duplicate_checker_result(false);
+  const res = await handler(
+    post_agente(PAYLOAD_VALIDO),
+    deps_pipeline({ publisher, duplicateChecker }),
+  );
+  assertEquals(res.status, 201);
+  assertEquals(publisher.calls.length, 1);
+});
+
+Deno.test("pipeline_mismo_owner_direccion_distinta_no_es_duplicado_permite_publicar", async () => {
+  // Regla (types.ts): el duplicado exige MISMA dirección normalizada. El mismo
+  // agente publicando una propiedad distinta no es un duplicado.
+  const publisher = publisher_ok();
+  const duplicateChecker = duplicate_checker_result(false);
+  const res = await handler(
+    post_agente(PAYLOAD_VALIDO),
+    deps_pipeline({ publisher, duplicateChecker }),
+  );
+  assertEquals(res.status, 201);
+  assertEquals(publisher.calls.length, 1);
+});
+
+Deno.test("pipeline_propiedad_previa_rechazada_o_eliminada_no_cuenta_como_duplicado_permite_publicar", async () => {
+  // Regla (types.ts): status NOT IN ('rejected','deleted_soft','deleted_hard') —
+  // una publicación previa rechazada o eliminada del mismo owner+dirección NO
+  // bloquea: el agente puede resubir.
+  const publisher = publisher_ok();
+  const duplicateChecker = duplicate_checker_result(false);
+  const res = await handler(
+    post_agente(PAYLOAD_VALIDO),
+    deps_pipeline({ publisher, duplicateChecker }),
+  );
+  assertEquals(res.status, 201);
+  assertEquals(publisher.calls.length, 1);
+});
+
+// ── Orden de ejecución (no gastar el slot en una publicación rechazada) ──────
+
+Deno.test("orden_video_check_ocurre_antes_que_duplicate_check_en_happy_path", async () => {
+  const order: string[] = [];
+  const videoChecker = video_checker_ok(90, order);
+  const duplicateChecker = duplicate_checker_result(false, order);
+  await handler(
+    post_agente(PAYLOAD_VALIDO),
+    deps_pipeline({ videoChecker, duplicateChecker }),
+  );
+  assertEquals(
+    order,
+    ["video_check", "duplicate_check"],
+    "el handler debe invocar videoStatusChecker ANTES que duplicatePropertyChecker",
+  );
+});
+
+Deno.test("orden_video_falla_nunca_llama_duplicate_checker_ni_publisher", async () => {
+  const publisher = publisher_ok();
+  const videoChecker = video_checker_error("VIDEO_NOT_READY");
+  const duplicateChecker = duplicate_checker_result(false);
+  await handler(
+    post_agente(PAYLOAD_VALIDO),
+    deps_pipeline({ publisher, videoChecker, duplicateChecker }),
+  );
+  assertEquals(
+    duplicateChecker.calls.length,
+    0,
+    "duplicatePropertyChecker NUNCA debe llamarse si el video falla su validación",
+  );
+  assertEquals(
+    publisher.calls.length,
+    0,
+    "propertyPublisher NUNCA debe llamarse si el video falla su validación",
+  );
 });
 
 // ── Atomicidad — propiedad + video en tx única ────────────────────────────────

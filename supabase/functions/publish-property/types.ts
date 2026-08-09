@@ -79,7 +79,15 @@ export interface PropertyPublishParams {
   student_friendly: boolean;
   description: string;
   // Estado explícito (contrato testeable): el handler siempre pasa estos valores.
-  property_status: "active";
+  // 73.4 — PRD §14.2: en beta TODA publicación va a pending_review, ya no hay
+  // auto-aprobación a 'active'. El tipo queda como UNIÓN (no se angosta al
+  // literal 'pending_review') a propósito: handler.ts de producción todavía
+  // pasa 'active' hoy (RED — eso es lo que discrimina esta subtarea) y esto es
+  // solo el contrato de tipos para que el archivo de tests compile; angostar el
+  // tipo aquí rompería la compilación de handler.ts (error de TS, no de
+  // aserción) e invalidaría el RED. El GREEN de 73.4 debe migrar el literal que
+  // handler.ts pasa de 'active' a 'pending_review'.
+  property_status: "active" | "pending_review";
   video_status: "ready";
   // referencia al video en vuelo a ENLAZAR (68.12 — reemplaza video_id/storage_path)
   cloudflare_uid: string;
@@ -93,9 +101,56 @@ export interface PropertyPublisher {
   publish(params: PropertyPublishParams): Promise<PropertyPublishResult>;
 }
 
+// ── VideoStatusChecker (73.4, absorbe 73.5) ───────────────────────────────────
+//
+// Pipeline de moderación (PRD §15.2): antes de publicar, valida que el video
+// enlazado por cloudflare_uid (del agente que publica) exista, esté listo
+// (status='ready') y dure entre 60 y 120 segundos INCLUSIVE (PRD §14, paso 5).
+// Implementación real (GREEN, fuera de esta fase RED): probablemente consulta
+// property_videos por (cloudflare_uid, agent_id).
+
+export type VideoStatusCheckResult =
+  | { ok: true; duration_seconds: number }
+  | {
+    ok: false;
+    error_code:
+      | "VIDEO_NOT_READY"
+      | "VIDEO_DURATION_INVALID"
+      | "VIDEO_NOT_FOUND";
+  };
+
+export interface VideoStatusChecker {
+  check(
+    cloudflare_uid: string,
+    agent_id: string,
+  ): Promise<VideoStatusCheckResult>;
+}
+
+// ── DuplicatePropertyChecker (73.4, absorbe 73.5) ─────────────────────────────
+//
+// Pipeline de moderación (PRD §15.2): "evitar duplicados obvios por misma
+// dirección, mismo agente". Regla exacta (spec 73.4): existe ya una propiedad
+// NO borrada (deleted_at is null) del MISMO owner_user_id con la MISMA
+// dirección normalizada (lower(trim(address)) — normaliza el checker, no la
+// DB) y status NOT IN ('rejected','deleted_soft','deleted_hard') (una
+// rechazada o eliminada no cuenta — el agente puede resubir).
+
+export interface DuplicateCheckResult {
+  isDuplicate: boolean;
+}
+
+export interface DuplicatePropertyChecker {
+  check(user_id: string, address: string): Promise<DuplicateCheckResult>;
+}
+
 // ── Deps inyectables del handler ──────────────────────────────────────────────
 
 export interface PublishPropertyDeps {
   callerVerifier: CallerVerifier;
   propertyPublisher: PropertyPublisher;
+  // 73.4/73.5 — pipeline de validación ANTES de invocar el publisher: primero
+  // videoStatusChecker, luego duplicatePropertyChecker. Si cualquiera falla, el
+  // publisher NUNCA se invoca (no gastar el slot en una publicación rechazada).
+  videoStatusChecker: VideoStatusChecker;
+  duplicatePropertyChecker: DuplicatePropertyChecker;
 }
