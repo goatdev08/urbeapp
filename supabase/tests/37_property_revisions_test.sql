@@ -97,11 +97,21 @@ select plan(35);
 -- Fixtures — UUIDs prefijo '...00000000732XX' (subtarea 73.2, sin colisión con
 -- los rangos de archivos previos — cada archivo pgTAP corre en su propia
 -- transacción revertida).
---   OW1 dueño de P1 (sección índice único) y P3 (sección FK cascade) : ...073201
+--   OW1 dueño de P1 (sección FK restrict), P3 (sección FK cascade) y P4
+--       (sección índice único)                                       : ...073201
 --   OW2 dueño de P2 (sección RLS/visibilidad)                        : ...073202
 --   ADM admin global                                                 : ...073203
---   OTH usuario autenticado sin relación con P1/P2/P3                : ...073204
+--   OTH usuario autenticado sin relación con P1/P2/P3/P4              : ...073204
 --   SB  sometedor desechable (sección FK restrict on delete usuario) : ...073205
+--
+-- ⚠️ CORRECCIÓN post-GREEN (guardian/orquestador, 2026-08-09): P1 originalmente
+-- se reusaba en DOS secciones (FK2 le sometía una revisión pending vía SB, Y
+-- la sección de índice único la reusaba como "primera pending") — con la
+-- tabla ya viva, la fila de FK2 seguía existiendo cuando UQ1 corría, así que
+-- "la primera pending" en realidad era la SEGUNDA y el índice único la
+-- rechazaba correctamente, tumbando UQ1 por un bug del fixture, no de la
+-- implementación. Se separó: P1 queda EXCLUSIVA de FK2; la sección de índice
+-- único gana su propia propiedad dedicada, P4 (...073214).
 -- ════════════════════════════════════════════════════════════════════════════
 
 insert into auth.users (id, email) values
@@ -115,14 +125,17 @@ update public.users set role = 'admin' where id = '00000000-0000-0000-0000-00000
 
 insert into public.properties (id, owner_user_id, property_type, operation_type, address, location, price, status) values
   ('00000000-0000-0000-0000-000000073211', '00000000-0000-0000-0000-000000073201',
-   'departamento', 'rent', 'Fixture property_revisions 7302 — P1 (unico parcial)',
+   'departamento', 'rent', 'Fixture property_revisions 7302 — P1 (FK restrict submitted_by)',
    extensions.ST_SetSRID(extensions.ST_MakePoint(-103.35, 20.67), 4326)::extensions.geography, 12000, 'active'),
   ('00000000-0000-0000-0000-000000073212', '00000000-0000-0000-0000-000000073202',
    'casa', 'sale', 'Fixture property_revisions 7302 — P2 (RLS/visibilidad)',
    extensions.ST_SetSRID(extensions.ST_MakePoint(-103.36, 20.68), 4326)::extensions.geography, 2500000, 'active'),
   ('00000000-0000-0000-0000-000000073213', '00000000-0000-0000-0000-000000073201',
    'local', 'rent', 'Fixture property_revisions 7302 — P3 (FK cascade delete)',
-   extensions.ST_SetSRID(extensions.ST_MakePoint(-103.34, 20.66), 4326)::extensions.geography, 8000, 'active');
+   extensions.ST_SetSRID(extensions.ST_MakePoint(-103.34, 20.66), 4326)::extensions.geography, 8000, 'active'),
+  ('00000000-0000-0000-0000-000000073214', '00000000-0000-0000-0000-000000073201',
+   'departamento', 'sale', 'Fixture property_revisions 7302 — P4 (indice unico parcial, DEDICADA, no reusa P1)',
+   extensions.ST_SetSRID(extensions.ST_MakePoint(-103.37, 20.69), 4326)::extensions.geography, 3200000, 'active');
 
 -- Helper de impersonación inline (mismo patrón que 02/08/18/21/25/27/28/29/30/31/33_*).
 create or replace function pg_temp.act_as(p_uid uuid, p_role text default 'authenticated')
@@ -239,12 +252,14 @@ select throws_ok(
 -- ════════════════════════════════════════════════════════════════════════════
 -- 2) ÍNDICE ÚNICO PARCIAL [🔒 invariante §15.6] — solo UNA revisión
 --    pending/needs_changes activa por propiedad; approved/rejected históricas
---    coexisten sin problema.
+--    coexisten sin problema. Usa P4 — DEDICADA a esta sección, nunca reusada
+--    en ninguna otra (a diferencia de P1, que ya carga la revisión de FK2) —
+--    para que "primera revisión pending" sea genuinamente la primera.
 -- ════════════════════════════════════════════════════════════════════════════
 
--- UQ1 [DELTA] primera revisión pending de P1 se inserta ok.
+-- UQ1 [DELTA] primera revisión pending de P4 se inserta ok.
 select ok(
-  pg_temp.try_insert_revision('00000000-0000-0000-0000-000000073211', '00000000-0000-0000-0000-000000073201', 'pending'),
+  pg_temp.try_insert_revision('00000000-0000-0000-0000-000000073214', '00000000-0000-0000-0000-000000073201', 'pending'),
   'UQ1_primera_revision_pending_de_una_propiedad_se_inserta_ok'
 );
 
@@ -252,30 +267,30 @@ select ok(
 -- false HOY porque la tabla no existe, así que "not false" ya es cierto por la
 -- razón incorrecta; tras GREEN debe seguir siendo false, pero por la
 -- violación real del índice único parcial] segunda revisión pending de la
--- MISMA propiedad P1 es rechazada.
+-- MISMA propiedad P4 es rechazada.
 select ok(
-  not pg_temp.try_insert_revision('00000000-0000-0000-0000-000000073211', '00000000-0000-0000-0000-000000073201', 'pending'),
+  not pg_temp.try_insert_revision('00000000-0000-0000-0000-000000073214', '00000000-0000-0000-0000-000000073201', 'pending'),
   'UQ2_segunda_revision_pending_para_la_misma_propiedad_es_rechazada_indice_unico_parcial'
 );
 
 -- UQ3 [INVARIANTE, mismo razonamiento que UQ2] needs_changes TAMBIÉN choca con
--- la pending activa de P1 (ambos estados cuentan como "activos" en el índice,
+-- la pending activa de P4 (ambos estados cuentan como "activos" en el índice,
 -- no solo pending).
 select ok(
-  not pg_temp.try_insert_revision('00000000-0000-0000-0000-000000073211', '00000000-0000-0000-0000-000000073201', 'needs_changes'),
+  not pg_temp.try_insert_revision('00000000-0000-0000-0000-000000073214', '00000000-0000-0000-0000-000000073201', 'needs_changes'),
   'UQ3_needs_changes_tambien_choca_con_una_pending_activa_de_la_misma_propiedad'
 );
 
--- UQ4 [DELTA] una revisión approved SÍ coexiste con la pending activa de P1
+-- UQ4 [DELTA] una revisión approved SÍ coexiste con la pending activa de P4
 -- (el índice único es PARCIAL, no total).
 select ok(
-  pg_temp.try_insert_revision('00000000-0000-0000-0000-000000073211', '00000000-0000-0000-0000-000000073201', 'approved'),
+  pg_temp.try_insert_revision('00000000-0000-0000-0000-000000073214', '00000000-0000-0000-0000-000000073201', 'approved'),
   'UQ4_una_revision_approved_puede_coexistir_con_la_pending_activa_no_es_unique_total'
 );
 
--- UQ5 [DELTA] una revisión rejected TAMBIÉN coexiste con la pending activa de P1.
+-- UQ5 [DELTA] una revisión rejected TAMBIÉN coexiste con la pending activa de P4.
 select ok(
-  pg_temp.try_insert_revision('00000000-0000-0000-0000-000000073211', '00000000-0000-0000-0000-000000073201', 'rejected'),
+  pg_temp.try_insert_revision('00000000-0000-0000-0000-000000073214', '00000000-0000-0000-0000-000000073201', 'rejected'),
   'UQ5_una_revision_rejected_tambien_puede_coexistir_con_la_pending_activa'
 );
 
