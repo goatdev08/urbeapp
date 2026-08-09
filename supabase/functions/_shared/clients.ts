@@ -78,6 +78,16 @@ import type {
   VideoArchiver,
   VideoLoader,
 } from "../archive-video/types.ts";
+import type {
+  AdminActionRecordParams,
+  AdminActionRecorder,
+  AdminActionRecordResult,
+  PropertyFetcher,
+  PropertyUpdater,
+  RevisionFinder,
+  RevisionResolveParams,
+  RevisionResolver,
+} from "../moderate-property/types.ts";
 
 /** Cliente supabase-js con service_role (bypassa RLS y column-grants). */
 export function service_client(): SupabaseClient {
@@ -1251,6 +1261,156 @@ export function make_duplicate_property_checker(
         (row) => row.address.trim().toLowerCase() === normalized_address,
       );
       return { isDuplicate };
+    },
+  };
+}
+
+/**
+ * Adaptador real de PropertyFetcher (subtarea 73.9, moderate-property). Trae
+ * id+status; excluye soft-deleted (deleted_at IS NOT NULL ya no debería
+ * moderarse — la propiedad quedó fuera del pipeline).
+ */
+export function make_property_fetcher(client: SupabaseClient): PropertyFetcher {
+  return {
+    async fetch(property_id: string) {
+      const { data, error } = await client
+        .from("properties")
+        .select("id, status")
+        .eq("id", property_id)
+        .is("deleted_at", null)
+        .maybeSingle();
+
+      if (error) {
+        return { ok: false, error_code: "DB_ERROR", message: error.message };
+      }
+      if (!data) {
+        return { ok: false, error_code: "PROPERTY_NOT_FOUND" };
+      }
+      return { ok: true, property: { id: data.id, status: data.status } };
+    },
+  };
+}
+
+/**
+ * Adaptador real de RevisionFinder (subtarea 73.9). Busca la revisión ACTIVA
+ * (status IN pending|needs_changes) — el índice único parcial de 73.2
+ * (property_revisions_one_active_per_property) garantiza a lo más una fila.
+ */
+export function make_revision_finder(client: SupabaseClient): RevisionFinder {
+  return {
+    async find_active(property_id: string) {
+      const { data, error } = await client
+        .from("property_revisions")
+        .select("id, status, changed_fields")
+        .eq("property_id", property_id)
+        .in("status", ["pending", "needs_changes"])
+        .maybeSingle();
+
+      if (error) {
+        return { ok: false, error_code: "DB_ERROR", message: error.message };
+      }
+      if (!data) {
+        return { ok: true, revision: null };
+      }
+      return {
+        ok: true,
+        revision: {
+          id: data.id,
+          status: data.status,
+          changed_fields: data.changed_fields,
+        },
+      };
+    },
+  };
+}
+
+/**
+ * Adaptador real de PropertyUpdater (subtarea 73.9). Dos operaciones
+ * separadas sobre `properties`, nunca combinadas en la misma llamada:
+ *   - set_status: solo status (+ updated_at).
+ *   - apply_revision_snapshot: aplica TODOS los campos de changed_fields (el
+ *     snapshot completo que 73.6 guardó en property_revisions), sin tocar
+ *     status.
+ */
+export function make_property_updater(client: SupabaseClient): PropertyUpdater {
+  return {
+    async set_status(property_id: string, status: string) {
+      const { error } = await client
+        .from("properties")
+        .update({ status, updated_at: new Date().toISOString() })
+        .eq("id", property_id);
+      if (error) {
+        return { ok: false, error_code: "DB_ERROR", message: error.message };
+      }
+      return { ok: true };
+    },
+    async apply_revision_snapshot(
+      property_id: string,
+      changed_fields: Record<string, unknown>,
+    ) {
+      const { error } = await client
+        .from("properties")
+        .update({ ...changed_fields, updated_at: new Date().toISOString() })
+        .eq("id", property_id);
+      if (error) {
+        return { ok: false, error_code: "DB_ERROR", message: error.message };
+      }
+      return { ok: true };
+    },
+  };
+}
+
+/**
+ * Adaptador real de RevisionResolver (subtarea 73.9). Cierra la revisión
+ * activa: approved/needs_changes/rejected, con reviewed_by_admin_id/
+ * reviewed_at/rejection_reason (shape de 20260809000003_property_revisions).
+ */
+export function make_revision_resolver(client: SupabaseClient): RevisionResolver {
+  return {
+    async resolve(params: RevisionResolveParams) {
+      const { error } = await client
+        .from("property_revisions")
+        .update({
+          status: params.status,
+          reviewed_by_admin_id: params.admin_id,
+          reviewed_at: new Date().toISOString(),
+          rejection_reason: params.reason,
+        })
+        .eq("id", params.revision_id);
+      if (error) {
+        return { ok: false, error_code: "DB_ERROR", message: error.message };
+      }
+      return { ok: true };
+    },
+  };
+}
+
+/**
+ * Adaptador real de AdminActionRecorder (subtarea 73.9) sobre admin_actions
+ * (20260604000007, append-only). INSERT directo con service_role — a
+ * diferencia de make_agency_creator (RPC atómica con su propio INSERT), aquí
+ * no hay una operación multi-tabla que requiera una transacción: la escritura
+ * principal (properties/property_revisions) y esta auditoría son dos pasos
+ * secuenciales del handler, no una unidad atómica de SQL.
+ */
+export function make_admin_action_recorder(
+  client: SupabaseClient,
+): AdminActionRecorder {
+  return {
+    async record(params: AdminActionRecordParams): Promise<AdminActionRecordResult> {
+      const { error } = await client.from("admin_actions").insert({
+        admin_id: params.admin_id,
+        action_type: params.action_type,
+        entity_type: params.entity_type,
+        entity_id: params.entity_id,
+        old_values: params.old_values,
+        new_values: params.new_values,
+        reason: params.reason,
+      });
+      if (error) {
+        return { ok: false, error_code: "DB_ERROR", message: error.message };
+      }
+      return { ok: true };
     },
   };
 }
