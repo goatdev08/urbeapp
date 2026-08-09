@@ -10,7 +10,11 @@ module.exports = ({ config }) => ({
   // 1.0.2: expo-glass-effect (módulo nativo, tab bar glass) → nuevo runtime OTA.
   // 1.0.3: expo-web-browser (módulo nativo, Google OAuth #72) → nuevo runtime OTA;
   // los builds 1.0.2 (2026-07-24) ya no reciben updates (instalar build nuevo).
-  version: '1.0.3',
+  // 1.0.4: splash e ícono corregidos (#114) — sin módulos nativos nuevos, pero el
+  // asset del isotipo entra en la huella del fingerprint (`expoConfigExternalFile`),
+  // así que el runtime cambia igual y los 1.0.3 dejan de recibir estos updates.
+  // Se sube `version` para que dos builds con splash distinto no se llamen igual.
+  version: '1.0.4',
   orientation: 'portrait',
   scheme: 'urbea',
   userInterfaceStyle: 'automatic',
