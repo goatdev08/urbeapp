@@ -1,0 +1,17 @@
+-- Rollback: 20260809000002_property_status_operational_values.sql
+-- Postgres NO permite eliminar un valor de un enum (no existe `ALTER TYPE ... DROP VALUE`);
+-- revertir uploading_media/media_failed/pending_payment/approved/expired/rented/sold/
+-- rejected/deleted_soft/deleted_hard requeriría recrear el tipo property_status completo
+-- (crear tipo nuevo, migrar la columna properties.status, dropear el tipo viejo) -- fuera de
+-- alcance de un rollback de una sola migración y peligroso si ya existen filas usando esos
+-- estados (subtareas 73.8+ los escriben activamente en producción del wizard/moderación).
+-- No-op documentado, mismo criterio que
+-- supabase/migrations/rollbacks/20260805000002_agency_member_role_values.sql y
+-- supabase/migrations/rollbacks/20260807000002_lead_status_reconcile_enum.sql.
+--
+-- Si en el futuro se necesita revertir de verdad: primero revertir/dropear las migraciones
+-- posteriores que dependen de estos valores (RLS, Edge Functions, constraints), confirmar que
+-- ninguna fila de properties tiene status en los 10 valores nuevos, y luego recrear el tipo
+-- sin ellos.
+
+-- (sin operación)

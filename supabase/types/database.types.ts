@@ -2,22 +2,23 @@
 // Regenerar con:  supabase gen types typescript --project-id mvpvqmyhrrkwbnpctpuq > supabase/types/database.types.ts
 // (o vía el MCP de Supabase: generate_typescript_types). NO editar a mano.
 //
-// ⚠️ #112 (2026-08-08): regen COMPLETO contra `--local` (CLI global de brew,
-// `supabase gen types typescript --local`), con las migraciones 20260808000001
-// (RLS de events_raw) y 20260808000002 (RPC get_lead_stats) ya aplicadas — ambas
-// desplegadas también al remoto ese mismo día, así que local y remoto coinciden.
-// Este regen incorpora:
-//   - La RPC `get_lead_stats(p_lead_ids uuid[])` de 112.3, que consume el hook
-//     useLeadStats. Sin ella había que usar el escape hatch `client: any` (mismo
-//     truco que mapProperties.ts / feedProperties.ts para RPC no modeladas).
-//   - `leads.agency_id` + su FK a agencies: DRIFT heredado de #75.5
-//     (20260807000006, el fix de fuga de PII cross-agencia). La columna existía en
-//     la base desde el 2026-08-07 pero nunca había llegado a este archivo.
+// ⚠️ #73.1 (2026-08-09): regen contra `--local` (CLI global de brew,
+// `supabase gen types typescript --local`), con la migración 20260809000002
+// (property_status +10 estados operativos del PRD §15.4: uploading_media,
+// media_failed, pending_payment, approved, expired, rented, sold, rejected,
+// deleted_soft, deleted_hard) ya aplicada localmente. Diff mínimo y verificado
+// contra el regen anterior: SOLO cambia el enum `property_status` (7→17
+// valores); nada más se movió. Esta migración NO se ha desplegado al remoto
+// (`urbea-app`) todavía -- local y remoto quedan desalineados en este único
+// enum hasta que una subtarea posterior (§13.9/despliegue de la ola) la
+// aplique allá y regenere de nuevo contra `--project-id`.
 //
-// El regen anterior (#75.5/#75.6, 2026-08-07) ya había resuelto: leads.score/level,
-// lead_temperature, lead_status ampliado, lead_status_history, el drift de #71
-// (agency_member_role con admin/viewer, agency_member_status con suspended) y las
-// RPC de Ola 1 (register_agency_atomic, switch_agency_atomic, upgrade_to_agent_atomic).
+// El regen anterior (#112, 2026-08-08) ya había resuelto: la RPC
+// `get_lead_stats`, `leads.agency_id` + su FK (drift heredado de #75.5),
+// leads.score/level, lead_temperature, lead_status ampliado,
+// lead_status_history, el drift de #71 (agency_member_role con
+// admin/viewer, agency_member_status con suspended) y las RPC de Ola 1
+// (register_agency_atomic, switch_agency_atomic, upgrade_to_agent_atomic).
 //
 // Gotchas de entorno para `gen types --local`:
 //   - Necesita el credential helper de Docker en el PATH →
@@ -1561,6 +1562,16 @@ export type Database = {
         | "paused"
         | "closed"
         | "suspended"
+        | "uploading_media"
+        | "media_failed"
+        | "pending_payment"
+        | "approved"
+        | "expired"
+        | "rented"
+        | "sold"
+        | "rejected"
+        | "deleted_soft"
+        | "deleted_hard"
       property_type: "casa" | "departamento" | "local" | "oficina" | "terreno"
       property_video_status:
         | "uploading"
@@ -1761,6 +1772,16 @@ export const Constants = {
         "paused",
         "closed",
         "suspended",
+        "uploading_media",
+        "media_failed",
+        "pending_payment",
+        "approved",
+        "expired",
+        "rented",
+        "sold",
+        "rejected",
+        "deleted_soft",
+        "deleted_hard",
       ],
       property_type: ["casa", "departamento", "local", "oficina", "terreno"],
       property_video_status: [
@@ -1774,4 +1795,3 @@ export const Constants = {
     },
   },
 } as const
-
