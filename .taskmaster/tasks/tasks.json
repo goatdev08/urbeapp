@@ -5177,7 +5177,7 @@
         "id": "73",
         "title": "Ola 1 — Publicación completa (5 pasos + 16 estados + moderación manual)",
         "description": "Wizard de 5 pasos con autoguardado de borrador, máquina de 16 estados de publicación, pipeline de moderación manual, publicación rápida, re-revisión por edición y cierre/baja. PRD §14–16.",
-        "details": "PRD §14 (wizard+autosave draft), §15 (moderación, pipeline, estados §15.4, re-revisión §15.5, visibilidad §15.6), §16 (cierre). Hoy: 3 pasos, auto-`active`, sin moderación. Es el corazón transaccional → CRÍTICO (EF publish-property, RPC atómica, RLS, máquina de estados). Cablear la abstracción de slot (vigencia) aunque sea gratis. Épica del camino a producción (ADR 0008 / docs/PRD-beta.md). Spec detallado (modelo de datos, RLS, EF, pantallas, estados, edge cases, tests, subtareas) se redacta SECUENCIAL al entrar su ola, con aprobación de Abraham; add-task roto → subtareas por escritura directa en tasks.json.",
+        "details": "PRD §14 (wizard+autosave draft), §15 (moderación, pipeline, estados §15.4, re-revisión §15.5, visibilidad §15.6), §16 (cierre). Hoy: 3 pasos, auto-`active`, sin moderación. Es el corazón transaccional → CRÍTICO (EF publish-property, RPC atómica, RLS, máquina de estados). Cablear la abstracción de slot (vigencia) aunque sea gratis. Épica del camino a producción (ADR 0008 / docs/PRD-beta.md). Spec detallado (modelo de datos, RLS, EF, pantallas, estados, edge cases, tests, subtareas) se redacta SECUENCIAL al entrar su ola, con aprobación de Abraham; add-task roto → subtareas por escritura directa en tasks.json.\n\nDERIVADAS: #120 (hardening) · #121 (hardening) · #122 (fix) · #123 (fix) · #124 (hardening) · #125 (producto)",
         "testStrategy": "TDD estricto en lógica crítica (supabase/functions/**, migrations/**, lib/hooks/validation): RED→GREEN→guardian. Verificación ligera (tsc/lint/smoke) en UI. Se detalla al specificar la ola.",
         "status": "done",
         "dependencies": [
@@ -7160,6 +7160,85 @@
           "74"
         ],
         "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": "120",
+        "title": "hardening(73.4): cableo params→RPC en publish-property/index.ts sin ningún test automatizado",
+        "description": "Origen: subtarea 73.4 · Detectado por: guardian (mutación). El mapeo de PropertyPublishParams a los argumentos de la RPC publish_property_atomic vive inline dentro del Deno.serve de index.ts, fuera de todo seam probado. La mutación (b) del guardian quitó la línea p_property_status:params.property_status y la suite completa (836 Deno + 831 pgTAP) siguió en verde mientras la publicación real caía en 'active' en silencio — exactamente el defecto crítico que ya tuvo que corregirse una vez en esta misma subtarea.",
+        "details": "Extraer el mapeo PropertyPublishParams→argumentos de la RPC a una función pura exportada y testeable (fuera del closure de Deno.serve), o agregar un test de integración mínimo contra el stack local que invoque el handler completo con adapters reales y verifique el estado final en DB. Mismo patrón de riesgo reaparecido en 73.9 (apply_revision_snapshot) — revisar si conviene una convención de repo (lint/checklist) para que todo index.ts nuevo declare explícitamente qué mapeos quedan sin test.",
+        "testStrategy": "Deno: test directo de la función de mapeo (params→args) con fixtures representativos. Integración: invocar el handler real end-to-end contra el stack local y verificar la fila de properties resultante.",
+        "status": "pending",
+        "dependencies": [
+          "73"
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": "121",
+        "title": "hardening(73.6): properties_update RLS permite saltarse la EF edit-property (sin re-revisión)",
+        "description": "Origen: subtarea 73.6 · Detectado por: guardian. La policy properties_update (RLS) sigue permitiendo que el owner o un admin de agencia hagan UPDATE directo de cualquier columna crítica (incluido price) sin pasar por la EF edit-property — la garantía §15.6 ('nadie salta la re-revisión') no está blindada a nivel DB, solo a nivel de qué llama el cliente móvil hoy.",
+        "details": "Se intentó endurecer la RLS durante 73.6 y se revirtió porque rompía una capacidad YA probada de la tarea 71.2 (PRD §4.10): un admin de agencia edita propiedades de los agentes de su equipo por RLS directo. Requiere diseño que satisfaga AMBAS garantías a la vez — posibles caminos: (a) que el admin de agencia también pase por edit-property (la EF ya acepta owner-o-admin, solo falta que el cliente de gestión de equipo la use en vez de UPDATE directo); (b) grant column-level que excluya SOLO los 5 campos críticos (operation_type, property_type, address, price, description) de la RLS directa, dejando el resto (price_visible, amenidades) editable sin pasar por la EF. Verificar contra supabase/tests/21_agency_member_role_matrix_test.sql (no debe romperse) y contra el resto de la suite de 73.6.",
+        "testStrategy": "pgTAP: RLS deniega UPDATE directo de campos críticos a owner/admin de agencia mientras 21_agency_member_role_matrix_test.sql sigue verde. Deno: edit-property sigue siendo el único camino que aplica correctamente el diff crítico/no-crítico.",
+        "status": "pending",
+        "dependencies": [
+          "73",
+          "71"
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": "122",
+        "title": "fix(73.6): usePublish.ts no parsea el body {code,message} real de un error de edit-property",
+        "description": "Origen: subtarea 73.6 · Detectado por: guardian. El fake de test de functions.invoke devuelve {data:null, error:{message}}, pero la supabase-js real ante un 4xx/5xx entrega un FunctionsHttpError cuyo .message es genérico ('Edge Function returned a non-2xx status code') y NO lee el body {error:{code,message}} que la EF sí manda. El usuario vería ese texto genérico en vez de, por ejemplo, 'No autorizado: no eres el dueño de esta propiedad'.",
+        "details": "usePublish.ts (edit mode) debe leer el body real del FunctionsHttpError (supabase-js expone .context con la Response original, o hay que leer el body manualmente según la versión del SDK — verificar la API exacta contra la versión instalada) y mostrar error.message del payload {code,message} en vez del mensaje genérico del SDK. Aplica potencialmente también a otros callers de functions.invoke en el repo (publish-property ya en producción) — revisar si es un problema aislado o sistémico antes de decidir alcance.",
+        "testStrategy": "Jest: mock de functions.invoke que simula un FunctionsHttpError real (no el {data,error} simplificado) y verifica que el mensaje mostrado viene del body, no del genérico del SDK.",
+        "status": "pending",
+        "dependencies": [
+          "73"
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": "123",
+        "title": "fix(73.3): price_visible en modo edición (useLoadProperty.ts/usePublish.ts) sin cobertura de test",
+        "description": "Origen: subtarea 73.3 · Detectado por: guardian. Para que el toggle price_visible funcionara correctamente en modo edición se tocaron 5 líneas fuera del footprint original de la subtarea (useLoadProperty.ts select+map, usePublish.ts edit_payload) — funcionales, verificadas por lectura, pero SIN ningún test que las respalde.",
+        "details": "Si alguien quita price_visible del select de useLoadProperty.ts, el toggle se resetea silenciosamente en modo edición y ningún test lo cazaría. Agregar: test de useLoadProperty que confirme que price_visible viaja del row de DB al PublishFormState; test de usePublish (edit mode) que confirme que price_visible del state llega al edit_payload.",
+        "testStrategy": "Jest/RNTL: extender los tests existentes de ambos hooks con el caso price_visible explícito (true→false y false→true).",
+        "status": "pending",
+        "dependencies": [
+          "73"
+        ],
+        "priority": "low",
+        "subtasks": []
+      },
+      {
+        "id": "124",
+        "title": "hardening(73.9): whitelist de campos editables duplicado entre edit-property y moderate-property",
+        "description": "Origen: subtarea 73.9 · Detectado por: guardian. apply_revision_snapshot (moderate-property) proyecta property_revisions.changed_fields al mismo whitelist de 12 columnas que edit-property/index.ts define — copiado deliberadamente (no factorizado), con comentario cruzado en ambos archivos. Si edit-property gana un campo editable nuevo y nadie replica el cambio en moderate-property, el campo nuevo simplemente no se aplicaría al aprobar una revisión — sin que ningún test lo detecte.",
+        "details": "Factorizar el whitelist a un helper compartido en supabase/functions/_shared/ (ej. EDITABLE_PROPERTY_FIELDS + project_property_fields()) que ambas EFs importen, eliminando la duplicación. Alternativa más barata: un test de guardia que compare programaticamente las dos listas (fallar si divergen) sin fusionar el código todavía.",
+        "testStrategy": "Deno: test que importa ambas listas (o la única factorizada) y confirma que edit-property y moderate-property aplican exactamente el mismo conjunto de columnas.",
+        "status": "pending",
+        "dependencies": [
+          "73"
+        ],
+        "priority": "low",
+        "subtasks": []
+      },
+      {
+        "id": "125",
+        "title": "producto(73.8): dos representaciones de \"rentada\"/\"vendida\" conviven en la DB",
+        "description": "Origen: subtarea 73.8 · Detectado por: guardian. Desde 73.8, cerrar una propiedad usa status='rented'/'sold' directo (camino nuevo). El camino viejo (status='closed'+closed_reason='rented'/'sold') sigue aceptado por la EF update-property-status (VALID_CLOSED_REASONS) para no romper filas históricas. El cliente ya solo produce el camino nuevo y la UI agrupa ambos (is_closed_bucket en my-listings.tsx), pero cualquier query/métrica futura que discrimine 'rentada vs vendida' tiene que mirar los dos campos mientras existan filas viejas.",
+        "details": "Decisión de producto pendiente: (a) dejar convivir ambas representaciones indefinidamente (el estado actual, funciona pero es deuda silenciosa); (b) backfill de las filas históricas closed+closed_reason∈{rented,sold} a status=rented/sold directo, y deprecar esos 2 valores de VALID_CLOSED_REASONS; (c) documentar explícitamente el dual-path como permanente si el volumen de datos históricos no lo justifica. Requiere que Abraham decida antes de picar código (no es una decisión técnica pura).",
+        "testStrategy": "N/A hasta la decisión de alcance — si se opta por backfill, pgTAP de la migración (idempotente + rollback) verificando el conteo de filas migradas.",
+        "status": "pending",
+        "dependencies": [
+          "73"
+        ],
+        "priority": "low",
         "subtasks": []
       }
     ],
