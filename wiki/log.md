@@ -2,6 +2,20 @@
 
 Append-only. Prefijo: `## [YYYY-MM-DD] tipo | título`
 
+## [2026-08-09] tarea | 75.4 Contacto WhatsApp + unificación — el feed contactaba sin crear lead
+
+Tercera subtarea del CRM. Lo que parecía "cambiar el texto del mensaje" destapó **tres huecos**, dos de ellos invisibles desde los tests.
+
+**1. Se podía contactar al agente sin que existiera el lead.** `VideoFeedItem` (feed) y `AgentCard` (detalle) abrían WhatsApp con `open_whatsapp()` directo, saltándose la EF: el agente recibía el mensaje y en Urbea **no quedaba nada** — sin lead, sin el acceso a datos que §19.2 le concede *sólo* tras el contacto, sin los +10 de scoring, sin fila en el CRM. Y el feed es donde más se contacta, así que el CRM perdía justo los contactos más frecuentes. Ambos lo admitían con un `ponytail:` ("llega en #11"). Fix: hook **`useContactAgent`** = un solo camino para los tres call sites (invoca EF → si 200 abre WhatsApp con el template del servidor → si falla **no** abre). `ContactAgentButton` perdió su copia del mapa de errores y su `onContactReady`; `open_whatsapp()` sobrevive sólo para la dirección inversa (el agente escribiéndole a su lead).
+
+**2. El precio se publicaba ignorando `price_visible`.** El template metía el precio **siempre**: una propiedad con el precio oculto lo soltaba igual en el prellenado de WhatsApp. El §19.3 no lleva precio, así que el arreglo fue de raíz — `PropertyWithAgent` perdió `price` y `operation_type` y la EF **ya ni pide la columna**. No se filtra lo que no se lee.
+
+**3. `property_video_id` era NULL en toda la producción.** El resolver de la EF vivía **inline en el closure de `Deno.serve`**, o sea sin un solo test, y omitía `video_id` con otro `ponytail:` — contra §9.6. Extraerlo a `property_resolver.ts` (mismo movimiento que 75.1 hizo con `lead_repo.ts`) fue lo que lo destapó: **el patrón se repite — lo que vive dentro del entry point no lo mira nadie.**
+
+**Template §19.3, parcial a propósito:** `Hola, vi tu propiedad en Urbea: {Tipo} en {dirección}, {zona}. Me interesa conocer más detalles.` Faltan `(#código)` y `[deep link]` porque `public_code` lo crea la **74** y la página `/v/[id]` la **78.5** (que espera el dominio, decisión de hoy). La **dirección** ocupa el lugar del código porque cumple su función — que el agente sepa de cuál propiedad le escriben; quitarla sin código sería regresión. Derivada **#118**.
+
+**Unificación §19.5:** ya funcionaba (índice único parcial + find/insert/recovery 23505) pero nada pineaba que la clave es **(agente, usuario) y NO la propiedad**; 4 tests nuevos mueren si alguien le agrega `property_id` al find. Suites: Deno **812** (98 en contact-agent, +27), Jest **952** (+8), tsc/lint 0. Los tests nuevos se verificaron **por mutación** (quitar el sort por `position` mató uno; quitar la zona del mensaje, otro).
+
 ## [2026-08-08] tarea | #113 El detalle del lead abría VACÍO — un `flex: 1` colapsado a altura 0
 
 Segundo reporte del dueño (*"en la cuenta de vladimir aún no puedo configurar los estados"*) tras un primer diagnóstico **equivocado** en #112: se atribuyó a permisos y era **layout**. El sheet abría con la cabecera y los botones, y nada en medio: ni Actividad, ni Cambiar estado, ni notas, ni historial — en TODAS las cuentas.

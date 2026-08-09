@@ -37,10 +37,17 @@ export interface CallerVerifier {
 export interface PropertyWithAgent {
   id: string;
   address: string;
-  price: number; // MXN pesos — ej. $1,650,000.00 → 1_650_000
+  // 75.4 — property_type + zone alimentan el template §19.3 ("[tipo + zona]").
+  property_type: string; // enum property_type: 'casa'|'departamento'|'local'|'oficina'|'terreno'
+  zone: string | null; // colonia; NULL en propiedades viejas → el template la omite
   status: string; // 'active' | 'draft' | 'paused' | 'closed' | etc.
-  operation_type: string; // 'rent' | 'sale' | 'both' — determina sufijo '/mes' en el mensaje (14.6)
   owner_user_id: string;
+  // ⚠️ 75.4 — `price` y `operation_type` SE RETIRARON a propósito, no por limpieza.
+  // El template viejo metía el precio SIEMPRE en el mensaje de WhatsApp, ignorando
+  // `properties.price_visible`: en una propiedad con el precio oculto, el prellenado
+  // lo publicaba igual. El template §19.3 no lleva precio, así que la EF ya no
+  // necesita leerlo — y lo que no se lee no se puede filtrar. Si alguien vuelve a
+  // necesitar el precio aquí, tiene que traer `price_visible` con él.
   agent_id: string; // = owner_user_id (alias explícito; el resolver los normaliza)
   agent_name: string; // CONCAT(first_name, ' ', last_name) — para el template del mensaje (14.6)
   agent_phone: string | null; // NULL si el agente no tiene teléfono registrado
@@ -59,14 +66,17 @@ export type PropertyResolveResult =
 // ── PropertyResolver ──────────────────────────────────────────────────────────
 //
 // DI port — obtiene propiedad + agente dueño (JOIN con disambiguación de FK).
-// Consulta equivalente (en el adapter real, creado en 14.3 GREEN):
-//   SELECT p.id, p.address, p.price, p.status, p.operation_type, p.owner_user_id,
+// Consulta equivalente (adapter real en property_resolver.ts, extraído de index.ts en 75.4):
+//   SELECT p.id, p.address, p.property_type, p.zone, p.status, p.owner_user_id,
 //          u.id AS agent_id,
 //          CONCAT(u.first_name, ' ', u.last_name) AS agent_name,   -- 14.6: para el mensaje
-//          u.phone AS agent_phone
+//          u.phone AS agent_phone,
+//          v.id AS video_id            -- 75.4/§9.6: video de origen del contacto
 //   FROM properties p
 //   JOIN users u ON p.owner_user_id = u.id   -- hint: users!properties_owner_user_id_fkey
+//   LEFT JOIN property_videos v ON v.property_id = p.id AND v.deleted_at IS NULL
 //   WHERE p.id = propertyId AND p.deleted_at IS NULL
+//   ORDER BY v.position ASC LIMIT 1
 // Si la fila no aparece → { ok: false, error_code: "PROPERTY_NOT_FOUND" }.
 // La validación de status y phone la hace el handler (no el resolver).
 

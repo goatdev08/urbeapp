@@ -8,13 +8,56 @@
 //   (e) validar propertyId → 400 INVALID_INPUT si falta / no-string / vacío / no-UUID
 //   (f) placeholder → 200 { ok: true }  (subtareas 14.3-14.6 añadirán la lógica real)
 
-import type { ContactAgentDeps, ContactAgentInput, LeadRecord } from "./types.ts";
+import type {
+  ContactAgentDeps,
+  ContactAgentInput,
+  LeadRecord,
+  PropertyWithAgent,
+} from "./types.ts";
 import { handle_cors_preflight } from "../_shared/cors.ts";
 import { error_response, json_response } from "../_shared/response.ts";
 
 // UUID 8-4-4-4-12 hex, case-insensitive — ponytail: manual sin Zod, cubre todos los edge cases del test
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// ── Template fijo de WhatsApp (§19.3) — 75.4 ──────────────────────────────────
+//
+// PRD §19.3, literal:
+//   "Hola, vi tu propiedad en Urbea: [tipo + zona] (#[código]). Me interesa
+//    conocer más detalles. [deep link al video]"
+// "El template no es editable por el agente" — por eso vive aquí y no en el cliente.
+//
+// ⚠️ DOS PIEZAS DEL TEMPLATE NO EXISTEN TODAVÍA y se degradan a propósito:
+//   · `(#código)` → `properties.public_code` (URB-XXXXX) lo crea la tarea 74.
+//   · `[deep link]` → la página `urbea.com/v/[id]` la crea la 78.5 (y necesita dominio).
+// Mientras tanto la DIRECCIÓN ocupa el lugar del código, porque cumple su misma
+// función: que el agente sepa DE CUÁL de sus propiedades le están escribiendo. Sin
+// código y sin dirección, "Casa en Del Valle" es ambiguo para quien publica varias
+// casas en la misma colonia — sería una regresión, no una simplificación.
+// ponytail: cuando aterricen 74 (public_code) y 78.5 (web), cambiar dirección → código
+// y agregar el link. Está registrado como tarea derivada.
+const PROPERTY_TYPE_LABEL: Record<string, string> = {
+  casa: "Casa",
+  departamento: "Departamento",
+  local: "Local",
+  oficina: "Oficina",
+  terreno: "Terreno",
+};
+
+function build_contact_message(property: PropertyWithAgent): string {
+  // Tipo desconocido (el enum puede crecer) → valor crudo, nunca "undefined".
+  const tipo = PROPERTY_TYPE_LABEL[property.property_type] ?? property.property_type;
+
+  // zone es NULL en las propiedades viejas y address puede venir vacío: se filtran
+  // los vacíos para no dejar comas huérfanas ni "null" impreso en el mensaje.
+  const ubicacion = [property.address, property.zone]
+    .filter((parte): parte is string => typeof parte === "string" && parte.trim() !== "")
+    .join(", ");
+
+  const donde = ubicacion === "" ? "" : ` en ${ubicacion}`;
+  return `Hola, vi tu propiedad en Urbea: ${tipo}${donde}. Me interesa conocer más detalles.`;
+}
 
 type ParseResult<T> =
   | { success: true; data: T }
@@ -199,20 +242,7 @@ export function make_contact_agent_handler(
     // Sanitizar teléfono: conservar solo dígitos (quitar +, espacios, guiones, paréntesis)
     const sanitized_phone = property.agent_phone.replace(/[^\d]/g, "");
 
-    // Formatear precio con Intl — es-MX, MXN
-    const price_fmt = new Intl.NumberFormat("es-MX", {
-      style: "currency",
-      currency: "MXN",
-    }).format(property.price ?? 0);
-
-    // Sufijo '/mes' para renta y 'both'; sin sufijo para venta
-    const price_str =
-      property.operation_type === "rent" || property.operation_type === "both"
-        ? `${price_fmt}/mes`
-        : price_fmt;
-
-    const message =
-      `Hola ${property.agent_name}, vi tu propiedad en Urbea: ${property.address} - ${price_str}. Me gustaría recibir más información.`;
+    const message = build_contact_message(property);
 
     return json_response(
       {

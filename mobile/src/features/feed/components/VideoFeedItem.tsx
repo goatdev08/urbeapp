@@ -29,7 +29,7 @@ import { useSaveProperty } from '../hooks/useSaveProperty';
 import { useVideoEngagementEvents } from '../hooks/useVideoEngagementEvents';
 import { create_video_engagement_store } from '../lib/videoEngagementDedupe';
 import { get_app_session_id } from '../lib/appSession';
-import { open_whatsapp } from '@/features/property-detail/utils/whatsapp';
+import { useContactAgent } from '@/hooks/useContactAgent';
 import { share_property } from '@/lib/shareProperty';
 
 import { colors, type_scale } from '@/theme/theme';
@@ -83,6 +83,10 @@ function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedIte
     property_id: property.id,
   });
 
+  // Contacto por WhatsApp — el MISMO camino que el detalle: la EF crea el lead
+  // y devuelve el template §19.3. Ver el comentario de handle_whatsapp abajo.
+  const { contact_agent } = useContactAgent();
+
   // ── Telemetría de engagement (112.2) ───────────────────────────────────────
   // session_id + store son singletons de módulo (arriba) — sobreviven el
   // reciclaje de VideoFeedItem por FlashList dentro de la MISMA sesión de app.
@@ -117,11 +121,13 @@ function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedIte
     router.push(`/property/${property.id}`);
   }, [property.id]);
 
-  // WhatsApp directo desde el feed — solo si el agente tiene teléfono.
-  // ponytail: contacto rápido sin lead CRM (como AgentCard del detalle); el
-  // registro de lead vive en el CTA del detalle (contact-agent EF).
+  // WhatsApp desde el feed — solo si el agente tiene teléfono.
+  // 75.4: antes llamaba a open_whatsapp() directo y NO registraba lead. Era el
+  // hueco grande: el feed es donde más se contacta, así que el CRM se estaba
+  // perdiendo justo los contactos más frecuentes (y con ellos el acceso a datos
+  // que §19.2 concede al agente y los +10 de scoring). Ahora pasa por la EF.
   const handle_whatsapp = property.agent_phone
-    ? () => open_whatsapp(property.agent_phone, property.address)
+    ? () => { void contact_agent(property.id); }
     : null;
 
   // Compartir link al video (Share nativo) — funciona sin cuenta en Urbea.

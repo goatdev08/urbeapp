@@ -8,7 +8,12 @@
  *   - borde silver, placeholder primary_tint
  *
  * ponytail: get_initials duplicada intencionalmente (ProfileHeader no la exporta;
- * extraer a shared utils si aparece un 3er consumidor). Sin registro CRM — #11.
+ * extraer a shared utils si aparece un 3er consumidor).
+ *
+ * 75.4: este botón llamaba a open_whatsapp() directo, sin pasar por la EF — o sea
+ * el agente recibía el mensaje y en Urbea no quedaba lead (ni acceso a datos §19.2,
+ * ni scoring, ni fila en el CRM). Ahora usa useContactAgent, el mismo camino que
+ * el CTA sticky y el feed.
  */
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -17,8 +22,8 @@ import { WhatsappLogo } from 'phosphor-react-native';
 
 import { colors, fonts, radii, shadows, spacing } from '@/theme/theme';
 import { useR2Urls } from '@/hooks/useR2Urls';
+import { useContactAgent } from '@/hooks/useContactAgent';
 import type { AgentInfo, AgencyInfo } from '../types';
-import { open_whatsapp } from '../utils/whatsapp';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -41,15 +46,17 @@ function get_initials(full_name: string | null): string {
 interface AgentCardProps {
   agent: AgentInfo;
   agency: AgencyInfo | null;
-  address: string;
+  /** UUID de la propiedad — la EF `contact-agent` lo necesita para crear el lead (75.4). */
+  property_id: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Componente
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function AgentCard({ agent, agency, address }: AgentCardProps) {
+export function AgentCard({ agent, agency, property_id }: AgentCardProps) {
   const [img_error, set_img_error] = useState(false);
+  const { contact_agent, is_contacting } = useContactAgent();
 
   // agent.profile_photo_url guarda el R2 KEY (misma columna user_preferences
   // que ProfileHeader, bucket privado, subtarea 69.3) — se resuelve a una URL
@@ -63,8 +70,7 @@ export function AgentCard({ agent, agency, address }: AgentCardProps) {
   const has_phone = agent.phone !== null && agent.phone.length > 0;
 
   function handle_whatsapp_press() {
-    // ponytail: sin registro de lead CRM — llega en #11
-    open_whatsapp(agent.phone, address);
+    void contact_agent(property_id);
   }
 
   return (
@@ -107,6 +113,7 @@ export function AgentCard({ agent, agency, address }: AgentCardProps) {
             pressed && styles.wa_button_pressed,
           ]}
           onPress={handle_whatsapp_press}
+          disabled={is_contacting}
           accessibilityRole="button"
           accessibilityLabel={`Contactar a ${display_name} por WhatsApp`}
           hitSlop={8}

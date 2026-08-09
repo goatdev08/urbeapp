@@ -48,7 +48,6 @@ import { AgentCard } from './components/AgentCard';
 import { PropertyMap } from './components/PropertyMap';
 import { ActionButtons } from './components/ActionButtons';
 import { DetailSkeleton } from './components/DetailSkeleton';
-import { open_whatsapp_ef } from './utils/whatsapp';
 
 // Espacio inferior reservado para el CTA sticky:
 // PrimaryButton height (54) + paddingTop (8) + paddingBottom (16) + margen visual (8)
@@ -171,7 +170,7 @@ export function PropertyDetailScreen(): React.JSX.Element {
           <AgentCard
             agent={data.agent}
             agency={data.agency}
-            address={data.address}
+            property_id={property_id}
           />
         </View>
 
@@ -186,12 +185,12 @@ export function PropertyDetailScreen(): React.JSX.Element {
            cuando ya sabemos que no hay teléfono. ────────────────────── */}
       {data.agent.phone !== null && (
         <View style={styles.sticky_cta}>
+          {/* 75.4: la apertura de WhatsApp se movió dentro del botón (useContactAgent),
+              para que el feed y la tarjeta de agente compartan exactamente el mismo
+              camino y ninguno pueda contactar sin registrar el lead. */}
           <ContactAgentButton
             propertyId={property_id}
             agentName={data.agent.full_name ?? 'Agente'}
-            onContactReady={(phone, message) => {
-              void open_whatsapp_ef(phone, message);
-            }}
           />
         </View>
       )}
