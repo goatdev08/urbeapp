@@ -5304,14 +5304,15 @@
             "id": 9,
             "title": "Aprobación admin (transiciones vía Studio en beta)",
             "description": "EFs de transición approve/needs_changes/reject/suspend que el super-admin dispara por Studio en beta (usa 71.5).",
-            "details": "EFs de moderación: approve (aplica revision → active/approved), needs_changes (motivo), reject (motivo), suspend (fraude/reporte, inmediato §15.6). En beta el super-admin las invoca por Studio/SQL; el panel web (Ola 3) las envolverá. admin_actions inmutable. CRÍTICA (state machine + auditoría).\n<info added on 2026-08-09T18:15:42.308Z>\nPLAN: DECISIÓN usuario 2026-08-09: 1 sola EF unificada moderate-property (patrón compacto de update-property-status), acción parametrizada (approve|needs_changes|reject|suspend), NO 4 EFs separadas. Al aprobar: aplica el snapshot de property_revisions (de 73.6) sobre la propiedad live. Auditoría vía admin_actions (ya existe desde #71/000007, inmutable). Requiere que 73.6 defina primero el contrato exacto de property_revisions (qué guarda el snapshot, cómo se aplica) — mantener orden estricto 73.6 antes de 73.9. agente=supabase · skills=urbea-supabase,urbea-testing · criticidad=crítica (supabase/functions/**, máquina de estados+auditoría) · footprint=supabase/functions/moderate-property/{handler.ts,types.ts,handler.test.ts}(nuevo).\n</info added on 2026-08-09T18:15:42.308Z>",
+            "details": "EFs de moderación: approve (aplica revision → active/approved), needs_changes (motivo), reject (motivo), suspend (fraude/reporte, inmediato §15.6). En beta el super-admin las invoca por Studio/SQL; el panel web (Ola 3) las envolverá. admin_actions inmutable. CRÍTICA (state machine + auditoría).\n<info added on 2026-08-09T18:15:42.308Z>\nPLAN: DECISIÓN usuario 2026-08-09: 1 sola EF unificada moderate-property (patrón compacto de update-property-status), acción parametrizada (approve|needs_changes|reject|suspend), NO 4 EFs separadas. Al aprobar: aplica el snapshot de property_revisions (de 73.6) sobre la propiedad live. Auditoría vía admin_actions (ya existe desde #71/000007, inmutable). Requiere que 73.6 defina primero el contrato exacto de property_revisions (qué guarda el snapshot, cómo se aplica) — mantener orden estricto 73.6 antes de 73.9. agente=supabase · skills=urbea-supabase,urbea-testing · criticidad=crítica (supabase/functions/**, máquina de estados+auditoría) · footprint=supabase/functions/moderate-property/{handler.ts,types.ts,handler.test.ts}(nuevo).\n</info added on 2026-08-09T18:15:42.308Z>\n<info added on 2026-08-09T22:46:11.721Z>\nBased on the user request describing the completion of the RED phase (test-first), here is the new text to append to subtask 73.9:\n\n---\n\nRED fase completada. Archivos creados: supabase/functions/moderate-property/types.ts (contrato DI + 6 ports: AdminVerifier, PropertyFetcher, RevisionFinder, PropertyUpdater{set_status, apply_revision_snapshot}, RevisionResolver, AdminActionRecorder), handler.ts (stub 501 únicamente), handler.test.ts (39 Deno.test totales). Runner: deno test --allow-net --config supabase/functions/deno.json supabase/functions/moderate-property/handler.test.ts. 39 tests, 0 passed, todos fallan por AssertionError de status HTTP 501 vs esperado, NO por import ni tipo. Diseño de seams: handler puro testable sin DB real mediante inyección de dependencias por los 6 ports (patrón de update-property-status/edit-property). Contrato fijado en types.ts: admin_actions.action_type replica el ModerateAction del payload ('approve'|'needs_changes'|'reject'|'suspend'), admin_actions.reason siempre payload.reason ?? null, old_values/new_values llevan {status:...} cuando toca properties.status (suspend sin-revisión) O {revision_status:...} cuando toca property_revisions (con-revisión), nunca ambos. RevisionResolver.reason: null en approve, payload.reason en needs_changes/reject. Respuesta 200 incluye el status RESULTANTE de properties (para ramas con-revisión que no modifican properties.status, devuelve el status previo intacto, típicamente 'active'). SUSPEND_BLOCKED_STATES={sold,rented,deleted_hard,deleted_soft} (criterio propio por PRD §16.1 'no se contempla reabrir'). Error nuevo NOTHING_TO_MODERATE (400): approve/needs_changes/reject sin revisión activa Y properties.status≠'pending_review'. adminActionRecorder DB_ERROR provoca 500 aunque propertyUpdater/revisionResolver hayan tenido éxito (auditoría obligatoria, no best-effort). Grid de edge cases: 3×2 happy path (approve|needs_changes|reject × con-revisión|sin-revisión), rama suspend independiente (incluyendo 4 tests de suspend bloqueado en cada estado terminal, revisión previa intacta si existe), reglas NOTHING_TO_MODERATE, auth (401/403), 404 property inexistente, 9 tests boundary payload (body no-JSON, property_id ausente/vacío/espacios, action fuera-enum, reason no-string/vacío/espacios), 5 tests CORS/método (OPTIONS 200+headers, GET/PUT/DELETE 405), 6 tests DB_ERROR 500 por cada dependencia (propertyFetcher, revisionFinder, propertyUpdater.set_status, propertyUpdater.apply_revision_snapshot, revisionResolver, adminActionRecorder tras escritura principal exitosa). Header admin propagado exacto al verifier. Siguiente: GREEN (implementar handler real hasta pasar los 39).\n</info added on 2026-08-09T22:46:11.721Z>",
             "testStrategy": "pgTAP/Deno: solo admin transiciona; approve activa y aplica revision; suspend oculta ya; auditoría registra.",
-            "status": "pending",
+            "status": "in-progress",
             "dependencies": [
               6
             ],
             "priority": "high",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-08-09T22:36:36.281Z"
           },
           {
             "id": 10,
@@ -5330,7 +5331,7 @@
             "parentId": "undefined"
           }
         ],
-        "updatedAt": "2026-08-09T22:36:22.751Z"
+        "updatedAt": "2026-08-09T22:36:36.281Z"
       },
       {
         "id": "74",
@@ -7163,12 +7164,14 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-08-09T22:36:22.751Z",
+      "lastModified": "2026-08-09T22:36:36.281Z",
       "taskCount": 119,
       "completedCount": 71,
       "tags": [
         "master"
-      ]
+      ],
+      "created": "2026-08-09T22:45:37.738Z",
+      "description": "Tasks for master context"
     }
   }
 }
