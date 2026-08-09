@@ -163,19 +163,38 @@ export default function Step5Screen() {
     set_publish_error(final_error);
 
     if (final_status === 'success') {
+      // 73.6: en edit mode, la EF edit-property puede responder 'direct'
+      // (cambios ya aplicados) o 'revision' (cambio crítico — PRD §15.5/§15.6
+      // — quedó pendiente de aprobación admin; la propiedad publicada actual
+      // NO cambió todavía).
+      if (is_edit_mode && publish_hook.editResultMode === 'revision') {
+        Alert.alert(
+          'Cambios en revisión',
+          'Tu edición incluye cambios importantes (ubicación, precio, tipo, etc.) que el equipo debe aprobar antes de publicarse. Mientras tanto, tu propiedad sigue visible con los datos actuales.',
+          [{ text: 'Entendido', onPress: () => router.replace('/') }],
+        );
+        return;
+      }
+
       // Portada: default 50% (Stream, 68.4) al publicar. El agente puede
       // refinarla en el editor una vez el video quede 'ready' (68.7, sección
       // "Portada" más abajo) — la generación de un frame local ya no aplica
       // con upload-first (cleanup P7 legacy, ver videoThumbnail.ts eliminado).
-      Alert.alert('¡Publicada!', 'Tu propiedad ya está disponible en el feed.', [
-        {
-          text: 'Aceptar',
-          // Navega a la home del feed (app/(protected)/index.tsx).
-          onPress: () => router.replace('/'),
-        },
-      ]);
+      Alert.alert(
+        is_edit_mode ? '¡Cambios guardados!' : '¡Publicada!',
+        is_edit_mode
+          ? 'Tu propiedad se actualizó correctamente.'
+          : 'Tu propiedad ya está disponible en el feed.',
+        [
+          {
+            text: 'Aceptar',
+            // Navega a la home del feed (app/(protected)/index.tsx).
+            onPress: () => router.replace('/'),
+          },
+        ],
+      );
     }
-  }, [publish_hook, router]);
+  }, [publish_hook, router, is_edit_mode]);
 
   // ── Derivados de estado ────────────────────────────────────────────────────
 
