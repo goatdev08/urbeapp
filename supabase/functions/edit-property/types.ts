@@ -72,6 +72,9 @@ export interface CallerVerifier {
 export interface CurrentPropertySnapshot {
   id: string;
   owner_user_id: string;
+  // #142: agencia real de la fila — la rama de autorización por rol de agencia
+  // (properties_update RLS que esta EF reemplaza) se escopa a ESTA agency_id.
+  agency_id: string | null;
   operation_type: string;
   property_type: string;
   price: number;
@@ -128,6 +131,19 @@ export interface RevisionUpserter {
   ): Promise<RevisionUpsertResult>;
 }
 
+// ── AgencyRoleResolver (#142) ─────────────────────────────────────────────────
+//
+// Replica la rama `private.agency_role_of(agency_id) in ('owner','admin')` de
+// la RLS properties_update (20260805000011, capacidad deliberada de #71) que
+// esta EF perdió al reemplazar el UPDATE directo: un owner/admin de agencia
+// puede editar las publicaciones de sus agentes. Devuelve el member_role
+// ACTIVO del usuario en ESA agencia, o null si no es miembro activo (o si la
+// query falla — fail-closed: sin rol no hay autorización extra).
+
+export interface AgencyRoleResolver {
+  resolve(user_id: string, agency_id: string): Promise<string | null>;
+}
+
 // ── Deps inyectables del handler ──────────────────────────────────────────────
 
 export interface EditPropertyDeps {
@@ -135,6 +151,7 @@ export interface EditPropertyDeps {
   propertyFetcher: PropertyFetcher;
   directPropertyUpdater: DirectPropertyUpdater;
   revisionUpserter: RevisionUpserter;
+  agencyRoleResolver: AgencyRoleResolver;
 }
 
 // ── Respuesta de éxito (contrato observable por el cliente — usePublish.ts) ───

@@ -84,6 +84,7 @@
 import { assertEquals, assertExists } from "@std/assert";
 import { handler } from "./handler.ts";
 import type {
+  AgencyRoleResolver,
   CallerVerifier,
   CallerVerifyResult,
   CurrentPropertySnapshot,
@@ -105,16 +106,25 @@ const OTRO_USUARIO_ID = "00000000-0000-0000-0006-000000000099";
 const PROPERTY_ID = "00000000-0000-0000-0006-000000000010";
 const REVISION_ID = "00000000-0000-0000-0006-000000000020";
 
+const AGENCY_ID = "00000000-0000-0000-0006-000000000030";
+
 // Snapshot ACTUAL (current_published) — línea base contra la que se hace el diff.
 const CURRENT: CurrentPropertySnapshot = {
   id: PROPERTY_ID,
   owner_user_id: OWNER_ID,
+  agency_id: null, // independiente por default; los tests de agencia lo pisan
   operation_type: "rent",
   property_type: "departamento",
   price: 12500,
   address: "Av. Insurgentes Sur 1234, CDMX",
   location: "SRID=4326;POINT(-99.1731 19.3737)",
   description: "Depa amplio y luminoso, cerca del metro",
+};
+
+// Snapshot de una propiedad publicada BAJO una agencia (para la matriz #142).
+const CURRENT_CON_AGENCIA: CurrentPropertySnapshot = {
+  ...CURRENT,
+  agency_id: AGENCY_ID,
 };
 
 // Payload BASE que reproduce exactamente el snapshot actual (sin cambios).
@@ -279,12 +289,29 @@ function method_request(method: string): Request {
   return new Request("http://localhost/edit-property", { method });
 }
 
+// ── Factories de fakes — AgencyRoleResolver (#142) ────────────────────────────
+
+interface FakeAgencyRoleResolver extends AgencyRoleResolver {
+  calls: { user_id: string; agency_id: string }[];
+}
+
+function resolver_role(role: string | null): FakeAgencyRoleResolver {
+  return {
+    calls: [],
+    resolve(user_id: string, agency_id: string): Promise<string | null> {
+      this.calls.push({ user_id, agency_id });
+      return Promise.resolve(role);
+    },
+  } as FakeAgencyRoleResolver;
+}
+
 function deps(overrides: Partial<EditPropertyDeps> = {}): EditPropertyDeps {
   return {
     callerVerifier: overrides.callerVerifier ?? verifier_ok(),
     propertyFetcher: overrides.propertyFetcher ?? fetcher_ok(),
     directPropertyUpdater: overrides.directPropertyUpdater ?? direct_updater_ok(),
     revisionUpserter: overrides.revisionUpserter ?? revision_upserter_ok(),
+    agencyRoleResolver: overrides.agencyRoleResolver ?? resolver_role(null),
   };
 }
 
@@ -696,4 +723,209 @@ Deno.test("error_400_payload_invalido_tiene_forma_error_code_message", async () 
   assertExists(body.error);
   assertEquals(typeof body.error.code, "string");
   assertEquals(typeof body.error.message, "string");
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// #142 (fix 73.6) — REGRESIÓN 1: capacidad de agencia perdida.
+// La RLS properties_update (20260805000011, capacidad deliberada de #71)
+// autorizaba también a private.agency_role_of(agency_id) in ('owner','admin');
+// al mover la edición a esta EF, esa rama desapareció: un owner/admin de
+// agencia que corregía las publicaciones de sus agentes recibía 403.
+// ═══════════════════════════════════════════════════════════════════════════
+
+Deno.test("142_owner_de_agencia_edita_propiedad_de_su_agente_200", async () => {
+  const resolver = resolver_role("owner");
+  const res = await handler(
+    post_auth(BASE_INPUT),
+    deps({
+      callerVerifier: verifier_ok(OTRO_USUARIO_ID, false),
+      propertyFetcher: fetcher_ok(CURRENT_CON_AGENCIA),
+      agencyRoleResolver: resolver,
+    }),
+  );
+  assertEquals(res.status, 200, "owner de la agencia de la fila debe poder editar (#71/#142)");
+  assertEquals(resolver.calls.length, 1, "debe resolver el rol contra la agencia de la fila");
+  assertEquals(resolver.calls[0].user_id, OTRO_USUARIO_ID);
+  assertEquals(resolver.calls[0].agency_id, AGENCY_ID);
+});
+
+Deno.test("142_admin_de_agencia_edita_propiedad_de_su_agente_200", async () => {
+  const res = await handler(
+    post_auth(BASE_INPUT),
+    deps({
+      callerVerifier: verifier_ok(OTRO_USUARIO_ID, false),
+      propertyFetcher: fetcher_ok(CURRENT_CON_AGENCIA),
+      agencyRoleResolver: resolver_role("admin"),
+    }),
+  );
+  assertEquals(res.status, 200, "admin de la agencia de la fila debe poder editar (#71/#142)");
+});
+
+Deno.test("142_member_de_agencia_NO_puede_editar_403", async () => {
+  const res = await handler(
+    post_auth(BASE_INPUT),
+    deps({
+      callerVerifier: verifier_ok(OTRO_USUARIO_ID, false),
+      propertyFetcher: fetcher_ok(CURRENT_CON_AGENCIA),
+      agencyRoleResolver: resolver_role("member"),
+    }),
+  );
+  assertEquals(res.status, 403, "solo owner|admin de agencia — member no edita ajeno");
+});
+
+Deno.test("142_viewer_de_agencia_NO_puede_editar_403", async () => {
+  const res = await handler(
+    post_auth(BASE_INPUT),
+    deps({
+      callerVerifier: verifier_ok(OTRO_USUARIO_ID, false),
+      propertyFetcher: fetcher_ok(CURRENT_CON_AGENCIA),
+      agencyRoleResolver: resolver_role("viewer"),
+    }),
+  );
+  assertEquals(res.status, 403);
+});
+
+Deno.test("142_sin_membresia_activa_403", async () => {
+  const res = await handler(
+    post_auth(BASE_INPUT),
+    deps({
+      callerVerifier: verifier_ok(OTRO_USUARIO_ID, false),
+      propertyFetcher: fetcher_ok(CURRENT_CON_AGENCIA),
+      agencyRoleResolver: resolver_role(null),
+    }),
+  );
+  assertEquals(res.status, 403);
+});
+
+Deno.test("142_propiedad_independiente_no_consulta_resolver_y_403", async () => {
+  // agency_id null (agente independiente): la rama de agencia NI SE EVALÚA.
+  const resolver = resolver_role("owner");
+  const res = await handler(
+    post_auth(BASE_INPUT),
+    deps({
+      callerVerifier: verifier_ok(OTRO_USUARIO_ID, false),
+      propertyFetcher: fetcher_ok(CURRENT), // agency_id: null
+      agencyRoleResolver: resolver,
+    }),
+  );
+  assertEquals(res.status, 403);
+  assertEquals(resolver.calls.length, 0, "sin agency_id no hay lookup de agencia");
+});
+
+Deno.test("142_owner_directo_no_consulta_resolver_short_circuit", async () => {
+  const resolver = resolver_role(null);
+  const res = await handler(
+    post_auth(BASE_INPUT),
+    deps({
+      callerVerifier: verifier_ok(OWNER_ID, false),
+      propertyFetcher: fetcher_ok(CURRENT_CON_AGENCIA),
+      agencyRoleResolver: resolver,
+    }),
+  );
+  assertEquals(res.status, 200);
+  assertEquals(resolver.calls.length, 0, "el dueño no necesita lookup de agencia");
+});
+
+Deno.test("142_editor_de_agencia_con_cambio_critico_va_a_revision", async () => {
+  // La rama de agencia autoriza, pero el diff §15.5 sigue aplicando igual.
+  const ru = revision_upserter_ok();
+  const res = await handler(
+    post_auth({ ...BASE_INPUT, price: 99999 }),
+    deps({
+      callerVerifier: verifier_ok(OTRO_USUARIO_ID, false),
+      propertyFetcher: fetcher_ok(CURRENT_CON_AGENCIA),
+      agencyRoleResolver: resolver_role("owner"),
+      revisionUpserter: ru,
+    }),
+  );
+  assertEquals(res.status, 200);
+  const body = await res.json();
+  assertEquals(body.mode, "revision");
+  assertEquals(ru.calls.length, 1);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// #142 — REGRESIÓN 2: escritura destructiva con body parcial.
+// El parser coaccionaba todo campo ausente a un default falsy (booleans→false,
+// description→'', numéricos→null): un body parcial (caller alterno, app vieja
+// tras OTA, retry) borraba amenidades y recámaras en silencio, y la
+// description '' encima se diffeaba como cambio crítico → revisión espuria.
+// Contrato nuevo: el body debe traer TODAS las claves editables (el móvil
+// siempre manda el objeto completo) — parcial => 400 INVALID_INPUT, fail loud.
+// ═══════════════════════════════════════════════════════════════════════════
+
+function sin(campo: string): Record<string, unknown> {
+  const body = { ...BASE_INPUT } as Record<string, unknown>;
+  delete body[campo];
+  return body;
+}
+
+Deno.test("142_body_sin_price_visible_400_no_coacciona_a_false", async () => {
+  const du = direct_updater_ok();
+  const res = await handler(post_auth(sin("price_visible")), deps({ directPropertyUpdater: du }));
+  assertEquals(res.status, 400, "campo booleano ausente NO debe coaccionarse a false");
+  assertEquals(du.calls.length, 0, "un body parcial jamás llega al UPDATE");
+});
+
+Deno.test("142_body_sin_pet_friendly_400", async () => {
+  const res = await handler(post_auth(sin("pet_friendly")), deps());
+  assertEquals(res.status, 400);
+});
+
+Deno.test("142_body_sin_allows_no_guarantor_400", async () => {
+  const res = await handler(post_auth(sin("allows_no_guarantor")), deps());
+  assertEquals(res.status, 400);
+});
+
+Deno.test("142_body_sin_student_friendly_400", async () => {
+  const res = await handler(post_auth(sin("student_friendly")), deps());
+  assertEquals(res.status, 400);
+});
+
+Deno.test("142_body_sin_description_400_no_coacciona_a_vacio", async () => {
+  const ru = revision_upserter_ok();
+  const res = await handler(post_auth(sin("description")), deps({ revisionUpserter: ru }));
+  assertEquals(res.status, 400, "description ausente NO debe volverse '' (diffeaba como cambio crítico)");
+  assertEquals(ru.calls.length, 0, "la description coaccionada a '' ya no manda a revisión espuria");
+});
+
+Deno.test("142_body_sin_bedrooms_400_no_coacciona_a_null", async () => {
+  const res = await handler(post_auth(sin("bedrooms")), deps());
+  assertEquals(res.status, 400, "clave numérica AUSENTE ≠ null explícito — no borrar en silencio");
+});
+
+Deno.test("142_body_sin_bathrooms_400", async () => {
+  const res = await handler(post_auth(sin("bathrooms")), deps());
+  assertEquals(res.status, 400);
+});
+
+Deno.test("142_body_sin_square_meters_400", async () => {
+  const res = await handler(post_auth(sin("square_meters")), deps());
+  assertEquals(res.status, 400);
+});
+
+Deno.test("142_bedrooms_null_EXPLICITO_es_valido_200", async () => {
+  // null explícito = "borrar el dato a propósito" — permitido; ausente no.
+  const res = await handler(
+    post_auth({ ...BASE_INPUT, bedrooms: null, bathrooms: null, square_meters: null }),
+    deps(),
+  );
+  assertEquals(res.status, 200);
+});
+
+Deno.test("142_price_visible_string_false_400_no_coacciona", async () => {
+  const res = await handler(post_auth({ ...BASE_INPUT, price_visible: "false" }), deps());
+  assertEquals(res.status, 400, "'false' string NO es boolean — rechazar, no interpretar");
+});
+
+Deno.test("142_description_vacia_EXPLICITA_es_valida", async () => {
+  // '' explícito = borrar la descripción a propósito (cambio crítico → revisión).
+  const ru = revision_upserter_ok();
+  const res = await handler(
+    post_auth({ ...BASE_INPUT, description: "" }),
+    deps({ revisionUpserter: ru }),
+  );
+  assertEquals(res.status, 200);
+  const body = await res.json();
+  assertEquals(body.mode, "revision", "borrar la description es cambio crítico §15.5");
 });
