@@ -37,7 +37,9 @@ import { useRouter } from 'expo-router';
 
 import { usePublishForm } from '@/features/publish/store/PublishFormContext';
 import { useVideoUpload, type UploadStatus } from '@/features/publish/hooks/useVideoUpload';
+import { useVideoReady } from '@/features/publish/hooks/useVideoReady';
 import { usePublish } from '@/features/publish/hooks/usePublish';
+import { validate_video_duration_ms } from '@/features/publish/validation';
 import { ThumbnailPicker } from '@/features/publish/components/ThumbnailPicker';
 import { PrimaryButton } from '@/components/PrimaryButton';
 
@@ -120,8 +122,17 @@ export default function Step5Screen() {
 
     if (result.canceled || !result.assets?.length) return;
 
-    const uri = result.assets?.[0]?.uri;
+    const asset = result.assets?.[0];
+    const uri = asset?.uri;
     if (!uri) return;
+
+    // #126: validar la duración AL ELEGIR (asset.duration en ms) — antes el
+    // rechazo llegaba del server al final del wizard, con el video ya subido.
+    const duration_check = validate_video_duration_ms(asset.duration);
+    if (!duration_check.valid) {
+      Alert.alert('Video fuera de rango', duration_check.error ?? '');
+      return;
+    }
 
     // Guardar URI en el form (para persistencia entre pasos) y en estado local.
     update({ video_local_uri: uri });
@@ -204,8 +215,7 @@ export default function Step5Screen() {
   const is_verifying = ui_status === 'verifying';
   // Contrato 68.4: el binario terminó de subir y quedó 'processing' en
   // Cloudflare Stream (transcodificando) — nunca llega a 'success' en el
-  // cliente; 'ready' se resuelve por webhook (68.5). Se trata como el estado
-  // "listo para publicar" de esta pantalla.
+  // cliente; 'ready' se resuelve por webhook (68.5).
   const is_success = ui_status === 'processing';
   const is_error = ui_status === 'error';
   const has_video = local_uri !== null;
@@ -214,6 +224,17 @@ export default function Step5Screen() {
 
   // ponytail: en edit mode sin video nuevo → se conserva el existente, no se requiere re-subir.
   const can_publish_without_new_video = is_edit_mode && !has_video;
+
+  // #126: el binario subido NO basta — el gate del server exige el 'ready'
+  // real de la DB (lo escribe el webhook de Stream). Pollear hasta entonces;
+  // antes, tocar Publicar aquí daba 409 VIDEO_NOT_READY sin espera ni retry.
+  // Solo aplica en create mode con upload terminado (uid en el form).
+  const { status: ready_status } = useVideoReady(
+    !is_edit_mode && is_success ? (state.cloudflare_uid ?? null) : null,
+  );
+  const is_video_processing = is_success && ready_status !== 'ready' && ready_status !== 'failed';
+  const is_video_ready = is_success && ready_status === 'ready';
+  const is_processing_failed = is_success && ready_status === 'failed';
 
   return (
     <SafeAreaView style={styles.container}>
@@ -295,12 +316,34 @@ export default function Step5Screen() {
             <Text style={styles.status_text}>Verificando que el video llegó…</Text>
           </View>
         )}
-        {is_success && (
+        {is_video_processing && (
+          <View style={styles.status_row}>
+            <ActivityIndicator size="small" color={COLOR_ACCENT} />
+            <Text style={styles.status_text}>
+              Procesando video… esto toma unos segundos
+            </Text>
+          </View>
+        )}
+        {is_video_ready && (
           <View style={styles.status_row}>
             <Text style={styles.success_icon}>✓</Text>
             <Text style={[styles.status_text, styles.success_text]}>
-              Video subido correctamente
+              Video listo para publicar
             </Text>
+          </View>
+        )}
+        {is_processing_failed && (
+          <View style={styles.error_container}>
+            <Text style={styles.error_text}>
+              El video no se pudo procesar. Intenta subirlo de nuevo.
+            </Text>
+            <TouchableOpacity
+              onPress={handle_retry}
+              style={styles.retry_btn}
+              accessibilityLabel="Reintentar subida del video"
+            >
+              <Text style={styles.retry_text}>Reintentar</Text>
+            </TouchableOpacity>
           </View>
         )}
         {is_error && (
@@ -339,10 +382,14 @@ export default function Step5Screen() {
         <PrimaryButton
           label={is_publishing
             ? (is_edit_mode ? 'Guardando…' : 'Publicando…')
+            : is_video_processing
+            ? 'Procesando video…'
             : (is_edit_mode ? 'Guardar cambios' : 'Publicar')}
           onPress={handle_publish}
           surface="light"
-          disabled={(!is_success && !can_publish_without_new_video) || is_publishing}
+          // #126: en create mode exige el 'ready' REAL de la DB (webhook), no
+          // solo el binario subido — publicar antes daba 409 VIDEO_NOT_READY.
+          disabled={(!is_video_ready && !can_publish_without_new_video) || is_publishing}
         />
       </View>
     </SafeAreaView>

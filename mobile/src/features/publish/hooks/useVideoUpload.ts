@@ -129,7 +129,7 @@ export interface UseVideoUploadResult {
  * `supabase/`). Sin fila → 'missing'. Error de la query → propaga (el
  * llamador lo trata fail-closed).
  */
-async function default_check_video_status(
+export async function default_check_video_status(
   supabase_client: SupabaseClient,
   cloudflare_uid: string,
 ): Promise<VideoCheckStatus> {

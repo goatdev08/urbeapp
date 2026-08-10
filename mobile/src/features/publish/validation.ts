@@ -132,6 +132,45 @@ export function validate_video_size(size_bytes: number): VideoSizeValidationResu
   return { valid: true, error: null, size_mb };
 }
 
+// ---------------------------------------------------------------------------
+// validate_video_duration_ms (#126) — duración 60–120 s INCLUSIVE (PRD §14
+// paso 5), validada AL ELEGIR el video (asset.duration del picker, en ms) —
+// no al final del wizard, donde el server la rechazaría con el video ya
+// subido. duration desconocida (null/undefined/0 — pickers Android viejos) →
+// pasa (fail-open): el server sigue validando cuando el webhook reporta la
+// duración real.
+// ---------------------------------------------------------------------------
+
+export const MIN_VIDEO_DURATION_SECONDS = 60;
+export const MAX_VIDEO_DURATION_SECONDS = 120;
+
+export interface VideoDurationValidationResult {
+  valid: boolean;
+  error: string | null;
+}
+
+export function validate_video_duration_ms(
+  duration_ms: number | null | undefined,
+): VideoDurationValidationResult {
+  // Duración desconocida (null/undefined/0) → fail-open: el server revalida
+  // con la duración real que reporte el webhook de Stream.
+  if (!duration_ms) {
+    return { valid: true, error: null };
+  }
+
+  const seconds = duration_ms / 1000;
+  if (seconds < MIN_VIDEO_DURATION_SECONDS || seconds > MAX_VIDEO_DURATION_SECONDS) {
+    return {
+      valid: false,
+      error:
+        `El video dura ${Math.round(seconds)} s y debe durar entre 60 y 120 segundos (1–2 min). ` +
+        'Recórtalo o elige otro.',
+    };
+  }
+
+  return { valid: true, error: null };
+}
+
 export function get_property_payload(state: PublishFormState): PublishFormPayload {
   if (
     !state.operation_type ||
