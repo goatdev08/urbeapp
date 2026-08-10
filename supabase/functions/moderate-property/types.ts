@@ -13,11 +13,14 @@
 //   approve/needs_changes/reject:
 //     - SI existe una revisión ACTIVA (status IN pending|needs_changes) para la
 //       propiedad: opera sobre la REVISIÓN.
-//         approve        → aplica changed_fields completo sobre properties (reemplaza
-//                           current_published), revisión→'approved'. properties.status
-//                           NO cambia (sigue el que ya tenía, típicamente 'active').
+//         approve        → aplica changed_fields sobre properties (reemplaza
+//                           current_published), revisión→'approved'. #130: si la
+//                           propiedad estaba 'pending_review' o 'needs_changes',
+//                           properties.status pasa a 'active' EN LA MISMA escritura
+//                           (antes se quedaba invisible para siempre); si ya estaba
+//                           'active' (re-revisión §15.6 normal), el status no cambia.
 //         needs_changes  → revisión→'needs_changes' + rejection_reason=reason.
-//                           properties NO se toca.
+//                           properties NO se toca (current_published intacta).
 //         reject         → revisión→'rejected' + rejection_reason=reason.
 //                           properties NO se toca.
 //     - SI NO existe revisión activa: opera sobre la PUBLICACIÓN INICIAL. Requiere
@@ -26,7 +29,9 @@
 //         approve        → properties.status='active'
 //         needs_changes  → properties.status='needs_changes'
 //         reject         → properties.status='rejected'
-//   TODAS las ramas registran en admin_actions (append-only, 20260604000007).
+//   TODAS las ramas registran en admin_actions (append-only, 20260604000007) —
+//   #130: en la MISMA transacción que la escritura principal (RPC
+//   moderate_property_atomic), y la respuesta reporta el status RESULTANTE.
 
 // ── Payload ────────────────────────────────────────────────────────────────────
 
@@ -75,64 +80,41 @@ export interface RevisionFinder {
   find_active(property_id: string): Promise<ActiveRevisionResult>;
 }
 
-// ── PropertyUpdater ───────────────────────────────────────────────────────────
-// Dos operaciones distintas sobre `properties`, nunca ambas en la misma rama:
-//   - set_status: cambia SOLO status (suspend, y las 3 ramas sin-revisión).
-//   - apply_revision_snapshot: reemplaza current_published con cambios completos
-//     del snapshot de la revisión (SOLO approve con-revisión). NO toca status.
+// ── ModerationWriter (#130) ───────────────────────────────────────────────────
+// Reemplaza a los tres seams de escritura previos (PropertyUpdater +
+// RevisionResolver + AdminActionRecorder), que eran round-trips independientes
+// sin transacción: si la auditoría fallaba tras activar la propiedad, la EF
+// devolvía 500 con la propiedad YA activa y sin rastro en admin_actions, y el
+// reintento moría en NOTHING_TO_MODERATE. Ahora el handler DECIDE (state
+// machine intacta aquí) y emite UNA escritura; el adaptador real la ejecuta
+// vía la RPC moderate_property_atomic (20260809000007) en una transacción.
+//
+// Campos opcionales = "no hacer esa escritura":
+//   new_property_status  ausente → properties.status no se toca.
+//   changed_fields       ausente → no se aplica snapshot de revisión.
+//   revision_id (+status/reason) ausente → no se resuelve revisión.
+// La auditoría (admin_id/action_type/old_values/new_values/reason) va SIEMPRE.
 
-export type PropertyWriteResult =
-  | { ok: true }
-  | { ok: false; error_code: "DB_ERROR"; message?: string };
-
-export interface PropertyUpdater {
-  set_status(property_id: string, status: string): Promise<PropertyWriteResult>;
-  apply_revision_snapshot(
-    property_id: string,
-    changed_fields: Record<string, unknown>,
-  ): Promise<PropertyWriteResult>;
-}
-
-// ── RevisionResolver ───────────────────────────────────────────────────────────
-// Cierra una revisión activa: approved (tras aplicar snapshot), needs_changes o
-// rejected. reason se persiste como rejection_reason (null en approve: no aplica).
-
-export interface RevisionResolveParams {
-  revision_id: string;
-  status: "approved" | "needs_changes" | "rejected";
-  admin_id: string;
-  reason: string | null;
-}
-
-export type RevisionResolveResult =
-  | { ok: true }
-  | { ok: false; error_code: "DB_ERROR"; message?: string };
-
-export interface RevisionResolver {
-  resolve(params: RevisionResolveParams): Promise<RevisionResolveResult>;
-}
-
-// ── AdminActionRecorder ────────────────────────────────────────────────────────
-// Auditoría append-only (admin_actions, 20260604000007). action_type = el
-// ModerateAction del payload, forma libre (columna text). Se llama en TODAS las
-// ramas exitosas, nunca en errores de validación/auth/not-found/nothing-to-moderate.
-
-export interface AdminActionRecordParams {
+export interface ModerationWriteParams {
+  property_id: string;
   admin_id: string;
   action_type: ModerateAction;
-  entity_type: "property";
-  entity_id: string;
   old_values: Record<string, unknown>;
   new_values: Record<string, unknown>;
   reason: string | null;
+  new_property_status?: string;
+  changed_fields?: Record<string, unknown>;
+  revision_id?: string;
+  revision_status?: "approved" | "needs_changes" | "rejected";
+  revision_reason?: string | null;
 }
 
-export type AdminActionRecordResult =
+export type ModerationWriteResult =
   | { ok: true }
   | { ok: false; error_code: "DB_ERROR"; message?: string };
 
-export interface AdminActionRecorder {
-  record(params: AdminActionRecordParams): Promise<AdminActionRecordResult>;
+export interface ModerationWriter {
+  apply(params: ModerationWriteParams): Promise<ModerationWriteResult>;
 }
 
 // ── Deps inyectables del handler ──────────────────────────────────────────────
@@ -141,9 +123,7 @@ export interface ModeratePropertyDeps {
   adminVerifier: import("../_shared/admin_auth.ts").AdminVerifier;
   propertyFetcher: PropertyFetcher;
   revisionFinder: RevisionFinder;
-  propertyUpdater: PropertyUpdater;
-  revisionResolver: RevisionResolver;
-  adminActionRecorder: AdminActionRecorder;
+  moderationWriter: ModerationWriter;
 }
 
 // ── Respuesta de éxito (contrato observable) ───────────────────────────────────
