@@ -1,16 +1,17 @@
 /**
- * /publish/step1 — Paso 1 del wizard de publicación.
- * Selección de tipo de operación y tipo de propiedad.
+ * /publish/step1 — Paso 1 del wizard de publicación (5 pasos, 73.3).
+ * Selección de tipo de operación (SOLO — property_type se movió a step2).
  *
- * Subtarea 8.2 — Build Step 1 for operation and property type selection.
+ * Origen: subtarea 8.2 (creó este screen con operación+propiedad juntos).
+ * 73.3 lo divide: step1 = operación, step2 = propiedad.
  *
  * El layout padre (_layout.tsx) ya provee:
- *   - PublishFormProvider  (contexto compartido entre los 3 pasos)
+ *   - PublishFormProvider  (contexto compartido entre los 5 pasos)
  *   - WizardHeader         (StepIndicator persistente, se actualiza reactivamente)
  *   - Stack headerShown:false
  *
  * Este screen solo es responsable de:
- *   1. Mostrar las opciones de operación y propiedad como cards seleccionables.
+ *   1. Mostrar las opciones de operación como cards seleccionables.
  *   2. Escribir al contexto via update().
  *   3. Validar con validate_step1 y navegar a step2 si es válido.
  */
@@ -28,7 +29,7 @@ import { usePublishForm } from '@/features/publish/store/PublishFormContext';
 import { validate_step1 } from '@/features/publish/validation';
 import { SelectionCard } from '@/features/publish/components/SelectionCard';
 import { PrimaryButton } from '@/components/PrimaryButton';
-import type { OperationType, PropertyType } from '@/features/publish/store/types';
+import type { OperationType } from '@/features/publish/store/types';
 
 // ---------------------------------------------------------------------------
 // Opciones — valores de DB con etiquetas en español
@@ -40,14 +41,6 @@ const OPERATION_OPTIONS: { value: OperationType; label: string }[] = [
   { value: 'both', label: 'Ambos' },
 ];
 
-const PROPERTY_OPTIONS: { value: PropertyType; label: string }[] = [
-  { value: 'casa', label: 'Casa' },
-  { value: 'departamento', label: 'Departamento' },
-  { value: 'local', label: 'Local' },
-  { value: 'oficina', label: 'Oficina' },
-  { value: 'terreno', label: 'Terreno' },
-];
-
 // ---------------------------------------------------------------------------
 // Screen
 // ---------------------------------------------------------------------------
@@ -56,19 +49,12 @@ export default function Step1Screen() {
   const router = useRouter();
   const { state, update } = usePublishForm();
 
-  // Derivado reactivo: el botón se habilita cuando ambos campos están seleccionados.
+  // Derivado reactivo: el botón se habilita cuando hay operation_type.
   const { valid } = validate_step1(state);
 
   const handle_operation_press = useCallback(
     (value: OperationType) => {
       update({ operation_type: value });
-    },
-    [update],
-  );
-
-  const handle_property_press = useCallback(
-    (value: PropertyType) => {
-      update({ property_type: value });
     },
     [update],
   );
@@ -90,7 +76,7 @@ export default function Step1Screen() {
         <View style={styles.page_header}>
           <Text style={styles.page_title}>¿Qué vas a publicar?</Text>
           <Text style={styles.page_subtitle}>
-            Selecciona el tipo de operación y de propiedad.
+            Selecciona el tipo de operación.
           </Text>
         </View>
 
@@ -104,23 +90,6 @@ export default function Step1Screen() {
                 label={label}
                 selected={state.operation_type === value}
                 onPress={() => handle_operation_press(value)}
-              />
-            </View>
-          ))}
-        </View>
-
-        {/* ── Sección: Tipo de propiedad ────────────────────────────── */}
-        <Text style={[styles.section_label, styles.section_label_spaced]}>
-          Tipo de propiedad
-        </Text>
-        {/* Grid de 2 columnas con wrap; 5 ítems → 2+2+1 */}
-        <View style={styles.grid_group}>
-          {PROPERTY_OPTIONS.map(({ value, label }) => (
-            <View key={value} style={styles.grid_item}>
-              <SelectionCard
-                label={label}
-                selected={state.property_type === value}
-                onPress={() => handle_property_press(value)}
               />
             </View>
           ))}
@@ -188,9 +157,6 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     marginBottom: 12,
   },
-  section_label_spaced: {
-    marginTop: 28,
-  },
 
   // ── Fila de 3 (operación) ────────────────────────────────────────────────
   row_group: {
@@ -199,17 +165,6 @@ const styles = StyleSheet.create({
   },
   row_item: {
     flex: 1,
-  },
-
-  // ── Grid de 2 columnas (propiedad) ───────────────────────────────────────
-  grid_group: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  grid_item: {
-    // ~50% del ancho disponible menos el gap
-    width: '48%',
   },
 
   // ── Botón ────────────────────────────────────────────────────────────────

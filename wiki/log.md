@@ -2,6 +2,21 @@
 
 Append-only. Prefijo: `## [YYYY-MM-DD] tipo | título`
 
+## [2026-08-09] tarea | #73 Ola 1 — Publicación completa (5 pasos + 16 estados + moderación manual)
+
+Cierra la ola de publicación: wizard de 5 pasos con autoguardado, `property_status` extendido a 17 valores (10 operativos nuevos), `property_revisions` (doble versión §15.6), `property_video_slots` (abstracción de vigencia), y dos EFs nuevas — `edit-property` (re-revisión por edición) y `moderate-property` (approve/needs_changes/reject/suspend unificada). En beta el admin modera por Supabase Studio, sin panel visual todavía (Ola 3).
+
+**La lección más valiosa de toda la tarea: 3 defectos críticos, los tres invisibles para la suite mockeada, los tres solo aparecieron al verificar contra el stack local real.**
+1. **73.4 — `publish-property` nunca habría llegado a `pending_review` en producción.** `handler.ts` ya mandaba el literal correcto (57 tests DI en verde lo confirmaban), pero `index.ts` (el adapter real) nunca reenviaba `property_status` como parámetro a la RPC, que seguía hardcodeando `'active'`. Toda la publicación real habría quedado auto-aprobada en silencio pese a la suite completa en verde. Fix: parámetro `p_property_status` en la RPC + 3 asserts pgTAP contra la fila REAL (no un mock).
+2. **73.6 — `edit-property`/`location.ts` sin cobertura real.** El diff de campo crítico "coordenadas cambiaron" solo se había probado con EWKT mockeado en ambos lados; el parser del formato real que devuelve PostgREST (EWKB hex) nunca se ejercitó. Mutation testing del guardian expuso el hueco — sin bug genuino esta vez, pero sí sin red. Cerrado con 11 tests contra fixtures NDR/XDR reales.
+3. **73.9 — `moderate-property`/`apply_revision_snapshot` con spread crudo.** El objeto `changed_fields` es el `EditPropertyInput` completo, que incluye `property_id`; `properties` usa `id`. Resultado: **`approve` con revisión activa SIEMPRE fallaba 500** ("column property_id does not exist") en la DB real, con 39 tests DI en verde. Fix: whitelist explícito de columnas editables (`project_property_snapshot_fields`).
+
+**Heurística que deja el patrón** (las 3 veces se repite): la pregunta correcta para decidir si un adaptador "delgado" necesita test contra schema real no es *"¿es una sola sentencia SQL?"* sino *"¿transforma o proyecta datos cuyo shape define otro componente?"* — los wrappers que solo pasan parámetros tal cual estuvieron siempre correctos; los tres que proyectaban/transformaban datos fueron exactamente los que tenían el bug.
+
+**73.10 (esta subtarea) — E2E completo contra el stack local real**, encadenado de punta a punta (JWTs reales vía admin API + password grant, video fixture sembrado directo en `property_videos` para no depender de la red real de Stream): publish→`pending_review`+slot creado → approve sin revisión→`active` → edit precio→revisión `pending` (propiedad intacta) → approve con revisión→snapshot aplicado (`price` nuevo) + revisión→`approved` → close `rented`→terminal sin reapertura (verificado con un segundo intento que devuelve 400). Bonus: `needs_changes`, `reject` y `suspend` (incluido el bloqueo de suspender un estado terminal). **Cero hallazgos nuevos** — las tres correcciones de arriba ya sostenían el flujo completo. Verificación final de toda la tarea #73: Deno **968/968**, pgTAP **831/831** (39 archivos), Jest **988/988** (85 suites), tsc/lint limpios en ambos paquetes.
+
+Ingest: [[moderacion]] pasa de `diferido` a `vivo` (reescrito con la máquina de estados real, el pipeline y los 3 defectos), [[propiedades-y-video]] gana la sección "Ola 1", `mapa-codebase.md` gana la fila de la Ola 1 completa.
+
 ## [2026-08-09] tarea | 75.4 Contacto WhatsApp + unificación — el feed contactaba sin crear lead
 
 Tercera subtarea del CRM. Lo que parecía "cambiar el texto del mensaje" destapó **tres huecos**, dos de ellos invisibles desde los tests.

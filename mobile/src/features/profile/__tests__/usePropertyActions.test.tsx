@@ -57,6 +57,17 @@
  * ### Señal compartida de mutación (subtarea 55.1)
  * - (EC-23) delete_exitoso_emite_property_deleted_una_vez_con_el_id
  * - (EC-24) delete_con_error_no_emite_property_deleted
+ *
+ * ### Cierre y baja (§16, subtarea 73.8) — rented/sold como new_status directo
+ * ⚠️ EC-8/EC-9 se actualizaron para usar closed_reason='withdrawn' (en vez de la
+ * const TEST_CLOSED_REASON='rented'/'sold') porque desde 73.8 esos motivos YA NO
+ * enrutan a new_status='closed' — ver EC-25..EC-28.
+ * - (EC-25) close_con_reason_rented_invoca_ef_new_status_rented
+ * - (EC-26) close_con_reason_rented_no_incluye_closed_reason_en_body
+ * - (EC-27) close_con_reason_sold_invoca_ef_new_status_sold
+ * - (EC-28) close_con_reason_sold_no_incluye_closed_reason_en_body
+ * - (EC-29) close_con_reason_withdrawn_sigue_new_status_closed [no-regresión]
+ * - (EC-30) close_con_reason_expired_sigue_new_status_closed [no-regresión]
  */
 
 import { renderHook, act } from '@testing-library/react-native';
@@ -326,9 +337,12 @@ describe('usePropertyActions', () => {
     );
   });
 
-  // ── (EC-8) Shape EF — body.new_status = 'closed' ────────────────────────
+  // ── (EC-8) Shape EF — body.new_status = 'closed' (vía withdrawn/expired, §16 73.8) ──
+  // ⚠️ 73.8: usa 'withdrawn' (no TEST_CLOSED_REASON='rented') a propósito — desde 73.8,
+  // 'rented'/'sold' YA NO enrutan a new_status='closed' (ver EC-25..EC-28 abajo).
+  // Este caso (withdrawn/expired) es el único que SIGUE yendo por new_status='closed'.
 
-  it('(EC-8) close_ef_body_tiene_new_status_closed: closeProperty invoca EF con body.new_status === "closed"', async () => {
+  it('(EC-8) close_ef_body_tiene_new_status_closed: closeProperty con motivo "withdrawn" invoca EF con body.new_status === "closed"', async () => {
     const mock_supabase = make_mock_supabase();
     const { result } = await renderHook(() =>
       usePropertyActions({ supabase: mock_supabase as never })
@@ -337,7 +351,7 @@ describe('usePropertyActions', () => {
     await act(async () => {
       await result.current.closeProperty({
         property_id: TEST_PROPERTY_ID,
-        closed_reason: TEST_CLOSED_REASON,
+        closed_reason: 'withdrawn',
       });
     });
 
@@ -345,9 +359,9 @@ describe('usePropertyActions', () => {
     expect(call_body.body.new_status).toBe('closed');
   });
 
-  // ── (EC-9) Shape EF — body.closed_reason coincide ────────────────────────
+  // ── (EC-9) Shape EF — body.closed_reason coincide (vía withdrawn, §16 73.8) ──
 
-  it('(EC-9) close_ef_body_tiene_closed_reason: body.closed_reason === el valor proporcionado a closeProperty', async () => {
+  it('(EC-9) close_ef_body_tiene_closed_reason: body.closed_reason === el valor proporcionado a closeProperty (motivo "withdrawn")', async () => {
     const mock_supabase = make_mock_supabase();
     const { result } = await renderHook(() =>
       usePropertyActions({ supabase: mock_supabase as never })
@@ -356,12 +370,12 @@ describe('usePropertyActions', () => {
     await act(async () => {
       await result.current.closeProperty({
         property_id: TEST_PROPERTY_ID,
-        closed_reason: 'sold',
+        closed_reason: 'withdrawn',
       });
     });
 
     const call_body = mock_supabase._mock_invoke.mock.calls[0]![1] as { body: Record<string, unknown> };
-    expect(call_body.body.closed_reason).toBe('sold');
+    expect(call_body.body.closed_reason).toBe('withdrawn');
   });
 
   // ── (EC-10) Shape EF — body.property_id coincide ─────────────────────────
@@ -647,6 +661,122 @@ describe('usePropertyActions', () => {
     });
 
     expect(mock_emit_property_deleted).not.toHaveBeenCalled();
+  });
+
+  // ── Cierre y baja (§16, subtarea 73.8) ──────────────────────────────────────
+  // Diseño: rented/sold pasan a ser new_status DIRECTO — closeProperty debe enrutar
+  // según el motivo elegido en el picker (ClosePropertyDialog): 'rented'/'sold' → EF
+  // con new_status=<motivo> sin closed_reason; 'withdrawn'/'expired' → sigue igual
+  // que hoy (new_status='closed', closed_reason=<motivo>; ver EC-8/EC-9 arriba).
+
+  // ── (EC-25/26) close con motivo 'rented' → new_status='rented', sin closed_reason ──
+
+  it("(EC-25) close_con_reason_rented_invoca_ef_new_status_rented: closeProperty({closed_reason:'rented'}) → body.new_status === 'rented'", async () => {
+    const mock_supabase = make_mock_supabase();
+    const { result } = await renderHook(() =>
+      usePropertyActions({ supabase: mock_supabase as never })
+    );
+
+    await act(async () => {
+      await result.current.closeProperty({
+        property_id: TEST_PROPERTY_ID,
+        closed_reason: 'rented',
+      });
+    });
+
+    const call_body = mock_supabase._mock_invoke.mock.calls[0]![1] as { body: Record<string, unknown> };
+    expect(call_body.body.new_status).toBe('rented');
+  });
+
+  it("(EC-26) close_con_reason_rented_no_incluye_closed_reason_en_body: closeProperty({closed_reason:'rented'}) → body NO trae closed_reason (el status ya es autodescriptivo)", async () => {
+    const mock_supabase = make_mock_supabase();
+    const { result } = await renderHook(() =>
+      usePropertyActions({ supabase: mock_supabase as never })
+    );
+
+    await act(async () => {
+      await result.current.closeProperty({
+        property_id: TEST_PROPERTY_ID,
+        closed_reason: 'rented',
+      });
+    });
+
+    const call_body = mock_supabase._mock_invoke.mock.calls[0]![1] as { body: Record<string, unknown> };
+    expect(call_body.body.closed_reason).toBeUndefined();
+  });
+
+  // ── (EC-27/28) close con motivo 'sold' → new_status='sold', sin closed_reason ─────
+
+  it("(EC-27) close_con_reason_sold_invoca_ef_new_status_sold: closeProperty({closed_reason:'sold'}) → body.new_status === 'sold'", async () => {
+    const mock_supabase = make_mock_supabase();
+    const { result } = await renderHook(() =>
+      usePropertyActions({ supabase: mock_supabase as never })
+    );
+
+    await act(async () => {
+      await result.current.closeProperty({
+        property_id: TEST_PROPERTY_ID,
+        closed_reason: 'sold',
+      });
+    });
+
+    const call_body = mock_supabase._mock_invoke.mock.calls[0]![1] as { body: Record<string, unknown> };
+    expect(call_body.body.new_status).toBe('sold');
+  });
+
+  it("(EC-28) close_con_reason_sold_no_incluye_closed_reason_en_body: closeProperty({closed_reason:'sold'}) → body NO trae closed_reason", async () => {
+    const mock_supabase = make_mock_supabase();
+    const { result } = await renderHook(() =>
+      usePropertyActions({ supabase: mock_supabase as never })
+    );
+
+    await act(async () => {
+      await result.current.closeProperty({
+        property_id: TEST_PROPERTY_ID,
+        closed_reason: 'sold',
+      });
+    });
+
+    const call_body = mock_supabase._mock_invoke.mock.calls[0]![1] as { body: Record<string, unknown> };
+    expect(call_body.body.closed_reason).toBeUndefined();
+  });
+
+  // ── (EC-29/30) no-regresión — withdrawn/expired SIGUEN vía new_status='closed' ───
+
+  it("(EC-29) close_con_reason_withdrawn_sigue_new_status_closed: closeProperty({closed_reason:'withdrawn'}) → body.new_status==='closed' && body.closed_reason==='withdrawn'", async () => {
+    const mock_supabase = make_mock_supabase();
+    const { result } = await renderHook(() =>
+      usePropertyActions({ supabase: mock_supabase as never })
+    );
+
+    await act(async () => {
+      await result.current.closeProperty({
+        property_id: TEST_PROPERTY_ID,
+        closed_reason: 'withdrawn',
+      });
+    });
+
+    const call_body = mock_supabase._mock_invoke.mock.calls[0]![1] as { body: Record<string, unknown> };
+    expect(call_body.body.new_status).toBe('closed');
+    expect(call_body.body.closed_reason).toBe('withdrawn');
+  });
+
+  it("(EC-30) close_con_reason_expired_sigue_new_status_closed: closeProperty({closed_reason:'expired'}) → body.new_status==='closed' && body.closed_reason==='expired'", async () => {
+    const mock_supabase = make_mock_supabase();
+    const { result } = await renderHook(() =>
+      usePropertyActions({ supabase: mock_supabase as never })
+    );
+
+    await act(async () => {
+      await result.current.closeProperty({
+        property_id: TEST_PROPERTY_ID,
+        closed_reason: 'expired',
+      });
+    });
+
+    const call_body = mock_supabase._mock_invoke.mock.calls[0]![1] as { body: Record<string, unknown> };
+    expect(call_body.body.new_status).toBe('closed');
+    expect(call_body.body.closed_reason).toBe('expired');
   });
 
 });

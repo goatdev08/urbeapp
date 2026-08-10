@@ -5,15 +5,22 @@
  * Layout horizontal: [thumbnail 72px] · [info flex:1 — address, stats, precio] · [⋯ menú]
  *
  * Badge de status:
- *   draft   → paper_2 bg + gray_3 text  ("Borrador")
- *   active  → primary bg + blanco       ("Activa")
- *   paused  → accent_soft bg + ink      ("Pausada")  ponytail: ink da mejor contraste en demo
- *   closed  → accent_deep bg + blanco   ("Cerrada")
+ *   draft           → paper_2 bg + gray_3 text     ("Borrador")
+ *   active          → primary bg + blanco          ("Activa")
+ *   paused          → accent_soft bg + ink          ("Pausada")  ponytail: ink da mejor contraste en demo
+ *   closed          → accent_deep bg + blanco       ("Cerrada")
+ *   pending_review  → primary_tint bg + primary     ("En revisión")     — #73.7 (§15.3)
+ *   needs_changes   → accent_tint bg + accent       ("Cambios solicitados") — #73.7
+ *   rejected        → danger bg + blanco            ("Rechazada")       — #73.7
+ *   (otros status del enum extendido en #73.1: fallback genérico humanizado,
+ *   ver `humanize_status` — no se agregan todos los 17 valores hasta que una
+ *   subtarea los use realmente, p.ej. 73.6/73.9).
  *
  * Subrow contextual bajo el badge:
- *   active/draft → 4 contadores reales (view, like, save, contact)
- *   paused       → "Sin visibilidad en el feed"
- *   closed       → closed_reason traducido o "Cerrada" como fallback
+ *   active/draft                          → 4 contadores reales (view, like, save, contact)
+ *   paused                                 → "Sin visibilidad en el feed"
+ *   pending_review/needs_changes/rejected → texto contextual propio (#73.7)
+ *   closed (y cualquier otro status)      → closed_reason traducido o "Cerrada" como fallback
  *
  * ponytail: íconos como Text unicode (react-native-svg no instalado); sin animaciones.
  * Slot 17.4: on_menu_press prop expuesto pero sin lógica aquí.
@@ -43,6 +50,17 @@ const STATUS_BADGE: Record<string, BadgeConfig> = {
   active: { label: 'Activa',   bg: colors.primary,     text: '#FFFFFF'         },
   paused: { label: 'Pausada',  bg: colors.accent_soft, text: colors.ink        },
   closed: { label: 'Cerrada',  bg: colors.accent_deep, text: '#FFFFFF'         },
+  // #73.7 (§15.3) — estados operativos nuevos (73.1) que un agente puede ver
+  // realistamente en el corto plazo tras publicar. Colores distintos a los 4
+  // de arriba, todos tokens de theme.ts.
+  pending_review: { label: 'En revisión',         bg: colors.primary_tint, text: colors.primary },
+  needs_changes:  { label: 'Cambios solicitados', bg: colors.accent_tint,  text: colors.accent  },
+  rejected:       { label: 'Rechazada',           bg: colors.danger,       text: '#FFFFFF'       },
+  // #73.8 (§16) — rented/sold ahora son new_status DIRECTO (ya no pasan por
+  // closed+closed_reason); mismo tratamiento visual que "Cerrada" por ser
+  // terminales, pero con copy propio en vez del fallback humanizado en inglés.
+  rented: { label: 'Rentada', bg: colors.accent_deep, text: '#FFFFFF' },
+  sold:   { label: 'Vendida', bg: colors.accent_deep, text: '#FFFFFF' },
 };
 
 /**
@@ -54,6 +72,8 @@ const STATUS_THUMB_ICON: Record<string, string> = {
   paused: '⏸',
   closed: '✓',
   draft:  '○',
+  rented: '✓',
+  sold:   '✓',
 };
 
 /** Traducción de closed_reason a es-MX. */
@@ -64,14 +84,36 @@ const CLOSED_REASON_LABEL: Record<string, string> = {
   expired:   'Expirada',
 };
 
+/**
+ * Texto contextual del subrow para los 3 status nuevos de #73.7 (§15.3) que
+ * un agente puede ver en el corto plazo. El resto de los status nuevos del
+ * enum extendido (73.1) caen en la rama `closed_label` genérica más abajo.
+ */
+const CONTEXTUAL_SUBROW: Record<string, string> = {
+  pending_review: 'Esperando aprobación del equipo',
+  needs_changes:  'Revisa los cambios solicitados',
+  rejected:       'No se aprobó — puedes editarla y reenviarla',
+};
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/**
+ * Convierte un status crudo (snake_case) en texto legible como último
+ * recurso — p.ej. "media_failed" → "Media failed". Nunca debe llegar a
+ * pantalla un string con guiones bajos crudos (#73.7).
+ */
+function humanize_status(status: string): string {
+  const spaced = status.replace(/_/g, ' ');
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
 
 /**
  * Devuelve la config de badge para el status dado.
  * Garantiza un valor no-undefined (TypeScript strict / noUncheckedIndexedAccess).
+ * Fallback humanizado (#73.7) — nunca muestra el string crudo del enum.
  */
 function get_badge(status: string): BadgeConfig {
-  return STATUS_BADGE[status] ?? { label: status, bg: colors.gray_2, text: colors.ink };
+  return STATUS_BADGE[status] ?? { label: humanize_status(status), bg: colors.gray_2, text: colors.ink };
 }
 
 /** Formatea precio con separadores de miles en es-MX. Reutiliza patrón de PropertyGridCard. */
@@ -129,10 +171,17 @@ export const PropertyListItem = React.memo(function PropertyListItem({
   const thumb_icon   = STATUS_THUMB_ICON[status] ?? '▷';
 
   const show_stats   = status === 'active' || status === 'draft';
+  // #73.8: rented/sold no llevan closed_reason (new_status ya es autodescriptivo)
+  // — el badge arriba ya dice "Rentada"/"Vendida", no hay fallback "Cerrada" errado.
   const closed_label =
-    closed_reason !== null && closed_reason !== undefined
-      ? (CLOSED_REASON_LABEL[closed_reason] ?? closed_reason)
-      : 'Cerrada';
+    status === 'rented' || status === 'sold'
+      ? badge.label
+      : closed_reason !== null && closed_reason !== undefined
+        ? (CLOSED_REASON_LABEL[closed_reason] ?? closed_reason)
+        : 'Cerrada';
+  /** #73.7 — texto propio para pending_review/needs_changes/rejected; el resto
+   *  de status (incluido closed) cae en `closed_label` más abajo. */
+  const contextual_caption = CONTEXTUAL_SUBROW[status];
 
   return (
     <Pressable
@@ -188,8 +237,13 @@ export const PropertyListItem = React.memo(function PropertyListItem({
           <Text style={styles.sub_caption} numberOfLines={1}>
             Sin visibilidad en el feed
           </Text>
+        ) : contextual_caption ? (
+          /* pending_review / needs_changes / rejected (#73.7) */
+          <Text style={styles.sub_caption} numberOfLines={1}>
+            {contextual_caption}
+          </Text>
         ) : (
-          /* closed */
+          /* closed (y demás status del enum extendido sin texto propio aún) */
           <Text style={styles.sub_caption} numberOfLines={1}>
             {closed_label}
           </Text>

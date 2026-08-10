@@ -2,22 +2,27 @@
 // Regenerar con:  supabase gen types typescript --project-id mvpvqmyhrrkwbnpctpuq > supabase/types/database.types.ts
 // (o vía el MCP de Supabase: generate_typescript_types). NO editar a mano.
 //
-// ⚠️ #112 (2026-08-08): regen COMPLETO contra `--local` (CLI global de brew,
-// `supabase gen types typescript --local`), con las migraciones 20260808000001
-// (RLS de events_raw) y 20260808000002 (RPC get_lead_stats) ya aplicadas — ambas
-// desplegadas también al remoto ese mismo día, así que local y remoto coinciden.
-// Este regen incorpora:
-//   - La RPC `get_lead_stats(p_lead_ids uuid[])` de 112.3, que consume el hook
-//     useLeadStats. Sin ella había que usar el escape hatch `client: any` (mismo
-//     truco que mapProperties.ts / feedProperties.ts para RPC no modeladas).
-//   - `leads.agency_id` + su FK a agencies: DRIFT heredado de #75.5
-//     (20260807000006, el fix de fuga de PII cross-agencia). La columna existía en
-//     la base desde el 2026-08-07 pero nunca había llegado a este archivo.
+// ⚠️ #73.4 (2026-08-09): regen contra `--local`, con las migraciones
+// 20260809000004/20260809000005 ya aplicadas localmente. Dos regens dentro de
+// la misma subtarea: (1) 20260809000004 -- tabla nueva `property_video_slots`
+// (abstracción de vigencia del slot de video, semilla #76/pagos, PRD
+// §2.2/§17.1); (2) 20260809000005, tras el fix crítico detectado por el
+// coordinador (property_status hardcodeado a 'active' en la RPC pese a que el
+// handler ya mandaba 'pending_review') -- agrega `p_property_status?: string`
+// a los Args de `publish_property_atomic`. Diff mínimo verificado byte-a-byte
+// contra el regen fresco en ambos casos; nada más se movió. Estas migraciones
+// NO se han desplegado al remoto (`urbea-app`) todavía -- local y remoto
+// quedan desalineados hasta que una subtarea posterior (§13.9/despliegue de
+// la ola) las aplique allá y regenere de nuevo contra `--project-id`.
 //
-// El regen anterior (#75.5/#75.6, 2026-08-07) ya había resuelto: leads.score/level,
-// lead_temperature, lead_status ampliado, lead_status_history, el drift de #71
-// (agency_member_role con admin/viewer, agency_member_status con suspended) y las
-// RPC de Ola 1 (register_agency_atomic, switch_agency_atomic, upgrade_to_agent_atomic).
+// El regen anterior (#73.2, 2026-08-09) ya había resuelto: tabla
+// `property_revisions` (snapshot doble-versión §15.6) + enum
+// property_revision_status pending/needs_changes/rejected/approved.
+//
+// El regen de #73.1 (2026-08-09) ya había resuelto: property_status +10
+// estados operativos del PRD §15.4 (uploading_media, media_failed,
+// pending_payment, approved, expired, rented, sold, rejected, deleted_soft,
+// deleted_hard).
 //
 // Gotchas de entorno para `gen types --local`:
 //   - Necesita el credential helper de Docker en el PATH →
@@ -1040,6 +1045,99 @@ export type Database = {
           },
         ]
       }
+      property_revisions: {
+        Row: {
+          changed_fields: Json
+          created_at: string
+          id: string
+          property_id: string
+          rejection_reason: string | null
+          reviewed_at: string | null
+          reviewed_by_admin_id: string | null
+          status: Database["public"]["Enums"]["property_revision_status"]
+          submitted_by: string
+          updated_at: string
+        }
+        Insert: {
+          changed_fields: Json
+          created_at?: string
+          id?: string
+          property_id: string
+          rejection_reason?: string | null
+          reviewed_at?: string | null
+          reviewed_by_admin_id?: string | null
+          status?: Database["public"]["Enums"]["property_revision_status"]
+          submitted_by: string
+          updated_at?: string
+        }
+        Update: {
+          changed_fields?: Json
+          created_at?: string
+          id?: string
+          property_id?: string
+          rejection_reason?: string | null
+          reviewed_at?: string | null
+          reviewed_by_admin_id?: string | null
+          status?: Database["public"]["Enums"]["property_revision_status"]
+          submitted_by?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "property_revisions_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "property_revisions_reviewed_by_admin_id_fkey"
+            columns: ["reviewed_by_admin_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "property_revisions_submitted_by_fkey"
+            columns: ["submitted_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      property_video_slots: {
+        Row: {
+          created_at: string
+          id: string
+          is_free: boolean
+          property_id: string
+          started_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_free?: boolean
+          property_id: string
+          started_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_free?: boolean
+          property_id?: string
+          started_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "property_video_slots_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: true
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       property_videos: {
         Row: {
           agent_id: string | null
@@ -1455,6 +1553,7 @@ export type Database = {
           p_operation_type: string
           p_pet_friendly?: boolean
           p_price: number
+          p_property_status?: string
           p_property_type: string
           p_square_meters?: number
           p_student_friendly?: boolean
@@ -1553,6 +1652,11 @@ export type Database = {
         | "duplicate"
         | "other"
       property_report_status: "new" | "reviewing" | "resolved" | "dismissed"
+      property_revision_status:
+        | "pending"
+        | "needs_changes"
+        | "rejected"
+        | "approved"
       property_status:
         | "draft"
         | "pending_review"
@@ -1561,6 +1665,16 @@ export type Database = {
         | "paused"
         | "closed"
         | "suspended"
+        | "uploading_media"
+        | "media_failed"
+        | "pending_payment"
+        | "approved"
+        | "expired"
+        | "rented"
+        | "sold"
+        | "rejected"
+        | "deleted_soft"
+        | "deleted_hard"
       property_type: "casa" | "departamento" | "local" | "oficina" | "terreno"
       property_video_status:
         | "uploading"
@@ -1753,6 +1867,12 @@ export const Constants = {
         "other",
       ],
       property_report_status: ["new", "reviewing", "resolved", "dismissed"],
+      property_revision_status: [
+        "pending",
+        "needs_changes",
+        "rejected",
+        "approved",
+      ],
       property_status: [
         "draft",
         "pending_review",
@@ -1761,6 +1881,16 @@ export const Constants = {
         "paused",
         "closed",
         "suspended",
+        "uploading_media",
+        "media_failed",
+        "pending_payment",
+        "approved",
+        "expired",
+        "rented",
+        "sold",
+        "rejected",
+        "deleted_soft",
+        "deleted_hard",
       ],
       property_type: ["casa", "departamento", "local", "oficina", "terreno"],
       property_video_status: [

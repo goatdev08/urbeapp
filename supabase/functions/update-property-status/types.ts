@@ -8,10 +8,23 @@
 
 // ── Enums del dominio (subconjunto que esta EF administra) ────────────────────
 //
-// La EF solo acepta draft|active|paused|closed.
+// La EF acepta como new_status (payload del cliente): draft|active|paused|closed|rented|sold.
 // pending_review, needs_changes, suspended → gestionados por moderación (EF distinta).
+// 'approved' (73.1/PRD §15.4) solo aparece como estado ORIGEN (leído de DB) — el cliente
+// nunca lo pide como destino aquí (lo fija la EF de aprobación); se incluye en el enum
+// únicamente para que VALID_TRANSITIONS pueda tener una entrada approved→rented|sold.
+// Cierre y baja (§16, 73.8): rented/sold son new_status DIRECTO (no closed+closed_reason) —
+// el status ya es autodescriptivo. El camino viejo closed+closed_reason (withdrawn/expired)
+// sigue vivo para no-regresión, ver ClosedReasonEnum.
 
-export type PropertyStatusEnum = "draft" | "active" | "paused" | "closed";
+export type PropertyStatusEnum =
+  | "draft"
+  | "active"
+  | "paused"
+  | "closed"
+  | "approved"
+  | "rented"
+  | "sold";
 export type ClosedReasonEnum = "rented" | "sold" | "withdrawn" | "expired";
 
 // ── Input validado ────────────────────────────────────────────────────────────
@@ -47,10 +60,13 @@ export interface CallerVerifier {
 //   5. Retornar la propiedad actualizada.
 //
 // Transiciones válidas (aplicadas en el updater):
-//   draft   → active
-//   active  → paused | closed (closed exige closed_reason)
-//   paused  → active | closed (closed exige closed_reason)
-//   closed  → (ninguna)
+//   draft     → active
+//   active    → paused | closed (closed exige closed_reason) | rented | sold
+//   paused    → active | closed (closed exige closed_reason) | rented | sold
+//   approved  → rented | sold
+//   closed    → (ninguna)
+//   rented    → (ninguna, terminal — sin reapertura en MVP)
+//   sold      → (ninguna, terminal — sin reapertura en MVP)
 //
 // Error codes:
 //   PROPERTY_NOT_FOUND   → handler devuelve 404

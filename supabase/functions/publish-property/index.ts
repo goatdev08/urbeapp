@@ -4,7 +4,11 @@
 // los tests importan handler.ts directamente y NO pasan por este archivo.
 
 import { handler } from "./handler.ts";
-import { service_client } from "../_shared/clients.ts";
+import {
+  make_duplicate_property_checker,
+  make_video_status_checker,
+  service_client,
+} from "../_shared/clients.ts";
 import type {
   CallerVerifier,
   CallerVerifyResult,
@@ -53,7 +57,10 @@ Deno.serve((req: Request) => {
   };
 
   // PropertyPublisher real: llama RPC publish_property_atomic (migración 0017,
-  // fix 100 en 20260805000011)
+  // fix 100 en 20260805000011, extendida en 20260809000005 con
+  // p_property_status — 73.4: SIN este campo, la RPC hardcodeaba 'active' y
+  // el handler.ts que ya mandaba 'pending_review' a este params.property_status
+  // se quedaba sin efecto real; ver 20260809000005 para el detalle del fix).
   const propertyPublisher: PropertyPublisher = {
     async publish(
       params: PropertyPublishParams,
@@ -74,6 +81,7 @@ Deno.serve((req: Request) => {
         p_student_friendly: params.student_friendly,
         p_description: params.description ?? null,
         p_cloudflare_uid: params.cloudflare_uid,
+        p_property_status: params.property_status,
       });
 
       if (error) {
@@ -95,5 +103,15 @@ Deno.serve((req: Request) => {
     },
   };
 
-  return handler(req, { callerVerifier, propertyPublisher });
+  // 73.4 — pipeline de moderación (PRD §15.2), instanciado con el mismo cliente
+  // service_role que el resto de deps.
+  const videoStatusChecker = make_video_status_checker(client);
+  const duplicatePropertyChecker = make_duplicate_property_checker(client);
+
+  return handler(req, {
+    callerVerifier,
+    propertyPublisher,
+    videoStatusChecker,
+    duplicatePropertyChecker,
+  });
 });

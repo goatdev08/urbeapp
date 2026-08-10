@@ -11,12 +11,16 @@ import type {
 } from "./types.ts";
 
 // Tabla de transiciones válidas — toda transición no listada → INVALID_TRANSITION.
-// closed: [] = propiedad cerrada es estado terminal.
+// closed/rented/sold: [] = estados terminales (cierre y baja §16 — sin reapertura en MVP).
+// approved (73.1/PRD §15.4): aprobada pero aún no activa; también puede cerrarse directo.
 const VALID_TRANSITIONS: Record<PropertyStatusEnum, PropertyStatusEnum[]> = {
   draft: ["active"],
-  active: ["paused", "closed"],
-  paused: ["active", "closed"],
+  active: ["paused", "closed", "rented", "sold"],
+  paused: ["active", "closed", "rented", "sold"],
+  approved: ["rented", "sold"],
   closed: [],
+  rented: [],
+  sold: [],
 };
 
 /**

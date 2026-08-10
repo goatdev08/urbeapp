@@ -1,19 +1,24 @@
 /**
  * usePublish — integración del wizard de publicación con la Edge Function publish-property
- * (create mode) o con UPDATE directo a Supabase (edit mode).
+ * (create mode) o con la Edge Function edit-property (edit mode, 73.6).
  *
  * Contrato:
- *   usePublish(deps?) → { status, error, property_id, publish }
+ *   usePublish(deps?) → { status, error, property_id, editResultMode, revisionId, publish }
  *
  *   CREATE mode (default — sin editMode):
  *     - publish(): arma payload con get_property_payload(state), invoca
  *       supabase.functions.invoke('publish-property', { body: payload }),
  *       en éxito expone property_id y llama reset(); en error expone mensaje sin reset.
  *
- *   EDIT mode (editMode=true, propertyId requerido):
- *     - publish(): actualiza directamente con supabase.from('properties').update({...}).eq('id', propertyId).
- *       NO invoca la Edge Function. Sin video nuevo → no incluye campos de video.
- *       En éxito: status='success'. En error: status='error' con mensaje.
+ *   EDIT mode (editMode=true, propertyId requerido) — 73.6, PRD §15.5/§15.6:
+ *     - publish(): invoca supabase.functions.invoke('edit-property',
+ *       { body: {...edit_payload, property_id} }). YA NO usa
+ *       from('properties').update() (contrato pre-73.6) — la EF decide server-side
+ *       si el cambio se aplica directo o dispara una re-revisión. Sin video nuevo →
+ *       no incluye campos de video.
+ *       En éxito: status='success', editResultMode = 'direct' | 'revision' según
+ *       la respuesta de la EF; revisionId poblado solo en modo 'revision'.
+ *       En error: status='error' con mensaje, editResultMode=null.
  *
  * NOTA DE IMPLEMENTACIÓN — refs puro, sin useState:
  *   Mismo patrón que useVideoUpload: estado solo en refs con getters.
@@ -43,6 +48,9 @@ function get_default_supabase(): any {
 
 export type PublishStatus = 'idle' | 'submitting' | 'success' | 'error';
 
+/** Resultado de la EF edit-property (73.6, PRD §15.5/§15.6) — null fuera de edit mode. */
+export type EditResultMode = 'direct' | 'revision' | null;
+
 export interface UsePublishDeps {
    
   supabase?: any;
@@ -56,6 +64,10 @@ export interface UsePublishResult {
   status: PublishStatus;
   error: string | null;
   property_id: string | null;
+  /** Solo poblado en edit mode tras un invoke exitoso a edit-property. */
+  editResultMode: EditResultMode;
+  /** id de la property_revision creada — solo cuando editResultMode='revision'. */
+  revisionId: string | null;
   publish: () => Promise<void>;
 }
 
@@ -75,19 +87,23 @@ export function usePublish(deps?: UsePublishDeps): UsePublishResult {
   const status_ref = useRef<PublishStatus>('idle');
   const error_ref = useRef<string | null>(null);
   const property_id_ref = useRef<string | null>(null);
+  const edit_result_mode_ref = useRef<EditResultMode>(null);
+  const revision_id_ref = useRef<string | null>(null);
 
   const publish = useCallback(async (): Promise<void> => {
-    // ── EDIT MODE — UPDATE directo con RLS, sin Edge Function ────────────────
+    // ── EDIT MODE — invoca la EF edit-property (73.6, PRD §15.5/§15.6) ───────
     if (edit_mode && property_id_edit) {
       // Marcar 'submitting' ANTES del primer await — visible en sync act().
       status_ref.current = 'submitting';
       error_ref.current = null;
       property_id_ref.current = null;
+      edit_result_mode_ref.current = null;
+      revision_id_ref.current = null;
 
       // Payload con campos editables de la tabla 'properties'.
       // NO incluye: owner_user_id (inmutable), video_id/storage_path (en property_videos).
       // La tabla NO tiene columnas lat/lng: la ubicación vive en `location`
-      // geography(Point,4326). PostgREST acepta EWKT como input — mismo punto
+      // geography(Point,4326). La EF acepta EWKT como input — mismo punto
       // que construye ST_Point(lng, lat) en el RPC de creación (x=lng, y=lat).
       const edit_payload = {
         operation_type: state.operation_type,
@@ -100,6 +116,7 @@ export function usePublish(deps?: UsePublishDeps): UsePublishResult {
         ...(state.lat !== null && state.lng !== null
           ? { location: `SRID=4326;POINT(${state.lng} ${state.lat})` }
           : {}),
+        price_visible: state.price_visible,
         pet_friendly: state.pet_friendly,
         allows_no_guarantor: state.allows_no_guarantor,
         student_friendly: state.student_friendly,
@@ -107,22 +124,25 @@ export function usePublish(deps?: UsePublishDeps): UsePublishResult {
       };
 
       try {
-        const { error: update_error } = (await supabase_client
-          .from('properties')
-          .update(edit_payload)
-          .eq('id', property_id_edit)) as {
-          data: unknown;
+        const { data, error: invoke_error } = (await supabase_client.functions.invoke(
+          'edit-property',
+          { body: { ...edit_payload, property_id: property_id_edit } },
+        )) as {
+          data: { ok?: boolean; mode?: 'direct' | 'revision'; revision_id?: string } | null;
           error: { message?: string } | null;
         };
 
-        if (update_error) {
+        if (invoke_error) {
           status_ref.current = 'error';
           error_ref.current =
-            update_error.message ?? 'Error al actualizar la propiedad';
+            invoke_error.message ?? 'Error al actualizar la propiedad';
           return;
         }
 
-        // Éxito — marcar success. No hay nuevo property_id (ya existe).
+        // Éxito — la EF decidió 'direct' (aplicado ya) o 'revision' (pendiente
+        // de aprobación admin, la propiedad publicada actual no cambió).
+        edit_result_mode_ref.current = data?.mode ?? null;
+        revision_id_ref.current = data?.revision_id ?? null;
         status_ref.current = 'success';
       } catch (e) {
         status_ref.current = 'error';
@@ -201,6 +221,12 @@ export function usePublish(deps?: UsePublishDeps): UsePublishResult {
       },
       get property_id(): string | null {
         return property_id_ref.current;
+      },
+      get editResultMode(): EditResultMode {
+        return edit_result_mode_ref.current;
+      },
+      get revisionId(): string | null {
+        return revision_id_ref.current;
       },
     }),
      

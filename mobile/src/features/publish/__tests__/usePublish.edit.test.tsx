@@ -1,37 +1,58 @@
 /**
  * Tests fase RED — usePublish hook: bifurcación create vs edit (modo edición)
  * (mobile/src/features/publish/hooks/usePublish.ts)
- * Subtarea Taskmaster: 17.8 — Implement edit flow pre-filling publication wizard
+ * Subtarea Taskmaster: 17.8 → EXTENDIDO por 73.6 (Re-revisión por edición, PRD §15.5/§15.6)
  *
  * SUT: usePublish(deps?) → { status, error, property_id, publish }
  *   con extensión: deps.editMode=true, deps.propertyId='...'
  *
- * Contrato (edit mode):
- *   - En edit mode: publish() invoca supabase.from('properties').update({...}).eq('id', propertyId).
- *     NO invoca functions.invoke('publish-property') (EF).
- *   - El update incluye los campos editables exactos.
- *   - Si no hay video_local_uri nuevo, el update NO incluye campos de video.
- *   - En create mode (sin editMode): EXACTAMENTE el comportamiento actual — invoca la EF.
- *     (Tests de regresión: garantizan que no se rompió el flujo de creación.)
+ * CAMBIO DE CONTRATO (73.6 — decisión de arquitectura 2026-08-09):
+ *   Edit mode YA NO hace UPDATE directo (`from('properties').update()`, RLS
+ *   como única guarda). Ahora invoca la Edge Function `edit-property`, que
+ *   decide server-side si la edición se aplica directo (`mode:'direct'`) o si
+ *   dispara una re-revisión (`mode:'revision'`, PRD §15.5/§15.6). El resultado
+ *   del hook debe distinguir ambos modos para que la UI muestre un mensaje
+ *   distinto ("cambios aplicados" vs "tu edición entró a revisión").
+ *
+ * SEAM bajo test: la firma pública de usePublish(deps?) — específicamente qué
+ * invoca en `supabase` y qué expone en el objeto devuelto.
+ *
+ * Contrato (edit mode, POST-73.6):
+ *   - En edit mode: publish() invoca supabase.functions.invoke('edit-property',
+ *     { body: {...edit_payload, property_id} }). NO invoca
+ *     from('properties').update() (el camino viejo). NO invoca
+ *     functions.invoke('publish-property') (EF de create).
+ *   - El body del invoke incluye los campos editables exactos + property_id.
+ *   - Si no hay video_local_uri nuevo, el body NO incluye campos de video.
+ *   - Éxito con mode:'direct' → status='success', editResultMode='direct'.
+ *   - Éxito con mode:'revision' → status='success', editResultMode='revision',
+ *     revisionId = el id que devolvió la EF.
+ *   - Error del invoke (network/HTTP) → status='error', editResultMode=null.
+ *   - En create mode (sin editMode): EXACTAMENTE el comportamiento actual — invoca
+ *     la EF publish-property. (Tests de regresión: no se rompió create.)
  *
  * EDGE CASES CUBIERTOS:
  *
  * ### Regresión — create mode (no debe cambiar)
  * - (EC-R1) create_mode_invoca_ef_publish_property
  * - (EC-R2) create_mode_no_invoca_update_directo
+ * - (EC-R3) create_mode_no_invoca_ef_edit_property
  *
- * ### Edit mode — happy path
- * - (EC-11) edit_mode_invoca_update_no_ef
- * - (EC-12) edit_mode_update_shape_correcto
- * - (EC-13) edit_mode_update_eq_property_id
- * - (EC-17) edit_mode_exito_expone_status_success
+ * ### Edit mode — happy path, modo 'direct' (73.6)
+ * - (EC-11) edit_mode_invoca_ef_edit_property_no_update_ni_publish
+ * - (EC-12) edit_mode_invoke_body_shape_correcto
+ * - (EC-13) edit_mode_invoke_body_incluye_property_id_correcto
+ * - (EC-17) edit_mode_exito_modo_direct_expone_status_success_y_editResultMode_direct
+ *
+ * ### Edit mode — happy path, modo 'revision' (73.6, PRD §15.5/§15.6)
+ * - (EC-19) edit_mode_exito_modo_revision_expone_editResultMode_revision_y_revisionId
  *
  * ### Edit mode — video
- * - (EC-14) edit_mode_sin_cambiar_video_no_sube_video
+ * - (EC-14) edit_mode_sin_cambiar_video_no_incluye_campos_de_video_en_body
  * - (EC-18) edit_mode_no_requiere_video_para_submit
  *
  * ### Edit mode — error
- * - (EC-16) edit_mode_error_update_expone_error
+ * - (EC-16) edit_mode_error_invoke_expone_error_y_editResultMode_null
  *
  * ### Propagación edit_mode/property_id vía PublishFormContext (53.1, RED)
  * SUT ampliado: PublishFormContext.tsx / types.ts — opción A de la exploración
@@ -42,7 +63,7 @@
  * - (EC-CTX-1) context_expone_edit_mode_y_property_id_en_default
  * - (EC-CTX-2) update_setea_edit_mode_true_y_property_id
  * - (EC-CTX-3) edit_mode_y_property_id_persisten_tras_update_de_otros_campos
- * - (EC-CTX-4) edit_mode_desde_contexto_dirige_publish_a_update_no_ef
+ * - (EC-CTX-4) edit_mode_desde_contexto_dirige_publish_a_ef_edit_property
  * - (EC-CTX-5) reset_limpia_edit_mode_y_property_id
  */
 
@@ -61,6 +82,21 @@ import type { PublishFormState } from '../store/types';
 // ---------------------------------------------------------------------------
 
 import { usePublish } from '../hooks/usePublish';
+import type { UsePublishResult } from '../hooks/usePublish';
+
+// ---------------------------------------------------------------------------
+// Extensión local de tipo — SOLO para estos tests (73.6, RED).
+// `editResultMode`/`revisionId` AÚN NO EXISTEN en UsePublishResult; ese es el
+// hueco que hace fallar los EC-17/EC-19/EC-16 de hoy. No se toca el tipo de
+// producción en fase RED (eso ocurre en la fase GREEN).
+// ---------------------------------------------------------------------------
+
+type EditResultMode = 'direct' | 'revision' | null;
+
+type UsePublishResultWithEditMode = UsePublishResult & {
+  editResultMode: EditResultMode;
+  revisionId: string | null;
+};
 
 // ---------------------------------------------------------------------------
 // Constantes de test
@@ -68,6 +104,7 @@ import { usePublish } from '../hooks/usePublish';
 
 const TEST_PROPERTY_ID = 'prop-uuid-edit-abc-123';
 const TEST_USER_ID = 'user-uid-agente-edit-456';
+const TEST_REVISION_ID = 'revision-uuid-789';
 
 /**
  * Campos del form válidos para CREATE (incluye video).
@@ -89,7 +126,7 @@ const VALID_FORM_CREATE = {
 
 /**
  * Campos del form válidos para EDIT (sin video — el usuario no cambió el video).
- * operation_type, property_type y price son mínimo requerido para el UPDATE.
+ * operation_type, property_type y price son mínimo requerido para el envío.
  * video_id y storage_path son null porque en edit mode no se requiere subir video nuevo.
  */
 const VALID_FORM_EDIT_NO_VIDEO = {
@@ -113,26 +150,34 @@ const VALID_FORM_EDIT_NO_VIDEO = {
 };
 
 // ---------------------------------------------------------------------------
-// Factory de mock Supabase para EDIT mode
-// Soporta tanto functions.invoke (para la regresión) como from().update() (edit)
+// Factory de mock Supabase — 73.6: AMBOS modos (create/edit) pasan por
+// functions.invoke, ruteado por el nombre de la EF. Se conserva el mock de
+// from().update() SOLO para probar que edit mode YA NO lo llama (regresión
+// inversa del contrato pre-73.6).
 // ---------------------------------------------------------------------------
 
 function make_mock_supabase_edit(opts: {
-  update_result?: { data: unknown; error: { message: string } | null };
-  invoke_result?: { data: unknown; error: unknown };
+  edit_invoke_result?: { data: unknown; error: { message?: string } | null };
+  publish_invoke_result?: { data: unknown; error: unknown };
 }) {
   const {
-    update_result = { data: [{ id: TEST_PROPERTY_ID }], error: null },
-    invoke_result = { data: { property_id: 'nuevo-prop-ef' }, error: null },
+    edit_invoke_result = { data: { ok: true, mode: 'direct' }, error: null },
+    publish_invoke_result = { data: { property_id: 'nuevo-prop-ef' }, error: null },
   } = opts;
 
-  // mock para el UPDATE chain: from('properties').update({...}).eq('id', id)
-  const mock_eq = jest.fn().mockResolvedValue(update_result);
+  const mock_invoke = jest.fn(
+    (fn_name: string, _opts?: { body: Record<string, unknown> }) => {
+      if (fn_name === 'edit-property') return Promise.resolve(edit_invoke_result);
+      if (fn_name === 'publish-property') return Promise.resolve(publish_invoke_result);
+      return Promise.resolve({ data: null, error: { message: `EF desconocida invocada: ${fn_name}` } });
+    },
+  );
+
+  // Legacy: mock del UPDATE directo, conservado SOLO para afirmar que edit
+  // mode YA NO lo invoca tras 73.6.
+  const mock_eq = jest.fn().mockResolvedValue({ data: [{ id: TEST_PROPERTY_ID }], error: null });
   const mock_update = jest.fn().mockReturnValue({ eq: mock_eq });
   const mock_from = jest.fn().mockReturnValue({ update: mock_update });
-
-  // mock para la Edge Function (create mode)
-  const mock_invoke = jest.fn().mockResolvedValue(invoke_result);
 
   return {
     from: mock_from,
@@ -154,7 +199,7 @@ const wrapper = ({ children }: { children: React.ReactNode }) => (
 // ---------------------------------------------------------------------------
 
 async function setup_edit_mode(opts: {
-  update_result?: { data: unknown; error: { message: string } | null };
+  edit_invoke_result?: { data: unknown; error: { message?: string } | null };
   form_fields?: Record<string, unknown>;
 }) {
   const mock_supabase = make_mock_supabase_edit(opts);
@@ -183,10 +228,10 @@ async function setup_edit_mode(opts: {
 // ---------------------------------------------------------------------------
 
 async function setup_create_mode(opts: {
-  invoke_result?: { data: unknown; error: unknown };
+  publish_invoke_result?: { data: unknown; error: unknown };
 }) {
   const mock_supabase = make_mock_supabase_edit({
-    invoke_result: opts.invoke_result ?? {
+    publish_invoke_result: opts.publish_invoke_result ?? {
       data: { property_id: 'nuevo-prop-creado' },
       error: null,
     },
@@ -212,7 +257,7 @@ async function setup_create_mode(opts: {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('usePublish — edit mode (17.8)', () => {
+describe('usePublish — edit mode invoca EF edit-property (73.6)', () => {
   // ── REGRESIÓN: create mode no debe cambiar ────────────────────────────────
 
   it('(EC-R1) create_mode_invoca_ef_publish_property: sin editMode, publish() invoca functions.invoke("publish-property") exactamente una vez', async () => {
@@ -222,9 +267,10 @@ describe('usePublish — edit mode (17.8)', () => {
       await result.current.sut.publish();
     });
 
-    expect(mock_supabase._mock_invoke).toHaveBeenCalledTimes(1);
-    const [fn_name] = mock_supabase._mock_invoke.mock.calls[0] as [string, unknown];
-    expect(fn_name).toBe('publish-property');
+    const publish_calls = mock_supabase._mock_invoke.mock.calls.filter(
+      ([fn_name]) => fn_name === 'publish-property',
+    );
+    expect(publish_calls.length).toBe(1);
   });
 
   it('(EC-R2) create_mode_no_invoca_update_directo: sin editMode, publish() NO llama from("properties").update()', async () => {
@@ -234,85 +280,130 @@ describe('usePublish — edit mode (17.8)', () => {
       await result.current.sut.publish();
     });
 
-    // No debe haber ninguna llamada from('properties') seguida de update en create mode
     expect(mock_supabase._mock_update).not.toHaveBeenCalled();
   });
 
-  // ── EDIT mode: happy path ─────────────────────────────────────────────────
-
-  it('(EC-11) edit_mode_invoca_update_no_ef: editMode=true → from("properties").update() es llamado; functions.invoke("publish-property") NO es llamado', async () => {
-    const { result, mock_supabase } = await setup_edit_mode({});
+  it('(EC-R3) create_mode_no_invoca_ef_edit_property: sin editMode, publish() NO invoca functions.invoke("edit-property")', async () => {
+    const { result, mock_supabase } = await setup_create_mode({});
 
     await act(async () => {
       await result.current.sut.publish();
     });
 
-    // La EF NO debe ser invocada
-    expect(mock_supabase._mock_invoke).not.toHaveBeenCalled();
-
-    // from('properties') debe haber sido llamado con 'properties'
-    expect(mock_supabase._mock_from).toHaveBeenCalledWith('properties');
-
-    // update() debe haber sido llamado
-    expect(mock_supabase._mock_update).toHaveBeenCalledTimes(1);
+    const edit_calls = mock_supabase._mock_invoke.mock.calls.filter(
+      ([fn_name]) => fn_name === 'edit-property',
+    );
+    expect(edit_calls.length).toBe(0);
   });
 
-  it('(EC-12) edit_mode_update_shape_correcto: el objeto pasado a update() incluye los campos editables exactos', async () => {
+  // ── EDIT mode: happy path, modo 'direct' ──────────────────────────────────
+
+  it('(EC-11) edit_mode_invoca_ef_edit_property_no_update_ni_publish: editMode=true → functions.invoke("edit-property") es llamado; from("properties").update() y functions.invoke("publish-property") NO son llamados', async () => {
     const { result, mock_supabase } = await setup_edit_mode({});
 
     await act(async () => {
       await result.current.sut.publish();
     });
 
-    expect(mock_supabase._mock_update).toHaveBeenCalledTimes(1);
-    const [update_payload] = mock_supabase._mock_update.mock.calls[0] as [Record<string, unknown>];
+    const edit_calls = mock_supabase._mock_invoke.mock.calls.filter(
+      ([fn_name]) => fn_name === 'edit-property',
+    );
+    expect(edit_calls.length).toBe(1);
 
-    // Campos editables que DEBEN estar en el payload
-    expect(update_payload.operation_type).toBe(VALID_FORM_EDIT_NO_VIDEO.operation_type);
-    expect(update_payload.property_type).toBe(VALID_FORM_EDIT_NO_VIDEO.property_type);
-    expect(update_payload.price).toBe(VALID_FORM_EDIT_NO_VIDEO.price);
-    expect(update_payload.address).toBe(VALID_FORM_EDIT_NO_VIDEO.address);
+    const publish_calls = mock_supabase._mock_invoke.mock.calls.filter(
+      ([fn_name]) => fn_name === 'publish-property',
+    );
+    expect(publish_calls.length).toBe(0);
+
+    // El UPDATE directo (contrato viejo, pre-73.6) YA NO debe usarse
+    expect(mock_supabase._mock_update).not.toHaveBeenCalled();
+  });
+
+  it('(EC-12) edit_mode_invoke_body_shape_correcto: el body pasado a functions.invoke("edit-property") incluye los campos editables exactos', async () => {
+    const { result, mock_supabase } = await setup_edit_mode({});
+
+    await act(async () => {
+      await result.current.sut.publish();
+    });
+
+    const [, invoke_opts] = mock_supabase._mock_invoke.mock.calls.find(
+      ([fn_name]) => fn_name === 'edit-property',
+    ) as [string, { body: Record<string, unknown> }];
+    const body = invoke_opts.body;
+
+    // Campos editables que DEBEN estar en el body
+    expect(body.operation_type).toBe(VALID_FORM_EDIT_NO_VIDEO.operation_type);
+    expect(body.property_type).toBe(VALID_FORM_EDIT_NO_VIDEO.property_type);
+    expect(body.price).toBe(VALID_FORM_EDIT_NO_VIDEO.price);
+    expect(body.address).toBe(VALID_FORM_EDIT_NO_VIDEO.address);
     // Ubicación: columna geography `location` en EWKT (no existen columnas lat/lng)
-    expect(update_payload.location).toBe(
+    expect(body.location).toBe(
       `SRID=4326;POINT(${VALID_FORM_EDIT_NO_VIDEO.lng} ${VALID_FORM_EDIT_NO_VIDEO.lat})`,
     );
-    expect(update_payload.lat).toBeUndefined();
-    expect(update_payload.lng).toBeUndefined();
-    expect(update_payload.pet_friendly).toBe(VALID_FORM_EDIT_NO_VIDEO.pet_friendly);
-    expect(update_payload.allows_no_guarantor).toBe(VALID_FORM_EDIT_NO_VIDEO.allows_no_guarantor);
-    expect(update_payload.student_friendly).toBe(VALID_FORM_EDIT_NO_VIDEO.student_friendly);
-    expect(update_payload.description).toBe(VALID_FORM_EDIT_NO_VIDEO.description);
+    expect(body.lat).toBeUndefined();
+    expect(body.lng).toBeUndefined();
+    expect(body.pet_friendly).toBe(VALID_FORM_EDIT_NO_VIDEO.pet_friendly);
+    expect(body.allows_no_guarantor).toBe(VALID_FORM_EDIT_NO_VIDEO.allows_no_guarantor);
+    expect(body.student_friendly).toBe(VALID_FORM_EDIT_NO_VIDEO.student_friendly);
+    expect(body.description).toBe(VALID_FORM_EDIT_NO_VIDEO.description);
 
     // Campos que NO deben estar: owner_user_id (inmutable), campos internos
-    expect(update_payload.owner_user_id).toBeUndefined();
+    expect(body.owner_user_id).toBeUndefined();
   });
 
-  it('(EC-13) edit_mode_update_eq_property_id: el .eq("id", propertyId) usa el TEST_PROPERTY_ID correcto', async () => {
+  it('(EC-13) edit_mode_invoke_body_incluye_property_id_correcto: el body incluye property_id = TEST_PROPERTY_ID', async () => {
     const { result, mock_supabase } = await setup_edit_mode({});
 
     await act(async () => {
       await result.current.sut.publish();
     });
 
-    expect(mock_supabase._mock_eq).toHaveBeenCalledWith('id', TEST_PROPERTY_ID);
+    const [, invoke_opts] = mock_supabase._mock_invoke.mock.calls.find(
+      ([fn_name]) => fn_name === 'edit-property',
+    ) as [string, { body: Record<string, unknown> }];
+
+    expect(invoke_opts.body.property_id).toBe(TEST_PROPERTY_ID);
   });
 
-  it('(EC-17) edit_mode_exito_expone_status_success: UPDATE exitoso → status="success"', async () => {
+  it('(EC-17) edit_mode_exito_modo_direct_expone_status_success_y_editResultMode_direct: la EF responde mode:"direct" → status="success", editResultMode="direct"', async () => {
     const { result } = await setup_edit_mode({
-      update_result: { data: [{ id: TEST_PROPERTY_ID }], error: null },
+      edit_invoke_result: { data: { ok: true, mode: 'direct' }, error: null },
     });
 
     await act(async () => {
       await result.current.sut.publish();
     });
 
-    expect(result.current.sut.status).toBe('success');
-    expect(result.current.sut.error).toBeNull();
+    const sut = result.current.sut as UsePublishResultWithEditMode;
+    expect(sut.status).toBe('success');
+    expect(sut.error).toBeNull();
+    expect(sut.editResultMode).toBe('direct');
+  });
+
+  // ── EDIT mode: happy path, modo 'revision' (PRD §15.5/§15.6) ──────────────
+
+  it('(EC-19) edit_mode_exito_modo_revision_expone_editResultMode_revision_y_revisionId: la EF responde mode:"revision" → status="success", editResultMode="revision", revisionId = el id devuelto', async () => {
+    const { result } = await setup_edit_mode({
+      edit_invoke_result: {
+        data: { ok: true, mode: 'revision', revision_id: TEST_REVISION_ID },
+        error: null,
+      },
+    });
+
+    await act(async () => {
+      await result.current.sut.publish();
+    });
+
+    const sut = result.current.sut as UsePublishResultWithEditMode;
+    expect(sut.status).toBe('success');
+    expect(sut.error).toBeNull();
+    expect(sut.editResultMode).toBe('revision');
+    expect(sut.revisionId).toBe(TEST_REVISION_ID);
   });
 
   // ── EDIT mode: video ──────────────────────────────────────────────────────
 
-  it('(EC-14) edit_mode_sin_cambiar_video_no_sube_video: sin video_local_uri nuevo, el update no incluye video_id ni storage_path del video nuevo', async () => {
+  it('(EC-14) edit_mode_sin_cambiar_video_no_incluye_campos_de_video_en_body: sin video_local_uri nuevo, el body no incluye video_id ni storage_path del video nuevo', async () => {
     const { result, mock_supabase } = await setup_edit_mode({
       form_fields: { ...VALID_FORM_EDIT_NO_VIDEO, video_local_uri: null, video_id: null, storage_path: null },
     });
@@ -321,19 +412,16 @@ describe('usePublish — edit mode (17.8)', () => {
       await result.current.sut.publish();
     });
 
-    expect(mock_supabase._mock_update).toHaveBeenCalledTimes(1);
-    const [update_payload] = mock_supabase._mock_update.mock.calls[0] as [Record<string, unknown>];
+    const [, invoke_opts] = mock_supabase._mock_invoke.mock.calls.find(
+      ([fn_name]) => fn_name === 'edit-property',
+    ) as [string, { body: Record<string, unknown> }];
 
-    // El update NO debe borrar/tocar el campo de video existente en DB
-    // (si se pasa storage_path null se sobreescribiría el video — esto no debe ocurrir)
-    // El campo video_id y storage_path de la fila property_videos NO se modifica vía properties.update
-    // Validamos que el payload no tiene storage_path (campo de property_videos, no de properties)
-    expect(update_payload.storage_path).toBeUndefined();
-    // video_id tampoco es campo de la tabla properties
-    expect(update_payload.video_id).toBeUndefined();
+    // storage_path/video_id NO son campos de `properties` — no deben viajar en el body.
+    expect(invoke_opts.body.storage_path).toBeUndefined();
+    expect(invoke_opts.body.video_id).toBeUndefined();
   });
 
-  it('(EC-18) edit_mode_no_requiere_video_para_submit: edit mode con video_id=null y storage_path=null logra llamar al update sin bloquearse por validación', async () => {
+  it('(EC-18) edit_mode_no_requiere_video_para_submit: edit mode con video_id=null y storage_path=null logra invocar la EF sin bloquearse por validación', async () => {
     const { result, mock_supabase } = await setup_edit_mode({
       form_fields: {
         ...VALID_FORM_EDIT_NO_VIDEO,
@@ -348,18 +436,21 @@ describe('usePublish — edit mode (17.8)', () => {
     });
 
     // En create mode con video_id=null, get_property_payload lanzaría → status='error'.
-    // En edit mode, debe llegar al UPDATE aunque no haya video nuevo.
-    expect(mock_supabase._mock_update).toHaveBeenCalledTimes(1);
+    // En edit mode, debe llegar al invoke aunque no haya video nuevo.
+    const edit_calls = mock_supabase._mock_invoke.mock.calls.filter(
+      ([fn_name]) => fn_name === 'edit-property',
+    );
+    expect(edit_calls.length).toBe(1);
     expect(result.current.sut.status).toBe('success');
   });
 
   // ── EDIT mode: error ──────────────────────────────────────────────────────
 
-  it('(EC-16) edit_mode_error_update_expone_error: UPDATE retorna error RLS → update() fue invocado, status="error", error contiene mensaje, property_id null', async () => {
+  it('(EC-16) edit_mode_error_invoke_expone_error_y_editResultMode_null: la EF responde error → functions.invoke fue invocado, status="error", error contiene mensaje, property_id null, editResultMode null', async () => {
     const { result, mock_supabase } = await setup_edit_mode({
-      update_result: {
+      edit_invoke_result: {
         data: null,
-        error: { message: 'new row violates row-level security policy' },
+        error: { message: 'No autorizado: el caller no es el dueño de la propiedad' },
       },
     });
 
@@ -367,12 +458,17 @@ describe('usePublish — edit mode (17.8)', () => {
       await result.current.sut.publish();
     });
 
-    // El UPDATE fue invocado (diferencia clave respecto al fallo de validación en create)
-    expect(mock_supabase._mock_update).toHaveBeenCalledTimes(1);
-    expect(result.current.sut.status).toBe('error');
-    expect(result.current.sut.error).not.toBeNull();
-    expect(result.current.sut.error).toMatch(/row-level security|rls|policy/i);
-    expect(result.current.sut.property_id).toBeNull();
+    const edit_calls = mock_supabase._mock_invoke.mock.calls.filter(
+      ([fn_name]) => fn_name === 'edit-property',
+    );
+    expect(edit_calls.length).toBe(1);
+
+    const sut = result.current.sut as UsePublishResultWithEditMode;
+    expect(sut.status).toBe('error');
+    expect(sut.error).not.toBeNull();
+    expect(sut.error).toMatch(/no autorizado/i);
+    expect(sut.property_id).toBeNull();
+    expect(sut.editResultMode).toBeNull();
   });
 });
 
@@ -443,7 +539,7 @@ describe('PublishFormContext — edit_mode/property_id propagation (53.1, RED)',
     expect(state.description).toBe('Casa remodelada, nueva descripción');
   });
 
-  it('(EC-CTX-4) edit_mode_desde_contexto_dirige_publish_a_update_no_ef: cuando editMode/propertyId provienen de context.state (propagados vía update, no de un literal fijo), publish() hace UPDATE directo, NO invoca la EF, y el payload no incluye campos de video', async () => {
+  it('(EC-CTX-4) edit_mode_desde_contexto_dirige_publish_a_ef_edit_property: cuando editMode/propertyId provienen de context.state (propagados vía update, no de un literal fijo), publish() invoca functions.invoke("edit-property"), NO invoca update() ni "publish-property", y el body no incluye campos de video', async () => {
     const mock_supabase = make_mock_supabase_edit({});
 
     const { result } = await renderHook(
@@ -484,15 +580,18 @@ describe('PublishFormContext — edit_mode/property_id propagation (53.1, RED)',
       await result.current.sut.publish();
     });
 
-    // La EF NO debe invocarse en modo edición.
-    expect(mock_supabase._mock_invoke).not.toHaveBeenCalled();
+    // El UPDATE directo (contrato viejo) NUNCA debe invocarse en modo edición.
+    expect(mock_supabase._mock_update).not.toHaveBeenCalled();
 
-    // El UPDATE directo debe haberse llamado (contrato objetivo tras GREEN).
-    expect(mock_supabase._mock_update).toHaveBeenCalledTimes(1);
+    // La EF edit-property debe haberse invocado (contrato objetivo 73.6).
+    const edit_calls = mock_supabase._mock_invoke.mock.calls.filter(
+      ([fn_name]) => fn_name === 'edit-property',
+    );
+    expect(edit_calls.length).toBe(1);
 
-    const [update_payload] = mock_supabase._mock_update.mock.calls[0] as [Record<string, unknown>];
-    expect(update_payload.video_id).toBeUndefined();
-    expect(update_payload.storage_path).toBeUndefined();
+    const [, invoke_opts] = edit_calls[0] as [string, { body: Record<string, unknown> }];
+    expect(invoke_opts.body.video_id).toBeUndefined();
+    expect(invoke_opts.body.storage_path).toBeUndefined();
   });
 
   it('(EC-CTX-5) reset_limpia_edit_mode_y_property_id: tras editar y llamar reset(), edit_mode vuelve a false y property_id a null', async () => {

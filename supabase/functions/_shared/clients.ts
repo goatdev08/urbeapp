@@ -16,6 +16,12 @@ import type {
   SignedGetItem,
 } from "../mint-r2-url/types.ts";
 
+import type {
+  DuplicateCheckResult,
+  DuplicatePropertyChecker,
+  VideoStatusCheckResult,
+  VideoStatusChecker,
+} from "../publish-property/types.ts";
 import type { InvitationDb, InvitationTokenRow } from "./invitation.ts";
 import type {
   AuthAdminClient,
@@ -72,6 +78,16 @@ import type {
   VideoArchiver,
   VideoLoader,
 } from "../archive-video/types.ts";
+import type {
+  AdminActionRecordParams,
+  AdminActionRecorder,
+  AdminActionRecordResult,
+  PropertyFetcher,
+  PropertyUpdater,
+  RevisionFinder,
+  RevisionResolveParams,
+  RevisionResolver,
+} from "../moderate-property/types.ts";
 
 /** Cliente supabase-js con service_role (bypassa RLS y column-grants). */
 export function service_client(): SupabaseClient {
@@ -1154,6 +1170,292 @@ export function make_poster_url_minter(
       }
 
       return results;
+    },
+  };
+}
+
+/**
+ * Adaptador real de VideoStatusChecker (73.4, pipeline de moderación PRD §15.2).
+ * Consulta property_videos por (cloudflare_uid, agent_id) — el video en vuelo
+ * upload-first (68.12): agent_id es el dueño del video, cloudflare_uid la
+ * referencia a Cloudflare Stream que el payload de publish-property manda a
+ * enlazar. Sin fila (uid ajeno, inexistente o soft-deleted) → VIDEO_NOT_FOUND.
+ * status != 'ready' → VIDEO_NOT_READY. duration_seconds fuera de [60,120]
+ * (inclusive, PRD §14 paso 5) → VIDEO_DURATION_INVALID.
+ */
+export function make_video_status_checker(
+  client: SupabaseClient,
+): VideoStatusChecker {
+  return {
+    async check(
+      cloudflare_uid: string,
+      agent_id: string,
+    ): Promise<VideoStatusCheckResult> {
+      const { data, error } = await client
+        .from("property_videos")
+        .select("status, duration_seconds")
+        .eq("cloudflare_uid", cloudflare_uid)
+        .eq("agent_id", agent_id)
+        .is("deleted_at", null)
+        .maybeSingle();
+
+      if (error || !data) {
+        return { ok: false, error_code: "VIDEO_NOT_FOUND" };
+      }
+      if (data.status !== "ready") {
+        return { ok: false, error_code: "VIDEO_NOT_READY" };
+      }
+      const duration = data.duration_seconds as number | null;
+      if (duration === null || duration < 60 || duration > 120) {
+        return { ok: false, error_code: "VIDEO_DURATION_INVALID" };
+      }
+      return { ok: true, duration_seconds: duration };
+    },
+  };
+}
+
+// Estados de properties que NO cuentan como duplicado (73.4, regla exacta en
+// publish-property/types.ts): una publicación rechazada o eliminada del mismo
+// owner+dirección no bloquea — el agente puede resubir.
+const DUPLICATE_EXCLUDED_STATUSES = ["rejected", "deleted_soft", "deleted_hard"];
+
+/**
+ * Adaptador real de DuplicatePropertyChecker (73.4, pipeline de moderación PRD
+ * §15.2). Trae las direcciones NO borradas del mismo owner_user_id cuyo status
+ * no esté en DUPLICATE_EXCLUDED_STATUSES, y compara en JS con
+ * lower(trim(...)) en AMBOS lados — evita depender de ilike (trata % y _ como
+ * comodines, inseguro con direcciones arbitrarias) para una comparación que en
+ * realidad es de igualdad normalizada, no de patrón.
+ * Fail-open (isDuplicate: false) ante error de red/DB — mismo criterio que
+ * make_phone_exists: un falso bloqueo por un timeout transitorio es peor que
+ * dejar pasar una publicación que, en el peor caso, un admin revisa en el
+ * pipeline de moderación de todas formas (pending_review, nunca auto-active).
+ */
+export function make_duplicate_property_checker(
+  client: SupabaseClient,
+): DuplicatePropertyChecker {
+  return {
+    async check(user_id: string, address: string): Promise<DuplicateCheckResult> {
+      const normalized_address = address.trim().toLowerCase();
+
+      const { data, error } = await client
+        .from("properties")
+        .select("address")
+        .eq("owner_user_id", user_id)
+        .is("deleted_at", null)
+        .not(
+          "status",
+          "in",
+          `(${DUPLICATE_EXCLUDED_STATUSES.join(",")})`,
+        );
+
+      if (error || !data) {
+        console.error(
+          "duplicate_property_checker: query falló, fail-open (isDuplicate=false)",
+          error,
+        );
+        return { isDuplicate: false };
+      }
+
+      const isDuplicate = (data as Array<{ address: string }>).some(
+        (row) => row.address.trim().toLowerCase() === normalized_address,
+      );
+      return { isDuplicate };
+    },
+  };
+}
+
+/**
+ * Adaptador real de PropertyFetcher (subtarea 73.9, moderate-property). Trae
+ * id+status; excluye soft-deleted (deleted_at IS NOT NULL ya no debería
+ * moderarse — la propiedad quedó fuera del pipeline).
+ */
+export function make_property_fetcher(client: SupabaseClient): PropertyFetcher {
+  return {
+    async fetch(property_id: string) {
+      const { data, error } = await client
+        .from("properties")
+        .select("id, status")
+        .eq("id", property_id)
+        .is("deleted_at", null)
+        .maybeSingle();
+
+      if (error) {
+        return { ok: false, error_code: "DB_ERROR", message: error.message };
+      }
+      if (!data) {
+        return { ok: false, error_code: "PROPERTY_NOT_FOUND" };
+      }
+      return { ok: true, property: { id: data.id, status: data.status } };
+    },
+  };
+}
+
+/**
+ * Adaptador real de RevisionFinder (subtarea 73.9). Busca la revisión ACTIVA
+ * (status IN pending|needs_changes) — el índice único parcial de 73.2
+ * (property_revisions_one_active_per_property) garantiza a lo más una fila.
+ */
+export function make_revision_finder(client: SupabaseClient): RevisionFinder {
+  return {
+    async find_active(property_id: string) {
+      const { data, error } = await client
+        .from("property_revisions")
+        .select("id, status, changed_fields")
+        .eq("property_id", property_id)
+        .in("status", ["pending", "needs_changes"])
+        .maybeSingle();
+
+      if (error) {
+        return { ok: false, error_code: "DB_ERROR", message: error.message };
+      }
+      if (!data) {
+        return { ok: true, revision: null };
+      }
+      return {
+        ok: true,
+        revision: {
+          id: data.id,
+          status: data.status,
+          changed_fields: data.changed_fields,
+        },
+      };
+    },
+  };
+}
+
+/**
+ * Whitelist de columnas reales de `properties` que un snapshot de
+ * property_revisions.changed_fields puede escribir. MISMO conjunto exacto que
+ * edit-property/index.ts:98-115 (DirectPropertyUpdater.apply) — ambas rutas
+ * escriben el mismo EditPropertyInput a la misma tabla, así que deben
+ * proyectar idénticas columnas. Copiado deliberadamente en vez de importado
+ * (mismo criterio de edit-property/index.ts:7-12: cada adaptador es una sola
+ * query obvia, sin indirección, para minimizar la superficie sin test) — si
+ * agregas/quitas un campo editable aquí, replica el cambio en ambos lados.
+ *
+ * ⚠️ NO hacer spread crudo de changed_fields: ese objeto es el
+ * EditPropertyInput COMPLETO que property_revisions guardó (73.6), y
+ * `property_id` es una de sus keys (types.ts:30) — no es columna de
+ * `properties` (que usa `id`). Un spread directo rompe el UPDATE completo
+ * (PostgREST: "Could not find the 'property_id' column of 'properties'"),
+ * hallazgo del guardian en 73.9.
+ */
+function project_property_snapshot_fields(
+  changed_fields: Record<string, unknown>,
+): Record<string, unknown> {
+  const update_payload: Record<string, unknown> = {
+    operation_type: changed_fields.operation_type,
+    property_type: changed_fields.property_type,
+    price: changed_fields.price,
+    bedrooms: changed_fields.bedrooms,
+    bathrooms: changed_fields.bathrooms,
+    square_meters: changed_fields.square_meters,
+    address: changed_fields.address,
+    price_visible: changed_fields.price_visible,
+    pet_friendly: changed_fields.pet_friendly,
+    allows_no_guarantor: changed_fields.allows_no_guarantor,
+    student_friendly: changed_fields.student_friendly,
+    description: changed_fields.description,
+  };
+  // location: igual que edit-property/index.ts:112-113 — solo se incluye si
+  // el snapshot lo trae (EWKT); ausente = no tocar coordenadas.
+  if (changed_fields.location !== undefined) {
+    update_payload.location = changed_fields.location;
+  }
+  return update_payload;
+}
+
+/**
+ * Adaptador real de PropertyUpdater (subtarea 73.9). Dos operaciones
+ * separadas sobre `properties`, nunca combinadas en la misma llamada:
+ *   - set_status: solo status (+ updated_at).
+ *   - apply_revision_snapshot: proyecta changed_fields al whitelist de
+ *     columnas editables (ver project_property_snapshot_fields), sin tocar
+ *     status.
+ */
+export function make_property_updater(client: SupabaseClient): PropertyUpdater {
+  return {
+    async set_status(property_id: string, status: string) {
+      const { error } = await client
+        .from("properties")
+        .update({ status, updated_at: new Date().toISOString() })
+        .eq("id", property_id);
+      if (error) {
+        return { ok: false, error_code: "DB_ERROR", message: error.message };
+      }
+      return { ok: true };
+    },
+    async apply_revision_snapshot(
+      property_id: string,
+      changed_fields: Record<string, unknown>,
+    ) {
+      const update_payload = project_property_snapshot_fields(changed_fields);
+      update_payload.updated_at = new Date().toISOString();
+
+      const { error } = await client
+        .from("properties")
+        .update(update_payload)
+        .eq("id", property_id);
+      if (error) {
+        return { ok: false, error_code: "DB_ERROR", message: error.message };
+      }
+      return { ok: true };
+    },
+  };
+}
+
+/**
+ * Adaptador real de RevisionResolver (subtarea 73.9). Cierra la revisión
+ * activa: approved/needs_changes/rejected, con reviewed_by_admin_id/
+ * reviewed_at/rejection_reason (shape de 20260809000003_property_revisions).
+ */
+export function make_revision_resolver(client: SupabaseClient): RevisionResolver {
+  return {
+    async resolve(params: RevisionResolveParams) {
+      const { error } = await client
+        .from("property_revisions")
+        .update({
+          status: params.status,
+          reviewed_by_admin_id: params.admin_id,
+          reviewed_at: new Date().toISOString(),
+          rejection_reason: params.reason,
+        })
+        .eq("id", params.revision_id);
+      if (error) {
+        return { ok: false, error_code: "DB_ERROR", message: error.message };
+      }
+      return { ok: true };
+    },
+  };
+}
+
+/**
+ * Adaptador real de AdminActionRecorder (subtarea 73.9) sobre admin_actions
+ * (20260604000007, append-only). INSERT directo con service_role — a
+ * diferencia de make_agency_creator (RPC atómica con su propio INSERT), aquí
+ * no hay una operación multi-tabla que requiera una transacción: la escritura
+ * principal (properties/property_revisions) y esta auditoría son dos pasos
+ * secuenciales del handler, no una unidad atómica de SQL.
+ */
+export function make_admin_action_recorder(
+  client: SupabaseClient,
+): AdminActionRecorder {
+  return {
+    async record(params: AdminActionRecordParams): Promise<AdminActionRecordResult> {
+      const { error } = await client.from("admin_actions").insert({
+        admin_id: params.admin_id,
+        action_type: params.action_type,
+        entity_type: params.entity_type,
+        entity_id: params.entity_id,
+        old_values: params.old_values,
+        new_values: params.new_values,
+        reason: params.reason,
+      });
+      if (error) {
+        return { ok: false, error_code: "DB_ERROR", message: error.message };
+      }
+      return { ok: true };
     },
   };
 }

@@ -8,9 +8,15 @@
 //   3. Parsear JSON body → 400 INVALID_INPUT si falla
 //   4. Validar payload → 400 INVALID_INPUT si falla
 //   5. callerVerifier.verify_caller(authHeader) → 401/403 si falla
-//   6. propertyPublisher.publish(params con property_status='active', video_status='ready')
-//   7. Si publish falla → 500 propagado limpio
-//   8. Si publish ok → 201 { property_id }
+//   6. videoStatusChecker.check(cloudflare_uid, agent_id) → 404/409/400 si falla (73.4, PRD §15.2)
+//      NO gastar el slot en una publicación que se va a rechazar: publisher NUNCA
+//      se invoca si este paso falla.
+//   7. duplicatePropertyChecker.check(user_id, address) → 409 si es duplicado (73.4, PRD §15.2)
+//      Mismo motivo: publisher NUNCA se invoca ante un duplicado obvio.
+//   8. propertyPublisher.publish(params con property_status='pending_review', video_status='ready')
+//      PRD §14.2: en beta TODA publicación va a revisión, ya no hay auto-aprobación a 'active'.
+//   9. Si publish falla → 500 propagado limpio (o 403 para AGENCY_MEMBERSHIP_SUSPENDED)
+//   10. Si publish ok → 201 { property_id }
 
 import { handle_cors_preflight } from "../_shared/cors.ts";
 import { error_response, json_response } from "../_shared/response.ts";
@@ -191,9 +197,43 @@ export async function handler(
     return error_response(verifyResult.error_code, message, status);
   }
 
-  // 6. Publicar propiedad + video atómicamente (RPC en GREEN)
-  // El handler fija property_status='active' y video_status='ready' explícitamente
-  // para que el contrato sea verificable en tests sin inspeccionar la DB.
+  // 6. Pipeline de moderación (73.4, PRD §15.2) — video primero, duplicado después.
+  // Si el video falla, duplicatePropertyChecker NUNCA se invoca (orden importa,
+  // ver handler.test.ts "orden_video_falla_nunca_llama_duplicate_checker_ni_publisher").
+  const videoCheck = await deps!.videoStatusChecker.check(
+    input.cloudflare_uid,
+    verifyResult.user_id,
+  );
+  if (!videoCheck.ok) {
+    const status = videoCheck.error_code === "VIDEO_NOT_FOUND"
+      ? 404
+      : videoCheck.error_code === "VIDEO_NOT_READY"
+      ? 409
+      : 400; // VIDEO_DURATION_INVALID
+    return error_response(
+      videoCheck.error_code,
+      "El video no pasó la validación previa a publicar",
+      status,
+    );
+  }
+
+  // 7. Duplicado obvio: mismo dueño + misma dirección (normalizada) ya publicada.
+  const duplicateCheck = await deps!.duplicatePropertyChecker.check(
+    verifyResult.user_id,
+    input.address,
+  );
+  if (duplicateCheck.isDuplicate) {
+    return error_response(
+      "DUPLICATE_PROPERTY",
+      "Ya existe una publicación tuya con esta misma dirección",
+      409,
+    );
+  }
+
+  // 8. Publicar propiedad + video atómicamente (RPC en GREEN)
+  // El handler fija property_status='pending_review' (PRD §14.2 — en beta TODA
+  // publicación va a revisión) y video_status='ready' explícitamente para que
+  // el contrato sea verificable en tests sin inspeccionar la DB.
   const publishResult = await deps!.propertyPublisher.publish({
     user_id: verifyResult.user_id,
     operation_type: input.operation_type,
@@ -209,7 +249,7 @@ export async function handler(
     allows_no_guarantor: input.allows_no_guarantor,
     student_friendly: input.student_friendly,
     description: input.description,
-    property_status: "active",
+    property_status: "pending_review",
     video_status: "ready",
     cloudflare_uid: input.cloudflare_uid,
   });
@@ -232,6 +272,6 @@ export async function handler(
     );
   }
 
-  // 7. Éxito: propiedad publicada
+  // 10. Éxito: propiedad publicada
   return json_response({ property_id: publishResult.property_id }, 201);
 }

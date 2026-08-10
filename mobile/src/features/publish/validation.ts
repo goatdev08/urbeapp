@@ -19,7 +19,7 @@ export interface ValidationResult {
 }
 
 // ---------------------------------------------------------------------------
-// Step 1 — operation_type y property_type requeridos
+// Step 1 — operation_type requerido (73.3: split del step1 viejo)
 // ---------------------------------------------------------------------------
 
 export function validate_step1(state: PublishFormState): ValidationResult {
@@ -28,6 +28,17 @@ export function validate_step1(state: PublishFormState): ValidationResult {
   if (!state.operation_type) {
     errors.operation_type = 'Selecciona el tipo de operación';
   }
+
+  return { valid: Object.keys(errors).length === 0, errors };
+}
+
+// ---------------------------------------------------------------------------
+// Step 2 — property_type requerido (73.3: split del step1 viejo)
+// ---------------------------------------------------------------------------
+
+export function validate_step2(state: PublishFormState): ValidationResult {
+  const errors: Record<string, string> = {};
+
   if (!state.property_type) {
     errors.property_type = 'Selecciona el tipo de propiedad';
   }
@@ -36,10 +47,12 @@ export function validate_step1(state: PublishFormState): ValidationResult {
 }
 
 // ---------------------------------------------------------------------------
-// Step 2 — price > 0, address no vacío, lat/lng presentes
+// Step 3 (73.3, antes step2) — price > 0, address no vacío, lat/lng
+// presentes. price_visible es un toggle sin validación de "requerido" —
+// siempre válido, nunca genera error propio.
 // ---------------------------------------------------------------------------
 
-export function validate_step2(state: PublishFormState): ValidationResult {
+export function validate_step3(state: PublishFormState): ValidationResult {
   const errors: Record<string, string> = {};
 
   if (state.price === null || state.price <= 0) {
@@ -59,13 +72,24 @@ export function validate_step2(state: PublishFormState): ValidationResult {
 }
 
 // ---------------------------------------------------------------------------
-// Step 3 — cloudflare_uid presente (upload a Cloudflare Stream completado).
-// 68.12 (upload-first): el gate real es cloudflare_uid — el video ya vive en
-// Stream antes de existir la propiedad (mint-upload-url, 68.4). storage_path
-// (Supabase Storage) es el flujo legado y ya no se exige aquí.
+// Step 4 (73.3, nuevo) — detalles opcionales: description, pet_friendly,
+// allows_no_guarantor, student_friendly. SIEMPRE válido — este paso no tiene
+// campos obligatorios propios.
 // ---------------------------------------------------------------------------
 
-export function validate_step3(state: PublishFormState): ValidationResult {
+export function validate_step4(_state: PublishFormState): ValidationResult {
+  return { valid: true, errors: {} };
+}
+
+// ---------------------------------------------------------------------------
+// Step 5 (73.3, renombrado 1:1 del viejo validate_step3) — cloudflare_uid
+// presente (upload a Cloudflare Stream completado). 68.12 (upload-first): el
+// gate real es cloudflare_uid — el video ya vive en Stream antes de existir
+// la propiedad (mint-upload-url, 68.4). storage_path (Supabase Storage) es
+// el flujo legado y ya no se exige aquí.
+// ---------------------------------------------------------------------------
+
+export function validate_step5(state: PublishFormState): ValidationResult {
   const errors: Record<string, string> = {};
 
   if (!state.cloudflare_uid) {
@@ -77,7 +101,7 @@ export function validate_step3(state: PublishFormState): ValidationResult {
 
 // ---------------------------------------------------------------------------
 // getPropertyPayload — transforma el state al shape de la EF publish-property.
-// Precondición: los 3 pasos ya validaron (lanza si hay campos nulos obligatorios).
+// Precondición: los 5 pasos ya validaron (lanza si hay campos nulos obligatorios).
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -132,6 +156,7 @@ export function get_property_payload(state: PublishFormState): PublishFormPayloa
     address: state.address,
     lat: state.lat,
     lng: state.lng,
+    price_visible: state.price_visible,
     pet_friendly: state.pet_friendly,
     allows_no_guarantor: state.allows_no_guarantor,
     student_friendly: state.student_friendly,

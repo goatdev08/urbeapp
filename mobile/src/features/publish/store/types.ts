@@ -1,9 +1,10 @@
 /**
- * types.ts — shape del estado del wizard de publicación (3 pasos).
+ * types.ts — shape del estado del wizard de publicación (5 pasos, 73.3).
  *
  * Alineado al esquema de DB (supabase/migrations/0001):
  *   - operation_type: enum ('rent', 'sale', 'both')
  *   - property_type:  enum ('casa', 'departamento', 'local', 'oficina', 'terreno')
+ *   - price_visible:  boolean, default true (properties.price_visible)
  *
  * ponytail: solo los campos que el wizard recolecta; sin lógica ni estado de UI.
  */
@@ -22,15 +23,16 @@ export type PropertyType =
   | 'terreno';
 
 // ---------------------------------------------------------------------------
-// Estado del wizard (acumulado a través de los 3 pasos)
+// Estado del wizard (acumulado a través de los 5 pasos)
 // ---------------------------------------------------------------------------
 
 export interface PublishFormState {
-  // Step 1 — tipo de operación y propiedad
+  // Step 1 — tipo de operación
   operation_type: OperationType | null;
+  // Step 2 — tipo de propiedad
   property_type: PropertyType | null;
 
-  // Step 2 — detalles y ubicación
+  // Step 3 (73.3) — detalles obligatorios: precio, dirección y ubicación
   price: number | null;
   bedrooms: number | null;
   bathrooms: number | null;
@@ -38,12 +40,16 @@ export interface PublishFormState {
   address: string;
   lat: number | null;
   lng: number | null;
+  /** Toggle "ocultar precio" — sin validación de requerido, default true (columna DB properties.price_visible). */
+  price_visible: boolean;
+
+  // Step 4 (73.3) — detalles opcionales
   pet_friendly: boolean;
   allows_no_guarantor: boolean;
   student_friendly: boolean;
   description: string;
 
-  // Step 3 — video
+  // Step 5 (73.3, era step 3) — video
   video_id: string | null;       // UUID generado en cliente antes de subir
   storage_path: string | null;   // ruta en Supabase Storage tras upload (flujo legado)
   cloudflare_uid: string | null; // uid de Cloudflare Stream devuelto por mint-upload-url (68.4)
@@ -74,6 +80,7 @@ export interface PublishFormPayload {
   address: string;
   lat: number;
   lng: number;
+  price_visible: boolean;
   pet_friendly: boolean;
   allows_no_guarantor: boolean;
   student_friendly: boolean;
@@ -95,6 +102,7 @@ export const INITIAL_PUBLISH_FORM_STATE: PublishFormState = {
   address: '',
   lat: null,
   lng: null,
+  price_visible: true,
   pet_friendly: false,
   allows_no_guarantor: false,
   student_friendly: false,

@@ -195,6 +195,17 @@ export function usePropertyActions(deps?: UsePropertyActionsDeps): UsePropertyAc
           error: 'Se requiere un motivo de cierre (closed_reason) para cerrar la publicación.',
         });
       }
+      // §16 (73.8): rented/sold son new_status DIRECTO — el status ya es
+      // autodescriptivo, no llevan closed_reason en el body. withdrawn/expired
+      // siguen el camino previo: new_status='closed' + closed_reason=<motivo>.
+      if (params.closed_reason === 'rented' || params.closed_reason === 'sold') {
+        return run_action(() =>
+          invoke_status({
+            property_id: params.property_id,
+            new_status: params.closed_reason,
+          }),
+        );
+      }
       return run_action(() =>
         invoke_status({
           property_id: params.property_id,

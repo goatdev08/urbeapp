@@ -86,12 +86,17 @@ export default function MyListingsScreen() {
   // ── Filtro de status (17.6) ──────────────────────────────────────────────
   const [active_filter, set_active_filter] = useState<FilterValue>('all');
 
+  // #73.8 (§16): rented/sold son new_status DIRECTO (no pasan por closed+closed_reason)
+  // pero el PRD exige que sigan cayendo en "Publicaciones cerradas" — son terminales.
+  const is_closed_bucket = (status: ListingItem['status']) =>
+    status === 'closed' || status === 'rented' || status === 'sold';
+
   /** Conteos calculados sobre el array completo (no el filtrado). */
   const counts: Record<FilterValue, number> = {
     all:    listings.length,
     active: listings.filter((i) => i.status === 'active').length,
     paused: listings.filter((i) => i.status === 'paused').length,
-    closed: listings.filter((i) => i.status === 'closed').length,
+    closed: listings.filter((i) => is_closed_bucket(i.status)).length,
   };
 
   /**
@@ -102,7 +107,9 @@ export default function MyListingsScreen() {
   const filtered_listings: ListingItem[] =
     active_filter === 'all'
       ? listings
-      : listings.filter((i) => i.status === active_filter);
+      : active_filter === 'closed'
+        ? listings.filter((i) => is_closed_bucket(i.status))
+        : listings.filter((i) => i.status === active_filter);
 
   // ── Menú de tres puntos (17.4) ───────────────────────────────────────────
   // null = cerrado; MyProperty = abierto para ese item

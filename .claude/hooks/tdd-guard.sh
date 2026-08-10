@@ -43,11 +43,22 @@ SENTINEL=".taskmaster/.current-red"
 
 CURRENT_SUBTASK=$(cat "$SENTINEL" 2>/dev/null || echo "")
 
-# Si el último commit es el RED de esta subtarea, estamos en GREEN → permitir.
-LAST_COMMIT_MSG=$(git log -1 --pretty=%s 2>/dev/null || echo "")
-if [ -n "$CURRENT_SUBTASK" ] && \
-   echo "$LAST_COMMIT_MSG" | grep -qE "^test\(red\): *${CURRENT_SUBTASK//./\\.}([^0-9]|$)"; then
-  exit 0
+# Si existe un commit RED de esta subtarea en el historial de la rama (no
+# necesariamente HEAD — un commit intermedio como "chore: reparar task.id" o
+# el GREEN de otro dominio de la MISMA subtarea puede haberse colado encima),
+# ya estamos en GREEN → permitir. Acotado a lo que la rama agregó sobre
+# origin/main (una tarea = una rama fresca, CLAUDE.md §5) para no matchear
+# el RED de subtareas viejas de otras ramas ya mergeadas.
+if [ -n "$CURRENT_SUBTASK" ]; then
+  RED_PATTERN="^test\(red\): *${CURRENT_SUBTASK//./\\.}([^0-9]|\$)"
+  if git rev-parse --verify origin/main >/dev/null 2>&1; then
+    RED_LOG=$(git log origin/main..HEAD --pretty=%s 2>/dev/null || echo "")
+  else
+    RED_LOG=$(git log --pretty=%s 2>/dev/null || echo "")
+  fi
+  if echo "$RED_LOG" | grep -qE "$RED_PATTERN"; then
+    exit 0
+  fi
 fi
 
 # Si hay cambios de test sin commitear desde HEAD → permitir (RED en progreso).

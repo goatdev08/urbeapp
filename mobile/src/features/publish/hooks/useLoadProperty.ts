@@ -87,6 +87,7 @@ export function useLoadProperty(
            bathrooms,
            square_meters,
            description,
+           price_visible,
            pet_friendly,
            allows_no_guarantor,
            student_friendly,
@@ -137,6 +138,9 @@ export function useLoadProperty(
         bathrooms: data.bathrooms,
         square_meters: data.square_meters,
         description: data.description,
+        // 73.3: fallback true — filas antiguas del mock/columna ausente no deben
+        // pisar el default con undefined (la columna DB es NOT NULL default true).
+        price_visible: data.price_visible ?? true,
         pet_friendly: data.pet_friendly,
         allows_no_guarantor: data.allows_no_guarantor,
         student_friendly: data.student_friendly,

@@ -1,40 +1,36 @@
 /**
- * /publish/step3 — Paso 3 del wizard de publicación.
- * Selección, preview y upload del video de la propiedad.
+ * /publish/step3 — Paso 3 del wizard de publicación (5 pasos, 73.3).
+ * Detalles OBLIGATORIOS: precio, recámaras/baños/m² (opcionales dentro del
+ * paso pero sin campo propio requerido), dirección + mapa, y el toggle de
+ * visibilidad de precio (price_visible).
  *
- * Subtarea 8.8 — Build Step 3 with video selection, preview and upload UI.
+ * Origen: subtarea 8.3/8.4/8.5/8.6 (creó este contenido como step2 viejo,
+ * junto con descripción y amenidades). 73.3 lo divide:
+ *   step3 = obligatorios (este archivo, price_visible nuevo)
+ *   step4 = opcionales (descripción + amenidades, se mueven ahí)
  *
- * Flujo:
- *   1. Usuario toca "Seleccionar video" → expo-image-picker abre galería.
- *   2. Al elegir: preview con expo-video + upload automático (useVideoUpload).
- *   3. Mientras sube: barra de progreso + estado 'Subiendo…'.
- *   4. En éxito: 'Listo' + botón "Publicar" habilitado (placeholder para esta demo).
- *   5. En error: mensaje de error + botón para reintentar.
- *
- * ponytail: UI state local (set_ui_status) para renderizar progreso — el hook
- *   usa refs (sin useState) para compatibilidad con el sync act() de EC-12.
- *   El re-render del screen lo dispara el estado local, no el hook.
+ * Validación del botón "Siguiente": validate_step3 completo
+ * (price/address/lat/lng — price_visible es un toggle, nunca bloquea).
  */
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
+  KeyboardAvoidingView,
+  Platform,
   SafeAreaView,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
-  TouchableOpacity,
+  TextInput,
   View,
 } from 'react-native';
-import * as ImagePicker from 'expo-image-picker';
-import { VideoView, useVideoPlayer } from 'expo-video';
 import { useRouter } from 'expo-router';
 
-
 import { usePublishForm } from '@/features/publish/store/PublishFormContext';
-import { useVideoUpload, type UploadStatus } from '@/features/publish/hooks/useVideoUpload';
-import { usePublish } from '@/features/publish/hooks/usePublish';
-import { ThumbnailPicker } from '@/features/publish/components/ThumbnailPicker';
+import { validate_step3 } from '@/features/publish/validation';
+import { AddressAutocomplete } from '@/features/publish/components/AddressAutocomplete';
+import { MapPicker } from '@/features/publish/components/MapPicker';
+import { NumericStepper } from '@/features/publish/components/NumericStepper';
 import { PrimaryButton } from '@/components/PrimaryButton';
 
 // ---------------------------------------------------------------------------
@@ -45,10 +41,10 @@ const COLOR_BG = '#FAFAF8';
 const COLOR_TEXT_PRIMARY = '#1A1A1A';
 const COLOR_TEXT_SECONDARY = '#6B7280';
 const COLOR_BORDER = '#E5E7EB';
+const COLOR_INPUT_BG = '#FFFFFF';
+const COLOR_HINT = '#9CA3AF';
 const COLOR_ACCENT = '#1A5E44'; // SALVIA
 const COLOR_ERROR = '#DC2626';
-const COLOR_SUCCESS = '#16A34A';
-const COLOR_PICKER_BG = '#F3F4F6';
 
 // ---------------------------------------------------------------------------
 // Screen
@@ -56,272 +52,218 @@ const COLOR_PICKER_BG = '#F3F4F6';
 
 export default function Step3Screen() {
   const router = useRouter();
-
   const { state, update } = usePublishForm();
-  // Edit mode se resuelve del CONTEXTO (propagado una vez en _layout), NO de la
-  // URL: sobrevive a la navegación step1→step2→step3, así que step3 ya no cae en
-  // create mode por pérdida del param → fin de la duplicación (#53).
-  const is_edit_mode = state.edit_mode;
-  const property_id = state.property_id;
 
-  // ── Local state para reactivity en la UI ──────────────────────────────────
-  // useVideoUpload usa refs (sin useState) → el screen gestiona sus propios
-  // estados de UI que reflejan el resultado del upload. Declarado ANTES del
-  // hook: set_ui_status se le pasa como on_status_change (defecto O2 — ver
-  // abajo).
-  const [local_uri, set_local_uri] = useState<string | null>(null);
-  const [ui_status, set_ui_status] = useState<UploadStatus>('idle');
-  const [ui_error, set_ui_error] = useState<string | null>(null);
-  // Estados de publicación (usePublish también usa refs — espejamos aquí para reactivity).
-  const [publish_status, set_publish_status] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle');
-  const [publish_error, set_publish_error] = useState<string | null>(null);
+  // Validación completa: price > 0, address, lat y lng presentes.
+  const { valid, errors } = validate_step3(state);
 
-  // O2 (guardian, tras 103.2): sin on_status_change, ui_status solo se leía
-  // DESPUÉS de `await hook.upload(...)` — el estado transitorio 'verifying'
-  // (hasta ~27s de poll silencioso) nunca llegaba a la pantalla. set_ui_status
-  // es estable (useState) → no rompe la memoización de `upload` en el hook.
-  const hook = useVideoUpload({ on_status_change: set_ui_status });
-  // Edit mode: UPDATE directo sin EF; create mode: invoca EF (sin cambios).
-  const publish_hook = usePublish({
-    editMode: is_edit_mode,
-    propertyId: property_id,
-  });
-
-  // ── Video player (expo-video) ──────────────────────────────────────────────
-  // ponytail: nativeControls=true → expo-video maneja play/pause, sin boilerplate.
-  const video_player = useVideoPlayer(local_uri, (player) => {
-    player.loop = true;
-    // Fix #57: tope de buffer anti-OOM — ver rationale en VideoFeedItem.tsx
-    player.bufferOptions = {
-      preferredForwardBufferDuration: 10,
-      maxBufferBytes: 25 * 1024 * 1024,
-    };
-  });
-
-  // Auto-play cuando cambia la URI (setup solo corre al montar).
-  useEffect(() => {
-    if (local_uri) {
-      video_player.play();
-    }
-  }, [local_uri, video_player]);
+  // Mensajes de error deduplicados para mostrar al usuario.
+  // lat y lng comparten el mismo texto — se colapsan en uno solo.
+  const error_messages = (() => {
+    const msgs: string[] = [];
+    if (errors.price) msgs.push(errors.price);
+    if (errors.address) msgs.push(errors.address);
+    if (errors.lat || errors.lng) msgs.push('La ubicación en el mapa es requerida');
+    return msgs;
+  })();
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
-  const handle_pick_video = useCallback(async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['videos'],
-      quality: 1,
-      allowsEditing: false,
-    });
+  const handle_price_change = useCallback(
+    (text: string) => {
+      // Acepta solo dígitos y un punto decimal; rechaza texto libre.
+      const clean = text.replace(/[^0-9.]/g, '');
+      const num = parseFloat(clean);
+      update({ price: Number.isFinite(num) && num > 0 ? num : null });
+    },
+    [update],
+  );
 
-    if (result.canceled || !result.assets?.length) return;
+  const handle_bedrooms_change = useCallback(
+    (next: number) => update({ bedrooms: next }),
+    [update],
+  );
 
-    const uri = result.assets?.[0]?.uri;
-    if (!uri) return;
+  const handle_bathrooms_change = useCallback(
+    (next: number) => update({ bathrooms: next }),
+    [update],
+  );
 
-    // Guardar URI en el form (para persistencia entre pasos) y en estado local.
-    update({ video_local_uri: uri });
-    set_local_uri(uri);
-    set_ui_status('uploading');
-    set_ui_error(null);
+  const handle_sqm_change = useCallback(
+    (text: string) => {
+      const clean = text.replace(/[^0-9.]/g, '');
+      const num = parseFloat(clean);
+      update({ square_meters: Number.isFinite(num) && num > 0 ? num : null });
+    },
+    [update],
+  );
 
-    // Iniciar upload — la función es async y modifica refs internamente.
-    await hook.upload(uri);
+  const handle_next = useCallback(() => {
+    if (!valid) return;
+    router.push('/publish/step4');
+  }, [valid, router]);
 
-    // Leer del hook (refs, siempre actualizados tras el await).
-    const final_status = hook.status;
-    const final_error = hook.error;
+  // ── Valores controlados (string para los TextInput numéricos) ─────────────
 
-    set_ui_status(final_status);
-    set_ui_error(final_error);
-  }, [update, hook]);
-
-  const handle_retry = useCallback(async () => {
-    if (!local_uri) return;
-    set_ui_status('uploading');
-    set_ui_error(null);
-    await hook.upload(local_uri);
-    set_ui_status(hook.status);
-    set_ui_error(hook.error);
-  }, [local_uri, hook]);
-
-  const handle_publish = useCallback(async () => {
-    // 8.10: submit a publish-property
-    set_publish_status('submitting');
-    set_publish_error(null);
-
-    await publish_hook.publish();
-
-    const final_status = publish_hook.status;
-    const final_error = publish_hook.error;
-
-    set_publish_status(final_status);
-    set_publish_error(final_error);
-
-    if (final_status === 'success') {
-      // Portada: default 50% (Stream, 68.4) al publicar. El agente puede
-      // refinarla en el editor una vez el video quede 'ready' (68.7, sección
-      // "Portada" más abajo) — la generación de un frame local ya no aplica
-      // con upload-first (cleanup P7 legacy, ver videoThumbnail.ts eliminado).
-      Alert.alert('¡Publicada!', 'Tu propiedad ya está disponible en el feed.', [
-        {
-          text: 'Aceptar',
-          // Navega a la home del feed (app/(protected)/index.tsx).
-          onPress: () => router.replace('/'),
-        },
-      ]);
-    }
-  }, [publish_hook, router]);
-
-  // ── Derivados de estado ────────────────────────────────────────────────────
-
-  const is_uploading = ui_status === 'uploading';
-  // #103.2: uploadAsync() puede fallar leyendo la respuesta aunque el video
-  // SÍ haya llegado a Stream — el hook verifica antes de marcar error.
-  const is_verifying = ui_status === 'verifying';
-  // Contrato 68.4: el binario terminó de subir y quedó 'processing' en
-  // Cloudflare Stream (transcodificando) — nunca llega a 'success' en el
-  // cliente; 'ready' se resuelve por webhook (68.5). Se trata como el estado
-  // "listo para publicar" de esta pantalla.
-  const is_success = ui_status === 'processing';
-  const is_error = ui_status === 'error';
-  const has_video = local_uri !== null;
-  const is_publishing = publish_status === 'submitting';
-  const is_publish_error = publish_status === 'error';
-
-  // ponytail: en edit mode sin video nuevo → se conserva el existente, no se requiere re-subir.
-  const can_publish_without_new_video = is_edit_mode && !has_video;
+  const price_text = state.price !== null ? String(state.price) : '';
+  const sqm_text = state.square_meters !== null ? String(state.square_meters) : '';
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* ── Encabezado ───────────────────────────────────────────────── */}
-      <View style={styles.header}>
-        <Text style={styles.page_title}>Video de la propiedad</Text>
-        <Text style={styles.page_subtitle}>
-          {is_edit_mode
-            ? 'El video no se puede cambiar en modo edición.'
-            : 'Sube un video vertical para mostrar la propiedad.'}
-        </Text>
-      </View>
-
-      {/* ── Contenido scrolleable (video + status + Portada en edit mode) ── */}
-      <ScrollView
-        style={styles.scroll_area}
-        contentContainerStyle={styles.scroll_content}
-        showsVerticalScrollIndicator={false}
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
       >
-      {/* ── Área de preview / picker ──────────────────────────────────── */}
-      <View style={styles.video_area}>
-        {has_video ? (
-          <VideoView
-            player={video_player}
-            style={styles.video_view}
-            nativeControls
-            contentFit="contain"
-          />
-        ) : is_edit_mode ? (
-          // Edit mode v1: el video no es reemplazable. Placeholder informativo
-          // (sin picker) para no generar uploads huérfanos en Storage.
-          <View style={styles.picker_placeholder}>
-            <Text style={styles.picker_icon}>▶</Text>
-            <Text style={styles.picker_text}>Video actual</Text>
-            <Text style={styles.picker_hint}>
-              El video no se puede cambiar en modo edición
-            </Text>
-          </View>
-        ) : (
-          // Área tocable para abrir el picker
-          <TouchableOpacity
-            style={styles.picker_placeholder}
-            onPress={handle_pick_video}
-            activeOpacity={0.7}
-            accessibilityLabel="Seleccionar video de la galería"
-          >
-            <Text style={styles.picker_icon}>▶</Text>
-            <Text style={styles.picker_text}>Seleccionar video</Text>
-            <Text style={styles.picker_hint}>
-              Toca para abrir la galería
-            </Text>
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {/* ── Botón de cambiar video (solo create mode; en edit no es reemplazable) ─ */}
-      {has_video && !is_edit_mode && (
-        <TouchableOpacity
-          style={styles.change_video_btn}
-          onPress={handle_pick_video}
-          disabled={is_uploading || is_verifying}
-          accessibilityLabel="Cambiar video"
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.scroll_content}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
-          <Text style={styles.change_video_text}>Cambiar video</Text>
-        </TouchableOpacity>
-      )}
-
-      {/* ── Estado del upload ─────────────────────────────────────────── */}
-      <View style={styles.status_area}>
-        {is_uploading && (
-          <View style={styles.status_row}>
-            <ActivityIndicator size="small" color={COLOR_ACCENT} />
-            <Text style={styles.status_text}>Subiendo video…</Text>
-          </View>
-        )}
-        {is_verifying && (
-          <View style={styles.status_row}>
-            <ActivityIndicator size="small" color={COLOR_ACCENT} />
-            <Text style={styles.status_text}>Verificando que el video llegó…</Text>
-          </View>
-        )}
-        {is_success && (
-          <View style={styles.status_row}>
-            <Text style={styles.success_icon}>✓</Text>
-            <Text style={[styles.status_text, styles.success_text]}>
-              Video subido correctamente
+          {/* ── Encabezado de pantalla ─────────────────────────────────── */}
+          <View style={styles.page_header}>
+            <Text style={styles.page_title}>Detalles de la propiedad</Text>
+            <Text style={styles.page_subtitle}>
+              Ingresa el precio y los datos principales.
             </Text>
           </View>
-        )}
-        {is_error && (
-          <View style={styles.error_container}>
-            <Text style={styles.error_text}>
-              {ui_error ?? 'Error al subir el video'}
-            </Text>
-            <TouchableOpacity
-              onPress={handle_retry}
-              style={styles.retry_btn}
-              accessibilityLabel="Reintentar subida del video"
-            >
-              <Text style={styles.retry_text}>Reintentar</Text>
-            </TouchableOpacity>
+
+          {/* ── Precio ───────────────────────────────────────────────────── */}
+          <Text style={styles.section_label}>Precio (MXN)</Text>
+          <View style={styles.input_row}>
+            <Text style={styles.currency_hint}>$</Text>
+            <TextInput
+              style={styles.price_input}
+              value={price_text}
+              onChangeText={handle_price_change}
+              keyboardType="numeric"
+              placeholder="0"
+              placeholderTextColor={COLOR_HINT}
+              returnKeyType="next"
+              accessibilityLabel="Precio en pesos mexicanos"
+            />
+            <Text style={styles.currency_suffix}>MXN</Text>
           </View>
-        )}
-      </View>
-
-      {/* ── Portada del video (68.7) — solo edit mode, con video linkeado ── */}
-      {is_edit_mode && state.cloudflare_uid && (
-        <ThumbnailPicker
-          cloudflareUid={state.cloudflare_uid}
-          videoStatus={state.video_status ?? 'processing'}
-          initialPct={state.video_thumbnail_pct}
-        />
-      )}
-      </ScrollView>
-
-      {/* ── CTA (fijo al fondo) ───────────────────────────────────────── */}
-      <View style={styles.cta_area}>
-        {is_publish_error && (
-          <Text style={styles.error_text}>
-            {publish_error ?? 'Error al publicar. Intenta de nuevo.'}
+          {/* Hint de moneda contextual */}
+          <Text style={styles.field_hint}>
+            Precio mensual si es renta · total si es venta.
           </Text>
-        )}
-        <PrimaryButton
-          label={is_publishing
-            ? (is_edit_mode ? 'Guardando…' : 'Publicando…')
-            : (is_edit_mode ? 'Guardar cambios' : 'Publicar')}
-          onPress={handle_publish}
-          surface="light"
-          disabled={(!is_success && !can_publish_without_new_video) || is_publishing}
-        />
-      </View>
+
+          {/* ── Visibilidad del precio (73.3, price_visible) ────────────── */}
+          <View style={[styles.toggles_card, styles.section_gap]}>
+            <View style={styles.toggle_row}>
+              <View style={styles.toggle_label_col}>
+                <Text style={styles.toggle_label}>Mostrar precio en el feed</Text>
+                <Text style={styles.field_hint}>
+                  Si lo ocultas, el precio solo se comparte por contacto directo.
+                </Text>
+              </View>
+              <Switch
+                value={state.price_visible}
+                onValueChange={(value) => update({ price_visible: value })}
+                trackColor={{ false: COLOR_BORDER, true: COLOR_ACCENT }}
+                thumbColor="#FFFFFF"
+                accessibilityLabel="Mostrar precio en el feed"
+              />
+            </View>
+          </View>
+
+          {/* ── Recámaras ─────────────────────────────────────────────── */}
+          <View style={[styles.stepper_row, styles.section_gap]}>
+            <View style={styles.stepper_label_col}>
+              <Text style={styles.section_label}>Recámaras</Text>
+              <Text style={styles.field_hint}>Opcional</Text>
+            </View>
+            <NumericStepper
+              value={state.bedrooms}
+              min={0}
+              max={20}
+              onChange={handle_bedrooms_change}
+              placeholder="0"
+            />
+          </View>
+
+          {/* ── Baños ─────────────────────────────────────────────────── */}
+          <View style={[styles.stepper_row, styles.section_gap]}>
+            <View style={styles.stepper_label_col}>
+              <Text style={styles.section_label}>Baños</Text>
+              <Text style={styles.field_hint}>Opcional</Text>
+            </View>
+            <NumericStepper
+              value={state.bathrooms}
+              min={0}
+              max={20}
+              onChange={handle_bathrooms_change}
+              placeholder="0"
+            />
+          </View>
+
+          {/* ── Metros cuadrados ──────────────────────────────────────── */}
+          <Text style={[styles.section_label, styles.section_gap]}>
+            Superficie (m²)
+          </Text>
+          <TextInput
+            style={styles.text_input}
+            value={sqm_text}
+            onChangeText={handle_sqm_change}
+            keyboardType="numeric"
+            placeholder="Ej. 85"
+            placeholderTextColor={COLOR_HINT}
+            returnKeyType="next"
+            accessibilityLabel="Superficie en metros cuadrados"
+          />
+          <Text style={styles.field_hint}>Opcional</Text>
+
+          {/* ── Dirección ─────────────────────────────────────────────── */}
+          <Text style={[styles.section_label, styles.section_gap]}>
+            Dirección
+          </Text>
+          <AddressAutocomplete
+            value={state.address}
+            onSelect={(address) => update({ address })}
+            onPlaceSelected={(address, lat, lng) => update({ address, lat, lng })}
+          />
+          <Text style={styles.field_hint}>
+            Escribe y selecciona de las sugerencias para fijar el pin, o ajústalo tocando el mapa.
+          </Text>
+
+          {/* ── Mapa ────────────────────────────────────────────────────────
+              Mapa interactivo — escribe update({ lat, lng }) solo al interactuar.
+              Requiere dev build con módulo nativo de react-native-maps.
+          ─────────────────────────────────────────────────────────────── */}
+          <View style={styles.section_gap}>
+            <MapPicker
+              lat={state.lat}
+              lng={state.lng}
+              onLocationChange={(lat, lng) => update({ lat, lng })}
+            />
+          </View>
+
+          {/* Espacio final para que el contenido no quede bajo el botón */}
+          <View style={styles.bottom_spacer} />
+        </ScrollView>
+
+        {/* ── Botón Siguiente (fijo al fondo) ───────────────────────────── */}
+        <View style={styles.cta_area}>
+          {!valid && error_messages.length > 0 && (
+            <View style={styles.errors_container}>
+              <Text style={styles.errors_title}>Falta completar:</Text>
+              {error_messages.map((msg) => (
+                <Text key={msg} style={styles.error_item}>
+                  {'•'} {msg}
+                </Text>
+              ))}
+            </View>
+          )}
+          <PrimaryButton
+            label="Siguiente"
+            onPress={handle_next}
+            surface="light"
+            disabled={!valid}
+          />
+        </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -335,20 +277,21 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLOR_BG,
   },
-
-  // ── Encabezado ────────────────────────────────────────────────────────────
-  header: {
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: 16,
+  flex: {
+    flex: 1,
   },
-
-  // ── Contenido scrolleable ────────────────────────────────────────────────
-  scroll_area: {
+  scroll: {
     flex: 1,
   },
   scroll_content: {
-    paddingBottom: 100, // despeje del cta_area fijo (absolute) al fondo
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 24,
+  },
+
+  // ── Encabezado ──────────────────────────────────────────────────────────
+  page_header: {
+    marginBottom: 28,
   },
   page_title: {
     fontSize: 22,
@@ -363,105 +306,137 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
 
-  // ── Video / picker ────────────────────────────────────────────────────────
-  video_area: {
-    marginHorizontal: 20,
-    borderRadius: 16,
-    overflow: 'hidden',
-    backgroundColor: '#000',
-    aspectRatio: 9 / 16,
-    maxHeight: 360,
-  },
-  video_view: {
-    flex: 1,
-  },
-  picker_placeholder: {
-    flex: 1,
-    backgroundColor: COLOR_PICKER_BG,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  picker_icon: {
-    fontSize: 36,
-    color: COLOR_TEXT_SECONDARY,
-  },
-  picker_text: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: COLOR_TEXT_PRIMARY,
-  },
-  picker_hint: {
+  // ── Sección label ────────────────────────────────────────────────────────
+  section_label: {
     fontSize: 12,
+    fontWeight: '700',
     color: COLOR_TEXT_SECONDARY,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+    marginBottom: 8,
+  },
+  section_gap: {
+    marginTop: 24,
   },
 
-  // ── Cambiar video ─────────────────────────────────────────────────────────
-  change_video_btn: {
-    alignSelf: 'center',
-    marginTop: 10,
-    paddingVertical: 6,
-    paddingHorizontal: 14,
-  },
-  change_video_text: {
-    fontSize: 13,
-    color: COLOR_ACCENT,
-    fontWeight: '600',
-  },
-
-  // ── Status del upload ──────────────────────────────────────────────────────
-  status_area: {
-    paddingHorizontal: 20,
-    marginTop: 16,
-    minHeight: 36,
-  },
-  status_row: {
+  // ── Precio ───────────────────────────────────────────────────────────────
+  input_row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    backgroundColor: COLOR_INPUT_BG,
+    borderWidth: 1,
+    borderColor: COLOR_BORDER,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    height: 52,
   },
-  status_text: {
-    fontSize: 14,
-    color: COLOR_TEXT_SECONDARY,
-  },
-  success_icon: {
-    fontSize: 16,
-    color: COLOR_SUCCESS,
-    fontWeight: '700',
-  },
-  success_text: {
-    color: COLOR_SUCCESS,
+  currency_hint: {
+    fontSize: 18,
     fontWeight: '600',
+    color: COLOR_TEXT_SECONDARY,
+    marginRight: 6,
   },
-  error_container: {
-    gap: 8,
+  price_input: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: '600',
+    color: COLOR_TEXT_PRIMARY,
+    padding: 0,
   },
-  error_text: {
+  currency_suffix: {
     fontSize: 13,
+    fontWeight: '500',
+    color: COLOR_HINT,
+    marginLeft: 6,
+  },
+
+  // ── Campo genérico ───────────────────────────────────────────────────────
+  text_input: {
+    backgroundColor: COLOR_INPUT_BG,
+    borderWidth: 1,
+    borderColor: COLOR_BORDER,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    fontSize: 15,
+    color: COLOR_TEXT_PRIMARY,
+  },
+
+  // ── Stepper row ──────────────────────────────────────────────────────────
+  stepper_row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: COLOR_INPUT_BG,
+    borderWidth: 1,
+    borderColor: COLOR_BORDER,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  stepper_label_col: {
+    gap: 2,
+  },
+
+  // ── Hint debajo del campo ────────────────────────────────────────────────
+  field_hint: {
+    fontSize: 12,
+    color: COLOR_HINT,
+    marginTop: 4,
+  },
+
+  // ── Toggles (price_visible) ─────────────────────────────────────────────
+  toggles_card: {
+    backgroundColor: COLOR_INPUT_BG,
+    borderWidth: 1,
+    borderColor: COLOR_BORDER,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  toggle_row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    gap: 12,
+  },
+  toggle_label_col: {
+    flex: 1,
+    gap: 2,
+  },
+  toggle_label: {
+    fontSize: 15,
+    color: COLOR_TEXT_PRIMARY,
+    fontWeight: '500',
+  },
+
+  // ── Errores sobre el botón ───────────────────────────────────────────────
+  errors_container: {
+    marginBottom: 10,
+    paddingHorizontal: 4,
+  },
+  errors_title: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLOR_ERROR,
+    marginBottom: 4,
+  },
+  error_item: {
+    fontSize: 12,
     color: COLOR_ERROR,
     lineHeight: 18,
-  },
-  retry_btn: {
-    alignSelf: 'flex-start',
-    paddingVertical: 4,
-    paddingHorizontal: 2,
-  },
-  retry_text: {
-    fontSize: 13,
-    color: COLOR_ACCENT,
-    fontWeight: '600',
   },
 
   // ── CTA ──────────────────────────────────────────────────────────────────
   cta_area: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
     paddingHorizontal: 20,
     paddingVertical: 16,
     backgroundColor: COLOR_BG,
     borderTopWidth: 1,
     borderTopColor: COLOR_BORDER,
+  },
+  bottom_spacer: {
+    height: 16,
   },
 });
