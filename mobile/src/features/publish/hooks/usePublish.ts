@@ -33,6 +33,7 @@ import { useRef, useCallback, useMemo } from 'react';
 
 import { usePublishForm } from '../store/PublishFormContext';
 import { get_property_payload } from '../validation';
+import { clear_current_draft, get_current_draft_id } from './useDraftAutosave';
 
 // ponytail: import lazy — el cliente real solo se carga si no se inyecta uno externo.
 // Los tests siempre inyectan su propio mock.
@@ -195,6 +196,27 @@ export function usePublish(deps?: UsePublishDeps): UsePublishResult {
 
       // Éxito — exponer property_id, limpiar form, marcar success.
       property_id_ref.current = pid as string;
+
+      // #127(5): descartar el borrador del autosave — publicar creó una fila
+      // NUEVA vía la RPC; sin esto el draft quedaba huérfano para siempre (y
+      // de paso bloqueaba la propia dirección vía el checker de duplicados,
+      // ver #135). Soft-delete fail-soft: si falla solo se loguea.
+      const draft_id = get_current_draft_id();
+      if (draft_id) {
+        clear_current_draft();
+        try {
+          const { error: discard_error } = await supabase_client
+            .from('properties')
+            .update({ deleted_at: new Date().toISOString() })
+            .eq('id', draft_id);
+          if (discard_error) {
+            console.warn('[usePublish] no se pudo descartar el borrador:', discard_error.message);
+          }
+        } catch (discard_err) {
+          console.warn('[usePublish] no se pudo descartar el borrador:', discard_err);
+        }
+      }
+
       reset();
       status_ref.current = 'success';
     } catch (e) {

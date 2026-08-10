@@ -55,6 +55,11 @@ import { PublishFormProvider, usePublishForm } from '../store/PublishFormContext
 // ---------------------------------------------------------------------------
 
 import { usePublish } from '../hooks/usePublish';
+import {
+  clear_current_draft,
+  get_current_draft_id,
+  set_current_draft_id,
+} from '../hooks/useDraftAutosave';
 
 // ---------------------------------------------------------------------------
 // Constantes de test
@@ -352,5 +357,102 @@ describe('usePublish', () => {
     expect(result.current.form.state.video_id).toBe(VALID_FORM_FIELDS.video_id);
     expect(result.current.form.state.storage_path).toBe(VALID_FORM_FIELDS.storage_path);
     expect(result.current.sut.status).toBe('error');
+  });
+  // ═══════════════════════════════════════════════════════════════════════════
+  // #127(5) — publicar descarta el borrador del autosave
+  // La publicación crea una fila NUEVA vía la RPC; sin el descarte, el draft
+  // del autosave quedaba huérfano para siempre (y bloqueaba la propia
+  // dirección vía el checker de duplicados, #135).
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  it('(#127-5) publicar_con_exito_descarta_el_borrador: soft-delete del draft y limpia el id de módulo', async () => {
+    set_current_draft_id('draft-uuid-127');
+    const mock_eq = jest.fn().mockResolvedValue({ data: null, error: null });
+    const mock_update = jest.fn().mockReturnValue({ eq: mock_eq });
+    const mock_from = jest.fn().mockReturnValue({ update: mock_update });
+    const mock_supabase = make_mock_supabase({}) as ReturnType<typeof make_mock_supabase> & {
+      from?: jest.Mock;
+    };
+    mock_supabase.from = mock_from;
+
+    const { result } = await renderHook(
+      () => ({
+        sut: usePublish({ supabase: mock_supabase }),
+        form: usePublishForm(),
+      }),
+      { wrapper }
+    );
+    await act(async () => {
+      result.current.form.update(VALID_FORM_FIELDS);
+    });
+
+    await act(async () => {
+      await result.current.sut.publish();
+    });
+
+    expect(result.current.sut.status).toBe('success');
+    expect(mock_from).toHaveBeenCalledWith('properties');
+    expect(mock_update).toHaveBeenCalledWith(
+      expect.objectContaining({ deleted_at: expect.any(String) }),
+    );
+    expect(mock_eq).toHaveBeenCalledWith('id', 'draft-uuid-127');
+    expect(get_current_draft_id()).toBeNull();
+  });
+
+  it('(#127-5b) publicar_sin_borrador_no_toca_properties: sin draft id, jamás llama .from()', async () => {
+    clear_current_draft();
+    const mock_from = jest.fn();
+    const mock_supabase = make_mock_supabase({}) as ReturnType<typeof make_mock_supabase> & {
+      from?: jest.Mock;
+    };
+    mock_supabase.from = mock_from;
+
+    const { result } = await renderHook(
+      () => ({
+        sut: usePublish({ supabase: mock_supabase }),
+        form: usePublishForm(),
+      }),
+      { wrapper }
+    );
+    await act(async () => {
+      result.current.form.update(VALID_FORM_FIELDS);
+    });
+    await act(async () => {
+      await result.current.sut.publish();
+    });
+
+    expect(result.current.sut.status).toBe('success');
+    expect(mock_from).not.toHaveBeenCalled();
+  });
+
+  it('(#127-5c) el_descarte_fallido_no_rompe_la_publicacion: el soft-delete truena pero status=success igual', async () => {
+    set_current_draft_id('draft-uuid-127-err');
+    const mock_eq = jest.fn().mockRejectedValue(new Error('red caída'));
+    const mock_update = jest.fn().mockReturnValue({ eq: mock_eq });
+    const mock_from = jest.fn().mockReturnValue({ update: mock_update });
+    const mock_supabase = make_mock_supabase({}) as ReturnType<typeof make_mock_supabase> & {
+      from?: jest.Mock;
+    };
+    mock_supabase.from = mock_from;
+    const warn_spy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const { result } = await renderHook(
+      () => ({
+        sut: usePublish({ supabase: mock_supabase }),
+        form: usePublishForm(),
+      }),
+      { wrapper }
+    );
+    await act(async () => {
+      result.current.form.update(VALID_FORM_FIELDS);
+    });
+    await act(async () => {
+      await result.current.sut.publish();
+    });
+
+    expect(result.current.sut.status).toBe('success');
+    expect(warn_spy).toHaveBeenCalled();
+    warn_spy.mockRestore();
+    clear_current_draft();
   });
 });
