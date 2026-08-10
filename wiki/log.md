@@ -2,6 +2,19 @@
 
 Append-only. Prefijo: `## [YYYY-MM-DD] tipo | título`
 
+## [2026-08-09] fix | Las 6 bloqueantes del review de #73 (+deploy completo: DB + 4 EFs + OTA)
+
+Cierra #126–#130 y #142 (PRs #57–#62, una rama/PR por tarea, TDD estricto: RED verificado por aserción en todas). Con esto, publicar → moderar → editar → cerrar queda usable de punta a punta, y TODO desplegado al remoto con el visto bueno de Abraham: 7 migraciones (`20260809000002`–`000008`), 4 EFs (`publish-property`, `edit-property`, `moderate-property`, `update-property-status`) y OTA a ambos canales (runtimes idénticos a los builds 1.0.4 — sin build nuevo, cero nativo tocado).
+
+**Los hallazgos que valen la pena recordar:**
+1. **#126 — la premisa del ticket estaba incompleta.** "Que el checker acepte `processing` como la RPC" era un **no-op**: nadie escribe jamás `processing` en `property_videos` (la fila va `uploading` → webhook → `ready`). El fix real fue del lado del cliente: validar la duración al ELEGIR el video y esperar el `ready` real de la DB (`useVideoReady`) antes de habilitar Publicar. Moraleja: antes de implementar la opción (a) de un ticket, verificar quién escribe realmente el estado del que depende.
+2. **#130 — la atomicidad como diseño, no como parche.** Los 3 seams de escritura de `moderate-property` se fusionaron en UNO respaldado por la RPC `moderate_property_atomic` (patrón `publish_property_atomic`): la state machine sigue en el handler testeado, y el SQL solo aporta la transacción. El snapshot aplica por PRESENCIA de clave jsonb (`?`) — clave ausente ≠ null explícito, la misma distinción que #142 fijó en el parser de `edit-property`. Los tests de "fallo parcial" se borraron a propósito: ese estado ya no puede existir.
+3. **#127 — la RLS como segunda capa tiene que tener dientes.** El hook de autosave era la única ruta de escritura de `properties` fuera de las EFs y la RLS no restringía `status`: cualquier caller con anon key + JWT de agente podía crear propiedades `active` sin moderación. `properties_insert` ahora exige `status='draft'` (pgTAP 40 lo fija con impersonación).
+4. **Gotcha de testing (nuevo, costó ~30 min de bisección):** `unmount()` manual FUERA de `act()` bajo fake timers corrompe el montaje de efectos de TODOS los tests siguientes del archivo — los hooks nuevos renderizan pero sus `useEffect` jamás corren, y solo los tests positivos lo notan. Fix: `await act(async () => { unmount(); ... })`. Registrado en memoria (`rntl_unmount_fuera_de_act`).
+5. **El lint `react-hooks` moderno prohíbe** escribir refs durante render (`state_ref.current = state` suelto) y `setState` síncrono dentro de un efecto — los patrones nuevos: asignar refs en un efecto sin deps, y derivar el estado visible de un estado "resultado final + uid" en vez de resetearlo en el efecto.
+
+Ingest: fila nueva en `mapa-codebase.md` (fixes #126–#142 + RPC de moderación + candado draft-only), [[moderacion]] sigue vivo (la máquina de estados de la EF cambió: approve-con-revisión activa desde pending_review/needs_changes).
+
 ## [2026-08-09] tarea | #73 Ola 1 — Publicación completa (5 pasos + 16 estados + moderación manual)
 
 Cierra la ola de publicación: wizard de 5 pasos con autoguardado, `property_status` extendido a 17 valores (10 operativos nuevos), `property_revisions` (doble versión §15.6), `property_video_slots` (abstracción de vigencia), y dos EFs nuevas — `edit-property` (re-revisión por edición) y `moderate-property` (approve/needs_changes/reject/suspend unificada). En beta el admin modera por Supabase Studio, sin panel visual todavía (Ola 3).
