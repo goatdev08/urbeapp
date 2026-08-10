@@ -5177,7 +5177,7 @@
         "id": "73",
         "title": "Ola 1 — Publicación completa (5 pasos + 16 estados + moderación manual)",
         "description": "Wizard de 5 pasos con autoguardado de borrador, máquina de 16 estados de publicación, pipeline de moderación manual, publicación rápida, re-revisión por edición y cierre/baja. PRD §14–16.",
-        "details": "PRD §14 (wizard+autosave draft), §15 (moderación, pipeline, estados §15.4, re-revisión §15.5, visibilidad §15.6), §16 (cierre). Hoy: 3 pasos, auto-`active`, sin moderación. Es el corazón transaccional → CRÍTICO (EF publish-property, RPC atómica, RLS, máquina de estados). Cablear la abstracción de slot (vigencia) aunque sea gratis. Épica del camino a producción (ADR 0008 / docs/PRD-beta.md). Spec detallado (modelo de datos, RLS, EF, pantallas, estados, edge cases, tests, subtareas) se redacta SECUENCIAL al entrar su ola, con aprobación de Abraham; add-task roto → subtareas por escritura directa en tasks.json.\n\nDERIVADAS: #120 (hardening) · #121 (hardening) · #122 (fix) · #123 (fix) · #124 (hardening) · #125 (producto)",
+        "details": "PRD §14 (wizard+autosave draft), §15 (moderación, pipeline, estados §15.4, re-revisión §15.5, visibilidad §15.6), §16 (cierre). Hoy: 3 pasos, auto-`active`, sin moderación. Es el corazón transaccional → CRÍTICO (EF publish-property, RPC atómica, RLS, máquina de estados). Cablear la abstracción de slot (vigencia) aunque sea gratis. Épica del camino a producción (ADR 0008 / docs/PRD-beta.md). Spec detallado (modelo de datos, RLS, EF, pantallas, estados, edge cases, tests, subtareas) se redacta SECUENCIAL al entrar su ola, con aprobación de Abraham; add-task roto → subtareas por escritura directa en tasks.json.\n\nDERIVADAS: #120 (hardening) · #121 (hardening) · #122 (fix) · #123 (fix) · #124 (hardening) · #125 (producto) · #126 (fix) · #127 (fix) · #128 (fix) · #129 (fix) · #130 (fix) · #131 (hardening) · #132 (hardening) · #133 (hardening) · #134 (fix) · #135 (fix) · #136 (fix) · #137 (fix) · #138 (hardening) · #139 (hardening) · #140 (polish) · #142 (fix) · #141 (hardening)",
         "testStrategy": "TDD estricto en lógica crítica (supabase/functions/**, migrations/**, lib/hooks/validation): RED→GREEN→guardian. Verificación ligera (tsc/lint/smoke) en UI. Se detalla al specificar la ola.",
         "status": "done",
         "dependencies": [
@@ -7239,6 +7239,227 @@
           "73"
         ],
         "priority": "low",
+        "subtasks": []
+      },
+      {
+        "id": "126",
+        "title": "fix(73.4): publicar truena tras subir el video — el gate exige 'ready' pero la fila nace 'uploading'",
+        "description": "Origen: subtarea 73.4 · Detectado por: code review PR #56 (4 ángulos + verificado a mano). El gate nuevo de publicación (make_video_status_checker, _shared/clients.ts) exige property_videos.status === 'ready' y duration_seconds entre 60 y 120. Pero mint-upload-url inserta la fila con status:'uploading' y solo el webhook de Cloudflare Stream la pasa a 'ready' llenando duration_seconds. step5 habilita el botón Publicar con un estado de UI ('processing') que nunca refleja el status real de la DB. Resultado: el agente sube su video, la UI dice 'Video subido correctamente', toca Publicar y recibe 409 VIDEO_NOT_READY, sin estado de espera ni reintento. Es el flujo primario de la app. Además los dos gates no concuerdan: la propia RPC acepta status in ('processing','ready') mientras el checker exige solo 'ready'.",
+        "details": "Opciones: (a) que el checker acepte 'processing' igual que la RPC y solo valide la duración cuando ya esté disponible; (b) que step5 haga polling del status real y muestre 'Procesando video…' con el botón deshabilitado hasta 'ready'; (c) ambas. Decidir también qué pasa cuando Cloudflare no devuelve duración (duration_seconds null → hoy da 400 VIDEO_DURATION_INVALID). Validar la duración 60-120s en el cliente ANTES de dejar llegar a step5, para no fallar al final del wizard.",
+        "testStrategy": "Deno: tests del checker con las combinaciones status × duration (uploading/processing/ready × null/45/90/150). E2E contra stack local: subir video real y publicar inmediatamente, sin esperar al webhook.",
+        "status": "pending",
+        "dependencies": [
+          "73"
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": "127",
+        "title": "fix(73.2): el autoguardado de borrador nunca guarda nada (y cuando guarde, duplica filas)",
+        "description": "Origen: subtarea 73.2 · Detectado por: code review PR #56 (5 ángulos + verificado a mano). useDraftAutosave.ts acumula 6 defectos independientes. (1) BLOQUEANTE: build_draft_payload no incluye owner_user_id, que es 'uuid not null' en properties y además lo exige el WITH CHECK de properties_insert (owner_user_id = auth.uid()); todo INSERT es rechazado, el fail-soft se lo traga y draft_id_ref queda null para siempre, reintentando en cada debounce. La feature §14.1 del PRD nunca funcionó en producción. (2) draft_id_ref solo se asigna DESPUÉS de que resuelve el INSERT, así que dos disparos solapados crean dos borradores. (3) la rama UPDATE ignora por completo 'error' de supabase-js (que no lanza), así que un fallo de RLS es indistinguible del éxito. (4) el efecto depende del objeto 'state' completo, que cambia de identidad en cada tecleo: la ventana de 1500ms se re-arma sin parar y salir del wizard antes de 1.5s de silencio no guarda nada — justo el caso de uso que el contrato documenta. (5) nada cancela el timer al publicar, así que el borrador y la propiedad publicada quedan como dos filas distintas. (6) el borrador huérfano luego dispara el checker de duplicados y bloquea al agente de publicar su propia dirección (ver #135). Los ~400 líneas de tests pasan porque mockean supabase y nunca ven la constraint. (7) ARQUITECTURA: el hook escribe filas de properties DIRECTO desde el cliente, contra CLAUDE.md §3 ('lógica de negocio en Edge Functions; RLS = 2ª capa') y en el mismo PR que sacó la edición del camino directo. Es la única ruta de creación de properties que no pasa por publish-property, así que se salta las invariantes que esta misma tarea existe para establecer (video ready, duplicados, slot, pending_review). Y la RLS no alcanza como segunda capa: properties_insert solo exige owner_user_id = auth.uid() y rol agent|admin — NO restringe la columna status, así que el literal del cliente es lo único que hace que la fila nazca 'draft'; cualquier caller con la anon key puede crear propiedades 'active' públicas sin moderación. (8) get_default_supabase() devuelve any, apagando TypeScript strict justo donde el PR agrega columnas nuevas (los hooks hermanos useThumbnail/useVideoUpload sí devuelven SupabaseClient).",
+        "details": "Arreglar (1) primero: agregar owner_user_id del usuario de sesión al payload. Para (2) usar un flag in-flight además del ref. Para (3) leer y loguear 'error' en ambas ramas. Para (4) mover 'state' a un ref leído dentro del callback y reducir las deps a primitivos, y disparar un guardado en el cleanup del desmontaje. Para (5) cancelar el timer y borrar/promover el borrador al publicar. El test que faltó: uno de integración contra la DB real (o al menos un fake que valide NOT NULL y RLS) — el patrón que ya nos costó 3 defectos en esta tarea.",
+        "testStrategy": "Jest con un fake que rechace payloads sin owner_user_id. Integración contra el stack local: llenar pasos 1-3, salir del wizard y verificar que existe exactamente UNA fila draft con el owner correcto.",
+        "status": "pending",
+        "dependencies": [
+          "73"
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": "128",
+        "title": "fix(73.8): ninguna acción de estado funciona sobre una publicación nueva (VALID_TRANSITIONS cubre 7 de 17 estados)",
+        "description": "Origen: subtarea 73.8 · Detectado por: code review PR #56 (4 ángulos + verificado a mano). VALID_TRANSITIONS en update-property-status/property_status_updater.ts solo enumera draft, active, paused, approved, closed, rented y sold — pero el enum property_status ya tiene 17 valores y, tras 73.4, TODA publicación nueva nace en pending_review. Pausar, reactivar, cerrar o marcar como rentada una propiedad recién publicada evalúa VALID_TRANSITIONS['pending_review'] → undefined → el optional chaining lo convierte en 'Transición pending_review→X no está permitida'. Lo mismo para needs_changes, suspended, rejected y expired. Es toda la población de publicaciones nuevas sin ninguna acción de ciclo de vida disponible salvo borrar. El '?.' es justo lo que oculta que la tabla quedó incompleta frente al enum extendido.",
+        "details": "Completar la matriz para los 17 valores del enum, decidiendo explícitamente el destino de cada estado (incluidos los terminales, que deben quedar como [] a propósito y no por omisión). Considerar derivar el tipo del enum generado en supabase/types/database.types.ts para que agregar un valor al enum rompa la compilación en vez de fallar en runtime (ver #139).",
+        "testStrategy": "Deno: test exhaustivo que recorra los 17 valores del enum y exija una entrada explícita en VALID_TRANSITIONS (falla si falta alguno). Tests de transición para pending_review, needs_changes y suspended.",
+        "status": "pending",
+        "dependencies": [
+          "73"
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": "129",
+        "title": "fix(73.3): price_visible se descarta al publicar (sí funciona al editar)",
+        "description": "Origen: subtarea 73.3 · Detectado por: code review PR #56 (2 ángulos + verificado a mano). El wizard recoge price_visible en step3, get_property_payload lo incluye y el móvil lo manda — pero publish-property no lo menciona en ningún archivo de la EF (parser, PropertyPublishParams, index.ts) y publish_property_atomic no tiene parámetro p_price_visible. El valor se descarta en silencio y la fila se crea con el default de la columna (true). El agente apaga 'Mostrar precio en el feed', publica, y su propiedad sale con el precio visible contra su elección explícita. Lo confuso: al EDITAR sí se respeta, porque edit-property sí pasa el campo. Verificado con grep: cero ocurrencias de price_visible en supabase/functions/publish-property/ y cero de p_price_visible en la migración 0005.",
+        "details": "Agregar p_price_visible a publish_property_atomic (migración nueva idempotente + rollback), al parser de publish-property, a PropertyPublishParams y al cableo de index.ts. Ojo: index.ts es exactamente el archivo sin tests que ya causó el defecto crítico de 73.4 (ver #120) — este arreglo necesita un test que verifique la fila real, no solo el handler.",
+        "testStrategy": "pgTAP: publicar con p_price_visible=false y verificar la columna en la fila creada. Deno: el parser acepta y propaga el campo. Integración: publicar desde el wizard con el toggle apagado y leer la fila.",
+        "status": "pending",
+        "dependencies": [
+          "73"
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": "130",
+        "title": "fix(73.9): aprobar-con-revisión deja la propiedad invisible (no toca status y reporta el viejo)",
+        "description": "Origen: subtarea 73.9 · Detectado por: code review PR #56 (4 ángulos). En moderate-property, la rama de aprobar-CON-revisión aplica el snapshot de changed_fields a properties pero nunca mueve properties.status, y devuelve en la respuesta el status leído ANTES de escribir. Consecuencias: (a) una propiedad en pending_review cuyo dueño editó antes de que el admin actuara queda en pending_review tras aprobar — invisible en el feed, porque properties_select exige status='active' — y hace falta un SEGUNDO clic de aprobar (que cae en la rama sin-revisión y sí funciona); (b) una propiedad en needs_changes cuyo dueño reenvía correcciones se queda en needs_changes PARA SIEMPRE: el admin aprueba, el snapshot se aplica, la revisión pasa a 'approved', y ya no hay revisión activa que resolver — no existe ningún camino de código que la active. El admin ve 200 OK y la cola marca el ítem como atendido.",
+        "details": "La rama con-revisión debe decidir y escribir el status destino igual que la rama sin-revisión (approve → active). Revisar también que la respuesta devuelva el status resultante, no el previo. Relacionado: el set_status del updater escribe filtrando solo por id, sin precondición de estado, así que puede pisar un cambio concurrente del dueño (ver #132).",
+        "testStrategy": "Deno: tests de la matriz {status inicial pending_review|needs_changes} × {con revisión|sin revisión} × {approve|needs_changes|reject}, verificando el status resultante y el cuerpo de la respuesta. E2E: publicar → editar campo crítico → aprobar → la propiedad aparece en el feed.",
+        "status": "pending",
+        "dependencies": [
+          "73"
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": "131",
+        "title": "hardening(73.8): draft→active en update-property-status permite saltarse la moderación entera",
+        "description": "Origen: subtarea 73.8 · Detectado por: code review PR #56 (2 ángulos). VALID_TRANSITIONS conserva draft: ['active']. update-property-status está autenticada por el DUEÑO (no por admin), así que un agente con una fila en draft — de un borrador histórico o del autoguardado cuando se arregle #127 — puede llamar a la EF con new_status='active' y poner su propiedad en el feed SIN pasar por moderación. El gate de PRD §14.2 se aplica en publish-property y queda abierto en otra EF: la invariante se enforcea en un lado y se deja libre en el otro.",
+        "details": "Quitar 'active' de las transiciones permitidas desde draft (o exigir rol admin para esa transición concreta). Revisar si algún flujo legítimo depende hoy de draft→active antes de cerrarlo. Relacionado con #121 (la RLS de properties_update también permite saltarse edit-property).",
+        "testStrategy": "Deno: un dueño no-admin que intenta draft→active recibe INVALID_TRANSITION o UNAUTHORIZED. pgTAP: verificar por impersonación que no queda ningún camino cliente a 'active' sin moderación.",
+        "status": "pending",
+        "dependencies": [
+          "73"
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": "132",
+        "title": "hardening(73.6): edit-property sin precondición de estado y con UPDATE sin guardas (TOCTOU)",
+        "description": "Origen: subtarea 73.6 · Detectado por: code review PR #56 (3 ángulos). Dos problemas en el mismo camino. (1) edit-property verifica propiedad pero NO estado: PropertyListItem ofrece 'Editar' en toda fila, así que un agente puede editar una propiedad ya marcada como vendida o rentada; si toca un campo crítico se crea una revisión 'pending' contra una propiedad que nunca podrá salir al feed, y si un admin la aprueba se reescriben precio y dirección de algo cerrado. El PRD §16.1 dice explícitamente que esos estados no se reabren. (2) DirectPropertyUpdater.apply hace UPDATE filtrando SOLO por id, con el cliente service_role (RLS pasada por alto), sin owner_user_id ni 'deleted_at is null' — la única guarda es el chequeo en JS contra un snapshot leído en un round-trip anterior. Dos ediciones concurrentes, o una edición corriendo contra un borrado lógico, se pisan; una edición iniciada antes de un soft-delete resucita valores. Lo mismo aplica a set_status en _shared/clients.ts.",
+        "details": "(1) Agregar precondición de estado editable (rechazar sold/rented/closed/rejected/deleted_*) con código de error propio. (2) Añadir .eq('owner_user_id', …).is('deleted_at', null) al UPDATE para que la escritura se auto-proteja, y una precondición de estado esperado en set_status.",
+        "testStrategy": "Deno: editar una propiedad vendida devuelve el error de estado. pgTAP/integración: dos updates concurrentes no se pisan; un update contra una fila soft-deleted no escribe.",
+        "status": "pending",
+        "dependencies": [
+          "73"
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": "133",
+        "title": "hardening(73.4): p_property_status con default 'active' reinstaura el bug, y published_at se sella en pending_review",
+        "description": "Origen: subtarea 73.4 · Detectado por: code review PR #56 (3 ángulos). Dos problemas en la migración 0005. (1) p_property_status tiene 'default active'. El propio encabezado de la migración documenta que el bug anterior era que index.ts no reenviaba el status y la RPC hardcodeaba 'active', auto-activando todo pese a tests en verde. Con ese default, cualquier llamador futuro que omita el parámetro (una EF nueva, un script de admin, un rollback de index.ts) reproduce el bug idéntico, en silencio y sin error. Un default de 'pending_review', o sin default, fallaría fuerte. (2) published_at se sigue llenando con now() en el INSERT aunque la fila nazca en pending_review: toda propiedad en revisión lleva fecha de publicación, una rechazada que nunca salió al aire también, y no hay ningún camino que ponga published_at cuando moderate-property la activa — el momento real de publicación se pierde.",
+        "details": "Cambiar el default a 'pending_review' o quitarlo. Mover published_at al momento de la activación (en moderate-property) y dejarlo null al crear. Ojo con las filas históricas al migrar.",
+        "testStrategy": "pgTAP: llamar la RPC sin p_property_status y verificar que NO queda activa. Verificar published_at null al crear y con valor tras aprobar.",
+        "status": "pending",
+        "dependencies": [
+          "73"
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": "134",
+        "title": "fix(73.6): description null vs '' dispara revisión espuria, y location_changed miente si falta location",
+        "description": "Origen: subtarea 73.6 · Detectado por: code review PR #56 (4 ángulos). (1) parse_edit_property_input convierte description a '' cuando no es string, pero has_critical_change la compara contra el valor crudo de la DB, que es null en toda propiedad publicada sin descripción (la columna es nullable). '' !== null → cambio crítico → el agente que solo movió el toggle de 'Acepta mascotas' recibe 'Cambios en revisión' y su edición queda congelada hasta que un admin apruebe; el índice único parcial además le bloquea cualquier edición posterior. CurrentPropertySnapshot tipa description como string, lo que esconde el null del compilador. (2) location_changed devuelve false cuando el payload omite 'location', y usePublish omite location siempre que lat o lng sean null — así que un cambio real de pin puede colarse como no crítico y aplicarse directo, saltándose §15.5.",
+        "details": "(1) Normalizar ambos lados antes de comparar (null y '' equivalentes) y corregir el tipo a string | null. (2) Distinguir 'no mandó location' de 'location sin cambios': si el formulario tiene coordenadas válidas debe mandarlas siempre, y si no las tiene hay que decidir explícitamente (probablemente rechazar el edit en vez de asumir 'sin cambios').",
+        "testStrategy": "Deno: propiedad con description null + edit que no toca description → NO crítico. Edit que omite location con lat/lng presentes en la DB → decidir y testear el contrato.",
+        "status": "pending",
+        "dependencies": [
+          "73"
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": "135",
+        "title": "fix(73.4): el checker de duplicados no excluye 'draft' (tu propio borrador te bloquea) y es fail-open",
+        "description": "Origen: subtarea 73.4 · Detectado por: code review PR #56 (4 ángulos). DUPLICATE_EXCLUDED_STATUSES solo excluye rejected, deleted_soft y deleted_hard. Consecuencias: (a) cuando el autoguardado funcione (#127), el borrador que el propio wizard acaba de crear para la dirección X cuenta como duplicado al publicar esa misma dirección → 409 DUPLICATE_PROPERTY 'Ya existe una publicación tuya con esta misma dirección', y el agente no puede publicar lo que acaba de redactar; (b) tampoco excluye closed/rented/sold, así que re-listar una dirección cuya publicación anterior se cerró queda bloqueado. Además el checker se trae TODAS las direcciones no borradas del dueño y compara en JS (coste lineal con el portafolio, en el camino caliente de publicar), es fail-open ante error de DB, y es un check-then-act sin constraint: dos publicaciones concurrentes pasan las dos.",
+        "details": "Revisar la lista de exclusión contra los 17 estados y decidir explícitamente cuáles cuentan como duplicado. Empujar la comparación normalizada a Postgres (.eq sobre una expresión normalizada + índice) en vez de escanear en JS. Evaluar un índice único parcial que haga cumplir la invariante en la DB en vez de en la aplicación.",
+        "testStrategy": "Deno: matriz de estados × ¿cuenta como duplicado? E2E: redactar borrador y publicar la misma dirección sin bloqueo.",
+        "status": "pending",
+        "dependencies": [
+          "73"
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": "136",
+        "title": "fix(73.7): 'Mis publicaciones' no tiene pestaña para pending_review y el alert de éxito miente",
+        "description": "Origen: subtarea 73.7 · Detectado por: code review PR #56 (3 ángulos). (1) Las pestañas y los conteos de my-listings.tsx se extendieron para rented/sold pero no para pending_review, needs_changes ni rejected — que tras 73.4 son el resultado NORMAL de publicar. El agente publica, su propiedad no cae en Activas, ni Pausadas, ni Cerradas: solo aparece en 'Todas' y la pestaña 'Activas' queda vacía justo después de la acción principal de la app. No hay ninguna pestaña que muestre lo que está esperando al admin, que es exactamente el público para el que 73.7 agregó los badges 'En revisión' / 'Cambios solicitados' / 'Rechazada'. (2) El alert de éxito de step5 en modo creación sigue diciendo 'Tu propiedad ya está disponible en el feed', cuando ahora nace en pending_review y el feed filtra status='active' — contradice el copy de moderación que la misma tarea agregó. (3) PropertyActionMenu solo ofrece acciones para active|paused, así que esas filas no tienen ninguna acción usable.",
+        "details": "Agregar una pestaña/bucket 'En revisión' que agrupe pending_review + needs_changes + rejected con su conteo, corregir el copy del alert para reflejar la moderación, y dar acciones al menú para esos estados (al menos editar y eliminar). Ojo: hay tres copias independientes de la semántica de estados en móvil (is_closed_bucket, STATUS_BADGE, STATUS_THUMB_ICON) — ver #139.",
+        "testStrategy": "Jest: conteos por pestaña con propiedades en los 17 estados; la suma de las pestañas debe cuadrar con 'Todas'. Snapshot del copy del alert.",
+        "status": "pending",
+        "dependencies": [
+          "73"
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": "137",
+        "title": "fix(73.6): revision_upserter es read-modify-write sin ON CONFLICT — doble tap devuelve 500",
+        "description": "Origen: subtarea 73.6 · Detectado por: code review PR #56 (3 ángulos). El 'upsert' de revisión hace SELECT (maybeSingle) y luego INSERT o UPDATE, sin transacción y sin conflict target contra el índice único parcial property_revisions_one_active_per_property. No hay guarda de in-flight en usePublish para el botón de guardar en modo edición, así que un doble tap manda dos peticiones: ambas ven 'sin revisión activa', ambas hacen INSERT, la segunda choca contra el índice y el usuario recibe un 500 DB_ERROR opaco aunque su primera edición SÍ se guardó. Además son dos round-trips donde uno bastaría.",
+        "details": "Usar upsert con onConflict contra el índice parcial, o un INSERT ... ON CONFLICT DO UPDATE dentro de una RPC SECURITY DEFINER. Agregar guarda de in-flight en el botón del cliente.",
+        "testStrategy": "Deno: dos llamadas concurrentes al upserter resuelven en una sola revisión activa, sin 500.",
+        "status": "pending",
+        "dependencies": [
+          "73"
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": "138",
+        "title": "hardening(73.9): SUSPEND_BLOCKED_STATES no cubre closed, expired ni rejected",
+        "description": "Origen: subtarea 73.9 · Detectado por: code review PR #56 (2 ángulos). La lista bloquea sold, rented y deleted_* pero no closed, expired ni rejected. Un admin puede suspender una publicación en 'closed' (estado que 73.1 mantuvo vivo justamente para filas históricas con closed_reason): el status pasa a 'suspended', el closed_reason queda colgando sin sentido, y se viola desde fuera el contrato terminal que update-property-status codifica como []. La lista enumera a mano el conjunto terminal y ya diverge de la tabla de transiciones de la otra EF — dos fuentes de verdad para lo mismo.",
+        "details": "Derivar el conjunto terminal de una sola definición compartida en vez de dos literales a mano (ver #139).",
+        "testStrategy": "Deno: suspender desde cada uno de los 17 estados y verificar que los terminales se rechazan.",
+        "status": "pending",
+        "dependencies": [
+          "73"
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": "139",
+        "title": "hardening(73.1): la máquina de 17 estados vive en 4+ literales a mano sin atarse al enum de la DB",
+        "description": "Origen: subtarea 73.1 · Detectado por: code review PR #56 (3 ángulos). El vocabulario de estados está copiado a mano en al menos cinco lugares: VALID_TRANSITIONS y PropertyStatusEnum (update-property-status), SUSPEND_BLOCKED_STATES / INITIAL_PUBLISH_TARGET_STATUS / REVISION_TARGET_STATUS (moderate-property), el status de entrada hardcodeado en publish-property, e is_closed_bucket + STATUS_BADGE + STATUS_THUMB_ICON en móvil. Ninguno está atado al enum real: supabase/types/database.types.ts ya exporta property_status con todos los valores. La próxima migración que agregue o renombre un estado compila en verde en todos lados y falla solo en runtime — que es exactamente cómo nacieron #128 y #138. Además la DB no tiene CHECK ni trigger que guarde las transiciones, así que un service_role puede escribir cualquier salto.",
+        "details": "Derivar los tipos del enum generado para que agregar un valor rompa la compilación donde falte manejarlo (Record exhaustivo, no parcial). Evaluar una sola definición compartida de la matriz de transiciones y del conjunto terminal, consumida por ambas EFs.",
+        "testStrategy": "Un test que recorra los valores del enum generado y exija cobertura explícita en cada mapa.",
+        "status": "pending",
+        "dependencies": [
+          "73"
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": "140",
+        "title": "polish(73): duplicación, código muerto e índices redundantes de la Ola 1",
+        "description": "Origen: subtarea 73 · Detectado por: code review PR #56 (ángulos de reuso, simplificación y eficiencia). Deuda no bloqueante que el review agrupó. (1) El parser EWKB está portado byte a byte de mobile/src/features/property-detail/utils/parseLocation.ts a edit-property/location.ts y YA divergen: el de móvil rechaza 'SRID=4326;POINT(...)' y el de la EF lo acepta. (2) CallerVerifier está hand-rolled por tercera vez en edit-property/index.ts pudiendo generalizar make_admin_verifier. (3) ParseResult + invalid() se re-declaran en cada EF nueva (4 copias) existiendo _shared/validation.ts. (4) OPERATION_TYPES/PROPERTY_TYPES duplicados entre publish-property y edit-property: agregar un tipo a uno y no al otro deja propiedades que se crean pero no se pueden editar. (5) usePublish no usa extract_error_code de mobile/src/lib/supabase/edge-errors.ts, el helper que ya usan 9 features (esto es #122). (6) build_draft_payload es una tercera copia del mapeo state→payload, incluida la plantilla EWKT. (7) has_minimum_draft_fields reimplementa validate_step1&&2&&3. (8) Código muerto: validate_step4 (nunca puede fallar, nadie la llama) y los tipos EditPropertySuccessBody / ModeratePropertySuccessBody (nadie los importa). (9) step2.tsx es un clon mecánico de step1.tsx (~170 líneas cada uno). (10) Índices redundantes: property_video_slots_property_idx sobre una columna que ya es UNIQUE, y property_revisions_property_idx que duplica la columna líder del índice único parcial. (11) Las RLS de las tablas nuevas usan EXISTS correlacionado en vez de un helper del schema private, contra el patrón de 0008/0010.",
+        "details": "Cosechable por partes; nada de esto bloquea el deploy. Lo de mayor valor real es (1) el parser divergente y (4) los enums duplicados, porque producen fallos silenciosos.",
+        "testStrategy": "Tests existentes deben seguir verdes; agregar uno que compare ambos parsers EWKB contra los mismos fixtures.",
+        "status": "pending",
+        "dependencies": [
+          "73"
+        ],
+        "priority": "low",
+        "subtasks": []
+      },
+      {
+        "id": "142",
+        "title": "fix(73.6): edit-property pierde la capacidad de agencia y vuelve destructivas las ediciones parciales",
+        "description": "Origen: subtarea 73.6 · Detectado por: code review PR #56 (ángulo de comportamiento removido). Dos REGRESIONES al mover la edición del UPDATE directo a la EF. (1) CAPACIDAD PERDIDA: el handler solo autoriza owner_user_id === caller o users.role === 'admin', pero la política properties_update (migración 20260805000011, capacidad deliberada de la tarea #71) TAMBIÉN permitía private.agency_role_of(agency_id) in ('owner','admin'). Un owner o admin de agencia que antes podía corregir la publicación de uno de sus agentes ahora recibe 403 UNAUTHORIZED_EDITOR. Es exactamente la matriz de roles que 71.2 estableció y que el intento de hardening de 73.6 ya había tocado (ver #121). (2) ESCRITURA DESTRUCTIVA: antes se mandaba un UPDATE parcial con solo las claves que el cliente enviaba; ahora parse_edit_property_input coacciona todo campo ausente a un default falsy (price_visible/pet_friendly/allows_no_guarantor/student_friendly a false, description a '', bedrooms/bathrooms/square_meters a null). Un body parcial — de un caller alterno, de una versión vieja de la app tras un OTA, o de un retry — borra amenidades y recámaras en silencio, y la descripción en blanco además se diffea como cambio crítico y manda a revisión una publicación correcta.",
+        "details": "(1) Replicar la rama de agencia en el verificador de la EF (reusar private.agency_role_of o el helper equivalente) para no perder la capacidad de #71. (2) Distinguir 'campo ausente' de 'campo puesto en falsy': usar undefined para lo no enviado y construir el payload solo con las claves presentes, o exigir el objeto completo y validarlo. Este segundo punto interactúa con la whitelist duplicada de #124.",
+        "testStrategy": "Deno: un owner de agencia edita la publicación de su agente y recibe 200. Un body parcial NO borra los campos ausentes. pgTAP: verificar por impersonación que la matriz de roles de #71 sigue intacta desde la EF.",
+        "status": "pending",
+        "dependencies": [
+          "73"
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": "141",
+        "title": "hardening(workflow): tdd-guard.sh quedó demasiado laxo tras el fix aplicado en la tarea 73",
+        "description": "Origen: subtarea 73 · Detectado por: code review PR #56 (ángulo de altitud). El fix que apliqué durante la 73 amplió el guard de 'el commit RED es HEAD' a 'existe un commit RED de esta subtarea en cualquier parte de origin/main..HEAD'. Eso resolvió los 4 falsos positivos de la tarea, pero deja el guard casi permisivo: una vez que aterriza el RED de una subtarea, TODO el resto de la rama pasa sin revisar, incluidas subtareas sin RED propio si el sentinel quedó viejo, y churn de implementación mucho después del GREEN. El mecanismo que hacía cumplir RED→GREEN se relajó para desbloquear esta PR y la próxima tarea hereda un guard que en la práctica asiente.",
+        "details": "Buscar un punto medio: p.ej. exigir que el commit RED de la subtarea ACTIVA exista y que el sentinel se borre al cerrar la subtarea (hoy puede quedar viejo), o validar contra la subtarea del sentinel en vez de contra cualquiera de la rama. Ojo: el classifier de auto mode bloquea que la IA edite este hook, así que requiere aprobación explícita fuera de auto mode.",
+        "testStrategy": "Casos: RED presente + subtarea activa distinta → debe bloquear. Sentinel viejo sin RED → debe bloquear. RED de la subtarea activa + commit intermedio encima → debe permitir (el caso que motivó el fix).",
+        "status": "pending",
+        "dependencies": [
+          "73"
+        ],
+        "priority": "medium",
         "subtasks": []
       }
     ],
