@@ -9,8 +9,8 @@
 // Cada `from()` consume el siguiente response de la cola y captura lo que se pasa
 // a `.update()` y `.eq()` para verificar el contrato con la DB.
 
-import { assertEquals } from "@std/assert";
-import { make_property_status_updater } from "./property_status_updater.ts";
+import { assert, assertEquals } from "@std/assert";
+import { make_property_status_updater, VALID_TRANSITIONS } from "./property_status_updater.ts";
 
 // ── Fake client ───────────────────────────────────────────────────────────────
 
@@ -430,4 +430,111 @@ Deno.test("updater_real_sold_a_active_devuelve_INVALID_TRANSITION_no_reapertura"
 
   assertEquals(result.ok, false);
   if (!result.ok) assertEquals(result.error_code, "INVALID_TRANSITION");
+});
+
+// ── #128: matriz completa — 17 estados del enum, cada uno con entrada EXPLÍCITA ──
+// El bug: VALID_TRANSITIONS cubría 7 de 17 valores y el `?.` convertía cada key
+// faltante en un INVALID_TRANSITION accidental (indistinguible de una decisión).
+// Estos tests exigen que la tabla sea espejo 1:1 del enum property_status en DB
+// (20260604000001 + 20260809000002) y fijan el contrato COMPLETO 17 orígenes × 6
+// destinos que el cliente puede pedir. Agregar un valor al enum sin decidir su
+// fila aquí = test rojo, no fallo silencioso en runtime.
+
+// Espejo del enum property_status en DB — 7 originales + 10 operativos (73.1).
+const ALL_PROPERTY_STATUSES = [
+  "draft",
+  "pending_review",
+  "needs_changes",
+  "active",
+  "paused",
+  "closed",
+  "suspended",
+  "uploading_media",
+  "media_failed",
+  "pending_payment",
+  "approved",
+  "expired",
+  "rented",
+  "sold",
+  "rejected",
+  "deleted_soft",
+  "deleted_hard",
+] as const;
+
+Deno.test("valid_transitions_tiene_entrada_explicita_para_los_17_valores_del_enum", () => {
+  for (const status of ALL_PROPERTY_STATUSES) {
+    assert(
+      Object.hasOwn(VALID_TRANSITIONS, status),
+      `VALID_TRANSITIONS no tiene entrada para '${status}' — cada valor del enum ` +
+        `property_status necesita una decisión explícita ([] cuenta, omisión no)`,
+    );
+  }
+});
+
+Deno.test("valid_transitions_no_tiene_keys_fuera_del_enum", () => {
+  for (const key of Object.keys(VALID_TRANSITIONS)) {
+    assert(
+      (ALL_PROPERTY_STATUSES as readonly string[]).includes(key),
+      `VALID_TRANSITIONS tiene la key '${key}' que no existe en el enum property_status`,
+    );
+  }
+});
+
+// Contrato completo: qué puede pedir el DUEÑO (vía esta EF) desde cada estado.
+// Decisiones deliberadas (#128, alineadas al PRD §15.4/§16 y al guard de 73.8):
+//   - Estados de moderación (pending_review, needs_changes, suspended, rejected):
+//     los mueve moderate-property; el dueño NO tiene acciones aquí → [].
+//   - Estados de pipeline (uploading_media, media_failed, pending_payment):
+//     los mueve el flujo de media/pago, no el dueño → [].
+//   - expired: la renovación regresa a pending_review vía flujo de pago (PRD §17),
+//     no vía esta EF → [].
+//   - Terminales (closed, rented, sold, deleted_soft, deleted_hard): sin reapertura
+//     en MVP (PRD §16.1) → [].
+//   - draft→active queda como comportamiento vigente; #131 decidirá si muere
+//     (bypass de moderación). Al resolverse #131, cambiar SOLO esa celda aquí.
+const EXPECTED_MATRIX: Record<string, string[]> = {
+  draft: ["active"],
+  pending_review: [],
+  needs_changes: [],
+  active: ["paused", "closed", "rented", "sold"],
+  paused: ["active", "closed", "rented", "sold"],
+  closed: [],
+  suspended: [],
+  uploading_media: [],
+  media_failed: [],
+  pending_payment: [],
+  approved: ["rented", "sold"],
+  expired: [],
+  rented: [],
+  sold: [],
+  rejected: [],
+  deleted_soft: [],
+  deleted_hard: [],
+};
+
+// Destinos que el handler deja pasar al updater (VALID_STATUSES del handler).
+const CLIENT_TARGETS = ["draft", "active", "paused", "closed", "rented", "sold"] as const;
+
+Deno.test("matriz_17x6_contrato_completo_origen_x_destino", async () => {
+  for (const origin of ALL_PROPERTY_STATUSES) {
+    for (const target of CLIENT_TARGETS) {
+      const expected_valid = EXPECTED_MATRIX[origin].includes(target);
+      const { client } = make_fake_client([
+        { data: { id: PROPERTY_ID, status: origin }, error: null },
+        // segunda response solo se consume si la transición es válida (UPDATE)
+        { data: { id: PROPERTY_ID, status: target, closed_reason: null }, error: null },
+      ]);
+      const updater = make_property_status_updater(client);
+      const result = await updater.update(
+        make_params(target, target === "closed" ? "withdrawn" : null),
+      );
+
+      assertEquals(
+        result.ok,
+        expected_valid,
+        `${origin}→${target}: se esperaba ${expected_valid ? "VÁLIDA" : "INVALID_TRANSITION"}`,
+      );
+      if (!result.ok) assertEquals(result.error_code, "INVALID_TRANSITION");
+    }
+  }
 });

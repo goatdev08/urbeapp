@@ -5,22 +5,44 @@
 
 import type {
   PropertyStatusEnum,
+  PropertyStatusTarget,
   PropertyStatusUpdater,
   UpdatePropertyStatusParams,
   UpdatePropertyStatusResult,
 } from "./types.ts";
 
-// Tabla de transiciones válidas — toda transición no listada → INVALID_TRANSITION.
-// closed/rented/sold: [] = estados terminales (cierre y baja §16 — sin reapertura en MVP).
-// approved (73.1/PRD §15.4): aprobada pero aún no activa; también puede cerrarse directo.
-const VALID_TRANSITIONS: Record<PropertyStatusEnum, PropertyStatusEnum[]> = {
+// Tabla de transiciones válidas — espejo 1:1 del enum property_status en DB (#128).
+// El Record sobre PropertyStatusEnum (17 valores) obliga a decidir CADA fila: agregar
+// un valor al enum sin su entrada aquí rompe la compilación, no falla en runtime.
+// [] = decisión deliberada de "el dueño no tiene acciones desde este estado", no omisión.
+// Exportada para el test de exhaustividad (property_status_updater.test.ts).
+export const VALID_TRANSITIONS: Record<PropertyStatusEnum, PropertyStatusTarget[]> = {
+  // draft→active vigente; #131 decidirá si muere (bypass de moderación).
   draft: ["active"],
+  // Moderación (pending_review/needs_changes/suspended/rejected): los mueve
+  // moderate-property; el dueño no opina aquí (guard 73.8: tampoco rented/sold
+  // antes de estar activa/aprobada).
+  pending_review: [],
+  needs_changes: [],
+  suspended: [],
+  rejected: [],
+  // Pipeline de media/pago: los mueve el wizard/webhook/flujo de pago.
+  uploading_media: [],
+  media_failed: [],
+  pending_payment: [],
+  // Ciclo operativo del dueño.
   active: ["paused", "closed", "rented", "sold"],
   paused: ["active", "closed", "rented", "sold"],
+  // approved (73.1/PRD §15.4): aprobada pero aún no activa; puede cerrarse directo.
   approved: ["rented", "sold"],
+  // expired: la renovación regresa a pending_review vía flujo de pago (PRD §17), no aquí.
+  expired: [],
+  // Terminales — sin reapertura en MVP (PRD §16.1).
   closed: [],
   rented: [],
   sold: [],
+  deleted_soft: [],
+  deleted_hard: [],
 };
 
 /**
@@ -73,7 +95,10 @@ export function make_property_status_updater(client: { from(table: string): any 
       // 3. Validar transición de estado
       const current = existing.status as PropertyStatusEnum;
       const next = params.new_status;
-      if (!VALID_TRANSITIONS[current]?.includes(next)) {
+      // El fallback [] solo puede activarse si la DB tiene un valor de enum más
+      // nuevo que este código (deploy desfasado) — fail closed, no crash (#128).
+      const allowed: PropertyStatusTarget[] = VALID_TRANSITIONS[current] ?? [];
+      if (!allowed.includes(next)) {
         return {
           ok: false,
           error_code: "INVALID_TRANSITION",
