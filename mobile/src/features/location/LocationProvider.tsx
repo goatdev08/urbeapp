@@ -61,6 +61,15 @@ const LocationContext = createContext<LocationContextValue | undefined>(undefine
 // (muro bloqueante con retry), igual que cuando getCurrentPositionAsync lanza.
 const GPS_TIMEOUT_MS = 10_000;
 
+// #144.1: fast-path del arranque en frío — el fix fresco de GPS es el tramo
+// más lento del boot (segundos en dispositivo real; el timeout completo de 10s
+// en el AVD). Si el SO tiene una posición de hace ≤10 min, se usa DE INMEDIATO
+// y el splash se libera sin esperar al GPS. Trade-off aceptado (decisión
+// usuario 2026-08-10): el primer orden del feed puede corresponder a la
+// posición de hace ≤10 min; el listener de AppState re-lee al siguiente
+// foreground y el error típico en esa ventana es de cuadras, no de kilómetros.
+const LAST_KNOWN_MAX_AGE_MS = 10 * 60 * 1000;
+
 // #143.1: antes de rendirse al muro, intentar la ÚLTIMA posición conocida del
 // SO. Dos casos reales: (a) arranque en frío sin fix fresco — el SO casi
 // siempre tiene una posición reciente y una coord ligeramente vieja es
@@ -71,6 +80,17 @@ const GPS_TIMEOUT_MS = 10_000;
 // era IMPOSIBLE pasar del muro ("Ya la activé" reintentaba el mismo camino
 // muerto). null (sin historial) o error → recién ahí cae al muro gps_off.
 async function fetch_current_coords(): Promise<LocationCoords> {
+  // Fast-path (#144.1): última posición reciente → retorno inmediato. Si la
+  // consulta falla o no hay posición ≤ maxAge, cae al camino lento de siempre.
+  try {
+    const recent = await Location.getLastKnownPositionAsync({ maxAge: LAST_KNOWN_MAX_AGE_MS });
+    if (recent) {
+      return { latitude: recent.coords.latitude, longitude: recent.coords.longitude };
+    }
+  } catch {
+    // getLastKnownPositionAsync no debería lanzar; si lo hace, el camino lento decide.
+  }
+
   let timeout_id: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
     timeout_id = setTimeout(() => reject(new Error('GPS timeout')), GPS_TIMEOUT_MS);

@@ -7472,7 +7472,7 @@
         "id": "143",
         "title": "polish(ux): quick fixes de arranque, navegación y adaptabilidad (lote 2026-08-10)",
         "description": "Origen: solicitud directa de Abraham (2026-08-10) mientras se procesa el submit de TestFlight 1.0.4. Lote de 6 fixes: (1) Android no avanza de la pantalla de ubicación (¿emulador o app? — relacionado #109); (2) el slider de la tab bar se mueve con animación exagerada, moderarla (mantener Phosphor); (3) splash = logo carnita sobre verde (urbea-logo-final.html, versión invertida); (4) precargar servicios DURANTE el splash para no ver skeleton/loading al entrar; (5) ícono idéntico iOS/Android: fondo verde #1A5E44 + U carnita #EEE4D0 (specs en urbea-logo-final.html); (6) adaptabilidad de proporciones + navegación por botones de Android (los CTAs del detalle del lead quedan tapados).",
-        "details": "⚠️ (3) y (5) son assets NATIVOS: entran al fingerprint → exigen build nuevo (1.0.5), NO viajan por OTA (memoria assets_nativos_gotchas). (1),(2),(4),(6) son JS → OTA. Gotchas: sips miente con el alpha (usar qlmanage para rasterizar SVG); iOS cachea la launch image; el foreground del adaptive icon ya mordió una vez con fondo blanco horneado (#114).",
+        "details": "⚠️ (3) y (5) son assets NATIVOS: entran al fingerprint → exigen build nuevo (1.0.5), NO viajan por OTA (memoria assets_nativos_gotchas). (1),(2),(4),(6) son JS → OTA. Gotchas: sips miente con el alpha (usar qlmanage para rasterizar SVG); iOS cachea la launch image; el foreground del adaptive icon ya mordió una vez con fondo blanco horneado (#114).\n\nDERIVADAS: #144 (usuario — reporte post-review de los quick fixes)",
         "testStrategy": "Verificación ligera (UI): tsc + lint + smoke en emulador Android (incl. modo navegación por botones: adb shell cmd overlay enable com.android.internal.systemui.navbar.threebutton) y simulador iOS. (4): medir que el feed aparece sin skeleton al soltar el splash.",
         "status": "done",
         "dependencies": [
@@ -7536,6 +7536,39 @@
           }
         ],
         "updatedAt": "2026-08-10T14:45:57.535804"
+      },
+      {
+        "id": "144",
+        "title": "polish(143.4): arranque en frío veloz — last-known primero (maxAge 10 min) + mint-video-url en paralelo",
+        "description": "Origen: subtarea 143.4 · Detectado por: usuario. Tras #143 el splash aguanta hasta que el feed resuelve, pero el arranque en frío sigue lento: (a) el gate de coords espera un fix fresco de GPS (segundos, o 10s de timeout) antes de caer al fallback; (b) el primer fetch del feed hace 3 viajes EN SERIE (RPC → select PostgREST → EF mint-video-url) cuando la EF solo necesita los page_ids de la RPC. Objetivo: que el splash se libere rápido (lejos del techo de 7s) sin cambiar contratos visibles.",
+        "details": "144.1: en fetch_current_coords, consultar PRIMERO Location.getLastKnownPositionAsync({ maxAge: 600000 }) — si hay posición ≤10 min, granted inmediato (sin esperar fix fresco). Sin posición reciente → camino actual intacto (fresh con timeout 10s → fallback last-known sin maxAge → muro). Trade-off aceptado por el usuario: el primer orden del feed puede ser el de la posición de hace ≤10 min; se autocorrige en el siguiente foreground (listener AppState).\n144.2: en fetchFeedProperties, invocar mint-video-url con los page_ids de la RPC EN PARALELO con el select de PostgREST (Promise.all) — ahorra ~1 RTT + el cold start de la EF en el camino crítico. Merge fail-closed intacto; mint de ids que el filtro descarta es desperdicio aceptable.",
+        "testStrategy": "TDD estricto (ambos son lib/hooks críticos). 144.1: Jest LocationProvider — last-known reciente → granted sin getCurrentPositionAsync; aserción del maxAge exacto; null → camino lento intacto; throw del fast-path no rompe. 144.2: Jest feedProperties — invoke recibe page_ids (no ids de filas); mint dispara sin esperar al select (query gated); select vacío tras mint disparado → data:[] sin throw. Suite completa + tsc + lint en verde.",
+        "status": "done",
+        "dependencies": [
+          "143"
+        ],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Coords: getLastKnownPositionAsync primero con maxAge 10 min",
+            "description": "Fast-path en fetch_current_coords: última posición conocida ≤10 min sale inmediata; sin ella, el camino fresh+fallback de #143.1 queda intacto.",
+            "details": "hecho (2026-08-10): fast-path en fetch_current_coords (mobile/src/features/location/LocationProvider.tsx) — getLastKnownPositionAsync({ maxAge: 600000 }) ANTES del fix fresco; posición ≤10 min → granted inmediato. Sin posición reciente o si la consulta lanza → camino #143.1 intacto (fresh con timeout 10s → fallback sin maxAge → muro). Tests: describe #144.1 (3 casos: granted sin getCurrentPositionAsync, maxAge exacto, throw del fast-path cae al fresh) + reescrito el test #143.1 'fresca OK → last-known nunca se consulta' (contrato viejo, muere por diseño) y el del fallback ahora distingue fast-path vs fallback por argumentos. RED 2 fallos → GREEN 20/20.",
+            "status": "done",
+            "dependencies": [],
+            "testStrategy": "Jest LocationProvider (describe #144.1) + regresión de EC-1..EC-10 y #143.1."
+          },
+          {
+            "id": 2,
+            "title": "Feed: mint-video-url en paralelo con el select de PostgREST",
+            "description": "La EF se invoca con los page_ids de la RPC vía Promise.all con la query; merge fail-closed sin cambios.",
+            "details": "hecho (2026-08-10): mobile/src/features/feed/lib/feedProperties.ts — mint_and_build_feed_data separado en mint_videos(client, property_ids) + build_feed_data(rows, videos); el mint dispara con los page_ids de la RPC y corre vía Promise.all con el select de PostgREST (antes 3 viajes en serie; ahorra ~1 RTT + cold start de la EF en frío). Merge fail-closed intacto; select vacío tras mint disparado → data:[] sin throw. Tests nuevos: feedProperties.parallel-mint.test.ts (PM-1 page_ids no ids-de-filas, PM-2 query gated demuestra paralelo, PM-3 select vacío) RED 3 fallos → GREEN; regresión EC-1..EC-19 + filters/zone/radius-null intactas. Verificación: jest 1021/1021, tsc 0, lint 0 errores.",
+            "status": "done",
+            "dependencies": [],
+            "testStrategy": "Jest feedProperties.parallel-mint.test.ts (PM-1..PM-3) + regresión EC-1..EC-19 y suites filters/zone/radius-null."
+          }
+        ],
+        "updatedAt": "2026-08-10T00:00:00.000Z"
       }
     ],
     "metadata": {

@@ -402,7 +402,11 @@ describe('#143.1: fallback_a_ultima_posicion_conocida', () => {
     mock_get_foreground.mockResolvedValue({ granted: true, canAskAgain: true });
     mock_has_services.mockResolvedValue(true);
     mock_get_current_position.mockRejectedValue(new Error('Current location is unavailable'));
-    mock_get_last_known.mockResolvedValue(make_position(19.4326, -99.1332));
+    // #144.1: el fast-path (llamada CON maxAge) devuelve null — este test cubre
+    // el FALLBACK post-error (llamada sin opciones), no el atajo del arranque.
+    mock_get_last_known.mockImplementation((opts?: { maxAge?: number }) =>
+      Promise.resolve(opts?.maxAge != null ? null : make_position(19.4326, -99.1332)),
+    );
 
     const { result } = await renderHook(() => useLocation(), { wrapper });
 
@@ -422,15 +426,16 @@ describe('#143.1: fallback_a_ultima_posicion_conocida', () => {
     expect(result.current.coords).toBeNull();
   });
 
-  it('posición fresca OK → getLastKnownPositionAsync NUNCA se consulta', async () => {
+  it('sin última reciente (fast-path null) → granted por el fix fresco (camino lento intacto)', async () => {
     mock_get_foreground.mockResolvedValue({ granted: true, canAskAgain: true });
     mock_has_services.mockResolvedValue(true);
-    mock_get_current_position.mockResolvedValue(make_position());
+    mock_get_current_position.mockResolvedValue(make_position(20.6597, -103.3496));
 
     const { result } = await renderHook(() => useLocation(), { wrapper });
 
     await waitFor(() => expect(result.current.status).toBe('granted'));
-    expect(mock_get_last_known).not.toHaveBeenCalled();
+    expect(result.current.coords).toEqual({ latitude: 20.6597, longitude: -103.3496 });
+    expect(mock_get_current_position).toHaveBeenCalledWith({ accuracy: Location.Accuracy.Balanced });
   });
 
   it('refresh() tras el muro con historial nuevo → destraba a granted (el botón "Ya la activé" por fin sirve en el AVD)', async () => {
@@ -450,5 +455,65 @@ describe('#143.1: fallback_a_ultima_posicion_conocida', () => {
 
     await waitFor(() => expect(result.current.status).toBe('granted'));
     expect(result.current.coords).toEqual({ latitude: 20.67, longitude: -103.35 });
+  });
+});
+
+// ===========================================================================
+// #144.1: last-known PRIMERO con maxAge — el fix fresco de GPS es el tramo más
+// lento del arranque en frío (segundos, o el timeout completo de 10s). Si el SO
+// tiene una posición de hace ≤10 min, el gate de coords debe destrabarse con
+// ELLA de inmediato y NO esperar getCurrentPositionAsync. Sin posición reciente
+// (null) o si la consulta rápida lanza → el camino lento de #143.1 corre igual
+// que siempre (fresh con timeout → fallback sin maxAge → muro).
+// ===========================================================================
+describe('#144.1: last_known_primero_con_maxAge', () => {
+  const MAX_AGE_MS = 10 * 60 * 1000;
+
+  // Mismo motivo que #143.1: el spy de EC-9 + clearAllMocks deja
+  // AppState.addEventListener devolviendo undefined para describes posteriores.
+  beforeEach(() => {
+    jest.spyOn(AppState, 'addEventListener').mockImplementation(((
+      _type: string,
+      _handler: (s: AppStateStatus) => void,
+    ) => ({ remove: jest.fn() })) as unknown as typeof AppState.addEventListener);
+  });
+
+  it('última posición ≤ maxAge disponible → granted inmediato SIN llamar getCurrentPositionAsync', async () => {
+    mock_get_foreground.mockResolvedValue({ granted: true, canAskAgain: true });
+    mock_has_services.mockResolvedValue(true);
+    // Solo el fast-path (llamada CON maxAge) tiene posición; el fix fresco no
+    // está configurado a propósito — si la impl lo llamara, el test truena.
+    mock_get_last_known.mockImplementation((opts?: { maxAge?: number }) =>
+      Promise.resolve(opts?.maxAge != null ? make_position(20.71, -103.41) : null),
+    );
+
+    const { result } = await renderHook(() => useLocation(), { wrapper });
+
+    await waitFor(() => expect(result.current.status).toBe('granted'));
+    expect(result.current.coords).toEqual({ latitude: 20.71, longitude: -103.41 });
+    expect(mock_get_current_position).not.toHaveBeenCalled();
+  });
+
+  it('la consulta rápida viaja con maxAge de 10 minutos exactos', async () => {
+    mock_get_foreground.mockResolvedValue({ granted: true, canAskAgain: true });
+    mock_has_services.mockResolvedValue(true);
+    mock_get_last_known.mockResolvedValue(make_position());
+
+    const { result } = await renderHook(() => useLocation(), { wrapper });
+
+    await waitFor(() => expect(result.current.status).toBe('granted'));
+    expect(mock_get_last_known).toHaveBeenCalledWith({ maxAge: MAX_AGE_MS });
+  });
+
+  it('getLastKnownPositionAsync LANZA en el fast-path → no rompe: cae al fix fresco', async () => {
+    mock_get_foreground.mockResolvedValue({ granted: true, canAskAgain: true });
+    mock_has_services.mockResolvedValue(true);
+    mock_get_last_known.mockRejectedValue(new Error('provider error'));
+    mock_get_current_position.mockResolvedValue(make_position(19.43, -99.13));
+
+    const { result } = await renderHook(() => useLocation(), { wrapper });
+
+    await waitFor(() => expect(result.current.status).toBe('granted'));
+    expect(result.current.coords).toEqual({ latitude: 19.43, longitude: -99.13 });
   });
 });
