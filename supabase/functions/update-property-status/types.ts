@@ -6,23 +6,45 @@
 //   - Handler: parse input, validación en-memoria (new_status enum, closed_reason invariante).
 //   - PropertyStatusUpdater: existencia de propiedad, ownership, validación de transición, UPDATE.
 
-// ── Enums del dominio (subconjunto que esta EF administra) ────────────────────
+// ── Enums del dominio ─────────────────────────────────────────────────────────
 //
-// La EF acepta como new_status (payload del cliente): draft|active|paused|closed|rented|sold.
-// pending_review, needs_changes, suspended → gestionados por moderación (EF distinta).
-// 'approved' (73.1/PRD §15.4) solo aparece como estado ORIGEN (leído de DB) — el cliente
-// nunca lo pide como destino aquí (lo fija la EF de aprobación); se incluye en el enum
-// únicamente para que VALID_TRANSITIONS pueda tener una entrada approved→rented|sold.
+// PropertyStatusEnum = espejo 1:1 del enum property_status en DB (17 valores,
+// 20260604000001 + 20260809000002). Al tiparse VALID_TRANSITIONS como
+// Record<PropertyStatusEnum, …>, agregar un valor al enum SIN decidir su fila
+// rompe la compilación (#128) — antes fallaba en runtime vía `?.` silencioso.
+//
+// PropertyStatusTarget = subconjunto que el CLIENTE puede pedir como new_status.
+// pending_review, needs_changes, suspended, rejected → los fija moderación (EF distinta).
+// uploading_media, media_failed, pending_payment → los fija el pipeline de media/pago.
+// approved → lo fija la EF de aprobación; aquí solo aparece como estado ORIGEN.
 // Cierre y baja (§16, 73.8): rented/sold son new_status DIRECTO (no closed+closed_reason) —
 // el status ya es autodescriptivo. El camino viejo closed+closed_reason (withdrawn/expired)
 // sigue vivo para no-regresión, ver ClosedReasonEnum.
 
 export type PropertyStatusEnum =
   | "draft"
+  | "pending_review"
+  | "needs_changes"
   | "active"
   | "paused"
   | "closed"
+  | "suspended"
+  | "uploading_media"
+  | "media_failed"
+  | "pending_payment"
   | "approved"
+  | "expired"
+  | "rented"
+  | "sold"
+  | "rejected"
+  | "deleted_soft"
+  | "deleted_hard";
+
+export type PropertyStatusTarget =
+  | "draft"
+  | "active"
+  | "paused"
+  | "closed"
   | "rented"
   | "sold";
 export type ClosedReasonEnum = "rented" | "sold" | "withdrawn" | "expired";
@@ -31,7 +53,7 @@ export type ClosedReasonEnum = "rented" | "sold" | "withdrawn" | "expired";
 
 export interface UpdatePropertyStatusInput {
   property_id: string; // UUID (string no vacío; la DB valida que sea UUID)
-  new_status: PropertyStatusEnum;
+  new_status: PropertyStatusTarget;
   closed_reason: ClosedReasonEnum | null; // requerido si new_status='closed' (invariante 🔒)
 }
 
@@ -59,14 +81,14 @@ export interface CallerVerifier {
 //   4. Aplicar UPDATE (status, closed_reason si new_status='closed').
 //   5. Retornar la propiedad actualizada.
 //
-// Transiciones válidas (aplicadas en el updater):
-//   draft     → active
+// Transiciones válidas (la tabla completa de 17 orígenes vive en VALID_TRANSITIONS,
+// property_status_updater.ts — cada valor del enum tiene fila explícita, #128):
+//   draft     → active (vigente; #131 decidirá si muere — bypass de moderación)
 //   active    → paused | closed (closed exige closed_reason) | rented | sold
 //   paused    → active | closed (closed exige closed_reason) | rented | sold
 //   approved  → rented | sold
-//   closed    → (ninguna)
-//   rented    → (ninguna, terminal — sin reapertura en MVP)
-//   sold      → (ninguna, terminal — sin reapertura en MVP)
+//   resto     → (ninguna): moderación/pipeline/pago los mueven sus EFs; terminales
+//               sin reapertura en MVP (PRD §16.1)
 //
 // Error codes:
 //   PROPERTY_NOT_FOUND   → handler devuelve 404
@@ -77,7 +99,7 @@ export interface CallerVerifier {
 export interface UpdatePropertyStatusParams {
   user_id: string;
   property_id: string;
-  new_status: PropertyStatusEnum;
+  new_status: PropertyStatusTarget;
   closed_reason: ClosedReasonEnum | null;
 }
 

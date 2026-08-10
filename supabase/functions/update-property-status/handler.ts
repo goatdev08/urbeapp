@@ -15,7 +15,7 @@ import { handle_cors_preflight } from "../_shared/cors.ts";
 import { error_response, json_response } from "../_shared/response.ts";
 import type {
   ClosedReasonEnum,
-  PropertyStatusEnum,
+  PropertyStatusTarget,
   UpdatePropertyStatusDeps,
   UpdatePropertyStatusInput,
 } from "./types.ts";
@@ -71,7 +71,7 @@ function parse_input(raw: unknown): ParseResult {
     );
   }
 
-  const new_status = obj.new_status as PropertyStatusEnum;
+  const new_status = obj.new_status as PropertyStatusTarget;
 
   // closed_reason: invariante 🔒 (mig 0005: property_closed_requires_reason)
   const has_closed_reason = "closed_reason" in obj && obj.closed_reason !== undefined;

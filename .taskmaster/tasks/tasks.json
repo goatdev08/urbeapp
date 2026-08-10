@@ -7273,12 +7273,13 @@
         "description": "Origen: subtarea 73.8 · Detectado por: code review PR #56 (4 ángulos + verificado a mano). VALID_TRANSITIONS en update-property-status/property_status_updater.ts solo enumera draft, active, paused, approved, closed, rented y sold — pero el enum property_status ya tiene 17 valores y, tras 73.4, TODA publicación nueva nace en pending_review. Pausar, reactivar, cerrar o marcar como rentada una propiedad recién publicada evalúa VALID_TRANSITIONS['pending_review'] → undefined → el optional chaining lo convierte en 'Transición pending_review→X no está permitida'. Lo mismo para needs_changes, suspended, rejected y expired. Es toda la población de publicaciones nuevas sin ninguna acción de ciclo de vida disponible salvo borrar. El '?.' es justo lo que oculta que la tabla quedó incompleta frente al enum extendido.",
         "details": "Completar la matriz para los 17 valores del enum, decidiendo explícitamente el destino de cada estado (incluidos los terminales, que deben quedar como [] a propósito y no por omisión). Considerar derivar el tipo del enum generado en supabase/types/database.types.ts para que agregar un valor al enum rompa la compilación en vez de fallar en runtime (ver #139).",
         "testStrategy": "Deno: test exhaustivo que recorra los 17 valores del enum y exija una entrada explícita en VALID_TRANSITIONS (falla si falta alguno). Tests de transición para pending_review, needs_changes y suspended.",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           "73"
         ],
         "priority": "high",
-        "subtasks": []
+        "subtasks": [],
+        "updatedAt": "2026-08-10T04:19:19.034Z"
       },
       {
         "id": "129",
@@ -7465,9 +7466,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-08-09T23:27:49.211Z",
-      "taskCount": 119,
-      "completedCount": 72,
+      "lastModified": "2026-08-10T04:19:19.034Z",
+      "taskCount": 142,
+      "completedCount": 73,
       "tags": [
         "master"
       ]
