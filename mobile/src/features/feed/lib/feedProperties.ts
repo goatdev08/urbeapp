@@ -90,25 +90,28 @@ const FEED_SELECT = `id, price, address, bedrooms, bathrooms, owner_user_id, age
        property_videos(id, storage_path, position, thumbnail_url)`;
 
 /**
- * Invoca mint-video-url y hace el merge fail-closed fila↔signed_url.
- * Compartido por el path plano (radius_m=null) y el path de proximidad —
- * ambos necesitan exactamente la misma resolución de URLs (#58.3, ponytail:
- * reusa en vez de duplicar el bloque de merge).
+ * Invoca mint-video-url para una lista de property_ids → MintedVideo[].
+ * #144.2: separado del merge para poder disparar EN PARALELO con el select de
+ * PostgREST — la EF solo necesita los page_ids de la RPC, no las filas.
  */
-async function mint_and_build_feed_data(client: any, rows: QueryRow[]): Promise<FeedPropertyWithUrl[]> {
-  if (rows.length === 0) return [];
-
-  const property_ids = rows.map((r) => r.id);
-
+async function mint_videos(client: any, property_ids: string[]): Promise<MintedVideo[]> {
   const { data: ef_data, error: ef_error } = (await client.functions.invoke('mint-video-url', {
     body: { property_ids },
   })) as { data: { videos: MintedVideo[] } | null; error: { message: string } | null };
 
   if (ef_error) throw new Error(ef_error.message);
+  return ef_data?.videos ?? [];
+}
 
+/**
+ * Merge fail-closed fila↔signed_url. Compartido por el path plano
+ * (radius_m=null) y el path de proximidad — ambos necesitan exactamente la
+ * misma resolución de URLs (#58.3, ponytail: reusa en vez de duplicar).
+ */
+function build_feed_data(rows: QueryRow[], videos: MintedVideo[]): FeedPropertyWithUrl[] {
   // Índice por property_id para merge O(1)
   const videos_map = new Map<string, MintedVideo>();
-  for (const v of ef_data?.videos ?? []) {
+  for (const v of videos) {
     videos_map.set(v.property_id, v);
   }
 
@@ -228,6 +231,13 @@ export async function fetchFeedProperties(
   // Paginación OFFSET sobre los ids de la RPC (no created_at cursor).
   const page_ids = rpc_ids.slice(offset, offset + PAGE_SIZE);
 
+  // #144.2: el mint dispara YA, con los page_ids de la RPC — no espera al
+  // select (antes eran 3 viajes en serie y el arranque en frío pagaba además
+  // el cold start de la EF de forma visible bajo el splash). Mint de ids que
+  // el filtro de abajo descarte es desperdicio aceptable: el merge fail-closed
+  // solo usa las filas reales.
+  const mint_promise = mint_videos(client, page_ids);
+
   // Construye la query base
   let query = client
     .from('properties')
@@ -240,10 +250,10 @@ export async function fetchFeedProperties(
   // radius_m NUNCA llega aquí: es solo parámetro de la RPC (invariante A1).
   query = build_filter_query(query, filters ?? EMPTY_FILTERS);
 
-  const { data: rows, error } = (await query) as {
-    data: QueryRow[] | null;
-    error: { message: string } | null;
-  };
+  const [{ data: rows, error }, minted_videos] = (await Promise.all([query, mint_promise])) as [
+    { data: QueryRow[] | null; error: { message: string } | null },
+    MintedVideo[],
+  ];
 
   if (error) throw new Error(error.message);
 
@@ -251,7 +261,7 @@ export async function fetchFeedProperties(
     return { data: [], nextCursor: null };
   }
 
-  const data = await mint_and_build_feed_data(client, rows);
+  const data = build_feed_data(rows, minted_videos);
 
   // Re-sort cliente por distancia ASC (de la RPC) — PostgREST no garantiza
   // el orden de .in(); Infinity para cualquier id sin distancia conocida.
