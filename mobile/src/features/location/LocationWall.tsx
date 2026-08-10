@@ -31,6 +31,7 @@ import { PrimaryButton } from '@/components/PrimaryButton';
 import { theme } from '@/theme/theme';
 
 import { useLocation } from './LocationProvider';
+import { release_splash } from '@/lib/splash-gate';
 
 export interface LocationWallProps {
   variant: 'permission_denied' | 'gps_off';
@@ -88,6 +89,8 @@ const COPY: Record<WallMode, ModeCopy> = {
 };
 
 export function LocationWall({ variant }: LocationWallProps): React.ReactElement {
+  // #143.4: el muro es la primera pantalla útil — soltar el splash aquí
+  useEffect(() => { release_splash(); }, []);
   const { request, refresh } = useLocation();
 
   // Sub-modo del permiso, resuelto async: 'ask' si el SO aún deja preguntar,

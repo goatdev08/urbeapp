@@ -2,6 +2,12 @@
 
 Append-only. Prefijo: `## [YYYY-MM-DD] tipo | título`
 
+## [2026-08-10] polish | #143 Quick fixes de arranque, navegación y adaptabilidad
+
+Lote pedido por Abraham mientras se procesaba el submit de TestFlight 1.0.4. Seis fixes: (1) el muro de ubicación de Android se destrabó con fallback a `getLastKnownPositionAsync` — la raíz del bloqueo #109 era que el Fused Location Provider del AVD jamás resuelve `getCurrentPositionAsync`, y la última posición conocida (la del `geo fix`) SÍ está disponible; de pilón cubre el arranque en frío de usuarios reales. (2) Slider de la tab bar moderado (spring 30/240 ≈ crítico + overshootClamping). (3+5) Ícono y splash regenerados EXACTOS del spec `urbea-logo-final.html` con qlmanage (misma cara iOS/Android; NATIVO → build 1.0.5, no OTA). (4) `splash-gate.ts`: el splash nativo aguanta hasta la primera pantalla útil (login/muros/feed-con-datos) con timeout de seguridad de 7 s — los servicios cargan debajo del logo, adiós al desfile skeleton/spinner. (6) `insets.bottom` en 10 puntos (sheets, wizard 1-5, admin, sticky CTA del detalle) — verificado en emulador con navegación por botones: los CTAs del lead ya no quedan tapados.
+
+Gotcha ya conocido reconfirmado: los componentes que ganan `useSafeAreaInsets` rompen sus tests sin el mock de `react-native-safe-area-context` (idioma en register-user-mode.test).
+
 ## [2026-08-09] fix | Las 6 bloqueantes del review de #73 (+deploy completo: DB + 4 EFs + OTA)
 
 Cierra #126–#130 y #142 (PRs #57–#62, una rama/PR por tarea, TDD estricto: RED verificado por aserción en todas). Con esto, publicar → moderar → editar → cerrar queda usable de punta a punta, y TODO desplegado al remoto con el visto bueno de Abraham: 7 migraciones (`20260809000002`–`000008`), 4 EFs (`publish-property`, `edit-property`, `moderate-property`, `update-property-status`) y OTA a ambos canales (runtimes idénticos a los builds 1.0.4 — sin build nuevo, cero nativo tocado).

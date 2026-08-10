@@ -19,9 +19,12 @@ import {
 } from '@expo-google-fonts/outfit';
 
 import { AuthProvider } from '@/features/auth/context';
+import { release_splash, SPLASH_SAFETY_TIMEOUT_MS } from '@/lib/splash-gate';
 
 // Mantiene el splash nativo (isotipo sobre verde de marca, ver app.config.js)
-// visible mientras cargan las fuentes — sin flash blanco de arranque.
+// visible mientras cargan las fuentes Y los servicios de arranque (#143.4):
+// la liberación vive en splash-gate.ts y la disparan las pantallas de destino
+// (login / LocationWall / LegalWall / feed con datos) — no las fuentes.
 void SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
@@ -37,10 +40,12 @@ export default function RootLayout() {
 
   const fonts_loaded = sg_loaded && hg_loaded && outfit_loaded;
 
-  // Suelta el splash nativo en cuanto las tres familias cargaron.
+  // Techo de seguridad (#143.4): si ninguna pantalla libera el splash (deep
+  // link a una ruta sin release explícito, servicio colgado), se suelta solo.
   useEffect(() => {
-    if (fonts_loaded) void SplashScreen.hideAsync();
-  }, [fonts_loaded]);
+    const timer = setTimeout(release_splash, SPLASH_SAFETY_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Mientras cargan, el splash nativo sigue en pantalla (preventAutoHideAsync).
   if (!fonts_loaded) return null;

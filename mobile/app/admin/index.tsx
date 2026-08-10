@@ -20,6 +20,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 
 import { supabase } from '@/lib/supabase/client';
@@ -112,6 +113,8 @@ function AgencyCard({ item, on_press }: AgencyCardProps): React.ReactElement {
 // ---------------------------------------------------------------------------
 
 export default function AdminAgencyListScreen(): React.ReactElement {
+  // #143.6: CTA flotante bajo la barra de botones de Android
+  const insets = useSafeAreaInsets();
   const router = useRouter();
 
   const [agencies, set_agencies] = useState<AgencyRow[]>([]);
@@ -219,7 +222,7 @@ export default function AdminAgencyListScreen(): React.ReactElement {
         testID="agencies-list"
       />
 
-      <View style={styles.cta_wrapper}>
+      <View style={[styles.cta_wrapper, { paddingBottom: 16 + insets.bottom }]}>
         <PrimaryButton
           label="Crear inmobiliaria"
           onPress={handle_create_press}

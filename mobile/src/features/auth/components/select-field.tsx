@@ -23,6 +23,7 @@ import {
   TouchableWithoutFeedback,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CaretDown, MagnifyingGlass, X } from 'phosphor-react-native';
 
 // ---------------------------------------------------------------------------
@@ -71,6 +72,8 @@ export function SelectField({
   disabled = false,
   loading = false,
 }: SelectFieldProps): React.JSX.Element {
+  // #143.6: barra de botones de Android tapaba las últimas opciones del sheet
+  const insets = useSafeAreaInsets();
   const [open, set_open] = useState(false);
   const [query, set_query] = useState('');
 
@@ -137,7 +140,7 @@ export function SelectField({
           <View style={styles.overlay} />
         </TouchableWithoutFeedback>
 
-        <View style={styles.sheet}>
+        <View style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
           <View style={styles.sheet_header}>
             <Text style={styles.sheet_title}>{label}</Text>
             <Pressable
@@ -245,7 +248,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     maxHeight: '70%',
-    paddingBottom: 24,
+    // #143.6: paddingBottom real vive inline (insets.bottom + 16)
   },
   sheet_header: {
     flexDirection: 'row',

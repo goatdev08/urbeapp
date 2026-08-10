@@ -61,6 +61,15 @@ const LocationContext = createContext<LocationContextValue | undefined>(undefine
 // (muro bloqueante con retry), igual que cuando getCurrentPositionAsync lanza.
 const GPS_TIMEOUT_MS = 10_000;
 
+// #143.1: antes de rendirse al muro, intentar la ÚLTIMA posición conocida del
+// SO. Dos casos reales: (a) arranque en frío sin fix fresco — el SO casi
+// siempre tiene una posición reciente y una coord ligeramente vieja es
+// infinitamente mejor que un muro bloqueante; (b) el AVD (#109): el Fused
+// Location Provider del emulador nunca resuelve getCurrentPositionAsync,
+// pero getLastKnownPositionAsync SÍ devuelve la coord fijada con
+// `adb emu geo fix` / Extended Controls — sin este fallback, en el emulador
+// era IMPOSIBLE pasar del muro ("Ya la activé" reintentaba el mismo camino
+// muerto). null (sin historial) o error → recién ahí cae al muro gps_off.
 async function fetch_current_coords(): Promise<LocationCoords> {
   let timeout_id: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
@@ -72,6 +81,15 @@ async function fetch_current_coords(): Promise<LocationCoords> {
       timeout,
     ]);
     return { latitude: position.coords.latitude, longitude: position.coords.longitude };
+  } catch (err) {
+    const last_known = await Location.getLastKnownPositionAsync();
+    if (last_known) {
+      return {
+        latitude: last_known.coords.latitude,
+        longitude: last_known.coords.longitude,
+      };
+    }
+    throw err; // sin posición fresca NI histórica → el caller decide (muro)
   } finally {
     clearTimeout(timeout_id);
   }

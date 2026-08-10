@@ -55,6 +55,7 @@ jest.mock('expo-location', () => ({
   requestForegroundPermissionsAsync: jest.fn(),
   hasServicesEnabledAsync: jest.fn(),
   getCurrentPositionAsync: jest.fn(),
+  getLastKnownPositionAsync: jest.fn(),
   Accuracy: { Balanced: 3 },
 }));
 
@@ -62,6 +63,7 @@ const mock_get_foreground = Location.getForegroundPermissionsAsync as jest.Mock;
 const mock_request_foreground = Location.requestForegroundPermissionsAsync as jest.Mock;
 const mock_has_services = Location.hasServicesEnabledAsync as jest.Mock;
 const mock_get_current_position = Location.getCurrentPositionAsync as jest.Mock;
+const mock_get_last_known = Location.getLastKnownPositionAsync as jest.Mock;
 
 function make_position(latitude = 20.6597, longitude = -103.3496) {
   return {
@@ -84,6 +86,10 @@ const wrapper = ({ children }: { children: React.ReactNode }) => (
 
 beforeEach(() => {
   jest.clearAllMocks();
+  // #143.1: default del fallback = sin historial (los EC previos conservan su
+  // semántica exacta: posición fresca falla → gps_off). Los tests del fallback
+  // lo pisan con una posición histórica.
+  mock_get_last_known.mockResolvedValue(null);
 });
 
 // ===========================================================================
@@ -374,5 +380,75 @@ describe('EC-10: getCurrentPosition_cuelga_timeout_cae_a_gps_off (#59)', () => {
 
     jest.useRealTimers();
     add_spy.mockRestore();
+  });
+});
+
+// ===========================================================================
+// #143.1: fallback a getLastKnownPositionAsync — el AVD (#109) y el arranque
+// en frío nunca resuelven getCurrentPositionAsync; la última posición conocida
+// destraba el muro. Sin historial → gps_off como siempre.
+// ===========================================================================
+describe('#143.1: fallback_a_ultima_posicion_conocida', () => {
+  // EC-9 (arriba) espía AppState.addEventListener; clearAllMocks deja ese spy
+  // devolviendo undefined para los describes posteriores → re-implementar aquí.
+  beforeEach(() => {
+    jest.spyOn(AppState, 'addEventListener').mockImplementation(((
+      _type: string,
+      _handler: (s: AppStateStatus) => void,
+    ) => ({ remove: jest.fn() })) as unknown as typeof AppState.addEventListener);
+  });
+
+  it('posición fresca LANZA + última conocida disponible → granted con esas coords', async () => {
+    mock_get_foreground.mockResolvedValue({ granted: true, canAskAgain: true });
+    mock_has_services.mockResolvedValue(true);
+    mock_get_current_position.mockRejectedValue(new Error('Current location is unavailable'));
+    mock_get_last_known.mockResolvedValue(make_position(19.4326, -99.1332));
+
+    const { result } = await renderHook(() => useLocation(), { wrapper });
+
+    await waitFor(() => expect(result.current.status).toBe('granted'));
+    expect(result.current.coords).toEqual({ latitude: 19.4326, longitude: -99.1332 });
+  });
+
+  it('posición fresca LANZA + sin historial (null) → gps_off (muro, como antes)', async () => {
+    mock_get_foreground.mockResolvedValue({ granted: true, canAskAgain: true });
+    mock_has_services.mockResolvedValue(true);
+    mock_get_current_position.mockRejectedValue(new Error('Current location is unavailable'));
+    mock_get_last_known.mockResolvedValue(null);
+
+    const { result } = await renderHook(() => useLocation(), { wrapper });
+
+    await waitFor(() => expect(result.current.status).toBe('gps_off'));
+    expect(result.current.coords).toBeNull();
+  });
+
+  it('posición fresca OK → getLastKnownPositionAsync NUNCA se consulta', async () => {
+    mock_get_foreground.mockResolvedValue({ granted: true, canAskAgain: true });
+    mock_has_services.mockResolvedValue(true);
+    mock_get_current_position.mockResolvedValue(make_position());
+
+    const { result } = await renderHook(() => useLocation(), { wrapper });
+
+    await waitFor(() => expect(result.current.status).toBe('granted'));
+    expect(mock_get_last_known).not.toHaveBeenCalled();
+  });
+
+  it('refresh() tras el muro con historial nuevo → destraba a granted (el botón "Ya la activé" por fin sirve en el AVD)', async () => {
+    mock_get_foreground.mockResolvedValue({ granted: true, canAskAgain: true });
+    mock_has_services.mockResolvedValue(true);
+    mock_get_current_position.mockRejectedValue(new Error('unavailable'));
+    mock_get_last_known.mockResolvedValue(null);
+
+    const { result } = await renderHook(() => useLocation(), { wrapper });
+    await waitFor(() => expect(result.current.status).toBe('gps_off'));
+
+    // El usuario fija la coord (geo fix / el SO consigue historial) y reintenta.
+    mock_get_last_known.mockResolvedValue(make_position(20.67, -103.35));
+    await act(async () => {
+      await result.current.refresh();
+    });
+
+    await waitFor(() => expect(result.current.status).toBe('granted'));
+    expect(result.current.coords).toEqual({ latitude: 20.67, longitude: -103.35 });
   });
 });

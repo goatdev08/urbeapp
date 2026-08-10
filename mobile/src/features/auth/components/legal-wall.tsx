@@ -17,6 +17,7 @@ import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'rea
 
 import { supabase } from '@/lib/supabase/client';
 import { useAuth } from '@/features/auth/context';
+import { release_splash } from '@/lib/splash-gate';
 import type { PendingLegalDocument } from '@/features/auth/hooks/useLegalGate';
 import { ConsentCheckbox } from '@/features/auth/components/consent-checkbox';
 import { brand, colors, fonts, layout, radii, spacing } from '@/theme/theme';
@@ -51,6 +52,9 @@ export interface LegalWallProps {
  * el usuario aceptaría y el muro seguiría ahí.
  */
 export function LegalWall({ pending, error, accept }: LegalWallProps): React.JSX.Element {
+  // #143.4: primera pantalla útil — soltar el splash nativo
+  useEffect(() => { release_splash(); }, []);
+
   const { signOut } = useAuth();
 
   // Una palomita por documento: aceptar en bloque sin marcar cada uno no sería

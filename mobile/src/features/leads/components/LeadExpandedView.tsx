@@ -53,7 +53,9 @@ import {
   TextInput,
   TouchableWithoutFeedback,
   View,
+  useWindowDimensions,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { BookmarkSimple, CaretDown, Info } from 'phosphor-react-native';
 
@@ -225,6 +227,19 @@ export function LeadExpandedView({
   const visible_history = history.slice(0, HISTORY_DISPLAY_CAP);
   const any_note_action_busy = is_saving_note || is_updating || follow_up_hook.is_updating;
 
+  // #143.6: el Modal es translúcido (edge-to-edge) — con la navegación por
+  // BOTONES de Android (~48dp) el paddingBottom fijo dejaba "Ver propiedad"/
+  // "WhatsApp" TAPADOS por la barra del sistema. insets.bottom refleja la barra
+  // real (gestos ≈ 24, botones ≈ 48, iOS home indicator ≈ 34). El maxHeight
+  // fijo (680) además desbordaba pantallas cortas → se acota al 88% de la
+  // ventana real.
+  const insets = useSafeAreaInsets();
+  const { height: window_height } = useWindowDimensions();
+  const sheet_adaptive_style = {
+    maxHeight: Math.min(SHEET_MAX_HEIGHT, window_height * 0.88),
+    paddingBottom: insets.bottom + spacing.s_16,
+  };
+
   return (
     <Modal
       visible={visible}
@@ -243,7 +258,7 @@ export function LeadExpandedView({
 
       {/* Sheet — KAV sube el sheet cuando el teclado sube (iOS) */}
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <View style={styles.sheet}>
+      <View style={[styles.sheet, sheet_adaptive_style]}>
 
         {/* Handle decorativo */}
         <View style={styles.handle_wrap}>
@@ -616,8 +631,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderTopLeftRadius: radii.r_24,
     borderTopRightRadius: radii.r_24,
-    maxHeight: SHEET_MAX_HEIGHT,
-    paddingBottom: spacing.s_32,
+    // maxHeight y paddingBottom REALES viven en sheet_adaptive_style (#143.6):
+    // dependen de insets + tamaño de ventana, no pueden ser estáticos.
     // Sombra top (iOS)
     shadowColor: '#1E160C',
     shadowOffset: { width: 0, height: -4 },

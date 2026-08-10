@@ -30,6 +30,16 @@ import { LeadExpandedView } from '../LeadExpandedView';
 import { ALL_LEAD_STATUSES, get_status_meta } from '../../lead_status_meta';
 import type { AgentLead } from '../../types';
 
+// #143.6: los componentes ahora leen insets (barra de botones de Android) —
+// mismo mock que register-user-mode.test.tsx.
+jest.mock('react-native-safe-area-context', () => {
+  const { View } = require('react-native');
+  return {
+    SafeAreaView: View,
+    useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
+  };
+});
+
 // ── Mocks de los 3 hooks de datos (el SUT es la UI, no la red) ───────────────
 const mock_update_status = jest.fn().mockResolvedValue({ ok: true });
 let mock_status_error: string | null = null;

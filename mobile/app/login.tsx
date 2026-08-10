@@ -13,7 +13,8 @@
  * rastrear los valores actuales de email/password de forma SIEMPRE SINCRÓNICA,
  * independientemente del ciclo de render.
  */
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { release_splash } from '@/lib/splash-gate';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -60,6 +61,9 @@ function handle_social_login_stub(provider: 'Apple'): never {
 // ---------------------------------------------------------------------------
 
 export default function LoginScreen() {
+  // #143.4: primera pantalla útil — soltar el splash nativo
+  useEffect(() => { release_splash(); }, []);
+
   const { signIn, session, isLoading } = useAuth();
   const router = useRouter();
   const { sign_in_with_google, error_message: google_error_message } = useGoogleOAuth();

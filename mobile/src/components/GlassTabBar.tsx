@@ -85,7 +85,14 @@ type GlassVariant = 'dark' | 'light';
 /** Geometría de un tab item, medida vía onLayout, relativa al contenedor `row`. */
 type TabItemLayout = { x: number; y: number; width: number; height: number };
 
-const LENS_SPRING = { damping: glass.lens_spring_damping, stiffness: glass.lens_spring_stiffness };
+// #143.2: overshootClamping — la cápsula jamás se pasa de la tab destino y
+// regresa; con el spring moderado (30/240, ver theme.ts) el movimiento queda
+// suave sin sentirse "pesado" (feedback del dueño en Android, 2026-08-10).
+const LENS_SPRING = {
+  damping: glass.lens_spring_damping,
+  stiffness: glass.lens_spring_stiffness,
+  overshootClamping: true,
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fondo de vidrio — split por plataforma/capacidad

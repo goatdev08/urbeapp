@@ -24,6 +24,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 
 import { usePublishForm } from '@/features/publish/store/PublishFormContext';
@@ -51,6 +52,8 @@ const COLOR_ERROR = '#DC2626';
 // ---------------------------------------------------------------------------
 
 export default function Step3Screen() {
+  // #143.6: barra de navegación por botones de Android tapaba el CTA
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const { state, update } = usePublishForm();
 
@@ -245,7 +248,7 @@ export default function Step3Screen() {
         </ScrollView>
 
         {/* ── Botón Siguiente (fijo al fondo) ───────────────────────────── */}
-        <View style={styles.cta_area}>
+        <View style={[styles.cta_area, { paddingBottom: 16 + insets.bottom }]}>
           {!valid && error_messages.length > 0 && (
             <View style={styles.errors_container}>
               <Text style={styles.errors_title}>Falta completar:</Text>

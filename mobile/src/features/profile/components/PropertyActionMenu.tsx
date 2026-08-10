@@ -27,6 +27,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, fonts, radii, shadows, spacing } from '@/theme/theme';
 import type { MyProperty } from '@/features/profile/types';
@@ -105,6 +106,8 @@ export function PropertyActionMenu({
   on_dismiss,
   callbacks,
 }: PropertyActionMenuProps): React.JSX.Element | null {
+  // #143.6: navegación por botones de Android tapaba la última acción
+  const insets = useSafeAreaInsets();
   if (!item) return null;
 
   const actions = get_actions(item.status, callbacks);
@@ -200,7 +203,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.paper,
     borderTopLeftRadius: radii.r_16,
     borderTopRightRadius: radii.r_16,
-    paddingBottom: spacing.s_32,  // safe area visual; sin react-native-safe-area-context extra
+    // #143.6: paddingBottom real vive inline (insets.bottom + s_16) — el fijo tapaba con navegación por botones
     paddingTop: spacing.s_8,
     ...shadows.md,
   },

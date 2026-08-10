@@ -168,13 +168,14 @@ export const glass = {
   // ancha dentro del mismo slot, sin tocar layout de GlassTabBar.tsx.
   lens_horizontal_inset: 4,
 
-  // Spring de traslación al cambiar de tab. Endurecido en #65.9 (3ª ronda,
-  // feedback del dueño: "mucho más rígido, casi sin rebote, denso" — el
-  // valor anterior (18/220, mismo idioma que LikeButton.tsx) se sentía
-  // juguetón/gomoso). damping alto + stiffness alto = asentamiento rápido
-  // sin overshoot perceptible, más "mecánico" que "elástico".
-  lens_spring_damping: 32,
-  lens_spring_stiffness: 420,
+  // Spring de traslación al cambiar de tab. Historia de tuning con el dueño:
+  // #65.9 lo endureció de 18/220 ("juguetón/gomoso") a 32/420; #143.2
+  // (2026-08-10) lo modera — en Android 32/420 se sentía "pesado/exagerado"
+  // al asentarse sobre la tab destino. 30/240 ≈ amortiguamiento crítico
+  // (ζ≈0.97): traslación más suave, asentamiento limpio; el overshoot
+  // residual lo elimina overshootClamping en GlassTabBar (LENS_SPRING).
+  lens_spring_damping: 30,
+  lens_spring_stiffness: 240,
 
   // Fade-in de la primera medición (evita el flash en x:0 antes del layout).
   lens_fade_duration_ms: 180,

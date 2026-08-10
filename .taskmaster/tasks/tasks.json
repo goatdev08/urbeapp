@@ -7467,6 +7467,75 @@
         ],
         "priority": "medium",
         "subtasks": []
+      },
+      {
+        "id": "143",
+        "title": "polish(ux): quick fixes de arranque, navegación y adaptabilidad (lote 2026-08-10)",
+        "description": "Origen: solicitud directa de Abraham (2026-08-10) mientras se procesa el submit de TestFlight 1.0.4. Lote de 6 fixes: (1) Android no avanza de la pantalla de ubicación (¿emulador o app? — relacionado #109); (2) el slider de la tab bar se mueve con animación exagerada, moderarla (mantener Phosphor); (3) splash = logo carnita sobre verde (urbea-logo-final.html, versión invertida); (4) precargar servicios DURANTE el splash para no ver skeleton/loading al entrar; (5) ícono idéntico iOS/Android: fondo verde #1A5E44 + U carnita #EEE4D0 (specs en urbea-logo-final.html); (6) adaptabilidad de proporciones + navegación por botones de Android (los CTAs del detalle del lead quedan tapados).",
+        "details": "⚠️ (3) y (5) son assets NATIVOS: entran al fingerprint → exigen build nuevo (1.0.5), NO viajan por OTA (memoria assets_nativos_gotchas). (1),(2),(4),(6) son JS → OTA. Gotchas: sips miente con el alpha (usar qlmanage para rasterizar SVG); iOS cachea la launch image; el foreground del adaptive icon ya mordió una vez con fondo blanco horneado (#114).",
+        "testStrategy": "Verificación ligera (UI): tsc + lint + smoke en emulador Android (incl. modo navegación por botones: adb shell cmd overlay enable com.android.internal.systemui.navbar.threebutton) y simulador iOS. (4): medir que el feed aparece sin skeleton al soltar el splash.",
+        "status": "done",
+        "dependencies": [
+          "73"
+        ],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "LocationWall: diagnosticar y destrabar el avance en Android",
+            "description": "",
+            "details": "[2026-08-10 15:07] hecho: LocationProvider.fetch_current_coords con fallback a getLastKnownPositionAsync antes de caer al muro (raíz: el Fused Location Provider del AVD nunca resuelve getCurrentPositionAsync — #109; en frío también ayuda a usuarios reales). 4 tests nuevos (21/21 verdes). VERIFICADO en el emulador: con geo fix, la app pasa del muro y el feed carga.",
+            "status": "done",
+            "dependencies": [],
+            "testStrategy": ""
+          },
+          {
+            "id": 2,
+            "title": "Tab bar: moderar la animación del slider",
+            "description": "",
+            "details": "[2026-08-10 15:07] hecho: lens_spring 32/420 → 30/240 (≈amortiguamiento crítico) + overshootClamping en LENS_SPRING (GlassTabBar.tsx). Movimiento suave sin pasarse de la tab destino. Phosphor intacto.",
+            "status": "done",
+            "dependencies": [],
+            "testStrategy": ""
+          },
+          {
+            "id": 3,
+            "title": "Splash carnita-sobre-verde (asset nativo)",
+            "description": "",
+            "details": "[2026-08-10 15:07] hecho: splash regenerado del spec urbea-logo-final.html — asset propio assets/splash-icon.png (U carnita recortada, alpha real, qlmanage) sobre backgroundColor #1A5E44, imageWidth 96. NATIVO: entra al build 1.0.5, no viaja por OTA.",
+            "status": "done",
+            "dependencies": [],
+            "testStrategy": ""
+          },
+          {
+            "id": 4,
+            "title": "Precarga de servicios durante el splash",
+            "description": "",
+            "details": "[2026-08-10 15:07] hecho: src/lib/splash-gate.ts (release one-shot + timeout de seguridad 7s en app/_layout). El splash aguanta hasta la primera pantalla útil: login/verify-email/LegalWall/LocationWall al montar, feed cuando el skeleton se resuelve. Los servicios (auth restore, ubicación, primer fetch) cargan DEBAJO del logo.",
+            "status": "done",
+            "dependencies": [],
+            "testStrategy": ""
+          },
+          {
+            "id": 5,
+            "title": "Ícono unificado iOS/Android (asset nativo)",
+            "description": "",
+            "details": "[2026-08-10 15:07] hecho: icon.png (verde #1A5E44 + U carnita 0.74, cuadro full-bleed — el SO redondea), android-icon-foreground (U sobre alpha) y android-icon-background (verde sólido) regenerados EXACTOS del spec → misma cara iOS/Android. version 1.0.4→1.0.5 (assets nativos = fingerprint nuevo).",
+            "status": "done",
+            "dependencies": [],
+            "testStrategy": ""
+          },
+          {
+            "id": 6,
+            "title": "Safe areas + navegación por botones (CTAs del lead tapados)",
+            "description": "",
+            "details": "[2026-08-10 15:07] hecho: insets.bottom aplicado en 10 puntos — LeadExpandedView (sheet + maxHeight 88% de ventana), PropertyActionMenu, select-field, steps 1-5 del wizard, admin/index, sticky CTA de PropertyDetailScreen (patrón FilterSheet). VERIFICADO en emulador con navegación por botones (threebutton): los CTAs del lead ya no quedan tapados. 2 tests con mock de safe-area agregado.",
+            "status": "done",
+            "dependencies": [],
+            "testStrategy": ""
+          }
+        ],
+        "updatedAt": "2026-08-10T14:45:57.535804"
       }
     ],
     "metadata": {
