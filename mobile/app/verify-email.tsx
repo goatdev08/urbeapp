@@ -26,6 +26,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { useAuth } from '@/features/auth/context';
+import { release_splash } from '@/lib/splash-gate';
 import { send_verification_email } from '@/features/auth/api';
 import { useSessionFromDeepLink } from '@/features/auth/hooks/useSessionFromDeepLink';
 import { UrbeaLockup } from '@/components/UrbeaLockup';
@@ -35,6 +36,9 @@ import { brand, colors, fonts } from '@/theme/theme';
 const RESEND_COOLDOWN_SECONDS = 60;
 
 export default function VerifyEmailScreen() {
+  // #143.4: primera pantalla útil — soltar el splash nativo
+  useEffect(() => { release_splash(); }, []);
+
   const { session, signOut } = useAuth();
   const router = useRouter();
   const { email: email_param } = useLocalSearchParams<{ email?: string }>();

@@ -33,6 +33,7 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 
 import { usePublishForm } from '@/features/publish/store/PublishFormContext';
@@ -62,6 +63,8 @@ const COLOR_PICKER_BG = '#F3F4F6';
 
 export default function Step5Screen() {
   const router = useRouter();
+  // #143.6: el CTA absoluto al fondo quedaba bajo la barra de botones de Android
+  const insets = useSafeAreaInsets();
 
   const { state, update } = usePublishForm();
   // Edit mode se resuelve del CONTEXTO (propagado una vez en _layout), NO de la
@@ -373,7 +376,7 @@ export default function Step5Screen() {
       </ScrollView>
 
       {/* ── CTA (fijo al fondo) ───────────────────────────────────────── */}
-      <View style={styles.cta_area}>
+      <View style={[styles.cta_area, { paddingBottom: 16 + insets.bottom }]}>
         {is_publish_error && (
           <Text style={styles.error_text}>
             {publish_error ?? 'Error al publicar. Intenta de nuevo.'}

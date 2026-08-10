@@ -33,6 +33,7 @@ import { ZoneActiveChip } from '../search/components/ZoneActiveChip';
 
 import { VideoFeedItem } from './components/VideoFeedItem';
 import { FeedSkeleton } from './components/FeedSkeleton';
+import { release_splash } from '@/lib/splash-gate';
 import { useFeedActiveIndex } from './hooks/useFeedActiveIndex';
 import { useFeedProperties } from './hooks/useFeedProperties';
 import type { FeedPropertyWithUrl } from './types';
@@ -77,6 +78,14 @@ export function FeedScreen() {
   // Carga inicial (sin datos previos): muestra skeleton full-screen.
   // isLoading arranca en true en el hook, por lo que no hay flash de empty state.
   const is_skeleton = isLoading && data.length === 0;
+
+  // #143.4: el splash nativo aguanta hasta que el feed se RESUELVE (datos,
+  // error o vacío) — el primer fetch corre debajo de la pantalla del logo,
+  // así el usuario ya no ve el skeleton en el arranque normal. Los estados
+  // post-arranque (refetch por filtros) no pasan por aquí: release es one-shot.
+  useEffect(() => {
+    if (!is_skeleton) release_splash();
+  }, [is_skeleton]);
 
   // Error sin datos previos: mensaje + reintentar.
   const is_error = error !== null && data.length === 0;

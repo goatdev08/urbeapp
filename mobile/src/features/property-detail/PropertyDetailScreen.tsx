@@ -184,7 +184,7 @@ export function PropertyDetailScreen(): React.JSX.Element {
            manejará el componente inline; esta guarda evita mostrarlo
            cuando ya sabemos que no hay teléfono. ────────────────────── */}
       {data.agent.phone !== null && (
-        <View style={styles.sticky_cta}>
+        <View style={[styles.sticky_cta, { paddingBottom: spacing.s_16 + insets.bottom }]}>
           {/* 75.4: la apertura de WhatsApp se movió dentro del botón (useContactAgent),
               para que el feed y la tarjeta de agente compartan exactamente el mismo
               camino y ninguno pueda contactar sin registrar el lead. */}
@@ -263,7 +263,7 @@ const styles = StyleSheet.create({
     right: 0,
     paddingHorizontal: layout.screen_inset,
     paddingTop: spacing.s_8,
-    paddingBottom: spacing.s_16,
+    // #143.6: paddingBottom real vive inline (+insets.bottom, barra de botones Android)
     backgroundColor: colors.paper,
   },
 

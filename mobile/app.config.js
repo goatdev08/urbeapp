@@ -14,7 +14,11 @@ module.exports = ({ config }) => ({
   // asset del isotipo entra en la huella del fingerprint (`expoConfigExternalFile`),
   // así que el runtime cambia igual y los 1.0.3 dejan de recibir estos updates.
   // Se sube `version` para que dos builds con splash distinto no se llamen igual.
-  version: '1.0.4',
+  // 1.0.5 (#143.3/#143.5): ícono y splash regenerados EXACTOS del spec
+  // urbea-logo-final.html (verde #1A5E44 + U carnita #EEE4D0, misma cara en
+  // iOS y Android) + splash con asset recortado propio (splash-icon.png).
+  // Assets nativos → fingerprint nuevo → los 1.0.4 no reciben estos updates.
+  version: '1.0.5',
   orientation: 'portrait',
   scheme: 'urbea',
   userInterfaceStyle: 'automatic',
@@ -79,11 +83,13 @@ module.exports = ({ config }) => ({
     // — el defecto estaba en el asset. Si alguien vuelve a exportarlo, verificar
     // el canal alfa ANTES de commitear.
     //
-    // imageWidth 360 (antes 220): la U ocupa solo ~30% del ancho del asset, así
-    // que sin el cuadro blanco quedaba en ~65pt. Con 360 mide ~106x147pt.
+    // #143.3: asset propio del splash (splash-icon.png) = la U RECORTADA a su
+    // caja (75% del ancho del PNG, sin el colchón del adaptive foreground).
+    // imageWidth 96 → la marca mide ~72dp: la proporción de la referencia
+    // aprobada (logo carnita centrado y discreto sobre el verde pleno).
     ['expo-splash-screen', {
-      image: './assets/android-icon-foreground.png',
-      imageWidth: 360,
+      image: './assets/splash-icon.png',
+      imageWidth: 96,
       resizeMode: 'contain',
       backgroundColor: '#1A5E44',
     }],

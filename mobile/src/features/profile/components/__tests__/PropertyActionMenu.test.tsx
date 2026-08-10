@@ -23,6 +23,16 @@ import { render, fireEvent } from '@testing-library/react-native';
 import { PropertyActionMenu, type PropertyActionCallbacks } from '../PropertyActionMenu';
 import type { MyProperty } from '@/features/profile/types';
 
+// #143.6: los componentes ahora leen insets (barra de botones de Android) —
+// mismo mock que register-user-mode.test.tsx.
+jest.mock('react-native-safe-area-context', () => {
+  const { View } = require('react-native');
+  return {
+    SafeAreaView: View,
+    useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
+  };
+});
+
 // item mínimo: el menú solo lee item.status para decidir las acciones.
 const ITEM = { status: 'active' } as MyProperty;
 

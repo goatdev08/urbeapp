@@ -21,6 +21,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 
 import { usePublishForm } from '@/features/publish/store/PublishFormContext';
@@ -43,6 +44,8 @@ const COLOR_ACCENT = '#1A5E44'; // SALVIA
 // ---------------------------------------------------------------------------
 
 export default function Step4Screen() {
+  // #143.6: barra de navegación por botones de Android tapaba el CTA
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const { state, update } = usePublishForm();
 
@@ -137,7 +140,7 @@ export default function Step4Screen() {
         </ScrollView>
 
         {/* ── Botón Siguiente (fijo al fondo) ───────────────────────────── */}
-        <View style={styles.cta_area}>
+        <View style={[styles.cta_area, { paddingBottom: 16 + insets.bottom }]}>
           <PrimaryButton
             label="Siguiente"
             onPress={handle_next}
