@@ -7287,12 +7287,13 @@
         "description": "Origen: subtarea 73.3 · Detectado por: code review PR #56 (2 ángulos + verificado a mano). El wizard recoge price_visible en step3, get_property_payload lo incluye y el móvil lo manda — pero publish-property no lo menciona en ningún archivo de la EF (parser, PropertyPublishParams, index.ts) y publish_property_atomic no tiene parámetro p_price_visible. El valor se descarta en silencio y la fila se crea con el default de la columna (true). El agente apaga 'Mostrar precio en el feed', publica, y su propiedad sale con el precio visible contra su elección explícita. Lo confuso: al EDITAR sí se respeta, porque edit-property sí pasa el campo. Verificado con grep: cero ocurrencias de price_visible en supabase/functions/publish-property/ y cero de p_price_visible en la migración 0005.",
         "details": "Agregar p_price_visible a publish_property_atomic (migración nueva idempotente + rollback), al parser de publish-property, a PropertyPublishParams y al cableo de index.ts. Ojo: index.ts es exactamente el archivo sin tests que ya causó el defecto crítico de 73.4 (ver #120) — este arreglo necesita un test que verifique la fila real, no solo el handler.",
         "testStrategy": "pgTAP: publicar con p_price_visible=false y verificar la columna en la fila creada. Deno: el parser acepta y propaga el campo. Integración: publicar desde el wizard con el toggle apagado y leer la fila.",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           "73"
         ],
         "priority": "high",
-        "subtasks": []
+        "subtasks": [],
+        "updatedAt": "2026-08-10T04:25:33.592Z"
       },
       {
         "id": "130",
@@ -7466,9 +7467,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-08-10T04:19:19.034Z",
+      "lastModified": "2026-08-10T04:25:33.592Z",
       "taskCount": 142,
-      "completedCount": 73,
+      "completedCount": 74,
       "tags": [
         "master"
       ]

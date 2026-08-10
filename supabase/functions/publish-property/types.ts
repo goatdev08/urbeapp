@@ -33,6 +33,9 @@ export interface PublishPropertyInput {
   pet_friendly: boolean;
   allows_no_guarantor: boolean;
   student_friendly: boolean;
+  // #129 — step3: toggle "Mostrar precio en el feed". Ausente en el payload →
+  // true (mismo default que la columna properties.price_visible).
+  price_visible: boolean;
   description: string;
   // video (68.12 — upload-first: cloudflare_uid reemplaza video_id + storage_path;
   // el video ya fue subido a Cloudflare Stream ANTES de existir la propiedad y
@@ -77,6 +80,10 @@ export interface PropertyPublishParams {
   pet_friendly: boolean;
   allows_no_guarantor: boolean;
   student_friendly: boolean;
+  // #129: antes este campo moría aquí — el wizard lo mandaba pero ni el parser,
+  // ni estos params, ni la RPC lo conocían; la fila nacía con el default true
+  // aunque el agente apagara "Mostrar precio en el feed".
+  price_visible: boolean;
   description: string;
   // Estado explícito (contrato testeable): el handler siempre pasa estos valores.
   // 73.4 — PRD §14.2: en beta TODA publicación va a pending_review, ya no hay
