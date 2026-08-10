@@ -70,7 +70,12 @@ import type { PublishFormState } from '../store/types';
 // SUT
 // ---------------------------------------------------------------------------
 
-import { useDraftAutosave, DRAFT_AUTOSAVE_DEBOUNCE_MS } from '../hooks/useDraftAutosave';
+import {
+  useDraftAutosave,
+  DRAFT_AUTOSAVE_DEBOUNCE_MS,
+  clear_current_draft,
+  get_current_draft_id,
+} from '../hooks/useDraftAutosave';
 
 // ---------------------------------------------------------------------------
 // Mock de expo-router — EC-8 necesita controlar useLocalSearchParams para
@@ -86,6 +91,7 @@ jest.mock('expo-router', () => ({
 // ---------------------------------------------------------------------------
 
 const DRAFT_ID = 'draft-prop-uuid-test-1';
+const USER_ID = 'user-uuid-test-1';
 
 const MINIMUM_DRAFT_FIELDS: Partial<PublishFormState> = {
   operation_type: 'rent',
@@ -141,10 +147,19 @@ function make_mock_supabase_draft(opts: {
 
 type MockSupabaseDraft = ReturnType<typeof make_mock_supabase_draft>;
 
-function render_autosave(initial_state: PublishFormState, mock_supabase: MockSupabaseDraft) {
+function render_autosave(
+  initial_state: PublishFormState,
+  mock_supabase: MockSupabaseDraft,
+  get_user_id: () => Promise<string | null> = () => Promise.resolve(USER_ID),
+) {
   return renderHook(
     ({ state }: { state: PublishFormState }) =>
-      useDraftAutosave(state, { supabase: mock_supabase }),
+      useDraftAutosave(state, {
+        // El mock no es un SupabaseClient completo — el hook solo usa .from()
+        // (y .auth solo cuando NO se inyecta get_user_id).
+        supabase: mock_supabase as never,
+        get_user_id,
+      }),
     { initialProps: { state: initial_state } },
   );
 }
@@ -154,8 +169,21 @@ function render_autosave(initial_state: PublishFormState, mock_supabase: MockSup
 // ---------------------------------------------------------------------------
 
 describe('useDraftAutosave', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     (useLocalSearchParams as jest.Mock).mockReturnValue({});
+    // Drenar microtareas pendientes de guardados del test anterior ANTES de
+    // limpiar el draft id de módulo — una cadena a medio resolver podría
+    // asignarlo DESPUÉS del clear y contaminar este test.
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    // #127(6): el draft id vive a nivel de módulo — limpiarlo entre tests.
+    clear_current_draft();
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    (console.warn as jest.Mock).mockRestore();
   });
 
   // ── (EC-1) Happy path: crea el draft tras el debounce ──────────────────────
@@ -352,22 +380,60 @@ describe('useDraftAutosave', () => {
     jest.useRealTimers();
   });
 
-  // ── (EC-9) Desmontar antes del debounce no escribe ──────────────────────────
+  // ── (EC-9, INVERTIDO en #127(4)) Desmontar con cambios pendientes GUARDA ────
+  // El contrato original ("desmontar antes del debounce no escribe") fijaba el
+  // bug: salir del wizard antes de 1.5 s de silencio perdía el borrador — justo
+  // el caso de uso que el PRD §14.1 documenta. Ahora el cleanup de desmontaje
+  // dispara un guardado inmediato con el último estado.
 
-  it('(EC-9) desmontar_antes_del_debounce_no_escribe: si el componente se desmonta antes de que dispare el timer, no escribe', async () => {
+  it('(EC-9) desmontar_con_cambios_pendientes_guarda_de_inmediato (#127(4))', async () => {
     const mock_supabase = make_mock_supabase_draft({});
     jest.useFakeTimers();
 
     const { unmount } = await render_autosave(build_state(MINIMUM_DRAFT_FIELDS), mock_supabase);
 
-    unmount();
+    // Desmonta ANTES de que el debounce dispare — el flush debe guardar igual.
+    await act(async () => {
+      unmount();
+      await jest.advanceTimersByTimeAsync(0); // microtasks del flush
+    });
+    // Drenar la cadena completa del guardado (get_user_id → insert → id).
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mock_supabase._mock_insert).toHaveBeenCalledTimes(1);
+    const [insert_payload] = mock_supabase._mock_insert.mock.calls[0] as [Record<string, unknown>];
+    expect(insert_payload.status).toBe('draft');
+    // La cadena terminó DENTRO de este test (no contamina al siguiente).
+    expect(get_current_draft_id()).toBe(DRAFT_ID);
 
     await act(async () => {
-      await jest.advanceTimersByTimeAsync(DRAFT_AUTOSAVE_DEBOUNCE_MS * 2);
+      await jest.runOnlyPendingTimersAsync();
+    });
+    jest.useRealTimers();
+  });
+
+  it('(EC-9b) desmontar_sin_campos_minimos_no_escribe: el flush respeta el gate de fila válida', async () => {
+    const mock_supabase = make_mock_supabase_draft({});
+    jest.useFakeTimers();
+
+    const { unmount } = await render_autosave(
+      build_state({ operation_type: 'rent' }),
+      mock_supabase,
+    );
+
+    await act(async () => {
+      unmount();
+      await jest.advanceTimersByTimeAsync(0);
     });
 
     expect(mock_supabase._mock_insert).not.toHaveBeenCalled();
 
+    await act(async () => {
+      await jest.runOnlyPendingTimersAsync();
+    });
     jest.useRealTimers();
   });
 
@@ -394,6 +460,140 @@ describe('useDraftAutosave', () => {
     });
 
     expect(mock_supabase._mock_insert).not.toHaveBeenCalled();
+
+    jest.useRealTimers();
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // #127 — los 6 defectos del hook original
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  it('(#127-1) insert_incluye_owner_user_id_de_la_sesion: la columna es NOT NULL y la RLS lo exige — sin él NINGÚN insert pasaba', async () => {
+    const mock_supabase = make_mock_supabase_draft({});
+    jest.useFakeTimers();
+
+    await render_autosave(build_state(MINIMUM_DRAFT_FIELDS), mock_supabase);
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(DRAFT_AUTOSAVE_DEBOUNCE_MS);
+    });
+
+    expect(mock_supabase._mock_insert).toHaveBeenCalledTimes(1);
+    const [insert_payload] = mock_supabase._mock_insert.mock.calls[0] as [Record<string, unknown>];
+    expect(insert_payload.owner_user_id).toBe(USER_ID);
+
+    jest.useRealTimers();
+  });
+
+  it('(#127-1b) sin_sesion_no_escribe: get_user_id null → no hay fila válida que crear', async () => {
+    const mock_supabase = make_mock_supabase_draft({});
+    jest.useFakeTimers();
+
+    await render_autosave(
+      build_state(MINIMUM_DRAFT_FIELDS),
+      mock_supabase,
+      () => Promise.resolve(null),
+    );
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(DRAFT_AUTOSAVE_DEBOUNCE_MS * 2);
+    });
+
+    expect(mock_supabase._mock_insert).not.toHaveBeenCalled();
+
+    jest.useRealTimers();
+  });
+
+  it('(#127-2) insert_lento_no_duplica_filas: un segundo disparo mientras el primer INSERT sigue volando NO hace otro INSERT', async () => {
+    const mock_supabase = make_mock_supabase_draft({});
+    // INSERT que no resuelve hasta que lo soltemos manualmente.
+    let release_insert: (v: { data: unknown; error: unknown }) => void = () => {};
+    mock_supabase._mock_single.mockImplementation(
+      () => new Promise((resolve) => {
+        release_insert = resolve;
+      }),
+    );
+    jest.useFakeTimers();
+
+    const { rerender } = await render_autosave(build_state(MINIMUM_DRAFT_FIELDS), mock_supabase);
+
+    // Primer disparo — INSERT queda en vuelo (single() pendiente).
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(DRAFT_AUTOSAVE_DEBOUNCE_MS);
+    });
+    expect(mock_supabase._mock_insert).toHaveBeenCalledTimes(1);
+
+    // Cambio + segundo disparo COMPLETO mientras el primero sigue volando.
+    await act(async () => {
+      rerender({ state: build_state({ ...MINIMUM_DRAFT_FIELDS, price: 999 }) });
+    });
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(DRAFT_AUTOSAVE_DEBOUNCE_MS);
+    });
+
+    // El defecto original: draft_id aún null → segundo INSERT → dos borradores.
+    expect(mock_supabase._mock_insert).toHaveBeenCalledTimes(1);
+
+    // Soltar el primer INSERT — ahora sí registra el draft id.
+    await act(async () => {
+      release_insert({ data: { id: DRAFT_ID }, error: null });
+    });
+    expect(get_current_draft_id()).toBe(DRAFT_ID);
+
+    await act(async () => {
+      await jest.runOnlyPendingTimersAsync();
+    });
+    jest.useRealTimers();
+  });
+
+  it('(#127-3) update_con_error_de_rls_se_loguea: el error de supabase-js no lanza — leerlo o perderlo', async () => {
+    const mock_supabase = make_mock_supabase_draft({
+      update_result: { data: null, error: { message: 'RLS: row-level security violation' } },
+    });
+    jest.useFakeTimers();
+
+    const { rerender } = await render_autosave(build_state(MINIMUM_DRAFT_FIELDS), mock_supabase);
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(DRAFT_AUTOSAVE_DEBOUNCE_MS);
+    });
+    await act(async () => {
+      rerender({ state: build_state({ ...MINIMUM_DRAFT_FIELDS, price: 500 }) });
+    });
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(DRAFT_AUTOSAVE_DEBOUNCE_MS);
+    });
+
+    expect(mock_supabase._mock_update).toHaveBeenCalledTimes(1);
+    expect(console.warn).toHaveBeenCalledWith(
+      expect.stringContaining('UPDATE del borrador falló'),
+      expect.stringContaining('RLS'),
+    );
+
+    jest.useRealTimers();
+  });
+
+  it('(#127-6) el_draft_id_sobrevive_al_desmontaje: salir y volver a entrar al wizard hace UPDATE del MISMO draft, no un segundo INSERT', async () => {
+    const mock_supabase = make_mock_supabase_draft({});
+    jest.useFakeTimers();
+
+    // Primera sesión de wizard: crea el draft.
+    const first = await render_autosave(build_state(MINIMUM_DRAFT_FIELDS), mock_supabase);
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(DRAFT_AUTOSAVE_DEBOUNCE_MS);
+    });
+    expect(mock_supabase._mock_insert).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      first.unmount();
+      await jest.advanceTimersByTimeAsync(0);
+    });
+
+    // Segunda sesión (remonta el wizard): debe REUSAR el draft.
+    await render_autosave(build_state({ ...MINIMUM_DRAFT_FIELDS, price: 777 }), mock_supabase);
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(DRAFT_AUTOSAVE_DEBOUNCE_MS);
+    });
+
+    expect(mock_supabase._mock_insert).toHaveBeenCalledTimes(1); // sigue siendo UNO
+    expect(mock_supabase._mock_update).toHaveBeenCalled();
+    expect(mock_supabase._mock_eq).toHaveBeenCalledWith('id', DRAFT_ID);
 
     jest.useRealTimers();
   });

@@ -7261,12 +7261,13 @@
         "description": "Origen: subtarea 73.2 · Detectado por: code review PR #56 (5 ángulos + verificado a mano). useDraftAutosave.ts acumula 6 defectos independientes. (1) BLOQUEANTE: build_draft_payload no incluye owner_user_id, que es 'uuid not null' en properties y además lo exige el WITH CHECK de properties_insert (owner_user_id = auth.uid()); todo INSERT es rechazado, el fail-soft se lo traga y draft_id_ref queda null para siempre, reintentando en cada debounce. La feature §14.1 del PRD nunca funcionó en producción. (2) draft_id_ref solo se asigna DESPUÉS de que resuelve el INSERT, así que dos disparos solapados crean dos borradores. (3) la rama UPDATE ignora por completo 'error' de supabase-js (que no lanza), así que un fallo de RLS es indistinguible del éxito. (4) el efecto depende del objeto 'state' completo, que cambia de identidad en cada tecleo: la ventana de 1500ms se re-arma sin parar y salir del wizard antes de 1.5s de silencio no guarda nada — justo el caso de uso que el contrato documenta. (5) nada cancela el timer al publicar, así que el borrador y la propiedad publicada quedan como dos filas distintas. (6) el borrador huérfano luego dispara el checker de duplicados y bloquea al agente de publicar su propia dirección (ver #135). Los ~400 líneas de tests pasan porque mockean supabase y nunca ven la constraint. (7) ARQUITECTURA: el hook escribe filas de properties DIRECTO desde el cliente, contra CLAUDE.md §3 ('lógica de negocio en Edge Functions; RLS = 2ª capa') y en el mismo PR que sacó la edición del camino directo. Es la única ruta de creación de properties que no pasa por publish-property, así que se salta las invariantes que esta misma tarea existe para establecer (video ready, duplicados, slot, pending_review). Y la RLS no alcanza como segunda capa: properties_insert solo exige owner_user_id = auth.uid() y rol agent|admin — NO restringe la columna status, así que el literal del cliente es lo único que hace que la fila nazca 'draft'; cualquier caller con la anon key puede crear propiedades 'active' públicas sin moderación. (8) get_default_supabase() devuelve any, apagando TypeScript strict justo donde el PR agrega columnas nuevas (los hooks hermanos useThumbnail/useVideoUpload sí devuelven SupabaseClient).",
         "details": "Arreglar (1) primero: agregar owner_user_id del usuario de sesión al payload. Para (2) usar un flag in-flight además del ref. Para (3) leer y loguear 'error' en ambas ramas. Para (4) mover 'state' a un ref leído dentro del callback y reducir las deps a primitivos, y disparar un guardado en el cleanup del desmontaje. Para (5) cancelar el timer y borrar/promover el borrador al publicar. El test que faltó: uno de integración contra la DB real (o al menos un fake que valide NOT NULL y RLS) — el patrón que ya nos costó 3 defectos en esta tarea.",
         "testStrategy": "Jest con un fake que rechace payloads sin owner_user_id. Integración contra el stack local: llenar pasos 1-3, salir del wizard y verificar que existe exactamente UNA fila draft con el owner correcto.",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           "73"
         ],
         "priority": "high",
-        "subtasks": []
+        "subtasks": [],
+        "updatedAt": "2026-08-10T05:07:58.833Z"
       },
       {
         "id": "128",
@@ -7470,9 +7471,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-08-10T04:50:08.692Z",
+      "lastModified": "2026-08-10T05:07:58.833Z",
       "taskCount": 142,
-      "completedCount": 77,
+      "completedCount": 78,
       "tags": [
         "master"
       ]
