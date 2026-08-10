@@ -1,6 +1,6 @@
 // supabase/functions/moderate-property/handler.ts
 // Handler PURO con dependencias inyectables (DI). No importa supabase-js — eso vive
-// en index.ts (entry de producción) + _shared/clients.ts. GREEN (subtarea 73.9).
+// en index.ts (entry de producción) + _shared/clients.ts. GREEN 73.9, revisado #130.
 //
 // Orquestación (service layer), siguiendo el contrato documentado en types.ts:
 //   1. CORS preflight (OPTIONS → 200)
@@ -12,8 +12,14 @@
 //   7. Rama suspend (directo a properties.status, NUNCA toca property_revisions)
 //      vs. rama approve/needs_changes/reject (con-revisión → opera sobre la
 //      revisión; sin-revisión → transiciona properties.status desde pending_review)
-//   8. SIEMPRE registra en admin_actions al final de una escritura exitosa —
-//      su fallo también es 500 (la auditoría no es best-effort).
+//   8. #130: cada rama emite UNA escritura vía moderationWriter (RPC atómica
+//      moderate_property_atomic) — snapshot + status + resolución de revisión +
+//      auditoría viajan en la misma transacción; ya no existe el estado
+//      "propiedad activa sin rastro en admin_actions". La auditoría sigue sin
+//      ser best-effort: su fallo revierte TODO y la llamada es reintentable.
+//   9. #130: approve CON revisión desde pending_review|needs_changes también
+//      ACTIVA la propiedad (antes quedaba invisible para siempre) y la
+//      respuesta reporta el status RESULTANTE, no el previo.
 
 import { handle_cors_preflight } from "../_shared/cors.ts";
 import { error_response, json_response } from "../_shared/response.ts";
@@ -194,31 +200,19 @@ export async function handler(
       );
     }
 
-    const writeResult = await deps!.propertyUpdater.set_status(
-      input.property_id,
-      "suspended",
-    );
+    const writeResult = await deps!.moderationWriter.apply({
+      property_id: input.property_id,
+      admin_id,
+      action_type: "suspend",
+      old_values: { status: property.status },
+      new_values: { status: "suspended" },
+      reason,
+      new_property_status: "suspended",
+    });
     if (!writeResult.ok) {
       return error_response(
         "DB_ERROR",
         writeResult.message ?? "Error de base de datos",
-        500,
-      );
-    }
-
-    const recordResult = await deps!.adminActionRecorder.record({
-      admin_id,
-      action_type: "suspend",
-      entity_type: "property",
-      entity_id: input.property_id,
-      old_values: { status: property.status },
-      new_values: { status: "suspended" },
-      reason,
-    });
-    if (!recordResult.ok) {
-      return error_response(
-        "DB_ERROR",
-        recordResult.message ?? "Error de base de datos",
         500,
       );
     }
@@ -243,55 +237,55 @@ export async function handler(
   }
   const revision = revisionResult.revision;
 
-  // 8a. CON revisión activa → opera sobre la revisión, properties NO se toca.
+  // 8a. CON revisión activa → opera sobre la revisión.
   if (revision !== null) {
-    if (action === "approve") {
-      const applyResult = await deps!.propertyUpdater.apply_revision_snapshot(
-        input.property_id,
-        revision.changed_fields,
-      );
-      if (!applyResult.ok) {
-        return error_response(
-          "DB_ERROR",
-          applyResult.message ?? "Error de base de datos",
-          500,
-        );
-      }
+    // #130: si la publicación estaba esperando moderación (pending_review) o
+    // correcciones (needs_changes), aprobar la revisión TAMBIÉN la activa —
+    // antes el status no se movía: quedaba invisible en el feed y sin ningún
+    // camino de código que la activara jamás. En la re-revisión normal §15.6
+    // (propiedad ya 'active'), el status no cambia.
+    const activate = action === "approve" &&
+      (property.status === "pending_review" ||
+        property.status === "needs_changes");
+    const resulting_status = activate ? "active" : property.status;
+
+    const old_values: Record<string, unknown> = {
+      revision_status: revision.status,
+    };
+    const new_values: Record<string, unknown> = {
+      revision_status: REVISION_TARGET_STATUS[action],
+    };
+    if (activate) {
+      old_values.status = property.status;
+      new_values.status = "active";
     }
 
-    const resolveResult = await deps!.revisionResolver.resolve({
-      revision_id: revision.id,
-      status: REVISION_TARGET_STATUS[action],
-      admin_id,
-      reason: action === "approve" ? null : reason,
-    });
-    if (!resolveResult.ok) {
-      return error_response(
-        "DB_ERROR",
-        resolveResult.message ?? "Error de base de datos",
-        500,
-      );
-    }
-
-    const recordResult = await deps!.adminActionRecorder.record({
+    const writeResult = await deps!.moderationWriter.apply({
+      property_id: input.property_id,
       admin_id,
       action_type: action,
-      entity_type: "property",
-      entity_id: input.property_id,
-      old_values: { revision_status: revision.status },
-      new_values: { revision_status: REVISION_TARGET_STATUS[action] },
+      old_values,
+      new_values,
       reason,
+      ...(action === "approve"
+        ? { changed_fields: revision.changed_fields }
+        : {}),
+      ...(activate ? { new_property_status: "active" } : {}),
+      revision_id: revision.id,
+      revision_status: REVISION_TARGET_STATUS[action],
+      revision_reason: action === "approve" ? null : reason,
     });
-    if (!recordResult.ok) {
+    if (!writeResult.ok) {
       return error_response(
         "DB_ERROR",
-        recordResult.message ?? "Error de base de datos",
+        writeResult.message ?? "Error de base de datos",
         500,
       );
     }
 
+    // #130: reportar el status RESULTANTE, no el leído antes de escribir.
     return json_response(
-      { property_id: input.property_id, status: property.status },
+      { property_id: input.property_id, status: resulting_status },
       200,
     );
   }
@@ -306,31 +300,19 @@ export async function handler(
   }
 
   const target_status = INITIAL_PUBLISH_TARGET_STATUS[action];
-  const writeResult = await deps!.propertyUpdater.set_status(
-    input.property_id,
-    target_status,
-  );
+  const writeResult = await deps!.moderationWriter.apply({
+    property_id: input.property_id,
+    admin_id,
+    action_type: action,
+    old_values: { status: property.status },
+    new_values: { status: target_status },
+    reason,
+    new_property_status: target_status,
+  });
   if (!writeResult.ok) {
     return error_response(
       "DB_ERROR",
       writeResult.message ?? "Error de base de datos",
-      500,
-    );
-  }
-
-  const recordResult = await deps!.adminActionRecorder.record({
-    admin_id,
-    action_type: action,
-    entity_type: "property",
-    entity_id: input.property_id,
-    old_values: { status: property.status },
-    new_values: { status: target_status },
-    reason,
-  });
-  if (!recordResult.ok) {
-    return error_response(
-      "DB_ERROR",
-      recordResult.message ?? "Error de base de datos",
       500,
     );
   }

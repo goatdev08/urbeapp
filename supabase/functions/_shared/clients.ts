@@ -79,14 +79,10 @@ import type {
   VideoLoader,
 } from "../archive-video/types.ts";
 import type {
-  AdminActionRecordParams,
-  AdminActionRecorder,
-  AdminActionRecordResult,
+  ModerationWriteParams,
+  ModerationWriter,
   PropertyFetcher,
-  PropertyUpdater,
   RevisionFinder,
-  RevisionResolveParams,
-  RevisionResolver,
 } from "../moderate-property/types.ts";
 
 /** Cliente supabase-js con service_role (bypassa RLS y column-grants). */
@@ -1332,137 +1328,36 @@ export function make_revision_finder(client: SupabaseClient): RevisionFinder {
 }
 
 /**
- * Whitelist de columnas reales de `properties` que un snapshot de
- * property_revisions.changed_fields puede escribir. MISMO conjunto exacto que
- * edit-property/index.ts:98-115 (DirectPropertyUpdater.apply) — ambas rutas
- * escriben el mismo EditPropertyInput a la misma tabla, así que deben
- * proyectar idénticas columnas. Copiado deliberadamente en vez de importado
- * (mismo criterio de edit-property/index.ts:7-12: cada adaptador es una sola
- * query obvia, sin indirección, para minimizar la superficie sin test) — si
- * agregas/quitas un campo editable aquí, replica el cambio en ambos lados.
- *
- * ⚠️ NO hacer spread crudo de changed_fields: ese objeto es el
- * EditPropertyInput COMPLETO que property_revisions guardó (73.6), y
- * `property_id` es una de sus keys (types.ts:30) — no es columna de
- * `properties` (que usa `id`). Un spread directo rompe el UPDATE completo
- * (PostgREST: "Could not find the 'property_id' column of 'properties'"),
- * hallazgo del guardian en 73.9.
+ * Adaptador real de ModerationWriter (#130). UNA llamada a la RPC
+ * moderate_property_atomic (20260809000007), que ejecuta en la MISMA
+ * transacción: snapshot de la revisión sobre `properties` (semántica por
+ * presencia de clave — el whitelist de columnas vive en la RPC, no aquí),
+ * transición de status, resolución de property_revisions y el INSERT de
+ * auditoría en admin_actions. Reemplaza a los tres adaptadores previos
+ * (make_property_updater / make_revision_resolver / make_admin_action_recorder),
+ * cuyos round-trips sueltos dejaban propiedades activas sin rastro de
+ * auditoría cuando el último paso fallaba.
  */
-function project_property_snapshot_fields(
-  changed_fields: Record<string, unknown>,
-): Record<string, unknown> {
-  const update_payload: Record<string, unknown> = {
-    operation_type: changed_fields.operation_type,
-    property_type: changed_fields.property_type,
-    price: changed_fields.price,
-    bedrooms: changed_fields.bedrooms,
-    bathrooms: changed_fields.bathrooms,
-    square_meters: changed_fields.square_meters,
-    address: changed_fields.address,
-    price_visible: changed_fields.price_visible,
-    pet_friendly: changed_fields.pet_friendly,
-    allows_no_guarantor: changed_fields.allows_no_guarantor,
-    student_friendly: changed_fields.student_friendly,
-    description: changed_fields.description,
-  };
-  // location: igual que edit-property/index.ts:112-113 — solo se incluye si
-  // el snapshot lo trae (EWKT); ausente = no tocar coordenadas.
-  if (changed_fields.location !== undefined) {
-    update_payload.location = changed_fields.location;
-  }
-  return update_payload;
-}
-
-/**
- * Adaptador real de PropertyUpdater (subtarea 73.9). Dos operaciones
- * separadas sobre `properties`, nunca combinadas en la misma llamada:
- *   - set_status: solo status (+ updated_at).
- *   - apply_revision_snapshot: proyecta changed_fields al whitelist de
- *     columnas editables (ver project_property_snapshot_fields), sin tocar
- *     status.
- */
-export function make_property_updater(client: SupabaseClient): PropertyUpdater {
+export function make_moderation_writer(client: SupabaseClient): ModerationWriter {
   return {
-    async set_status(property_id: string, status: string) {
-      const { error } = await client
-        .from("properties")
-        .update({ status, updated_at: new Date().toISOString() })
-        .eq("id", property_id);
-      if (error) {
-        return { ok: false, error_code: "DB_ERROR", message: error.message };
-      }
-      return { ok: true };
-    },
-    async apply_revision_snapshot(
-      property_id: string,
-      changed_fields: Record<string, unknown>,
-    ) {
-      const update_payload = project_property_snapshot_fields(changed_fields);
-      update_payload.updated_at = new Date().toISOString();
-
-      const { error } = await client
-        .from("properties")
-        .update(update_payload)
-        .eq("id", property_id);
-      if (error) {
-        return { ok: false, error_code: "DB_ERROR", message: error.message };
-      }
-      return { ok: true };
-    },
-  };
-}
-
-/**
- * Adaptador real de RevisionResolver (subtarea 73.9). Cierra la revisión
- * activa: approved/needs_changes/rejected, con reviewed_by_admin_id/
- * reviewed_at/rejection_reason (shape de 20260809000003_property_revisions).
- */
-export function make_revision_resolver(client: SupabaseClient): RevisionResolver {
-  return {
-    async resolve(params: RevisionResolveParams) {
-      const { error } = await client
-        .from("property_revisions")
-        .update({
-          status: params.status,
-          reviewed_by_admin_id: params.admin_id,
-          reviewed_at: new Date().toISOString(),
-          rejection_reason: params.reason,
-        })
-        .eq("id", params.revision_id);
-      if (error) {
-        return { ok: false, error_code: "DB_ERROR", message: error.message };
-      }
-      return { ok: true };
-    },
-  };
-}
-
-/**
- * Adaptador real de AdminActionRecorder (subtarea 73.9) sobre admin_actions
- * (20260604000007, append-only). INSERT directo con service_role — a
- * diferencia de make_agency_creator (RPC atómica con su propio INSERT), aquí
- * no hay una operación multi-tabla que requiera una transacción: la escritura
- * principal (properties/property_revisions) y esta auditoría son dos pasos
- * secuenciales del handler, no una unidad atómica de SQL.
- */
-export function make_admin_action_recorder(
-  client: SupabaseClient,
-): AdminActionRecorder {
-  return {
-    async record(params: AdminActionRecordParams): Promise<AdminActionRecordResult> {
-      const { error } = await client.from("admin_actions").insert({
-        admin_id: params.admin_id,
-        action_type: params.action_type,
-        entity_type: params.entity_type,
-        entity_id: params.entity_id,
-        old_values: params.old_values,
-        new_values: params.new_values,
-        reason: params.reason,
+    async apply(params: ModerationWriteParams) {
+      const { error } = await client.rpc("moderate_property_atomic", {
+        p_admin_id: params.admin_id,
+        p_property_id: params.property_id,
+        p_action_type: params.action_type,
+        p_old_values: params.old_values,
+        p_new_values: params.new_values,
+        p_reason: params.reason,
+        p_new_property_status: params.new_property_status ?? null,
+        p_changed_fields: params.changed_fields ?? null,
+        p_revision_id: params.revision_id ?? null,
+        p_revision_status: params.revision_status ?? null,
+        p_revision_reason: params.revision_reason ?? null,
       });
       if (error) {
-        return { ok: false, error_code: "DB_ERROR", message: error.message };
+        return { ok: false as const, error_code: "DB_ERROR" as const, message: error.message };
       }
-      return { ok: true };
+      return { ok: true as const };
     },
   };
 }

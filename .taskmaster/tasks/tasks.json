@@ -7302,12 +7302,13 @@
         "description": "Origen: subtarea 73.9 · Detectado por: code review PR #56 (4 ángulos). En moderate-property, la rama de aprobar-CON-revisión aplica el snapshot de changed_fields a properties pero nunca mueve properties.status, y devuelve en la respuesta el status leído ANTES de escribir. Consecuencias: (a) una propiedad en pending_review cuyo dueño editó antes de que el admin actuara queda en pending_review tras aprobar — invisible en el feed, porque properties_select exige status='active' — y hace falta un SEGUNDO clic de aprobar (que cae en la rama sin-revisión y sí funciona); (b) una propiedad en needs_changes cuyo dueño reenvía correcciones se queda en needs_changes PARA SIEMPRE: el admin aprueba, el snapshot se aplica, la revisión pasa a 'approved', y ya no hay revisión activa que resolver — no existe ningún camino de código que la active. El admin ve 200 OK y la cola marca el ítem como atendido. ADEMÁS, la escritura de status y el insert en admin_actions son dos round-trips independientes sin transacción: si el audit falla tras cambiar el status, la EF devuelve 500 con la propiedad YA activa y la acción sin auditar; el reintento choca con la guarda de la rama sin-revisión (el status ya no es pending_review) y devuelve NOTHING_TO_MODERATE, dejando una publicación viva sin rastro en admin_actions.",
         "details": "La rama con-revisión debe decidir y escribir el status destino igual que la rama sin-revisión (approve → active). Revisar también que la respuesta devuelva el status resultante, no el previo. Relacionado: el set_status del updater escribe filtrando solo por id, sin precondición de estado, así que puede pisar un cambio concurrente del dueño (ver #132). Envolver el trío de escrituras (snapshot + resolver revisión + admin_action) en una RPC SECURITY DEFINER, el mismo patrón que ya usa publish_property_atomic, para que sea atómico y reintentable.",
         "testStrategy": "Deno: tests de la matriz {status inicial pending_review|needs_changes} × {con revisión|sin revisión} × {approve|needs_changes|reject}, verificando el status resultante y el cuerpo de la respuesta. E2E: publicar → editar campo crítico → aprobar → la propiedad aparece en el feed.",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           "73"
         ],
         "priority": "high",
-        "subtasks": []
+        "subtasks": [],
+        "updatedAt": "2026-08-10T04:50:08.692Z"
       },
       {
         "id": "131",
@@ -7469,9 +7470,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-08-10T04:40:12.805Z",
+      "lastModified": "2026-08-10T04:50:08.692Z",
       "taskCount": 142,
-      "completedCount": 76,
+      "completedCount": 77,
       "tags": [
         "master"
       ]
