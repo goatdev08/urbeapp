@@ -249,6 +249,55 @@ Deno.test("contrato_publisher_recibe_property_status_pending_review_ya_no_active
   );
 });
 
+// ── #129: price_visible ya no se descarta al publicar ─────────────────────────
+// El bug: el wizard mandaba price_visible pero el parser lo ignoraba, así que
+// la fila nacía con el default de columna (true) aunque el agente apagara
+// "Mostrar precio en el feed". Al EDITAR sí se respetaba — inconsistencia pura.
+
+Deno.test("contrato_publisher_recibe_price_visible_false_cuando_el_payload_lo_manda", async () => {
+  const publisher = publisher_ok();
+  await handler(
+    post_agente({ ...PAYLOAD_VALIDO, price_visible: false }),
+    deps_validos(publisher),
+  );
+  assertEquals(
+    publisher.calls[0].price_visible,
+    false,
+    "price_visible=false del wizard debe llegar al publisher — antes moría en el parser (#129)",
+  );
+});
+
+Deno.test("contrato_publisher_recibe_price_visible_true_cuando_el_payload_lo_manda_true", async () => {
+  const publisher = publisher_ok();
+  await handler(
+    post_agente({ ...PAYLOAD_VALIDO, price_visible: true }),
+    deps_validos(publisher),
+  );
+  assertEquals(publisher.calls[0].price_visible, true);
+});
+
+Deno.test("contrato_publisher_recibe_price_visible_true_por_default_si_ausente", async () => {
+  // Payload sin price_visible (caller viejo) → default true, igual que la columna.
+  const publisher = publisher_ok();
+  await handler(post_agente(PAYLOAD_VALIDO), deps_validos(publisher));
+  assertEquals(
+    publisher.calls[0].price_visible,
+    true,
+    "sin price_visible en el payload debe defaultear a true (mismo default que la columna)",
+  );
+});
+
+Deno.test("contrato_price_visible_no_booleano_defaultea_a_true_no_coacciona", async () => {
+  // Lección #142: distinguir "ausente/ruido" de "false explícito" — un string
+  // 'false' NO debe interpretarse como apagar el precio.
+  const publisher = publisher_ok();
+  await handler(
+    post_agente({ ...PAYLOAD_VALIDO, price_visible: "false" }),
+    deps_validos(publisher),
+  );
+  assertEquals(publisher.calls[0].price_visible, true);
+});
+
 Deno.test("happy_path_publisher_recibe_video_status_ready", async () => {
   const publisher = publisher_ok();
   await handler(post_agente(PAYLOAD_VALIDO), deps_validos(publisher));

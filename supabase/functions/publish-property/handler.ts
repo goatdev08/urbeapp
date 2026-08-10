@@ -143,6 +143,9 @@ function parse_publish_property_input(raw: unknown): ParseResult {
       pet_friendly: obj.pet_friendly === true,
       allows_no_guarantor: obj.allows_no_guarantor === true,
       student_friendly: obj.student_friendly === true,
+      // #129: solo boolean explícito cuenta; ausente o ruido → default true
+      // (mismo default que la columna). NO coaccionar strings (lección #142).
+      price_visible: typeof obj.price_visible === "boolean" ? obj.price_visible : true,
       description: typeof obj.description === "string" ? obj.description : "",
       cloudflare_uid: obj.cloudflare_uid,
     },
@@ -248,6 +251,7 @@ export async function handler(
     pet_friendly: input.pet_friendly,
     allows_no_guarantor: input.allows_no_guarantor,
     student_friendly: input.student_friendly,
+    price_visible: input.price_visible,
     description: input.description,
     property_status: "pending_review",
     video_status: "ready",

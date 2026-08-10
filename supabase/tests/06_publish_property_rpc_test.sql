@@ -25,7 +25,7 @@
 -- que el default se preserva si se omite el parámetro.
 
 begin;
-select plan(37);
+select plan(39);
 
 -- ── Fixtures: agentes (uno por escenario, aislados) ───────────────────────────
 -- El trigger handle_new_user (migración 0002) crea public.users al insertar en auth.users.
@@ -792,6 +792,92 @@ select is(
     where owner_user_id = '00000000-0000-0000-0000-000000000c62'),
   'active',
   '36) p_property_status omitido usa el default ''active'' del parámetro -- backward-compat para cualquier caller que no lo pase'
+);
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- #129 (fix 73.3) — p_price_visible llega a la fila real. Origen: el wizard
+-- mandaba price_visible pero ni la EF ni esta RPC conocían el campo — la fila
+-- nacía SIEMPRE con el default de columna (true) aunque el agente apagara
+-- "Mostrar precio en el feed". Asserts contra la fila real de `properties`:
+--   37) p_price_visible => false se persiste (el caso que antes era imposible).
+--   38) omitido → default true del parámetro (mismo default que la columna,
+--       backward-compat para callers que no lo pasen).
+-- ════════════════════════════════════════════════════════════════════════════
+
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-000000000c70', 'agente_precio_oculto@urbea.mx'),
+  ('00000000-0000-0000-0000-000000000c71', 'agente_precio_default@urbea.mx');
+update public.users set role = 'agent'
+ where id in (
+   '00000000-0000-0000-0000-000000000c70',
+   '00000000-0000-0000-0000-000000000c71'
+ );
+
+-- 37) p_price_visible => false (el toggle apagado del wizard)
+
+insert into public.property_videos
+  (id, property_id, agent_id, status, position, cloudflare_uid, tus_upload_url)
+values (
+  '00000000-0000-0000-0000-000000000c70',
+  null,
+  '00000000-0000-0000-0000-000000000c70',
+  'processing',
+  1,
+  'cfuid-precio-oculto-01',
+  'https://upload.example/precio-oculto'
+);
+
+select public.publish_property_atomic(
+  p_user_id             => '00000000-0000-0000-0000-000000000c70'::uuid,
+  p_operation_type      => 'rent',
+  p_property_type       => 'departamento',
+  p_price               => 5000.00,
+  p_address             => 'Calle Precio Oculto 1',
+  p_lat                 => 20.1,
+  p_lng                 => -100.1,
+  p_cloudflare_uid      => 'cfuid-precio-oculto-01',
+  p_property_status     => 'pending_review',
+  p_price_visible       => false
+);
+
+select is(
+  (select price_visible from public.properties
+    where owner_user_id = '00000000-0000-0000-0000-000000000c70'),
+  false,
+  '37) p_price_visible=false se persiste en la fila real -- el toggle "Mostrar precio" apagado ya NO se descarta (#129)'
+);
+
+-- 38) p_price_visible omitido -- default true del parámetro (= default columna)
+
+insert into public.property_videos
+  (id, property_id, agent_id, status, position, cloudflare_uid, tus_upload_url)
+values (
+  '00000000-0000-0000-0000-000000000c71',
+  null,
+  '00000000-0000-0000-0000-000000000c71',
+  'processing',
+  1,
+  'cfuid-precio-default-01',
+  'https://upload.example/precio-default'
+);
+
+select public.publish_property_atomic(
+  p_user_id             => '00000000-0000-0000-0000-000000000c71'::uuid,
+  p_operation_type      => 'rent',
+  p_property_type       => 'departamento',
+  p_price               => 5000.00,
+  p_address             => 'Calle Precio Default 1',
+  p_lat                 => 20.2,
+  p_lng                 => -100.2,
+  p_cloudflare_uid      => 'cfuid-precio-default-01'
+  -- p_price_visible omitido a propósito
+);
+
+select is(
+  (select price_visible from public.properties
+    where owner_user_id = '00000000-0000-0000-0000-000000000c71'),
+  true,
+  '38) p_price_visible omitido usa el default true del parámetro -- backward-compat, mismo default que la columna'
 );
 
 select * from finish();

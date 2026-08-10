@@ -79,6 +79,7 @@ Deno.serve((req: Request) => {
         p_pet_friendly: params.pet_friendly,
         p_allows_no_guarantor: params.allows_no_guarantor,
         p_student_friendly: params.student_friendly,
+        p_price_visible: params.price_visible,
         p_description: params.description ?? null,
         p_cloudflare_uid: params.cloudflare_uid,
         p_property_status: params.property_status,
