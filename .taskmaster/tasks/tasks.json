@@ -7247,12 +7247,13 @@
         "description": "Origen: subtarea 73.4 · Detectado por: code review PR #56 (4 ángulos + verificado a mano). El gate nuevo de publicación (make_video_status_checker, _shared/clients.ts) exige property_videos.status === 'ready' y duration_seconds entre 60 y 120. Pero mint-upload-url inserta la fila con status:'uploading' y solo el webhook de Cloudflare Stream la pasa a 'ready' llenando duration_seconds. step5 habilita el botón Publicar con un estado de UI ('processing') que nunca refleja el status real de la DB. Resultado: el agente sube su video, la UI dice 'Video subido correctamente', toca Publicar y recibe 409 VIDEO_NOT_READY, sin estado de espera ni reintento. Es el flujo primario de la app. Además los dos gates no concuerdan: la propia RPC acepta status in ('processing','ready') mientras el checker exige solo 'ready'.",
         "details": "Opciones: (a) que el checker acepte 'processing' igual que la RPC y solo valide la duración cuando ya esté disponible; (b) que step5 haga polling del status real y muestre 'Procesando video…' con el botón deshabilitado hasta 'ready'; (c) ambas. Decidir también qué pasa cuando Cloudflare no devuelve duración (duration_seconds null → hoy da 400 VIDEO_DURATION_INVALID). Validar la duración 60-120s en el cliente ANTES de dejar llegar a step5, para no fallar al final del wizard.",
         "testStrategy": "Deno: tests del checker con las combinaciones status × duration (uploading/processing/ready × null/45/90/150). E2E contra stack local: subir video real y publicar inmediatamente, sin esperar al webhook.",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           "73"
         ],
         "priority": "high",
-        "subtasks": []
+        "subtasks": [],
+        "updatedAt": "2026-08-10T04:35:09.097Z"
       },
       {
         "id": "127",
@@ -7467,9 +7468,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-08-10T04:25:33.592Z",
+      "lastModified": "2026-08-10T04:35:09.097Z",
       "taskCount": 142,
-      "completedCount": 74,
+      "completedCount": 75,
       "tags": [
         "master"
       ]

@@ -1175,13 +1175,20 @@ export function make_poster_url_minter(
 }
 
 /**
- * Adaptador real de VideoStatusChecker (73.4, pipeline de moderación PRD §15.2).
- * Consulta property_videos por (cloudflare_uid, agent_id) — el video en vuelo
- * upload-first (68.12): agent_id es el dueño del video, cloudflare_uid la
- * referencia a Cloudflare Stream que el payload de publish-property manda a
- * enlazar. Sin fila (uid ajeno, inexistente o soft-deleted) → VIDEO_NOT_FOUND.
- * status != 'ready' → VIDEO_NOT_READY. duration_seconds fuera de [60,120]
- * (inclusive, PRD §14 paso 5) → VIDEO_DURATION_INVALID.
+ * Adaptador real de VideoStatusChecker (73.4, pipeline de moderación PRD §15.2;
+ * contrato revisado en #126). Consulta property_videos por (cloudflare_uid,
+ * agent_id) — el video en vuelo upload-first (68.12). Sin fila (uid ajeno,
+ * inexistente o soft-deleted) → VIDEO_NOT_FOUND.
+ *
+ * #126 — el gate viejo exigía 'ready' + duración en rango, pero la fila nace
+ * 'uploading' y solo el webhook la pasa a 'ready': publicar recién subido daba
+ * 409, y un 'ready' sin duración reportada daba 400 sin salida posible.
+ * Contrato nuevo, alineado con la RPC publish_property_atomic (que enlaza
+ * videos con status in ('processing','ready')):
+ *   - status fuera de ('processing','ready') → VIDEO_NOT_READY.
+ *   - duration_seconds se valida SOLO cuando se conoce: fuera de [60,120]
+ *     (inclusive, PRD §14 paso 5) → VIDEO_DURATION_INVALID; null → pasa
+ *     (el cliente valida la duración al elegir el video, antes de subir).
  */
 export function make_video_status_checker(
   client: SupabaseClient,
@@ -1202,11 +1209,11 @@ export function make_video_status_checker(
       if (error || !data) {
         return { ok: false, error_code: "VIDEO_NOT_FOUND" };
       }
-      if (data.status !== "ready") {
+      if (data.status !== "ready" && data.status !== "processing") {
         return { ok: false, error_code: "VIDEO_NOT_READY" };
       }
       const duration = data.duration_seconds as number | null;
-      if (duration === null || duration < 60 || duration > 120) {
+      if (duration !== null && (duration < 60 || duration > 120)) {
         return { ok: false, error_code: "VIDEO_DURATION_INVALID" };
       }
       return { ok: true, duration_seconds: duration };
