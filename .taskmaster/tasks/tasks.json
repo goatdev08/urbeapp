@@ -7445,12 +7445,13 @@
         "description": "Origen: subtarea 73.6 · Detectado por: code review PR #56 (ángulo de comportamiento removido). Dos REGRESIONES al mover la edición del UPDATE directo a la EF. (1) CAPACIDAD PERDIDA: el handler solo autoriza owner_user_id === caller o users.role === 'admin', pero la política properties_update (migración 20260805000011, capacidad deliberada de la tarea #71) TAMBIÉN permitía private.agency_role_of(agency_id) in ('owner','admin'). Un owner o admin de agencia que antes podía corregir la publicación de uno de sus agentes ahora recibe 403 UNAUTHORIZED_EDITOR. Es exactamente la matriz de roles que 71.2 estableció y que el intento de hardening de 73.6 ya había tocado (ver #121). (2) ESCRITURA DESTRUCTIVA: antes se mandaba un UPDATE parcial con solo las claves que el cliente enviaba; ahora parse_edit_property_input coacciona todo campo ausente a un default falsy (price_visible/pet_friendly/allows_no_guarantor/student_friendly a false, description a '', bedrooms/bathrooms/square_meters a null). Un body parcial — de un caller alterno, de una versión vieja de la app tras un OTA, o de un retry — borra amenidades y recámaras en silencio, y la descripción en blanco además se diffea como cambio crítico y manda a revisión una publicación correcta.",
         "details": "(1) Replicar la rama de agencia en el verificador de la EF (reusar private.agency_role_of o el helper equivalente) para no perder la capacidad de #71. (2) Distinguir 'campo ausente' de 'campo puesto en falsy': usar undefined para lo no enviado y construir el payload solo con las claves presentes, o exigir el objeto completo y validarlo. Este segundo punto interactúa con la whitelist duplicada de #124.",
         "testStrategy": "Deno: un owner de agencia edita la publicación de su agente y recibe 200. Un body parcial NO borra los campos ausentes. pgTAP: verificar por impersonación que la matriz de roles de #71 sigue intacta desde la EF.",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           "73"
         ],
         "priority": "high",
-        "subtasks": []
+        "subtasks": [],
+        "updatedAt": "2026-08-10T04:40:12.805Z"
       },
       {
         "id": "141",
@@ -7468,9 +7469,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-08-10T04:35:09.097Z",
+      "lastModified": "2026-08-10T04:40:12.805Z",
       "taskCount": 142,
-      "completedCount": 75,
+      "completedCount": 76,
       "tags": [
         "master"
       ]

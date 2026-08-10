@@ -93,22 +93,65 @@ function parse_edit_property_input(raw: unknown): ParseResult {
     return invalid("address no puede ser vacío");
   }
 
+  // #142 — el body debe ser COMPLETO (el móvil siempre manda todas las claves
+  // editables). Antes, todo campo ausente se coaccionaba a un default falsy
+  // (booleans→false, description→'', numéricos→null): un body parcial — caller
+  // alterno, app vieja tras un OTA, retry — borraba amenidades y recámaras en
+  // silencio, y la description '' encima se diffeaba como cambio crítico y
+  // mandaba a revisión una publicación correcta. Parcial => 400, fail loud.
+
+  // Booleans: requeridos y de tipo boolean estricto (nada de 'false' string).
+  for (
+    const campo of [
+      "price_visible",
+      "pet_friendly",
+      "allows_no_guarantor",
+      "student_friendly",
+    ] as const
+  ) {
+    if (typeof obj[campo] !== "boolean") {
+      return invalid(
+        `${campo} es requerido y debe ser booleano — un body parcial no debe borrar campos`,
+      );
+    }
+  }
+
+  // Numéricos anulables: la CLAVE debe venir; null explícito = borrar a
+  // propósito (permitido), clave ausente = body parcial (rechazado).
+  for (const campo of ["bedrooms", "bathrooms", "square_meters"] as const) {
+    if (!(campo in obj) || obj[campo] === undefined) {
+      return invalid(
+        `${campo} es requerido (usa null explícito para borrar el dato) — un body parcial no debe borrar campos`,
+      );
+    }
+    if (obj[campo] !== null && typeof obj[campo] !== "number") {
+      return invalid(`${campo} debe ser número o null`);
+    }
+  }
+
+  // description: requerida como string; '' explícito = borrarla a propósito
+  // (cambio crítico §15.5 → revisión), ausente = body parcial.
+  if (typeof obj.description !== "string") {
+    return invalid(
+      "description es requerida (usa '' explícito para borrarla) — un body parcial no debe borrar campos",
+    );
+  }
+
   const data: EditPropertyInput = {
     property_id: obj.property_id,
     operation_type: obj.operation_type as OperationType,
     property_type: obj.property_type as PropertyType,
     price: obj.price,
-    bedrooms: typeof obj.bedrooms === "number" ? obj.bedrooms : null,
-    bathrooms: typeof obj.bathrooms === "number" ? obj.bathrooms : null,
-    square_meters: typeof obj.square_meters === "number"
-      ? obj.square_meters
-      : null,
+    bedrooms: obj.bedrooms as number | null,
+    bathrooms: obj.bathrooms as number | null,
+    square_meters: obj.square_meters as number | null,
     address: obj.address,
-    price_visible: obj.price_visible === true,
-    pet_friendly: obj.pet_friendly === true,
-    allows_no_guarantor: obj.allows_no_guarantor === true,
-    student_friendly: obj.student_friendly === true,
-    description: typeof obj.description === "string" ? obj.description : "",
+    // casts seguros: tipo y presencia validados arriba (los loops no narrowean)
+    price_visible: obj.price_visible as boolean,
+    pet_friendly: obj.pet_friendly as boolean,
+    allows_no_guarantor: obj.allows_no_guarantor as boolean,
+    student_friendly: obj.student_friendly as boolean,
+    description: obj.description,
   };
 
   // location: OPCIONAL — ausente = "el usuario no tocó el mapa" (no se evalúa).
@@ -207,12 +250,24 @@ export async function handler(
   }
   const current = fetchResult.property;
 
-  // 7. Ownership: mismo criterio que la RLS properties_update que esta EF reemplaza
+  // 7. Autorización: mismo criterio que la RLS properties_update que esta EF
+  //    reemplaza (20260805000011): owner ∨ admin de plataforma ∨ owner/admin
+  //    ACTIVO de la agencia REAL de la fila (#142 — la rama de agencia se
+  //    perdió al mover la edición del UPDATE directo a esta EF, capacidad
+  //    deliberada de #71).
   const is_owner = current.owner_user_id === verifyResult.user_id;
-  if (!is_owner && !verifyResult.is_admin) {
+  let authorized = is_owner || verifyResult.is_admin;
+  if (!authorized && current.agency_id) {
+    const agency_role = await deps!.agencyRoleResolver.resolve(
+      verifyResult.user_id,
+      current.agency_id,
+    );
+    authorized = agency_role === "owner" || agency_role === "admin";
+  }
+  if (!authorized) {
     return error_response(
       "UNAUTHORIZED_EDITOR",
-      "No autorizado: no eres el dueño de esta propiedad ni administrador",
+      "No autorizado: no eres el dueño de esta propiedad, ni administrador, ni owner/admin de su inmobiliaria",
       403,
     );
   }

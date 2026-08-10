@@ -15,6 +15,7 @@ import { handler } from "./handler.ts";
 import { make_revision_upserter } from "./revision_upserter.ts";
 import { service_client } from "../_shared/clients.ts";
 import type {
+  AgencyRoleResolver,
   CallerVerifier,
   CallerVerifyResult,
   CurrentPropertySnapshot,
@@ -70,7 +71,7 @@ Deno.serve((req: Request) => {
       const { data, error } = await client
         .from("properties")
         .select(
-          "id, owner_user_id, operation_type, property_type, price, address, location, description",
+          "id, owner_user_id, agency_id, operation_type, property_type, price, address, location, description",
         )
         .eq("id", property_id)
         .is("deleted_at", null)
@@ -127,10 +128,32 @@ Deno.serve((req: Request) => {
 
   const revisionUpserter = make_revision_upserter(client);
 
+  // AgencyRoleResolver real (#142): réplica de private.agency_role_of pero
+  // parametrizada por user_id (aquí no hay auth.uid() — corre con service_role).
+  // Membresía ACTIVA en la agencia REAL de la fila; error o sin fila → null
+  // (fail-closed: sin rol no hay autorización extra).
+  const agencyRoleResolver: AgencyRoleResolver = {
+    async resolve(user_id: string, agency_id: string): Promise<string | null> {
+      const { data, error } = await client
+        .from("agency_members")
+        .select("member_role")
+        .eq("agency_id", agency_id)
+        .eq("user_id", user_id)
+        .eq("status", "active")
+        .maybeSingle();
+
+      if (error || !data) {
+        return null;
+      }
+      return data.member_role as string;
+    },
+  };
+
   return handler(req, {
     callerVerifier,
     propertyFetcher,
     directPropertyUpdater,
     revisionUpserter,
+    agencyRoleResolver,
   });
 });
