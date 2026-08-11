@@ -7627,7 +7627,7 @@
         "description": "Origen: subtarea 72.3 · Detectado por: usuario (device real 2026-08-10, APK 1.0.5). El registro nuevo crea la cuenta sin confirmar y manda un correo cuyo link redirige a http://localhost:3000 (site_url; uri_allow_list vacío) — página muerta en el teléfono. Decisión de Abraham: saltar la confirmación TEMPORALMENTE (\"permitir que los usuarios se unan, después lo pedimos\"). Además: el AVD post-reboot quedó sin ubicación en todos los providers y el muro gps_off bloquea ver la app en el emulador → fallback de coords GDL solo en __DEV__.",
         "details": "3 frentes: (1) EF register: email_confirm:false→true (revert = el verdadero cierre de 72.3 con Resend); (2) register.tsx: auto-login post-registro con fallback al camino verify-email si signIn falla (compat con EF vieja durante la ventana de deploy); (3) LocationProvider.fetch_current_coords: si no hay fix fresco NI histórico y __DEV__, devolver GDL (20.6736,-103.3444) en vez de lanzar → el muro gps_off deja de bloquear emuladores. Config remota (sin código): uri_allow_list='urbea://**' para que verify-email/reset-password redirijan a la app cuando se re-active la confirmación.",
         "testStrategy": "EF: handler.test.ts asserta email_confirm:true (RED→GREEN, deno test). Cliente: register-user-mode.test.tsx re-contratado a auto-login + fallback. Location: tests del muro con __DEV__=false forzado + test nuevo del fallback __DEV__. pnpm tsc/lint/jest verdes.",
-        "status": "in-progress",
+        "status": "done",
         "dependencies": [
           "72",
           "93",
@@ -7639,31 +7639,35 @@
             "id": 1,
             "title": "EF register: email_confirm true (TDD) + deploy remoto",
             "description": "Flip en handler.ts con comentario de reversión; test 400 actualizado primero (RED).",
-            "status": "pending",
-            "dependencies": []
+            "status": "done",
+            "dependencies": [],
+            "details": "[2026-08-10 20:34] hecho: handler.ts email_confirm true (comentario ponytail de reversión) + handler.test.ts:400 assert true (RED verificado: 67/1 → GREEN 68/68 deno). Deploy remoto: supabase functions deploy register --use-api --import-map. Smoke prod: register 200 user_id → password grant inmediato OK (email_confirmed_at poblado); usuario smoke borrado."
           },
           {
             "id": 2,
             "title": "register.tsx: auto-login post-registro con fallback verify-email",
             "description": "signIn(email,password) tras register_user ok; si falla → send_verification_email + /verify-email (orden de deploy independiente).",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               1
-            ]
+            ],
+            "details": "[2026-08-10 20:34] hecho: register.tsx handle_user_submit → signIn(email,password) con fallback en catch a send_verification_email + /verify-email (compat con EF vieja). register-user-mode.test.tsx re-contratado: EC-1 auto-login + test nuevo de fallback (8/8)."
           },
           {
             "id": 3,
             "title": "LocationProvider: fallback GDL en __DEV__ cuando no hay fix",
             "description": "Solo __DEV__; producción conserva el muro gps_off.",
-            "status": "pending",
-            "dependencies": []
+            "status": "done",
+            "dependencies": [],
+            "details": "[2026-08-10 20:34] hecho: LocationProvider DEV_FALLBACK_COORDS (GDL 20.6736,-103.3444) al final de fetch_current_coords solo si __DEV__ (console.warn). Tests: archivo corre con __DEV__=false (semántica producción) + describe #146 con 2 tests (22/22)."
           },
           {
             "id": 4,
             "title": "Config remota: uri_allow_list urbea://** (Management API)",
             "description": "Arregla el destino de los links de verify/reset para cuando se re-active la confirmación.",
-            "status": "pending",
-            "dependencies": []
+            "status": "deferred",
+            "dependencies": [],
+            "details": "[2026-08-10 20:34] BLOQUEADO por permisos: el PATCH a la Management API (uri_allow_list=urbea://**) lo denegó el classifier. Comando pendiente para Abraham (ver reporte). Solo importa al re-activar la confirmación (72.3) y para los links de reset-password."
           }
         ]
       }
