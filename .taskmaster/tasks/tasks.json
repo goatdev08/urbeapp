@@ -5177,7 +5177,7 @@
         "id": "73",
         "title": "Ola 1 — Publicación completa (5 pasos + 16 estados + moderación manual)",
         "description": "Wizard de 5 pasos con autoguardado de borrador, máquina de 16 estados de publicación, pipeline de moderación manual, publicación rápida, re-revisión por edición y cierre/baja. PRD §14–16.",
-        "details": "PRD §14 (wizard+autosave draft), §15 (moderación, pipeline, estados §15.4, re-revisión §15.5, visibilidad §15.6), §16 (cierre). Hoy: 3 pasos, auto-`active`, sin moderación. Es el corazón transaccional → CRÍTICO (EF publish-property, RPC atómica, RLS, máquina de estados). Cablear la abstracción de slot (vigencia) aunque sea gratis. Épica del camino a producción (ADR 0008 / docs/PRD-beta.md). Spec detallado (modelo de datos, RLS, EF, pantallas, estados, edge cases, tests, subtareas) se redacta SECUENCIAL al entrar su ola, con aprobación de Abraham; add-task roto → subtareas por escritura directa en tasks.json.\n\nDERIVADAS: #120 (hardening) · #121 (hardening) · #122 (fix) · #123 (fix) · #124 (hardening) · #125 (producto) · #126 (fix) · #127 (fix) · #128 (fix) · #129 (fix) · #130 (fix) · #131 (hardening) · #132 (hardening) · #133 (hardening) · #134 (fix) · #135 (fix) · #136 (fix) · #137 (fix) · #138 (hardening) · #139 (hardening) · #140 (polish) · #142 (fix) · #141 (hardening)",
+        "details": "PRD §14 (wizard+autosave draft), §15 (moderación, pipeline, estados §15.4, re-revisión §15.5, visibilidad §15.6), §16 (cierre). Hoy: 3 pasos, auto-`active`, sin moderación. Es el corazón transaccional → CRÍTICO (EF publish-property, RPC atómica, RLS, máquina de estados). Cablear la abstracción de slot (vigencia) aunque sea gratis. Épica del camino a producción (ADR 0008 / docs/PRD-beta.md). Spec detallado (modelo de datos, RLS, EF, pantallas, estados, edge cases, tests, subtareas) se redacta SECUENCIAL al entrar su ola, con aprobación de Abraham; add-task roto → subtareas por escritura directa en tasks.json.\n\nDERIVADAS: #120 (hardening) · #121 (hardening) · #122 (fix) · #123 (fix) · #124 (hardening) · #125 (producto) · #126 (fix) · #127 (fix) · #128 (fix) · #129 (fix) · #130 (fix) · #131 (hardening) · #132 (hardening) · #133 (hardening) · #134 (fix) · #135 (fix) · #136 (fix) · #137 (fix) · #138 (hardening) · #139 (hardening) · #140 (polish) · #142 (fix) · #141 (hardening) · #151 (fix)",
         "testStrategy": "TDD estricto en lógica crítica (supabase/functions/**, migrations/**, lib/hooks/validation): RED→GREEN→guardian. Verificación ligera (tsc/lint/smoke) en UI. Se detalla al specificar la ola.",
         "status": "done",
         "dependencies": [
@@ -7710,6 +7710,20 @@
         ],
         "priority": "medium",
         "subtasks": []
+      },
+      {
+        "id": "151",
+        "title": "fix(73): borrador del autosave bloqueaba TODA publicación con 409 DUPLICATE_PROPERTY",
+        "description": "Origen: tarea 73 (Ola 1, autosave de borradores) · Detectado por: usuario (publicar fallaba en iPhone real y emulador con 'Edge Function returned a non-2xx status code'). El wizard guarda un draft en properties con la dirección ya capturada; el DuplicatePropertyChecker de publish-property no excluía status 'draft' → el propio borrador del agente bloqueaba su publish con 409 en TODOS los intentos. El descarte del borrador (#135) solo corre tras un publish exitoso → deadlock permanente.",
+        "details": "Fix: 'draft' agregado a DUPLICATE_EXCLUDED_STATUSES en supabase/functions/_shared/clients.ts (un borrador no es una publicación). TDD: RED borrador_draft_no_cuenta_como_duplicado en _shared/duplicate_property_checker.test.ts → GREEN (11/11; suite publish-property+_shared 147/147). Deploy: publish-property v17 al remoto (server-first, sin OTA — beneficia a todos los builds instalados). Verificación E2E en producción: publicación real desde el emulador (release 1.0.5) → ¡Publicada!, propiedad c16af7f5 en pending_review con video ready 10s enlazado. Evidencia del diagnóstico: 6 intentos con 409 en logs (v15 y v16), 4 drafts acumulados con la misma dirección del owner ce8c866f.",
+        "testStrategy": "deno test _shared/duplicate_property_checker.test.ts (11/11, incluye el caso draft) + suite completa publish-property/_shared 147/147 + smoke E2E real en producción (publicación exitosa tras el deploy).",
+        "status": "done",
+        "dependencies": [
+          "73"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2026-08-11T04:45:00.000Z"
       }
     ],
     "metadata": {
