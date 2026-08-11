@@ -237,15 +237,19 @@ Deno.test("happy_path_publisher_llamado_exactamente_una_vez", async () => {
   assertEquals(publisher.calls.length, 1, "publish debe ser llamado exactamente una vez");
 });
 
-Deno.test("contrato_publisher_recibe_property_status_pending_review_ya_no_active", async () => {
-  // 73.4 — SUPERSEDE la expectativa vieja ('active', auto-aprobación PRD §12).
-  // PRD §14.2 (beta): TODA publicación va a pending_review, sin excepción de rol.
+Deno.test("contrato_publisher_recibe_property_status_active_moderacion_suspendida", async () => {
+  // #153 — SUPERSEDE (temporalmente) la expectativa de 73.4 ('pending_review',
+  // PRD §14.2). Decisión de Abraham 2026-08-11: NO hay moderador ni interfaz de
+  // moderación todavía — las publicaciones quedaban atoradas en pending_review
+  // sin forma de aprobarlas más que por SQL. Mientras exista ese hueco, toda
+  // publicación sale directo a 'active'. Revertir a 'pending_review' cuando
+  // llegue la interfaz de moderación (re-flip de este assert = el RED).
   const publisher = publisher_ok();
   await handler(post_agente(PAYLOAD_VALIDO), deps_validos(publisher));
   assertEquals(
     publisher.calls[0].property_status,
-    "pending_review",
-    "property_status debe ser 'pending_review' — PRD §14.2: en beta TODA publicación va a revisión, ya no hay auto-aprobación a 'active'",
+    "active",
+    "property_status debe ser 'active' — #153: moderación suspendida hasta tener interfaz; el pipeline de validación (video+duplicado) sigue activo",
   );
 });
 

@@ -5177,7 +5177,7 @@
         "id": "73",
         "title": "Ola 1 — Publicación completa (5 pasos + 16 estados + moderación manual)",
         "description": "Wizard de 5 pasos con autoguardado de borrador, máquina de 16 estados de publicación, pipeline de moderación manual, publicación rápida, re-revisión por edición y cierre/baja. PRD §14–16.",
-        "details": "PRD §14 (wizard+autosave draft), §15 (moderación, pipeline, estados §15.4, re-revisión §15.5, visibilidad §15.6), §16 (cierre). Hoy: 3 pasos, auto-`active`, sin moderación. Es el corazón transaccional → CRÍTICO (EF publish-property, RPC atómica, RLS, máquina de estados). Cablear la abstracción de slot (vigencia) aunque sea gratis. Épica del camino a producción (ADR 0008 / docs/PRD-beta.md). Spec detallado (modelo de datos, RLS, EF, pantallas, estados, edge cases, tests, subtareas) se redacta SECUENCIAL al entrar su ola, con aprobación de Abraham; add-task roto → subtareas por escritura directa en tasks.json.\n\nDERIVADAS: #120 (hardening) · #121 (hardening) · #122 (fix) · #123 (fix) · #124 (hardening) · #125 (producto) · #126 (fix) · #127 (fix) · #128 (fix) · #129 (fix) · #130 (fix) · #131 (hardening) · #132 (hardening) · #133 (hardening) · #134 (fix) · #135 (fix) · #136 (fix) · #137 (fix) · #138 (hardening) · #139 (hardening) · #140 (polish) · #142 (fix) · #141 (hardening) · #151 (fix)",
+        "details": "PRD §14 (wizard+autosave draft), §15 (moderación, pipeline, estados §15.4, re-revisión §15.5, visibilidad §15.6), §16 (cierre). Hoy: 3 pasos, auto-`active`, sin moderación. Es el corazón transaccional → CRÍTICO (EF publish-property, RPC atómica, RLS, máquina de estados). Cablear la abstracción de slot (vigencia) aunque sea gratis. Épica del camino a producción (ADR 0008 / docs/PRD-beta.md). Spec detallado (modelo de datos, RLS, EF, pantallas, estados, edge cases, tests, subtareas) se redacta SECUENCIAL al entrar su ola, con aprobación de Abraham; add-task roto → subtareas por escritura directa en tasks.json.\n\nDERIVADAS: #120 (hardening) · #121 (hardening) · #122 (fix) · #123 (fix) · #124 (hardening) · #125 (producto) · #126 (fix) · #127 (fix) · #128 (fix) · #129 (fix) · #130 (fix) · #131 (hardening) · #132 (hardening) · #133 (hardening) · #134 (fix) · #135 (fix) · #136 (fix) · #137 (fix) · #138 (hardening) · #139 (hardening) · #140 (polish) · #142 (fix) · #141 (hardening) · #151 (fix) · #152 (producto) · #153 (producto)",
         "testStrategy": "TDD estricto en lógica crítica (supabase/functions/**, migrations/**, lib/hooks/validation): RED→GREEN→guardian. Verificación ligera (tsc/lint/smoke) en UI. Se detalla al specificar la ola.",
         "status": "done",
         "dependencies": [
@@ -7724,6 +7724,34 @@
         "priority": "high",
         "subtasks": [],
         "updatedAt": "2026-08-11T04:45:00.000Z"
+      },
+      {
+        "id": "152",
+        "title": "producto(73): el alert de publicación exitosa promete feed inmediato pero la propiedad entra a pending_review",
+        "description": "Origen: tarea 73 (§14.2, toda publicación va a pending_review) · Detectado por: usuario/Virgilio durante el smoke de #151. step5.tsx muestra '¡Publicada! Tu propiedad ya está disponible en el feed.' pero la fila nace en pending_review (moderación manual) — el agente va al feed, no ve su propiedad y parece un bug. Ajustar el copy a la realidad (en revisión, te avisamos al aprobarla) y considerar el mismo ajuste en el estado del wizard.",
+        "details": "Archivo: mobile/app/(protected)/publish/step5.tsx (Alert de handle_publish, rama create mode). Verificación ligera (componente): tsc + lint + jest de step5 si existe. Coordinar con el dueño del wizard (Ola 1) — no tocar su rama en vuelo.",
+        "testStrategy": "pnpm tsc --noEmit + pnpm lint + revisión visual del alert en emulador.",
+        "status": "pending",
+        "dependencies": [
+          "73"
+        ],
+        "priority": "medium",
+        "subtasks": [],
+        "updatedAt": "2026-08-11T04:50:00.000Z"
+      },
+      {
+        "id": "153",
+        "title": "producto(73): suspender moderación temporalmente — publicar sale directo a 'active'",
+        "description": "Origen: tarea 73 (§14.2 pending_review) · Detectado por: usuario (no hay moderador ni interfaz de moderación; toda publicación quedaba atorada en pending_review sin más salida que SQL). Decisión de Abraham 2026-08-11: cortar el canal de revisión TEMPORALMENTE hasta que exista la interfaz. El pipeline de validación (video ready + duplicado) sigue intacto; solo cambia el estado de nacimiento.",
+        "details": "Cambio: publish-property/handler.ts pasa property_status='active' (antes 'pending_review') con comentario ponytail #153 que documenta el techo (sin revisión humana) y la reversión (re-flip del assert contrato_publisher_recibe_property_status_active_moderacion_suspendida en handler.test.ts = el RED del revert). TDD: assert invertido primero (RED) → GREEN 61/61 (suite completa 147/147). Deploy: publish-property v18 al remoto, server-first, sin OTA. Data: las 2 propiedades atoradas (c16af7f5 emulador, 5f4be1c2 iPhone) flipeadas a 'active' por SQL. REVERTIR cuando exista la interfaz de moderación (crear tarea al revertir).",
+        "testStrategy": "deno test publish-property/ 61/61 con el contrato nuevo; verificación en DB de que las publicaciones nacen 'active'.",
+        "status": "done",
+        "dependencies": [
+          "73"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2026-08-11T05:05:00.000Z"
       }
     ],
     "metadata": {
