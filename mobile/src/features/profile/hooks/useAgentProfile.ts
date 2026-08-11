@@ -87,12 +87,14 @@ export function useAgentProfile(agent_id: string): UseAgentProfileState {
           .eq('id', agent_id)
           .single();
 
-        // Query 2: columnas de migración 0015 (no en tipos generados).
-        // ponytail: cast por tipos 0015 sin regenerar — mismo patrón que profileService
-        // y OnboardingScreen: .select('full_name') + cast `as PrefsRow | null`.
+        // Query 2 (#145.3): identidad pública vía la VISTA agent_public_profiles.
+        // Antes leía user_preferences directo y la RLS ("solo tu fila o admin")
+        // devolvía 0 filas EN SILENCIO para perfiles ajenos — el nombre y la
+        // foto de otros agentes jamás se mostraban. La vista brinca la RLS solo
+        // en estas 2 columnas (migración 20260810000001).
         const prefs_query = supabase
-          .from('user_preferences')
-          .select('full_name, profile_photo_url' as never)
+          .from('agent_public_profiles')
+          .select('full_name, profile_photo_url')
           .eq('user_id', agent_id)
           .maybeSingle();
 

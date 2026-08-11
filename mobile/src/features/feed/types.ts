@@ -28,6 +28,14 @@ export type FeedProperty = {
   created_at: string;
   /** Teléfono del agente (users.phone) para el botón WhatsApp del feed. null si no hay. */
   agent_phone: string | null;
+  /** Nombre público del agente (vista agent_public_profiles, #145). null si no hay fila. */
+  agent_name: string | null;
+  /**
+   * Foto de perfil del agente EN CRUDO (#145): key R2 nueva o URL http(s)
+   * legacy de Storage — la UI la resuelve con useR2Urls (passthrough de URLs,
+   * mint de keys). null si el agente no tiene foto.
+   */
+  agent_photo_url: string | null;
   video: FeedPropertyVideo;
 };
 

@@ -113,8 +113,11 @@ function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedIte
     toggleSave();
   }, [toggleSave]);
 
-  // ponytail: navegación al perfil del agente diferida — sin ruta feed→perfil en 9.6.
-  const handle_agent_press = useCallback(() => undefined, []);
+  // #145.4: tap en avatar/nombre del agente → su perfil público con sus
+  // publicaciones (/profile/[id] ya existía desde #16.6; el stub era de 9.6).
+  const handle_agent_press = useCallback(() => {
+    router.push(`/profile/${property.owner_user_id}`);
+  }, [property.owner_user_id]);
 
   // Tap sobre el bloque de info → detalle de la propiedad (/property/[id]).
   const handle_property_press = useCallback(() => {

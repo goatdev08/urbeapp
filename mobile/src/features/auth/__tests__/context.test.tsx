@@ -120,7 +120,9 @@ function setup_from_mock(profile_data: UserProfile | null) {
   const mock_single = jest.fn().mockResolvedValue({ data: profile_data, error: null });
   const mock_eq = jest.fn().mockReturnValue({ single: mock_single });
   const mock_select = jest.fn().mockReturnValue({ eq: mock_eq });
-  mock_from.mockReturnValue({ select: mock_select } as ReturnType<typeof supabase.from>);
+  // ponytail: doble cast vía unknown — el shape del builder generado cambió al
+  // regenerar tipos (#145.3) y el overlap directo ya no compila.
+  mock_from.mockReturnValue({ select: mock_select } as unknown as ReturnType<typeof supabase.from>);
   return { mock_single, mock_eq, mock_select };
 }
 

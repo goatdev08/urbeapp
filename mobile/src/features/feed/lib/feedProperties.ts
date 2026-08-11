@@ -70,6 +70,16 @@ type MintedVideo = {
 /** Fila cruda que devuelve la RPC properties_within_radius (#42.2). */
 type RpcRow = { id: string; distance_m: number };
 
+/** Identidad pública del agente (vista agent_public_profiles, #145.2). */
+type ProfileEmbed = { full_name: string | null; profile_photo_url: string | null };
+
+type UsersEmbed = {
+  phone: string | null;
+  // Embed anidado de la VISTA agent_public_profiles (una fila por user_id).
+  // Puede faltar (agente sin preferencias / fixture viejo) → identidad null.
+  agent_public_profiles?: ProfileEmbed | ProfileEmbed[] | null;
+};
+
 type QueryRow = {
   id: string;
   price: number;
@@ -81,12 +91,16 @@ type QueryRow = {
   created_at: string;
   // Embed to-one del dueño para el teléfono. PostgREST puede devolver objeto o
   // array de un elemento según la relación; se normaliza al leer.
-  users?: { phone: string | null } | { phone: string | null }[] | null;
+  users?: UsersEmbed | UsersEmbed[] | null;
   property_videos: { id: string; storage_path: string; position: number; thumbnail_url: string | null }[];
 };
 
+// #145.2: la vista agent_public_profiles se embebe ANIDADA en users — PostgREST
+// la resuelve por los FKs de su tabla base (user_preferences.user_id → users.id;
+// smoke remoto 2026-08-10 verificado). Un solo viaje: la identidad del agente
+// llega en la MISMA query del feed, sin RTT extra.
 const FEED_SELECT = `id, price, address, bedrooms, bathrooms, owner_user_id, agency_id, created_at,
-       users!properties_owner_user_id_fkey(phone),
+       users!properties_owner_user_id_fkey(phone, agent_public_profiles(full_name, profile_photo_url)),
        property_videos(id, storage_path, position, thumbnail_url)`;
 
 /**
@@ -131,6 +145,14 @@ function build_feed_data(rows: QueryRow[], videos: MintedVideo[]): FeedPropertyW
     const owner = Array.isArray(row.users) ? row.users[0] : row.users;
     const agent_phone = owner?.phone ?? null;
 
+    // #145.2: identidad pública del agente — mismo trato de normalización.
+    // Fail-open: sin fila en la vista → nulls; la propiedad SIGUE en el feed
+    // (la identidad es decoración, no requisito).
+    const profile_raw = owner?.agent_public_profiles;
+    const profile = Array.isArray(profile_raw) ? profile_raw[0] : profile_raw;
+    const agent_name = profile?.full_name ?? null;
+    const agent_photo_url = profile?.profile_photo_url ?? null;
+
     data.push({
       id: row.id,
       price: row.price,
@@ -141,6 +163,8 @@ function build_feed_data(rows: QueryRow[], videos: MintedVideo[]): FeedPropertyW
       agency_id: row.agency_id,
       created_at: row.created_at,
       agent_phone,
+      agent_name,
+      agent_photo_url,
       video: {
         id: video_entry.id,
         storage_path: video_entry.storage_path,
