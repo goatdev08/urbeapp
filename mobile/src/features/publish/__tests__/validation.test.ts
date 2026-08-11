@@ -137,17 +137,17 @@ describe('validate_video_size', () => {
 });
 
 // ===========================================================================
-// validate_video_duration_ms (#126) — 60–120 s inclusive, validado AL ELEGIR
-// el video (picker), no al final del wizard con el video ya subido.
+// validate_video_duration_ms (#126, rango #149: 10–120 s inclusive), validado
+// AL ELEGIR el video (picker), no al final del wizard con el video ya subido.
 // ===========================================================================
 
 describe('validate_video_duration_ms', () => {
-  it('rechaza un video de 45 s con mensaje en español que menciona el rango', () => {
-    const result = validate_video_duration_ms(45_000);
+  it('rechaza un video de 5 s con mensaje en español que menciona el rango', () => {
+    const result = validate_video_duration_ms(5_000);
 
     expect(result.valid).toBe(false);
     expect(result.error).not.toBeNull();
-    expect(result.error).toMatch(/60/);
+    expect(result.error).toMatch(/10/);
     expect(result.error).toMatch(/120|2 min/);
   });
 
@@ -158,14 +158,18 @@ describe('validate_video_duration_ms', () => {
     expect(result.error).not.toBeNull();
   });
 
-  it('acepta 60 s y 120 s exactos (límites inclusive, PRD §14 paso 5)', () => {
-    expect(validate_video_duration_ms(60_000).valid).toBe(true);
+  it('acepta 10 s y 120 s exactos (límites inclusive, #149)', () => {
+    expect(validate_video_duration_ms(10_000).valid).toBe(true);
     expect(validate_video_duration_ms(120_000).valid).toBe(true);
   });
 
-  it('rechaza 59.4 s y 120.6 s (justo fuera del rango)', () => {
-    expect(validate_video_duration_ms(59_400).valid).toBe(false);
+  it('rechaza 9.4 s y 120.6 s (justo fuera del rango)', () => {
+    expect(validate_video_duration_ms(9_400).valid).toBe(false);
     expect(validate_video_duration_ms(120_600).valid).toBe(false);
+  });
+
+  it('acepta 45 s (antes rechazado — el rango viejo 60–120 ya no aplica, #149)', () => {
+    expect(validate_video_duration_ms(45_000).valid).toBe(true);
   });
 
   it('acepta 90 s (caso típico)', () => {
