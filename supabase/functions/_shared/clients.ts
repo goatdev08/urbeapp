@@ -1222,7 +1222,16 @@ export function make_video_status_checker(
 // Estados de properties que NO cuentan como duplicado (73.4, regla exacta en
 // publish-property/types.ts): una publicación rechazada o eliminada del mismo
 // owner+dirección no bloquea — el agente puede resubir.
-const DUPLICATE_EXCLUDED_STATUSES = ["rejected", "deleted_soft", "deleted_hard"];
+// #151 (origen 73): 'draft' excluido — el autosave del wizard guarda un draft
+// con la dirección ya capturada y el propio borrador del agente bloqueaba su
+// publish con 409 en todos los intentos (el descarte #135 solo corre tras el
+// éxito → deadlock). Un borrador no es una publicación.
+const DUPLICATE_EXCLUDED_STATUSES = [
+  "draft",
+  "rejected",
+  "deleted_soft",
+  "deleted_hard",
+];
 
 /**
  * Adaptador real de DuplicatePropertyChecker (73.4, pipeline de moderación PRD

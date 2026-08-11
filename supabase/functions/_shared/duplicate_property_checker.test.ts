@@ -171,6 +171,21 @@ Deno.test("propiedad_previa_eliminada_hard_no_cuenta_como_duplicado", async () =
   assertEquals(result.isDuplicate, false, "status deleted_hard está excluido de la regla de duplicado");
 });
 
+Deno.test("borrador_draft_no_cuenta_como_duplicado", async () => {
+  // #151 (origen 73): el autosave del wizard guarda un draft en properties con
+  // la dirección YA capturada; si 'draft' contara como duplicado, el propio
+  // borrador del agente bloquearía su publicación con 409 en TODOS los
+  // intentos (el descarte de #135 solo corre tras un publish exitoso → deadlock).
+  const client = make_fake_client([make_row({ status: "draft" })]);
+  const checker = make_duplicate_property_checker(client as never);
+  const result = await checker.check(OWNER, ADDRESS);
+  assertEquals(
+    result.isDuplicate,
+    false,
+    "un borrador no es una publicación — no debe bloquear el publish de su propio autor",
+  );
+});
+
 Deno.test("propiedad_con_deleted_at_no_nulo_no_cuenta_como_duplicado", async () => {
   const client = make_fake_client([make_row({ deleted_at: "2026-08-01T00:00:00Z" })]);
   const checker = make_duplicate_property_checker(client as never);
