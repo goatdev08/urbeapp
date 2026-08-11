@@ -63,12 +63,14 @@ const MATRIX: Array<[string, number | null, string]> = [
   ["uploading", 150, "VIDEO_NOT_READY"],
   // processing: subido, transcodificando — la RPC lo acepta, el checker también (#126)
   ["processing", null, "ok"],
-  ["processing", 45, "VIDEO_DURATION_INVALID"],
+  ["processing", 5, "VIDEO_DURATION_INVALID"],
+  ["processing", 45, "ok"], // #149: el mínimo bajó a 10 s — 45 ya es válido
   ["processing", 90, "ok"],
   ["processing", 150, "VIDEO_DURATION_INVALID"],
-  // ready: el caso pleno — duración conocida se valida [60,120] inclusive
+  // ready: el caso pleno — duración conocida se valida [10,120] inclusive (#149)
   ["ready", null, "ok"], // #126: sin duración conocida NO bloquea (antes: 400 sin salida)
-  ["ready", 45, "VIDEO_DURATION_INVALID"],
+  ["ready", 5, "VIDEO_DURATION_INVALID"],
+  ["ready", 45, "ok"], // #149
   ["ready", 90, "ok"],
   ["ready", 150, "VIDEO_DURATION_INVALID"],
   // failed: transcodificación muerta — jamás publicable
@@ -101,16 +103,17 @@ Deno.test("checker_matriz_status_x_duration", async () => {
 
 // ── Bordes exactos de duración (inclusive por PRD §14 paso 5) ─────────────────
 
-Deno.test("checker_ready_duration_60_y_120_son_validos_inclusive", async () => {
-  for (const d of [60, 120]) {
+Deno.test("checker_ready_duration_10_y_120_son_validos_inclusive", async () => {
+  // #149: el mínimo bajó de 60 a 10 s (decisión de producto 2026-08-10).
+  for (const d of [10, 60, 120]) {
     const checker = make_video_status_checker(fake_client(row("ready", d)));
     const result = await checker.check(UID, AGENT);
     assertEquals(result.ok, true, `ready×${d} debe ser válido (límite inclusive)`);
   }
 });
 
-Deno.test("checker_ready_duration_59_y_121_son_invalidos", async () => {
-  for (const d of [59, 121]) {
+Deno.test("checker_ready_duration_9_y_121_son_invalidos", async () => {
+  for (const d of [9, 121]) {
     const checker = make_video_status_checker(fake_client(row("ready", d)));
     const result = await checker.check(UID, AGENT);
     assertEquals(result.ok, false, `ready×${d} debe rechazarse`);

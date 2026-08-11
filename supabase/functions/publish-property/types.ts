@@ -113,9 +113,9 @@ export interface PropertyPublisher {
 // Pipeline de moderación (PRD §15.2): antes de publicar, valida que el video
 // enlazado por cloudflare_uid (del agente que publica) exista y esté subido
 // (status 'processing' o 'ready' — alineado con la RPC, #126) y que su
-// duración, CUANDO se conoce, esté entre 60 y 120 segundos INCLUSIVE (PRD §14,
-// paso 5). duration_seconds null (webhook aún sin reportar) NO bloquea — el
-// cliente valida la duración al elegir el video, antes de subir.
+// duración, CUANDO se conoce, esté entre 10 y 120 segundos INCLUSIVE (#149;
+// antes 60–120). duration_seconds null (webhook aún sin reportar) NO bloquea —
+// el cliente valida la duración al elegir el video, antes de subir.
 
 export type VideoStatusCheckResult =
   | { ok: true; duration_seconds: number | null }
