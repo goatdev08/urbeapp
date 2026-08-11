@@ -64,13 +64,25 @@ export interface ProfileScreenProps {
    * La ruta empujada /profile/[id] (Stack, sin tab bar) no lo pasa.
    */
   under_floating_tab_bar?: boolean;
+  /**
+   * true cuando la pantalla llegó EMPUJADA al Stack (/profile/[id]) y hay una
+   * ruta a la cual regresar — muestra el BackButton flotante SIEMPRE, incluso
+   * en el perfil propio (#147: tocar tu propio video en el feed empuja tu
+   * perfil y sin esto quedabas sin regreso visible). El tab Perfil no lo pasa.
+   */
+  show_back?: boolean;
 }
 
 // ---------------------------------------------------------------------------
 // Componente
 // ---------------------------------------------------------------------------
 
-export function ProfileScreen({ agent_id, is_own_profile, under_floating_tab_bar = false }: ProfileScreenProps) {
+export function ProfileScreen({
+  agent_id,
+  is_own_profile,
+  under_floating_tab_bar = false,
+  show_back = false,
+}: ProfileScreenProps) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { signOut, user } = useAuth();
@@ -217,9 +229,9 @@ export function ProfileScreen({ agent_id, is_own_profile, under_floating_tab_bar
 
   return (
     <View style={styles.scroll}>
-      {/* Perfil ajeno (ruta empujada /profile/[id]) → botón atrás flotante.
-          En el perfil propio (tab) no hay atrás; ahí va el menú "⋯". */}
-      {!is_own_profile && <BackButton floating />}
+      {/* Ruta empujada (/profile/[id]) → botón atrás flotante SIEMPRE — aun
+          en el perfil propio (#147). En el tab Perfil no hay nada que popear. */}
+      {show_back && <BackButton floating />}
 
       {/* Botón "⋯" flotante arriba-derecha — abre el menú de acciones.
           Solo en perfil propio (las acciones son del dueño de la cuenta). */}
