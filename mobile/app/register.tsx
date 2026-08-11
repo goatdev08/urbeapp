@@ -5,11 +5,11 @@
  *   'user'  (default) — registro libre (§5.1): nombre completo, teléfono,
  *           fecha de nacimiento, estado, municipio, correo + contraseña
  *           (+confirmar). register_user (EF `register`, 93.2) crea la cuenta
- *           (email_confirm:false, 72.3), el perfil (role='user') y los 4
- *           consentimientos en un solo paso server-side; SIN auto-login —
- *           GoTrue rechazaría el password grant sin correo confirmado, así
- *           que el cliente dispara send_verification_email y navega a
- *           /verify-email en su lugar (72.3, verificación real de email).
+ *           (email_confirm:true — #146, skip TEMPORAL de 72.3), el perfil
+ *           (role='user') y los 4 consentimientos en un solo paso server-side;
+ *           tras el éxito hay auto-login (signIn) y la sesión redirige a la
+ *           home. Fallback: si signIn falla (EF vieja sin auto-confirm), se
+ *           conserva el camino send_verification_email → /verify-email.
  *   'agent' — registro de agente por código de invitación (flujo original 5.7/5.8):
  *           validate-invitation → datos → redeem-invitation → auto-login → onboarding.
  *
@@ -230,15 +230,18 @@ export default function RegisterScreen() {
         return;
       }
 
-      // Sin auto-login (72.3): la EF `register` crea la cuenta con
-      // email_confirm:false, así que GoTrue rechazaría el password grant con
-      // email_not_confirmed. El correo de verificación lo dispara el
-      // cliente (admin.createUser no lo envía) y el usuario espera en
-      // /verify-email hasta abrir el enlace.
-      // El boolean de éxito/fallo se ignora aquí a propósito: verify-email.tsx
-      // ya tiene su propio botón "reenviar" si este primer envío falló.
-      await send_verification_email(email);
-      router.replace({ pathname: '/verify-email', params: { email } });
+      // #146 (skip TEMPORAL de 72.3): la EF `register` auto-confirma la
+      // cuenta, así que el usuario entra directo con auto-login — la sesión
+      // dispara el <Redirect href="/"> de arriba. Fallback: si el signIn
+      // falla (p.ej. la EF vieja aún creaba sin confirmar → email_not_confirmed
+      // durante la ventana de deploy), se conserva el camino verify-email
+      // completo — el cliente funciona con CUALQUIER versión de la EF.
+      try {
+        await signIn(email, password);
+      } catch {
+        await send_verification_email(email);
+        router.replace({ pathname: '/verify-email', params: { email } });
+      }
     } catch (err) {
       set_general_error(map_network_error(err));
     } finally {

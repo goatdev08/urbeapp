@@ -5066,7 +5066,7 @@
         "id": "72",
         "title": "Ola 1 — Auth completo (Google/Apple OAuth + OTP teléfono + LFPDPPP versionado)",
         "description": "Autenticación del PRD §5 más allá de email+pass: Google/Apple OAuth, OTP por teléfono, términos y aviso de privacidad versionados, validaciones obligatorias de registro.",
-        "details": "PRD §5 (5.1–5.5). Hoy: email+pass. Falta OAuth (Google/Apple vía Supabase Auth), OTP teléfono, aceptación versionada LFPDPPP (§5.5), validaciones (§5.4), recuperación (§5.3). Toca Supabase Auth config, migraciones (consentimiento versionado), UI de registro/login. Épica del camino a producción (ADR 0008 / docs/PRD-beta.md). Spec detallado (modelo de datos, RLS, EF, pantallas, estados, edge cases, tests, subtareas) se redacta SECUENCIAL al entrar su ola, con aprobación de Abraham; add-task roto → subtareas por escritura directa en tasks.json.\n\n=== ENTREGA PARCIAL (2026-07-28) ===\nDONE y en main: 72.1 catalogo INEGI (32 estados / 2478 municipios), 72.2 constraints de registro §5.1, 72.6 gate legal versionado §5.5, 72.7 consentimiento WhatsApp.\nDEFERRED por prerequisito EXTERNO (Abraham): 72.3 espera cuenta Resend + dominio verificado · 72.4 espera Google Cloud OAuth client · 72.5 espera el SMTP de 72.3.\nPor decision del usuario la UI de las TRES ya quedo construida y en verde: al llegar las credenciales es CONFIGURAR, no programar.\nLa tarea NO se marca done. Retomarla cuando existan las cuentas.\nDeuda derivada levantada como tareas propias: #92 (revocar TRUNCATE en todo public — anon lo tiene de fabrica), #93 (/auth/v1/signup con la anon key crea cuentas incompletas §5.1 + los errores crudos de Postgres llegan sin filtrar a un llamante anonimo), #94 (el consentimiento de WhatsApp no se verifica en el punto de contacto, hoy es solo probatorio).\nNOTA DE ALCANCE: el titulo dice \"OTP telefono\" pero NINGUNA subtarea lo implementa — docs/PRD-beta.md:84 lo difiere explicitamente (\"guardar campo, verificar solo email en beta\"). No es un hueco del plan.",
+        "details": "PRD §5 (5.1–5.5). Hoy: email+pass. Falta OAuth (Google/Apple vía Supabase Auth), OTP teléfono, aceptación versionada LFPDPPP (§5.5), validaciones (§5.4), recuperación (§5.3). Toca Supabase Auth config, migraciones (consentimiento versionado), UI de registro/login. Épica del camino a producción (ADR 0008 / docs/PRD-beta.md). Spec detallado (modelo de datos, RLS, EF, pantallas, estados, edge cases, tests, subtareas) se redacta SECUENCIAL al entrar su ola, con aprobación de Abraham; add-task roto → subtareas por escritura directa en tasks.json.\n\n=== ENTREGA PARCIAL (2026-07-28) ===\nDONE y en main: 72.1 catalogo INEGI (32 estados / 2478 municipios), 72.2 constraints de registro §5.1, 72.6 gate legal versionado §5.5, 72.7 consentimiento WhatsApp.\nDEFERRED por prerequisito EXTERNO (Abraham): 72.3 espera cuenta Resend + dominio verificado · 72.4 espera Google Cloud OAuth client · 72.5 espera el SMTP de 72.3.\nPor decision del usuario la UI de las TRES ya quedo construida y en verde: al llegar las credenciales es CONFIGURAR, no programar.\nLa tarea NO se marca done. Retomarla cuando existan las cuentas.\nDeuda derivada levantada como tareas propias: #92 (revocar TRUNCATE en todo public — anon lo tiene de fabrica), #93 (/auth/v1/signup con la anon key crea cuentas incompletas §5.1 + los errores crudos de Postgres llegan sin filtrar a un llamante anonimo), #94 (el consentimiento de WhatsApp no se verifica en el punto de contacto, hoy es solo probatorio).\nNOTA DE ALCANCE: el titulo dice \"OTP telefono\" pero NINGUNA subtarea lo implementa — docs/PRD-beta.md:84 lo difiere explicitamente (\"guardar campo, verificar solo email en beta\"). No es un hueco del plan.\nDERIVADAS: #146 (usuario — skip temporal de confirmación de email)",
         "testStrategy": "TDD estricto en lógica crítica (supabase/functions/**, migrations/**, lib/hooks/validation): RED→GREEN→guardian. Verificación ligera (tsc/lint/smoke) en UI. Se detalla al specificar la ola.",
         "status": "done",
         "dependencies": [
@@ -7620,6 +7620,52 @@
           }
         ],
         "updatedAt": "2026-08-10T00:00:00.000Z"
+      },
+      {
+        "id": "146",
+        "title": "fix(72.3): registro entra directo — skip temporal de confirmación de email + fallback de ubicación en __DEV__",
+        "description": "Origen: subtarea 72.3 · Detectado por: usuario (device real 2026-08-10, APK 1.0.5). El registro nuevo crea la cuenta sin confirmar y manda un correo cuyo link redirige a http://localhost:3000 (site_url; uri_allow_list vacío) — página muerta en el teléfono. Decisión de Abraham: saltar la confirmación TEMPORALMENTE (\"permitir que los usuarios se unan, después lo pedimos\"). Además: el AVD post-reboot quedó sin ubicación en todos los providers y el muro gps_off bloquea ver la app en el emulador → fallback de coords GDL solo en __DEV__.",
+        "details": "3 frentes: (1) EF register: email_confirm:false→true (revert = el verdadero cierre de 72.3 con Resend); (2) register.tsx: auto-login post-registro con fallback al camino verify-email si signIn falla (compat con EF vieja durante la ventana de deploy); (3) LocationProvider.fetch_current_coords: si no hay fix fresco NI histórico y __DEV__, devolver GDL (20.6736,-103.3444) en vez de lanzar → el muro gps_off deja de bloquear emuladores. Config remota (sin código): uri_allow_list='urbea://**' para que verify-email/reset-password redirijan a la app cuando se re-active la confirmación.",
+        "testStrategy": "EF: handler.test.ts asserta email_confirm:true (RED→GREEN, deno test). Cliente: register-user-mode.test.tsx re-contratado a auto-login + fallback. Location: tests del muro con __DEV__=false forzado + test nuevo del fallback __DEV__. pnpm tsc/lint/jest verdes.",
+        "status": "in-progress",
+        "dependencies": [
+          "72",
+          "93",
+          "143"
+        ],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "EF register: email_confirm true (TDD) + deploy remoto",
+            "description": "Flip en handler.ts con comentario de reversión; test 400 actualizado primero (RED).",
+            "status": "pending",
+            "dependencies": []
+          },
+          {
+            "id": 2,
+            "title": "register.tsx: auto-login post-registro con fallback verify-email",
+            "description": "signIn(email,password) tras register_user ok; si falla → send_verification_email + /verify-email (orden de deploy independiente).",
+            "status": "pending",
+            "dependencies": [
+              1
+            ]
+          },
+          {
+            "id": 3,
+            "title": "LocationProvider: fallback GDL en __DEV__ cuando no hay fix",
+            "description": "Solo __DEV__; producción conserva el muro gps_off.",
+            "status": "pending",
+            "dependencies": []
+          },
+          {
+            "id": 4,
+            "title": "Config remota: uri_allow_list urbea://** (Management API)",
+            "description": "Arregla el destino de los links de verify/reset para cuando se re-active la confirmación.",
+            "status": "pending",
+            "dependencies": []
+          }
+        ]
       }
     ],
     "metadata": {

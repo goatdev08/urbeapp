@@ -84,13 +84,23 @@ const wrapper = ({ children }: { children: React.ReactNode }) => (
   <LocationProvider>{children}</LocationProvider>
 );
 
+// #146: el fallback __DEV__ (coord GDL fija) le quitaría el muro a los tests
+// de gps_off — este archivo verifica el comportamiento de PRODUCCIÓN, así que
+// corre completo con __DEV__=false; el describe #146 lo enciende localmente.
+const set_dev = (value: boolean) => {
+  (globalThis as unknown as { __DEV__: boolean }).__DEV__ = value;
+};
+
 beforeEach(() => {
   jest.clearAllMocks();
+  set_dev(false);
   // #143.1: default del fallback = sin historial (los EC previos conservan su
   // semántica exacta: posición fresca falla → gps_off). Los tests del fallback
   // lo pisan con una posición histórica.
   mock_get_last_known.mockResolvedValue(null);
 });
+
+afterAll(() => set_dev(true));
 
 // ===========================================================================
 // EC-1: permiso NO concedido → 'permission_denied', coords null
@@ -515,5 +525,35 @@ describe('#144.1: last_known_primero_con_maxAge', () => {
 
     await waitFor(() => expect(result.current.status).toBe('granted'));
     expect(result.current.coords).toEqual({ latitude: 19.43, longitude: -99.13 });
+  });
+});
+
+// ===========================================================================
+// #146: fallback __DEV__ — un AVD sin fix en NINGÚN provider no bloquea el dev
+// ===========================================================================
+describe('#146: fallback_dev_sin_fix_no_bloquea', () => {
+  it('__DEV__ + fresca LANZA + sin historial → granted con la coord GDL fija (sin muro)', async () => {
+    set_dev(true);
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mock_get_foreground.mockResolvedValue({ granted: true, canAskAgain: true });
+    mock_has_services.mockResolvedValue(true);
+    mock_get_current_position.mockRejectedValue(new Error('Current location is unavailable'));
+    // fast-path (maxAge) e histórico en null vía el beforeEach — el peor caso real (#109).
+
+    const { result } = await renderHook(() => useLocation(), { wrapper });
+
+    await waitFor(() => expect(result.current.status).toBe('granted'));
+    expect(result.current.coords).toEqual({ latitude: 20.6736, longitude: -103.3444 });
+  });
+
+  it('con __DEV__=false el mismo escenario conserva el muro gps_off (producción intacta)', async () => {
+    mock_get_foreground.mockResolvedValue({ granted: true, canAskAgain: true });
+    mock_has_services.mockResolvedValue(true);
+    mock_get_current_position.mockRejectedValue(new Error('Current location is unavailable'));
+
+    const { result } = await renderHook(() => useLocation(), { wrapper });
+
+    await waitFor(() => expect(result.current.status).toBe('gps_off'));
+    expect(result.current.coords).toBeNull();
   });
 });

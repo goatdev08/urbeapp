@@ -17,10 +17,9 @@
 //     que contengan "already been registered" / "already registered".
 //
 // Orquestación: validar payload (§5.1) → UNDERAGE → phone_exists → createUser
-// (metadata EXACTA a lo que lee handle_new_user, email_confirm:false — 72.3:
-// el usuario queda sin confirmar; el CLIENTE dispara el correo de verificación
-// vía auth.resend post-registro, porque admin.createUser NO envía correo
-// automático. GoTrue rechazará el login hasta que confirme) →
+// (metadata EXACTA a lo que lee handle_new_user; email_confirm:true — #146:
+// skip TEMPORAL de la verificación de email 72.3, el usuario entra directo
+// con login inmediato post-registro. Revertir a false al re-activar 72.3) →
 // register_atomic (RPC 93.1, append-only, UNA sola vez) → 200 { user_id }.
 // Si register_atomic falla → compensación deleteUser(user_id); si la
 // compensación también falla, se registra con console.error (sin enmascarar)
@@ -185,7 +184,10 @@ export async function handler(
     const create_result = await authAdmin.createUser({
       email: input.email,
       password: input.password,
-      email_confirm: false,
+      // ponytail: #146 — auto-confirmar TEMPORALMENTE (decisión Abraham
+      // 2026-08-10): el link de confirmación redirigía a localhost:3000 en el
+      // teléfono. Revertir a false al re-activar 72.3 (Resend + dominio).
+      email_confirm: true,
       user_metadata: {
         first_name: input.first_name,
         last_name: input.last_name,

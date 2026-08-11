@@ -7,14 +7,14 @@
  * `signUp` (context) + `record_signup_consents` y en su lugar llamar
  * `register_user` (EF `register`, 93.2).
  *
- * Cambio bajo prueba (72.3 — RENEGOCIADO, reemplaza el contrato post-éxito de
- * 93.3): GoTrue ya NO auto-confirma la cuenta (email_confirm:false en la EF),
- * así que el auto-login (`signIn`) tras el éxito de `register_user` YA NO
- * ocurre (GoTrue rechazaría el password grant con email_not_confirmed). El
- * flujo correcto es: éxito → `send_verification_email(email)` →
- * `router.replace({ pathname: '/verify-email', params: { email } })`. El modo
- * 'agent' (invitación, auto-login SÍ vigente porque redeem_invitation
- * confirma el email a propósito) NO cambia (EC-6, no-regresión).
+ * Cambio bajo prueba (#146 — skip TEMPORAL de 72.3): la EF vuelve a
+ * auto-confirmar (email_confirm:true), así que el contrato post-éxito es
+ * auto-login `signIn(email, password)` (la sesión activa el <Redirect
+ * href="/"> del screen). El camino 72.3 (send_verification_email →
+ * /verify-email) queda SOLO como fallback cuando signIn rechaza — p.ej. la
+ * ventana de deploy donde la EF vieja aún crea sin confirmar. El modo
+ * 'agent' (invitación, auto-login vía redeem_invitation) NO cambia (EC-6,
+ * no-regresión).
  *
  * Reusa el armazón de mocks de login-submit.test.tsx (useAuth, expo-router,
  * SafeAreaView) — misma convención RNTL v14 + React 19 (render async, act,
@@ -30,9 +30,9 @@
  * - EC-1: submit válido (todo lleno, 3 consentimientos aceptados) → register_user
  *   llamado UNA vez con el payload EXACTO (email trim, phone E.164, date_of_birth
  *   YYYY-MM-DD, state_id/municipality_id del picker, first_name/last_name
- *   partidos del nombre completo) y, tras éxito, send_verification_email
- *   llamado con el email trim + router.replace hacia /verify-email con param
- *   email; signIn y signUp (context) NUNCA se llaman.
+ *   partidos del nombre completo) y, tras éxito, auto-login signIn(email,
+ *   password) sin pasar por verify-email (#146); si signIn rechaza →
+ *   fallback send_verification_email + /verify-email. signUp NUNCA se llama.
  *
  * ### Validación local (gate antes de llamar a la red)
  * - EC-2: falta un consentimiento (whatsapp) → register_user NO se llama (0 veces)
@@ -226,12 +226,13 @@ afterEach(() => {
 });
 
 // ===========================================================================
-// EC-1: submit válido → register_user con el payload exacto, luego
-//       send_verification_email + router.replace a /verify-email (72.3);
-//       signIn/signUp (context) nunca se llaman.
+// EC-1: submit válido → register_user con el payload exacto, luego auto-login
+//       (#146, skip temporal de 72.3: la EF auto-confirma y el usuario entra
+//       directo — la sesión dispara el <Redirect href="/">). El camino
+//       verify-email queda SOLO como fallback si signIn falla.
 // ===========================================================================
-describe('EC-1: submit_valido_llama_register_user_y_luego_send_verification_email', () => {
-  it('register_user recibe el payload normalizado; tras éxito llama send_verification_email(email) y navega a /verify-email con el email; signIn/signUp NO se usan', async () => {
+describe('EC-1: submit_valido_llama_register_user_y_luego_auto_login', () => {
+  it('register_user recibe el payload normalizado; tras éxito hay auto-login signIn(email, password) SIN pasar por verify-email; signUp NO se usa', async () => {
     mock_register_user.mockResolvedValue({ ok: true, user_id: 'uuid-93' });
 
     let q!: RenderResult;
@@ -258,19 +259,40 @@ describe('EC-1: submit_valido_llama_register_user_y_luego_send_verification_emai
       municipality_id: '14039',
     });
 
+    expect(mock_sign_in).toHaveBeenCalledTimes(1);
+    expect(mock_sign_in).toHaveBeenCalledWith(VALID.email_trimmed, VALID.password);
+
+    // Con auto-login exitoso NO se manda correo ni se navega a verify-email —
+    // la sesión nueva activa el <Redirect href="/"> del propio screen.
+    expect(mock_send_verification_email).not.toHaveBeenCalled();
+    expect(mock_router_replace).not.toHaveBeenCalledWith(
+      expect.objectContaining({ pathname: '/verify-email' }),
+    );
+    expect(mock_sign_up).not.toHaveBeenCalled();
+  });
+
+  it('fallback: si signIn RECHAZA (EF vieja sin auto-confirm → email_not_confirmed), conserva send_verification_email + navegación a /verify-email', async () => {
+    mock_register_user.mockResolvedValue({ ok: true, user_id: 'uuid-93' });
+    mock_sign_in.mockRejectedValue(new Error('Email not confirmed'));
+
+    let q!: RenderResult;
+    await act(async () => {
+      q = await render(<RegisterScreen />);
+    });
+
+    await fill_valid_user_form(q);
+
+    await act(async () => {
+      fireEvent.press(q.getByRole('button', { name: /crear cuenta/i }));
+    });
+    await drain_react_updates();
+
     expect(mock_send_verification_email).toHaveBeenCalledTimes(1);
     expect(mock_send_verification_email).toHaveBeenCalledWith(VALID.email_trimmed);
-
     expect(mock_router_replace).toHaveBeenCalledWith({
       pathname: '/verify-email',
       params: { email: VALID.email_trimmed },
     });
-
-    // GoTrue rechazaría el password grant sin email confirmado (72.3) — ya no
-    // hay auto-login en el modo 'user'. El wiring viejo (signUp de context)
-    // tampoco debe usarse.
-    expect(mock_sign_in).not.toHaveBeenCalled();
-    expect(mock_sign_up).not.toHaveBeenCalled();
   });
 });
 
