@@ -124,7 +124,7 @@ const TEST_PREFS_DATA = {
 //
 // Recrea las cadenas builder que el hook usa:
 //   from('users').select(...).eq('id', agent_id).single()
-//   from('user_preferences').select(...).eq('user_id', agent_id).maybeSingle()
+//   from('agent_public_profiles').select(...).eq('user_id', agent_id).maybeSingle()  (#145.3: vista, no la tabla)
 // ---------------------------------------------------------------------------
 
 function make_supabase_mock(opts: {
@@ -144,14 +144,14 @@ function make_supabase_mock(opts: {
   const mock_eq_users = jest.fn().mockReturnValue({ single: mock_single });
   const mock_select_users = jest.fn().mockReturnValue({ eq: mock_eq_users });
 
-  // Cadena user_preferences → maybeSingle()
+  // Cadena agent_public_profiles (vista #145.3) → maybeSingle()
   const mock_maybe_single = jest.fn().mockResolvedValue(prefs_result);
   const mock_eq_prefs = jest.fn().mockReturnValue({ maybeSingle: mock_maybe_single });
   const mock_select_prefs = jest.fn().mockReturnValue({ eq: mock_eq_prefs });
 
   const mock_from = jest.fn().mockImplementation((table: string) => {
     if (table === 'users') return { select: mock_select_users };
-    if (table === 'user_preferences') return { select: mock_select_prefs };
+    if (table === 'agent_public_profiles') return { select: mock_select_prefs };
     return {};
   });
 
@@ -183,13 +183,13 @@ beforeEach(() => {
 describe('useAgentProfile', () => {
   // ── EC-1: Fetch inicial en mount ──────────────────────────────────────────
 
-  it('(EC-1) fetch_inicial_en_mount: al montar, llama from("users") y from("user_preferences") y expone data con los campos del agente', async () => {
+  it('(EC-1) fetch_inicial_en_mount: al montar, llama from("users") y from("agent_public_profiles") y expone data con los campos del agente', async () => {
     // Patrón RNTL 14: await renderHook estabiliza efectos async antes de continuar.
     const { result } = await renderHook(() => useAgentProfile(TEST_AGENT_ID));
 
     // Ambas queries deben haberse ejecutado
     expect(mock_supabase_holder.client._mock_from).toHaveBeenCalledWith('users');
-    expect(mock_supabase_holder.client._mock_from).toHaveBeenCalledWith('user_preferences');
+    expect(mock_supabase_holder.client._mock_from).toHaveBeenCalledWith('agent_public_profiles');
     expect(mock_supabase_holder.client._mock_from).toHaveBeenCalledTimes(2);
 
     // Estado final: sin error, con datos
@@ -216,7 +216,7 @@ describe('useAgentProfile', () => {
   it('(EC-2) re_fetch_on_focus_invoca_queries_de_nuevo: cuando la pantalla recupera el foco, supabase.from se llama de nuevo (re-fetch anti-stale)', async () => {
     const { result } = await renderHook(() => useAgentProfile(TEST_AGENT_ID));
 
-    // Baseline: 2 queries en mount (users + user_preferences)
+    // Baseline: 2 queries en mount (users + agent_public_profiles)
     expect(result.current.loading).toBe(false);
     const calls_tras_mount = mock_supabase_holder.client._mock_from.mock.calls.length;
     expect(calls_tras_mount).toBe(2);
@@ -236,7 +236,7 @@ describe('useAgentProfile', () => {
 
   // ── EC-3: prefs null no rompe ─────────────────────────────────────────────
 
-  it('(EC-3) prefs_null_no_rompe: si user_preferences devuelve null (usuario sin onboarding), full_name y profile_photo_url son null sin error', async () => {
+  it('(EC-3) prefs_null_no_rompe: si la vista agent_public_profiles devuelve null (agente sin preferencias), full_name y profile_photo_url son null sin error', async () => {
     mock_supabase_holder.client = make_supabase_mock({
       prefs_result: { data: null, error: null },
     });

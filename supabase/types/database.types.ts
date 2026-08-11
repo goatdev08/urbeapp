@@ -1,37 +1,3 @@
-// Tipos TypeScript generados desde el esquema de Supabase (proyecto urbea-app).
-// Regenerar con:  supabase gen types typescript --project-id mvpvqmyhrrkwbnpctpuq > supabase/types/database.types.ts
-// (o vía el MCP de Supabase: generate_typescript_types). NO editar a mano.
-//
-// ⚠️ #73.4 (2026-08-09): regen contra `--local`, con las migraciones
-// 20260809000004/20260809000005 ya aplicadas localmente. Dos regens dentro de
-// la misma subtarea: (1) 20260809000004 -- tabla nueva `property_video_slots`
-// (abstracción de vigencia del slot de video, semilla #76/pagos, PRD
-// §2.2/§17.1); (2) 20260809000005, tras el fix crítico detectado por el
-// coordinador (property_status hardcodeado a 'active' en la RPC pese a que el
-// handler ya mandaba 'pending_review') -- agrega `p_property_status?: string`
-// a los Args de `publish_property_atomic`. Diff mínimo verificado byte-a-byte
-// contra el regen fresco en ambos casos; nada más se movió. Estas migraciones
-// NO se han desplegado al remoto (`urbea-app`) todavía -- local y remoto
-// quedan desalineados hasta que una subtarea posterior (§13.9/despliegue de
-// la ola) las aplique allá y regenere de nuevo contra `--project-id`.
-//
-// El regen anterior (#73.2, 2026-08-09) ya había resuelto: tabla
-// `property_revisions` (snapshot doble-versión §15.6) + enum
-// property_revision_status pending/needs_changes/rejected/approved.
-//
-// El regen de #73.1 (2026-08-09) ya había resuelto: property_status +10
-// estados operativos del PRD §15.4 (uploading_media, media_failed,
-// pending_payment, approved, expired, rented, sold, rejected, deleted_soft,
-// deleted_hard).
-//
-// Gotchas de entorno para `gen types --local`:
-//   - Necesita el credential helper de Docker en el PATH →
-//     export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"
-//   - Exportar SUPABASE_ACCESS_TOKEN con un valor dummy, o la CLI se cuelga esperando
-//     el Keychain en sesiones no interactivas (ver memoria supabase_cli_use_brew_global).
-//     🔴 NUNCA escribas ese valor literal en un archivo versionado: GitHub Push
-//     Protection reconoce el prefijo y rechaza el push entero.
-
 export type Json =
   | string
   | number
@@ -41,30 +7,10 @@ export type Json =
   | Json[]
 
 export type Database = {
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
+  // Allows to automatically instantiate createClient with right options
+  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
+  __InternalSupabase: {
+    PostgrestVersion: "14.15"
   }
   public: {
     Tables: {
@@ -1494,7 +1440,22 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      agent_public_profiles: {
+        Row: {
+          full_name: string | null
+          profile_photo_url: string | null
+          user_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_preferences_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       admin_create_agency_atomic: {
@@ -1525,6 +1486,22 @@ export type Database = {
           vio_completo: boolean
         }[]
       }
+      moderate_property_atomic: {
+        Args: {
+          p_action_type: string
+          p_admin_id: string
+          p_changed_fields?: Json
+          p_new_property_status?: string
+          p_new_values: Json
+          p_old_values: Json
+          p_property_id: string
+          p_reason?: string
+          p_revision_id?: string
+          p_revision_reason?: string
+          p_revision_status?: string
+        }
+        Returns: undefined
+      }
       pending_legal_consents: {
         Args: never
         Returns: {
@@ -1553,6 +1530,7 @@ export type Database = {
           p_operation_type: string
           p_pet_friendly?: boolean
           p_price: number
+          p_price_visible?: boolean
           p_property_status?: string
           p_property_type: string
           p_square_meters?: number
@@ -1808,9 +1786,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {
       agency_member_role: ["owner", "agent", "admin", "viewer"],
@@ -1904,4 +1879,3 @@ export const Constants = {
     },
   },
 } as const
-

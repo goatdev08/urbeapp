@@ -8,12 +8,14 @@
  *
  * ponytail: solo modo oscuro hardcodeado (#F6F2EB / rgba blancos sobre ink_feed).
  * El dual-mode formal (theme dark) queda pendiente al final de la tarea #9.
- * El avatar del agente muestra la inicial del owner_user_id como placeholder —
- * nombre y foto real requieren join con user_preferences (subtarea futura).
- * El handler onAgentPress es stub (sin ruta de perfil desde el feed aún).
+ * #145.4: avatar con la FOTO real del agente (vista agent_public_profiles →
+ * useR2Urls resuelve key R2 o passthrough de URL legacy) + nombre debajo;
+ * fallback a la inicial (del nombre si existe) cuando no hay foto. El tap
+ * (avatar o nombre) navega al perfil público vía onAgentPress con feedback
+ * de presión (mismo scale/opacity que los botones del rail).
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -21,10 +23,12 @@ import {
   Platform,
   StyleSheet,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Bathtub, Bed, BookmarkSimple, Heart, type Icon, ShareNetwork, WhatsappLogo } from 'phosphor-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useR2Urls } from '@/hooks/useR2Urls';
 import { colors, fonts, glass, spacing } from '@/theme/theme';
 import type { FeedPropertyWithUrl } from '../types';
 
@@ -77,9 +81,16 @@ export function PropertyOverlay({
 }: PropertyOverlayProps) {
   const insets = useSafeAreaInsets();
 
-  // ponytail: inicial como placeholder de avatar — foto/nombre del agente
-  // requieren join con user_preferences; diferido a subtarea de enriquecimiento del feed.
-  const agent_initial = property.owner_user_id.charAt(0).toUpperCase();
+  // #145.4: foto real del agente. agent_photo_url es key R2 o URL legacy —
+  // useR2Urls resuelve/pasa según corresponda (fail-soft → null → inicial).
+  const { urls: avatar_urls } = useR2Urls([property.agent_photo_url]);
+  const avatar_url = avatar_urls[0] ?? null;
+  const [avatar_error, set_avatar_error] = useState(false);
+  const show_photo = Boolean(avatar_url) && !avatar_error;
+
+  // Fallback: inicial del nombre público; sin nombre, la del owner_user_id
+  // (comportamiento previo a #145).
+  const agent_initial = (property.agent_name ?? property.owner_user_id).charAt(0).toUpperCase();
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
@@ -145,18 +156,37 @@ export function PropertyOverlay({
         style={[styles.info, { bottom: insets.bottom + INFO_BOTTOM }]}
         pointerEvents="box-none"
       >
-        {/* Avatar del agente */}
+        {/* Avatar + nombre del agente (#145.4) — foto real con fallback a
+            inicial; feedback de presión y tap → perfil público del agente. */}
         <Pressable
           onPress={onAgentPress}
-          style={styles.agent_row}
+          style={({ pressed }) => [styles.agent_row, pressed && styles.agent_row_pressed]}
           accessibilityRole="button"
-          accessibilityLabel="Ver perfil del agente"
+          accessibilityLabel={
+            property.agent_name
+              ? `Ver perfil de ${property.agent_name}`
+              : 'Ver perfil del agente'
+          }
         >
           <View style={styles.agent_avatar}>
-            <Text style={styles.agent_initial} numberOfLines={1}>
-              {agent_initial}
-            </Text>
+            {show_photo ? (
+              <Image
+                source={{ uri: avatar_url! }}
+                style={styles.agent_photo}
+                contentFit="cover"
+                onError={() => set_avatar_error(true)}
+              />
+            ) : (
+              <Text style={styles.agent_initial} numberOfLines={1}>
+                {agent_initial}
+              </Text>
+            )}
           </View>
+          {property.agent_name && (
+            <Text style={styles.agent_name} numberOfLines={1}>
+              {property.agent_name}
+            </Text>
+          )}
         </Pressable>
 
         {/* Bloque de info tappable → abre el detalle (/property/[id]).
@@ -306,21 +336,43 @@ const styles = StyleSheet.create({
     marginBottom: spacing.s_12,
     alignSelf: 'flex-start',
   },
+  /** Feedback de presión (#145.4) — mismo lenguaje que btn_pressed del rail. */
+  agent_row_pressed: {
+    transform: [{ scale: 0.94 }],
+    opacity: 0.8,
+  },
   agent_avatar: {
     width: 34,
     height: 34,
     borderRadius: 17,
-    // ponytail: color placeholder marrón cálido — foto real requiere join user_preferences
+    // Fondo del fallback de inicial; la foto lo cubre por completo cuando hay.
     backgroundColor: '#6f5742',
     borderWidth: 2,
     borderColor: colors.primary_soft,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden', // la foto respeta el círculo
+  },
+  agent_photo: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 15, // 17 - 2 de borde
   },
   agent_initial: {
     fontFamily: fonts.sans_bold,
     fontSize: 13,
     color: '#F6F2EB',
+  },
+  /** Nombre público del agente bajo el avatar (#145.4). */
+  agent_name: {
+    marginTop: spacing.s_4,
+    fontFamily: fonts.sans_bold,
+    fontSize: 13,
+    color: colors.paper,
+    // Sombra sutil para legibilidad sobre video claro (mismo rol que el gradiente).
+    textShadowColor: 'rgba(23,20,15,0.55)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   address: {
     fontFamily: fonts.display,

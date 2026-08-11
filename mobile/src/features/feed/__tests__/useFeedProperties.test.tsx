@@ -48,6 +48,8 @@ function make_feed_property(
     bedrooms: 2,
     bathrooms: 1,
     owner_user_id: 'owner-uuid-feed-test',
+    agent_name: null,
+    agent_photo_url: null,
     agency_id: null,
     created_at: '2026-01-01T00:00:00Z',
     agent_phone: null,

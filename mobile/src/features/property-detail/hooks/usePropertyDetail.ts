@@ -130,12 +130,13 @@ export function usePropertyDetail(id: string): UsePropertyDetailResult {
       if (row_error) throw new Error(row_error.message);
       if (!row) throw new Error('Propiedad no encontrada');
 
-      // ── Paso 2: paralelo — user_preferences + mint-video-url ──────────
-      // ponytail: cast `as never` para columnas de migración 0015 no regeneradas;
-      // mismo patrón que useAgentProfile.ts y profileService.ts.
+      // ── Paso 2: paralelo — identidad del agente + mint-video-url ──────
+      // #145.3: se lee la VISTA agent_public_profiles, no user_preferences.
+      // La RLS de la tabla ("solo tu fila o admin") hacía que la AgentCard
+      // cayera al fallback EN SILENCIO para cualquier visitante no-admin.
       const prefs_query = supabase
-        .from('user_preferences')
-        .select('full_name, profile_photo_url' as never)
+        .from('agent_public_profiles')
+        .select('full_name, profile_photo_url')
         .eq('user_id', row.owner_user_id)
         .maybeSingle();
 

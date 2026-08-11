@@ -7472,7 +7472,7 @@
         "id": "143",
         "title": "polish(ux): quick fixes de arranque, navegación y adaptabilidad (lote 2026-08-10)",
         "description": "Origen: solicitud directa de Abraham (2026-08-10) mientras se procesa el submit de TestFlight 1.0.4. Lote de 6 fixes: (1) Android no avanza de la pantalla de ubicación (¿emulador o app? — relacionado #109); (2) el slider de la tab bar se mueve con animación exagerada, moderarla (mantener Phosphor); (3) splash = logo carnita sobre verde (urbea-logo-final.html, versión invertida); (4) precargar servicios DURANTE el splash para no ver skeleton/loading al entrar; (5) ícono idéntico iOS/Android: fondo verde #1A5E44 + U carnita #EEE4D0 (specs en urbea-logo-final.html); (6) adaptabilidad de proporciones + navegación por botones de Android (los CTAs del detalle del lead quedan tapados).",
-        "details": "⚠️ (3) y (5) son assets NATIVOS: entran al fingerprint → exigen build nuevo (1.0.5), NO viajan por OTA (memoria assets_nativos_gotchas). (1),(2),(4),(6) son JS → OTA. Gotchas: sips miente con el alpha (usar qlmanage para rasterizar SVG); iOS cachea la launch image; el foreground del adaptive icon ya mordió una vez con fondo blanco horneado (#114).\n\nDERIVADAS: #144 (usuario — reporte post-review de los quick fixes)",
+        "details": "⚠️ (3) y (5) son assets NATIVOS: entran al fingerprint → exigen build nuevo (1.0.5), NO viajan por OTA (memoria assets_nativos_gotchas). (1),(2),(4),(6) son JS → OTA. Gotchas: sips miente con el alpha (usar qlmanage para rasterizar SVG); iOS cachea la launch image; el foreground del adaptive icon ya mordió una vez con fondo blanco horneado (#114).\n\nDERIVADAS: #144 (usuario — reporte post-review de los quick fixes) · #145 (usuario — avatar/nombre real del agente en el feed)",
         "testStrategy": "Verificación ligera (UI): tsc + lint + smoke en emulador Android (incl. modo navegación por botones: adb shell cmd overlay enable com.android.internal.systemui.navbar.threebutton) y simulador iOS. (4): medir que el feed aparece sin skeleton al soltar el splash.",
         "status": "done",
         "dependencies": [
@@ -7566,6 +7566,57 @@
             "status": "done",
             "dependencies": [],
             "testStrategy": "Jest feedProperties.parallel-mint.test.ts (PM-1..PM-3) + regresión EC-1..EC-19 y suites filters/zone/radius-null."
+          }
+        ],
+        "updatedAt": "2026-08-10T00:00:00.000Z"
+      },
+      {
+        "id": "145",
+        "title": "producto(9.6): identidad real del agente en el feed — foto+nombre, tap al perfil público (y fix RLS de user_preferences ajeno)",
+        "description": "Origen: subtarea 9.6 (onAgentPress quedó stub y el avatar como inicial placeholder) · Detectado por: usuario. Pedido: (1) el avatar del feed debe mostrar la foto real del perfil, con el nombre del usuario debajo; (2) al pulsarlo, feedback visual y navegación al perfil público del agente (/profile/[id], que YA existe con sus publicaciones). Hallazgo en el análisis: la RLS user_prefs_select es 'solo tu fila o admin', así que TODA lectura ajena de full_name/profile_photo_url falla en silencio hoy — el perfil ajeno y la AgentCard del detalle ya mostraban fallback sin que nadie lo notara. Fix de fondo: vista agent_public_profiles (user_id, full_name, profile_photo_url; solo roles agent/admin) con grant a authenticated; los 3 lectores (feed, usePropertyDetail, useAgentProfile) leen la vista.",
+        "details": "Vista con derechos del owner (security_invoker=false) para brincar la RLS de user_preferences SOLO en esas 2 columnas; los datos de comportamiento del buscador (presupuesto, ubicación, filtros) siguen privados. Embed anidado en FEED_SELECT: users!properties_owner_user_id_fkey(phone, agent_public_profiles(full_name, profile_photo_url)). Foto = key R2 → se resuelve con useR2Urls (patrón ProfileHeader) en el overlay. Todo el lado app es JS → OTA a los 1.0.5; la vista va por apply_migration al remoto.",
+        "testStrategy": "pgTAP: buscador lee nombre/foto de un agente vía la vista; NO puede leer budget/location (columnas ausentes); user_preferences directo sigue bloqueado; fila de role=user NO aparece en la vista. Jest: mapping del embed en feedProperties (objeto/null); hooks actualizados; overlay con foto/fallback. Smoke remoto: curl del embed con JWT de demo.",
+        "status": "done",
+        "dependencies": [
+          "143"
+        ],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Migración: vista agent_public_profiles + grant + pgTAP",
+            "description": "supabase/migrations + rollback + tests; apply_migration al remoto y smoke por SQL/REST.",
+            "details": "hecho (2026-08-10): migración 20260810000001_agent_public_profiles_view.sql + rollback + pgTAP 41 (plan 6). Vista security_invoker=false sobre user_preferences JOIN users (role agent|admin), columnas SOLO user_id/full_name/profile_photo_url; grant select a authenticated, revoke anon/public. RED 6 fallos → GREEN 6/6 (supabase test db local). Desplegada al remoto vía MCP apply_migration; smoke SQL: 2 filas (agentes demo). Smoke REST con JWT demo (admin@urbea.demo): el embed anidado users→agent_public_profiles resuelve — devolvió full_name 'Vladimir YEH' + foto.",
+            "status": "done",
+            "dependencies": [],
+            "testStrategy": "pgTAP por impersonación JWT."
+          },
+          {
+            "id": 2,
+            "title": "feedProperties: embed anidado de la vista + campos agent_name/agent_photo_key",
+            "description": "FEED_SELECT + mapping null-safe a FeedPropertyWithUrl.",
+            "details": "hecho (2026-08-10): FEED_SELECT embebe agent_public_profiles(full_name, profile_photo_url) anidada en users (mismo viaje, 0 RTT extra); FeedPropertyWithUrl gana agent_name y agent_photo_url (crudo: key R2 o URL legacy). Normalización objeto/array y fail-open (sin fila → nulls, la propiedad no se omite). Tests: feedProperties.agent-identity.test.ts AI-1..AI-3, RED 3 → GREEN; 13 suites del feed verdes.",
+            "status": "done",
+            "dependencies": [],
+            "testStrategy": "TDD Jest (lib crítica)."
+          },
+          {
+            "id": 3,
+            "title": "usePropertyDetail y useAgentProfile leen la vista (fix del fallback silencioso)",
+            "description": "Swap from('user_preferences') → from('agent_public_profiles').",
+            "details": "hecho (2026-08-10): useAgentProfile y usePropertyDetail cambian from('user_preferences') → from('agent_public_profiles') — arregla el fallback SILENCIOSO del perfil ajeno y de la AgentCard del detalle (la RLS 'solo tu fila' devolvía 0 filas para no-admins). Tipos de DB regenerados del remoto (la vista entra tipada; adiós casts 'as never' en estos 2 hooks). Tests de useAgentProfile re-apuntados a la vista (RED 6 → GREEN).",
+            "status": "done",
+            "dependencies": [],
+            "testStrategy": "Tests existentes actualizados."
+          },
+          {
+            "id": 4,
+            "title": "PropertyOverlay/VideoFeedItem: foto + nombre + feedback + router.push a /profile/[id]",
+            "description": "Avatar con foto real (useR2Urls, fallback inicial), nombre debajo, pressed feedback, navegación.",
+            "details": "hecho (2026-08-10): PropertyOverlay — avatar con foto real (useR2Urls patrón ProfileHeader: passthrough URL legacy, mint de key R2; onError → inicial), nombre público debajo del avatar (sombra para legibilidad), Pressable con feedback de presión (scale 0.94 + opacity, mismo lenguaje que el rail) y accessibilityLabel con el nombre. VideoFeedItem: handle_agent_press deja de ser stub → router.push('/profile/[owner_user_id]') (la pantalla de perfil público con publicaciones existe desde #16.6). Verificación ligera: tsc 0, lint 0 errores, jest 1024/1024. Smoke visual en emulador BLOQUEADO por entorno: el AVD post-reboot quedó sin last-location en ningún provider (variante dura de #109; geo fix no aterriza sin listener GPS activo) — el muro de ubicación bloquearía a CUALQUIER versión del código en ese estado. Verificado en su lugar por REST remoto real (145.1).",
+            "status": "done",
+            "dependencies": [],
+            "testStrategy": "Verificación ligera (componentes): tsc+lint+tests de overlay existentes + smoke emulador."
           }
         ],
         "updatedAt": "2026-08-10T00:00:00.000Z"
