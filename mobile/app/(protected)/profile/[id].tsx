@@ -34,6 +34,7 @@ export default function AgentProfileScreen() {
     <ProfileScreen
       agent_id={id}
       is_own_profile={is_own_profile}
+      show_back
     />
   );
 }

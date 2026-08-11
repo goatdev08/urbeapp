@@ -7574,7 +7574,7 @@
         "id": "145",
         "title": "producto(9.6): identidad real del agente en el feed — foto+nombre, tap al perfil público (y fix RLS de user_preferences ajeno)",
         "description": "Origen: subtarea 9.6 (onAgentPress quedó stub y el avatar como inicial placeholder) · Detectado por: usuario. Pedido: (1) el avatar del feed debe mostrar la foto real del perfil, con el nombre del usuario debajo; (2) al pulsarlo, feedback visual y navegación al perfil público del agente (/profile/[id], que YA existe con sus publicaciones). Hallazgo en el análisis: la RLS user_prefs_select es 'solo tu fila o admin', así que TODA lectura ajena de full_name/profile_photo_url falla en silencio hoy — el perfil ajeno y la AgentCard del detalle ya mostraban fallback sin que nadie lo notara. Fix de fondo: vista agent_public_profiles (user_id, full_name, profile_photo_url; solo roles agent/admin) con grant a authenticated; los 3 lectores (feed, usePropertyDetail, useAgentProfile) leen la vista.",
-        "details": "Vista con derechos del owner (security_invoker=false) para brincar la RLS de user_preferences SOLO en esas 2 columnas; los datos de comportamiento del buscador (presupuesto, ubicación, filtros) siguen privados. Embed anidado en FEED_SELECT: users!properties_owner_user_id_fkey(phone, agent_public_profiles(full_name, profile_photo_url)). Foto = key R2 → se resuelve con useR2Urls (patrón ProfileHeader) en el overlay. Todo el lado app es JS → OTA a los 1.0.5; la vista va por apply_migration al remoto.",
+        "details": "Vista con derechos del owner (security_invoker=false) para brincar la RLS de user_preferences SOLO en esas 2 columnas; los datos de comportamiento del buscador (presupuesto, ubicación, filtros) siguen privados. Embed anidado en FEED_SELECT: users!properties_owner_user_id_fkey(phone, agent_public_profiles(full_name, profile_photo_url)). Foto = key R2 → se resuelve con useR2Urls (patrón ProfileHeader) en el overlay. Todo el lado app es JS → OTA a los 1.0.5; la vista va por apply_migration al remoto.\nDERIVADAS: #147 (usuario — back button en perfil propio empujado)",
         "testStrategy": "pgTAP: buscador lee nombre/foto de un agente vía la vista; NO puede leer budget/location (columnas ausentes); user_preferences directo sigue bloqueado; fila de role=user NO aparece en la vista. Jest: mapping del embed en feedProperties (objeto/null); hooks actualizados; overlay con foto/fallback. Smoke remoto: curl del embed con JWT de demo.",
         "status": "done",
         "dependencies": [
@@ -7670,6 +7670,19 @@
             "details": "[2026-08-10 20:34] BLOQUEADO por permisos: el PATCH a la Management API (uri_allow_list=urbea://**) lo denegó el classifier. Comando pendiente para Abraham (ver reporte). Solo importa al re-activar la confirmación (72.3) y para los links de reset-password."
           }
         ]
+      },
+      {
+        "id": "147",
+        "title": "polish(145): botón de regresar SIEMPRE en el perfil público empujado (iOS+Android)",
+        "description": "Origen: tarea 145 · Detectado por: usuario (probando el tap foto/nombre del feed). El BackButton solo se mostraba con is_own_profile=false; al tocar tu PROPIO video en el feed, la ruta empujada /profile/[id] mostraba el perfil sin regreso visible. Fix: prop show_back explícita — la ruta empujada la pasa siempre; el tab Perfil nunca (no hay nada que popear). Gestos: iOS ya tiene fullScreenGestureEnabled en el Stack raíz; en Android el swipe estilo iOS no existe en native-stack (el back del sistema/gesto del SO sí popea) — predictive back requiere cambio nativo (fingerprint) → diferido al siguiente build.",
+        "details": "mobile/src/features/profile/ProfileScreen.tsx (prop show_back) + mobile/app/(protected)/profile/[id].tsx (show_back). NO tocar app.json (predictiveBackGestureEnabled cambiaría la huella y los OTA a la flota 1.0.5 se volverían NO-OP).",
+        "testStrategy": "tsc + lint + jest (suite completa); smoke visual del usuario.",
+        "status": "done",
+        "dependencies": [
+          "145"
+        ],
+        "priority": "medium",
+        "subtasks": []
       }
     ],
     "metadata": {
