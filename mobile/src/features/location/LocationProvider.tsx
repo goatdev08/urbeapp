@@ -70,6 +70,12 @@ const GPS_TIMEOUT_MS = 10_000;
 // foreground y el error típico en esa ventana es de cuadras, no de kilómetros.
 const LAST_KNOWN_MAX_AGE_MS = 10 * 60 * 1000;
 
+// #146: un AVD puede quedar sin fix en NINGÚN provider (post-reboot, #109) y
+// el muro gps_off se vuelve imposible de pasar — bloqueaba ver la app en el
+// emulador. SOLO en __DEV__ se cae a una coord fija (GDL centro); producción
+// conserva el muro bloqueante con retry.
+const DEV_FALLBACK_COORDS: LocationCoords = { latitude: 20.6736, longitude: -103.3444 };
+
 // #143.1: antes de rendirse al muro, intentar la ÚLTIMA posición conocida del
 // SO. Dos casos reales: (a) arranque en frío sin fix fresco — el SO casi
 // siempre tiene una posición reciente y una coord ligeramente vieja es
@@ -108,6 +114,10 @@ async function fetch_current_coords(): Promise<LocationCoords> {
         latitude: last_known.coords.latitude,
         longitude: last_known.coords.longitude,
       };
+    }
+    if (__DEV__) {
+      console.warn('[location] sin fix fresco ni histórico — fallback __DEV__ a GDL centro (#146)');
+      return DEV_FALLBACK_COORDS;
     }
     throw err; // sin posición fresca NI histórica → el caller decide (muro)
   } finally {

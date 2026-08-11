@@ -392,12 +392,13 @@ Deno.test("happy_path_create_user_recibe_metadata_exacta_de_handle_new_user", as
   const call = authAdmin.create_calls[0];
   assertEquals(call.email, PAYLOAD_VALIDO.email);
   assertEquals(call.password, PAYLOAD_VALIDO.password);
-  // 72.3 (verificación real de email): el registro libre YA NO auto-confirma
-  // — el correo de confirmación lo dispara el CLIENTE (mobile/src/features/
-  // auth/api.ts, send_verification_email) después de un 200 exitoso. El resto
-  // del contrato (200 {user_id}, compensación deleteUser, errores
-  // sanitizados) NO cambia — ver los demás tests de este archivo.
-  assertEquals(call.email_confirm, false);
+  // #146 (skip TEMPORAL de 72.3, decisión Abraham 2026-08-10): el registro
+  // vuelve a auto-confirmar — el link de confirmación redirigía a
+  // http://localhost:3000 (site_url) en el teléfono y bloqueaba el alta de
+  // usuarios reales. Cuando 72.3 se re-active (Resend + dominio verificado),
+  // este assert regresa a false. El resto del contrato (200 {user_id},
+  // compensación deleteUser, errores sanitizados) NO cambia.
+  assertEquals(call.email_confirm, true);
   assertEquals(call.user_metadata.first_name, PAYLOAD_VALIDO.first_name);
   assertEquals(call.user_metadata.last_name, PAYLOAD_VALIDO.last_name);
   assertEquals(call.user_metadata.phone, PAYLOAD_VALIDO.phone);
