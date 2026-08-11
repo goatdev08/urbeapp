@@ -18,7 +18,11 @@ module.exports = ({ config }) => ({
   // urbea-logo-final.html (verde #1A5E44 + U carnita #EEE4D0, misma cara en
   // iOS y Android) + splash con asset recortado propio (splash-icon.png).
   // Assets nativos → fingerprint nuevo → los 1.0.4 no reciben estos updates.
-  version: '1.0.5',
+  // 1.0.6 (#148/#154): el re-export de #143 horneó fondo BLANCO en splash-icon
+  // y android-icon-foreground (alpha uniforme opaco — la 1.0.5 muestra el cuadro
+  // blanco tras la U). PNGs des-mezclados a alfa real (PR #69). Assets nativos →
+  // fingerprint nuevo → los 1.0.5 no reciben los updates de este runtime.
+  version: '1.0.6',
   orientation: 'portrait',
   scheme: 'urbea',
   userInterfaceStyle: 'automatic',
