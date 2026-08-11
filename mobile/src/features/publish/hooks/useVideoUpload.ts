@@ -109,6 +109,12 @@ export interface UseVideoUploadDeps {
   // transición en vivo.
   /** Notificado en cada transición de status durante upload() (RNTL no puede observar refs a mitad de un await; ver EC22/EC23). */
   on_status_change?: (status: UploadStatus) => void;
+  /**
+   * Notificado EN VIVO con cada avance del progreso 0..1 (#150, EC24) — mismo
+   * problema que on_status_change: el ref es invisible a mitad de un await,
+   * y la barra de progreso de step5 necesita cada tick para animarse.
+   */
+  on_progress?: (progress: number) => void;
 }
 
 export interface UseVideoUploadResult {
@@ -157,14 +163,15 @@ async function verify_before_failing(params: {
   interval_ms: number;
   /** Setter que actualiza status_ref Y notifica on_status_change (O2). */
   set_status: (status: UploadStatus) => void;
-  progress_ref: { current: number };
+  /** Setter que actualiza progress_ref Y notifica on_progress (#150). */
+  set_progress: (progress: number) => void;
   error_ref: { current: string | null };
   update: (patch: { video_id: string; cloudflare_uid: string }) => void;
 }): Promise<void> {
-  const { cloudflare_uid, checker, attempts, interval_ms, set_status, progress_ref, error_ref, update } = params;
+  const { cloudflare_uid, checker, attempts, interval_ms, set_status, set_progress, error_ref, update } = params;
 
   set_status('verifying');
-  progress_ref.current = 0.99;
+  set_progress(0.99);
 
   try {
     for (let attempt = 0; attempt < attempts; attempt += 1) {
@@ -176,7 +183,7 @@ async function verify_before_failing(params: {
       if (check_status === 'ready' || check_status === 'processing') {
         update({ video_id: cloudflare_uid, cloudflare_uid });
         set_status('processing');
-        progress_ref.current = 1;
+        set_progress(1);
         error_ref.current = null;
         return;
       }
@@ -218,6 +225,7 @@ export function useVideoUpload(deps?: UseVideoUploadDeps): UseVideoUploadResult 
   const verify_attempts = deps?.verify_attempts ?? DEFAULT_VERIFY_ATTEMPTS;
   const verify_interval_ms = deps?.verify_interval_ms ?? DEFAULT_VERIFY_INTERVAL_MS;
   const on_status_change = deps?.on_status_change;
+  const on_progress = deps?.on_progress;
 
   const status_ref = useRef<UploadStatus>('idle');
   const progress_ref = useRef<number>(0);
@@ -233,12 +241,18 @@ export function useVideoUpload(deps?: UseVideoUploadDeps): UseVideoUploadResult 
         status_ref.current = next;
         on_status_change?.(next);
       };
+      // #150: gemelo de set_status para el progreso — la barra de step5 se
+      // anima con cada tick notificado en vivo.
+      const set_progress = (next: number): void => {
+        progress_ref.current = next;
+        on_progress?.(next);
+      };
 
       // Guard: no URI seleccionado
       if (!local_uri) {
         set_status('error');
         error_ref.current = 'No se seleccionó ningún video';
-        progress_ref.current = 0;
+        set_progress(0);
         return;
       }
 
@@ -246,7 +260,7 @@ export function useVideoUpload(deps?: UseVideoUploadDeps): UseVideoUploadResult 
       // ejecución del async function, visible vía getter en sync act().
       set_status('uploading');
       error_ref.current = null;
-      progress_ref.current = 0;
+      set_progress(0);
 
       // Validación local: existencia + techo de tamaño — SÍNCRONA vía la API
       // nueva de File (v56): .exists / .size son getters síncronos, sin I/O
@@ -301,7 +315,7 @@ export function useVideoUpload(deps?: UseVideoUploadDeps): UseVideoUploadResult 
         uploadType: UploadType.MULTIPART,
         fieldName: 'file',
         onProgress: ({ bytesSent, totalBytes }) => {
-          progress_ref.current = totalBytes > 0 ? Math.min(bytesSent / totalBytes, 0.99) : 0;
+          set_progress(totalBytes > 0 ? Math.min(bytesSent / totalBytes, 0.99) : 0);
         },
       });
 
@@ -322,7 +336,7 @@ export function useVideoUpload(deps?: UseVideoUploadDeps): UseVideoUploadResult 
         // 'ready' llega por webhook (68.5). NO storage_path (flujo legado).
         update({ video_id: stream_uid, cloudflare_uid: stream_uid });
         set_status('processing');
-        progress_ref.current = 1;
+        set_progress(1);
         return;
       }
 
@@ -332,13 +346,13 @@ export function useVideoUpload(deps?: UseVideoUploadDeps): UseVideoUploadResult 
         attempts: verify_attempts,
         interval_ms: verify_interval_ms,
         set_status,
-        progress_ref,
+        set_progress,
         error_ref,
         update,
       });
     },
 
-    [supabase_client, update, check_video_status, verify_attempts, verify_interval_ms, on_status_change],
+    [supabase_client, update, check_video_status, verify_attempts, verify_interval_ms, on_status_change, on_progress],
   );
 
   return useMemo(

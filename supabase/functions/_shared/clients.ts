@@ -1182,8 +1182,8 @@ export function make_poster_url_minter(
  * Contrato nuevo, alineado con la RPC publish_property_atomic (que enlaza
  * videos con status in ('processing','ready')):
  *   - status fuera de ('processing','ready') → VIDEO_NOT_READY.
- *   - duration_seconds se valida SOLO cuando se conoce: fuera de [60,120]
- *     (inclusive, PRD §14 paso 5) → VIDEO_DURATION_INVALID; null → pasa
+ *   - duration_seconds se valida SOLO cuando se conoce: fuera de [10,120]
+ *     (inclusive, #149 — antes [60,120]) → VIDEO_DURATION_INVALID; null → pasa
  *     (el cliente valida la duración al elegir el video, antes de subir).
  */
 export function make_video_status_checker(
@@ -1209,7 +1209,9 @@ export function make_video_status_checker(
         return { ok: false, error_code: "VIDEO_NOT_READY" };
       }
       const duration = data.duration_seconds as number | null;
-      if (duration !== null && (duration < 60 || duration > 120)) {
+      // #149: mínimo 10 s (antes 60) — espejo de MIN/MAX_VIDEO_DURATION_SECONDS
+      // en mobile/src/features/publish/validation.ts; cambiar SIEMPRE ambos.
+      if (duration !== null && (duration < 10 || duration > 120)) {
         return { ok: false, error_code: "VIDEO_DURATION_INVALID" };
       }
       return { ok: true, duration_seconds: duration };
@@ -1220,7 +1222,16 @@ export function make_video_status_checker(
 // Estados de properties que NO cuentan como duplicado (73.4, regla exacta en
 // publish-property/types.ts): una publicación rechazada o eliminada del mismo
 // owner+dirección no bloquea — el agente puede resubir.
-const DUPLICATE_EXCLUDED_STATUSES = ["rejected", "deleted_soft", "deleted_hard"];
+// #151 (origen 73): 'draft' excluido — el autosave del wizard guarda un draft
+// con la dirección ya capturada y el propio borrador del agente bloqueaba su
+// publish con 409 en todos los intentos (el descarte #135 solo corre tras el
+// éxito → deadlock). Un borrador no es una publicación.
+const DUPLICATE_EXCLUDED_STATUSES = [
+  "draft",
+  "rejected",
+  "deleted_soft",
+  "deleted_hard",
+];
 
 /**
  * Adaptador real de DuplicatePropertyChecker (73.4, pipeline de moderación PRD

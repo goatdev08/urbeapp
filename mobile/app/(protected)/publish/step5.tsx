@@ -21,7 +21,6 @@
  */
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   SafeAreaView,
   ScrollView,
@@ -42,6 +41,7 @@ import { useVideoReady } from '@/features/publish/hooks/useVideoReady';
 import { usePublish } from '@/features/publish/hooks/usePublish';
 import { validate_video_duration_ms } from '@/features/publish/validation';
 import { ThumbnailPicker } from '@/features/publish/components/ThumbnailPicker';
+import { UploadProgressBar } from '@/features/publish/components/UploadProgressBar';
 import { PrimaryButton } from '@/components/PrimaryButton';
 
 // ---------------------------------------------------------------------------
@@ -81,6 +81,13 @@ export default function Step5Screen() {
   const [local_uri, set_local_uri] = useState<string | null>(null);
   const [ui_status, set_ui_status] = useState<UploadStatus>('idle');
   const [ui_error, set_ui_error] = useState<string | null>(null);
+  // #150: progreso 0..1 espejado en vivo desde el hook (on_progress) para la
+  // barra. Redondeado a centésimas — React descarta el setState si el valor
+  // no cambió, así los ticks del uploader no fuerzan re-renders de más.
+  const [ui_progress, set_ui_progress] = useState(0);
+  const handle_progress = useCallback((p: number) => {
+    set_ui_progress(Math.round(p * 100) / 100);
+  }, []);
   // Estados de publicación (usePublish también usa refs — espejamos aquí para reactivity).
   const [publish_status, set_publish_status] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle');
   const [publish_error, set_publish_error] = useState<string | null>(null);
@@ -89,7 +96,7 @@ export default function Step5Screen() {
   // DESPUÉS de `await hook.upload(...)` — el estado transitorio 'verifying'
   // (hasta ~27s de poll silencioso) nunca llegaba a la pantalla. set_ui_status
   // es estable (useState) → no rompe la memoización de `upload` en el hook.
-  const hook = useVideoUpload({ on_status_change: set_ui_status });
+  const hook = useVideoUpload({ on_status_change: set_ui_status, on_progress: handle_progress });
   // Edit mode: UPDATE directo sin EF; create mode: invoca EF (sin cambios).
   const publish_hook = usePublish({
     editMode: is_edit_mode,
@@ -305,27 +312,29 @@ export default function Step5Screen() {
         </TouchableOpacity>
       )}
 
-      {/* ── Estado del upload ─────────────────────────────────────────── */}
+      {/* ── Estado del upload (#150: barra de progreso, ya no spinner) ── */}
       <View style={styles.status_area}>
         {is_uploading && (
-          <View style={styles.status_row}>
-            <ActivityIndicator size="small" color={COLOR_ACCENT} />
-            <Text style={styles.status_text}>Subiendo video…</Text>
-          </View>
+          // Antes del primer byte (mint-upload-url en vuelo) no hay progreso
+          // medible → banda indeterminada; con bytes reales → % determinado.
+          <UploadProgressBar
+            indeterminate={ui_progress === 0}
+            progress={ui_progress}
+            label={
+              ui_progress === 0
+                ? 'Preparando la subida…'
+                : `Subiendo video… ${Math.round(ui_progress * 100)}%`
+            }
+          />
         )}
         {is_verifying && (
-          <View style={styles.status_row}>
-            <ActivityIndicator size="small" color={COLOR_ACCENT} />
-            <Text style={styles.status_text}>Verificando que el video llegó…</Text>
-          </View>
+          <UploadProgressBar indeterminate label="Verificando que el video llegó…" />
         )}
         {is_video_processing && (
-          <View style={styles.status_row}>
-            <ActivityIndicator size="small" color={COLOR_ACCENT} />
-            <Text style={styles.status_text}>
-              Procesando video… esto toma unos segundos
-            </Text>
-          </View>
+          <UploadProgressBar
+            indeterminate
+            label="Procesando video… esto toma unos segundos"
+          />
         )}
         {is_video_ready && (
           <View style={styles.status_row}>

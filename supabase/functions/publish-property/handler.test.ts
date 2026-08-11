@@ -237,15 +237,19 @@ Deno.test("happy_path_publisher_llamado_exactamente_una_vez", async () => {
   assertEquals(publisher.calls.length, 1, "publish debe ser llamado exactamente una vez");
 });
 
-Deno.test("contrato_publisher_recibe_property_status_pending_review_ya_no_active", async () => {
-  // 73.4 — SUPERSEDE la expectativa vieja ('active', auto-aprobación PRD §12).
-  // PRD §14.2 (beta): TODA publicación va a pending_review, sin excepción de rol.
+Deno.test("contrato_publisher_recibe_property_status_active_moderacion_suspendida", async () => {
+  // #153 — SUPERSEDE (temporalmente) la expectativa de 73.4 ('pending_review',
+  // PRD §14.2). Decisión de Abraham 2026-08-11: NO hay moderador ni interfaz de
+  // moderación todavía — las publicaciones quedaban atoradas en pending_review
+  // sin forma de aprobarlas más que por SQL. Mientras exista ese hueco, toda
+  // publicación sale directo a 'active'. Revertir a 'pending_review' cuando
+  // llegue la interfaz de moderación (re-flip de este assert = el RED).
   const publisher = publisher_ok();
   await handler(post_agente(PAYLOAD_VALIDO), deps_validos(publisher));
   assertEquals(
     publisher.calls[0].property_status,
-    "pending_review",
-    "property_status debe ser 'pending_review' — PRD §14.2: en beta TODA publicación va a revisión, ya no hay auto-aprobación a 'active'",
+    "active",
+    "property_status debe ser 'active' — #153: moderación suspendida hasta tener interfaz; el pipeline de validación (video+duplicado) sigue activo",
   );
 });
 
@@ -880,14 +884,14 @@ Deno.test("pipeline_video_no_listo_retorna_409_y_bloquea_publisher", async () =>
   );
 });
 
-Deno.test("pipeline_video_duracion_menor_a_60_retorna_400_duration_invalid", async () => {
-  // Simula un video de 45s: fuera del rango [60,120] del PRD §14 paso 5.
+Deno.test("pipeline_video_duracion_menor_al_minimo_retorna_400_duration_invalid", async () => {
+  // Simula un video de 5s: fuera del rango [10,120] (#149; antes [60,120]).
   const videoChecker = video_checker_error("VIDEO_DURATION_INVALID");
   const res = await handler(
     post_agente(PAYLOAD_VALIDO),
     deps_pipeline({ videoChecker }),
   );
-  assertEquals(res.status, 400, "duration_seconds < 60 debe rechazarse con 400");
+  assertEquals(res.status, 400, "duration_seconds < 10 debe rechazarse con 400");
   const body = await res.json();
   assertEquals(body.error.code, "VIDEO_DURATION_INVALID");
 });
@@ -904,14 +908,15 @@ Deno.test("pipeline_video_duracion_mayor_a_120_retorna_400_duration_invalid", as
   assertEquals(body.error.code, "VIDEO_DURATION_INVALID");
 });
 
-Deno.test("pipeline_video_duracion_exactamente_60_boundary_es_valida_y_publica", async () => {
+Deno.test("pipeline_video_duracion_exactamente_10_boundary_es_valida_y_publica", async () => {
+  // #149: el límite inferior bajó de 60 a 10 s.
   const publisher = publisher_ok();
-  const videoChecker = video_checker_ok(60);
+  const videoChecker = video_checker_ok(10);
   const res = await handler(
     post_agente(PAYLOAD_VALIDO),
     deps_pipeline({ publisher, videoChecker }),
   );
-  assertEquals(res.status, 201, "duration_seconds = 60 es el límite INFERIOR inclusive — válido");
+  assertEquals(res.status, 201, "duration_seconds = 10 es el límite INFERIOR inclusive — válido");
   assertEquals(publisher.calls.length, 1);
 });
 

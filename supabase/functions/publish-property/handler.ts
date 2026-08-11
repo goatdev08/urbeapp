@@ -13,8 +13,9 @@
 //      se invoca si este paso falla.
 //   7. duplicatePropertyChecker.check(user_id, address) → 409 si es duplicado (73.4, PRD §15.2)
 //      Mismo motivo: publisher NUNCA se invoca ante un duplicado obvio.
-//   8. propertyPublisher.publish(params con property_status='pending_review', video_status='ready')
-//      PRD §14.2: en beta TODA publicación va a revisión, ya no hay auto-aprobación a 'active'.
+//   8. propertyPublisher.publish(params con property_status='active' (#153, temporal), video_status='ready')
+//      #153: moderación SUSPENDIDA hasta tener interfaz — revertir a
+//      'pending_review' (PRD §14.2) cuando exista. El pipeline 6-7 sigue vivo.
 //   9. Si publish falla → 500 propagado limpio (o 403 para AGENCY_MEMBERSHIP_SUSPENDED)
 //   10. Si publish ok → 201 { property_id }
 
@@ -234,9 +235,14 @@ export async function handler(
   }
 
   // 8. Publicar propiedad + video atómicamente (RPC en GREEN)
-  // El handler fija property_status='pending_review' (PRD §14.2 — en beta TODA
-  // publicación va a revisión) y video_status='ready' explícitamente para que
+  // El handler fija property_status y video_status explícitamente para que
   // el contrato sea verificable en tests sin inspeccionar la DB.
+  // ponytail: #153 — property_status='active' TEMPORALMENTE (decisión Abraham
+  // 2026-08-11): no hay moderador ni interfaz de moderación, y 'pending_review'
+  // (PRD §14.2, 73.4) dejaba toda publicación atorada sin más salida que SQL.
+  // El pipeline de validación previo (video + duplicado) sigue intacto.
+  // Techo conocido: sin revisión humana hasta revertir. Revertir a
+  // 'pending_review' cuando exista la interfaz de moderación.
   const publishResult = await deps!.propertyPublisher.publish({
     user_id: verifyResult.user_id,
     operation_type: input.operation_type,
@@ -253,7 +259,7 @@ export async function handler(
     student_friendly: input.student_friendly,
     price_visible: input.price_visible,
     description: input.description,
-    property_status: "pending_review",
+    property_status: "active",
     video_status: "ready",
     cloudflare_uid: input.cloudflare_uid,
   });

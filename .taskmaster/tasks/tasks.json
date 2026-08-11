@@ -985,7 +985,7 @@
         "id": "10",
         "title": "Build property detail screen with full information",
         "description": "Create comprehensive property detail view with video, all property data, location map, and agent info",
-        "details": "1. Create detail screen (app/property/[id].tsx) with route parameter\n2. Fetch property with join: property_videos, user (agent), agency\n3. Layout: Full-screen video player at top (expo-video), scrollable content below\n4. Display: Operation type badge, price (large), property type, bedrooms/bathrooms/sqm icons, full address, description, amenities chips (pet_friendly, no_guarantor, student_friendly, amenities array)\n5. Embedded map (react-native-maps) showing exact location with marker\n6. Agent card: Photo, name, agency name, contact button (WhatsApp)\n7. Like/save buttons (floating over video or in header)\n8. Share button (react-native-share)\n9. Back button navigation\n10. Loading state while fetching\n11. Error state if property not found\n12. Test: All data displays correctly, map shows right location, contact button works\n\nDERIVADAS: #106 (usuario 2026-08-07 — cancelada, superseded) · #148 (usuario 2026-08-10 — hero de video con colapso por scroll) · #149 (usuario 2026-08-10 — chips de características en el wizard)",
+        "details": "1. Create detail screen (app/property/[id].tsx) with route parameter\n2. Fetch property with join: property_videos, user (agent), agency\n3. Layout: Full-screen video player at top (expo-video), scrollable content below\n4. Display: Operation type badge, price (large), property type, bedrooms/bathrooms/sqm icons, full address, description, amenities chips (pet_friendly, no_guarantor, student_friendly, amenities array)\n5. Embedded map (react-native-maps) showing exact location with marker\n6. Agent card: Photo, name, agency name, contact button (WhatsApp)\n7. Like/save buttons (floating over video or in header)\n8. Share button (react-native-share)\n9. Back button navigation\n10. Loading state while fetching\n11. Error state if property not found\n12. Test: All data displays correctly, map shows right location, contact button works\n\nDERIVADAS: #106 (usuario 2026-08-07 — el detalle deja de reproducir video; card de miniatura + descripción)",
         "testStrategy": "Verify: (1) Video plays correctly, (2) All property data displays, (3) Map shows exact location, (4) Agent info displays with photo, (5) Like/save buttons work, (6) Contact button opens WhatsApp, (7) Back navigation works, (8) Share functionality works, (9) Handles missing optional fields gracefully",
         "priority": "high",
         "dependencies": [
@@ -5177,7 +5177,7 @@
         "id": "73",
         "title": "Ola 1 — Publicación completa (5 pasos + 16 estados + moderación manual)",
         "description": "Wizard de 5 pasos con autoguardado de borrador, máquina de 16 estados de publicación, pipeline de moderación manual, publicación rápida, re-revisión por edición y cierre/baja. PRD §14–16.",
-        "details": "PRD §14 (wizard+autosave draft), §15 (moderación, pipeline, estados §15.4, re-revisión §15.5, visibilidad §15.6), §16 (cierre). Hoy: 3 pasos, auto-`active`, sin moderación. Es el corazón transaccional → CRÍTICO (EF publish-property, RPC atómica, RLS, máquina de estados). Cablear la abstracción de slot (vigencia) aunque sea gratis. Épica del camino a producción (ADR 0008 / docs/PRD-beta.md). Spec detallado (modelo de datos, RLS, EF, pantallas, estados, edge cases, tests, subtareas) se redacta SECUENCIAL al entrar su ola, con aprobación de Abraham; add-task roto → subtareas por escritura directa en tasks.json.\n\nDERIVADAS: #120 (hardening) · #121 (hardening) · #122 (fix) · #123 (fix) · #124 (hardening) · #125 (producto) · #126 (fix) · #127 (fix) · #128 (fix) · #129 (fix) · #130 (fix) · #131 (hardening) · #132 (hardening) · #133 (hardening) · #134 (fix) · #135 (fix) · #136 (fix) · #137 (fix) · #138 (hardening) · #139 (hardening) · #140 (polish) · #142 (fix) · #141 (hardening)",
+        "details": "PRD §14 (wizard+autosave draft), §15 (moderación, pipeline, estados §15.4, re-revisión §15.5, visibilidad §15.6), §16 (cierre). Hoy: 3 pasos, auto-`active`, sin moderación. Es el corazón transaccional → CRÍTICO (EF publish-property, RPC atómica, RLS, máquina de estados). Cablear la abstracción de slot (vigencia) aunque sea gratis. Épica del camino a producción (ADR 0008 / docs/PRD-beta.md). Spec detallado (modelo de datos, RLS, EF, pantallas, estados, edge cases, tests, subtareas) se redacta SECUENCIAL al entrar su ola, con aprobación de Abraham; add-task roto → subtareas por escritura directa en tasks.json.\n\nDERIVADAS: #120 (hardening) · #121 (hardening) · #122 (fix) · #123 (fix) · #124 (hardening) · #125 (producto) · #126 (fix) · #127 (fix) · #128 (fix) · #129 (fix) · #130 (fix) · #131 (hardening) · #132 (hardening) · #133 (hardening) · #134 (fix) · #135 (fix) · #136 (fix) · #137 (fix) · #138 (hardening) · #139 (hardening) · #140 (polish) · #142 (fix) · #141 (hardening) · #151 (fix) · #152 (producto) · #153 (producto)",
         "testStrategy": "TDD estricto en lógica crítica (supabase/functions/**, migrations/**, lib/hooks/validation): RED→GREEN→guardian. Verificación ligera (tsc/lint/smoke) en UI. Se detalla al specificar la ola.",
         "status": "done",
         "dependencies": [
@@ -6933,10 +6933,10 @@
       {
         "id": "106",
         "title": "producto(10.2): detalle sin reproducción — card de miniatura + descripción, y previsualización de subida que no se queda corriendo",
-        "description": "CANCELADA (superseded, 2026-08-10): reemplazada por la tarea 148 tras exploración .taskmaster/docs/exploraciones/038-detalle-sin-autoplay-y-chips-en-wizard.md. La premisa de esta tarea ('el detalle es contexto, no reproducción') quedó invertida por decisión del usuario: el hero pasa a ser video vivo con colapso por scroll, no una miniatura estática. Su parte (b) — preview de step5.tsx sin loop infinito — sigue viva, doblada dentro de la tarea 148.\n\nOrigen: subtarea 10.2 · Detectado por: usuario (2026-08-07). Prioridad declarada por Abraham: no consumir recursos de video más allá de lo necesario (cada minuto entregado por Cloudflare Stream se cobra). (a) La pantalla de detalle YA NO reproduce el video arriba: se sustituye el player por un card horizontal alargado con MINIATURA + descripción general, conservando el mismo tamaño y espacio que ocupa hoy el video. (b) La previsualización del wizard de subida se queda reproduciendo el video y debe dejar de hacerlo.",
+        "description": "Origen: subtarea 10.2 · Detectado por: usuario (2026-08-07). Prioridad declarada por Abraham: no consumir recursos de video más allá de lo necesario (cada minuto entregado por Cloudflare Stream se cobra). (a) La pantalla de detalle YA NO reproduce el video arriba: se sustituye el player por un card horizontal alargado con MINIATURA + descripción general, conservando el mismo tamaño y espacio que ocupa hoy el video. (b) La previsualización del wizard de subida se queda reproduciendo el video y debe dejar de hacerlo.",
         "details": "(a) mobile/src/features/property-detail/components/PropertyVideoPlayer.tsx → reemplazar por un card (miniatura del video + descripción general de la propiedad) con el MISMO footprint visual (alto/ancho/espaciado) que el player actual, en el lenguaje visual de Urbea (urbea-identidad-visual.html) y el layout del prototipo. El video sigue viéndose en el feed; el detalle es contexto, no reproducción. Decidir si el card lleva al feed en esa propiedad al tocarlo (probable, pero confirmar con Abraham). (b) Previsualización del wizard de publicar: no auto-reproducir / pausar al salir de foco. Revisar TODOS los puntos de reproducción (feed VideoFeedItem, preview de subida, detalle) para que ninguno quede en loop desatendido. NO crítica (componentes/pantallas) → verificación ligera (tsc + lint + smoke). Ver memoria [[video_playback_burns_quota]].",
         "testStrategy": "pnpm tsc --noEmit + pnpm lint. Smoke en emulador por CLI: abrir detalle → NO hay reproducción (0 minutos de Stream), la miniatura carga y el card respeta el espacio; abrir el wizard de subida con un video elegido → no se reproduce solo. Verificar en el dashboard de Cloudflare Stream que un recorrido de detalle no suma minutos entregados.",
-        "status": "cancelled",
+        "status": "pending",
         "dependencies": [
           "10"
         ],
@@ -7472,7 +7472,7 @@
         "id": "143",
         "title": "polish(ux): quick fixes de arranque, navegación y adaptabilidad (lote 2026-08-10)",
         "description": "Origen: solicitud directa de Abraham (2026-08-10) mientras se procesa el submit de TestFlight 1.0.4. Lote de 6 fixes: (1) Android no avanza de la pantalla de ubicación (¿emulador o app? — relacionado #109); (2) el slider de la tab bar se mueve con animación exagerada, moderarla (mantener Phosphor); (3) splash = logo carnita sobre verde (urbea-logo-final.html, versión invertida); (4) precargar servicios DURANTE el splash para no ver skeleton/loading al entrar; (5) ícono idéntico iOS/Android: fondo verde #1A5E44 + U carnita #EEE4D0 (specs en urbea-logo-final.html); (6) adaptabilidad de proporciones + navegación por botones de Android (los CTAs del detalle del lead quedan tapados).",
-        "details": "⚠️ (3) y (5) son assets NATIVOS: entran al fingerprint → exigen build nuevo (1.0.5), NO viajan por OTA (memoria assets_nativos_gotchas). (1),(2),(4),(6) son JS → OTA. Gotchas: sips miente con el alpha (usar qlmanage para rasterizar SVG); iOS cachea la launch image; el foreground del adaptive icon ya mordió una vez con fondo blanco horneado (#114).\n\nDERIVADAS: #148 (usuario/emulador — alfa horneado en assets 1.0.5) · #144 (usuario — reporte post-review de los quick fixes) · #145 (usuario — avatar/nombre real del agente en el feed)",
+        "details": "⚠️ (3) y (5) son assets NATIVOS: entran al fingerprint → exigen build nuevo (1.0.5), NO viajan por OTA (memoria assets_nativos_gotchas). (1),(2),(4),(6) son JS → OTA. Gotchas: sips miente con el alpha (usar qlmanage para rasterizar SVG); iOS cachea la launch image; el foreground del adaptive icon ya mordió una vez con fondo blanco horneado (#114).\n\nDERIVADAS: #144 (usuario — reporte post-review de los quick fixes) · #145 (usuario — avatar/nombre real del agente en el feed)",
         "testStrategy": "Verificación ligera (UI): tsc + lint + smoke en emulador Android (incl. modo navegación por botones: adb shell cmd overlay enable com.android.internal.systemui.navbar.threebutton) y simulador iOS. (4): medir que el feed aparece sin skeleton al soltar el splash.",
         "status": "done",
         "dependencies": [
@@ -7699,36 +7699,79 @@
       },
       {
         "id": "149",
-        "title": "producto(10.4): chips compactos de características en el wizard step4",
-        "description": "Origen: subtarea 10.4 · Detectado por: usuario (2026-08-10). Doc de exploración: .taskmaster/docs/exploraciones/038-detalle-sin-autoplay-y-chips-en-wizard.md. Independiente de la tarea 148 (no comparte archivos). En publish/step4.tsx se elimina la toggles_card actual (3 Switch: 'Acepta mascotas', 'Sin aval / fiador', 'Apto estudiantes') y se reemplaza por una fila compacta de chips bajo la descripción, reusando/promoviendo el componente FilterChipGroup ya existente en features/search/. Los 3 campos siguen capturándose al publicar exactamente igual que hoy, para que el filtro existente en FilterSheet.tsx siga funcionando con datos reales — se descartó mover la captura a 'editar propiedad' (dato ausente para la mayoría de propiedades) e inferirlo del texto libre de la descripción (frágil, falsos negativos).",
-        "details": "Promover mobile/src/features/search/components/FilterChipGroup.tsx → mobile/src/components/ChipGroup.tsx (git mv + actualizar el import en FilterSheet.tsx, único consumidor: FilterSheet.tsx:44,258,274; el componente ya es multi-select controlado con accessibilityRole='checkbox' y tokens primary_tint/paper_2/gray_2 — cero tests que migrar).\n\nEn step4.tsx: quitar toggles_card completa y el import de Switch; montar ChipGroup como fila compacta bajo la descripción, sin card ni sección dedicada nueva. Solo esta sección de chips migra a tokens de theme.ts — el resto de step4.tsx conserva sus hex locales (COLOR_BG, COLOR_ACCENT, etc.), alcance mínimo, deuda registrada.\n\nMapeo string[] ⇄ 3 booleanos queda INLINE en el screen (no en lib/), para mantenerlo fuera de la vía crítica TDD — es presentacional puro. Los chips deben producir boolean estricto (true/false), nunca undefined ni tri-estado, en PublishFormState.\n\nCopy: 'Pet friendly' / 'Sin aval' / 'Estudiantes', cada chip con accessibilityLabel largo y descriptivo ('Acepta mascotas', 'No requiere aval o fiador', 'Apto para estudiantes') y accessibilityState reflejando el seleccionado.\n\nREGLAS NO OBVIAS: edit-property exige body COMPLETO desde #142 — si el selector deja de escribir alguno de los 3 booleanos en PublishFormState, la edición los borra en silencio ([[moderacion]]). En FilterSheet un false significa 'no filtrar' (nunca .eq(col,false)); en la propiedad false significa 'no aplica' — los chips deben producir boolean estricto, no tri-estado ([[busqueda-y-filtros]]).\n\nFUERA DE ALCANCE: no migrar FilterSheet.tsx a chips en este lote; no capturar amenities (JSONB) con selección múltiple (YAGNI); no migrar todo step4.tsx a theme.ts; no tocar el payload/schema de publish-property ni edit-property.\n\nARCHIVOS: mobile/src/components/ChipGroup.tsx (nuevo, promovido); mobile/src/features/search/components/FilterSheet.tsx (solo actualizar import); mobile/app/(protected)/publish/step4.tsx (quitar toggles_card, montar chips).",
-        "testStrategy": "pnpm tsc --noEmit + pnpm lint. FilterSheet se ve y funciona exactamente igual que antes (regresión visual por screenshot CLI). En step4.tsx ya no existe toggles_card ni ningún Switch. Publicar una propiedad con chips activos y LEER la fila real de properties (no solo el form) — pet_friendly/allows_no_guarantor/student_friendly correctos. Editar una propiedad que ya tenía flags en true y confirmar que los CONSERVA (regresión #142, contrato de body completo). FilterSheet sigue devolviendo resultados no vacíos filtrando por cada uno de los 3 flags. Maestro publicar.yaml sigue pasando (ajustar selector si apuntaba a los Switch), termina en stopApp. Suite Jest sin regresiones.",
-        "status": "pending",
+        "title": "producto(126): duración mínima de video baja de 60 s a 10 s (rango 10–120)",
+        "description": "Origen: tarea 126/73 · Detectado por: usuario (probando el wizard en iPhone real — su video fue rechazado por la EF publish-property con VIDEO_DURATION_INVALID). Decisión de producto de Abraham 2026-08-10: mínimo 10 s, máximo 120 s se queda. Dos candados sincronizados: validate_video_duration_ms (cliente, al elegir el video) y make_video_status_checker (EF publish-property, con la duración real del webhook).",
+        "details": "mobile/src/features/publish/validation.ts (MIN 60→10 + mensaje) · supabase/functions/_shared/clients.ts (checker 60→10) + comentarios/types. TDD: validation.test.ts, video_status_checker.test.ts y publish-property/handler.test.ts re-contratados a los bordes nuevos ANTES del cambio. Server-first (aflojar el server no rompe clientes viejos), luego OTA.\n[2026-08-10 21:50] hecho: PR #70 mergeado · EF publish-property desplegada al remoto · OTA publicado a ambas plataformas (runtimes f8b4d3c6/8e35e7a0 = builds 1.0.5). RED verificado (3 jest + 1 deno fallando en bordes nuevos) → GREEN deno 68/68, jest 1028/1028.",
+        "testStrategy": "RED: bordes 9/10/120/121 en las 3 suites → GREEN. Deploy publish-property + OTA.",
+        "status": "done",
         "dependencies": [
-          "10"
+          "126"
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": "150",
+        "title": "polish(68.4): barra de progreso animada en la subida del video (step5) + agencia de Ramos → Urbea Inmobiliaria",
+        "description": "Origen: subtarea 68.4/103.2 · Detectado por: usuario (probando el wizard en iPhone: solo un spinner, y un tramo sin feedback tras aceptar el video). Barra con relleno verde Urbea animado (scaleX, native driver) + banda indeterminada para las fases sin progreso medible (mint-upload-url en vuelo, verificación, transcodificación). Extra de datos (producción): Santiago Ramos y su propiedad pasaron de 'Tu Casa con Vlad' a la agencia nueva 'Urbea Inmobiliaria' (insert agencies + update users/properties, reversible).",
+        "details": "[2026-08-10 22:01] useVideoUpload: dep on_progress (gemelo de on_status_change; TDD EC24 RED→GREEN 27/27) · components/UploadProgressBar.tsx nuevo (determinate+indeterminate, gotcha lint react-hooks: useState perezoso en vez de useRef.current) · step5.tsx: ui_progress espejado con redondeo a centésimas, 3 spinners reemplazados; 'Preparando la subida…' cubre el hueco sin feedback. Agencia vieja de Ramos: 2a000000-...-a1 (rollback: revertir agency_id).",
+        "testStrategy": "EC24 en useVideoUpload (crítico); barra = componente (tsc+lint+jest). Smoke visual del usuario en iPhone tras OTA.",
+        "status": "done",
+        "dependencies": [
+          "68",
+          "103"
         ],
         "priority": "medium",
         "subtasks": []
       },
       {
-        "id": "148",
-        "title": "fix(143.3): splash e ícono Android con fondo blanco horneado en 1.0.5 — alfa real restaurado (requiere build 1.0.6)",
-        "description": "Origen: subtarea 143.3 · Detectado por: usuario (splash con cuadro blanco) + verificación en emulador con el APK 1.0.5 real. El re-export de #143.3 perdió la transparencia que #114 había arreglado: splash-icon.png y android-icon-foreground.png quedaron RGBA con alfa=255 en TODOS los píxeles (blanco opaco horneado). En producción: splash = cuadro blanco sobre el verde; ícono adaptativo Android = fondo blanco en vez de verde. Lección: verificar alpha EXTREMA (min<255), no solo el modo RGBA — sips/el modo mienten.",
-        "details": "Fix: unmix blanco→alfa (P = a*C + (1-a)*blanco, C=carnita #EEE4D0 detectado) preservando el encuadre aprobado de 143.3; verificado por composición sobre #1A5E44. ⚠️ Asset nativo → entra al fingerprint: MERGEAR SOLO cuando se vaya a compilar 1.0.6 — si entra a main antes, los OTA siguientes se vuelven NO-OP para la flota 1.0.5. PR abierto sin merge esperando decisión de Abraham.",
-        "testStrategy": "alpha extrema (0,255) en ambos PNG + composición visual sobre verde + tras el build 1.0.6: splash real en emulador (screencap) e ícono en launcher.",
-        "status": "review",
+        "id": "151",
+        "title": "fix(73): borrador del autosave bloqueaba TODA publicación con 409 DUPLICATE_PROPERTY",
+        "description": "Origen: tarea 73 (Ola 1, autosave de borradores) · Detectado por: usuario (publicar fallaba en iPhone real y emulador con 'Edge Function returned a non-2xx status code'). El wizard guarda un draft en properties con la dirección ya capturada; el DuplicatePropertyChecker de publish-property no excluía status 'draft' → el propio borrador del agente bloqueaba su publish con 409 en TODOS los intentos. El descarte del borrador (#135) solo corre tras un publish exitoso → deadlock permanente.",
+        "details": "Fix: 'draft' agregado a DUPLICATE_EXCLUDED_STATUSES en supabase/functions/_shared/clients.ts (un borrador no es una publicación). TDD: RED borrador_draft_no_cuenta_como_duplicado en _shared/duplicate_property_checker.test.ts → GREEN (11/11; suite publish-property+_shared 147/147). Deploy: publish-property v17 al remoto (server-first, sin OTA — beneficia a todos los builds instalados). Verificación E2E en producción: publicación real desde el emulador (release 1.0.5) → ¡Publicada!, propiedad c16af7f5 en pending_review con video ready 10s enlazado. Evidencia del diagnóstico: 6 intentos con 409 en logs (v15 y v16), 4 drafts acumulados con la misma dirección del owner ce8c866f.",
+        "testStrategy": "deno test _shared/duplicate_property_checker.test.ts (11/11, incluye el caso draft) + suite completa publish-property/_shared 147/147 + smoke E2E real en producción (publicación exitosa tras el deploy).",
+        "status": "done",
         "dependencies": [
-          "143"
+          "73"
         ],
         "priority": "high",
-        "subtasks": []
+        "subtasks": [],
+        "updatedAt": "2026-08-11T04:45:00.000Z"
+      },
+      {
+        "id": "152",
+        "title": "producto(73): el alert de publicación exitosa promete feed inmediato pero la propiedad entra a pending_review",
+        "description": "Origen: tarea 73 (§14.2, toda publicación va a pending_review) · Detectado por: usuario/Virgilio durante el smoke de #151. step5.tsx muestra '¡Publicada! Tu propiedad ya está disponible en el feed.' pero la fila nace en pending_review (moderación manual) — el agente va al feed, no ve su propiedad y parece un bug. Ajustar el copy a la realidad (en revisión, te avisamos al aprobarla) y considerar el mismo ajuste en el estado del wizard.",
+        "details": "Archivo: mobile/app/(protected)/publish/step5.tsx (Alert de handle_publish, rama create mode). Verificación ligera (componente): tsc + lint + jest de step5 si existe. Coordinar con el dueño del wizard (Ola 1) — no tocar su rama en vuelo.",
+        "testStrategy": "pnpm tsc --noEmit + pnpm lint + revisión visual del alert en emulador.",
+        "status": "pending",
+        "dependencies": [
+          "73"
+        ],
+        "priority": "medium",
+        "subtasks": [],
+        "updatedAt": "2026-08-11T04:50:00.000Z"
+      },
+      {
+        "id": "153",
+        "title": "producto(73): suspender moderación temporalmente — publicar sale directo a 'active'",
+        "description": "Origen: tarea 73 (§14.2 pending_review) · Detectado por: usuario (no hay moderador ni interfaz de moderación; toda publicación quedaba atorada en pending_review sin más salida que SQL). Decisión de Abraham 2026-08-11: cortar el canal de revisión TEMPORALMENTE hasta que exista la interfaz. El pipeline de validación (video ready + duplicado) sigue intacto; solo cambia el estado de nacimiento.",
+        "details": "Cambio: publish-property/handler.ts pasa property_status='active' (antes 'pending_review') con comentario ponytail #153 que documenta el techo (sin revisión humana) y la reversión (re-flip del assert contrato_publisher_recibe_property_status_active_moderacion_suspendida en handler.test.ts = el RED del revert). TDD: assert invertido primero (RED) → GREEN 61/61 (suite completa 147/147). Deploy: publish-property v18 al remoto, server-first, sin OTA. Data: las 2 propiedades atoradas (c16af7f5 emulador, 5f4be1c2 iPhone) flipeadas a 'active' por SQL. REVERTIR cuando exista la interfaz de moderación (crear tarea al revertir).",
+        "testStrategy": "deno test publish-property/ 61/61 con el contrato nuevo; verificación en DB de que las publicaciones nacen 'active'.",
+        "status": "done",
+        "dependencies": [
+          "73"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2026-08-11T05:05:00.000Z"
       }
     ],
     "metadata": {
       "version": "1.0.0",
       "lastModified": "2026-08-10T05:07:58.833Z",
-      "taskCount": 149,
-      "completedCount": 83,
+      "taskCount": 142,
+      "completedCount": 78,
       "tags": [
         "master"
       ]

@@ -133,15 +133,17 @@ export function validate_video_size(size_bytes: number): VideoSizeValidationResu
 }
 
 // ---------------------------------------------------------------------------
-// validate_video_duration_ms (#126) — duración 60–120 s INCLUSIVE (PRD §14
-// paso 5), validada AL ELEGIR el video (asset.duration del picker, en ms) —
-// no al final del wizard, donde el server la rechazaría con el video ya
-// subido. duration desconocida (null/undefined/0 — pickers Android viejos) →
-// pasa (fail-open): el server sigue validando cuando el webhook reporta la
+// validate_video_duration_ms (#126) — duración 10–120 s INCLUSIVE (#149:
+// el mínimo bajó de 60 a 10, decisión de producto 2026-08-10; espejo del
+// checker en supabase/functions/_shared/clients.ts — cambiar SIEMPRE ambos),
+// validada AL ELEGIR el video (asset.duration del picker, en ms) — no al
+// final del wizard, donde el server la rechazaría con el video ya subido.
+// duration desconocida (null/undefined/0 — pickers Android viejos) → pasa
+// (fail-open): el server sigue validando cuando el webhook reporta la
 // duración real.
 // ---------------------------------------------------------------------------
 
-export const MIN_VIDEO_DURATION_SECONDS = 60;
+export const MIN_VIDEO_DURATION_SECONDS = 10;
 export const MAX_VIDEO_DURATION_SECONDS = 120;
 
 export interface VideoDurationValidationResult {
@@ -163,7 +165,7 @@ export function validate_video_duration_ms(
     return {
       valid: false,
       error:
-        `El video dura ${Math.round(seconds)} s y debe durar entre 60 y 120 segundos (1–2 min). ` +
+        `El video dura ${Math.round(seconds)} s y debe durar entre 10 y 120 segundos (máx 2 min). ` +
         'Recórtalo o elige otro.',
     };
   }
