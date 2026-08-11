@@ -7696,6 +7696,20 @@
         ],
         "priority": "high",
         "subtasks": []
+      },
+      {
+        "id": "150",
+        "title": "polish(68.4): barra de progreso animada en la subida del video (step5) + agencia de Ramos → Urbea Inmobiliaria",
+        "description": "Origen: subtarea 68.4/103.2 · Detectado por: usuario (probando el wizard en iPhone: solo un spinner, y un tramo sin feedback tras aceptar el video). Barra con relleno verde Urbea animado (scaleX, native driver) + banda indeterminada para las fases sin progreso medible (mint-upload-url en vuelo, verificación, transcodificación). Extra de datos (producción): Santiago Ramos y su propiedad pasaron de 'Tu Casa con Vlad' a la agencia nueva 'Urbea Inmobiliaria' (insert agencies + update users/properties, reversible).",
+        "details": "[2026-08-10 22:01] useVideoUpload: dep on_progress (gemelo de on_status_change; TDD EC24 RED→GREEN 27/27) · components/UploadProgressBar.tsx nuevo (determinate+indeterminate, gotcha lint react-hooks: useState perezoso en vez de useRef.current) · step5.tsx: ui_progress espejado con redondeo a centésimas, 3 spinners reemplazados; 'Preparando la subida…' cubre el hueco sin feedback. Agencia vieja de Ramos: 2a000000-...-a1 (rollback: revertir agency_id).",
+        "testStrategy": "EC24 en useVideoUpload (crítico); barra = componente (tsc+lint+jest). Smoke visual del usuario en iPhone tras OTA.",
+        "status": "done",
+        "dependencies": [
+          "68",
+          "103"
+        ],
+        "priority": "medium",
+        "subtasks": []
       }
     ],
     "metadata": {

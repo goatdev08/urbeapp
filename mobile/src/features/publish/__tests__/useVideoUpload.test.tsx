@@ -529,6 +529,65 @@ describe('useVideoUpload', () => {
     expect(result.current.progress).toBe(1);
   });
 
+  // ── (EC24, #150) on_progress — callback EN VIVO para la barra de la UI ────
+  // El progreso vive en un ref (invisible a mitad de un await, mismo problema
+  // que O2/on_status_change): sin este callback, step5 solo puede mostrar un
+  // spinner. La barra de progreso necesita CADA avance notificado en vivo.
+
+  it('(EC24) on_progress_notifica_cada_avance_en_vivo_y_el_1_final', async () => {
+    let captured_on_progress: ((d: { bytesSent: number; totalBytes: number }) => void) | undefined;
+    let resolve_upload!: (v: MockUploadTaskResult) => void;
+    const pending = new Promise<MockUploadTaskResult>((res) => {
+      resolve_upload = res;
+    });
+    const create_upload_task = jest.fn().mockImplementation((_url: string, options: {
+      onProgress?: (d: { bytesSent: number; totalBytes: number }) => void;
+    }) => {
+      captured_on_progress = options.onProgress;
+      return { uploadAsync: jest.fn().mockReturnValue(pending) };
+    });
+    const file_instance: MockFileInstance = {
+      exists: true,
+      size: 50 * 1024 * 1024,
+      createUploadTask: create_upload_task,
+      _upload_task: { uploadAsync: jest.fn().mockReturnValue(pending) },
+    };
+    MockFile.mockImplementation(() => file_instance as never);
+    const mock_supabase = make_mock_supabase({});
+    const mock_on_progress = jest.fn();
+
+    const { result } = await renderHook(() =>
+      useVideoUpload({ supabase: mock_supabase as never, on_progress: mock_on_progress }),
+    );
+
+    act(() => {
+      void result.current.upload(TEST_LOCAL_URI);
+    });
+    await act(async () => {
+      await flush_microtasks();
+    });
+
+    // El arranque resetea la barra a 0 EN VIVO (feedback inmediato post-picker).
+    expect(mock_on_progress).toHaveBeenCalledWith(0);
+
+    act(() => {
+      captured_on_progress!({ bytesSent: 25e6, totalBytes: 100e6 });
+    });
+    expect(mock_on_progress).toHaveBeenCalledWith(0.25);
+
+    act(() => {
+      captured_on_progress!({ bytesSent: 60e6, totalBytes: 100e6 });
+    });
+    expect(mock_on_progress).toHaveBeenCalledWith(0.6);
+
+    await act(async () => {
+      resolve_upload({ status: 200 });
+    });
+
+    // Éxito → 1 notificado (la barra cierra llena, no se queda en 0.99).
+    expect(mock_on_progress).toHaveBeenCalledWith(1);
+  });
+
   // ── (EC10) Orden: mint-upload-url solo se invoca tras validar tamaño ─────
 
   it('(EC10) invoca_mint_upload_url_solo_despues_de_validar_tamano: con archivo válido, File se construye/lee ANTES de invocar mint-upload-url', async () => {
