@@ -7688,9 +7688,9 @@
         "id": "149",
         "title": "producto(126): duración mínima de video baja de 60 s a 10 s (rango 10–120)",
         "description": "Origen: tarea 126/73 · Detectado por: usuario (probando el wizard en iPhone real — su video fue rechazado por la EF publish-property con VIDEO_DURATION_INVALID). Decisión de producto de Abraham 2026-08-10: mínimo 10 s, máximo 120 s se queda. Dos candados sincronizados: validate_video_duration_ms (cliente, al elegir el video) y make_video_status_checker (EF publish-property, con la duración real del webhook).",
-        "details": "mobile/src/features/publish/validation.ts (MIN 60→10 + mensaje) · supabase/functions/_shared/clients.ts (checker 60→10) + comentarios/types. TDD: validation.test.ts, video_status_checker.test.ts y publish-property/handler.test.ts re-contratados a los bordes nuevos ANTES del cambio. Server-first (aflojar el server no rompe clientes viejos), luego OTA.",
+        "details": "mobile/src/features/publish/validation.ts (MIN 60→10 + mensaje) · supabase/functions/_shared/clients.ts (checker 60→10) + comentarios/types. TDD: validation.test.ts, video_status_checker.test.ts y publish-property/handler.test.ts re-contratados a los bordes nuevos ANTES del cambio. Server-first (aflojar el server no rompe clientes viejos), luego OTA.\n[2026-08-10 21:50] hecho: PR #70 mergeado · EF publish-property desplegada al remoto · OTA publicado a ambas plataformas (runtimes f8b4d3c6/8e35e7a0 = builds 1.0.5). RED verificado (3 jest + 1 deno fallando en bordes nuevos) → GREEN deno 68/68, jest 1028/1028.",
         "testStrategy": "RED: bordes 9/10/120/121 en las 3 suites → GREEN. Deploy publish-property + OTA.",
-        "status": "in-progress",
+        "status": "done",
         "dependencies": [
           "126"
         ],
