@@ -167,7 +167,9 @@ function make_supabase_mock(opts: {
   } = opts;
 
   const mock_order = jest.fn().mockResolvedValue(query_result);
-  const mock_select = jest.fn().mockReturnValue({ order: mock_order });
+  // #155: la cadena admite .eq() entre select y order (filtro user_id).
+  const mock_eq = jest.fn().mockReturnValue({ order: mock_order });
+  const mock_select = jest.fn().mockReturnValue({ eq: mock_eq, order: mock_order });
   const mock_from = jest.fn().mockReturnValue({ select: mock_select });
 
   return {
@@ -175,6 +177,7 @@ function make_supabase_mock(opts: {
     // Expuestos para aserciones directas
     _mock_from: mock_from,
     _mock_select: mock_select,
+    _mock_eq: mock_eq,
     _mock_order: mock_order,
   };
 }
@@ -431,6 +434,38 @@ describe('useSavedProperties', () => {
     expect(result.current.error).toBeNull();
   });
 
+});
+
+// ---------------------------------------------------------------------------
+// EXTENSIÓN — Tarea #155: filtro explícito por user_id
+// ---------------------------------------------------------------------------
+//
+// CONTEXTO DEL RED (#155, detectado en producción 2026-08-11):
+//   La policy saves_select es `user_id = auth.uid() OR public.is_admin()`.
+//   El hook confiaba en RLS ("NO filtrar user_id en el select", contrato 13.6)
+//   — correcto para usuarios normales, pero para cuentas ADMIN la RLS deja
+//   pasar los saves de TODOS los usuarios: la pantalla Guardados mezclaba
+//   guardados ajenos (que además no se pueden borrar — saves_delete solo
+//   permite filas propias → DELETE de 0 filas SIN error → el item "revive"),
+//   y una propiedad guardada por 2 usuarios duplicaba keys en la FlatList.
+//   FIX GREEN: .eq('user_id', user.id) entre select y order — "mis guardados"
+//   son SIEMPRE los del usuario autenticado, sin importar su rol.
+
+describe('useSavedProperties — filtro user_id (#155)', () => {
+  it('(EC-1-155) query_filtra_por_user_id_del_autenticado: la cadena incluye .eq("user_id", <id del usuario de useAuth>) — sin depender de RLS (cuentas admin ven todo por is_admin)', async () => {
+    const mock = make_supabase_mock();
+    await renderHook(() => useSavedProperties({ supabase: mock }));
+
+    expect(mock._mock_eq).toHaveBeenCalledWith('user_id', TEST_USER_ID);
+  });
+
+  it('(EC-2-155) orden_desc_se_conserva_con_el_filtro: con .eq en la cadena, .order("created_at", { ascending: false }) se sigue llamando', async () => {
+    const mock = make_supabase_mock();
+    await renderHook(() => useSavedProperties({ supabase: mock }));
+
+    expect(mock._mock_eq).toHaveBeenCalledWith('user_id', TEST_USER_ID);
+    expect(mock._mock_order).toHaveBeenCalledWith('created_at', { ascending: false });
+  });
 });
 
 // ---------------------------------------------------------------------------

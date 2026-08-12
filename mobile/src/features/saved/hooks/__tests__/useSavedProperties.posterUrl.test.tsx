@@ -105,7 +105,9 @@ function make_supabase_mock(opts: { rows?: SaveRow[] } = {}) {
   const { rows = ROWS } = opts;
 
   const mock_order = jest.fn().mockResolvedValue({ data: rows, error: null });
-  const mock_select = jest.fn().mockReturnValue({ order: mock_order });
+  // #155: la cadena real incluye .eq('user_id', ...) entre select y order.
+  const mock_eq = jest.fn().mockReturnValue({ order: mock_order });
+  const mock_select = jest.fn().mockReturnValue({ eq: mock_eq, order: mock_order });
   const mock_from = jest.fn().mockReturnValue({ select: mock_select });
 
   return { from: mock_from, functions: { invoke: jest.fn() }, _mock_from: mock_from };
