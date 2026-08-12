@@ -4,8 +4,9 @@
  * Subtarea Taskmaster: 13.6 — pantalla "Guardados" (hook crítico, fase GREEN).
  *
  * Contrato:
- *   - Query: from('saves').select(embed properties+property_videos).order('created_at', { ascending: false })
- *   - RLS (saves_select) filtra por user_id automáticamente. NO filtrar por user_id en el select.
+ *   - Query: from('saves').select(embed properties+property_videos).eq('user_id', user.id).order('created_at', { ascending: false })
+ *   - #155: filtro user_id EXPLÍCITO además de RLS — saves_select incluye
+ *     `OR is_admin()`, y sin el .eq una cuenta admin veía los saves de todos.
  *   - Sin sesión (user=null) → no consulta, properties: [], loading: false, error: null.
  *   - BUG1 FIX: saves NO tiene deleted_at (DELETE duro — migración 0006). Sin filtro deleted_at.
  *   - Transform: cada fila → GridProperty. thumbnail_url = video de menor position; null-safe.
@@ -99,6 +100,12 @@ export function useSavedProperties(deps?: { supabase?: any }): UseSavedPropertie
           property_videos(thumbnail_url, position)
         )`,
       )
+      // #155: filtro explícito además de RLS — saves_select tiene `OR is_admin()`,
+      // así que una cuenta admin recibía los guardados de TODOS los usuarios
+      // (ajenos que no puede borrar → "no se eliminan", y keys duplicadas en la
+      // grilla cuando 2 usuarios guardan la misma propiedad). "Mis guardados"
+      // son siempre los del usuario autenticado, sin importar su rol.
+      .eq('user_id', user.id)
       .order('created_at', { ascending: false });
 
     if (query_error) {

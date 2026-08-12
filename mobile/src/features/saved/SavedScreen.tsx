@@ -13,7 +13,7 @@
  * Se añade cursor-based loading si el dato lo justifica (tarea futura).
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   FlatList,
   LayoutAnimation,
@@ -22,6 +22,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { useFocusEffect } from 'expo-router';
 import { BookmarkSimple } from 'phosphor-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -70,6 +71,22 @@ export function SavedScreen(): React.JSX.Element {
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [properties]); // hidden_ids excluido a propósito — se lee vía set_hidden_ids(prev)
+
+  // ── Refetch al re-enfocar el tab (#155) ──────────────────────────────────
+  // Como tab (slot 4 no-agentes) la pantalla queda montada tras la primera
+  // visita y el hook solo consulta al montar: guardar/quitar desde el feed o
+  // el detalle dejaba esta lista desfasada. Se salta el PRIMER foco porque
+  // coincide con el mount (el hook ya fetchea ahí — evita la query doble).
+  const is_first_focus = useRef(true);
+  useFocusEffect(
+    useCallback(() => {
+      if (is_first_focus.current) {
+        is_first_focus.current = false;
+        return;
+      }
+      void refetch();
+    }, [refetch]),
+  );
 
   // Lista visible: propiedades del servidor menos las en vuelo (optimista).
   const displayed_properties = useMemo(

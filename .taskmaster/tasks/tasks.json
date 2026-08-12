@@ -1320,7 +1320,7 @@
         "id": "13",
         "title": "Implement like, save, and saved properties screen",
         "description": "Add like and save interactions with backend persistence, and create saved properties list screen",
-        "details": "1. Create like button component with animation (heart icon)\n2. Edge Function: supabase/functions/toggle-like/index.ts (insert/delete in likes table, update property.like_count)\n3. Create save button component (bookmark icon)\n4. Edge Function: supabase/functions/toggle-save/index.ts (insert/delete in saves table, update property.save_count)\n5. Optimistic UI updates: immediate visual feedback, rollback on error\n6. Create saved properties screen (app/(tabs)/saved.tsx) showing user's saves with property cards\n7. Query: SELECT properties.* FROM saves JOIN properties ON saves.property_id = properties.id WHERE saves.user_id = current_user AND saves.deleted_at IS NULL ORDER BY saves.created_at DESC\n8. Property card component: thumbnail (video first frame or placeholder), price, address, bedrooms/bathrooms, tap to detail\n9. Swipe-to-delete from saved list\n10. Empty state when no saved properties\n11. Test: Like persists, save persists, saved list updates",
+        "details": "1. Create like button component with animation (heart icon)\n2. Edge Function: supabase/functions/toggle-like/index.ts (insert/delete in likes table, update property.like_count)\n3. Create save button component (bookmark icon)\n4. Edge Function: supabase/functions/toggle-save/index.ts (insert/delete in saves table, update property.save_count)\n5. Optimistic UI updates: immediate visual feedback, rollback on error\n6. Create saved properties screen (app/(tabs)/saved.tsx) showing user's saves with property cards\n7. Query: SELECT properties.* FROM saves JOIN properties ON saves.property_id = properties.id WHERE saves.user_id = current_user AND saves.deleted_at IS NULL ORDER BY saves.created_at DESC\n8. Property card component: thumbnail (video first frame or placeholder), price, address, bedrooms/bathrooms, tap to detail\n9. Swipe-to-delete from saved list\n10. Empty state when no saved properties\n11. Test: Like persists, save persists, saved list updates\n\nDERIVADAS: #155 (usuario) · #156 (diagnóstico #155)",
         "testStrategy": "Test: (1) Like button toggles on/off correctly, (2) Like count increments/decrements, (3) Save button toggles on/off correctly, (4) Saved properties screen shows all saved properties, (5) Swipe-to-delete removes from saved, (6) Optimistic updates work and rollback on error, (7) Like/save state persists across app restarts, (8) Double-tap to like from feed works",
         "priority": "medium",
         "dependencies": [
@@ -7487,7 +7487,8 @@
             "details": "[2026-08-10 15:07] hecho: LocationProvider.fetch_current_coords con fallback a getLastKnownPositionAsync antes de caer al muro (raíz: el Fused Location Provider del AVD nunca resuelve getCurrentPositionAsync — #109; en frío también ayuda a usuarios reales). 4 tests nuevos (21/21 verdes). VERIFICADO en el emulador: con geo fix, la app pasa del muro y el feed carga.",
             "status": "done",
             "dependencies": [],
-            "testStrategy": ""
+            "testStrategy": "",
+            "parentId": "undefined"
           },
           {
             "id": 2,
@@ -7496,7 +7497,8 @@
             "details": "[2026-08-10 15:07] hecho: lens_spring 32/420 → 30/240 (≈amortiguamiento crítico) + overshootClamping en LENS_SPRING (GlassTabBar.tsx). Movimiento suave sin pasarse de la tab destino. Phosphor intacto.",
             "status": "done",
             "dependencies": [],
-            "testStrategy": ""
+            "testStrategy": "",
+            "parentId": "undefined"
           },
           {
             "id": 3,
@@ -7505,7 +7507,8 @@
             "details": "[2026-08-10 15:07] hecho: splash regenerado del spec urbea-logo-final.html — asset propio assets/splash-icon.png (U carnita recortada, alpha real, qlmanage) sobre backgroundColor #1A5E44, imageWidth 96. NATIVO: entra al build 1.0.5, no viaja por OTA.",
             "status": "done",
             "dependencies": [],
-            "testStrategy": ""
+            "testStrategy": "",
+            "parentId": "undefined"
           },
           {
             "id": 4,
@@ -7514,7 +7517,8 @@
             "details": "[2026-08-10 15:07] hecho: src/lib/splash-gate.ts (release one-shot + timeout de seguridad 7s en app/_layout). El splash aguanta hasta la primera pantalla útil: login/verify-email/LegalWall/LocationWall al montar, feed cuando el skeleton se resuelve. Los servicios (auth restore, ubicación, primer fetch) cargan DEBAJO del logo.",
             "status": "done",
             "dependencies": [],
-            "testStrategy": ""
+            "testStrategy": "",
+            "parentId": "undefined"
           },
           {
             "id": 5,
@@ -7523,7 +7527,8 @@
             "details": "[2026-08-10 15:07] hecho: icon.png (verde #1A5E44 + U carnita 0.74, cuadro full-bleed — el SO redondea), android-icon-foreground (U sobre alpha) y android-icon-background (verde sólido) regenerados EXACTOS del spec → misma cara iOS/Android. version 1.0.4→1.0.5 (assets nativos = fingerprint nuevo).",
             "status": "done",
             "dependencies": [],
-            "testStrategy": ""
+            "testStrategy": "",
+            "parentId": "undefined"
           },
           {
             "id": 6,
@@ -7532,7 +7537,8 @@
             "details": "[2026-08-10 15:07] hecho: insets.bottom aplicado en 10 puntos — LeadExpandedView (sheet + maxHeight 88% de ventana), PropertyActionMenu, select-field, steps 1-5 del wizard, admin/index, sticky CTA de PropertyDetailScreen (patrón FilterSheet). VERIFICADO en emulador con navegación por botones (threebutton): los CTAs del lead ya no quedan tapados. 2 tests con mock de safe-area agregado.",
             "status": "done",
             "dependencies": [],
-            "testStrategy": ""
+            "testStrategy": "",
+            "parentId": "undefined"
           }
         ],
         "updatedAt": "2026-08-10T14:45:57.535804"
@@ -7556,7 +7562,8 @@
             "details": "hecho (2026-08-10): fast-path en fetch_current_coords (mobile/src/features/location/LocationProvider.tsx) — getLastKnownPositionAsync({ maxAge: 600000 }) ANTES del fix fresco; posición ≤10 min → granted inmediato. Sin posición reciente o si la consulta lanza → camino #143.1 intacto (fresh con timeout 10s → fallback sin maxAge → muro). Tests: describe #144.1 (3 casos: granted sin getCurrentPositionAsync, maxAge exacto, throw del fast-path cae al fresh) + reescrito el test #143.1 'fresca OK → last-known nunca se consulta' (contrato viejo, muere por diseño) y el del fallback ahora distingue fast-path vs fallback por argumentos. RED 2 fallos → GREEN 20/20.",
             "status": "done",
             "dependencies": [],
-            "testStrategy": "Jest LocationProvider (describe #144.1) + regresión de EC-1..EC-10 y #143.1."
+            "testStrategy": "Jest LocationProvider (describe #144.1) + regresión de EC-1..EC-10 y #143.1.",
+            "parentId": "undefined"
           },
           {
             "id": 2,
@@ -7565,7 +7572,8 @@
             "details": "hecho (2026-08-10): mobile/src/features/feed/lib/feedProperties.ts — mint_and_build_feed_data separado en mint_videos(client, property_ids) + build_feed_data(rows, videos); el mint dispara con los page_ids de la RPC y corre vía Promise.all con el select de PostgREST (antes 3 viajes en serie; ahorra ~1 RTT + cold start de la EF en frío). Merge fail-closed intacto; select vacío tras mint disparado → data:[] sin throw. Tests nuevos: feedProperties.parallel-mint.test.ts (PM-1 page_ids no ids-de-filas, PM-2 query gated demuestra paralelo, PM-3 select vacío) RED 3 fallos → GREEN; regresión EC-1..EC-19 + filters/zone/radius-null intactas. Verificación: jest 1021/1021, tsc 0, lint 0 errores.",
             "status": "done",
             "dependencies": [],
-            "testStrategy": "Jest feedProperties.parallel-mint.test.ts (PM-1..PM-3) + regresión EC-1..EC-19 y suites filters/zone/radius-null."
+            "testStrategy": "Jest feedProperties.parallel-mint.test.ts (PM-1..PM-3) + regresión EC-1..EC-19 y suites filters/zone/radius-null.",
+            "parentId": "undefined"
           }
         ],
         "updatedAt": "2026-08-10T00:00:00.000Z"
@@ -7589,7 +7597,8 @@
             "details": "hecho (2026-08-10): migración 20260810000001_agent_public_profiles_view.sql + rollback + pgTAP 41 (plan 6). Vista security_invoker=false sobre user_preferences JOIN users (role agent|admin), columnas SOLO user_id/full_name/profile_photo_url; grant select a authenticated, revoke anon/public. RED 6 fallos → GREEN 6/6 (supabase test db local). Desplegada al remoto vía MCP apply_migration; smoke SQL: 2 filas (agentes demo). Smoke REST con JWT demo (admin@urbea.demo): el embed anidado users→agent_public_profiles resuelve — devolvió full_name 'Vladimir YEH' + foto.",
             "status": "done",
             "dependencies": [],
-            "testStrategy": "pgTAP por impersonación JWT."
+            "testStrategy": "pgTAP por impersonación JWT.",
+            "parentId": "undefined"
           },
           {
             "id": 2,
@@ -7598,7 +7607,8 @@
             "details": "hecho (2026-08-10): FEED_SELECT embebe agent_public_profiles(full_name, profile_photo_url) anidada en users (mismo viaje, 0 RTT extra); FeedPropertyWithUrl gana agent_name y agent_photo_url (crudo: key R2 o URL legacy). Normalización objeto/array y fail-open (sin fila → nulls, la propiedad no se omite). Tests: feedProperties.agent-identity.test.ts AI-1..AI-3, RED 3 → GREEN; 13 suites del feed verdes.",
             "status": "done",
             "dependencies": [],
-            "testStrategy": "TDD Jest (lib crítica)."
+            "testStrategy": "TDD Jest (lib crítica).",
+            "parentId": "undefined"
           },
           {
             "id": 3,
@@ -7607,7 +7617,8 @@
             "details": "hecho (2026-08-10): useAgentProfile y usePropertyDetail cambian from('user_preferences') → from('agent_public_profiles') — arregla el fallback SILENCIOSO del perfil ajeno y de la AgentCard del detalle (la RLS 'solo tu fila' devolvía 0 filas para no-admins). Tipos de DB regenerados del remoto (la vista entra tipada; adiós casts 'as never' en estos 2 hooks). Tests de useAgentProfile re-apuntados a la vista (RED 6 → GREEN).",
             "status": "done",
             "dependencies": [],
-            "testStrategy": "Tests existentes actualizados."
+            "testStrategy": "Tests existentes actualizados.",
+            "parentId": "undefined"
           },
           {
             "id": 4,
@@ -7616,7 +7627,8 @@
             "details": "hecho (2026-08-10): PropertyOverlay — avatar con foto real (useR2Urls patrón ProfileHeader: passthrough URL legacy, mint de key R2; onError → inicial), nombre público debajo del avatar (sombra para legibilidad), Pressable con feedback de presión (scale 0.94 + opacity, mismo lenguaje que el rail) y accessibilityLabel con el nombre. VideoFeedItem: handle_agent_press deja de ser stub → router.push('/profile/[owner_user_id]') (la pantalla de perfil público con publicaciones existe desde #16.6). Verificación ligera: tsc 0, lint 0 errores, jest 1024/1024. Smoke visual en emulador BLOQUEADO por entorno: el AVD post-reboot quedó sin last-location en ningún provider (variante dura de #109; geo fix no aterriza sin listener GPS activo) — el muro de ubicación bloquearía a CUALQUIER versión del código en ese estado. Verificado en su lugar por REST remoto real (145.1).",
             "status": "done",
             "dependencies": [],
-            "testStrategy": "Verificación ligera (componentes): tsc+lint+tests de overlay existentes + smoke emulador."
+            "testStrategy": "Verificación ligera (componentes): tsc+lint+tests de overlay existentes + smoke emulador.",
+            "parentId": "undefined"
           }
         ],
         "updatedAt": "2026-08-10T00:00:00.000Z"
@@ -7641,7 +7653,8 @@
             "description": "Flip en handler.ts con comentario de reversión; test 400 actualizado primero (RED).",
             "status": "done",
             "dependencies": [],
-            "details": "[2026-08-10 20:34] hecho: handler.ts email_confirm true (comentario ponytail de reversión) + handler.test.ts:400 assert true (RED verificado: 67/1 → GREEN 68/68 deno). Deploy remoto: supabase functions deploy register --use-api --import-map. Smoke prod: register 200 user_id → password grant inmediato OK (email_confirmed_at poblado); usuario smoke borrado."
+            "details": "[2026-08-10 20:34] hecho: handler.ts email_confirm true (comentario ponytail de reversión) + handler.test.ts:400 assert true (RED verificado: 67/1 → GREEN 68/68 deno). Deploy remoto: supabase functions deploy register --use-api --import-map. Smoke prod: register 200 user_id → password grant inmediato OK (email_confirmed_at poblado); usuario smoke borrado.",
+            "parentId": "undefined"
           },
           {
             "id": 2,
@@ -7651,7 +7664,8 @@
             "dependencies": [
               1
             ],
-            "details": "[2026-08-10 20:34] hecho: register.tsx handle_user_submit → signIn(email,password) con fallback en catch a send_verification_email + /verify-email (compat con EF vieja). register-user-mode.test.tsx re-contratado: EC-1 auto-login + test nuevo de fallback (8/8)."
+            "details": "[2026-08-10 20:34] hecho: register.tsx handle_user_submit → signIn(email,password) con fallback en catch a send_verification_email + /verify-email (compat con EF vieja). register-user-mode.test.tsx re-contratado: EC-1 auto-login + test nuevo de fallback (8/8).",
+            "parentId": "undefined"
           },
           {
             "id": 3,
@@ -7659,7 +7673,8 @@
             "description": "Solo __DEV__; producción conserva el muro gps_off.",
             "status": "done",
             "dependencies": [],
-            "details": "[2026-08-10 20:34] hecho: LocationProvider DEV_FALLBACK_COORDS (GDL 20.6736,-103.3444) al final de fetch_current_coords solo si __DEV__ (console.warn). Tests: archivo corre con __DEV__=false (semántica producción) + describe #146 con 2 tests (22/22)."
+            "details": "[2026-08-10 20:34] hecho: LocationProvider DEV_FALLBACK_COORDS (GDL 20.6736,-103.3444) al final de fetch_current_coords solo si __DEV__ (console.warn). Tests: archivo corre con __DEV__=false (semántica producción) + describe #146 con 2 tests (22/22).",
+            "parentId": "undefined"
           },
           {
             "id": 4,
@@ -7667,7 +7682,8 @@
             "description": "Arregla el destino de los links de verify/reset para cuando se re-active la confirmación.",
             "status": "deferred",
             "dependencies": [],
-            "details": "[2026-08-10 20:34] BLOQUEADO por permisos: el PATCH a la Management API (uri_allow_list=urbea://**) lo denegó el classifier. Comando pendiente para Abraham (ver reporte). Solo importa al re-activar la confirmación (72.3) y para los links de reset-password."
+            "details": "[2026-08-10 20:34] BLOQUEADO por permisos: el PATCH a la Management API (uri_allow_list=urbea://**) lo denegó el classifier. Comando pendiente para Abraham (ver reporte). Solo importa al re-activar la confirmación (72.3) y para los links de reset-password.",
+            "parentId": "undefined"
           }
         ]
       },
@@ -7770,22 +7786,49 @@
         "id": "154",
         "title": "chore(148): version 1.0.6 — build con el splash de alfa real",
         "description": "Origen: tarea 148 (fix de assets con alfa real, PR #69) · Detectado por: decisión de Abraham (opción A — compilar ya). Los assets del splash/ícono son nativos: el fix no viaja por OTA y mergearlo cambió el fingerprint, así que se compila 1.0.6 (Android APK perfil preview + iOS perfil production → TestFlight) y se redistribuye.",
-        "details": "Bump version 1.0.5→1.0.6 en mobile/app.config.js con la nota del porqué (precedente #114). Builds EAS desde main mergeado; verificar fingerprint nuevo vs 1.0.5 (f8b4d3c6/8e35e7a0) y entrega: APK para inversores + eas submit a TestFlight. ⚠️ Desde este merge, los OTAs publicados apuntan al runtime 1.0.6 — la flota 1.0.5 queda congelada (instalar build nuevo para seguir recibiendo updates).",
+        "details": "Bump version 1.0.5→1.0.6 en mobile/app.config.js con la nota del porqué (precedente #114). Builds EAS desde main mergeado; verificar fingerprint nuevo vs 1.0.5 (f8b4d3c6/8e35e7a0) y entrega: APK para inversores + eas submit a TestFlight. ⚠️ Desde este merge, los OTAs publicados apuntan al runtime 1.0.6 — la flota 1.0.5 queda congelada (instalar build nuevo para seguir recibiendo updates). CIERRE: builds 1.0.6 FINISHED (android runtime 374ba3dd, ios ca62b26a — distintos a los de 1.0.5 f8b4d3c6/8e35e7a0, fingerprint nuevo confirmado); iOS subido a TestFlight (App Store Connect procesando); APK instalado en el emulador y splash verificado visualmente (verde #1A5E44 + U carnita, sin cuadro blanco).",
         "testStrategy": "eas build:list muestra los 2 builds 1.0.6 terminados con runtime nuevo; APK instala y arranca con splash verde limpio; TestFlight procesa el build.",
-        "status": "in-progress",
+        "status": "done",
         "dependencies": [
           "148"
         ],
         "priority": "high",
         "subtasks": [],
         "updatedAt": "2026-08-11T05:20:00.000Z"
+      },
+      {
+        "id": "155",
+        "title": "fix(13): Guardados desfasado — la lista no se refresca al volver a enfocar el tab",
+        "description": "Origen: tarea 13 (pantalla Guardados) · Detectado por: usuario (Abraham, 2026-08-11, cuentas de usuario normal en Android). Los guardados quitados/agregados desde el feed o el detalle no se reflejan al volver al tab Guardados.",
+        "details": "DIAGNÓSTICO: para no-agentes 'Guardados' es un TAB (slot 4 de AndroidTabsLayout/IosNativeTabsLayout, el mismo que Leads para agentes). Con freezeOnBlur la pantalla queda montada tras la primera visita y useSavedProperties solo consulta al MONTAR (+ pull-to-refresh + on_synced del long-press). No hay refetch al re-enfocar → toda mutación hecha FUERA de la pantalla (bookmark del feed, bookmark del detalle) deja la lista vieja: quitados que siguen apareciendo y guardados nuevos que no aparecen. Afecta IGUAL a agentes (misma pantalla vía Perfil→⋯→Guardados, router.push('/saved') a la misma ruta de tab oculta) — solo que los usuarios normales lo ven más porque es tab de primera clase. NO es RLS (saves_delete = user_id=auth.uid(), idéntica para todos los roles) ni el DELETE (duro, sin deleted_at). FIX: useFocusEffect en SavedScreen que dispara refetch() al ganar foco, saltándose el primer foco (el mount ya fetchea — evita query doble). Path = pantalla (no crítico) → verificación ligera. Precedente del patrón: useAgentProfile re-fetch on focus (#22.5). DERIVADAS: #156 (gap hermano detectado en el diagnóstico).\n\nHECHO (2026-08-11): DOS causas corregidas, no una. (1) FOCO: useFocusEffect en SavedScreen.tsx con ref que salta el primer foco — verificado E2E en emulador (guardar desde feed → volver al tab → aparece sin pull-to-refresh). (2) CAUSA RAÍZ del reporte — SCOPING ADMIN: saves_select tiene `OR is_admin()`, el hook confiaba en RLS y las cuentas admin (las de prueba de Abraham: swacg08, admin@) veían los saves de TODOS los usuarios; los ajenos no se pueden borrar (saves_delete solo filas propias → DELETE de 0 filas sin error → el item revive al refetch = 'no se eliminan') y una propiedad guardada por 2 usuarios duplicaba keys de fila en la FlatList numColumns ('Encountered two children with the same key' — visto en vivo; los keys de fila son los ids unidos por ':'). Evidencia DB: admin@ tenía 2 saves pero la pantalla mostraba 6+. FIX: .eq('user_id', user.id) en useSavedProperties (TDD: RED EC-1-155/EC-2-155 fallaron por aserción con 0 calls a eq, GREEN con el filtro; mock de posterUrl.test actualizado a la cadena nueva). Para usuarios normales reales solo aplicaba el desfase de foco. Verificación: Jest 1031/1031, tsc 0, lint 0 errores; E2E: lista del admin = exactamente sus 2 saves, quitar Terreno → desaparece y persiste (DB: 1 save), 0 warnings de dup key, app terminada con force-stop. La RLS NO se tocó (is_admin() en SELECT queda para tooling admin futuro; el scoping del cliente es la capa correcta para 'mis guardados').",
+        "testStrategy": "pnpm tsc --noEmit + pnpm lint verdes; suite Jest de saved (useSavedProperties 11+ tests) intacta; smoke en emulador Android: guardar desde el feed → tab Guardados muestra el item; quitar desde el detalle → volver → ya no está (terminar en force-stop, cuota Stream).",
+        "status": "done",
+        "dependencies": [
+          "13"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2026-08-12T00:48:52.465Z"
+      },
+      {
+        "id": "156",
+        "title": "producto(13): el bookmark del feed y del detalle no reflejan el estado real de guardado",
+        "description": "Origen: tarea 13 (guardados) · Detectado por: diagnóstico de #155. useFeedProperties y el detalle no consultan saves: useSaveProperty arranca siempre initialSaved=false, así que una propiedad YA guardada aparece con el bookmark apagado.",
+        "details": "Consecuencia UX: para QUITAR un guardado desde el feed hay que tocar el bookmark DOS veces (el 1er tap hace INSERT → 23505 'ya existe' → se queda en saved=true y solo enciende el ícono; el 2º sí hace DELETE). El usuario percibe que 'no se eliminan bien'. FIX candidato: que useFeedProperties/PropertyDetail traigan el estado real (embed o query batch a saves por los ids de la página, mismo patrón que fetch_grid_posters) y pasen initialSaved/initialLiked. Nota: useLikeProperty tiene exactamente el mismo gap con likes. Evaluar juntos.",
+        "testStrategy": "Tests del hook de feed con el batch de saves; smoke: guardar → cerrar app → reabrir feed → bookmark encendido en la propiedad guardada.",
+        "status": "pending",
+        "dependencies": [
+          "13"
+        ],
+        "priority": "medium",
+        "subtasks": []
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-08-10T05:07:58.833Z",
-      "taskCount": 142,
-      "completedCount": 78,
+      "lastModified": "2026-08-12T00:48:52.465Z",
+      "taskCount": 156,
+      "completedCount": 89,
       "tags": [
         "master"
       ]
