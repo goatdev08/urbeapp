@@ -33,21 +33,27 @@ interface ZoneActiveChipProps {
   on_press: () => void;
   /** Variante para fondos oscuros (feed inmersivo). Default: false (mapa claro). */
   dark?: boolean;
+  /**
+   * Texto del chip (#157.8): con una colonia seleccionada muestra su nombre
+   * ("Chapalita · Quitar"). Default "Zona activa" — backwards-compatible con
+   * el uso existente del feed/mapa para filters.area (#56.5).
+   */
+  label?: string;
   style?: StyleProp<ViewStyle>;
 }
 
-export function ZoneActiveChip({ on_press, dark = false, style }: ZoneActiveChipProps) {
+export function ZoneActiveChip({ on_press, dark = false, label = 'Zona activa', style }: ZoneActiveChipProps) {
   return (
     <TouchableOpacity
       style={[styles.container, dark ? styles.container_dark : styles.container_light, style]}
       onPress={on_press}
       activeOpacity={0.85}
       accessibilityRole="button"
-      accessibilityLabel="Zona activa. Quitar filtro de zona"
+      accessibilityLabel={`${label}. Quitar filtro de zona`}
     >
       <MapPin size={16} weight="fill" color={dark ? colors.primary_soft : colors.primary} />
-      <Text style={[styles.label, dark && styles.label_dark]}>
-        Zona activa{' '}
+      <Text style={[styles.label, dark && styles.label_dark]} numberOfLines={1}>
+        {label}{' '}
         <Text style={[styles.action, dark && styles.action_dark]}>· Quitar</Text>
       </Text>
     </TouchableOpacity>

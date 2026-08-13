@@ -15,8 +15,8 @@
  *   solo recalcula cuando data o region cambian.
  */
 import React, { Component, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
-import MapView, { Region } from 'react-native-maps';
+import { ActivityIndicator, Keyboard, StyleSheet, Text, View } from 'react-native';
+import MapView, { Polygon, Region } from 'react-native-maps';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -25,13 +25,18 @@ import { useLocation } from '@/features/location/LocationProvider';
 import { useFilters } from '../search/filterStore';
 import { GDL_REGION } from './constants';
 import { useMapProperties } from './hooks/useMapProperties';
+import { usePlaceSearch } from './hooks/usePlaceSearch';
 import { cluster_properties } from './lib/clusterMarkers';
 import { viewport_to_area } from './lib/viewportToArea';
+import { bbox_to_region } from './lib/bboxRegion';
+import { fetch_neighborhood_polygon, type NeighborhoodPolygon } from './lib/neighborhoodPolygon';
+import type { PlaceSuggestion } from './lib/placeSearch';
 import { PropertyMarker } from './components/PropertyMarker';
 import { ClusterMarker } from './components/ClusterMarker';
 import { PropertyMiniCard } from './components/PropertyMiniCard';
 import { AreaSearchPill } from './components/AreaSearchPill';
 import { MapSearchBar } from './components/MapSearchBar';
+import { MapSearchSuggestions } from './components/MapSearchSuggestions';
 import { FilterSheet } from '../search/components/FilterSheet';
 import { ZoneActiveChip } from '../search/components/ZoneActiveChip';
 import type { MapProperty } from './types';
@@ -98,7 +103,16 @@ function MapContent(): React.JSX.Element {
   const insets = useSafeAreaInsets();
 
   const { filters, set_filter, active_filter_count } = useFilters();
-  const { data, loading, error } = useMapProperties(undefined, filters);
+
+  // ── Búsqueda de lugares + colonia seleccionada (#157) ─────────────────────
+  // La colonia es estado LOCAL del mapa (decisión D6: no vive en FilterState —
+  // el feed no la consume). neighborhood_id fluye como 3er parámetro a
+  // useMapProperties; active_polygon pinta el perímetro.
+  const place_search = usePlaceSearch();
+  const [neighborhood_id, set_neighborhood_id] = useState<string | null>(null);
+  const [active_polygon, set_active_polygon] = useState<NeighborhoodPolygon | null>(null);
+
+  const { data, loading, error } = useMapProperties(undefined, filters, neighborhood_id);
   // Ubicación real (LocationProvider, permiso obligatorio #41): centra el mapa
   // en la ciudad del usuario en vez de GDL fija. Fallback: GDL_REGION.
   const { coords: user_coords } = useLocation();
@@ -114,7 +128,6 @@ function MapContent(): React.JSX.Element {
   );
   const [region, set_region] = useState<Region>(initial_region);
   const [selected, set_selected] = useState<MapProperty | null>(null);
-  const [query, set_query] = useState('');
   const [filter_visible, set_filter_visible] = useState(false);
   const [show_area_pill, set_show_area_pill] = useState(false);
   const area_pill_timer_ref = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -144,25 +157,15 @@ function MapContent(): React.JSX.Element {
   }, [user_coords]);
 
   /*
-   * ponytail: filtro cliente sin geocoding ni nueva dependencia — cubre el scope #11.7.
-   * Filtra por address y property_type; recalcula solo cuando data o query cambian.
-   * clustered deriva de filtered → no recalcula todo el clustering ante un cambio
-   * de región si el query no cambió. tracksViewChanges={false} en markers (ver
-   * PropertyMarker.tsx) evita re-renders por frame con 50+ pins en pantalla.
+   * #157 (D7): el filtro cliente trivial de #11.7 (includes sobre address/
+   * property_type) se SUSTITUYE por el autocomplete server-side — la barra
+   * ahora busca LUGARES (colonias/municipios), no texto de propiedades.
+   * clustered deriva directo de data. tracksViewChanges={false} en markers
+   * (ver PropertyMarker.tsx) evita re-renders por frame con 50+ pins.
    */
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return data ?? [];
-    return (data ?? []).filter(
-      (p) =>
-        p.address.toLowerCase().includes(q) ||
-        p.property_type.toLowerCase().includes(q),
-    );
-  }, [data, query]);
-
   const clustered = useMemo(
-    () => cluster_properties(filtered, region),
-    [filtered, region],
+    () => cluster_properties(data ?? [], region),
+    [data, region],
   );
 
   // Limpia el timer del pill "Buscar en esta zona" al desmontar (evita fugas).
@@ -197,12 +200,76 @@ function MapContent(): React.JSX.Element {
    * onPress del pill: convierte el viewport actual a {center, radius_m}
    * (#56.1), lo setea como `filters.area` y navega al feed — la capa de
    * datos (56.3) ya reacciona sola al cambio de `area`, sin plomería extra.
+   * #157 (D9): además limpia la colonia activa — colonia y area son
+   * mutuamente excluyentes (dos acotaciones simultáneas serían ambiguas).
    */
   function handle_area_search(): void {
     const area = viewport_to_area(region);
     set_filter('area', area);
     set_show_area_pill(false);
+    clear_neighborhood();
     router.push('/');
+  }
+
+  /** Quita la colonia activa (perímetro + filtro). */
+  function clear_neighborhood(): void {
+    set_neighborhood_id(null);
+    set_active_polygon(null);
+  }
+
+  /**
+   * Selección de una sugerencia del autocomplete (#157.8).
+   * - Colonia: baja su polígono (get_neighborhood_geojson), lo dibuja, encuadra
+   *   el bbox con fitToCoordinates y activa el filtro espacial (neighborhood_id
+   *   → RPC properties_within_neighborhood). Limpia `filters.area` (D9).
+   * - Municipio: no hay polígono municipal — encuadra su bbox precalculado
+   *   (D4) y reusa el mecanismo de área de #56 (círculo del viewport, D5).
+   *   bbox null (municipio sin colonias cargadas) → solo cierra el dropdown.
+   * En ambos casos la barra se limpia: el estado visible queda en el CHIP
+   * ("<Nombre> · Quitar"), no en el texto de la barra.
+   */
+  async function handle_select_place(suggestion: PlaceSuggestion): Promise<void> {
+    place_search.clear();
+    Keyboard.dismiss();
+
+    if (suggestion.kind === 'neighborhood') {
+      set_filter('area', null); // D9: excluyentes
+      try {
+        const polygon = await fetch_neighborhood_polygon(suggestion.id);
+        if (polygon) {
+          set_active_polygon(polygon);
+          set_neighborhood_id(suggestion.id);
+          fit_bbox(polygon.bbox);
+          return;
+        }
+      } catch {
+        // fail-soft: sin polígono no hay filtro; al menos encuadra si hay bbox.
+      }
+      if (suggestion.bbox) fit_bbox(suggestion.bbox);
+      return;
+    }
+
+    // Municipio
+    clear_neighborhood();
+    if (!suggestion.bbox) return; // sin colonias cargadas → sin encuadre (D4)
+    const muni_region = bbox_to_region(suggestion.bbox);
+    map_ref.current?.animateToRegion(muni_region, 400);
+    set_filter('area', viewport_to_area(muni_region));
+    set_show_area_pill(false);
+  }
+
+  /** Encuadra un bbox con padding — para el perímetro de colonia. */
+  function fit_bbox(bbox: { min_lat: number; min_lng: number; max_lat: number; max_lng: number }): void {
+    map_ref.current?.fitToCoordinates(
+      [
+        { latitude: bbox.min_lat, longitude: bbox.min_lng },
+        { latitude: bbox.max_lat, longitude: bbox.max_lng },
+      ],
+      {
+        edgePadding: { top: 140, right: 40, bottom: 140, left: 40 },
+        animated: true,
+      },
+    );
   }
 
   /** Centra y hace zoom-in sobre el cluster tocado. */
@@ -230,6 +297,21 @@ function MapContent(): React.JSX.Element {
         showsUserLocation
         showsMyLocationButton
       >
+        {/*
+         * #157: perímetro de la colonia seleccionada. Un <Polygon> por anillo
+         * exterior (las colonias multipolígono del DCAH son raras pero existen).
+         * Relleno primary al 10% + trazo primary — persiste al panear (D9);
+         * solo lo quitan el chip o el pill "Buscar en esta zona".
+         */}
+        {active_polygon?.polygons.map((ring, index) => (
+          <Polygon
+            key={`${active_polygon.id}-${index}`}
+            coordinates={ring}
+            strokeColor={colors.primary}
+            strokeWidth={2}
+            fillColor="rgba(26, 94, 68, 0.10)"
+          />
+        ))}
         {clustered.map((item) => {
           if (item.type === 'point') {
             return (
@@ -296,6 +378,21 @@ function MapContent(): React.JSX.Element {
         />
       )}
 
+      {/*
+       * Chip de colonia activa (#157.8) — mismo componente, con el nombre de
+       * la colonia como label ("Chapalita · Quitar"). Nunca coexiste con el
+       * chip de area (D9: mutuamente excluyentes), así que comparten ancla.
+       */}
+      {active_polygon != null && (
+        <ZoneActiveChip
+          label={active_polygon.name}
+          on_press={clear_neighborhood}
+          style={{
+            top: insets.top + spacing.s_8 + MAP_SEARCH_BAR_HEIGHT_APPROX + spacing.s_8,
+          }}
+        />
+      )}
+
       {/* ── Barra de búsqueda flotante — overlay superior (z-index último) ── */}
       {/*
        * Renderizado después del MapView y los overlays para quedar por encima
@@ -304,10 +401,18 @@ function MapContent(): React.JSX.Element {
        * del MapView y tiene mayor z-index.
        */}
       <MapSearchBar
-        value={query}
-        on_change={set_query}
+        value={place_search.query}
+        on_change={place_search.set_query}
         on_filter_press={() => set_filter_visible(true)}
         active_filter_count={active_filter_count}
+      />
+
+      {/* Dropdown de sugerencias (#157.8) — después de la barra en orden de
+          render para quedar encima de los chips cuando está abierto. */}
+      <MapSearchSuggestions
+        suggestions={place_search.suggestions}
+        on_select={(s) => void handle_select_place(s)}
+        top={insets.top + spacing.s_8 + MAP_SEARCH_BAR_HEIGHT_APPROX + spacing.s_8}
       />
 
       {/* FilterSheet — abierto desde el ícono options-outline del MapSearchBar */}
