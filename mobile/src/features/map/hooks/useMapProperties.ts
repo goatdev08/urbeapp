@@ -39,6 +39,10 @@ export function useMapProperties(
 
   supabase?: any,
   filters?: FilterState,
+  // #157: colonia seleccionada en el autocomplete (estado local de MapScreen,
+  // decisión D6). Al cambiar (seleccionar/limpiar), fetch_data cambia de
+  // identidad y el efecto refetchea — mismo mecanismo que `filters`.
+  neighborhood_id?: string | null,
 ): UseMapPropertiesState {
   const { coords } = useLocation();
   const [data, set_data] = useState<MapProperty[]>([]);
@@ -58,14 +62,14 @@ export function useMapProperties(
     set_loading(true);
     set_error(null);
     try {
-      const result = await fetchMapProperties(build_deps(), filters);
+      const result = await fetchMapProperties(build_deps(), filters, neighborhood_id);
       set_data(result);
     } catch (e) {
       set_error(e instanceof Error ? e.message : 'Error al cargar propiedades del mapa');
     } finally {
       set_loading(false);
     }
-  }, [filters, build_deps]);
+  }, [filters, build_deps, neighborhood_id]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount: dispara la carga async (fetch_data maneja su propio loading/error).

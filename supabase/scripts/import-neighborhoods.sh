@@ -65,7 +65,11 @@ fetch_and_prepare() {
   local zip="$DATA_DIR/$slug.zip"
   if [ ! -s "$zip" ]; then
     echo "→ [$nn] descargando $slug.zip"
-    curl -fsSL --retry 3 -o "$zip" "$BASE_URL/$slug.zip"
+    # A archivo temporal + validación: un timeout de INEGI a media descarga
+    # dejaba un zip truncado CACHEADO que rompía el unzip en el reintento.
+    curl -fSL --retry 3 -o "$zip.tmp" "$BASE_URL/$slug.zip"
+    unzip -tqq "$zip.tmp" > /dev/null || die "[$nn] zip corrupto tras descargar (reintenta)"
+    mv "$zip.tmp" "$zip"
   fi
 
   local workdir="$DATA_DIR/$slug"

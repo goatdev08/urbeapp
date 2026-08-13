@@ -1,7 +1,13 @@
 /**
  * mapProperties.ts — capa de datos del mapa global (#11.2).
  *
- * fetchMapProperties(deps?, filters?):
+ * fetchMapProperties(deps?, filters?, neighborhood_id?):
+ *   - `neighborhood_id` string (#157) → rama de MÁXIMA prioridad (gana sobre
+ *     area y todo lo demás): RPC properties_within_neighborhood (ST_Intersects
+ *     con el polígono de la colonia) → ids → `.in('id', ids)` + filtros. SIN
+ *     expansión ni fallback: colonia sin propiedades = [] honesto. El id NUNCA
+ *     viaja por build_filter_query (invariante A1) ni vive en FilterState
+ *     (decisión D6: es estado local de MapScreen, no filtro cross-screen).
  *   - `filters.radius_m === null` (#58.3) → SALTA la RPC por completo: query
  *     plana (status/deleted_at + build_filter_query), SIN `.in('id', ...)` —
  *     trae TODAS las propiedades activas que matcheen los filtros de usuario.
@@ -96,10 +102,47 @@ function build_map_result(rows: QueryRow[]): MapProperty[] {
 export async function fetchMapProperties(
   deps?: MapPropertiesDeps,
   filters?: FilterState,
+  // ponytail: 3er parámetro opcional — las llamadas existentes con 0-2 args no cambian.
+  neighborhood_id?: string | null,
 ): Promise<MapProperty[]> {
   // ponytail: lazy-require del cliente real; nunca se evalúa en tests (deps siempre inyectado)
 
   const client: any = deps?.supabase ?? (require('@/lib/supabase/client') as any).supabase;
+
+  // #157: modo colonia — máxima prioridad, ANTES de area/#56. La colonia es
+  // una selección explícita del autocomplete: si no tiene propiedades, el
+  // resultado vacío es la verdad (sin expansión ni fallback a otro radio).
+  if (neighborhood_id != null) {
+    const rpc_result = (await client.rpc('properties_within_neighborhood', {
+      // La RPC recibe bigint; en el cliente el id viaja como string (PlaceSuggestion).
+      p_neighborhood_id: Number(neighborhood_id),
+    })) as { data: { id: string }[] | null; error: { message: string } | null };
+
+    if (rpc_result.error) throw new Error(rpc_result.error.message);
+
+    const rpc_ids = (rpc_result.data ?? []).map((r) => r.id);
+    if (rpc_ids.length === 0) return [];
+
+    let nb_query = client
+      .from('properties')
+      .select(MAP_SELECT)
+      .in('id', rpc_ids)
+      .eq('status', 'active')
+      .is('deleted_at', null);
+
+    // Filtros de usuario (#12.7) — neighborhood_id NUNCA llega aquí (invariante A1).
+    nb_query = build_filter_query(nb_query, filters ?? EMPTY_FILTERS);
+
+    const { data: nb_rows, error: nb_error } = (await nb_query) as {
+      data: QueryRow[] | null;
+      error: { message: string } | null;
+    };
+
+    if (nb_error) throw new Error(nb_error.message);
+    if (!nb_rows || nb_rows.length === 0) return [];
+
+    return build_map_result(nb_rows);
+  }
 
   // #56: modo zona ("buscar en esta zona") — ADITIVO, corre ANTES del check
   // radius_m===null. Gana sobre la query plana de #58.3 y sobre la
