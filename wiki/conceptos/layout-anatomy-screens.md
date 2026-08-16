@@ -14,7 +14,8 @@ actualizado: 2026-06-28
 ## Tokens de layout (de `theme.ts`, grupo `layout`)
 - `screen_inset = 20` — padding horizontal de página (prototipo midió 18 → base-4 20).
 - `grid_gutter = 14` — separación de columnas del grid de tarjetas.
-- `grid_cols = 2` — grid de propiedades por defecto.
+- `grid_cols = 3` · `grid_tile_gap = 2` — grid de **portadas** (perfil y guardados), borde a borde estilo Instagram desde #179; el ancho de celda lo da el helper `grid_tile_width(screen_width)` (ver [[perfil-agente]]).
+- `grid_gutter = 14` — separación del grid de **tarjetas completas** (listas con card, no tiles).
 - Frame lógico: **390×844**. El bezel r46 es del device, no se porta. Contenido ancho 354 = 390 − 2×20 (≈ 354 medido con inset 18; con inset 20 el contenido es 350).
 - Spacing vertical: escala base-4 (`s_8`/`s_12`/`s_16`/`s_24`/`s_32`/`s_40`). Secciones grandes = `s_40`; bloques = `s_24`/`s_32`; dentro de bloque = `s_8`/`s_12`.
 
@@ -24,7 +25,8 @@ actualizado: 2026-06-28
 - **Inset de página:** `layout.screen_inset` a izq/der de todo el contenido scrolleable. Excepción: media **full-bleed** (feed, hero de detalle) sin inset.
 - **Barra inferior** (tab/acciones): anclada, sobre el contenido; respetar safe-area inferior.
 - **Header:** anclado arriba; respetar safe-area superior (notch).
-- **Grid de tarjetas:** `numColumns=2`, gutter `layout.grid_gutter`, celda = `(ancho_contenido − gutter) / 2`.
+- **Grid de portadas (perfil/guardados):** `numColumns=grid_cols` (3), separación `grid_tile_gap` (2), SIN inset de página (full-bleed) y celda = `grid_tile_width(ancho_pantalla)` pasada por prop — **no `flex:1`**, que estira la última fila parcial.
+- **Grid de tarjetas completas:** gutter `layout.grid_gutter`, celda = `(ancho_contenido − gutter) / 2`.
 
 ## Pantallas (descubrimiento — oscuro/inmersivo)
 ### Feed vertical (#9)
@@ -49,7 +51,7 @@ actualizado: 2026-06-28
 
 ### Perfil del agente (#16, vivo)
 - `ProfileHeader` (avatar + identidad + agencia) con inset `s_20`, separado `s_24` del grid.
-- **Grid 2-col** de `PropertyGridCard` (`grid_cols`, `grid_gutter`), inset de página.
+- **Grid 3-col** de tiles `PropertyGridCard` (`grid_cols`, `grid_tile_gap`), full-bleed (sin inset de página) desde #179.
 - `EmptyState` centrado cuando no hay propiedades.
 
 ### Mis publicaciones (#17, vivo)

@@ -34,6 +34,8 @@ export interface SavedGridItemProps {
    * Se llama DESPUÉS de que toggleSave() resuelve para evitar race condition.
    */
   on_synced: () => void | Promise<void>;
+  /** Ancho del tile, calculado por la grilla (ver PropertyGridCard). */
+  width: number;
 }
 
 // ─── Componente ───────────────────────────────────────────────────────────────
@@ -42,6 +44,7 @@ export function SavedGridItem({
   item,
   on_removed,
   on_synced,
+  width,
 }: SavedGridItemProps): React.JSX.Element {
   const router = useRouter();
   const { toggleSave } = useSaveProperty({ property_id: item.id, initialSaved: true });
@@ -74,6 +77,7 @@ export function SavedGridItem({
   return (
     <PropertyGridCard
       item={item}
+      width={width}
       onPress={handle_press}
       onLongPress={handle_long_press}
     />

@@ -5,12 +5,18 @@
  * Todos los tokens de diseño vienen de theme.ts (cero hex hardcodeado aquí).
  *
  * Sembrado en subtarea #16.3 — primera pantalla con identidad visual Urbea.
+ *
+ * ⚠️ 179.3 — se reacomodó al patrón de Instagram (referencia: Abraham,
+ * 2026-08-16): fila superior con el avatar a la izquierda y las estadísticas a
+ * la derecha, y debajo el bloque de identidad alineado a la IZQUIERDA (antes
+ * todo iba centrado en columna). La bio ya NO se corta: admitía hasta 280
+ * caracteres (límite de profile/edit.tsx) pero se pintaba con numberOfLines=3.
  */
 import React, { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 
-import { colors, radii, shadows, spacing, type_scale } from '@/theme/theme';
+import { colors, fonts, radii, shadows, spacing, type_scale } from '@/theme/theme';
 import { IsotipoMark } from '@/components/IsotipoMark';
 import { useR2Urls } from '@/hooks/useR2Urls';
 import type { AgentProfile } from '../types';
@@ -43,10 +49,12 @@ function format_member_since(iso_date: string): string {
 // Constantes de layout
 // ─────────────────────────────────────────────────────────────────────────────
 
-const AVATAR_SIZE = 96;
+// 80px (antes 96): en la fila con las 3 columnas de stats un avatar mayor
+// aprieta los números en pantallas de 360dp.
+const AVATAR_SIZE = 80;
 // Badge de isotipo (esquina inferior-derecha del avatar_ring, solo con foto real).
-const ISOTIPO_BADGE_SIZE = 28;
-const ISOTIPO_BADGE_OFFSET = -8; // ~10px hacia afuera del borde del avatar_ring
+const ISOTIPO_BADGE_SIZE = 26;
+const ISOTIPO_BADGE_OFFSET = -6;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Componente
@@ -54,13 +62,20 @@ const ISOTIPO_BADGE_OFFSET = -8; // ~10px hacia afuera del borde del avatar_ring
 
 interface ProfileHeaderProps {
   profile: AgentProfile;
-  /** Counts de publicaciones/leads/cerrados (useAgentStats). Omitidos → no se renderiza el sheet. */
+  /** Counts del header (useAgentStats). null → columnas en "—". */
   stats?: AgentStats | null;
   /** true mientras useAgentStats resuelve los counts. */
   loading?: boolean;
+  /** Elige el juego de columnas de stats (Leads solo en el perfil propio). */
+  is_own_profile?: boolean;
 }
 
-export function ProfileHeader({ profile, stats, loading = false }: ProfileHeaderProps) {
+export function ProfileHeader({
+  profile,
+  stats,
+  loading = false,
+  is_own_profile = false,
+}: ProfileHeaderProps) {
   const { full_name, profile_photo_url, bio, member_since, agency_name } = profile;
 
   const [img_error, set_img_error] = useState(false);
@@ -76,59 +91,58 @@ export function ProfileHeader({ profile, stats, loading = false }: ProfileHeader
 
   return (
     <View style={styles.container}>
-      {/* ── Avatar ─────────────────────────────────────────────────── */}
-      {/* avatar_wrapper (sin overflow:hidden) para que el badge de isotipo,
-          absolute en su esquina, no se recorte junto con la foto. */}
-      <View style={styles.avatar_wrapper}>
-        <View style={styles.avatar_ring}>
-          {show_photo ? (
-            <Image
-              source={{ uri: avatar_url! }}
-              style={styles.avatar_img}
-              transition={150}
-              onError={() => set_img_error(true)}
-              accessibilityLabel={`Foto de perfil de ${display_name}`}
-            />
-          ) : (
-            <View style={styles.avatar_placeholder}>
-              <Text style={styles.avatar_initials}>{initials}</Text>
+      {/* ── Fila 1: avatar + estadísticas ───────────────────────────── */}
+      <View style={styles.top_row}>
+        {/* avatar_wrapper (sin overflow:hidden) para que el badge de isotipo,
+            absolute en su esquina, no se recorte junto con la foto. */}
+        <View style={styles.avatar_wrapper}>
+          <View style={styles.avatar_ring}>
+            {show_photo ? (
+              <Image
+                source={{ uri: avatar_url! }}
+                style={styles.avatar_img}
+                transition={150}
+                onError={() => set_img_error(true)}
+                accessibilityLabel={`Foto de perfil de ${display_name}`}
+              />
+            ) : (
+              <View style={styles.avatar_placeholder}>
+                <Text style={styles.avatar_initials}>{initials}</Text>
+              </View>
+            )}
+          </View>
+          {/* Badge de isotipo: solo con foto real, no en el fallback de iniciales. */}
+          {show_photo && (
+            <View style={styles.isotipo_badge}>
+              <IsotipoMark size={12} color={colors.paper} />
             </View>
           )}
         </View>
-        {/* Badge de isotipo: solo con foto real, no en el fallback de iniciales. */}
-        {show_photo && (
-          <View style={styles.isotipo_badge}>
-            <IsotipoMark size={13} color={colors.paper} />
-          </View>
-        )}
+
+        <ProfessionalStats
+          stats={stats ?? null}
+          loading={loading}
+          is_own_profile={is_own_profile}
+        />
       </View>
 
-      {/* ── Nombre ─────────────────────────────────────────────────── */}
-      <Text style={styles.name} numberOfLines={2}>
-        {display_name}
-      </Text>
+      {/* ── Bloque de identidad (alineado a la izquierda) ───────────── */}
+      <View style={styles.identity}>
+        <Text style={styles.name}>{display_name}</Text>
 
-      {/* ── Badge de agencia (solo si está presente) ───────────────── */}
-      {agency_name != null && (
-        <View style={styles.agency_badge}>
-          <Text style={styles.agency_text}>{agency_name}</Text>
-        </View>
-      )}
+        {agency_name != null && (
+          <View style={styles.agency_badge}>
+            <Text style={styles.agency_text}>{agency_name}</Text>
+          </View>
+        )}
 
-      {/* ── Miembro desde ──────────────────────────────────────────── */}
-      <Text style={styles.member_since}>
-        {format_member_since(member_since)}
-      </Text>
+        <Text style={styles.member_since}>{format_member_since(member_since)}</Text>
 
-      {/* ── Bio (solo si está presente) ────────────────────────────── */}
-      {bio != null && (
-        <Text style={styles.bio} numberOfLines={3}>
-          {bio}
-        </Text>
-      )}
-
-      {/* ── Estadísticas profesionales (publicaciones/leads/cerrados) ── */}
-      <ProfessionalStats stats={stats ?? null} loading={loading} />
+        {/* Bio COMPLETA: sin numberOfLines — el alto crece con el contenido y
+            respeta los saltos de línea que escribió la persona (máx. 280
+            caracteres, tope de profile/edit.tsx). */}
+        {bio != null && bio.trim() !== '' && <Text style={styles.bio}>{bio}</Text>}
+      </View>
     </View>
   );
 }
@@ -140,19 +154,25 @@ export function ProfileHeader({ profile, stats, loading = false }: ProfileHeader
 const styles = StyleSheet.create({
   container: {
     backgroundColor: colors.paper,
-    paddingHorizontal: spacing.s_24,
+    paddingHorizontal: spacing.s_16,
     // El inset superior (notch/Dynamic Island) lo aplica ProfileScreen en el
-    // contentContainer del ScrollView; aquí solo el respiro visual bajo el inset.
-    paddingTop: spacing.s_16,
-    paddingBottom: spacing.s_32,
+    // contentContainer del ScrollView; este respiro deja libre la esquina
+    // superior, donde flotan los botones "⋯" y atrás de ProfileScreen.
+    paddingTop: spacing.s_40,
+    paddingBottom: spacing.s_16,
+  },
+
+  // ── Fila avatar + stats ─────────────────────────────────────────────────
+  top_row: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: spacing.s_16,
   },
 
   // ── Avatar ──────────────────────────────────────────────────────────────
   avatar_wrapper: {
     width: AVATAR_SIZE,
     height: AVATAR_SIZE,
-    marginBottom: spacing.s_16,
   },
   avatar_ring: {
     width: AVATAR_SIZE,
@@ -193,12 +213,17 @@ const styles = StyleSheet.create({
     lineHeight: AVATAR_SIZE, // centrado vertical dentro del círculo
   },
 
-  // ── Nombre ──────────────────────────────────────────────────────────────
+  // ── Identidad (nombre, agencia, miembro desde, bio) ──────────────────────
+  identity: {
+    marginTop: spacing.s_16,
+    alignItems: 'flex-start',
+  },
   name: {
-    ...type_scale.h1,
+    fontFamily: fonts.display,
+    fontSize: 22,
+    lineHeight: 27,
+    letterSpacing: -0.22,
     color: colors.ink,
-    textAlign: 'center',
-    marginBottom: spacing.s_8,
   },
 
   // ── Badge agencia ────────────────────────────────────────────────────────
@@ -207,7 +232,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.r_pill,
     paddingHorizontal: spacing.s_12,
     paddingVertical: spacing.s_4,
-    marginBottom: spacing.s_8,
+    marginTop: spacing.s_8,
   },
   agency_text: {
     ...type_scale.caption,
@@ -218,14 +243,13 @@ const styles = StyleSheet.create({
   member_since: {
     ...type_scale.caption,
     color: colors.gray_2,
-    textAlign: 'center',
-    marginBottom: spacing.s_12,
+    marginTop: spacing.s_8,
   },
 
   // ── Bio ──────────────────────────────────────────────────────────────────
   bio: {
     ...type_scale.body,
     color: colors.gray_3,
-    textAlign: 'center',
+    marginTop: spacing.s_8,
   },
 });

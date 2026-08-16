@@ -341,9 +341,28 @@ export const spacing = {
 
 export const layout = {
   screen_inset: 20, // padding horizontal de página (prototipo 18 → base-4 20)
-  grid_gutter: 14,  // separación entre columnas del grid de tarjetas (medido exacto)
-  grid_cols: 2,     // columnas por defecto del grid de propiedades
+  grid_gutter: 14,  // separación entre columnas del grid de TARJETAS (listas con card completa)
+  // Grid de PORTADAS del perfil/guardados (179.2): 3 columnas borde a borde,
+  // separación hairline — la referencia es la grilla de Instagram, donde la
+  // portada manda y el respiro entre celdas es casi nulo.
+  grid_cols: 3,
+  grid_tile_gap: 2,
 } as const;
+
+/**
+ * Ancho en px de una celda de la grilla de portadas, dado el ancho de pantalla.
+ *
+ * Se calcula aquí (y no con flex:1 en la celda) porque con `gap` + flex:1 la
+ * última fila PARCIAL estira sus celdas a todo el ancho disponible.
+ *
+ * ponytail: `floor` deja hasta 2px sin usar al borde derecho en algunos anchos
+ * de pantalla — imperceptible, y evita que una fracción haga que la fila sume
+ * más que el ancho disponible y salte de línea.
+ */
+export function grid_tile_width(screen_width: number): number {
+  const total_gap = layout.grid_tile_gap * (layout.grid_cols - 1);
+  return Math.floor((screen_width - total_gap) / layout.grid_cols);
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // EXPORT AGRUPADO
