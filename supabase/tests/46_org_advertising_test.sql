@@ -33,7 +33,7 @@
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(58);
+select plan(63);
 
 create or replace function pg_temp.act_as(p_uid uuid, p_role text default 'authenticated')
 returns void language plpgsql as $$
@@ -834,6 +834,172 @@ select is(
   (select price_visible from public.properties where id = (select property_id from result_pricevisible_default_83)),
   true,
   'NOREG3_el_guard_de_precio_visible_de_20260809000006_sigue_vivo_p_price_visible_omitido_sigue_defaulteando_a_true'
+);
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 9) No-regresión — publish_property_atomic (20260815000004, tarea #167,
+--    YA DESPLEGADA en producción: hizo backfill real de las 20 propiedades
+--    existentes). Ampliación 2026-08-16: cuando 168.3 corra su create-or-
+--    replace sobre publish_property_atomic para meter el guard
+--    AGENCY_CANNOT_PUBLISH_PROPERTIES, el punto de partida vigente YA NO es
+--    20260809000006 (17 params) sino 20260815000004 (20 params) — si el
+--    cuerpo se reescribe desde la versión vieja, los 3 params del wizard
+--    (p_built_square_meters, p_half_bathrooms, p_currency) desaparecen en
+--    silencio y las propiedades que YA los tienen guardados en producción
+--    quedan huérfanas de la columna que las alimenta. Estos asserts PASAN
+--    hoy por diseño (comportamiento ya vigente) — son la red de seguridad
+--    para el create-or-replace de 168.3, no capacidad nueva; mismo patrón
+--    que las secciones 6 y 8.6 de este mismo archivo.
+--
+-- ── Edge cases enumerados (paso 1 del protocolo test-author) ────────────────
+-- Firma (catálogo, no basta solo esto — un create-or-replace puede conservar
+-- la firma y tirar el cuerpo):
+--   · SIG1: publish_property_atomic tiene EXACTAMENTE una sobrecarga en
+--     pg_proc, con 20 parámetros — ni el overload viejo de 17 args queda
+--     huérfano, ni el nuevo guard bifurca la firma en dos funciones.
+--   · SIG2: los 3 params nuevos de 167 siguen presentes AL FINAL de la firma
+--     con su tipo y DEFAULT literal exactos (p_built_square_meters numeric
+--     default null, p_half_bathrooms integer default null, p_currency text
+--     default 'MXN') — valor esperado tomado literal de la migración
+--     20260815000004 vigente, no recalculado.
+-- Comportamiento (la firma sola no caza un cuerpo que ignore los params):
+--   · NOREG4: pasando los 3 valores explícitos (built_square_meters,
+--     half_bathrooms, currency='USD'), publish_property_atomic los persiste
+--     tal cual en la fila real de properties.
+--   · NOREG5: built_square_meters/half_bathrooms omitidos (currency='USD'
+--     explícito, para aislar este default del de currency) -> ambos quedan
+--     null en la fila real.
+--   · NOREG6: p_currency omitido (built_square_meters/half_bathrooms
+--     explícitos, para aislar este default) -> la fila real queda en 'MXN'
+--     — el MISMO default que hizo el backfill de las 20 propiedades ya en
+--     producción; si 168.3 lo pierde, esas 20 filas quedan sin ancla de
+--     comportamiento esperado hacia adelante.
+-- ════════════════════════════════════════════════════════════════════════════
+
+-- ── 9.1) SIG1 — exactamente UNA sobrecarga en pg_proc, con 20 params ───────
+select ok(
+  (
+    (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'public' and p.proname = 'publish_property_atomic') = 1
+    and
+    (select pronargs from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'public' and p.proname = 'publish_property_atomic' limit 1) = 20
+  ),
+  'SIG1_publish_property_atomic_tiene_exactamente_UNA_sobrecarga_en_pg_proc_con_20_parametros_el_create_or_replace_de_168_3_no_debe_dejar_huerfano_el_overload_viejo_de_17_args_ni_bifurcar_la_firma'
+);
+
+-- ── 9.2) SIG2 — los 3 params del wizard (167) siguen AL FINAL de la firma,
+--         con tipo y DEFAULT literal exactos (valor esperado tomado de
+--         20260815000004, no recalculado) ─────────────────────────────────
+select ok(
+  coalesce(
+    (select pg_get_function_arguments(p.oid) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'public' and p.proname = 'publish_property_atomic' and p.pronargs = 20),
+    ''
+  ) like
+    '%p_built_square_meters numeric DEFAULT NULL::numeric, '
+    || 'p_half_bathrooms integer DEFAULT NULL::integer, '
+    || 'p_currency text DEFAULT ''MXN''::text',
+  'SIG2_los_3_parametros_del_wizard_de_167_p_built_square_meters_p_half_bathrooms_p_currency_siguen_al_final_de_la_firma_con_tipo_y_default_exactos_incluyendo_default_MXN_tras_el_create_or_replace_de_168_3'
+);
+
+-- ── 9.3) NOREG4 — happy path: los 3 valores explícitos se persisten ────────
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-000000468351', 'agente_wizard_full_noregresion_83@urbea.mx');
+update public.users set role = 'agent' where id = '00000000-0000-0000-0000-000000468351';
+insert into public.property_videos (id, property_id, agent_id, status, position, cloudflare_uid, tus_upload_url) values
+  ('00000000-0000-0000-0000-000000468352', null, '00000000-0000-0000-0000-000000468351', 'ready', 1,
+   'cfuid-83-wizard-full-noregresion', 'https://upload.example/wizard-full-noregresion-83');
+
+create temp table result_wizard_full_83 (property_id uuid);
+insert into result_wizard_full_83 (property_id)
+select property_id from public.publish_property_atomic(
+  p_user_id              => '00000000-0000-0000-0000-000000468351'::uuid,
+  p_operation_type       => 'sale',
+  p_property_type        => 'casa',
+  p_price                => 2450000.00,
+  p_address              => 'Calle Wizard Full NoRegresion 83',
+  p_lat                  => 20.65,
+  p_lng                  => -103.35,
+  p_cloudflare_uid       => 'cfuid-83-wizard-full-noregresion',
+  p_built_square_meters  => 210.75,
+  p_half_bathrooms       => 2,
+  p_currency             => 'USD'
+);
+
+select is(
+  (select row(built_square_meters, half_bathrooms, currency)::text
+     from public.properties
+    where id = (select property_id from result_wizard_full_83)),
+  '(210.75,2,USD)',
+  'NOREG4_los_3_campos_del_wizard_de_167_built_square_meters_half_bathrooms_currency_se_siguen_persistiendo_en_la_fila_real_tras_el_create_or_replace_de_168_3'
+);
+
+-- ── 9.4) NOREG5 — built_square_meters/half_bathrooms omitidos -> null,
+--         aislado con currency explícito para no depender del default de
+--         currency ──────────────────────────────────────────────────────
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-000000468361', 'agente_wizard_omiteBH_noregresion_83@urbea.mx');
+update public.users set role = 'agent' where id = '00000000-0000-0000-0000-000000468361';
+insert into public.property_videos (id, property_id, agent_id, status, position, cloudflare_uid, tus_upload_url) values
+  ('00000000-0000-0000-0000-000000468362', null, '00000000-0000-0000-0000-000000468361', 'ready', 1,
+   'cfuid-83-wizard-omiteBH-noregresion', 'https://upload.example/wizard-omiteBH-noregresion-83');
+
+create temp table result_wizard_omiteBH_83 (property_id uuid);
+insert into result_wizard_omiteBH_83 (property_id)
+select property_id from public.publish_property_atomic(
+  p_user_id         => '00000000-0000-0000-0000-000000468361'::uuid,
+  p_operation_type  => 'sale',
+  p_property_type   => 'casa',
+  p_price           => 1980000.00,
+  p_address         => 'Calle Wizard Omite BH NoRegresion 83',
+  p_lat             => 20.66,
+  p_lng             => -103.36,
+  p_cloudflare_uid  => 'cfuid-83-wizard-omiteBH-noregresion',
+  p_currency        => 'USD'
+  -- p_built_square_meters / p_half_bathrooms omitidos a propósito
+);
+
+select is(
+  (select row(built_square_meters, half_bathrooms, currency)::text
+     from public.properties
+    where id = (select property_id from result_wizard_omiteBH_83)),
+  '(,,USD)',
+  'NOREG5_p_built_square_meters_p_half_bathrooms_omitidos_siguen_quedando_null_en_la_fila_real_aislado_de_currency_tras_el_create_or_replace_de_168_3'
+);
+
+-- ── 9.5) NOREG6 — p_currency omitido -> default 'MXN' (el MISMO default
+--         que hizo el backfill de las 20 propiedades ya en producción),
+--         aislado con built_square_meters/half_bathrooms explícitos ──────
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-000000468371', 'agente_wizard_omiteCurrency_noregresion_83@urbea.mx');
+update public.users set role = 'agent' where id = '00000000-0000-0000-0000-000000468371';
+insert into public.property_videos (id, property_id, agent_id, status, position, cloudflare_uid, tus_upload_url) values
+  ('00000000-0000-0000-0000-000000468372', null, '00000000-0000-0000-0000-000000468371', 'ready', 1,
+   'cfuid-83-wizard-omiteCurrency-noregresion', 'https://upload.example/wizard-omiteCurrency-noregresion-83');
+
+create temp table result_wizard_omiteCurrency_83 (property_id uuid);
+insert into result_wizard_omiteCurrency_83 (property_id)
+select property_id from public.publish_property_atomic(
+  p_user_id              => '00000000-0000-0000-0000-000000468371'::uuid,
+  p_operation_type       => 'sale',
+  p_property_type        => 'casa',
+  p_price                => 3100000.00,
+  p_address              => 'Calle Wizard Omite Currency NoRegresion 83',
+  p_lat                  => 20.67,
+  p_lng                  => -103.37,
+  p_cloudflare_uid       => 'cfuid-83-wizard-omiteCurrency-noregresion',
+  p_built_square_meters  => 305,
+  p_half_bathrooms       => 1
+  -- p_currency omitido a propósito
+);
+
+select is(
+  (select row(built_square_meters, half_bathrooms, currency)::text
+     from public.properties
+    where id = (select property_id from result_wizard_omiteCurrency_83)),
+  '(305,1,MXN)',
+  'NOREG6_p_currency_omitido_sigue_defaulteando_a_MXN_el_mismo_default_que_hizo_el_backfill_de_las_20_propiedades_ya_en_produccion_tras_el_create_or_replace_de_168_3'
 );
 
 select * from finish();
