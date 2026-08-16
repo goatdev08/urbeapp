@@ -8276,13 +8276,13 @@
             "id": 5,
             "title": "UI admin: el correo pasa a ser el canal primario del alta",
             "description": "Ligera (OTA). El copy del alta pasa de \"copia este link\" a \"le enviamos un correo\"; el action_link se conserva visible como respaldo porque sin Resend configurado es el único camino que funciona.",
-            "details": "PLAN · agente=mobile · criticidad=NO crítica (verificación ligera) · impacto-prod=OTA (solo JS/UI) · footprint=mobile/app/admin/agencies/[id].tsx (bloque de invite_action_link: ~:175-183, :295-310, :332-375) y el form de alta que navega con esos params\n\nCAMBIO: el copy pasa a \"le enviamos un correo de invitación a <email>\". El link se conserva VISIBLE como respaldo (colapsado o secundario), con su copy_to_clipboard intacto. Motivo concreto: mientras Resend no esté configurado en el remoto, el respaldo es el ÚNICO camino que funciona — quitarlo dejaría el alta sin salida en producción.\n\nMostrar el resultado REAL del envío si el EF lo reporta (p.ej. un campo nuevo opcional email_sent en la respuesta) en lugar de asumir que se envió: decirle al admin \"ya le llegó\" cuando no llegó es peor que no decir nada.\n\nVERIFICACIÓN: pnpm tsc --noEmit + pnpm lint + smoke en emulador por CLI (adb, NUNCA computer-use).\n\nFOOTPRINT COMPLETADO por el analista (2026-08-15): además de [id].tsx, tocar mobile/app/admin/agencies/create.tsx:269-283 — ahí se arma el router.replace({ params: { invite_action_link: response.invite_action_link, ... } }). El campo nuevo email_sent (fijado en 168.4) también hay que reenviarlo por ahí.\nSkills: urbea-expo (sin urbea-testing: la verificación declarada es tsc+lint+smoke, sin tests unitarios nuevos).",
-            "status": "pending",
+            "details": "PLAN · agente=mobile · criticidad=NO crítica (verificación ligera) · impacto-prod=OTA (solo JS/UI) · footprint=mobile/app/admin/agencies/[id].tsx (bloque de invite_action_link: ~:175-183, :295-310, :332-375) y el form de alta que navega con esos params\n\nCAMBIO: el copy pasa a \"le enviamos un correo de invitación a <email>\". El link se conserva VISIBLE como respaldo (colapsado o secundario), con su copy_to_clipboard intacto. Motivo concreto: mientras Resend no esté configurado en el remoto, el respaldo es el ÚNICO camino que funciona — quitarlo dejaría el alta sin salida en producción.\n\nMostrar el resultado REAL del envío si el EF lo reporta (p.ej. un campo nuevo opcional email_sent en la respuesta) en lugar de asumir que se envió: decirle al admin \"ya le llegó\" cuando no llegó es peor que no decir nada.\n\nVERIFICACIÓN: pnpm tsc --noEmit + pnpm lint + smoke en emulador por CLI (adb, NUNCA computer-use).\n\nFOOTPRINT COMPLETADO por el analista (2026-08-15): además de [id].tsx, tocar mobile/app/admin/agencies/create.tsx:269-283 — ahí se arma el router.replace({ params: { invite_action_link: response.invite_action_link, ... } }). El campo nuevo email_sent (fijado en 168.4) también hay que reenviarlo por ahí.\nSkills: urbea-expo (sin urbea-testing: la verificación declarada es tsc+lint+smoke, sin tests unitarios nuevos).\n<info added on 2026-08-16T15:34:11.319Z>\nCORRECCION PRE-EJECUCION (orquestador, 2026-08-16) - DECISION DE ABRAHAM tras checkpoint de 168.4.\n\nPREMISA FALSA CORREGIDA: El plan original asumia que email_sent=false era un estado alcanzable (org creada, envio fallido). El guardian de 168.4 probo lo contrario: inviteUserByEmail crea el usuario Y envia en UNA sola transaccion; GoTrue hace rollback del usuario si el envio falla (evidencia: apagando SMTP con docker stop supabase_inbucket_urbea-app → 500, AUTH_INVITE_FAILED, 0 filas en auth.users).\n\nDECISION: aceptar el fail-closed. NO se implementa camino degradado (separar generateLink + envio a Resend propio, opcion b del doc 039) - diferido hasta segundo correo transaccional.\n\nALCANCE REVISADO:\n1. NO construir rama UI para email_sent === false - seria codigo muerto; el adaptador real solo emite email_sent:true o error. Los 3 tests de Deno que especifican email_sent:false (bitacora 168.4) describen contrato que la frontera no honra.\n2. SI construir camino de ERROR: cuando alta falla por AUTH_INVITE_FAILED, mostrar mensaje accionable \"no se pudo enviar la invitacion, reintenta\" (no error generico ni 500 crudo). Fail-closed ventaja: GoTrue revierte usuario → reintentar con MISMO correo funciona (no choca EMAIL_ALREADY_EXISTS).\n3. Correo = canal PRIMARIO (copy: \"le enviamos un correo de invitacion a <email>\"). invite_action_link CONSERVAR como respaldo secundario visible (NO quitar: builds instalados consumen mobile/app/admin/agencies/[id].tsx:175,178,183,295,304-305,332,342,370-374 y create.tsx:269-283).\n4. Copy honesto sobre el respaldo: tras 168.4 invite_action_link es MAGICLINK (no type=invite), apunta a site_url (no urbea://). Correo real si es type=invite con redirect_to=urbea://.\n5. HALLAZGO 2 DE 168.4 QUE ATERRIZA AQUI: criterio de cierre 168.4 decia \"link abre app CON SESION INICIADA\" - HOY NO SE CUMPLE. useSessionFromDeepLink solo montado en mobile/app/reset-password.tsx:62 y verify-email.tsx:66; OWNER_INVITE_REDIRECT_TO='urbea://' (clients.ts:173) apunta raiz → tokens del fragmento SE PIERDEN. Evaluar si montar hook en raiz entra en alcance de esta subtarea o sale como derivada (crear tarea con 4 marcas trazabilidad CLAUDE.md 5 si sale).\n\nVERIFICACION: criticidad NO CRITICA intacta (mobile/app/**, presentacion). Gates SOLO desde mobile/: pnpm tsc --noEmit + pnpm lint. NUNCA desde raiz repo (pnpm tsc da 'Command tsc not found', pnpm lint cae a binario Java Homebrew, ambos exit 1 enganoso).\n</info added on 2026-08-16T15:34:11.319Z>",
+            "status": "in-progress",
             "dependencies": [
               4
             ],
             "testStrategy": "pnpm tsc --noEmit, pnpm lint, smoke por CLI del alta de organización: se ve el mensaje de correo enviado y el link de respaldo sigue copiable.",
-            "updatedAt": "2026-08-15T00:00:00.000Z",
+            "updatedAt": "2026-08-16T15:34:18.978Z",
             "parentId": "168"
           },
           {
@@ -8318,7 +8318,7 @@
             "parentId": "168"
           }
         ],
-        "updatedAt": "2026-08-16T15:33:00.374Z"
+        "updatedAt": "2026-08-16T15:34:18.978Z"
       },
       {
         "id": "169",
@@ -8722,7 +8722,7 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-08-16T15:33:00.374Z",
+      "lastModified": "2026-08-16T15:34:18.978Z",
       "taskCount": 177,
       "completedCount": 94,
       "tags": [
