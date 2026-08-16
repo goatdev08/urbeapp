@@ -2,10 +2,12 @@
 // Handler PURO con dependencias inyectables (DI). No importa supabase-js — eso vive
 // en index.ts (entry de producción). Esto mantiene los tests rápidos y offline.
 //
-// Orquestación (7.5):
+// Orquestación (7.5 + 168.4):
 //   validación de body → validación de payload (+ owner fields si authAdmin) →
-//   verificar admin → create_owner_invite (Auth) → RPC create_atomic →
-//   compensación si RPC falla → 201 con agency_id [+ owner_user_id + invite_action_link].
+//   verificar admin → create_owner_invite (Auth: inviteUserByEmail si está
+//   disponible, si no generateInviteLink) → RPC create_atomic →
+//   compensación si RPC falla → 201 con agency_id
+//   [+ owner_user_id + invite_action_link + email_sent].
 
 import { handle_cors_preflight } from "../_shared/cors.ts";
 import { error_response, json_response } from "../_shared/response.ts";
@@ -179,6 +181,10 @@ export async function handler(
   // Crear owner vía invitación (7.5) — solo cuando authAdmin está inyectado
   let owner_user_id: string | undefined;
   let invite_action_link: string | undefined;
+  // 168.4: presente (boolean) solo cuando create_owner_invite usó el seam
+  // inviteUserByEmail (correo real). Con el authAdmin viejo (generateInviteLink
+  // solamente) queda undefined — aditivo, no se manda en la respuesta.
+  let email_sent: boolean | undefined;
 
   if (deps?.authAdmin && owner_email && owner_first_name && owner_last_name) {
     const invite_result = await create_owner_invite(deps.authAdmin, {
@@ -199,6 +205,7 @@ export async function handler(
 
     owner_user_id = invite_result.user_id;
     invite_action_link = invite_result.action_link;
+    email_sent = invite_result.email_sent;
   }
 
   // Generar token inicial de invitación (7.6): plano → se devuelve al admin; hash → se persiste.
@@ -243,8 +250,9 @@ export async function handler(
     return error_response(createResult.error_code, message, status);
   }
 
-  // Construir respuesta de éxito (7.5: owner_user_id + invite_action_link; 7.6: plain_token + token_id)
-  const response_body: Record<string, string> = {
+  // Construir respuesta de éxito (7.5: owner_user_id + invite_action_link;
+  // 7.6: plain_token + token_id; 168.4: email_sent aditivo)
+  const response_body: Record<string, string | boolean> = {
     agency_id: createResult.agency_id,
   };
   if (owner_user_id !== undefined) {
@@ -252,6 +260,9 @@ export async function handler(
   }
   if (invite_action_link !== undefined) {
     response_body.invite_action_link = invite_action_link;
+  }
+  if (email_sent !== undefined) {
+    response_body.email_sent = email_sent;
   }
   // plain_token: se devuelve al admin SOLO en la respuesta; NUNCA se persiste en BD.
   response_body.plain_token = plain_token;

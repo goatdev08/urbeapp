@@ -28,6 +28,8 @@ import type {
   CreateUserParams,
   GenerateInviteLinkParams,
   GenerateInviteLinkResponse,
+  InviteByEmailParams,
+  InviteByEmailResponse,
 } from "./auth_user.ts";
 import type {
   InvitationRedeemer,
@@ -162,6 +164,14 @@ export function make_invitation_db(client: SupabaseClient): InvitationDb {
   };
 }
 
+// 168.4: destino del deep link que GoTrue anexa al correo real de invitación
+// (el token de sesión viaja en el fragmento de la URL, mismo mecanismo que
+// requestPasswordReset en mobile/src/features/auth/context.tsx). Sin ruta
+// dedicada de aceptación de invitación todavía (168.5), se apunta a la raíz
+// de la app — dentro del patrón permitido `urbea://*` (supabase/config.toml
+// additional_redirect_urls). Cambiar aquí cuando 168.5 defina la pantalla.
+const OWNER_INVITE_REDIRECT_TO = "urbea://";
+
 /** Adaptador real de AuthAdminClient sobre supabase.auth.admin. */
 export function make_auth_admin(client: SupabaseClient): AuthAdminClient {
   return {
@@ -195,6 +205,49 @@ export function make_auth_admin(client: SupabaseClient): AuthAdminClient {
         data: {
           user: { id: data.user.id },
           action_link: data.properties.action_link,
+        },
+        error: null,
+      };
+    },
+    /**
+     * 168.4: envío REAL del correo de invitación (plantilla "Invite user" de
+     * GoTrue + el SMTP configurado — Mailpit en local, Resend en remoto tras
+     * 168.6). A diferencia de generateLink, inviteUserByEmail NO devuelve
+     * action_link en su respuesta (el link solo viaja en el correo que GoTrue
+     * ya mandó) — se recupera un link de RESPALDO con un segundo
+     * generateLink(type:'magiclink') sobre el usuario que acaba de crearse
+     * ('invite' fallaría aquí con "already registered", porque el usuario ya
+     * existe a esta altura). Fail-open en el backup: si ese segundo link no
+     * se puede generar, el correo YA se mandó (email_sent:true igual) y el
+     * link de respaldo queda como cadena vacía en vez de tumbar el flujo.
+     */
+    async inviteUserByEmail(
+      params: InviteByEmailParams,
+    ): Promise<InviteByEmailResponse> {
+      const { data, error } = await client.auth.admin.inviteUserByEmail(
+        params.email,
+        {
+          redirectTo: params.redirectTo ?? OWNER_INVITE_REDIRECT_TO,
+          data: params.data,
+        },
+      );
+      if (error || !data?.user) {
+        return {
+          data: null,
+          error: error
+            ? { message: error.message }
+            : { message: "inviteUserByEmail devolvió sin data" },
+        };
+      }
+      const backup = await client.auth.admin.generateLink({
+        type: "magiclink",
+        email: params.email,
+      });
+      return {
+        data: {
+          user: { id: data.user.id },
+          action_link: backup.data?.properties?.action_link ?? "",
+          email_sent: true,
         },
         error: null,
       };
