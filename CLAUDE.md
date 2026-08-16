@@ -10,6 +10,15 @@ Decisiones de fondo: `wiki/decisiones/0003` (vault), `0004` (Taskmaster), `0006`
 - Métrica de éxito: tareas cerradas con **mínimo código nuevo** y máxima claridad. No LOC.
 - 🪶 **Skill `ponytail` (modo `full` por defecto) está activo al escribir código.** Es el reflejo que hace cumplir este principio: la escalera YAGNI → ¿ya existe? → stdlib/Expo/Supabase nativo → dependencia ya instalada → una línea → mínimo que funciona. Marca simplificaciones deliberadas con un comentario `// ponytail:` (intención + techo conocido). Companions: `/ponytail-review` (revisar un diff por sobre-ingeniería), `/ponytail-audit` (escanear el repo), `/ponytail-debt` (cosechar los `ponytail:` pendientes). No aplica a validación en fronteras de confianza, manejo de errores, RLS/seguridad ni a lo que el usuario pida explícito.
 
+## 0.5 🔴 PRODUCCIÓN VIVA (desde 2026-08-10) — aplica a TODOS los agentes
+**Hay personas reales conectadas probando la app y la base se puebla poco a poco. Todo cambio se piensa PARA PRODUCCIÓN — ya no existe el "es solo la demo".** Decisión: `wiki/decisiones/0009-produccion-viva.md`. Reglas derivadas (checklist en cada plan y cada cierre):
+1. **La DB remota tiene datos reales.** Migraciones aditivas/idempotentes + rollback probado; **NUNCA** resets, TRUNCATE ni seeds al remoto. Un cambio destructivo (DROP, ALTER que pierde datos, revocar un grant que clientes vivos usan) exige patrón **expand → migrate → contract** y aprobación explícita de Abraham.
+2. **Compatibilidad hacia atrás.** Los builds instalados (APKs de inversores, TestFlight) siguen llamando los contratos viejos: EFs, RPCs, vistas, columnas (`select('*')`). No rompas un contrato publicado; deprecia en dos pasos — **cliente por OTA primero, contract en backend después** (precedente: #116, flip de `disable_signup`).
+3. **Merge a `main` = candidato a release.** Todo lo mergeado puede salir por OTA a testers reales en cualquier momento; nada entra a `main` sin verificación completa (suites verdes + smoke del flujo tocado). Deploy remoto (migraciones/EFs) y OTA se **verifican después de publicar** (sonda/smoke + entrega real del runtime, no NO-OP).
+4. **Privacidad y seguridad primero.** Son datos de personas reales: RLS siempre como 2ª capa, no loguear PII, no exponer más de lo que el aviso promete ([[privacidad-datos]]).
+5. **Cuotas reales.** Ver video en pruebas = verificar que reproduce y **PARAR** (minutos de Stream se facturan); flujos E2E terminan en `stopApp`.
+6. **Desempate:** entre "rápido" y "seguro para producción" gana producción; si eso bloquea, se escala a Abraham en vez de degradar la garantía.
+
 ## 1. Qué es Urbea / dónde está todo
 - Plataforma inmobiliaria móvil (Expo + Supabase), feed vertical de video. Primer hito: **demo cerrada de 3 semanas** → `docs/PRD-MVP-demo.md`.
 - **Memoria del proyecto = vault `wiki/`** (ábrelo en Obsidian). Entra por `wiki/_index/00-MOC-home.md`.
@@ -73,7 +82,7 @@ La criticidad **no se juzga**: se **deriva** del footprint de la subtarea. El an
    5. Cierra: `task-master set-status --id=<id>.<n> --status=done`.
 5. **Cerrar la tarea** — ⚠️ **OBLIGATORIO, NO opcional:** en cuanto la última subtarea queda done, marca la tarea: `task-master set-status --id=<id> --status=done`. Una tarea terminada **sin** `set-status done` es un bug del flujo: rompe `task-master next` y desincroniza el estado entre ramas (el problema que nos costó horas). **Verifica** con `task-master show <id>` que quedó `done` antes de seguir. Misma regla al cerrar CADA subtarea (paso 4.5) — nunca dejes trabajo terminado en `pending`/`in-progress`.
 6. **Ingest al vault** (promover lo durable) — actualiza `wiki/codebase/mapa-codebase.md` (concepto → archivos nuevos), la página de concepto (`estado: vivo`, `codigo:` con rutas reales) y una línea en `wiki/log.md`.
-7. **Integrar a `main` (PR con `gh`)** — cada tarea vive en su rama `tarea/<id>-<slug>` que **ramifica desde `origin/main` fresco** (`git fetch origin && git switch -c tarea/<id>-<slug> origin/main`), NO desde otra rama de tarea (el apilamiento es lo que confundía el estado). Al cerrar:
+7. **Integrar a `main` (PR con `gh`)** — 🔴 antes del PR, pasa el **gate de producción viva (§0.5)**: sin migraciones destructivas ni contratos rotos para builds instalados, orden OTA-primero si hay contract. Cada tarea vive en su rama `tarea/<id>-<slug>` que **ramifica desde `origin/main` fresco** (`git fetch origin && git switch -c tarea/<id>-<slug> origin/main`), NO desde otra rama de tarea (el apilamiento es lo que confundía el estado). Al cerrar:
    1. `pnpm tsc --noEmit` verde → `git push -u origin tarea/<id>-<slug>`.
    2. `gh pr create --base main --fill` (título `feat(<id>): <título>`).
    3. `gh pr merge --squash --delete-branch` → **un commit por tarea** en `main`, rama borrada local+remota.

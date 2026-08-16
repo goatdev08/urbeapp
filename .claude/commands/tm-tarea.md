@@ -60,6 +60,10 @@ Por cada subtarea pendiente:
 4. Conocimiento durable → ingest al vault.
 
 ### 6 — Cierre de la tarea (todas las subtareas done)
+0. 🔴 **Gate de producción viva (CLAUDE.md §0.5)** — verifícalo ANTES de marcar done y de cualquier PR:
+   - ¿Alguna migración nueva es destructiva o sin rollback? → no cierres: replantea a expand→migrate→contract y pide aprobación.
+   - ¿Se tocó un contrato publicado (EF/RPC/vista/columnas que los builds instalados leen)? → confirma que el orden de release es cliente-OTA-primero y déjalo escrito en la bitácora de la subtarea.
+   - ¿Quedó algún seed/dato de prueba apuntando al remoto? → elimínalo.
 1. `task-master set-status --id=<id> --status=done`.
 2. **Ingest al vault** (skill `urbea-context` → mantenimiento):
    - `wiki/codebase/mapa-codebase.md`: concepto → archivos nuevos.
@@ -70,6 +74,7 @@ Por cada subtarea pendiente:
 `✅ Tarea <id>` · subtareas cerradas · TDD aplicado en {críticas} · bloqueantes {creados/vinculados} · verificación · siguiente (`/tm-status`).
 
 ## Reglas
+- 🔴 **Producción viva (CLAUDE.md §0.5):** usuarios reales conectados y datos reales en el remoto. Pasa a cada agente de dominio el `impacto-prod` de su subtarea (del PLAN o del analista); nada destructivo ni ruptura de contrato sin el plan en dos pasos aprobado.
 - **CLI de Taskmaster siempre** (nunca MCP). **PNPM** para todo. **Naming snake_case** (CLAUDE.md).
 - **Serie**: una subtarea a la vez (el paralelo con worktrees + graphify queda para el futuro, ADR 0007).
 - **No avances** con un agente bloqueado o `guardian` en FAIL sin resolver/agendar.

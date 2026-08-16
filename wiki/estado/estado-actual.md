@@ -8,6 +8,9 @@ actualizado: 2026-08-15
 
 > Narrativa de "dónde estamos hoy". El **qué sigue / qué está hecho** vive en **Taskmaster** (`task-master list`), no aquí.
 
+## 🔴 Vigente desde 2026-08-10 — PRODUCCIÓN VIVA
+**Hay personas reales conectadas probando la app y la base se puebla poco a poco.** Todo cambio se piensa para producción: nada de seeds/resets al remoto, migraciones aditivas con rollback, contratos publicados se deprecian en dos pasos (cliente-OTA-primero), y ante duda gana producción. Reglas completas en **CLAUDE.md §0.5**; decisión en [[0009-produccion-viva]]; el gate corre en el analista (Paso 5.5), `/tm-plan` (impacto-prod) y `/tm-tarea` (cierre 6.0).
+
 ## Hoy (2026-08-15) — Quick fixes del wizard de publicación (paso 3/4), sesión directa
 
 - **✅ 7 pedidos de Abraham (screenshots anotados) + selector de moneda aprobado en el momento — implementados en `tarea/167-wizard-quickfixes` desde `origin/main` fresco.** Solo el punto de chips tenía tarea (#167, cerrada aquí); el resto (solo 2 tipos de operación, superficie terreno+construida, mapa modo mira-central, precio con comas, medios baños, errores inline solo-tras-intentar-avanzar) NO tenía tarea de Taskmaster — se implementó y documentó directo en el vault por instrucción explícita de Abraham para esta sesión. Detalle técnico completo en `wiki/log.md` (entrada 2026-08-15) y `wiki/codebase/mapa-codebase.md` (fila "Publicación completa Ola 1 (#73)").

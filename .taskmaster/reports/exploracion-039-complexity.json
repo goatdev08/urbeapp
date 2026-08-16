@@ -1,0 +1,44 @@
+{
+  "meta": {
+    "generatedAt": "2026-08-14",
+    "source": "estimación manual del doc de exploración 039 (analyze-complexity roto: gotcha generateObject, CLAUDE.md §4)",
+    "explorationDoc": ".taskmaster/docs/exploraciones/039-cuenta-comercial-anunciantes.md"
+  },
+  "complexityAnalysis": [
+    {
+      "taskId": 168,
+      "taskTitle": "feat(039-A): organización con capacidad de publicidad + invitación por correo",
+      "complexityScore": 7,
+      "recommendedSubtasks": 6,
+      "reasoning": "Migración aditiva sobre agencies (tabla viva con datos reales) + RPC service_role + cambio de firma con DEFAULT en RPC publicada + pieza nueva de correo con dependencia externa (Resend no configurado en remoto; escape hatch local con Mailpit). Todo crítico por path (migrations + EFs)."
+    },
+    {
+      "taskId": 169,
+      "taskTitle": "feat(039-B): anuncios — creativo 6–30 s, campaña por zona y moderación admin",
+      "complexityScore": 8,
+      "recommendedSubtasks": 8,
+      "reasoning": "4 tablas nuevas + trigger de máquina de estados + RPC atómica + 3 Edge Functions (una extiende stream-webhook con no-regresión estricta) + validación/hook móviles críticos + wizard. Punto donde el modelo queda fijado sobre datos reales."
+    },
+    {
+      "taskId": 170,
+      "taskTitle": "feat(039-C): anuncios en el feed — inserción, impresiones, kill-switch y aviso de privacidad",
+      "complexityScore": 9,
+      "recommendedSubtasks": 9,
+      "reasoning": "Toca el feed en producción viva (mayor riesgo de producto): RPC de targeting con fallback geo, función pura de intercalado con 8 invariantes, composición en el hook del feed sin regresión, EF de impresiones service_role idempotente, kill-switch, y DOS gates bloqueantes externos (preview de diseño aprobado por el cliente + aviso de privacidad nuevo con re-consentimiento)."
+    },
+    {
+      "taskId": 171,
+      "taskTitle": "feat(039-D): panel del anunciante — mis anuncios y métricas por zona",
+      "complexityScore": 5,
+      "recommendedSubtasks": 4,
+      "reasoning": "Una RPC security definer con k-anonimato + hook + pantalla que reusa patrones de my-listings/CRM. Aditiva y de bajo riesgo."
+    },
+    {
+      "taskId": 172,
+      "taskTitle": "feat(039-E): publicidad fase 2 — CPM/CPC, subasta y antifraude",
+      "complexityScore": null,
+      "recommendedSubtasks": null,
+      "reasoning": "Deferred: se registra para dejar escrito el destino de ad_impressions; se explora en su momento con #76/#84 hechas."
+    }
+  ]
+}

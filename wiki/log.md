@@ -1,6 +1,28 @@
 # Bitácora del proyecto
 
-Append-only. Prefijo: `## [YYYY-MM-DD] tipo | título`
+Append-only. Prefijo: `## [2026-08-13] feat | #157 Búsqueda en el mapa estilo Google Maps (colonias DCAH/INEGI + perímetro + filtro espacial)
+
+- Pedido de Abraham: buscar una colonia y que delimite su perímetro, con sugerencias mientras escribes. Hallazgo clave: el "catálogo INEGI" (72.1) era solo NOMBRES — cero geometría. Dataset elegido: **DCAH 2024 del INEGI** (75,516 polígonos nacionales; URLs vía el API de la biblioteca digital, la página es SPA con soft-404s). Decisión con el usuario: base propia PostGIS (patrón Zillow/Redfin), cobertura nacional (beta cerrada, no solo GDL).
+- Backend (TDD estricto, pgTAP 42-45): `mx_neighborhoods` (CVEGEO=source_key, geography(MultiPolygon), name_normalized generada con `private.normalize_search_text` — sin unaccent) + bbox precalculado en `mx_municipalities`; RPCs `search_places` / `get_neighborhood_geojson` / `properties_within_neighborhood` (A1 flaco, ST_Intersects usa el GiST existente).
+- Import SIN contraseña de DB (Abraham prefirió no compartirla): RPC `import_neighborhoods_batch` (solo service_role) + EF desechable `import-neighborhoods` (secret fail-closed, Deno 12/12) + pipeline mapshaper (reproyección LCC→WGS84, simplify 15m) — precedente "EF desechable" de 72.1. Jalisco 7,928/7,928 verificado (0 inválidas, p95 53 vértices); nacional por estados en lotes de 500.
+- Mobile (33 tests nuevos, suite 1064/1064): libs `placeSearch`/`neighborhoodPolygon`/`bboxRegion`, hook `usePlaceSearch` (debounce+anti-stale), rama `neighborhood_id` en `fetchMapProperties` (máxima prioridad, invariante A1), dropdown `MapSearchSuggestions`, `<Polygon>` + chip con nombre. Decisiones D5/D6/D7/D9: municipio reusa `filters.area`; colonia = estado local (NO FilterState); filtro cliente viejo sustituido; colonia y area excluyentes.
+- Smoke E2E (emulador, cuenta real): Providencia GDL dibujada EXACTA sobre las calles; Jocotán (match sin acento) muestra el pin de una propiedad real DENTRO del polígono; municipio Zapopan encuadra + chip de zona. Derivada: #158 (colonias "Ninguno" del DCAH en el autocomplete).
+- Gotchas nuevos: RNTL 14 (`renderHook` async + `await act`); `adb input text` corta en espacios (usar `%s`); deploy EF con `--use-api` (docker-credential-desktop roto).
+
+## [2026-08-11] fix | #155 Guardados: desfase de foco + scoping de admin (causa raíz del reporte)
+
+- Reporte de Abraham: "no se eliminan los guardados / no se reflejan las publicaciones" en cuentas no-agente (Android + iPhone).
+- Causa 1 (todos los roles): la pantalla es tab (slot 4 no-agentes), queda montada y el hook solo consultaba al montar → toda mutación desde feed/detalle dejaba la lista vieja. Fix: `useFocusEffect`→`refetch()` en `SavedScreen.tsx` (salta el primer foco).
+- Causa 2 (la RAÍZ, cuentas admin = las de prueba): `saves_select` tiene `OR is_admin()` y el hook confiaba en RLS → un admin veía los saves de TODOS; los ajenos no se pueden borrar (`saves_delete` solo filas propias → DELETE de 0 filas sin error → el item revive al refetch) y 2 usuarios guardando la misma propiedad duplicaban keys de fila (`FlatList numColumns` une los keys con `:` — el warning "two children with the same key" llevó a la causa). Evidencia: admin@ tenía 2 saves en DB y la pantalla mostraba 6+.
+- Fix TDD (hook crítico): RED EC-1-155/EC-2-155 (0 calls a `.eq`) → GREEN `.eq('user_id', user.id)` en `useSavedProperties.ts`. RLS intacta (is_admin() en SELECT queda para tooling futuro).
+- Verificación: Jest 1031/1031 · tsc 0 · lint 0 errores · E2E emulador (dev-client + Metro): lista del admin = sus 2 saves exactos, quitar persiste en DB, 0 warnings dup key, force-stop al final.
+- Derivada #156: el bookmark del feed/detalle no refleja el estado real (initialSaved siempre false → quitar desde el feed requiere 2 taps: el 1º hace INSERT→23505). Pendiente.
+
+## [YYYY-MM-DD] tipo | título`
+
+## [2026-08-10] decision | 0009 Producción viva — todo cambio se piensa para producción
+
+Pedido de Abraham: hay personas reales conectadas probando la app y la base se puebla poco a poco — se acabó la mentalidad de demo. La normativa quedó integrada en el flujo en tres puntos para minimizar el error humano: **CLAUDE.md §0.5** (las 6 reglas: DB aditiva+rollback sin seeds/resets al remoto, compat hacia atrás con builds instalados con orden cliente-OTA-primero, merge=candidato a release, privacidad/RLS, cuotas reales, ante duda gana producción), **analista-subtareas Paso 5.5** (línea "Impacto producción" por subtarea: `sin riesgo | ⚠️ destructiva | ⚠️ contrato`), **`/tm-plan`** (impacto-prod obligatorio en el PLAN + pregunta de diseño forzada si hay ⚠️) y **`/tm-tarea`** (gate de producción viva en el cierre, paso 6.0, antes de done y del PR; CLAUDE.md §5.7 lo repite antes del merge). ADR: [[0009-produccion-viva]].
 
 ## [2026-08-15] producto | Quick fixes del wizard de publicación (paso 3/4) — sesión directa, sin ciclo tm-tarea
 
@@ -637,3 +659,16 @@ Verificación: `tsc` 0, `lint` 0 errores. Ingest: [[feed-vertical-video]], [[pro
 **Verificación:** pgTAP 312/312 · Jest 785/785 · `pnpm tsc --noEmit` 0 · `pnpm lint` 0 errores. Ingest: [[legal-consentimientos]], [[mapa-codebase]].
 
 ## [2026-07-30] tarea | #93 Registro server-side atómico — EF register + RPC register_user_atomic; signup público cerrado (local); errores sanitizados (fin del oráculo de enumeración por errores crudos)
+
+## [2026-08-10] explore | aprobado tareas 148,149 (cancelada #106) — Hero de video con colapso por scroll en el detalle + chips en wizard step4
+
+## [2026-08-11] fix | #151 — el borrador del autosave bloqueaba toda publicación (409 DUPLICATE_PROPERTY)
+El wizard (Ola 1, #73) guarda un draft con la dirección; el checker de duplicados de publish-property no excluía status draft → el agente se bloqueaba a sí mismo en TODOS los intentos (iPhone real y emulador). Fix: draft entra a DUPLICATE_EXCLUDED_STATUSES (clients.ts), RED→GREEN 11/11, publish-property v17 desplegada server-first (sin OTA) y verificada con una publicación real → pending_review. PR #72.
+
+## [2026-08-11] producto | #153 — moderación suspendida temporalmente (publicar → active directo)
+No hay moderador ni interfaz: pending_review atoraba toda publicación (solo SQL la liberaba). Decisión de Abraham: publish-property v18 fija active al nacer; el pipeline de validación (video+duplicado) sigue. Revertir a pending_review (§14.2) cuando exista la interfaz — el revert es re-flip del assert del contrato. Las 2 propiedades atoradas se liberaron por SQL. PR #73.
+
+## [2026-08-11] chore | #154 — build 1.0.6 compilado y distribuido (splash de alfa real)
+Opción A aprobada: PR #69 mergeado (conflicto tasks.json reconciliado), bump 1.0.6 (PR #74), builds EAS verdes (runtimes nuevos 374ba3dd/ca62b26a), iOS en TestFlight, splash verificado en el APK instalado. La flota 1.0.5 ya no recibe OTAs nuevos — migrar al build 1.0.6.
+
+## [2026-08-14] explore | aprobado tareas 168–172 — Cuenta comercial / anunciantes: video nativo "Patrocinado" en el feed, targeting por zona (#157), organización con capacidad can_advertise (generaliza agencies, sin entidad nueva), impresiones desde el día 1 en tabla propia vía EF, 4 tareas encadenadas + fase 2 CPM/CPC deferred (doc 039)
