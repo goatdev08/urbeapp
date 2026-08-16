@@ -801,9 +801,9 @@ begin
     json_build_object('sub', '00000000-0000-0000-0000-000000470101'::uuid)::text, true);
   begin
     insert into public.ad_creatives (id, agency_id, cloudflare_uid)
-      values ('00000000-0000-0000-0000-000000470303', '00000000-0000-0000-0000-000000470201', 'cfuid-ads-47-propia-org');
+      values ('00000000-0000-0000-0000-000000470304', '00000000-0000-0000-0000-000000470201', 'cfuid-ads-47-propia-org');
     insert into result_creative_insert_own_org
-      select true, agency_id from public.ad_creatives where id = '00000000-0000-0000-0000-000000470303';
+      select true, agency_id from public.ad_creatives where id = '00000000-0000-0000-0000-000000470304';
   exception when others then
     insert into result_creative_insert_own_org values (false, null);
   end;
