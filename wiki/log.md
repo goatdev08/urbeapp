@@ -2,6 +2,15 @@
 
 Append-only. Prefijo: `## [YYYY-MM-DD] tipo | título`
 
+## [2026-08-16] polish | #180 Acciones visibles en el perfil (editar/guardados o WhatsApp) y leads fuera del header
+
+- Pedido de Abraham tras ver #179 en el dispositivo, con la referencia de Instagram anotada: "Editar perfil" y "Guardados" estaban escondidas tras el menú ⋯ y suben a botones visibles entre la bio y la grilla; en un perfil ajeno ese mismo espacio lo ocupa un botón de **contacto por WhatsApp** del mismo tamaño y forma. Texto a la izquierda, ícono Phosphor a la derecha (`PencilSimple`, `BookmarkSimple`, `WhatsappLogo`). Las dos entradas movidas se quitaron del menú: dos caminos al mismo destino no aportan.
+- **Leads sale del header por completo** (decisión suya): es un dato de gestión que se consulta en el CRM y solo el dueño de la cuenta. Con él se fue la opción `include_leads` que #179 había introducido para no filtrarlo. Stats: propio = Publicaciones · Guardados · Me gusta; **ajeno = Publicaciones · Me gusta** (hacia afuera la señal pública es cuánto gusta el catálogo, no cuánta gente lo archivó).
+- **El WhatsApp del perfil no pasa por el CRM, a propósito.** Se extrajo `open_whatsapp_text(phone, texto)` de `open_whatsapp` (que ahora la llama) en vez de duplicar el sanitizado. No se reusó `open_whatsapp_ef`: su Alert "✓ Contacto enviado" mentiría — contactar a un agente **desde su perfil** no nace de una propiedad y el lead exige `property_id`. Si el agente no tiene teléfono, el botón no se pinta.
+- ⚠️ **Gotcha de layout que solo apareció en Android:** el botón flotante "⋯" caía justo encima de la tercera columna de estadísticas. El inset superior de Android es mucho menor que el notch de iOS, así que el `paddingTop` estético del header alcanzaba allá pero no acá. Ahora reserva la banda EXACTA que ocupa el botón (`s_8 + 40 + s_8`).
+- Verificación: TDD en el hook (RED 5 fallos → GREEN, 8 tests; test L-1 vigila que nunca se consulte la tabla `leads`), Jest 1084/1084, tsc 0, lint 0 errores, smoke por CLI en iOS y Android en perfil propio y ajeno.
+- Solo JS/UI: viaja por OTA, sin migraciones.
+
 ## [2026-08-16] polish | #179 Perfil estilo Instagram: grid 3 columnas, bio completa y header con estadísticas
 
 - Pedido de Abraham (con capturas de dos perfiles de Instagram como referencia): 3 columnas en la grilla, bio COMPLETA (se cortaba) y header reacomodado. Decisiones tomadas con él: celda con precio + badge de operación, grilla borde a borde (gap 2, sin radios), Guardados también a 3 col, tercer stat = **Guardados** en vez de "Cerrados".

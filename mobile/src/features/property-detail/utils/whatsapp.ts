@@ -3,6 +3,7 @@
  *
  * Funciones:
  *   open_whatsapp      — abre wa.me con número y dirección (AgentCard; sin lead CRM).
+ *   open_whatsapp_text — abre wa.me con un mensaje ya armado (botón del perfil de agente).
  *   open_whatsapp_ef   — abre WhatsApp con phone+message de la EF contact-agent (CTA sticky).
  *                        Incluye canOpenURL + fallback web + Alert nativo de confirmación.
  *
@@ -19,11 +20,30 @@ import { Alert, Linking } from 'react-native';
  * @param address Dirección de la propiedad para el mensaje prefill.
  */
 export function open_whatsapp(phone: string | null, address: string): void {
+  open_whatsapp_text(phone, `Hola, me interesa la propiedad en ${address}`);
+}
+
+/**
+ * open_whatsapp_text — abre wa.me con un mensaje YA armado (180.2).
+ *
+ * Extraído de `open_whatsapp` para que el botón de contacto del perfil de
+ * agente reuse el mismo camino sin duplicar el sanitizado ni el encode: ahí
+ * no hay propiedad de por medio, el mensaje es "quiero contactarte".
+ *
+ * ponytail: se queda en `wa.me` (abre la app si está instalada, web si no) en
+ * vez de la escalera deep-link/fallback/Alert de `open_whatsapp_ef` — esa
+ * confirma "✓ Contacto enviado", que aquí mentiría: NO se registra lead
+ * (contactar al agente desde su perfil no nace de una propiedad, y el CRM
+ * exige property_id).
+ *
+ * @param phone Teléfono del agente. null/vacío → no hace nada.
+ * @param text  Mensaje prefill sin encodear.
+ */
+export function open_whatsapp_text(phone: string | null, text: string): void {
   if (phone === null || phone.length === 0) return;
   // Limpia caracteres no numéricos (espacios, guiones, paréntesis)
   const clean_phone = phone.replace(/\D/g, '');
-  const text = encodeURIComponent(`Hola, me interesa la propiedad en ${address}`);
-  void Linking.openURL(`https://wa.me/${clean_phone}?text=${text}`);
+  void Linking.openURL(`https://wa.me/${clean_phone}?text=${encodeURIComponent(text)}`);
 }
 
 /**

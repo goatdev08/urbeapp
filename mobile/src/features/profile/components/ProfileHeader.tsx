@@ -22,6 +22,7 @@ import { useR2Urls } from '@/hooks/useR2Urls';
 import type { AgentProfile } from '../types';
 import type { AgentStats } from '../hooks/useAgentStats';
 import { ProfessionalStats } from './ProfessionalStats';
+import { ProfileActions } from './ProfileActions';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -52,6 +53,9 @@ function format_member_since(iso_date: string): string {
 // 80px (antes 96): en la fila con las 3 columnas de stats un avatar mayor
 // aprieta los números en pantallas de 360dp.
 const AVATAR_SIZE = 80;
+// Alto del botón flotante "⋯"/atrás de ProfileScreen — la cabecera reserva
+// esta banda para no quedar debajo de ellos (ver container.paddingTop).
+const FLOATING_BTN_SIZE = 40;
 // Badge de isotipo (esquina inferior-derecha del avatar_ring, solo con foto real).
 const ISOTIPO_BADGE_SIZE = 26;
 const ISOTIPO_BADGE_OFFSET = -6;
@@ -66,8 +70,12 @@ interface ProfileHeaderProps {
   stats?: AgentStats | null;
   /** true mientras useAgentStats resuelve los counts. */
   loading?: boolean;
-  /** Elige el juego de columnas de stats (Leads solo en el perfil propio). */
+  /** Elige el juego de columnas de stats y la fila de acciones (180.2). */
   is_own_profile?: boolean;
+  /** Perfil propio → botón "Editar perfil" de la fila de acciones. */
+  on_edit_profile?: () => void;
+  /** Perfil propio → botón "Guardados" de la fila de acciones. */
+  on_saved?: () => void;
 }
 
 export function ProfileHeader({
@@ -75,8 +83,10 @@ export function ProfileHeader({
   stats,
   loading = false,
   is_own_profile = false,
+  on_edit_profile,
+  on_saved,
 }: ProfileHeaderProps) {
-  const { full_name, profile_photo_url, bio, member_since, agency_name } = profile;
+  const { full_name, profile_photo_url, bio, phone, member_since, agency_name } = profile;
 
   const [img_error, set_img_error] = useState(false);
 
@@ -143,6 +153,15 @@ export function ProfileHeader({
             caracteres, tope de profile/edit.tsx). */}
         {bio != null && bio.trim() !== '' && <Text style={styles.bio}>{bio}</Text>}
       </View>
+
+      {/* ── Acciones (bajo la bio, sobre la grilla) ─────────────────── */}
+      <ProfileActions
+        is_own_profile={is_own_profile}
+        on_edit_profile={on_edit_profile ?? (() => {})}
+        on_saved={on_saved ?? (() => {})}
+        phone={phone}
+        agent_name={full_name}
+      />
     </View>
   );
 }
@@ -156,9 +175,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.paper,
     paddingHorizontal: spacing.s_16,
     // El inset superior (notch/Dynamic Island) lo aplica ProfileScreen en el
-    // contentContainer del ScrollView; este respiro deja libre la esquina
-    // superior, donde flotan los botones "⋯" y atrás de ProfileScreen.
-    paddingTop: spacing.s_40,
+    // contentContainer del ScrollView; este respiro deja libre la banda donde
+    // flotan los botones "⋯" y atrás de ProfileScreen. El número NO es
+    // estético: es el alto que ocupan (s_8 de margen + 40 del botón + s_8) —
+    // con menos, en Android (inset superior chico) el "⋯" caía justo sobre la
+    // tercera columna de estadísticas.
+    paddingTop: spacing.s_8 + FLOATING_BTN_SIZE + spacing.s_8,
     paddingBottom: spacing.s_16,
   },
 

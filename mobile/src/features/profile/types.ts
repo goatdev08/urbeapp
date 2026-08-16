@@ -101,6 +101,11 @@ export interface AgentProfile {
   profile_photo_url: string | null;
   /** Biografía corta — de users.bio (null hasta que se implemente edición). */
   bio: UserRow['bio'];
+  /**
+   * Teléfono del agente (users.phone) — alimenta el botón "Contactar por
+   * WhatsApp" del perfil AJENO (180.2). null → el botón no se pinta.
+   */
+  phone: UserRow['phone'];
   /** Fecha de alta del usuario — usada como "member since". */
   member_since: UserRow['created_at'];
   /** Nombre de la agencia (null si el agente es independiente). */

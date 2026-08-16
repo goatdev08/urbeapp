@@ -3,10 +3,17 @@
  * Archivo SUT: mobile/src/features/profile/hooks/useAgentStats.ts
  * Subtarea Taskmaster: 23.1 (original) · 179.1 (rediseño estilo Instagram)
  *
- * ⚠️ CAMBIO DE CONTRATO EN 179.1 — el header de perfil dejó de mostrar
- * "Cerrados" y ahora muestra:
- *   - perfil propio: Publicaciones · Leads · Guardados
- *   - perfil ajeno:  Publicaciones · Guardados · Me gusta
+ * ⚠️ CAMBIO DE CONTRATO EN 180.1 — `leads` SALE del header por completo: es un
+ * dato de gestión que solo se consulta en el CRM y solo el dueño de la cuenta
+ * (decisión de Abraham, 2026-08-16). Con él se va la opción `include_leads`
+ * que 179.1 había introducido para no filtrarlo en perfiles ajenos, y las 2
+ * queries a `leads` desaparecen. El CRM mantiene su propio RPC get_lead_stats
+ * (migración 20260808000002). El header queda:
+ *   - perfil propio: Publicaciones · Guardados · Me gusta
+ *   - perfil ajeno:  Publicaciones · Me gusta
+ *
+ * ⚠️ CAMBIO DE CONTRATO PREVIO EN 179.1 — el header dejó de mostrar
+ * "Cerrados":
  * Consecuencias en este archivo:
  *   1. `closed` SALE de AgentStats y su query desaparece. NO es un test
  *      debilitado: el dato ya no se pinta en ninguna superficie (el CRM tiene
@@ -21,9 +28,8 @@
  *      ahora acepta `{ include_leads }` y en false NI SIQUIERA consulta leads.
  *
  * FIRMA DEL HOOK:
- *   useAgentStats(agent_id: string, opts?: { include_leads?: boolean })
- *     → { loading: boolean; stats: AgentStats | null }
- *   AgentStats = { publications: number; leads: number; saves: number; likes: number }
+ *   useAgentStats(agent_id: string) → { loading: boolean; stats: AgentStats | null }
+ *   AgentStats = { publications: number; saves: number; likes: number }
  *
  * QUERIES ESPERADAS (Promise.all).
  * Orden REAL de supabase-js: .select() con las opciones de count va PRIMERO,
@@ -41,11 +47,7 @@
  *      (suma en cliente: son las mismas pocas filas que ya cuenta la query 1;
  *      los contadores los mantiene el trigger de 20260701000001 — cero backend
  *      nuevo. Un RPC de agregación sería más caro de mantener que el reduce.)
- *   3. leads = leads
- *        .select('id', { count: 'exact', head: true })
- *        .eq('agent_id', agent_id)
- *        .is('deleted_at', null)
- *      SOLO si include_leads !== false.
+ *   (la tabla `leads` YA NO se consulta — ver el cambio de contrato de 180.1.)
  *
  * PATRÓN DE MOCK: igual que useAgentProfile.test.tsx — holder mutable
  * `mock_supabase_holder` con getter en @/lib/supabase/client (nombre con
@@ -64,7 +66,7 @@
  * ### Edge cases del PRD / reglas no obvias
  * - EC-3: queries_usan_filtros_correctos_status_y_deleted_at
  * - S-1:  suma_save_count_y_like_count_de_todas_las_filas
- * - S-2:  include_leads_false_no_consulta_la_tabla_leads
+ * - L-1:  nunca_consulta_la_tabla_leads (180.1)
  *
  * ### Boundary / error
  * - EC-4: error_en_alguna_query_degrada_a_ceros_sin_throw
@@ -95,8 +97,6 @@ interface TableMockConfig {
   properties?: CountResult;
   /** Query 2: filas con save_count/like_count para sumar en cliente. */
   sums?: RowsResult;
-  /** Query 3: count de leads (solo si include_leads). */
-  leads_all?: CountResult;
 }
 
 /**
@@ -110,7 +110,6 @@ function make_supabase_mock(config: TableMockConfig = {}) {
   const {
     properties = { count: 0, error: null },
     sums = { data: [], error: null },
-    leads_all = { count: 0, error: null },
   } = config;
 
   const calls: {
@@ -147,7 +146,10 @@ function make_supabase_mock(config: TableMockConfig = {}) {
       if (table === 'properties') {
         return Promise.resolve(selected_columns === 'id' ? properties : sums);
       }
-      return Promise.resolve(leads_all);
+      // Cualquier otra tabla (p.ej. `leads`) es un error de contrato: el hook
+      // no debe consultarla. Se resuelve con un valor absurdo para que, si
+      // alguna vez vuelve a consultarse, el test que la vigile lo note.
+      return Promise.resolve({ count: 999, data: null, error: null });
     });
 
     return chain;
@@ -214,10 +216,9 @@ describe('useAgentStats', () => {
 
   // ── EC-2: Counts correctos tras resolver ──────────────────────────────────
 
-  it('(EC-2) tras_resolver_expone_los_counts_correctos_y_loading_false: stats refleja publicaciones, leads y las sumas de guardados/me gusta', async () => {
+  it('(EC-2) tras_resolver_expone_los_counts_correctos_y_loading_false: stats refleja publicaciones y las sumas de guardados/me gusta', async () => {
     mock_supabase_holder.client = make_supabase_mock({
       properties: { count: 7, error: null },
-      leads_all: { count: 15, error: null },
       sums: {
         data: [
           { save_count: 3, like_count: 10 },
@@ -232,7 +233,6 @@ describe('useAgentStats', () => {
     expect(result.current.loading).toBe(false);
     expect(result.current.stats).toEqual({
       publications: 7,
-      leads: 15,
       saves: 8,
       likes: 12,
     });
@@ -260,52 +260,44 @@ describe('useAgentStats', () => {
     expect(result.current.stats?.likes).toBe(10);
   });
 
-  // ── S-2: leads es privado — en perfil ajeno ni se consulta ────────────────
+  // ── L-1: leads NO se consulta desde el perfil (180.1) ────────────────────
   //
-  // La RLS de leads solo deja ver los propios: en un perfil ajeno la query
-  // devuelve 0 y el header pintaba "0 Leads" como si el agente no tuviera
-  // ninguno. Además de no pintarlo, no tiene sentido pagar la request.
+  // El conteo de leads es un dato de gestión: vive en el CRM y solo lo ve el
+  // dueño de la cuenta. Antes se pedía siempre y en perfiles ajenos la RLS
+  // devolvía 0, así que el header pintaba "0 Leads" como si el agente no
+  // tuviera ninguno.
 
-  it('(S-2) include_leads_false_no_consulta_la_tabla_leads: no llama from("leads") y stats.leads queda en 0', async () => {
+  it('(L-1) nunca_consulta_la_tabla_leads: el hook no llama from("leads") y stats no expone leads', async () => {
     mock_supabase_holder.client = make_supabase_mock({
       properties: { count: 6, error: null },
-      leads_all: { count: 99, error: null }, // no debe llegar a leerse
       sums: { data: [{ save_count: 2, like_count: 4 }], error: null },
     });
 
-    const { result } = await renderHook(() =>
-      useAgentStats(TEST_AGENT_ID, { include_leads: false }),
-    );
+    const { result } = await renderHook(() => useAgentStats(TEST_AGENT_ID));
 
     expect(mock_supabase_holder.client._calls.from).not.toContain('leads');
-    expect(result.current.stats).toEqual({
-      publications: 6,
-      leads: 0,
-      saves: 2,
-      likes: 4,
-    });
+    expect(result.current.stats).toEqual({ publications: 6, saves: 2, likes: 4 });
+    expect(result.current.stats).not.toHaveProperty('leads');
   });
 
   // ── EC-3: Filtros correctos por query ─────────────────────────────────────
 
-  it('(EC-3) queries_usan_filtros_correctos_status_y_deleted_at: las 2 queries a properties filtran owner_user_id + status in active/paused + deleted_at null; leads filtra agent_id + deleted_at null (sin status); el count usa exact+head y la de sumas trae filas', async () => {
+  it('(EC-3) queries_usan_filtros_correctos_status_y_deleted_at: las 2 queries a properties filtran owner_user_id + status in active/paused + deleted_at null; el count usa exact+head y la de sumas trae filas', async () => {
     await renderHook(() => useAgentStats(TEST_AGENT_ID));
 
     const calls = mock_supabase_holder.client._calls;
 
-    // from() se llamó dos veces para properties (count + sumas) y una para leads
-    expect(calls.from.filter((t) => t === 'properties').length).toBe(2);
-    expect(calls.from.filter((t) => t === 'leads').length).toBe(1);
+    // from() se llamó SOLO dos veces, ambas a properties (count + sumas)
+    expect(calls.from).toEqual(['properties', 'properties']);
 
-    // owner_user_id / agent_id correctos
+    // owner_user_id correcto en las dos
     expect(calls.eq.filter(([col, val]) => col === 'owner_user_id' && val === TEST_AGENT_ID).length).toBe(2);
-    expect(calls.eq).toContainEqual(['agent_id', TEST_AGENT_ID]);
 
     // Ambas queries de properties acotan a publicaciones visibles
     expect(calls.in.filter(([col, val]) => col === 'status' && Array.isArray(val) && (val as string[]).join() === 'active,paused').length).toBe(2);
 
-    // deleted_at is null se usó en las 3 queries
-    expect(calls.is.filter(([col, val]) => col === 'deleted_at' && val === null).length).toBe(3);
+    // deleted_at is null se usó en las 2 queries
+    expect(calls.is.filter(([col, val]) => col === 'deleted_at' && val === null).length).toBe(2);
 
     // El count de publicaciones no trae filas; la query de sumas sí (sin head).
     expect(calls.select).toContainEqual(['id', { count: 'exact', head: true }]);
@@ -320,7 +312,6 @@ describe('useAgentStats', () => {
   it('(EC-4) error_en_alguna_query_degrada_a_ceros_sin_throw: si la query de properties falla, stats queda en ceros y no lanza', async () => {
     mock_supabase_holder.client = make_supabase_mock({
       properties: { count: null, error: { message: 'RLS denied' } },
-      leads_all: { count: 15, error: null },
       sums: { data: [{ save_count: 2, like_count: 4 }], error: null },
     });
 
@@ -335,7 +326,7 @@ describe('useAgentStats', () => {
 
     expect(thrown).toBeNull();
     expect(final_state?.loading).toBe(false);
-    expect(final_state?.stats).toEqual({ publications: 0, leads: 0, saves: 0, likes: 0 });
+    expect(final_state?.stats).toEqual({ publications: 0, saves: 0, likes: 0 });
   });
 
   // ── S-3: el error de la query nueva degrada igual que las demás ───────────
@@ -343,14 +334,13 @@ describe('useAgentStats', () => {
   it('(S-3) error_en_la_query_de_sumas_degrada_a_ceros: si falla la query de save_count/like_count, stats queda en ceros y no lanza', async () => {
     mock_supabase_holder.client = make_supabase_mock({
       properties: { count: 7, error: null },
-      leads_all: { count: 15, error: null },
       sums: { data: null, error: { message: 'RLS denied' } },
     });
 
     const { result } = await renderHook(() => useAgentStats(TEST_AGENT_ID));
 
     expect(result.current.loading).toBe(false);
-    expect(result.current.stats).toEqual({ publications: 0, leads: 0, saves: 0, likes: 0 });
+    expect(result.current.stats).toEqual({ publications: 0, saves: 0, likes: 0 });
   });
 
   // ── EC-5: ignore flag evita setState tras unmount ─────────────────────────

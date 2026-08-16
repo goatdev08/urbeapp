@@ -8737,7 +8737,7 @@
         "id": "179",
         "title": "polish(16): perfil estilo Instagram — grid 3 columnas, bio completa y header con stats",
         "description": "Origen: tarea 16 (perfil de agente) · Detectado por: usuario (Abraham, 2026-08-16, capturas de Instagram como referencia). El perfil se ve pobre al lado de un perfil de Instagram: la grilla usa 2 columnas con cards grandes (título/zona/precio) en vez de tiles de portada, y la biografía se corta a 3 líneas (numberOfLines=3) aunque el usuario puede escribir 280 caracteres con saltos de línea. Se rediseña el perfil con el lenguaje de Instagram manteniendo la identidad Urbea: grid de 3 columnas borde a borde (gap 2, sin radios), tile = portada 3/4 con precio abajo-izquierda y badge de operación arriba-izquierda (respalda el mockup 10 'Perfil' de urbea-identidad-visual.html, .gcell L446-461), header con avatar a la izquierda y stats a la derecha, y bio completa que crece según su largo. Además el tercer stat deja de ser 'Cerrados': en perfil propio queda Publicaciones/Leads/Guardados y en perfil ajeno Publicaciones/Guardados/Me gusta (Leads es dato privado: la RLS lo devuelve 0 en perfiles ajenos y hoy se pinta '0 Leads', lo que engaña). Solo JS/UI: viaja por OTA, sin migraciones ni contratos nuevos.",
-        "details": "DECISIONES (Abraham, 2026-08-16): celda con precio + badge de operación (no solo portada); grid borde a borde estilo Instagram (gap 2, sin radios ni padding lateral); Guardados también pasa a 3 columnas; header estilo Instagram; 3er stat = Guardados (suma de properties.save_count, mantenido por el trigger de 20260701000001 — cero backend nuevo); vistas descartadas por ahora (view_count nunca se puebla; las vistas viven en events_raw con RLS privada y exigirían un RPC security-definer + revisión de privacidad).\n\nFOOTPRINT: mobile/src/components/PropertyGridCard.tsx (reescritura a tile, mismas props + width), mobile/src/components/GridSkeleton.tsx, mobile/src/features/profile/components/{PropertiesGrid,ProfileHeader,ProfessionalStats}.tsx, mobile/src/features/profile/ProfileScreen.tsx, mobile/src/features/profile/hooks/useAgentStats.ts (CRÍTICA, path hooks/**), mobile/src/features/saved/{SavedScreen.tsx,components/SavedGridItem.tsx}, mobile/src/theme/theme.ts (layout.grid_cols 3 + grid_tile_gap).\n\nNO se toca: publicación, feed, detalle, backend.",
+        "details": "DECISIONES (Abraham, 2026-08-16): celda con precio + badge de operación (no solo portada); grid borde a borde estilo Instagram (gap 2, sin radios ni padding lateral); Guardados también pasa a 3 columnas; header estilo Instagram; 3er stat = Guardados (suma de properties.save_count, mantenido por el trigger de 20260701000001 — cero backend nuevo); vistas descartadas por ahora (view_count nunca se puebla; las vistas viven en events_raw con RLS privada y exigirían un RPC security-definer + revisión de privacidad).\n\nFOOTPRINT: mobile/src/components/PropertyGridCard.tsx (reescritura a tile, mismas props + width), mobile/src/components/GridSkeleton.tsx, mobile/src/features/profile/components/{PropertiesGrid,ProfileHeader,ProfessionalStats}.tsx, mobile/src/features/profile/ProfileScreen.tsx, mobile/src/features/profile/hooks/useAgentStats.ts (CRÍTICA, path hooks/**), mobile/src/features/saved/{SavedScreen.tsx,components/SavedGridItem.tsx}, mobile/src/theme/theme.ts (layout.grid_cols 3 + grid_tile_gap).\n\nNO se toca: publicación, feed, detalle, backend.\n\nDERIVADAS: #180 (usuario)",
         "testStrategy": "useAgentStats es lógica (hooks/**) → TDD estricto: RED en mobile/src/features/profile/__tests__/useAgentStats.test.ts (suma de saves/likes, include_leads:false no consulta leads, degradación graceful si falla la query) antes de implementar. El resto es UI → verificación ligera: pnpm tsc --noEmit + pnpm lint + suite completa verde + smoke por CLI en iOS (xcrun simctl io booted screenshot) y Android (adb exec-out screencap) comparando contra las capturas de referencia: bio multilínea completa, 3 stats correctos por modo, grid 3 col con precio legible y última fila parcial sin estirar, Guardados 3 col con long-press intacto.",
         "status": "done",
         "dependencies": [
@@ -8800,13 +8800,67 @@
           }
         ],
         "updatedAt": "2026-08-16T19:21:30.955Z"
+      },
+      {
+        "id": "180",
+        "title": "polish(179): acciones del perfil visibles (editar/guardados o WhatsApp) y stats públicas sin leads",
+        "description": "Origen: tarea 179 · Detectado por: usuario (Abraham, 2026-08-16, referencia de Instagram anotada). Dos ajustes tras ver #179 en el dispositivo: (1) 'Editar perfil' y 'Guardados' están escondidos tras el menú ⋯ — pasan a ser botones VISIBLES entre la bio y la grilla, como los de Instagram; en un perfil AJENO ese mismo espacio lo ocupa un botón de contacto por WhatsApp del mismo tamaño y forma. (2) El conteo de leads sale del header por completo: es un dato de gestión que solo se consulta en el CRM y solo el dueño de la cuenta. El perfil público queda en Publicaciones + Me gusta; el propio conserva Guardados como métrica propia. Solo JS/UI: viaja por OTA, sin migraciones.",
+        "details": "FOOTPRINT: mobile/src/features/profile/components/ProfileActions.tsx (NUEVO), ProfileHeader.tsx (monta las acciones tras la bio), ProfessionalStats.tsx (juegos de columnas), ProfileScreen.tsx (quita 'Guardados' y 'Editar perfil' del ProfileMenu, pasa los handlers), hooks/useAgentStats.ts (CRÍTICA, hooks/**: sale `leads` y con él `include_leads`), hooks/useAgentProfile.ts + types.ts (traer users.phone para el WhatsApp del perfil ajeno).\n\nWHATSAPP: reusa open_whatsapp_ef de features/property-detail/utils/whatsapp.ts (deep link + fallback wa.me). NO pasa por useContactAgent/EF contact-agent: esa vía crea un lead y exige property_id, que aquí no existe (el contacto es al agente, no sobre una propiedad). Si el agente no tiene teléfono, el botón no se pinta.\n\nNO se toca: backend, feed, detalle, CRM.",
+        "testStrategy": "useAgentStats es lógica (hooks/**) → TDD: RED que exija que NO se consulte la tabla leads y que AgentStats ya no exponga `leads`. El resto es UI → pnpm tsc --noEmit + pnpm lint + suite completa + smoke por CLI en iOS y Android: perfil propio (2 botones, stats Publicaciones/Guardados/Me gusta), perfil ajeno (botón de WhatsApp, stats Publicaciones/Me gusta) y que el menú ⋯ ya no duplique las opciones movidas.",
+        "status": "done",
+        "dependencies": [
+          "179"
+        ],
+        "priority": "medium",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "useAgentStats: quitar leads del header (queda en el CRM)",
+            "description": "CRÍTICA (hooks/**) → TDD. `leads` sale de AgentStats y desaparece su query; con eso se va también la opción include_leads que 179.1 había introducido para no filtrar el dato en perfiles ajenos. El CRM sigue con su propio RPC get_lead_stats (20260808000002).",
+            "details": "<info added on 2026-08-16T21:44:30.945Z>\nhecho: RED (5 fallos) → GREEN. useAgentStats pierde 'leads' y con él la opción include_leads que 179.1 había introducido: el conteo de leads es dato de gestión, se consulta en el CRM (RPC get_lead_stats, 20260808000002) y solo el dueño. El hook queda en 2 queries a properties (count + sumas). Test nuevo L-1 'nunca_consulta_la_tabla_leads' (assert de que from() solo recibe 'properties'); EC-2/EC-3/EC-4/S-3 actualizados al tipo nuevo {publications,saves,likes}. El mock ahora resuelve cualquier tabla distinta de properties con un valor absurdo para que una regresión se note. 8/8 verde.\n</info added on 2026-08-16T21:44:30.945Z>",
+            "testStrategy": "RED en __tests__/useAgentStats.test.ts: el hook NUNCA llama from('leads') y AgentStats expone solo publications/saves/likes.",
+            "status": "done",
+            "dependencies": [],
+            "priority": "medium",
+            "subtasks": [],
+            "parentId": "undefined",
+            "updatedAt": "2026-08-16T21:44:37.726Z"
+          },
+          {
+            "id": 2,
+            "title": "ProfileActions: botones de editar/guardados (propio) o WhatsApp (ajeno)",
+            "description": "Componente nuevo con la fila de acciones entre la bio y la grilla, al estilo de Instagram: en perfil propio dos botones iguales lado a lado ('Editar perfil' y 'Guardados'); en perfil ajeno un botón del mismo tamaño y forma para contactar por WhatsApp (oculto si el agente no tiene teléfono). Se quitan esas dos entradas del ProfileMenu para no duplicarlas. useAgentProfile trae users.phone.",
+            "details": "<info added on 2026-08-16T21:45:38.005Z>\nPlan: analizar el codebase para entender la estructura del perfil y los componentes mencionados antes de documentar la implementación completada.Based on my analysis of the codebase, here is the new text content for the subtask update:\n\nCreado mobile/src/features/profile/components/ProfileActions.tsx (143 líneas): fila de acciones entre la bio y la grilla de propiedades, al estilo de la referencia de Instagram que señaló Abraham. En perfil propio pinta dos botones iguales lado a lado ('Editar perfil' con PencilSimple y 'Guardados' con BookmarkSimple, el mismo ícono de SaveButton y la pantalla de Guardados); en perfil ajeno pinta un botón del mismo tamaño y forma para 'Contactar por WhatsApp' con WhatsappLogo fill. Se omite la fila entera si el agente no tiene teléfono. Petición de Abraham 2026-08-16: el texto va pegado a la izquierda y el ícono Phosphor al extremo derecho, logrado con justifyContent space-between. Los botones usan estilo local (superficie clara paper_2, alto 38, sin BlurView) en lugar de PrimaryButton — comentario ponytail: sin componente nuevo en el design system hasta que un segundo consumidor lo pida.\n\nModificado mobile/src/features/property-detail/utils/whatsapp.ts: extraída la función open_whatsapp_text(phone, texto) del cuerpo de open_whatsapp — esta última ahora la llama con el mensaje prefill de la propiedad. Permite que ProfileActions reuse el sanitizado del teléfono (replace /\\D/g) y el encodeURIComponent sin duplicar esas 3 líneas. Comentario ponytail: NO se usa open_whatsapp_ef en el botón del perfil porque su Alert '✓ Contacto enviado' mentiría — contactar al agente desde su perfil no crea lead CRM (exige property_id, que aquí no existe).\n\nModificado mobile/src/features/profile/hooks/useAgentProfile.ts: agregado users.phone al SELECT en la línea 86 (alias phone en AgentProfile) para que ProfileActions pueda omitir el botón de WhatsApp si es null o vacío.\n\nModificado mobile/src/features/profile/types.ts: agregado el campo phone: string | null a la interface AgentProfile.\n\nModificado mobile/src/features/profile/components/ProfileHeader.tsx: integrado ProfileActions bajo la bio, antes de la grilla (líneas 157–164). Se pasan is_own_profile, on_edit_profile, on_saved (callbacks del ProfileScreen), phone y full_name (para el saludo del mensaje). FIX de layout para Android: el botón flotante ⋯ caía sobre la tercera columna de estadísticas en dispositivos con inset superior pequeño — container.paddingTop ahora reserva exactamente la banda que ocupan los botones flotantes (s_8 + 40 + s_8), documentado en la línea 180 como cálculo explícito en lugar del s_40 estético anterior.\n\nModificado mobile/src/features/profile/components/ProfileMenu.tsx: removidas las dos entradas 'Editar perfil' y 'Guardados' del menú ProfileMenu (solo quedaron las que no viven en la superficie: Invitar agente, Ver tu agencia, Miembros de tu agencia, Ver tus leads, Cerrar sesión) para no dar dos caminos al mismo destino — patrón de un toque directo desde el botón visible.\n\nVerificado por CLI en iOS simulator (xcrun simctl) y Android emulator (adb shell): perfil propio muestra los dos botones lado a lado y navegan correctamente; perfil ajeno con teléfono muestra solo el botón de WhatsApp y abre el enlace wa.me con el mensaje prefill correcto; perfil ajeno sin teléfono omite la fila entera. El botón ⋯ del ProfileScreen ya no se solapa con las stats en Android. tsc --noEmit y lint verdes.\n</info added on 2026-08-16T21:45:38.005Z>",
+            "testStrategy": "tsc + lint + smoke por CLI en iOS y Android en ambos modos de perfil.",
+            "status": "done",
+            "dependencies": [],
+            "priority": "medium",
+            "subtasks": [],
+            "parentId": "undefined",
+            "updatedAt": "2026-08-16T21:45:44.745Z"
+          },
+          {
+            "id": 3,
+            "title": "Stats por modo y cierre (vault + verificación)",
+            "description": "ProfessionalStats: propio Publicaciones/Guardados/Me gusta, ajeno Publicaciones/Me gusta. Actualizar wiki/conceptos/perfil-agente.md, mapa-codebase, log y estado-actual.",
+            "details": "<info added on 2026-08-16T21:47:02.999Z>\nBased on the user request describing the completion of subtask 180.3, here is the new information that should be appended to the subtask's details:\n\nCompleted implementation of ProfessionalStats with mode-dependent visibility: owner profile shows Publicaciones/Guardados/Me gusta, external profiles show Publicaciones/Me gusta (Guardados removed from public view as the signal is how much people like the catalog, not how many archived it).\n\nVault ingestion:\n- wiki/conceptos/perfil-agente.md: added Ajuste #180 section documenting new stats signature, rationale for WhatsApp CTA outside CRM flow, and paddingTop rule (equals floating button height to prevent overlap)\n- wiki/codebase/mapa-codebase.md: updated profile feature row with new components and hooks\n- wiki/log.md: added entry for 2026-08-16\n- wiki/estado/estado-actual.md: updated current state narrative\n\nFinal verification passed: Jest 1084/1084 tests across 95 suites, TypeScript compilation 0 errors, lint 0 errors.\n</info added on 2026-08-16T21:47:02.999Z>",
+            "testStrategy": "Suite completa verde + smoke visual comparado contra la referencia anotada.",
+            "status": "done",
+            "dependencies": [],
+            "priority": "medium",
+            "subtasks": [],
+            "parentId": "undefined",
+            "updatedAt": "2026-08-16T21:47:09.762Z"
+          }
+        ],
+        "updatedAt": "2026-08-16T21:47:09.762Z"
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-08-16T19:21:30.955Z",
-      "taskCount": 179,
-      "completedCount": 96,
+      "lastModified": "2026-08-16T21:47:09.762Z",
+      "taskCount": 180,
+      "completedCount": 97,
       "tags": [
         "master"
       ]
