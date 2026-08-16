@@ -2,6 +2,14 @@
 
 Append-only. Prefijo: `## [YYYY-MM-DD] tipo | título`
 
+## [2026-08-16] polish | #186 El pin de los mapas, a dos tonos: contorno por tema + disco de color
+
+- Derivada de #185, reporte de Abraham al verlo en el dispositivo: "en los mapas se ve totalmente de un color sólido". Ahora el pin se dibuja con **contorno** (anillo + asta) y **disco interior** de color.
+- **`weight="duotone"` de Phosphor da exactamente esos dos paths** — usados al revés de lo habitual: el path principal (`color`) hace de contorno y el duotone (`duotoneColor`) de relleno. `duotoneOpacity={1}` es obligatorio: el default de Phosphor es 0.2 y lavaba el disco.
+- **Se conservó el código por operación** (renta salvia / venta arcilla), ahora en el disco: preguntado a Abraham, prefirió no perder la única señal que distingue renta de venta de un vistazo en el mapa. `MapPinIcon` mantiene su firma — la prop `color` pasó a significar el disco, así que ningún consumidor cambió.
+- **Primera detección de tema del dispositivo de la app** (`useColorScheme`; `userInterfaceStyle: 'automatic'` ya estaba en `app.config.js`): contorno tinta en claro, marfil en oscuro. ⚠️ **Limitado a iOS a propósito**: se verificó por CLI (`adb shell cmd uimode night yes`) que los tiles de Google en Android **no** oscurecen con el sistema — un contorno marfil allá sería un pin invisible sobre un mapa claro. El día que exista un `customMapStyle` oscuro, ese guard de plataforma es lo único que sobra.
+- Verificación: tsc 0, lint 0, Jest 1084/1084; smoke por CLI en iOS claro y oscuro (Apple Maps sí oscurece: el contorno marfil queda perfectamente legible) y Android en oscuro. Solo JS/UI → OTA.
+
 ## [2026-08-16] polish | #185 Pin único en toda la app — Phosphor `MapPinSimple`
 
 - Pedido de Abraham: el pin de paleta (`map-pin-simple`) sustituye a la gota (`MapPin`) **en todas partes**, tab de Mapa incluido y en las dos plataformas. Un solo cambio en `MapPinIcon.tsx` cubrió los tres mapas (global, detalle y el picker del wizard de publicación); los seis usos inline (dirección del detalle, LocationWall, chip de zona, sugerencias de colonia, estado vacío del feed, tab de Android) se migraron con `perl -pi \bMapPin\b`. Geometría intacta: `MapPinSimple` también remata en punta abajo-centro (y=232 del viewBox 256), así que `anchor={{0.5,1}}` y `centerOffset -size/2` siguen siendo correctos.
