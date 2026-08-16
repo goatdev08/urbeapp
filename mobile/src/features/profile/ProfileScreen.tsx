@@ -128,7 +128,10 @@ export function ProfileScreen({
   }
 
   function handle_saved() {
-    router.push('/saved');
+    // ⚠️ NO '/saved': ese tab está con href:null para agentes y expo-router
+    // descarta el push en silencio (el botón no hacía nada). Ver el docblock
+    // de app/(protected)/profile/saved.tsx.
+    router.push('/profile/saved');
   }
 
   function handle_my_listings() {
