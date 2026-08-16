@@ -1,6 +1,21 @@
 # Bitácora del proyecto
 
-Append-only. Prefijo: `## [2026-08-13] feat | #157 Búsqueda en el mapa estilo Google Maps (colonias DCAH/INEGI + perímetro + filtro espacial)
+Append-only. Prefijo: `## [YYYY-MM-DD] tipo | título`
+
+## [2026-08-16] polish | #179 Perfil estilo Instagram: grid 3 columnas, bio completa y header con estadísticas
+
+- Pedido de Abraham (con capturas de dos perfiles de Instagram como referencia): 3 columnas en la grilla, bio COMPLETA (se cortaba) y header reacomodado. Decisiones tomadas con él: celda con precio + badge de operación, grilla borde a borde (gap 2, sin radios), Guardados también a 3 col, tercer stat = **Guardados** en vez de "Cerrados".
+- **La card se volvió tile.** `PropertyGridCard` pasó de media 4/5 + body (título, zona, precio héroe con tick) a portada 3/4 a sangre con badge de operación arriba-izq y precio abajo-izq en blanco con `textShadow`: en 3 columnas la celda mide ~115-135px y el body no cabe. No es invención — el `.gcell` del mockup 10 de `urbea-identidad-visual.html` ya definía así la celda del perfil.
+- ⚠️ **Gotcha de layout que costó pensar:** el ancho de la celda se calcula (`grid_tile_width(useWindowDimensions().width)`, tokens `layout.grid_cols:3` + `grid_tile_gap:2`) y se pasa por prop en vez de usar `flex:1`. Con `columnWrapperStyle` + `gap`, un `flex:1` **estira las celdas de la última fila parcial** — una sola propiedad ocupaba el ancho completo de la pantalla. Verificado en Guardados, que tiene 5 items: la 2ª fila deja su hueco.
+- **La bio se cortaba por `numberOfLines={3}`** aunque `profile/edit.tsx` permite 280 caracteres. Ahora crece con el contenido y respeta los saltos de línea. El header pasó al patrón de Instagram: fila avatar (80px, antes 96) + estadísticas a la derecha, identidad alineada a la izquierda.
+- **Tercer stat.** Se evaluó "Vistas" y se descartó: `properties.view_count` nunca se puebla y las vistas viven en `events_raw` con RLS privada — exigiría un RPC security-definer + revisión de privacidad. `save_count`/`like_count` en cambio ya los mantiene el trigger de `20260701000001`, así que **Guardados** salió gratis (suma en cliente, sin backend nuevo).
+- 🔒 **Hallazgo de privacidad:** "Leads" es un dato privado y en un perfil AJENO la RLS devolvía 0 — el header pintaba "0 Leads" como si el agente no tuviera ninguno. Ahora `useAgentStats(agent_id, {include_leads})` ni siquiera consulta la tabla en perfiles ajenos, y ese perfil muestra Publicaciones · Guardados · Me gusta. Además `closed` salió del hook junto con su query: nadie lo consumía y el CRM tiene su propio `get_lead_stats` (`20260808000002`).
+- Otros dos arreglos que salieron del rediseño: `ProfessionalStats` ya no se oculta con todo en 0 (dejaba al avatar solo en una fila a medias) y `GridSkeleton` replica el layout real de la grilla (si diverge vuelve el salto de layout que existe para evitar).
+- Hallazgo del smoke: en Guardados el primer tile quedaba bajo el status bar — esa pantalla no tiene header de navegación propio y el padding lateral de las cards viejas lo disimulaba. Fix: `ListHeaderComponent` con `insets.top`.
+- Verificación: TDD en el hook (RED 6 fallos → GREEN, 8 tests), Jest 1084/1084 (95 suites), tsc 0, lint 0 errores. Smoke por CLI en iOS (iPhone 17 Pro) y Android (emulador urbea): perfil propio, perfil ajeno y Guardados. No se probó el long-press de quitar guardado — dispararía un DELETE real sobre datos de producción y su código no cambió.
+- Solo JS/UI: viaja por OTA, sin migraciones ni contratos nuevos.
+
+## [2026-08-13] feat | #157 Búsqueda en el mapa estilo Google Maps (colonias DCAH/INEGI + perímetro + filtro espacial)
 
 - Pedido de Abraham: buscar una colonia y que delimite su perímetro, con sugerencias mientras escribes. Hallazgo clave: el "catálogo INEGI" (72.1) era solo NOMBRES — cero geometría. Dataset elegido: **DCAH 2024 del INEGI** (75,516 polígonos nacionales; URLs vía el API de la biblioteca digital, la página es SPA con soft-404s). Decisión con el usuario: base propia PostGIS (patrón Zillow/Redfin), cobertura nacional (beta cerrada, no solo GDL).
 - Backend (TDD estricto, pgTAP 42-45): `mx_neighborhoods` (CVEGEO=source_key, geography(MultiPolygon), name_normalized generada con `private.normalize_search_text` — sin unaccent) + bbox precalculado en `mx_municipalities`; RPCs `search_places` / `get_neighborhood_geojson` / `properties_within_neighborhood` (A1 flaco, ST_Intersects usa el GiST existente).

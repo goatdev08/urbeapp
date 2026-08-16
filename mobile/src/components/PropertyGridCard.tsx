@@ -1,22 +1,28 @@
 /**
- * PropertyGridCard — card de propiedad para la grilla 2-columnas del perfil.
+ * PropertyGridCard — tile de propiedad para la grilla 3-columnas del perfil.
  *
- * Spec visual: .taskmaster/docs/exploraciones/003-kit/property-grid-card-preview.html
- * Reutilizable en el feed (#9) y cualquier pantalla con grid de propiedades.
+ * Spec visual: mockup 10 "Perfil" de urbea-identidad-visual.html (.gcell,
+ * L446-461): tile de portada 3/4 a sangre, precio abajo-izquierda en blanco
+ * sobre la imagen. Referencia de composición: perfil de Instagram (Abraham,
+ * 2026-08-16) — grilla borde a borde, sin radios ni separación visible.
+ *
+ * ⚠️ 179.2 — antes era una CARD 2-columnas (media 4/5 + body con título, zona
+ * y precio héroe con tick Salvia). En 3 columnas la celda mide ~115-135 px y
+ * ese body no cabe: se sustituye por el tile. Lo que sobrevive del diseño
+ * anterior es lo que sí se lee a ese tamaño: badge de operación y precio.
  *
  * Estructura:
- *   - Card: Pressable con sombra (outer) + View con overflow:hidden (inner/clip).
- *     Dos capas necesarias en RN para tener shadow visible + borderRadius clip.
- *   - Media: aspect-ratio 4/5. Image si hay thumbnail_url; placeholder café sólido
+ *   - Pressable con overflow:hidden. El ANCHO lo fija el padre (`width`), no
+ *     flex:1: con `columnWrapperStyle` + gap, un flex:1 estira las celdas de
+ *     la última fila parcial (1 sola propiedad = tile de ancho completo).
+ *   - Media: aspect-ratio 3/4. Image si hay portada; placeholder café sólido
  *     con el isotipo de firma (IsotipoMark) tenue si no (#32).
- *   - Badge operación (arriba-izq): Renta (primary) / Venta (accent) / Renta-Venta (accent).
- *   - Badge Pausada (junto a op-badge si status==='paused'): pill glass claro.
- *   - Overlay de atenuación cuando pausada: rgba oscuro sobre el media.
- *   - Body: título (property_type label), zona (address), precio héroe con tick Salvia.
+ *   - Badge operación (arriba-izq): Renta (primary) / Venta (accent).
+ *   - Badge Pausada (junto al de operación si status==='paused') + overlay.
+ *   - Precio (abajo-izq): blanco con textShadow — sin degradado, que exigiría
+ *     expo-linear-gradient (módulo nativo ausente del dev build).
  *
- * ponytail: sin BlurView en el pause-badge (rgba 92% basta para el demo).
- * Placeholder de miniatura = color sólido (sin expo-linear-gradient, que exigiría
- * módulo nativo) + IsotipoMark (isotipo vectorial react-native-svg desde #43.4).
+ * Reutilizado por: PropertiesGrid (perfil) y SavedGridItem (guardados).
  */
 
 import React from 'react';
@@ -26,7 +32,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 
 import { format_price } from '@/lib/formatPrice';
-import { colors, fonts, radii, shadows } from '@/theme/theme';
+import { colors, fonts } from '@/theme/theme';
 import { IsotipoMark } from '@/components/IsotipoMark';
 import type { GridProperty } from '@/features/profile/types';
 
@@ -56,16 +62,19 @@ export interface PropertyGridCardProps {
   onPress: () => void;
   /** Long-press opcional — usado en "Guardados" para quitar con confirmación. */
   onLongPress?: () => void;
+  /**
+   * Ancho exacto del tile en px, calculado por la grilla desde el ancho de
+   * pantalla. Sin él el tile no ocuparía espacio (no hay flex:1 a propósito).
+   */
+  width: number;
 }
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 // ─── Componente ───────────────────────────────────────────────────────────────
 
 // React.memo: en grillas con RefreshControl/quitado optimista, cada setState del
 // padre re-renderizaba todas las celdas; con memo solo re-renderiza la que cambia.
-export const PropertyGridCard = React.memo(function PropertyGridCard({ item, onPress, onLongPress }: PropertyGridCardProps): React.JSX.Element {
-  const { price, currency, operation_type, property_type, status, address, thumbnail_url, posterUrl } = item;
+export const PropertyGridCard = React.memo(function PropertyGridCard({ item, onPress, onLongPress, width }: PropertyGridCardProps): React.JSX.Element {
+  const { price, currency, operation_type, property_type, status, thumbnail_url, posterUrl } = item;
 
   const is_paused    = status === 'paused';
   const is_sale      = operation_type === 'sale' || operation_type === 'both';
@@ -82,85 +91,55 @@ export const PropertyGridCard = React.memo(function PropertyGridCard({ item, onP
       accessibilityRole="button"
       accessibilityLabel={`${prop_label}, ${op_label}, ${format_price(price, currency)}`}
       style={({ pressed }) => [
-        styles.card_shadow,
-        pressed && styles.card_pressed,
+        styles.tile,
+        { width },
+        pressed && styles.tile_pressed,
       ]}
     >
-      {/* Inner: clips el contenido al borderRadius de la card */}
-      <View style={styles.card_clip}>
+      {cover_uri !== null ? (
+        <Image
+          source={{ uri: cover_uri }}
+          style={StyleSheet.absoluteFill}
+          contentFit="cover"
+          transition={200}
+        />
+      ) : (
+        /* ponytail: placeholder café sólido (paper_2) — sin expo-linear-gradient
+           para no exigir módulo nativo (el dev build no lo incluye); un tono plano
+           basta como fondo de la miniatura ausente. */
+        <View style={[StyleSheet.absoluteFill, styles.placeholder]}>
+          {/* Isotipo de firma como placeholder de miniatura ausente (#32). */}
+          <IsotipoMark size={26} color={colors.gray_2} />
+        </View>
+      )}
 
-        {/* ── Media ──────────────────────────────────────────────────────────── */}
-        <View style={styles.media}>
-          {cover_uri !== null ? (
-            <Image
-              source={{ uri: cover_uri }}
-              style={StyleSheet.absoluteFill}
-              contentFit="cover"
-              transition={200}
-            />
-          ) : (
-            /* ponytail: placeholder café sólido (paper_2) — sin expo-linear-gradient
-               para no exigir módulo nativo (el dev build no lo incluye); un tono plano
-               basta como fondo de la miniatura ausente. */
-            <View style={[StyleSheet.absoluteFill, styles.placeholder_gradient]}>
-              {/* Isotipo de firma como placeholder de miniatura ausente (#32). */}
-              <View style={styles.placeholder_icon}>
-                <IsotipoMark size={34} color={colors.gray_2} />
-              </View>
-            </View>
-          )}
+      {/* Overlay de atenuación cuando la propiedad está pausada */}
+      {is_paused && <View style={styles.paused_overlay} />}
 
-          {/* Overlay de atenuación cuando la propiedad está pausada */}
-          {is_paused && <View style={styles.paused_overlay} />}
-
-          {/* ── Row de badges (arriba-izq) ─────────────────────────────────── */}
-          <View style={styles.top_row}>
-            {/* Badge operación */}
-            <View style={[styles.op_badge, is_sale && styles.op_badge_sale]}>
-              <Text style={styles.op_badge_text}>{op_label}</Text>
-            </View>
-
-            {/* Badge "Pausada" — solo si status === 'paused' */}
-            {is_paused && (
-              <View style={styles.pause_badge}>
-                <View style={styles.pause_dot} />
-                <Text style={styles.pause_badge_text}>Pausada</Text>
-              </View>
-            )}
-          </View>
+      {/* ── Row de badges (arriba-izq) ───────────────────────────────────── */}
+      <View style={styles.top_row}>
+        <View style={[styles.op_badge, is_sale && styles.op_badge_sale]}>
+          <Text style={styles.op_badge_text}>{op_label}</Text>
         </View>
 
-        {/* ── Body ───────────────────────────────────────────────────────────── */}
-        <View style={styles.body}>
-          {/* Título: tipo de propiedad en display font */}
-          <Text style={styles.title} numberOfLines={1}>
-            {prop_label}
-          </Text>
-
-          {/* Zona: address con indicador visual (dot — sin SVG) */}
-          {address !== null && (
-            <View style={styles.zone_row}>
-              {/* ponytail: dot como View — react-native-svg no instalado; suficiente para el demo */}
-              <View style={styles.zone_dot} />
-              <Text style={styles.zone_text} numberOfLines={1}>
-                {address}
-              </Text>
-            </View>
-          )}
-
-          {/* Precio héroe con tick Salvia */}
-          <View style={styles.price_block}>
-            <View style={styles.price_tick} />
-            <View style={styles.price_row}>
-              <Text style={styles.price_text}>{format_price(price, currency)}</Text>
-              {show_per_mes && (
-                <Text style={styles.price_per}>/mes</Text>
-              )}
-            </View>
+        {is_paused && (
+          <View style={styles.pause_badge}>
+            <Text style={styles.pause_badge_text}>Pausada</Text>
           </View>
-        </View>
-
+        )}
       </View>
+
+      {/* ── Precio (abajo-izq, sobre la portada) ─────────────────────────── */}
+      <Text
+        style={styles.price_text}
+        numberOfLines={1}
+        // Precios largos ("$19,490,000 MXN") en ~115px: encoge en vez de cortar.
+        adjustsFontSizeToFit
+        minimumFontScale={0.75}
+      >
+        {format_price(price, currency)}
+        {show_per_mes ? <Text style={styles.price_per}>/mes</Text> : null}
+      </Text>
     </Pressable>
   );
 });
@@ -168,155 +147,82 @@ export const PropertyGridCard = React.memo(function PropertyGridCard({ item, onP
 // ─── Estilos ──────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  // ── Card (dos capas: shadow + clip) ─────────────────────────────────────────
-  // En RN iOS, overflow:'hidden' suprime las sombras. Se separan responsabilidades:
-  //   card_shadow → sombra + borderRadius + fondo blanco (sin overflow:hidden)
-  //   card_clip   → overflow:hidden + mismo borderRadius (clips la miniatura y bordes)
-  card_shadow: {
-    flex: 1,
-    borderRadius: radii.r_16,
-    backgroundColor: '#FFFFFF', // ponytail: superficie base — sin token white en theme
-    ...shadows.sm,
-  },
-  card_pressed: {
-    transform: [{ scale: 0.985 }],
-  },
-  card_clip: {
-    flex: 1,
-    borderRadius: radii.r_16,
+  // ── Tile ─────────────────────────────────────────────────────────────────────
+  // Sin sombra ni borderRadius: la grilla es borde a borde (Instagram) y la
+  // separación entre celdas la da el gap del columnWrapper, no un margen aquí.
+  tile: {
+    aspectRatio: 3 / 4,
     overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: colors.paper_3,
+    backgroundColor: colors.paper_2,
   },
-
-  // ── Media ────────────────────────────────────────────────────────────────────
-  media: {
-    aspectRatio: 4 / 5,
-    overflow: 'hidden',
+  tile_pressed: {
+    opacity: 0.82,
   },
-  placeholder_gradient: {
+  placeholder: {
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.paper_2,
-  },
-  placeholder_icon: {
     opacity: 0.55, // isotipo tenue, no intrusivo
   },
   paused_overlay: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(30,22,12,0.18)',
+    backgroundColor: 'rgba(30,22,12,0.28)',
   },
 
   // ── Badges ───────────────────────────────────────────────────────────────────
   top_row: {
     position: 'absolute',
-    top: 9,
-    left: 9,
-    right: 9,
+    top: 5,
+    left: 5,
+    right: 5,
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 6,
+    gap: 4,
     alignItems: 'flex-start',
   },
   op_badge: {
     backgroundColor: colors.primary,
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-    borderRadius: radii.r_pill,
+    paddingVertical: 2.5,
+    paddingHorizontal: 7,
+    borderRadius: 999,
   },
   op_badge_sale: {
     backgroundColor: colors.accent,
   },
   op_badge_text: {
     fontFamily: fonts.sans_bold,
-    fontSize: 11,
+    fontSize: 9.5,
     color: '#FFFFFF', // ponytail: texto blanco sobre badge — sin token white en theme
-    letterSpacing: 0.1,
   },
   pause_badge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
     backgroundColor: 'rgba(246,242,235,0.92)',
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-    borderRadius: radii.r_pill,
-    borderWidth: 1,
-    borderColor: colors.silver,
-  },
-  pause_dot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: colors.gray_2,
+    paddingVertical: 2.5,
+    paddingHorizontal: 7,
+    borderRadius: 999,
   },
   pause_badge_text: {
     fontFamily: fonts.sans_bold,
-    fontSize: 11,
+    fontSize: 9.5,
     color: colors.ink,
   },
 
-  // ── Body ─────────────────────────────────────────────────────────────────────
-  body: {
-    paddingTop: 11,
-    paddingHorizontal: 12,
-    paddingBottom: 13,
-  },
-  title: {
-    fontFamily: fonts.display,
-    fontSize: 14.5,
-    lineHeight: 17,    // ~1.18 del spec
-    letterSpacing: -0.15,
-    color: colors.ink,
-  },
-  zone_row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    marginTop: 3,
-  },
-  zone_dot: {
-    width: 5,
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: colors.gray_2,
-    opacity: 0.7,
-    flexShrink: 0,
-  },
-  zone_text: {
-    flex: 1,
-    fontFamily: fonts.sans,
-    fontSize: 11.5,
-    color: colors.gray_2,
-  },
-
-  // ── Precio héroe ─────────────────────────────────────────────────────────────
-  // Replica el ::before pseudo-element del HTML: línea de 26x3 (tick Salvia)
-  // sobre el precio, con 9px de espacio desde la zona.
-  price_block: {
-    marginTop: 9,
-  },
-  price_tick: {
-    width: 26,
-    height: 3,
-    backgroundColor: colors.primary,
-    borderRadius: 3,
-    marginBottom: 6,
-  },
-  price_row: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 4,
-  },
+  // ── Precio sobre la portada ──────────────────────────────────────────────────
   price_text: {
+    position: 'absolute',
+    left: 6,
+    right: 6,
+    bottom: 5,
     fontFamily: fonts.display,
-    fontSize: 18,
-    letterSpacing: -0.18,
-    color: colors.ink,
+    fontSize: 12.5,
+    color: '#FFFFFF',
+    letterSpacing: -0.1,
+    // Legibilidad sobre portadas claras sin degradado (módulo nativo ausente).
+    textShadowColor: 'rgba(0,0,0,0.6)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
   },
   price_per: {
     fontFamily: fonts.sans_semibold,
-    fontSize: 11.5,
-    color: colors.gray_2,
+    fontSize: 9.5,
   },
 });

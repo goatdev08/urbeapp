@@ -87,7 +87,11 @@ export function ProfileScreen({
   const insets = useSafeAreaInsets();
   const { signOut, user } = useAuth();
   const { loading, error, data } = useAgentProfile(agent_id);
-  const { loading: stats_loading, stats } = useAgentStats(agent_id);
+  // include_leads: `leads` es privado — en un perfil ajeno la RLS devuelve 0 y
+  // el header pintaba "0 Leads" como si el agente no tuviera ninguno (179.1).
+  const { loading: stats_loading, stats } = useAgentStats(agent_id, {
+    include_leads: is_own_profile,
+  });
   // Owner de agencia → opción "Invitar agentes" en el menú (tarea #34)
   const { isOwner } = useAgencyRole();
   const [menu_visible, set_menu_visible] = useState(false);
@@ -253,10 +257,12 @@ export function ProfileScreen({
         showsVerticalScrollIndicator={false}
       >
         {/* Cabecera del agente */}
-        <ProfileHeader profile={data} stats={stats} loading={stats_loading} />
-
-        {/* Separador visual entre header y la grilla */}
-        <View style={styles.divider} />
+        <ProfileHeader
+          profile={data}
+          stats={stats}
+          loading={stats_loading}
+          is_own_profile={is_own_profile}
+        />
 
         {/* Grilla de propiedades */}
         <PropertiesGrid
@@ -318,12 +324,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.paper_2,
-  },
-
-  divider: {
-    height: 1,
-    backgroundColor: colors.paper_3,
-    marginHorizontal: spacing.s_16,
-    marginBottom: spacing.s_16,
   },
 });

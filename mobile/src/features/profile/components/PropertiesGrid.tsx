@@ -1,20 +1,23 @@
 /**
- * PropertiesGrid — grilla 2 columnas de propiedades del agente.
+ * PropertiesGrid — grilla 3 columnas de propiedades del agente.
  *
- * Usa FlatList con numColumns={2} (no ScrollView+map) para aprovechar
- * el renderizado virtualizado.
+ * Usa FlatList con numColumns={layout.grid_cols} (no ScrollView+map) para
+ * aprovechar el renderizado virtualizado.
+ *
+ * ⚠️ 179.2 — pasó de 2 columnas con padding lateral a 3 columnas BORDE A BORDE
+ * (referencia: perfil de Instagram, Abraham 2026-08-16). El ancho de celda se
+ * calcula con grid_tile_width() y se pasa al tile: con `gap` + flex:1 la última
+ * fila parcial estiraba sus celdas a todo el ancho, justo lo que la referencia
+ * no hace.
  *
  * Props:
  *   owner_user_id  — user_id del agente cuyas propiedades se muestran.
  *   onPressProperty — callback con el property_id al tocar una celda.
  *
  * Estados:
- *   loading → GridSkeleton (grilla fantasma).
+ *   loading → GridSkeleton (grilla fantasma, mismo layout: no salta).
  *   error   → texto discreto con el mensaje.
  *   vacío   → FlatList vacío; ListEmptyComponent lo maneja 16.6.
- *
- * Celda: <PropertyGridCard> (implementado en 16.5). flex:1 en la card +
- * aspectRatio:4/5 en el media — sin cálculo manual de CELL_WIDTH/CELL_HEIGHT.
  */
 
 import React from 'react';
@@ -22,25 +25,24 @@ import {
   FlatList,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { GridSkeleton } from '@/components/GridSkeleton';
 import { PropertyGridCard } from '@/components/PropertyGridCard';
-import { colors, floating_content_clearance, spacing, type_scale } from '@/theme/theme';
+import {
+  colors,
+  floating_content_clearance,
+  grid_tile_width,
+  layout,
+  spacing,
+  type_scale,
+} from '@/theme/theme';
 import { usePropertiesGrid } from '../hooks/usePropertiesGrid';
 import type { GridProperty } from '../types';
 import { EmptyState } from './EmptyState';
-
-// ---------------------------------------------------------------------------
-// Constantes de layout
-// ---------------------------------------------------------------------------
-
-// ponytail: CELL_WIDTH/CELL_HEIGHT eliminados — PropertyGridCard usa flex:1 +
-// aspectRatio:4/5 en el media, el grid calcula el ancho automáticamente.
-const HORIZONTAL_PADDING = spacing.s_16;
-const COLUMN_GAP = spacing.s_8;
 
 // ---------------------------------------------------------------------------
 // Tipos de props
@@ -74,6 +76,8 @@ export function PropertiesGrid({
   under_floating_tab_bar = false,
 }: PropertiesGridProps): React.JSX.Element {
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
+  const tile_width = grid_tile_width(width);
   const { loading, error, data } = usePropertiesGrid(owner_user_id);
 
   if (loading) {
@@ -93,7 +97,7 @@ export function PropertiesGrid({
     <FlatList<GridProperty>
       data={data ?? []}
       keyExtractor={(item) => item.id}
-      numColumns={2}
+      numColumns={layout.grid_cols}
       columnWrapperStyle={styles.column_wrapper}
       contentContainerStyle={[
         styles.list_content,
@@ -107,6 +111,7 @@ export function PropertiesGrid({
       renderItem={({ item }) => (
         <PropertyGridCard
           item={item}
+          width={tile_width}
           onPress={() => onPressProperty(item.id)}
         />
       )}
@@ -135,12 +140,12 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingHorizontal: spacing.s_16,
   },
+  // Borde a borde: sin padding horizontal (la portada llega al filo).
   list_content: {
-    paddingHorizontal: HORIZONTAL_PADDING,
     paddingBottom: spacing.s_24,
   },
   column_wrapper: {
-    gap: COLUMN_GAP,
-    marginBottom: COLUMN_GAP,
+    gap: layout.grid_tile_gap,
+    marginBottom: layout.grid_tile_gap,
   },
 });

@@ -1,15 +1,19 @@
 /**
- * GridSkeleton — placeholder de carga para grillas 2-col en modo gestión
- * (Guardados, grilla del perfil). Cards fantasma con pulso de opacidad.
+ * GridSkeleton — placeholder de carga para la grilla de portadas 3-col en modo
+ * gestión (Guardados, grilla del perfil). Tiles fantasma con pulso de opacidad.
  *
  * Complemento claro del FeedSkeleton (oscuro/beam): en fondo paper el pulso
  * sutil comunica "cargando" sin el barrido, y evita el salto de layout de un
  * ActivityIndicator centrado → grilla (pulido flash 2026-07-06).
  *
- * ponytail: número fijo de cards fantasma; sin variantes de tamaño.
+ * ⚠️ 179.2 — replica el layout REAL de la grilla (3 col borde a borde, tile
+ * 3/4, gap hairline, sin líneas de texto debajo). Si diverge vuelve el salto
+ * de layout que este componente existe para evitar.
+ *
+ * ponytail: número fijo de tiles fantasma; sin variantes de tamaño.
  */
 import { useEffect } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, {
   cancelAnimation,
   Easing,
@@ -19,11 +23,14 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { colors, radii, spacing } from '@/theme/theme';
+import { colors, grid_tile_width, layout } from '@/theme/theme';
 
-const CARD_COUNT = 6;
+/** 3 filas completas: cubre de sobra el alto visible de cualquier pantalla. */
+const TILE_COUNT = layout.grid_cols * 3;
 
 export function GridSkeleton() {
+  const { width } = useWindowDimensions();
+  const tile_width = grid_tile_width(width);
   const pulse = useSharedValue(0.5);
 
   useEffect(() => {
@@ -41,12 +48,8 @@ export function GridSkeleton() {
 
   return (
     <View style={styles.root}>
-      {Array.from({ length: CARD_COUNT }, (_, i) => (
-        <Animated.View key={i} style={[styles.card, pulse_style]}>
-          <View style={styles.thumb} />
-          <View style={styles.line_md} />
-          <View style={styles.line_sm} />
-        </Animated.View>
+      {Array.from({ length: TILE_COUNT }, (_, i) => (
+        <Animated.View key={i} style={[styles.tile, { width: tile_width }, pulse_style]} />
       ))}
     </View>
   );
@@ -57,33 +60,11 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: spacing.s_12,
-    paddingHorizontal: spacing.s_16,
-    paddingTop: spacing.s_16,
+    gap: layout.grid_tile_gap,
     backgroundColor: colors.paper,
   },
-  card: {
-    // 2 columnas: mitad del ancho menos el gap.
-    flexBasis: '47%',
-    flexGrow: 1,
-    gap: spacing.s_8,
-  },
-  thumb: {
-    aspectRatio: 0.8,
-    borderRadius: radii.r_16,
+  tile: {
+    aspectRatio: 3 / 4,
     backgroundColor: colors.paper_3,
-  },
-  line_md: {
-    height: 14,
-    width: '70%',
-    borderRadius: radii.r_4,
-    backgroundColor: colors.paper_3,
-  },
-  line_sm: {
-    height: 12,
-    width: '45%',
-    borderRadius: radii.r_4,
-    backgroundColor: colors.paper_2,
-    marginBottom: spacing.s_8,
   },
 });
