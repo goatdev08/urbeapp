@@ -85,6 +85,24 @@ comment on column public.ads.paused_by_suspension is
   'ads con este valor en true reviven al reactivar la organización -- sin '
   'esta columna, reactivar resucitaría un ad que un admin apagó a propósito.';
 
+-- CHECK (hallazgo del guardián, 2026-08-16): 'paused' SIN paused_at es un
+-- estado inalcanzable por el SUT -- el único camino a 'paused' es
+-- active->paused (abajo), que siempre lo estampa -- pero si algo lo
+-- produjera igual (backfill, INSERT directo de service_role), la
+-- reactivación devolvería CERO días recuperados EN SILENCIO, justo lo que D2
+-- (Abraham) prohíbe. public.ads nace vacía en 169.1 -- entra validado, sin
+-- necesidad de NOT VALID.
+alter table public.ads
+  drop constraint if exists ads_paused_at_matches_status;
+alter table public.ads
+  add constraint ads_paused_at_matches_status
+    check (status <> 'paused' or paused_at is not null);
+
+comment on constraint ads_paused_at_matches_status on public.ads is
+  'Anti-pérdida silenciosa (D2, 169.2): un ad en paused SIEMPRE debe traer '
+  'paused_at -- sin este CHECK, un paused sin paused_at reactivaría con '
+  'ends_at intacto en vez de tronar, perdiendo días pagados sin rastro.';
+
 -- ════════════════════════════════════════════════════════════════════════════
 -- 2) Trigger: public.ads — máquina de estados + auditoría obligatoria.
 -- ════════════════════════════════════════════════════════════════════════════
@@ -129,11 +147,12 @@ begin
   if old.status = 'active' and new.status = 'paused' then
     new.paused_at := now();
   elsif old.status = 'paused' and new.status = 'active' then
-    -- coalesce: un ad sembrado DIRECTO en 'paused' (fixture de test, nunca
-    -- pasó por la rama active->paused de este trigger) puede traer
-    -- paused_at NULL -- sin días que devolver, ends_at queda intacto en vez
-    -- de propagar NULL y violar el NOT NULL de la columna.
-    new.ends_at := old.ends_at + coalesce(now() - old.paused_at, interval '0');
+    -- El CHECK ads_paused_at_matches_status garantiza que un ad en 'paused'
+    -- SIEMPRE trae paused_at no nulo (el único camino a 'paused' es
+    -- active->paused, arriba, que lo estampa) -- sin coalesce: si paused_at
+    -- llegara NULL aquí sería un bug real, no un estado legítimo a tolerar
+    -- en silencio (D2: jamás perder días pagados sin que reviente).
+    new.ends_at := old.ends_at + (now() - old.paused_at);
     new.paused_at := null;
     new.paused_by_suspension := false;
   end if;

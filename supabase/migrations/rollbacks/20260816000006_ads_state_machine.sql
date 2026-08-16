@@ -5,9 +5,9 @@
 --    pending_approval->rejected}, sin active<->suspended ni cascada a ads.
 -- 2) Elimina el trigger + función nuevos de public.ads
 --    (ads_status_change / handle_ad_status_change).
--- 3) Elimina las 2 columnas de contabilidad de public.ads
---    (paused_at, paused_by_suspension) -- aditivas de esta migración, sin
---    nada más dependiendo de ellas.
+-- 3) Elimina el CHECK ads_paused_at_matches_status y las 2 columnas de
+--    contabilidad de public.ads (paused_at, paused_by_suspension) --
+--    aditivas de esta migración, sin nada más dependiendo de ellas.
 --
 -- Re-ejecutable: create or replace + drop trigger/function/column if exists.
 
@@ -84,8 +84,9 @@ drop trigger if exists ads_status_change on public.ads;
 drop function if exists public.handle_ad_status_change();
 
 -- ════════════════════════════════════════════════════════════════════════════
--- 3) public.ads — quita las 2 columnas de contabilidad de D2.
+-- 3) public.ads — quita el CHECK y las 2 columnas de contabilidad de D2.
 -- ════════════════════════════════════════════════════════════════════════════
 
+alter table public.ads drop constraint if exists ads_paused_at_matches_status;
 alter table public.ads drop column if exists paused_at;
 alter table public.ads drop column if exists paused_by_suspension;
