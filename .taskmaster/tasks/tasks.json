@@ -7972,7 +7972,7 @@
         "id": "157",
         "title": "feat: búsqueda en mapa con colonias (autocomplete + perímetro + filtro espacial)",
         "description": "Búsqueda estilo Google Maps en el mapa: autocomplete server-side de colonias + municipios (cobertura nacional), al seleccionar colonia se dibuja su perímetro (Polygon), se encuadra y se filtran las propiedades dentro (ST_Intersects). Datos en base propia (PostGIS, patrón Zillow/Redfin): dataset abierto de polígonos de colonias cargado a public.mx_neighborhoods. Aprobado por Abraham 2026-08-13 (plan valiant-dancing-quokka).",
-        "details": "Supersede el diseño sin geometría de 74.1; alimenta 74.7/74.8; deja base para #119 (backfill zone por ST_Contains — tarea derivada futura). Decisiones D1-D9 en el plan: geom geography(MultiPolygon,4326) (GiST de properties.location sirve tal cual); normalización sin unaccent (private.normalize_search_text + columna generada + GIN trgm); bbox municipal precalculado; municipio reusa filters.area (círculo del bbox, precedente #56); colonia = estado local de MapScreen + 3er parámetro de fetchMapProperties (NO entra a FilterState); import por psql \\copy staging + upsert por source_key (jamás db push; migraciones por apply_migration); colonia y area mutuamente excluyentes, el polígono persiste al panear. DOS PRs: PR-A backend (subtareas 1-4, incluye import remoto validado), PR-B mobile (5-8) → OTA. Todo aditivo, rollbacks presentes, ningún contrato existente cambia.\n\nDERIVADAS: #158 (usuario/smoke 157.8) · #159 (ranking homónimas + absorbió #163) · #160 · #161 · #164 · #165 (review PRs #76/#77) · #115 (absorbió #162, FilterSheet). Tras la auditoría 2026-08-14: #162 y #163 quedaron canceladas por fusión.",
+        "details": "Supersede el diseño sin geometría de 74.1; alimenta 74.7/74.8; deja base para #119 (backfill zone por ST_Contains — tarea derivada futura). Decisiones D1-D9 en el plan: geom geography(MultiPolygon,4326) (GiST de properties.location sirve tal cual); normalización sin unaccent (private.normalize_search_text + columna generada + GIN trgm); bbox municipal precalculado; municipio reusa filters.area (círculo del bbox, precedente #56); colonia = estado local de MapScreen + 3er parámetro de fetchMapProperties (NO entra a FilterState); import por psql \\copy staging + upsert por source_key (jamás db push; migraciones por apply_migration); colonia y area mutuamente excluyentes, el polígono persiste al panear. DOS PRs: PR-A backend (subtareas 1-4, incluye import remoto validado), PR-B mobile (5-8) → OTA. Todo aditivo, rollbacks presentes, ningún contrato existente cambia.\n\nDERIVADAS: #158 (usuario/smoke 157.8) · #159 (ranking homónimas + absorbió #163) · #160 · #161 · #164 · #165 (review PRs #76/#77) · #115 (absorbió #162, FilterSheet). Tras la auditoría 2026-08-14: #162 y #163 quedaron canceladas por fusión.\nDERIVADAS: #175 (guardian 168.1)",
         "testStrategy": "Backend: pgTAP 42/43/44 + suite existente (supabase test db local); post-import queries de verificación contra el remoto. Mobile: Jest suite completa (1031 existentes + nuevos), pnpm tsc --noEmit, pnpm lint. Smoke emulador Android CLI-only: \"provi\" → sugerencias; colonia → perímetro + encuadre + solo pins internos; chip quita todo; municipio → encuadre + chip área; pill reemplaza polígono; force-stop al final.",
         "status": "done",
         "dependencies": [
@@ -8212,7 +8212,7 @@
         "id": "168",
         "title": "feat(039-A): organización con capacidad de publicidad (can_advertise) + invitación por correo",
         "description": "Origen: exploración 039 (.taskmaster/docs/exploraciones/039-cuenta-comercial-anunciantes.md), aprobada por Abraham el 2026-08-14. Tarea A de 4 encadenadas (168→169→170→171, +172 deferred). Generaliza `agencies` a 'organización con capacidades' en vez de crear una entidad 'business' aparte: una inmobiliaria ACTIVA publicidad sobre su misma cuenta (la enciende el admin de Urbea en beta; solo la organización puede tener la capacidad, nunca un agente individual) y una cuenta solo-publicidad es una organización con únicamente can_advertise. Reusa TODA la membresía/invitaciones/RLS de #71 sin duplicar. Pieza nueva: la invitación del owner llega POR CORREO ELECTRÓNICO.",
-        "details": "MODELO: ALTER TABLE agencies ADD COLUMN can_publish_properties boolean default true, can_advertise boolean default false, advertiser_category (enum nuevo: credito_hipotecario | seguro | mudanza | limpieza | notaria | avaluo | otro, nullable) + CHECK 'al menos una capacidad'. Booleanos y NO un enum `kind`: el default aditivo es literal (cero backfill, toda fila preexistente queda (true,false,null) = comportamiento exacto de hoy) y no paga el gotcha ALTER TYPE ADD VALUE. Helper private.org_can_advertise(id) (false para inexistente/deleted/inactiva/sin capacidad). RPC set_org_advertising_atomic (solo service_role, escribe admin_actions en la misma transacción, fault-injection = rollback total). admin_create_agency_atomic gana 2 params con DEFAULT al final (contrato publicado intacto). Ningún authenticated (ni el owner) puede poner can_advertise=true por PostgREST — verificar por impersonación JWT; si el grant de 0008 lo permite, revocar esas columnas. El invariante 'máx 1 organización activa por persona' sigue sostenido SOLO por agency_members_one_active_per_user. Efecto colateral bueno: el 409 de concurrencia de mint-upload-url está scoped por agent_id sobre property_videos, así que ad_creatives (tarea 169, tabla propia) nunca colisiona.\nINVITACIÓN POR CORREO (hallazgo): hoy NINGÚN flujo manda correo — create-invitation devuelve un código que la UI muestra una vez y admin-create-agency usa auth.admin.generateLink({type:'invite'}) (_shared/clients.ts:180) que GENERA el link pero NO lo envía. La infra existe a medias (#72.3/72.5, probada E2E con Mailpit local) pero el SMTP remoto de Resend NO está configurado (falta API key + dominio ~$10–15/año; docs/TODO-pendientes.md §1 desde 2026-07-31). Camino: inviteUserByEmail (footprint mínimo) sobre una EF de Resend propia; construir y verificar E2E en LOCAL contra Mailpit (localhost:54324); el flip remoto es checklist de despliegue de Abraham y NO bloquea la tarea. Si el envío falla, la operación no deja basura (compensación deleteUser + atomicidad). El action_link deja de ser el único canal en la UI admin (respaldo).\nFOOTPRINT: supabase/migrations/2026…_org_advertising_capability.sql + _set_org_advertising_rpc.sql (+rollbacks, CRÍTICA), supabase/tests/NN_org_advertising_test.sql (pgTAP), supabase/functions/_shared/auth_user.ts + clients.ts (invite→correo, CRÍTICA), supabase/functions/admin-create-agency/ (CRÍTICA), docs/TODO-pendientes.md (checklist Resend). Deps 74/75 son ORDEN DE PRIORIDAD (después de cerrar la Ola 1), no técnicas — técnicamente podría arrancar hoy. Producción viva §0.5: todo aditivo, select('*') sobre agencies desde clientes v1.0.x sigue funcionando.",
+        "details": "MODELO: ALTER TABLE agencies ADD COLUMN can_publish_properties boolean default true, can_advertise boolean default false, advertiser_category (enum nuevo: credito_hipotecario | seguro | mudanza | limpieza | notaria | avaluo | otro, nullable) + CHECK 'al menos una capacidad'. Booleanos y NO un enum `kind`: el default aditivo es literal (cero backfill, toda fila preexistente queda (true,false,null) = comportamiento exacto de hoy) y no paga el gotcha ALTER TYPE ADD VALUE. Helper private.org_can_advertise(id) (false para inexistente/deleted/inactiva/sin capacidad). RPC set_org_advertising_atomic (solo service_role, escribe admin_actions en la misma transacción, fault-injection = rollback total). admin_create_agency_atomic gana 2 params con DEFAULT al final (contrato publicado intacto). Ningún authenticated (ni el owner) puede poner can_advertise=true por PostgREST — verificar por impersonación JWT; si el grant de 0008 lo permite, revocar esas columnas. El invariante 'máx 1 organización activa por persona' sigue sostenido SOLO por agency_members_one_active_per_user. Efecto colateral bueno: el 409 de concurrencia de mint-upload-url está scoped por agent_id sobre property_videos, así que ad_creatives (tarea 169, tabla propia) nunca colisiona.\nINVITACIÓN POR CORREO (hallazgo): hoy NINGÚN flujo manda correo — create-invitation devuelve un código que la UI muestra una vez y admin-create-agency usa auth.admin.generateLink({type:'invite'}) (_shared/clients.ts:180) que GENERA el link pero NO lo envía. La infra existe a medias (#72.3/72.5, probada E2E con Mailpit local) pero el SMTP remoto de Resend NO está configurado (falta API key + dominio ~$10–15/año; docs/TODO-pendientes.md §1 desde 2026-07-31). Camino: inviteUserByEmail (footprint mínimo) sobre una EF de Resend propia; construir y verificar E2E en LOCAL contra Mailpit (localhost:54324); el flip remoto es checklist de despliegue de Abraham y NO bloquea la tarea. Si el envío falla, la operación no deja basura (compensación deleteUser + atomicidad). El action_link deja de ser el único canal en la UI admin (respaldo).\nFOOTPRINT: supabase/migrations/2026…_org_advertising_capability.sql + _set_org_advertising_rpc.sql (+rollbacks, CRÍTICA), supabase/tests/NN_org_advertising_test.sql (pgTAP), supabase/functions/_shared/auth_user.ts + clients.ts (invite→correo, CRÍTICA), supabase/functions/admin-create-agency/ (CRÍTICA), docs/TODO-pendientes.md (checklist Resend). Deps 74/75 son ORDEN DE PRIORIDAD (después de cerrar la Ola 1), no técnicas — técnicamente podría arrancar hoy. Producción viva §0.5: todo aditivo, select('*') sobre agencies desde clientes v1.0.x sigue funcionando.\nDERIVADAS: #173 (guardian 168.3) · #174 (guardian 168.4) · #176 (guardian 168.2) · #177 (guardian 168.4)",
         "testStrategy": "pgTAP: defaults (true,false,null) en filas preexistentes + no-regresión de publicar con organización vieja; CHECK rechaza (false,false); impersonación JWT: owner no puede setear can_advertise; RPC solo service_role + admin_actions + fault-injection rollback; org_can_advertise 4 asserts; firma vieja de admin_create_agency_atomic = mismo resultado; organización solo-publicidad no puede publicar propiedades. Deno: invite manda correo (Mailpit E2E local), fallo de envío = sin basura. pnpm tsc/lint verdes.",
         "status": "in-progress",
         "dependencies": [
@@ -8296,10 +8296,25 @@
               2,
               3,
               4,
-              5
+              5,
+              7
             ],
             "testStrategy": "grep de select('*') sobre agencies en supabase/functions/**; pgTAP de no-regresión de privilegios; pnpm tsc --noEmit y pnpm lint verdes antes del PR.",
             "updatedAt": "2026-08-15T00:00:00.000Z",
+            "parentId": "168"
+          },
+          {
+            "id": 7,
+            "title": "CHECK: encender la capacidad de publicidad exige advertiser_category",
+            "description": "🔴 CRÍTICA (RED pgTAP → GREEN migración). Cierra el hueco que encontró el guardian de 168.2: hoy `can_advertise = true` con `advertiser_category` NULL es alcanzable en silencio, y 169–171 leen esa categoría para servir anuncios. Decisión de Abraham (2026-08-16): hacerlo imposible en la base, no confiar en que quien llame la RPC se acuerde.",
+            "details": "PLAN · agente=supabase · skills=urbea-supabase+urbea-testing · criticidad=CRÍTICA (supabase/migrations/**) · impacto-prod=aditivo, sin riesgo · footprint=supabase/migrations/20260816000003_advertiser_category_required.sql (+rollback), asserts nuevos en supabase/tests/46_org_advertising_test.sql (hoy plan(63)).\n\nORIGEN — la evidencia exacta del guardian de 168.2: `advertiser_category = p_category` es INCONDICIONAL en 20260815000002_set_org_advertising_rpc.sql:71-73. Comprobado en vivo: antes `can=true cat=notaria`, después de `set_org_advertising_atomic(id, true)` (sin p_category) queda `can=true cat=NULL`. Ningún assert lo cubría.\n\nDECISIÓN DE ABRAHAM (2026-08-16, checkpoint tras 168.4): opción (a) CHECK. Se DESCARTÓ el `coalesce(p_category, advertiser_category)` porque deja sin forma de limpiar la categoría y no impide que la PRIMERA vez se encienda sin ninguna; y se descartó validarlo en 169 porque mueve la garantía de la base a la lógica de aplicación.\n\nGREEN: constraint nombrado sobre public.agencies que impida `can_advertise = true AND advertiser_category IS NULL`, con mensaje explícito (el patrón y el estilo de mensaje ya están en `agencies_al_menos_una_capacidad`, migración 20260815000001). Aditivo y seguro para §0.5: el estado actual de producción YA lo cumple porque NADIE tiene can_advertise=true todavía — pero verifícalo contra la base antes de aplicar, no lo asumas.\n\n⚠️ EFECTO OBLIGADO SOBRE LA RPC: con el CHECK puesto, `set_org_advertising_atomic(id, true)` sin p_category pasa a FALLAR en vez de dejar el estado inválido. Eso es lo buscado, pero el error debe ser explícito y accionable, no un 23514 crudo. Revisar si la RPC necesita validar antes y lanzar un P0001 propio.\n\nRED: (1) can_advertise=true + categoría NULL es rechazado por el CHECK con mensaje explícito; (2) can_advertise=true + categoría no nula pasa; (3) can_advertise=false + categoría NULL sigue siendo válido (es el estado por defecto de TODA fila preexistente — si esto falla, rompiste producción); (4) apagar la capacidad de una org que tenía categoría no truena; (5) la RPC sin p_category da error explícito, no 23514 crudo ni estado inválido.\n\n⚠️ FIXTURE PEGAJOSO ya conocido en 46_org_advertising_test.sql: el trigger veneno de la sección 7 bloquea INSERTs a admin_actions y no se dropea hasta la sección 8. Si tus asserts escriben auditoría, dropéalo al inicio de tu sección o serán vacuos (ya pasó con FI3/INV4).",
+            "status": "pending",
+            "dependencies": [
+              1,
+              2
+            ],
+            "testStrategy": "pgTAP en 46_org_advertising_test.sql con los 5 bloques del RED, contra el stack LOCAL (§0.5 regla 1 — nunca el remoto). Antes de aplicar, verificar contra la base que ninguna fila existente viola el CHECK. Suite completa verde (línea base: 47 archivos / 1008 asserts) y rollback probado.",
+            "updatedAt": "2026-08-16T00:00:00.000Z",
             "parentId": "168"
           }
         ],
@@ -8632,6 +8647,77 @@
         "priority": "low",
         "subtasks": [],
         "updatedAt": "2026-08-14T18:00:00.000Z"
+      },
+      {
+        "id": "173",
+        "title": "fix(168.3): mapear AGENCY_CANNOT_PUBLISH_PROPERTIES a un status HTTP explícito en publish-property",
+        "description": "Origen: subtarea 168.3 · Detectado por: guardian. supabase/functions/publish-property/index.ts:95 solo reconoce \"AGENCY_MEMBERSHIP_SUSPENDED\" en el mensaje P0001; el guard nuevo AGENCY_CANNOT_PUBLISH_PROPERTIES cae al fallback genérico DB_ERROR (probable 500) en vez de un 403/409. La invariante de seguridad SÍ se cumple — la publicación se bloquea en la DB, atómicamente — pero el criterio de producto de 168.3 pedía un error EXPLÍCITO, y por el seam del EF hoy es genérico.",
+        "details": "footprint=supabase/functions/publish-property/index.ts (~:95) + su handler.test.ts. Criticidad: CRÍTICA (supabase/functions/**). Impacto-prod: aditivo (solo cambia el status/código de error de un camino que hoy es 500). El patrón a copiar es el mapeo existente de AGENCY_MEMBERSHIP_SUSPENDED en esa misma línea. Considerar si conviene una tabla de mapeo en vez de una cadena de ternarios, dado que ya van 2 códigos y 169–171 pueden sumar más.",
+        "testStrategy": "Deno: el guard devuelve el status/código explícito, no DB_ERROR. No-regresión del mapeo de AGENCY_MEMBERSHIP_SUSPENDED.",
+        "status": "pending",
+        "dependencies": [
+          "168"
+        ],
+        "priority": "medium",
+        "subtasks": [],
+        "updatedAt": "2026-08-16T00:00:00.000Z"
+      },
+      {
+        "id": "174",
+        "title": "test(168.4): cubrir el seam de adaptadores de _shared/clients.ts (make_agency_creator y make_auth_admin)",
+        "description": "Origen: subtarea 168.4 · Detectado por: guardian. supabase/functions/_shared/clients.ts tiene COBERTURA CERO: ningún *.test.ts lo importa (convención del repo: los adaptadores son la frontera de DI). Ese hueco es justamente lo que permitió que el adaptador real NO honrara el contrato del seam sin que ninguna suite lo detectara (hallazgo 1 de 168.4: email_sent:false resultó inalcanzable en producción pese a tener 3 tests que lo especifican).",
+        "details": "footprint=supabase/functions/_shared/clients.ts + un handler/adapter test nuevo. Criticidad: CRÍTICA (supabase/functions/**). Dos seams sin fijar hoy: (1) make_agency_creator incluye p_can_publish_properties/p_can_advertise SOLO si !== undefined — si esa condición se invierte, ningún test lo caza y el payload viejo mandaría null explícito contra una columna NOT NULL; (2) make_auth_admin.inviteUserByEmail: el segundo generateLink de respaldo, su fail-open a cadena vacía y el default de redirectTo tampoco los fija ningún test (el guardian los verificó a mano). Decidir el enfoque: o se testean los adaptadores con un cliente Supabase falso, o se documenta explícitamente por qué la frontera queda sin cobertura y qué la sustituye.",
+        "testStrategy": "Deno con un cliente Supabase falso: mapeo de nombres de params, omisión cuando undefined, fail-open del link de respaldo.",
+        "status": "pending",
+        "dependencies": [
+          "168"
+        ],
+        "priority": "medium",
+        "subtasks": [],
+        "updatedAt": "2026-08-16T00:00:00.000Z"
+      },
+      {
+        "id": "175",
+        "title": "fix(157): scopear los asserts de 43_search_places_test.sql a sus propios fixtures",
+        "description": "Origen: tarea 157 · Detectado por: guardian de la subtarea 168.1. 43_search_places_test.sql:70-73 y :121 asiertan CONTEOS ABSOLUTOS sobre public.mx_neighborhoods en vez de scopear a sus fixtures. seed.sql no puebla esa tabla, pero el pipeline de import de #157 deja filas locales que solo borra un db reset — así que el test depende del estado global de la tabla y falla con cualquier dato residual.",
+        "details": "footprint=supabase/tests/43_search_places_test.sql (:70-73 y :121). Criticidad: no crítica (es un archivo de test, nunca bloqueado por el tdd-guard). Impacto-prod: ninguno. EVIDENCIA REPRODUCIDA por el guardian: insertando UNA sola colonia PROVIDENCIA NORTE, el test 5 pasa a \"have: 3 / want: 2\". Con un import DCAH completo (miles de filas) revientan además los asserts de ranking, contexto, bbox y el clamp de :121 (que espera exactamente 20) — ése es el patrón \"15/24\" que se observó. COSTO REAL YA PAGADO: hizo perder ~1h en un diagnóstico falso durante la fase RED de 168.1, donde se reportó como regresión algo que era solo estado local rancio. FIX: filtrar por un discriminante de los propios fixtures (p.ej. source_key like 'test-157-%') en vez de contar toda la tabla.",
+        "testStrategy": "El archivo pasa 24/24 con la tabla vacía Y con datos residuales de un import real. Ésa es la prueba de que quedó scopeado.",
+        "status": "pending",
+        "dependencies": [
+          "157"
+        ],
+        "priority": "low",
+        "subtasks": [],
+        "updatedAt": "2026-08-16T00:00:00.000Z"
+      },
+      {
+        "id": "176",
+        "title": "test(168.2): devolver los dientes a FI3 e INV4 en 46_org_advertising_test.sql (asserts vacuos)",
+        "description": "Origen: subtarea 168.2 · Detectado por: guardian (mutation testing). Los asserts FI3 (:523) e INV4 (:557) son VACUOS: ningún mutante los hizo fallar. El trigger veneno creado en :500 nunca se dropea, así que desde la sección 7.4 en adelante ningún INSERT a admin_actions puede aterrizar — el count(*)=0 que verifican lo garantiza el fixture, no el SUT. El mismo fixture blinda a INV3, que pasó pese a un mutante que sí encendía una agencia borrada.",
+        "details": "footprint=supabase/tests/46_org_advertising_test.sql (:500, :523, :552, :557). Criticidad: no crítica (archivo de test). Impacto-prod: ninguno. FIX exacto que propuso el guardian: `drop trigger poison_admin_actions_before_insert on public.admin_actions;` antes de la sección 7.5, lo que además aísla 7.5 de 7.4. NOTA: la sección 8 (168.3) ya dropea ese trigger al inicio — o sea el patrón correcto ya existe en el archivo, solo falta aplicarlo antes. VERIFICACIÓN OBLIGATORIA: no basta con corregirlo; hay que DEMOSTRAR con un mutante que los asserts ahora fallan cuando la implementación está mal. Si no se demuestra, siguen siendo vacuos.",
+        "testStrategy": "Mutation testing: implementar mal la RPC a propósito y confirmar que FI3/INV4/INV3 fallan. Suite completa sigue verde.",
+        "status": "pending",
+        "dependencies": [
+          "168"
+        ],
+        "priority": "low",
+        "subtasks": [],
+        "updatedAt": "2026-08-16T00:00:00.000Z"
+      },
+      {
+        "id": "177",
+        "title": "polish(168.4): el link de respaldo del alta debe abrir la app (redirectTo en el generateLink de respaldo)",
+        "description": "Origen: subtarea 168.4 · Detectado por: guardian. El segundo generateLink que produce el invite_action_link de respaldo se llama SIN redirectTo (clients.ts:242-245), así que apunta al site_url en vez de a urbea://. El link que el admin copia al portapapeles no abre la app. Es preexistente (el generateInviteLink viejo ya apuntaba al site_url), no lo introdujo 168.4 — pero ahora es el único respaldo y vale cerrarlo.",
+        "details": "footprint=supabase/functions/_shared/clients.ts:242-245. Criticidad: CRÍTICA por path (supabase/functions/**) aunque el cambio sea de una línea: pasar `redirectTo: OWNER_INVITE_REDIRECT_TO` (definido en clients.ts:173). DEPENDE DE #174: hoy clients.ts no tiene NINGÚN test, así que este cambio no se puede verificar por suite — se verificaría a mano, que es exactamente el problema que #174 cierra. Hacerlo después de #174 permite fijarlo con un assert de verdad. CONTEXTO adyacente: el hallazgo 2 de 168.4 (useSessionFromDeepLink no está montado en la raíz, así que los tokens del fragmento se pierden al abrir urbea://) lo aborda la subtarea 168.5. Sin ese montaje, arreglar el redirectTo aquí no alcanza por sí solo.",
+        "testStrategy": "Con la cobertura de #174 en pie: el link de respaldo trae redirect_to=urbea://. Verificación E2E contra Mailpit local.",
+        "status": "pending",
+        "dependencies": [
+          "168",
+          "174"
+        ],
+        "priority": "low",
+        "subtasks": [],
+        "updatedAt": "2026-08-16T00:00:00.000Z"
       }
     ],
     "metadata": {
