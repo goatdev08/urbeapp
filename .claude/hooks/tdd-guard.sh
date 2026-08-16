@@ -63,7 +63,7 @@ fi
 
 # Si hay cambios de test sin commitear desde HEAD → permitir (RED en progreso).
 TEST_CHANGES=$(git status --porcelain 2>/dev/null | \
-  grep -E '\.(test|spec)\.(ts|js)$|supabase/tests/.*\.sql$' || true)
+  grep -E '\.(test|spec)\.(ts|tsx|js|jsx)$|supabase/tests/.*\.sql$' || true)
 [ -n "$TEST_CHANGES" ] && exit 0
 
 cat >&2 <<EOF
