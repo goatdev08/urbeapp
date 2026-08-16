@@ -8403,12 +8403,12 @@
             "title": "mobile/src/features/ads/lib/validation.ts — duración, CTA y zonas",
             "description": "🔴 CRÍTICA (**/validation*). Funciones puras con las fronteras exactas y el MISMO código de error que el servidor, para que el usuario no vea dos mensajes distintos del mismo problema.",
             "details": "PLAN · agente=mobile · skills=urbea-expo+urbea-testing · criticidad=CRÍTICA (**/validation* y **/lib/**) · impacto-prod=código nuevo detrás del gating · footprint=mobile/src/features/ads/lib/validation.ts + mobile/src/features/ads/__tests__/validation.test.ts\n\n⚠️ La carpeta mobile/src/features/ads/ NO EXISTE todavía — se crea aquí. Vecinas de las que copiar estructura: feed/, publish/, agency/.\n\nREGLAS PURAS: duración 6–30 s INCLUSIVE, con las fronteras 5.9 / 6 / 30 / 30.1 explícitas en el test, rechazada con el MISMO código AD_DURATION_INVALID que usa el servidor (169.5). El cliente rechaza al ELEGIR el archivo, el servidor al pasar a ready: si los códigos no coinciden, el mismo problema produce dos mensajes distintos. CTA: external_url (esquema http/https, rechazar javascript: y data:), whatsapp (teléfono normalizable), phone. Zonas: cada entrada es municipio XOR colonia, y la lista VACÍA es VÁLIDA — significa nacional, no un error de formulario.\n\nSin fetch ni estado: la RED se escribe primero y debe fallar por ASERCIÓN, no por import.\n\n<info added on 2026-08-16T00:00:00.000Z>\nPLAN + APORTE DEL ANALISTA (2026-08-16): mobile/src/features/property-detail/utils/whatsapp.ts ya tiene el criterio de normalización de teléfono de la casa (phone.replace(/\\D/g, \"\")). La validación del CTA whatsapp debe ESPEJAR ese criterio para no inventar una regla de formato distinta a la que ya usa el resto de la app. No es un import directo (ese archivo tiene side-effects de Linking) — es la convención a copiar.\n\nagente=mobile · skills=urbea-expo,urbea-testing · criticidad=CRÍTICA (**/lib/** y **/validation*) · impacto-prod=sin riesgo (funciones puras, sin red).\n\nLa carpeta mobile/src/features/ads/ NO existe todavía: se crea aquí. AD_DURATION_INVALID debe ser el MISMO código de error que usa el servidor (169.5) — el rechazo por duración ocurre en cliente al elegir archivo Y en servidor al pasar a ready, y ambos deben hablar el mismo idioma.\n\nGates: pnpm tsc --noEmit y pnpm lint DESDE mobile/, nunca desde la raíz (desde la raíz fallan de forma engañosa: no hay scripts en el package.json raíz y `lint` cae a una herramienta Java de Homebrew).\n</info added on 2026-08-16T00:00:00.000Z>",
-            "status": "pending",
+            "status": "in-progress",
             "dependencies": [
               5
             ],
             "testStrategy": "Jest: fronteras de duración (5.9/6/30/30.1), esquemas de CTA rechazados y aceptados, XOR de zonas, lista vacía válida. pnpm tsc --noEmit y pnpm lint verdes.",
-            "updatedAt": "2026-08-16T00:00:00.000Z",
+            "updatedAt": "2026-08-16T22:38:53.567Z",
             "parentId": "169"
           },
           {
@@ -8456,7 +8456,7 @@
             "parentId": "undefined"
           }
         ],
-        "updatedAt": "2026-08-16T22:38:29.339Z"
+        "updatedAt": "2026-08-16T22:38:53.567Z"
       },
       {
         "id": "170",
@@ -8930,7 +8930,7 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-08-16T22:38:29.339Z",
+      "lastModified": "2026-08-16T22:38:53.568Z",
       "taskCount": 184,
       "completedCount": 97,
       "tags": [
