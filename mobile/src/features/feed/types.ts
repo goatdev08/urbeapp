@@ -20,6 +20,18 @@ export type FeedPropertyVideo = {
 export type FeedProperty = {
   id: string;
   price: number;
+  /**
+   * Metadatos del listado (quick fix 2026-08-15) — chips de operación/tipo,
+   * divisa del precio y respeto a price_visible en el overlay. Los tipos son
+   * string (no el enum literal) porque el feed solo los PINTA; el mapa
+   * label/color vive en el overlay y hace fallback al valor crudo.
+   */
+  operation_type: string;
+  property_type: string;
+  /** 'MXN' | 'USD'. Fail-open a 'MXN' si la fila no trae la columna. */
+  currency: string;
+  /** false → el overlay muestra "Precio a consultar". Fail-open a true. */
+  price_visible: boolean;
   address: string;
   bedrooms: number;
   bathrooms: number;

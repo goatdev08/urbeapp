@@ -25,6 +25,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 // al llegar la miniatura (pulido flash 2026-07-06).
 import { Image } from 'expo-image';
 
+import { format_price } from '@/lib/formatPrice';
 import { colors, fonts, radii, shadows } from '@/theme/theme';
 import { IsotipoMark } from '@/components/IsotipoMark';
 import type { GridProperty } from '@/features/profile/types';
@@ -59,17 +60,12 @@ export interface PropertyGridCardProps {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-/** Formatea un precio numérico con separadores de miles en es-MX. */
-function format_price(n: number): string {
-  return `$${n.toLocaleString('es-MX')}`;
-}
-
 // ─── Componente ───────────────────────────────────────────────────────────────
 
 // React.memo: en grillas con RefreshControl/quitado optimista, cada setState del
 // padre re-renderizaba todas las celdas; con memo solo re-renderiza la que cambia.
 export const PropertyGridCard = React.memo(function PropertyGridCard({ item, onPress, onLongPress }: PropertyGridCardProps): React.JSX.Element {
-  const { price, operation_type, property_type, status, address, thumbnail_url, posterUrl } = item;
+  const { price, currency, operation_type, property_type, status, address, thumbnail_url, posterUrl } = item;
 
   const is_paused    = status === 'paused';
   const is_sale      = operation_type === 'sale' || operation_type === 'both';
@@ -84,7 +80,7 @@ export const PropertyGridCard = React.memo(function PropertyGridCard({ item, onP
       onPress={onPress}
       onLongPress={onLongPress}
       accessibilityRole="button"
-      accessibilityLabel={`${prop_label}, ${op_label}, ${format_price(price)}`}
+      accessibilityLabel={`${prop_label}, ${op_label}, ${format_price(price, currency)}`}
       style={({ pressed }) => [
         styles.card_shadow,
         pressed && styles.card_pressed,
@@ -156,7 +152,7 @@ export const PropertyGridCard = React.memo(function PropertyGridCard({ item, onP
           <View style={styles.price_block}>
             <View style={styles.price_tick} />
             <View style={styles.price_row}>
-              <Text style={styles.price_text}>{format_price(price)}</Text>
+              <Text style={styles.price_text}>{format_price(price, currency)}</Text>
               {show_per_mes && (
                 <Text style={styles.price_per}>/mes</Text>
               )}

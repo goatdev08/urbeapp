@@ -1005,4 +1005,168 @@ describe('useVideoUpload', () => {
     expect(statuses).toContain('processing');
     expect(result.current.status).toBe('processing');
   });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Quick fix 2026-08-15 (smoke manual): "Cambiar video" durante una subida
+  // debe CANCELAR la anterior y dejar subir otra de inmediato.
+  //   - mint-upload-url se invoca con body { replace: true } (la EF soft-borra
+  //     los pendientes sin propiedad del caller antes de contar concurrencia).
+  //   - createUploadTask recibe un AbortSignal; cancel() lo aborta.
+  //   - Una subida cancelada/superada NUNCA escribe status/error/form después:
+  //     el llamador la reemplazó, su resultado ya no importa.
+  //   - upload() mientras hay otra en vuelo = supersede (cancela la anterior).
+  // EDGE CASES:
+  // - (CX-1) mint_se_invoca_con_replace_true
+  // - (CX-2) createUploadTask_recibe_signal_y_cancel_lo_aborta_status_idle
+  // - (CX-3) subida_cancelada_no_escribe_al_form_ni_pone_error_al_resolver
+  // - (CX-4) segundo_upload_supera_al_primero_solo_el_segundo_escribe
+  // ─────────────────────────────────────────────────────────────────────────
+
+  it('(CX-1) mint_se_invoca_con_replace_true', async () => {
+    const mock_supabase = make_mock_supabase({});
+    const { result } = await renderHook(() =>
+      useVideoUpload({ supabase: mock_supabase as never }),
+    );
+    await act(async () => {
+      await result.current.upload(TEST_LOCAL_URI);
+    });
+    expect(mock_supabase._mock_invoke).toHaveBeenCalledWith('mint-upload-url', {
+      body: { replace: true },
+    });
+  });
+
+  it('(CX-2) createUploadTask_recibe_signal_y_cancel_lo_aborta_status_idle', async () => {
+    // uploadAsync queda colgado hasta que se aborta el signal (como el nativo).
+    let captured_signal: AbortSignal | undefined;
+    const upload_task: MockUploadTask = {
+      uploadAsync: jest.fn().mockImplementation(
+        () =>
+          new Promise((_resolve, reject) => {
+            captured_signal?.addEventListener('abort', () => {
+              const err = new Error('Aborted');
+              err.name = 'AbortError';
+              reject(err);
+            });
+          }),
+      ),
+    };
+    const file_instance = make_mock_file({ upload_task });
+    file_instance.createUploadTask.mockImplementation((_url: string, opts: { signal?: AbortSignal }) => {
+      captured_signal = opts.signal;
+      return upload_task;
+    });
+    MockFile.mockImplementation(() => file_instance as never);
+    const mock_supabase = make_mock_supabase({});
+    const statuses: string[] = [];
+
+    const { result } = await renderHook(() =>
+      useVideoUpload({ supabase: mock_supabase as never, on_status_change: (s) => statuses.push(s) }),
+    );
+
+    let upload_promise!: Promise<void>;
+    act(() => {
+      upload_promise = result.current.upload(TEST_LOCAL_URI);
+    });
+    await act(async () => {
+      await flush_microtasks(6);
+    });
+    expect(captured_signal).toBeInstanceOf(AbortSignal);
+    expect(captured_signal!.aborted).toBe(false);
+
+    act(() => {
+      result.current.cancel();
+    });
+    await act(async () => {
+      await upload_promise;
+    });
+
+    expect(captured_signal!.aborted).toBe(true);
+    expect(result.current.status).toBe('idle');
+    expect(result.current.error).toBeNull();
+    expect(mock_update).not.toHaveBeenCalled();
+    expect(statuses[statuses.length - 1]).toBe('idle');
+  });
+
+  it('(CX-3) subida_cancelada_no_escribe_al_form_ni_pone_error_al_resolver', async () => {
+    // El nativo NO respeta el abort y termina 2xx después — aun así, una
+    // subida cancelada no debe escribir nada (el llamador ya la reemplazó).
+    let resolve_upload!: (v: MockUploadTaskResult) => void;
+    const upload_task: MockUploadTask = {
+      uploadAsync: jest.fn().mockImplementation(
+        () => new Promise((resolve) => { resolve_upload = resolve; }),
+      ),
+    };
+    const file_instance = make_mock_file({ upload_task });
+    MockFile.mockImplementation(() => file_instance as never);
+    const mock_supabase = make_mock_supabase({});
+
+    const { result } = await renderHook(() =>
+      useVideoUpload({ supabase: mock_supabase as never }),
+    );
+
+    let upload_promise!: Promise<void>;
+    act(() => {
+      upload_promise = result.current.upload(TEST_LOCAL_URI);
+    });
+    await act(async () => {
+      await flush_microtasks(6);
+    });
+    act(() => {
+      result.current.cancel();
+    });
+    await act(async () => {
+      resolve_upload({ status: 200 });
+      await upload_promise;
+    });
+
+    expect(mock_update).not.toHaveBeenCalled();
+    expect(result.current.status).toBe('idle');
+    expect(result.current.error).toBeNull();
+  });
+
+  it('(CX-4) segundo_upload_supera_al_primero_solo_el_segundo_escribe', async () => {
+    let resolve_first!: (v: MockUploadTaskResult) => void;
+    const first_task: MockUploadTask = {
+      uploadAsync: jest.fn().mockImplementation(
+        () => new Promise((resolve) => { resolve_first = resolve; }),
+      ),
+    };
+    const second_task = make_mock_upload_task({ status: 200 });
+    const first_file = make_mock_file({ upload_task: first_task });
+    const second_file = make_mock_file({ upload_task: second_task });
+    MockFile.mockImplementationOnce(() => first_file as never).mockImplementationOnce(
+      () => second_file as never,
+    );
+    const SECOND_UID = 'stream-uid-second-xyz';
+    const mock_invoke = jest
+      .fn()
+      .mockResolvedValueOnce({ data: { uploadUrl: SIGNED_UPLOAD_URL, uid: STREAM_UID }, error: null })
+      .mockResolvedValueOnce({ data: { uploadUrl: SIGNED_UPLOAD_URL, uid: SECOND_UID }, error: null });
+    const mock_supabase = { functions: { invoke: mock_invoke } };
+
+    const { result } = await renderHook(() =>
+      useVideoUpload({ supabase: mock_supabase as never }),
+    );
+
+    let first_promise!: Promise<void>;
+    act(() => {
+      first_promise = result.current.upload(TEST_LOCAL_URI);
+    });
+    await act(async () => {
+      await flush_microtasks(6);
+    });
+    // Segundo upload mientras el primero sigue en vuelo → supersede.
+    await act(async () => {
+      await result.current.upload('file:///other/video.mp4');
+    });
+    // El primero termina "bien" DESPUÉS — no debe pisar al segundo.
+    await act(async () => {
+      resolve_first({ status: 200 });
+      await first_promise;
+    });
+
+    expect(mock_update).toHaveBeenCalledTimes(1);
+    expect(mock_update).toHaveBeenCalledWith({ video_id: SECOND_UID, cloudflare_uid: SECOND_UID });
+    expect(result.current.status).toBe('processing');
+  });
 });

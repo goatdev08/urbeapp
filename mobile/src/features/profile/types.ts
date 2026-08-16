@@ -29,6 +29,8 @@ type VideoRow = Database['public']['Tables']['property_videos']['Row'];
 export interface GridProperty {
   id: PropertyRow['id'];
   price: PropertyRow['price'];
+  /** 'MXN' | 'USD' (quick fix 2026-08-15). Opcional: fixtures viejos → format_price cae a MXN. */
+  currency?: string;
   operation_type: PropertyRow['operation_type'];
   property_type: PropertyRow['property_type'];
   status: PropertyRow['status'];
@@ -58,6 +60,8 @@ export interface GridProperty {
 export interface MyProperty {
   id: PropertyRow['id'];
   price: PropertyRow['price'];
+  /** 'MXN' | 'USD' (quick fix 2026-08-15). Opcional: fixtures viejos → format_price cae a MXN. */
+  currency?: string;
   operation_type: PropertyRow['operation_type'];
   property_type: PropertyRow['property_type'];
   status: PropertyRow['status'];

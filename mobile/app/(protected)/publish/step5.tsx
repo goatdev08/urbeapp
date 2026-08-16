@@ -145,13 +145,22 @@ export default function Step5Screen() {
     }
 
     // Guardar URI en el form (para persistencia entre pasos) y en estado local.
-    update({ video_local_uri: uri });
+    // Quick fix 2026-08-15: si había una subida en vuelo, hook.upload() la
+    // cancela y la reemplaza (supersede) — "Cambiar video" ya no espera.
+    // El uid/cloudflare_uid del video anterior se limpia del form para no
+    // publicar con un video que acabamos de descartar.
+    update({ video_local_uri: uri, video_id: null, cloudflare_uid: null });
     set_local_uri(uri);
+    set_ui_progress(0);
     set_ui_status('uploading');
     set_ui_error(null);
 
     // Iniciar upload — la función es async y modifica refs internamente.
     await hook.upload(uri);
+
+    // Si mientras tanto el usuario eligió OTRO video, este upload fue superado:
+    // el hook ya no refleja este resultado y el pick nuevo espejará el suyo.
+    if (hook.status === 'idle') return;
 
     // Leer del hook (refs, siempre actualizados tras el await).
     const final_status = hook.status;
@@ -305,7 +314,8 @@ export default function Step5Screen() {
         <TouchableOpacity
           style={styles.change_video_btn}
           onPress={handle_pick_video}
-          disabled={is_uploading || is_verifying}
+          // Quick fix 2026-08-15: habilitado también DURANTE la subida — elegir
+          // otro video cancela la actual (hook.upload supersede + EF replace).
           accessibilityLabel="Cambiar video"
         >
           <Text style={styles.change_video_text}>Cambiar video</Text>

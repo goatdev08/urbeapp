@@ -77,6 +77,7 @@ export function usePropertiesGrid(owner_user_id: string): UsePropertiesGridState
         .select(
           `id,
            price,
+           currency,
            operation_type,
            property_type,
            status,
@@ -117,6 +118,7 @@ export function usePropertiesGrid(owner_user_id: string): UsePropertiesGridState
         return {
           id: row.id,
           price: row.price,
+          currency: row.currency ?? 'MXN',
           operation_type: row.operation_type,
           property_type: row.property_type,
           status: row.status,

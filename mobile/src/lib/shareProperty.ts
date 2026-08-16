@@ -10,21 +10,17 @@
  */
 import { Share } from 'react-native';
 
+import { format_price } from '@/lib/formatPrice';
+
 export interface SharePropertyInput {
   /** Signed URL reproducible del mp4 (de la EF mint-video-url). */
   signedUrl: string;
   /** Dirección de la propiedad para el texto del mensaje. */
   address: string;
-  /** Precio en MXN (opcional) para enriquecer el mensaje. */
+  /** Precio (opcional) para enriquecer el mensaje. */
   price?: number;
-}
-
-function format_price(price: number): string {
-  return new Intl.NumberFormat('es-MX', {
-    style: 'currency',
-    currency: 'MXN',
-    maximumFractionDigits: 0,
-  }).format(price);
+  /** Divisa del precio ('MXN' | 'USD'); omitida → MXN. */
+  currency?: string | null;
 }
 
 /**
@@ -32,7 +28,7 @@ function format_price(price: number): string {
  * No lanza: cancelar la hoja o un error se ignoran (fire-and-forget UX).
  */
 export async function share_property(input: SharePropertyInput): Promise<void> {
-  const price_line = input.price !== undefined ? `\n${format_price(input.price)}` : '';
+  const price_line = input.price !== undefined ? `\n${format_price(input.price, input.currency)}` : '';
   const message = `🏠 ${input.address}${price_line}\n\nMira el video de esta propiedad en Urbea:\n${input.signedUrl}`;
 
   try {

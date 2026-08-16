@@ -41,6 +41,29 @@ export async function handler(req: Request, deps?: MintUploadUrlDeps): Promise<R
   }
   const uid = caller.user_id;
 
+  // 4b. `replace: true` (quick fix 2026-08-15) — "Cambiar video": cancela los
+  //     pendientes NO asociados a propiedad del propio caller antes de contar.
+  //     Body ausente/ilegible → sin replace (contrato viejo intacto).
+  let replace = false;
+  try {
+    const parsed: unknown = await req.json();
+    replace = typeof parsed === "object" && parsed !== null &&
+      (parsed as { replace?: unknown }).replace === true;
+  } catch {
+    replace = false;
+  }
+  if (replace && deps.pendingUploadCanceller) {
+    try {
+      await deps.pendingUploadCanceller.cancel_unattached_uploads(uid);
+    } catch {
+      return error_response(
+        "INTERNAL_ERROR",
+        "Error interno al cancelar el video en curso",
+        500,
+      );
+    }
+  }
+
   // 5. Concurrencia por agente (§13.2, fail-closed): 1 video propio en
   //    uploading/processing → 409, sin llamar a Stream ni insertar. `stale_before`
   //    (reaper, 103.1 parte B) descarta 'uploading' colgados hace más de

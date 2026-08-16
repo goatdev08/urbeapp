@@ -31,8 +31,8 @@ import { useRouter } from 'expo-router';
 import { usePublishForm } from '@/features/publish/store/PublishFormContext';
 import { validate_step3 } from '@/features/publish/validation';
 import { AddressAutocomplete } from '@/features/publish/components/AddressAutocomplete';
+import { CompactStepper } from '@/features/publish/components/CompactStepper';
 import { MapPicker } from '@/features/publish/components/MapPicker';
-import { NumericStepper } from '@/features/publish/components/NumericStepper';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import type { Currency } from '@/features/publish/store/types';
 
@@ -243,48 +243,37 @@ export default function Step3Screen() {
           </View>
 
           {/* ── Recámaras ─────────────────────────────────────────────── */}
-          <View style={[styles.stepper_row, styles.section_gap]}>
-            <View style={styles.stepper_label_col}>
-              <Text style={styles.section_label}>Recámaras</Text>
-              <Text style={styles.field_hint}>Opcional</Text>
-            </View>
-            <NumericStepper
+          {/* Comparte CompactStepper con baños/medios baños para que la
+              caja tenga el mismo tamaño; el segundo hueco del row queda
+              vacío (mismo grid de 2 columnas, gap:10) en vez de estirar
+              la caja de recámaras a todo el ancho. */}
+          <View style={[styles.dimensions_row, styles.section_gap]}>
+            <CompactStepper
+              label="Recámaras"
               value={state.bedrooms}
               min={0}
               max={20}
               onChange={handle_bedrooms_change}
-              placeholder="0"
             />
+            <View style={styles.dimension_col} />
           </View>
 
           {/* ── Baños + medios baños ─────────────────────────────────────── */}
           <View style={[styles.dimensions_row, styles.section_gap]}>
-            <View style={[styles.stepper_row, styles.dimension_col]}>
-              <View style={styles.stepper_label_col}>
-                <Text style={styles.section_label}>Baños</Text>
-                <Text style={styles.field_hint}>Opcional</Text>
-              </View>
-              <NumericStepper
-                value={state.bathrooms}
-                min={0}
-                max={20}
-                onChange={handle_bathrooms_change}
-                placeholder="0"
-              />
-            </View>
-            <View style={[styles.stepper_row, styles.dimension_col]}>
-              <View style={styles.stepper_label_col}>
-                <Text style={styles.section_label}>Medios baños</Text>
-                <Text style={styles.field_hint}>Opcional</Text>
-              </View>
-              <NumericStepper
-                value={state.half_bathrooms}
-                min={0}
-                max={5}
-                onChange={handle_half_bathrooms_change}
-                placeholder="0"
-              />
-            </View>
+            <CompactStepper
+              label="Baños"
+              value={state.bathrooms}
+              min={0}
+              max={20}
+              onChange={handle_bathrooms_change}
+            />
+            <CompactStepper
+              label="Medios baños"
+              value={state.half_bathrooms}
+              min={0}
+              max={5}
+              onChange={handle_half_bathrooms_change}
+            />
           </View>
 
           {/* ── Superficie: terreno + construida lado a lado ────────────── */}
@@ -496,22 +485,6 @@ const styles = StyleSheet.create({
   },
   dimension_col: {
     flex: 1,
-  },
-
-  // ── Stepper row ──────────────────────────────────────────────────────────
-  stepper_row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: COLOR_INPUT_BG,
-    borderWidth: 1,
-    borderColor: COLOR_BORDER,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-  },
-  stepper_label_col: {
-    gap: 2,
   },
 
   // ── Hint / error debajo del campo ─────────────────────────────────────────

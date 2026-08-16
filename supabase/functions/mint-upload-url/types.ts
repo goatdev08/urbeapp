@@ -100,6 +100,19 @@ export interface VideoRegistrar {
   register_uploading_video(params: RegisterUploadingVideoParams): Promise<void>;
 }
 
+// ── PendingUploadCanceller — "Cambiar video" cancela la subida anterior ──────
+// Quick fix 2026-08-15 (smoke manual): body { replace: true } → antes del
+// chequeo de concurrencia se soft-borran (deleted_at = now()) las filas del
+// caller con property_id IS NULL en ('uploading','processing') — los videos
+// "del wizard en curso" que aún no pertenecen a ninguna propiedad. Devuelve
+// cuántas canceló. Las filas ya asociadas a una propiedad NO se tocan (esas
+// siguen bajo la invariante §13.2). Lanza si el UPDATE falla → 500.
+// Sin `replace` (builds instalados antes del OTA) el handler no lo llama.
+
+export interface PendingUploadCanceller {
+  cancel_unattached_uploads(agent_id: string): Promise<number>;
+}
+
 // ── Deps inyectables del handler ──────────────────────────────────────────────
 
 export interface MintUploadUrlDeps {
@@ -107,6 +120,8 @@ export interface MintUploadUrlDeps {
   activeUploadChecker: ActiveUploadChecker;
   streamUploadCreator: StreamUploadCreator;
   videoRegistrar: VideoRegistrar;
+  /** Opcional para no romper a los llamadores/tests previos: sin él, `replace` se ignora. */
+  pendingUploadCanceller?: PendingUploadCanceller;
 }
 
 // ── Shape de respuesta 200 ─────────────────────────────────────────────────────

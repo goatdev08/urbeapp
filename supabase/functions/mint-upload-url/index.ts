@@ -12,6 +12,7 @@
 import { handler } from "./handler.ts";
 import {
   make_active_upload_checker,
+  make_pending_upload_canceller,
   make_stream_upload_creator,
   make_video_registrar,
   service_client,
@@ -43,6 +44,13 @@ Deno.serve((req: Request) => {
   const activeUploadChecker = make_active_upload_checker(client);
   const streamUploadCreator = make_stream_upload_creator();
   const videoRegistrar = make_video_registrar(client);
+  const pendingUploadCanceller = make_pending_upload_canceller(client);
 
-  return handler(req, { callerVerifier, activeUploadChecker, streamUploadCreator, videoRegistrar });
+  return handler(req, {
+    callerVerifier,
+    activeUploadChecker,
+    streamUploadCreator,
+    videoRegistrar,
+    pendingUploadCanceller,
+  });
 });

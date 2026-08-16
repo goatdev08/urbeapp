@@ -49,6 +49,7 @@ import type {
 } from "./agency.ts";
 import type {
   ActiveUploadChecker,
+  PendingUploadCanceller,
   RegisterUploadingVideoParams,
   StreamDirectUploadParams,
   StreamDirectUploadResult,
@@ -789,6 +790,34 @@ export function make_video_registrar(client: SupabaseClient): VideoRegistrar {
       if (error) {
         throw new Error(`Insert en property_videos falló: ${error.message}`);
       }
+    },
+  };
+}
+
+/**
+ * Adaptador real de PendingUploadCanceller (quick fix 2026-08-15, "Cambiar
+ * video"): soft-borra los videos del agente que aún NO pertenecen a ninguna
+ * propiedad (property_id IS NULL) y siguen en uploading/processing. Es lo que
+ * el wizard tenía "en curso"; al pedir un slot nuevo con replace:true dejan
+ * de contar para la invariante §13.2. Devuelve filas afectadas. Lanza si el
+ * UPDATE falla (el handler → 500). El binario en Stream, si llegó, queda
+ * huérfano — se limpia con el mismo criterio que cualquier soft-delete.
+ */
+export function make_pending_upload_canceller(client: SupabaseClient): PendingUploadCanceller {
+  return {
+    async cancel_unattached_uploads(agent_id: string): Promise<number> {
+      const { data, error } = await client
+        .from("property_videos")
+        .update({ deleted_at: new Date().toISOString() })
+        .eq("agent_id", agent_id)
+        .is("property_id", null)
+        .is("deleted_at", null)
+        .in("status", ["uploading", "processing"])
+        .select("id");
+      if (error) {
+        throw new Error(`Cancelar uploads pendientes falló: ${error.message}`);
+      }
+      return data?.length ?? 0;
     },
   };
 }
