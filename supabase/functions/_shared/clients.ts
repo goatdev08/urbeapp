@@ -1493,11 +1493,18 @@ export function make_moderation_writer(client: SupabaseClient): ModerationWriter
  *
  * Colapsa TRES causas en el MISMO 403 FORBIDDEN (fail-closed, nunca 404 ni
  * 500): (a) sin membresía activa, (b) miembro pero no owner/admin, (c) owner/
- * admin de una organización real pero private.org_can_advertise(agency_id)
- * (168.1) es false. org_can_advertise se invoca vía RPC — es SQL puro sobre
- * `agencies`, sin dependencia de auth.uid(), así que service_role puede
- * llamarla igual que authenticated (EXECUTE sigue en PUBLIC por default, ver
- * comentario de agency_role_of arriba). El agency_id SIEMPRE sale de esta
+ * admin de una organización real pero sin la capacidad de anunciar.
+ *
+ * ⚠️ FIX del guardián (2026-08-16, sonda contra el stack local): la capacidad
+ * se resuelve vía `public.org_can_advertise` (20260816000008), un wrapper que
+ * DELEGA en `private.org_can_advertise` (168.1) — PostgREST/`client.rpc()` NO
+ * puede alcanzar el esquema `private` directo (ésa es su función; ver
+ * 20260815000001), así que llamar el nombre de la función privada devolvía
+ * SIEMPRE PGRST202 (función no encontrada) y colapsaba el authorize en
+ * FORBIDDEN para el 100% de los anunciantes, sin importar sus datos. El
+ * wrapper está restringido a `service_role` (revoke explícito de
+ * public/anon/authenticated en la propia migración) — no abre a PostgREST una
+ * capacidad que hasta ahora era privada. El agency_id SIEMPRE sale de esta
  * resolución server-side — nunca del body.
  */
 export function make_advertiser_authorizer(
@@ -1519,6 +1526,8 @@ export function make_advertiser_authorizer(
         return { ok: false, error_code: "FORBIDDEN" };
       }
 
+      // Wrapper público (20260816000008) — NUNCA el nombre de la función
+      // private.* directo, PostgREST no lo resuelve (PGRST202, ver docblock).
       const { data: can_advertise, error: rpc_error } = await client.rpc(
         "org_can_advertise",
         { p_agency_id: data.agency_id },

@@ -33,7 +33,7 @@
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(71);
+select plan(80);
 
 create or replace function pg_temp.act_as(p_uid uuid, p_role text default 'authenticated')
 returns void language plpgsql as $$
@@ -217,6 +217,88 @@ select is(
   true,
   'org_can_advertise: activa + no borrada + can_advertise=true -> true (happy path)'
 );
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 4B) 🔒 public.org_can_advertise(uuid) — wrapper PÚBLICO que DELEGA en
+--     private.org_can_advertise (fix del guardián sobre 169.4, 2026-08-16:
+--     PostgREST no expone el esquema `private` -- client.rpc("org_can_advertise")
+--     desde make_advertiser_authorizer (_shared/clients.ts) fallaba SIEMPRE
+--     con PGRST202, la EF devolvía 403 al 100% de los anunciantes legítimos.
+--     Migración: 20260816000008_org_can_advertise_public_wrapper.sql.
+--
+--     Nada anclaba este contrato: el guardián mutó el nombre de la función y
+--     el nombre del parámetro y las 1310 pruebas de la suite quedaron verdes
+--     en ambos casos -- el bug exacto que se acaba de pagar puede volver en
+--     silencio. Verificado EMPÍRICAMENTE contra la migración ya aplicada
+--     (has_function_privilege directo, sin pgTAP) antes de fijar cada
+--     literal esperado -- no se adivinó ningún valor.
+--
+-- ── Edge cases enumerados (paso 1 del protocolo test-author) ────────────────
+--   · Existencia + firma exacta (uuid) -- mata el mutante del renombre de
+--     función.
+--   · Nombre del parámetro EXACTO = p_agency_id -- el adapter lo pasa
+--     NOMBRADO; renombrarlo rompe la llamada real en producción sin romper
+--     un test que solo mire la firma posicional.
+--   · Privilegios, lo que más importa: anon/authenticated/PUBLIC (pseudo-rol)
+--     SIN EXECUTE, service_role CON EXECUTE -- un futuro
+--     `grant execute on all functions in schema public to authenticated`
+--     (el patrón más común del ecosistema Supabase) evaporaría el revoke y
+--     este assert es lo único que lo detectaría en rojo.
+--   · Delegación REAL, no sello de goma: true/false para las MISMAS
+--     organizaciones que la Sección 4 ya probó contra private.org_can_advertise
+--     directo (reusa agencia 460111=true / 460114=false) -- si alguien
+--     hardcodea `return true` o reimplementa el predicado en `public` en vez
+--     de delegar, esto lo cacha. Impersonando service_role (el canal real
+--     que usa la EF), no superusuario.
+--   · private.org_can_advertise SIGUE existiendo con el grant de
+--     `authenticated` intacto (168.1, 20260815000001:75) -- el wrapper la
+--     complementa, no la sustituye ni le quita privilegios.
+-- ════════════════════════════════════════════════════════════════════════════
+
+-- ── WRAP1) Existencia + firma exacta -- mata el mutante del renombre ───────
+select has_function('public', 'org_can_advertise', array['uuid'],
+  'public.org_can_advertise(uuid) existe -- wrapper del fix de 169.4 (PostgREST no expone private)');
+
+-- ── WRAP2) Nombre del parámetro EXACTO = p_agency_id -- el adapter real lo
+--          pasa NOMBRADO (make_advertiser_authorizer, _shared/clients.ts) ──
+select is(
+  (select pg_get_function_arguments(p.oid)
+     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'org_can_advertise'),
+  'p_agency_id uuid',
+  'public.org_can_advertise: el parámetro se llama EXACTAMENTE p_agency_id -- renombrarlo rompe la llamada nombrada real sin romper la firma posicional'
+);
+
+-- ── WRAP3-6) Privilegios reales (has_function_privilege por debajo, no
+--            catálogo de un revoke que un GRANT masivo futuro evapora) ────
+select function_privs_are('public', 'org_can_advertise', array['uuid'], 'anon', array[]::name[],
+  'public.org_can_advertise: anon SIN EXECUTE');
+select function_privs_are('public', 'org_can_advertise', array['uuid'], 'authenticated', array[]::name[],
+  'public.org_can_advertise: authenticated SIN EXECUTE -- mata un futuro grant execute on all functions in schema public a authenticated (el patrón más común de Supabase)');
+select function_privs_are('public', 'org_can_advertise', array['uuid'], 'public', array[]::name[],
+  'public.org_can_advertise: PUBLIC (pseudo-rol) SIN EXECUTE -- Postgres otorga EXECUTE a PUBLIC por default al crear la función, el revoke explícito debe seguir vivo');
+select function_privs_are('public', 'org_can_advertise', array['uuid'], 'service_role', array['EXECUTE']::name[],
+  'public.org_can_advertise: service_role SÍ tiene EXECUTE -- sin esto la EF vuelve a devolver 403 al 100% de los anunciantes');
+
+-- ── WRAP7-8) Delegación REAL -- MISMAS organizaciones de la Sección 4
+--            (460111=true, 460114=false), llamadas ahora vía el wrapper
+--            público impersonando service_role (el canal real de la EF) ───
+select pg_temp.act_as(null, 'service_role');
+select is(
+  public.org_can_advertise('00000000-0000-0000-0000-000000460111'::uuid),
+  true,
+  'public.org_can_advertise: delega en private.org_can_advertise y devuelve true para una organización que SÍ puede anunciar'
+);
+select is(
+  public.org_can_advertise('00000000-0000-0000-0000-000000460114'::uuid),
+  false,
+  'public.org_can_advertise: delega en private.org_can_advertise y devuelve false para una organización que NO puede anunciar'
+);
+reset role;
+
+-- ── WRAP9) private.org_can_advertise conserva su grant de authenticated ────
+select function_privs_are('private', 'org_can_advertise', array['uuid'], 'authenticated', array['EXECUTE']::name[],
+  'private.org_can_advertise: authenticated conserva EXECUTE (grant original de 168.1, 20260815000001:75) intacto tras agregar el wrapper -- el wrapper complementa, no sustituye');
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- 5) Seguridad — impersonación con JWT real de OWNER: ni el dueño legítimo de
