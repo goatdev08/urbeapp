@@ -63,11 +63,17 @@ export type PropertyVideoDetail = {
 export type PropertyDetail = {
   id: string;
   price: number;
+  /** 'MXN' | 'USD' (quick fix 2026-08-15). Fail-open a 'MXN'. */
+  currency: string;
+  /** false → "Precio a consultar". Fail-open a true. */
+  price_visible: boolean;
   property_type: DBPropertyRow['property_type'];
   operation_type: DBPropertyRow['operation_type'];
   bedrooms: number | null;
   bathrooms: number | null;
+  half_bathrooms: number | null;
   square_meters: number | null;
+  built_square_meters: number | null;
   address: string;
   description: string | null;
   pet_friendly: boolean;

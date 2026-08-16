@@ -25,7 +25,7 @@
 -- que el default se preserva si se omite el parámetro.
 
 begin;
-select plan(39);
+select plan(41);
 
 -- ── Fixtures: agentes (uno por escenario, aislados) ───────────────────────────
 -- El trigger handle_new_user (migración 0002) crea public.users al insertar en auth.users.
@@ -878,6 +878,93 @@ select is(
     where owner_user_id = '00000000-0000-0000-0000-000000000c71'),
   true,
   '38) p_price_visible omitido usa el default true del parámetro -- backward-compat, mismo default que la columna'
+);
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- Quick fixes wizard paso 3 (sesión 2026-08-15, sin tarea de Taskmaster):
+-- p_built_square_meters, p_half_bathrooms, p_currency.
+-- ════════════════════════════════════════════════════════════════════════════
+
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-000000000c80', 'agente_wizard_full@urbea.mx'),
+  ('00000000-0000-0000-0000-000000000c81', 'agente_wizard_default@urbea.mx');
+update public.users set role = 'agent'
+ where id in (
+   '00000000-0000-0000-0000-000000000c80',
+   '00000000-0000-0000-0000-000000000c81'
+ );
+
+-- 39) los 3 campos nuevos se persisten en la fila real
+
+insert into public.property_videos
+  (id, property_id, agent_id, status, position, cloudflare_uid, tus_upload_url)
+values (
+  '00000000-0000-0000-0000-000000000c80',
+  null,
+  '00000000-0000-0000-0000-000000000c80',
+  'processing',
+  1,
+  'cfuid-wizard-full-01',
+  'https://upload.example/wizard-full'
+);
+
+select public.publish_property_atomic(
+  p_user_id              => '00000000-0000-0000-0000-000000000c80'::uuid,
+  p_operation_type       => 'rent',
+  p_property_type        => 'casa',
+  p_price                => 15000.00,
+  p_address              => 'Calle Wizard Full 1',
+  p_lat                  => 20.3,
+  p_lng                  => -100.3,
+  p_cloudflare_uid       => 'cfuid-wizard-full-01',
+  p_property_status      => 'pending_review',
+  p_built_square_meters  => 180.5,
+  p_half_bathrooms       => 1,
+  p_currency             => 'USD'
+);
+
+select is(
+  (select row(built_square_meters, half_bathrooms, currency)::text
+     from public.properties
+    where owner_user_id = '00000000-0000-0000-0000-000000000c80'),
+  '(180.5,1,USD)',
+  '39) p_built_square_meters/p_half_bathrooms/p_currency se persisten en la fila real'
+);
+
+-- 40) los 3 campos nuevos son opcionales -- omitidos usan sus defaults
+-- (built_square_meters/half_bathrooms null, currency default MXN)
+
+insert into public.property_videos
+  (id, property_id, agent_id, status, position, cloudflare_uid, tus_upload_url)
+values (
+  '00000000-0000-0000-0000-000000000c81',
+  null,
+  '00000000-0000-0000-0000-000000000c81',
+  'processing',
+  1,
+  'cfuid-wizard-default-01',
+  'https://upload.example/wizard-default'
+);
+
+select public.publish_property_atomic(
+  p_user_id         => '00000000-0000-0000-0000-000000000c81'::uuid,
+  p_operation_type  => 'rent',
+  p_property_type   => 'casa',
+  p_price           => 15000.00,
+  p_address         => 'Calle Wizard Default 1',
+  p_lat             => 20.4,
+  p_lng             => -100.4,
+  p_cloudflare_uid  => 'cfuid-wizard-default-01',
+  p_property_status => 'pending_review'
+  -- los 3 params nuevos omitidos a propósito
+);
+
+select is(
+  (select row(built_square_meters, half_bathrooms, currency)::text
+     from public.properties
+    where owner_user_id = '00000000-0000-0000-0000-000000000c81'),
+  '(,,MXN)',
+  '40) p_built_square_meters/p_half_bathrooms omitidos -> null; p_currency omitido -> default MXN'
 );
 
 select * from finish();

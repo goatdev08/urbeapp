@@ -2,20 +2,32 @@
  * MapPicker.tsx — Mapa interactivo para fijar la ubicación exacta de la propiedad.
  *
  * Subtarea 8.5 — Implement map picker for exact location selection.
+ * Quick fix 2026-08-15 (sin tarea de Taskmaster): modo "mira central" estilo
+ * Uber/Airbnb — reemplaza el tap-to-place + marcador arrastrable. El pin
+ * queda FIJO al centro de la pantalla; el usuario arrastra/hace zoom al MAPA
+ * (no al pin) hasta encajar el punto exacto debajo. Más preciso que un tap en
+ * un mapa chico, porque el usuario puede acercar el zoom antes de soltar.
  *
  * SUPUESTO: requiere un dev build con el módulo nativo de react-native-maps enlazado.
  *   NO funciona en Expo Go. Si el módulo no está disponible en runtime, el
  *   MapErrorBoundary muestra un fallback plano en lugar de crashear el wizard.
  *   Para activar el mapa: `pnpm expo run:ios` / `pnpm expo run:android` (o EAS build).
  *
- * Invariante: lat/lng SOLO se escriben en el estado cuando el usuario toca o arrastra
- *   el marcador. Antes de interactuar, state.lat/state.lng permanecen null.
+ * Invariante: lat/lng SOLO se escriben en el estado cuando el usuario arrastra
+ *   o hace zoom al mapa (gesto real — `details.isGesture` de
+ *   onRegionChangeComplete). Un recentrado PROGRAMÁTICO (montaje, o el efecto
+ *   que sigue a state.lat/lng cambiando desde fuera — p. ej. el autocomplete
+ *   de dirección) nunca escribe de vuelta al estado: sin ese guard, el mapa
+ *   entraría en un loop de "recentra → dispara evento → recentra otra vez".
  *
- * ponytail: MapView estándar de react-native-maps — sin wrappers ni dependencias extra.
+ * ponytail: MapView estándar de react-native-maps — sin wrappers ni dependencias
+ *   extra; el pin central es un <MapPinIcon> posicionado con position:absolute,
+ *   no un <Marker> geo-anclado (ya no representa una coordenada del mapa, sino
+ *   el centro fijo del viewport).
  */
 import React, { Component, useEffect, useRef } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import MapView, { Marker } from 'react-native-maps';
+import MapView, { type Region } from 'react-native-maps';
 
 import { MapPinIcon } from '@/components/MapPinIcon';
 import { useLocation } from '@/features/location/LocationProvider';
@@ -44,13 +56,8 @@ const CDMX_REGION = {
 /** Zoom más cerrado cuando ya hay coords seleccionadas (~1 km). */
 const SELECTED_DELTA = 0.01;
 
-// ---------------------------------------------------------------------------
-// Tipo interno para el evento de coordenada (compartido por onPress y onDragEnd)
-// ---------------------------------------------------------------------------
-
-type CoordinateEvent = {
-  nativeEvent: { coordinate: { latitude: number; longitude: number } };
-};
+/** Tamaño del pin central — igual al que usaba el Marker anterior. */
+const PIN_SIZE = 38;
 
 // ---------------------------------------------------------------------------
 // Props
@@ -59,7 +66,7 @@ type CoordinateEvent = {
 export interface MapPickerProps {
   lat: number | null;
   lng: number | null;
-  /** Se invoca al tocar el mapa o al soltar el marcador. Solo aquí se actualizan coords. */
+  /** Se invoca cuando el usuario arrastra/hace zoom al mapa (gesto real). Solo aquí se actualizan coords. */
   onLocationChange: (lat: number, lng: number) => void;
 }
 
@@ -108,8 +115,10 @@ export function MapPicker({ lat, lng, onLocationChange }: MapPickerProps) {
   const { coords: user_coords } = useLocation();
 
   // Recentra el mapa cuando las coords cambian desde fuera (p. ej. al elegir una
-  // dirección del autocomplete) o al fijar el pin manualmente. initialRegion solo
-  // aplica al primer montaje, así que sin esto el pin quedaría fuera de vista.
+  // dirección del autocomplete). initialRegion solo aplica al primer montaje,
+  // así que sin esto el pin quedaría fuera de vista. Este recentrado es
+  // PROGRAMÁTICO — el onRegionChangeComplete que dispara NO debe rescribir el
+  // estado (ver guard de isGesture abajo).
   useEffect(() => {
     if (lat === null || lng === null) return;
     map_ref.current?.animateToRegion(
@@ -141,10 +150,13 @@ export function MapPicker({ lat, lng, onLocationChange }: MapPickerProps) {
         }
       : CDMX_REGION;
 
-  // Handler compartido — fijar coords cuando el usuario toca el mapa.
-  const handle_coordinate = (e: CoordinateEvent) => {
-    const { latitude, longitude } = e.nativeEvent.coordinate;
-    onLocationChange(latitude, longitude);
+  // Modo mira central: el pin es fijo, el mapa se mueve. Solo un gesto REAL
+  // del usuario (pan/pinch, details.isGesture) escribe al estado — un
+  // recentrado programático (animateToRegion de arriba, o el propio montaje)
+  // también dispara este callback pero con isGesture=false.
+  const handle_region_change_complete = (region: Region, details?: { isGesture?: boolean }) => {
+    if (!details?.isGesture) return;
+    onLocationChange(region.latitude, region.longitude);
   };
 
   return (
@@ -155,25 +167,16 @@ export function MapPicker({ lat, lng, onLocationChange }: MapPickerProps) {
           testID="map-picker"
           style={styles.map}
           initialRegion={initial_region}
-          onPress={handle_coordinate}
+          onRegionChangeComplete={handle_region_change_complete}
           // ponytail: provider omitido — usa el default de la plataforma
           //   (Google Maps en Android, Apple Maps en iOS). El GOOGLE_MAPS_API_KEY
           //   ya está configurado en app.config.js para ambas plataformas.
-        >
-          {/* Marker aparece SOLO cuando el usuario ha interactuado — nunca con coords falsas */}
-          {has_location && (
-            <Marker
-              coordinate={{ latitude: lat, longitude: lng }}
-              draggable
-              onDragEnd={handle_coordinate}
-              anchor={{ x: 0.5, y: 1 }}
-              centerOffset={{ x: 0, y: -19 }}
-            >
-              {/* Pin canónico Phosphor — mismo icono que el mapa global y el detalle */}
-              <MapPinIcon size={38} />
-            </Marker>
-          )}
-        </MapView>
+        />
+
+        {/* Pin central fijo — no geo-anclado, siempre marca el centro del viewport. */}
+        <View style={styles.center_pin} pointerEvents="none" testID="map-picker-center-pin">
+          <MapPinIcon size={PIN_SIZE} />
+        </View>
 
         {/* Feedback de coordenadas / hint de interacción */}
         {has_location ? (
@@ -182,7 +185,7 @@ export function MapPicker({ lat, lng, onLocationChange }: MapPickerProps) {
           </Text>
         ) : (
           <Text style={styles.hint_text}>
-            Toca el mapa para fijar la ubicación exacta
+            Mueve el mapa para fijar la ubicación exacta
           </Text>
         )}
       </View>
@@ -205,6 +208,17 @@ const styles = StyleSheet.create({
   map: {
     width: '100%',
     height: 240,
+  },
+
+  // Pin fijo al centro del contenedor del mapa — la PUNTA del icono (no su
+  // centro geométrico) debe caer exactamente en el centro: se desplaza medio
+  // ancho a la izquierda y el alto completo hacia arriba.
+  center_pin: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    marginLeft: -PIN_SIZE / 2,
+    marginTop: -PIN_SIZE,
   },
 
   // Fallback cuando el módulo nativo no está disponible

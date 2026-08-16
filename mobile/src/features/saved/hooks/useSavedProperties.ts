@@ -34,6 +34,7 @@ type VideoEmbed = { thumbnail_url: string | null; position: number };
 type PropertyEmbed = {
   id: string;
   price: number;
+  currency?: string | null;
   operation_type: string;
   property_type: string;
   status: string;
@@ -93,6 +94,7 @@ export function useSavedProperties(deps?: { supabase?: any }): UseSavedPropertie
         `properties(
           id,
           price,
+          currency,
           operation_type,
           property_type,
           status,
@@ -138,6 +140,7 @@ export function useSavedProperties(deps?: { supabase?: any }): UseSavedPropertie
         // ponytail: cast necesario porque el embed no viene tipado por supabase-js;
         // los valores reales son un subconjunto del enum de la DB.
         price: p.price,
+        currency: p.currency ?? 'MXN',
         operation_type: p.operation_type as GridProperty['operation_type'],
         property_type: p.property_type as GridProperty['property_type'],
         status: p.status as GridProperty['status'],

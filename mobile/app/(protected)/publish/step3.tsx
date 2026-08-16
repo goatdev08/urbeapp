@@ -12,10 +12,11 @@
  * Validación del botón "Siguiente": validate_step3 completo
  * (price/address/lat/lng — price_visible es un toggle, nunca bloquea).
  */
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -30,9 +31,23 @@ import { useRouter } from 'expo-router';
 import { usePublishForm } from '@/features/publish/store/PublishFormContext';
 import { validate_step3 } from '@/features/publish/validation';
 import { AddressAutocomplete } from '@/features/publish/components/AddressAutocomplete';
+import { CompactStepper } from '@/features/publish/components/CompactStepper';
 import { MapPicker } from '@/features/publish/components/MapPicker';
-import { NumericStepper } from '@/features/publish/components/NumericStepper';
 import { PrimaryButton } from '@/components/PrimaryButton';
+import type { Currency } from '@/features/publish/store/types';
+
+// ---------------------------------------------------------------------------
+// Formateo de precio con separador de miles (quick fix 2026-08-15) — el
+// usuario solo teclea dígitos; se muestran agrupados (1,000 / 1,000,000) y el
+// state guarda el número limpio.
+// ---------------------------------------------------------------------------
+
+function format_price_digits(digits: string): string {
+  if (!digits) return '';
+  return Number(digits).toLocaleString('en-US');
+}
+
+const CURRENCY_OPTIONS: Currency[] = ['MXN', 'USD'];
 
 // ---------------------------------------------------------------------------
 // Tokens (alineados con step1/step2)
@@ -60,25 +75,26 @@ export default function Step3Screen() {
   // Validación completa: price > 0, address, lat y lng presentes.
   const { valid, errors } = validate_step3(state);
 
-  // Mensajes de error deduplicados para mostrar al usuario.
-  // lat y lng comparten el mismo texto — se colapsan en uno solo.
-  const error_messages = (() => {
-    const msgs: string[] = [];
-    if (errors.price) msgs.push(errors.price);
-    if (errors.address) msgs.push(errors.address);
-    if (errors.lat || errors.lng) msgs.push('La ubicación en el mapa es requerida');
-    return msgs;
-  })();
+  // Quick fix 2026-08-15: los errores solo se PINTAN (borde rojo + mensaje por
+  // campo) después de que el usuario intenta avanzar sin completar algo — no
+  // al escribir/perder foco. Se resetea si vuelve a intentar y ya es válido.
+  const [attempted_submit, set_attempted_submit] = useState(false);
+  const show_errors = attempted_submit && !valid;
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
   const handle_price_change = useCallback(
     (text: string) => {
-      // Acepta solo dígitos y un punto decimal; rechaza texto libre.
-      const clean = text.replace(/[^0-9.]/g, '');
-      const num = parseFloat(clean);
+      // Solo dígitos — el separador de miles se agrega al mostrar, no lo teclea el usuario.
+      const digits = text.replace(/[^0-9]/g, '');
+      const num = digits ? Number(digits) : NaN;
       update({ price: Number.isFinite(num) && num > 0 ? num : null });
     },
+    [update],
+  );
+
+  const handle_currency_change = useCallback(
+    (next: Currency) => update({ currency: next }),
     [update],
   );
 
@@ -92,6 +108,11 @@ export default function Step3Screen() {
     [update],
   );
 
+  const handle_half_bathrooms_change = useCallback(
+    (next: number) => update({ half_bathrooms: next }),
+    [update],
+  );
+
   const handle_sqm_change = useCallback(
     (text: string) => {
       const clean = text.replace(/[^0-9.]/g, '');
@@ -101,15 +122,29 @@ export default function Step3Screen() {
     [update],
   );
 
+  const handle_built_sqm_change = useCallback(
+    (text: string) => {
+      const clean = text.replace(/[^0-9.]/g, '');
+      const num = parseFloat(clean);
+      update({ built_square_meters: Number.isFinite(num) && num > 0 ? num : null });
+    },
+    [update],
+  );
+
   const handle_next = useCallback(() => {
-    if (!valid) return;
+    if (!valid) {
+      set_attempted_submit(true);
+      return;
+    }
     router.push('/publish/step4');
   }, [valid, router]);
 
   // ── Valores controlados (string para los TextInput numéricos) ─────────────
 
-  const price_text = state.price !== null ? String(state.price) : '';
+  const price_text = state.price !== null ? format_price_digits(String(state.price)) : '';
   const sqm_text = state.square_meters !== null ? String(state.square_meters) : '';
+  const built_sqm_text =
+    state.built_square_meters !== null ? String(state.built_square_meters) : '';
 
   return (
     <SafeAreaView style={styles.container}>
@@ -133,25 +168,60 @@ export default function Step3Screen() {
           </View>
 
           {/* ── Precio ───────────────────────────────────────────────────── */}
-          <Text style={styles.section_label}>Precio (MXN)</Text>
-          <View style={styles.input_row}>
-            <Text style={styles.currency_hint}>$</Text>
-            <TextInput
-              style={styles.price_input}
-              value={price_text}
-              onChangeText={handle_price_change}
-              keyboardType="numeric"
-              placeholder="0"
-              placeholderTextColor={COLOR_HINT}
-              returnKeyType="next"
-              accessibilityLabel="Precio en pesos mexicanos"
-            />
-            <Text style={styles.currency_suffix}>MXN</Text>
+          <Text style={styles.section_label}>Precio</Text>
+          <View style={styles.price_row}>
+            <View
+              style={[
+                styles.input_row,
+                styles.price_input_row,
+                show_errors && errors.price && styles.input_row_error,
+              ]}
+            >
+              <Text style={styles.currency_hint}>$</Text>
+              <TextInput
+                style={styles.price_input}
+                value={price_text}
+                onChangeText={handle_price_change}
+                keyboardType="numeric"
+                placeholder="0"
+                placeholderTextColor={COLOR_HINT}
+                returnKeyType="next"
+                accessibilityLabel="Precio"
+              />
+            </View>
+            {/* Selector de moneda — quick fix 2026-08-15, solo etiqueta (sin conversión) */}
+            <View style={styles.currency_toggle}>
+              {CURRENCY_OPTIONS.map((c) => (
+                <Pressable
+                  key={c}
+                  onPress={() => handle_currency_change(c)}
+                  style={[
+                    styles.currency_option,
+                    state.currency === c && styles.currency_option_active,
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: state.currency === c }}
+                  accessibilityLabel={`Moneda ${c}`}
+                >
+                  <Text
+                    style={[
+                      styles.currency_option_text,
+                      state.currency === c && styles.currency_option_text_active,
+                    ]}
+                  >
+                    {c}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
           </View>
-          {/* Hint de moneda contextual */}
-          <Text style={styles.field_hint}>
-            Precio mensual si es renta · total si es venta.
-          </Text>
+          {show_errors && errors.price ? (
+            <Text style={styles.field_error}>{errors.price}</Text>
+          ) : (
+            <Text style={styles.field_hint}>
+              Precio mensual si es renta · total si es venta.
+            </Text>
+          )}
 
           {/* ── Visibilidad del precio (73.3, price_visible) ────────────── */}
           <View style={[styles.toggles_card, styles.section_gap]}>
@@ -173,50 +243,70 @@ export default function Step3Screen() {
           </View>
 
           {/* ── Recámaras ─────────────────────────────────────────────── */}
-          <View style={[styles.stepper_row, styles.section_gap]}>
-            <View style={styles.stepper_label_col}>
-              <Text style={styles.section_label}>Recámaras</Text>
-              <Text style={styles.field_hint}>Opcional</Text>
-            </View>
-            <NumericStepper
+          {/* Comparte CompactStepper con baños/medios baños para que la
+              caja tenga el mismo tamaño; el segundo hueco del row queda
+              vacío (mismo grid de 2 columnas, gap:10) en vez de estirar
+              la caja de recámaras a todo el ancho. */}
+          <View style={[styles.dimensions_row, styles.section_gap]}>
+            <CompactStepper
+              label="Recámaras"
               value={state.bedrooms}
               min={0}
               max={20}
               onChange={handle_bedrooms_change}
-              placeholder="0"
             />
+            <View style={styles.dimension_col} />
           </View>
 
-          {/* ── Baños ─────────────────────────────────────────────────── */}
-          <View style={[styles.stepper_row, styles.section_gap]}>
-            <View style={styles.stepper_label_col}>
-              <Text style={styles.section_label}>Baños</Text>
-              <Text style={styles.field_hint}>Opcional</Text>
-            </View>
-            <NumericStepper
+          {/* ── Baños + medios baños ─────────────────────────────────────── */}
+          <View style={[styles.dimensions_row, styles.section_gap]}>
+            <CompactStepper
+              label="Baños"
               value={state.bathrooms}
               min={0}
               max={20}
               onChange={handle_bathrooms_change}
-              placeholder="0"
+            />
+            <CompactStepper
+              label="Medios baños"
+              value={state.half_bathrooms}
+              min={0}
+              max={5}
+              onChange={handle_half_bathrooms_change}
             />
           </View>
 
-          {/* ── Metros cuadrados ──────────────────────────────────────── */}
-          <Text style={[styles.section_label, styles.section_gap]}>
-            Superficie (m²)
-          </Text>
-          <TextInput
-            style={styles.text_input}
-            value={sqm_text}
-            onChangeText={handle_sqm_change}
-            keyboardType="numeric"
-            placeholder="Ej. 85"
-            placeholderTextColor={COLOR_HINT}
-            returnKeyType="next"
-            accessibilityLabel="Superficie en metros cuadrados"
-          />
-          <Text style={styles.field_hint}>Opcional</Text>
+          {/* ── Superficie: terreno + construida lado a lado ────────────── */}
+          <View style={[styles.dimensions_row, styles.section_gap]}>
+            <View style={styles.dimension_col}>
+              <Text style={styles.section_label}>Terreno (m²)</Text>
+              <TextInput
+                style={styles.text_input}
+                value={sqm_text}
+                onChangeText={handle_sqm_change}
+                keyboardType="numeric"
+                placeholder="Ej. 85"
+                placeholderTextColor={COLOR_HINT}
+                returnKeyType="next"
+                accessibilityLabel="Superficie de terreno en metros cuadrados"
+              />
+              <Text style={styles.field_hint}>Opcional</Text>
+            </View>
+            <View style={styles.dimension_col}>
+              <Text style={styles.section_label}>Construida (m²)</Text>
+              <TextInput
+                style={styles.text_input}
+                value={built_sqm_text}
+                onChangeText={handle_built_sqm_change}
+                keyboardType="numeric"
+                placeholder="Ej. 65"
+                placeholderTextColor={COLOR_HINT}
+                returnKeyType="next"
+                accessibilityLabel="Superficie construida en metros cuadrados"
+              />
+              <Text style={styles.field_hint}>Opcional</Text>
+            </View>
+          </View>
 
           {/* ── Dirección ─────────────────────────────────────────────── */}
           <Text style={[styles.section_label, styles.section_gap]}>
@@ -227,9 +317,13 @@ export default function Step3Screen() {
             onSelect={(address) => update({ address })}
             onPlaceSelected={(address, lat, lng) => update({ address, lat, lng })}
           />
-          <Text style={styles.field_hint}>
-            Escribe y selecciona de las sugerencias para fijar el pin, o ajústalo tocando el mapa.
-          </Text>
+          {show_errors && errors.address ? (
+            <Text style={styles.field_error}>{errors.address}</Text>
+          ) : (
+            <Text style={styles.field_hint}>
+              Escribe y selecciona de las sugerencias para fijar el pin, o ajusta el mapa.
+            </Text>
+          )}
 
           {/* ── Mapa ────────────────────────────────────────────────────────
               Mapa interactivo — escribe update({ lat, lng }) solo al interactuar.
@@ -242,6 +336,9 @@ export default function Step3Screen() {
               onLocationChange={(lat, lng) => update({ lat, lng })}
             />
           </View>
+          {show_errors && (errors.lat || errors.lng) && (
+            <Text style={styles.field_error}>La ubicación en el mapa es requerida</Text>
+          )}
 
           {/* Espacio final para que el contenido no quede bajo el botón */}
           <View style={styles.bottom_spacer} />
@@ -249,22 +346,7 @@ export default function Step3Screen() {
 
         {/* ── Botón Siguiente (fijo al fondo) ───────────────────────────── */}
         <View style={[styles.cta_area, { paddingBottom: 16 + insets.bottom }]}>
-          {!valid && error_messages.length > 0 && (
-            <View style={styles.errors_container}>
-              <Text style={styles.errors_title}>Falta completar:</Text>
-              {error_messages.map((msg) => (
-                <Text key={msg} style={styles.error_item}>
-                  {'•'} {msg}
-                </Text>
-              ))}
-            </View>
-          )}
-          <PrimaryButton
-            label="Siguiente"
-            onPress={handle_next}
-            surface="light"
-            disabled={!valid}
-          />
+          <PrimaryButton label="Siguiente" onPress={handle_next} surface="light" />
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -323,6 +405,11 @@ const styles = StyleSheet.create({
   },
 
   // ── Precio ───────────────────────────────────────────────────────────────
+  price_row: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
   input_row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -332,6 +419,12 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 14,
     height: 52,
+  },
+  price_input_row: {
+    flex: 1,
+  },
+  input_row_error: {
+    borderColor: COLOR_ERROR,
   },
   currency_hint: {
     fontSize: 18,
@@ -346,11 +439,31 @@ const styles = StyleSheet.create({
     color: COLOR_TEXT_PRIMARY,
     padding: 0,
   },
-  currency_suffix: {
+
+  // ── Selector de moneda (quick fix 2026-08-15) ─────────────────────────────
+  currency_toggle: {
+    flexDirection: 'row',
+    height: 52,
+    borderWidth: 1,
+    borderColor: COLOR_BORDER,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  currency_option: {
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  currency_option_active: {
+    backgroundColor: COLOR_ACCENT,
+  },
+  currency_option_text: {
     fontSize: 13,
-    fontWeight: '500',
-    color: COLOR_HINT,
-    marginLeft: 6,
+    fontWeight: '600',
+    color: COLOR_TEXT_SECONDARY,
+  },
+  currency_option_text_active: {
+    color: '#FFFFFF',
   },
 
   // ── Campo genérico ───────────────────────────────────────────────────────
@@ -365,27 +478,26 @@ const styles = StyleSheet.create({
     color: COLOR_TEXT_PRIMARY,
   },
 
-  // ── Stepper row ──────────────────────────────────────────────────────────
-  stepper_row: {
+  // ── Fila de 2 columnas (baños/medios baños, terreno/construida) ──────────
+  dimensions_row: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: COLOR_INPUT_BG,
-    borderWidth: 1,
-    borderColor: COLOR_BORDER,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    gap: 10,
   },
-  stepper_label_col: {
-    gap: 2,
+  dimension_col: {
+    flex: 1,
   },
 
-  // ── Hint debajo del campo ────────────────────────────────────────────────
+  // ── Hint / error debajo del campo ─────────────────────────────────────────
   field_hint: {
     fontSize: 12,
     color: COLOR_HINT,
     marginTop: 4,
+  },
+  field_error: {
+    fontSize: 12,
+    color: COLOR_ERROR,
+    marginTop: 4,
+    fontWeight: '500',
   },
 
   // ── Toggles (price_visible) ─────────────────────────────────────────────
@@ -412,23 +524,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: COLOR_TEXT_PRIMARY,
     fontWeight: '500',
-  },
-
-  // ── Errores sobre el botón ───────────────────────────────────────────────
-  errors_container: {
-    marginBottom: 10,
-    paddingHorizontal: 4,
-  },
-  errors_title: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: COLOR_ERROR,
-    marginBottom: 4,
-  },
-  error_item: {
-    fontSize: 12,
-    color: COLOR_ERROR,
-    lineHeight: 18,
   },
 
   // ── CTA ──────────────────────────────────────────────────────────────────

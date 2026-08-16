@@ -37,6 +37,14 @@ export interface PublishPropertyInput {
   // true (mismo default que la columna properties.price_visible).
   price_visible: boolean;
   description: string;
+  // Quick fixes wizard paso 3 (2026-08-15): superficie construida (m², separada
+  // de square_meters = terreno) y medios baños — mismo patrón lenient que
+  // bathrooms/square_meters (ausente o no-numérico → null, sin error 400).
+  built_square_meters: number | null;
+  half_bathrooms: number | null;
+  // Moneda de price — 'MXN'|'USD', solo etiqueta (sin conversión). Ausente →
+  // 'MXN' (mismo default que la columna); valor fuera del enum → 400.
+  currency: "MXN" | "USD";
   // video (68.12 — upload-first: cloudflare_uid reemplaza video_id + storage_path;
   // el video ya fue subido a Cloudflare Stream ANTES de existir la propiedad y
   // solo se ENLAZA — ver publish_property_atomic en supabase/migrations).
@@ -85,6 +93,10 @@ export interface PropertyPublishParams {
   // aunque el agente apagara "Mostrar precio en el feed".
   price_visible: boolean;
   description: string;
+  // Quick fixes wizard paso 3 (2026-08-15) — mismo contrato que arriba.
+  built_square_meters: number | null;
+  half_bathrooms: number | null;
+  currency: "MXN" | "USD";
   // Estado explícito (contrato testeable): el handler siempre pasa estos valores.
   // 73.4 — PRD §14.2: en beta TODA publicación va a pending_review, ya no hay
   // auto-aprobación a 'active'. El tipo queda como UNIÓN (no se angosta al

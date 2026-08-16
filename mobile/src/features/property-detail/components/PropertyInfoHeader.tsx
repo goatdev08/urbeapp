@@ -20,6 +20,7 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Bathtub, Bed, type Icon, Ruler } from 'phosphor-react-native';
 
+import { format_price } from '@/lib/formatPrice';
 import { colors, fonts, radii, spacing, type_scale } from '@/theme/theme';
 import type { PropertyDetail } from '../types';
 
@@ -27,13 +28,8 @@ import type { PropertyDetail } from '../types';
 // Constantes / helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-// ponytail: formatter instanciado fuera del componente — singleton reutilizado
-// en cada render sin re-crear el objeto en cada llamada.
-const MXN_FORMATTER = new Intl.NumberFormat('es-MX', {
-  style: 'currency',
-  currency: 'MXN',
-  maximumFractionDigits: 0,
-});
+/** Texto cuando el agente ocultó el precio (price_visible=false). */
+const PRICE_HIDDEN_LABEL = 'Precio a consultar';
 
 const PROPERTY_TYPE_LABEL: Record<string, string> = {
   casa:         'Casa',
@@ -64,11 +60,15 @@ export type PropertyInfoHeaderProps = {
 export function PropertyInfoHeader({ data }: PropertyInfoHeaderProps): React.JSX.Element {
   const {
     price,
+    currency,
+    price_visible,
     operation_type,
     property_type,
     bedrooms,
     bathrooms,
+    half_bathrooms,
     square_meters,
+    built_square_meters,
     address,
   } = data;
 
@@ -87,9 +87,22 @@ export function PropertyInfoHeader({ data }: PropertyInfoHeaderProps): React.JSX
   // Specs null-safe — se incluyen solo los campos con valor numérico.
   type SpecItem = { icon: Icon; label: string };
   const specs: SpecItem[] = [];
+  // Quick fix 2026-08-15: medios baños y superficie construida (si existen).
+  //   "2 baños + 1 medio" · "120 m² terreno · 85 m² const."; si solo hay
+  //   terreno se conserva el "X m²" de siempre.
   if (bedrooms      !== null) specs.push({ icon: Bed,     label: `${bedrooms} rec.` });
-  if (bathrooms     !== null) specs.push({ icon: Bathtub, label: `${bathrooms} baños` });
-  if (square_meters !== null) specs.push({ icon: Ruler,   label: `${square_meters} m²` });
+  if (bathrooms !== null || half_bathrooms) {
+    const full = bathrooms ?? 0;
+    const half_txt = half_bathrooms ? ` + ${half_bathrooms} medio${half_bathrooms > 1 ? 's' : ''}` : '';
+    specs.push({ icon: Bathtub, label: `${full} baños${half_txt}` });
+  }
+  if (square_meters !== null && built_square_meters !== null) {
+    specs.push({ icon: Ruler, label: `${square_meters} m² terreno · ${built_square_meters} m² const.` });
+  } else if (square_meters !== null) {
+    specs.push({ icon: Ruler, label: `${square_meters} m²` });
+  } else if (built_square_meters !== null) {
+    specs.push({ icon: Ruler, label: `${built_square_meters} m² const.` });
+  }
 
   return (
     <View style={styles.container}>
@@ -119,8 +132,10 @@ export function PropertyInfoHeader({ data }: PropertyInfoHeaderProps): React.JSX
       <View style={styles.price_block}>
         <View style={styles.price_tick} />
         <View style={styles.price_row}>
-          <Text style={styles.price_text}>{MXN_FORMATTER.format(price)}</Text>
-          {show_per_mes && (
+          <Text style={styles.price_text}>
+            {price_visible ? format_price(price, currency) : PRICE_HIDDEN_LABEL}
+          </Text>
+          {show_per_mes && price_visible && (
             <Text style={styles.price_per}>/mes</Text>
           )}
         </View>

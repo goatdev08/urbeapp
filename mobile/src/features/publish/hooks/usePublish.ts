@@ -110,9 +110,12 @@ export function usePublish(deps?: UsePublishDeps): UsePublishResult {
         operation_type: state.operation_type,
         property_type: state.property_type,
         price: state.price,
+        currency: state.currency,
         bedrooms: state.bedrooms,
         bathrooms: state.bathrooms,
+        half_bathrooms: state.half_bathrooms,
         square_meters: state.square_meters,
+        built_square_meters: state.built_square_meters,
         address: state.address,
         ...(state.lat !== null && state.lng !== null
           ? { location: `SRID=4326;POINT(${state.lng} ${state.lat})` }

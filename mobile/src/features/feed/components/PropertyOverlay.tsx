@@ -29,21 +29,31 @@ import { Bathtub, Bed, BookmarkSimple, Heart, type Icon, ShareNetwork, WhatsappL
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useR2Urls } from '@/hooks/useR2Urls';
-import { colors, fonts, glass, spacing } from '@/theme/theme';
+import { format_price } from '@/lib/formatPrice';
+import { colors, fonts, glass, radii, spacing } from '@/theme/theme';
 import type { FeedPropertyWithUrl } from '../types';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Formatea precio en MXN sin decimales: $15,000 */
-function format_price(price: number): string {
-  return new Intl.NumberFormat('es-MX', {
-    style: 'currency',
-    currency: 'MXN',
-    maximumFractionDigits: 0,
-  }).format(price);
-}
+/** Texto cuando el agente ocultó el precio (price_visible=false). */
+const PRICE_HIDDEN_LABEL = 'Precio a consultar';
+
+/** Etiquetas de los chips — mismos mapas que PropertyGridCard (op-badge de la
+ * identidad visual: Renta salvia / Venta arcilla). Fallback al valor crudo. */
+const OPERATION_LABEL: Record<string, string> = {
+  rent: 'Renta',
+  sale: 'Venta',
+  both: 'Renta/Venta',
+};
+const PROPERTY_TYPE_LABEL: Record<string, string> = {
+  casa: 'Casa',
+  departamento: 'Departamento',
+  local: 'Local',
+  oficina: 'Oficina',
+  terreno: 'Terreno',
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tipos
@@ -91,6 +101,11 @@ export function PropertyOverlay({
   // Fallback: inicial del nombre público; sin nombre, la del owner_user_id
   // (comportamiento previo a #145).
   const agent_initial = (property.agent_name ?? property.owner_user_id).charAt(0).toUpperCase();
+
+  // Chips de listado — mismo criterio de color que PropertyGridCard.
+  const is_sale = property.operation_type === 'sale' || property.operation_type === 'both';
+  const op_label = OPERATION_LABEL[property.operation_type] ?? property.operation_type;
+  const type_label = PROPERTY_TYPE_LABEL[property.property_type] ?? property.property_type;
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
@@ -196,14 +211,29 @@ export function PropertyOverlay({
           accessibilityRole="button"
           accessibilityLabel="Ver detalle de la propiedad"
         >
+          {/* Chips: operación (op-badge canónico) + tipo (glass neutro) —
+              quick fix 2026-08-15. Van encima de la dirección como en el
+              mockup del feed (op-badge sobre el título). */}
+          <View style={styles.chips_row} pointerEvents="none">
+            <View style={[styles.op_chip, is_sale && styles.op_chip_sale]}>
+              <Text style={styles.op_chip_text}>{op_label}</Text>
+            </View>
+            <View style={styles.type_chip}>
+              <Text style={styles.type_chip_text}>{type_label}</Text>
+            </View>
+          </View>
+
           {/* Dirección (título en el feed) */}
           <Text style={styles.address} numberOfLines={2}>
             {property.address}
           </Text>
 
-          {/* Precio en MXN */}
+          {/* Precio con divisa (sufijo siempre) o "Precio a consultar" si el
+              agente lo ocultó (price_visible=false). */}
           <Text style={styles.price} numberOfLines={1}>
-            {format_price(property.price)}
+            {property.price_visible
+              ? format_price(property.price, property.currency)
+              : PRICE_HIDDEN_LABEL}
           </Text>
 
           {/* Specs: recámaras y baños con íconos */}
@@ -373,6 +403,42 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(23,20,15,0.55)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
+  },
+  // Chips de listado (quick fix 2026-08-15) — op-badge de la identidad
+  // (salvia Renta / arcilla Venta) + tipo en glass oscuro como el rail.
+  chips_row: {
+    flexDirection: 'row',
+    gap: 6,
+    marginBottom: spacing.s_8,
+  },
+  op_chip: {
+    backgroundColor: colors.primary,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: radii.r_pill,
+  },
+  op_chip_sale: {
+    backgroundColor: colors.accent,
+  },
+  op_chip_text: {
+    fontFamily: fonts.sans_bold,
+    fontSize: 11,
+    color: '#FFFFFF',
+    letterSpacing: 0.1,
+  },
+  type_chip: {
+    backgroundColor: 'rgba(23,20,15,0.36)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: radii.r_pill,
+  },
+  type_chip_text: {
+    fontFamily: fonts.sans_bold,
+    fontSize: 11,
+    color: colors.paper,
+    letterSpacing: 0.1,
   },
   address: {
     fontFamily: fonts.display,

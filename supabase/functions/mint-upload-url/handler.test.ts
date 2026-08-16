@@ -92,6 +92,7 @@ import {
   type CallerVerifier,
   type CallerVerifyResult,
   type MintUploadUrlDeps,
+  type PendingUploadCanceller,
   type RegisterUploadingVideoParams,
   type StreamDirectUploadParams,
   type StreamDirectUploadResult,
@@ -546,3 +547,122 @@ Deno.test(
     assertEquals(registrar.calls.length, 0, "no regresión: sigue sin insertar con >=1 activo");
   },
 );
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Quick fix 2026-08-15 (hallazgo del smoke manual, sin tarea de Taskmaster):
+// "Cambiar video" durante una subida debe CANCELAR la anterior y dejar subir
+// otra — no 409 hasta que pase el reaper de 15 min. Contrato ADITIVO:
+//   body { replace: true } → antes del chequeo de concurrencia, el handler
+//   pide a PendingUploadCanceller.cancel_unattached_uploads(uid) soft-borrar
+//   las filas del caller con property_id IS NULL en uploading/processing (los
+//   videos "del wizard en curso"); luego sigue el flujo normal (el count solo
+//   verá filas ya asociadas a una propiedad). Sin `replace` (builds viejos) →
+//   comportamiento idéntico al anterior.
+// EDGE CASES:
+// - (RP-1) replace_true_llama_canceller_con_uid_del_caller_y_luego_200
+// - (RP-2) sin_replace_no_llama_canceller_y_conserva_409
+// - (RP-3) replace_true_pero_count_sigue_en_1_retorna_409 (fila asociada a una
+//          propiedad ya publicada — el replace NO la toca)
+// - (RP-4) canceller_lanza_retorna_500_sin_llamar_stream
+// - (RP-5) body_invalido_no_json_se_trata_como_sin_replace
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface FakePendingUploadCanceller extends PendingUploadCanceller {
+  calls: string[];
+}
+
+function canceller_ok(): FakePendingUploadCanceller {
+  return {
+    calls: [],
+    cancel_unattached_uploads(agent_id: string): Promise<number> {
+      this.calls.push(agent_id);
+      return Promise.resolve(1);
+    },
+  } as FakePendingUploadCanceller;
+}
+
+function canceller_throws(): FakePendingUploadCanceller {
+  return {
+    calls: [],
+    cancel_unattached_uploads(agent_id: string): Promise<number> {
+      this.calls.push(agent_id);
+      return Promise.reject(new Error("update property_videos failed"));
+    },
+  } as FakePendingUploadCanceller;
+}
+
+function post_request_with_body(body: string): Request {
+  return new Request("http://localhost/mint-upload-url", {
+    method: "POST",
+    headers: { Authorization: "Bearer fake.jwt.token", "Content-Type": "application/json" },
+    body,
+  });
+}
+
+Deno.test("(RP-1) replace_true_llama_canceller_con_uid_del_caller_y_luego_200", async () => {
+  const canceller = canceller_ok();
+  const uploader = uploader_ok(STREAM_RESULT);
+  const registrar = registrar_ok();
+  const deps = make_deps({
+    pendingUploadCanceller: canceller,
+    activeUploadChecker: checker_count({}),
+    streamUploadCreator: uploader,
+    videoRegistrar: registrar,
+  });
+  const res = await handler(post_request_with_body(JSON.stringify({ replace: true })), deps);
+  assertEquals(res.status, 200);
+  assertEquals(canceller.calls, [AGENT_UID], "debe cancelar los pendientes DEL CALLER (uid del JWT)");
+  assertEquals(uploader.calls.length, 1);
+  assertEquals(registrar.calls.length, 1);
+});
+
+Deno.test("(RP-2) sin_replace_no_llama_canceller_y_conserva_409", async () => {
+  const canceller = canceller_ok();
+  const deps = make_deps({
+    pendingUploadCanceller: canceller,
+    activeUploadChecker: checker_count({ [AGENT_UID]: 1 }),
+  });
+  const res = await handler(post_request(), deps);
+  assertEquals(res.status, 409, "sin replace el contrato viejo se conserva (builds instalados)");
+  assertEquals(canceller.calls.length, 0, "sin replace NO se cancela nada");
+});
+
+Deno.test("(RP-3) replace_true_pero_count_sigue_en_1_retorna_409", async () => {
+  // El count representa una fila YA asociada a una propiedad (processing de un
+  // video publicado) — el replace no la toca y la concurrencia sigue mandando.
+  const canceller = canceller_ok();
+  const uploader = uploader_ok(STREAM_RESULT);
+  const deps = make_deps({
+    pendingUploadCanceller: canceller,
+    activeUploadChecker: checker_count({ [AGENT_UID]: 1 }),
+    streamUploadCreator: uploader,
+  });
+  const res = await handler(post_request_with_body(JSON.stringify({ replace: true })), deps);
+  assertEquals(res.status, 409);
+  assertEquals(canceller.calls.length, 1, "el canceller SÍ corrió (antes del count)");
+  assertEquals(uploader.calls.length, 0);
+});
+
+Deno.test("(RP-4) canceller_lanza_retorna_500_sin_llamar_stream", async () => {
+  const uploader = uploader_ok(STREAM_RESULT);
+  const registrar = registrar_ok();
+  const deps = make_deps({
+    pendingUploadCanceller: canceller_throws(),
+    streamUploadCreator: uploader,
+    videoRegistrar: registrar,
+  });
+  const res = await handler(post_request_with_body(JSON.stringify({ replace: true })), deps);
+  assertEquals(res.status, 500);
+  const body = await res.json();
+  assertEquals(body.error.code, "INTERNAL_ERROR");
+  assertEquals(uploader.calls.length, 0);
+  assertEquals(registrar.calls.length, 0);
+});
+
+Deno.test("(RP-5) body_invalido_no_json_se_trata_como_sin_replace", async () => {
+  const canceller = canceller_ok();
+  const deps = make_deps({ pendingUploadCanceller: canceller });
+  const res = await handler(post_request_with_body("{not json"), deps);
+  assertEquals(res.status, 200, "un body ilegible no debe romper el flujo viejo");
+  assertEquals(canceller.calls.length, 0);
+});

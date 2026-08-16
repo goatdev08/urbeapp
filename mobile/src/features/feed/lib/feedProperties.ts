@@ -83,6 +83,12 @@ type UsersEmbed = {
 type QueryRow = {
   id: string;
   price: number;
+  operation_type: string;
+  property_type: string;
+  // Opcionales en el tipo: filas de fixtures/cache previas al quick fix
+  // 2026-08-15 no las traen → fail-open ('MXN' / true) al mapear.
+  currency?: string | null;
+  price_visible?: boolean | null;
   address: string;
   bedrooms: number;
   bathrooms: number;
@@ -99,7 +105,7 @@ type QueryRow = {
 // la resuelve por los FKs de su tabla base (user_preferences.user_id → users.id;
 // smoke remoto 2026-08-10 verificado). Un solo viaje: la identidad del agente
 // llega en la MISMA query del feed, sin RTT extra.
-const FEED_SELECT = `id, price, address, bedrooms, bathrooms, owner_user_id, agency_id, created_at,
+const FEED_SELECT = `id, price, operation_type, property_type, currency, price_visible, address, bedrooms, bathrooms, owner_user_id, agency_id, created_at,
        users!properties_owner_user_id_fkey(phone, agent_public_profiles(full_name, profile_photo_url)),
        property_videos(id, storage_path, position, thumbnail_url)`;
 
@@ -156,6 +162,10 @@ function build_feed_data(rows: QueryRow[], videos: MintedVideo[]): FeedPropertyW
     data.push({
       id: row.id,
       price: row.price,
+      operation_type: row.operation_type,
+      property_type: row.property_type,
+      currency: row.currency ?? 'MXN',
+      price_visible: row.price_visible ?? true,
       address: row.address,
       bedrooms: row.bedrooms,
       bathrooms: row.bathrooms,

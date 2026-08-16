@@ -38,6 +38,7 @@ const PROPERTY_TYPES = new Set<string>([
   "oficina",
   "terreno",
 ]);
+const CURRENCIES = new Set<string>(["MXN", "USD"]);
 
 // ── Validación del payload ─────────────────────────────────────────────────────
 
@@ -127,6 +128,16 @@ function parse_publish_property_input(raw: unknown): ParseResult {
     return invalid("cloudflare_uid no puede ser vacío");
   }
 
+  // currency: OPCIONAL — solo string explícito dentro del enum cuenta; ausente
+  // o ruido → default 'MXN' (mismo default que la columna). Valor presente
+  // pero fuera del enum → 400 (a diferencia de bathrooms/square_meters, un
+  // currency inválido no es "ruido silencioso": cambia cómo se lee el precio).
+  if (obj.currency !== undefined && obj.currency !== null) {
+    if (typeof obj.currency !== "string" || !CURRENCIES.has(obj.currency)) {
+      return invalid("currency debe ser 'MXN' o 'USD'");
+    }
+  }
+
   return {
     success: true,
     data: {
@@ -148,6 +159,17 @@ function parse_publish_property_input(raw: unknown): ParseResult {
       // (mismo default que la columna). NO coaccionar strings (lección #142).
       price_visible: typeof obj.price_visible === "boolean" ? obj.price_visible : true,
       description: typeof obj.description === "string" ? obj.description : "",
+      // Quick fixes wizard paso 3 (2026-08-15) — mismo patrón lenient que
+      // bathrooms/square_meters.
+      built_square_meters: typeof obj.built_square_meters === "number"
+        ? obj.built_square_meters
+        : null,
+      half_bathrooms: typeof obj.half_bathrooms === "number"
+        ? obj.half_bathrooms
+        : null,
+      currency: (typeof obj.currency === "string" ? obj.currency : "MXN") as
+        | "MXN"
+        | "USD",
       cloudflare_uid: obj.cloudflare_uid,
     },
   };
@@ -259,6 +281,9 @@ export async function handler(
     student_friendly: input.student_friendly,
     price_visible: input.price_visible,
     description: input.description,
+    built_square_meters: input.built_square_meters,
+    half_bathrooms: input.half_bathrooms,
+    currency: input.currency,
     property_status: "active",
     video_status: "ready",
     cloudflare_uid: input.cloudflare_uid,

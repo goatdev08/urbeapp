@@ -1,12 +1,19 @@
 ---
 tipo: estado
-actualizado: 2026-08-09
+actualizado: 2026-08-15
 ---
 
 
 # Estado actual
 
 > Narrativa de "dónde estamos hoy". El **qué sigue / qué está hecho** vive en **Taskmaster** (`task-master list`), no aquí.
+
+## Hoy (2026-08-15) — Quick fixes del wizard de publicación (paso 3/4), sesión directa
+
+- **✅ 7 pedidos de Abraham (screenshots anotados) + selector de moneda aprobado en el momento — implementados en `tarea/167-wizard-quickfixes` desde `origin/main` fresco.** Solo el punto de chips tenía tarea (#167, cerrada aquí); el resto (solo 2 tipos de operación, superficie terreno+construida, mapa modo mira-central, precio con comas, medios baños, errores inline solo-tras-intentar-avanzar) NO tenía tarea de Taskmaster — se implementó y documentó directo en el vault por instrucción explícita de Abraham para esta sesión. Detalle técnico completo en `wiki/log.md` (entrada 2026-08-15) y `wiki/codebase/mapa-codebase.md` (fila "Publicación completa Ola 1 (#73)").
+- **🔴 3 columnas aditivas nuevas en `properties`** (`built_square_meters`, `half_bathrooms`, `currency`), `publish_property_atomic` extendida a 20 params, `moderate_property_atomic` gana los 3 campos en el snapshot-apply. Verificado completo en local (pgTAP + Deno + Jest en verde, tsc/lint 0) — **nada desplegado al remoto todavía**, igual que la tarea #168 (organización puede anunciarse) que corrió en paralelo esta misma sesión en su propia rama.
+- **⚠️ Pendiente antes de dar la demo por cerrada:** smoke visual en emulador del modo mira-central del mapa y los chips de características (no se verificó UI real esta sesión, solo tsc/lint/tests). Y reconciliar el `set-status done` de #167 cuando la rama `tarea/168-org-can-advertise` mergee a `main` (su `tasks.json` es el único que conoce esa tarea hoy).
+- **🧾 Gotchas de entorno documentados** (ver wiki/log.md): el sentinel `.taskmaster/.current-red` no es branch-scoped (dos ramas activas en paralelo pueden pisarse la señal de TDD-guard) y el stack de Supabase local es un Postgres COMPARTIDO entre worktrees (dos ramas concurrentes ven la misma DB — se evitó `supabase migration up`/`repair` para no desalinear el ledger de la otra rama, se aplicó DDL directo por `docker exec psql`).
 
 ## Hoy (2026-08-09) — madrugada: las 6 bloqueantes del review CERRADAS + deploy completo (DB, EFs y OTA)
 

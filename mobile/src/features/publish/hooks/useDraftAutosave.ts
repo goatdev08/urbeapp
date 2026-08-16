@@ -100,9 +100,12 @@ function build_draft_payload(
     operation_type: state.operation_type,
     property_type: state.property_type,
     price: state.price,
+    currency: state.currency,
     bedrooms: state.bedrooms,
     bathrooms: state.bathrooms,
+    half_bathrooms: state.half_bathrooms,
     square_meters: state.square_meters,
+    built_square_meters: state.built_square_meters,
     address: state.address,
     // La tabla no tiene columnas lat/lng: la ubicación vive en `location`
     // geography(Point,4326) — PostgREST acepta EWKT (x=lng, y=lat).

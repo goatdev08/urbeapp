@@ -39,6 +39,17 @@
  *         - 'uploading' | 'missing' agotados los intentos → mensaje neutro.
  *         - el checker lanza → mensaje neutro, fail-closed (no reintenta).
  *
+ * Quick fix 2026-08-15 (smoke manual): "Cambiar video" durante una subida
+ * la CANCELA y deja subir otra de inmediato.
+ *   - `cancel()` aborta el uploadAsync en vuelo (AbortSignal) y vuelve a
+ *     'idle' sin error. Un upload cancelado/superado NUNCA escribe status,
+ *     error ni form después (token de generación `upload_seq_ref`: cada
+ *     await re-verifica que sigue siendo el upload vigente).
+ *   - `upload()` con otro en vuelo = supersede (cancela el anterior primero).
+ *   - mint-upload-url se invoca con `{ replace: true }` → la EF soft-borra los
+ *     pendientes SIN propiedad del caller antes del chequeo de concurrencia
+ *     (antes: 409 UPLOAD_IN_PROGRESS hasta 15 min después).
+ *
  * NOTA DE IMPLEMENTACIÓN — refs puro, sin useState (heredado del hook
  * anterior, ver historial): RNTL v14 actualiza result.current vía useEffect
  * (lazy); estado en refs + getters evita "unresolved act work" en sync act().
@@ -118,8 +129,10 @@ export interface UseVideoUploadDeps {
 }
 
 export interface UseVideoUploadResult {
-  /** Inicia la subida del video indicado por su URI local. */
+  /** Inicia la subida del video indicado por su URI local. Si hay otra en vuelo, la cancela primero. */
   upload: (local_uri: string | null) => Promise<void>;
+  /** Cancela la subida en vuelo (si la hay): aborta el binario y vuelve a 'idle' sin error. */
+  cancel: () => void;
   /** 'idle' | 'uploading' | 'processing' | 'error' */
   status: UploadStatus;
   /** Progreso de la subida 0..1 (0 cuando no hay subida activa, 1 al terminar el binario). */
@@ -230,6 +243,21 @@ export function useVideoUpload(deps?: UseVideoUploadDeps): UseVideoUploadResult 
   const status_ref = useRef<UploadStatus>('idle');
   const progress_ref = useRef<number>(0);
   const error_ref = useRef<string | null>(null);
+  // Generación del upload vigente + su AbortController. Un upload cuyo seq ya
+  // no es el actual fue cancelado o superado: no escribe nada más.
+  const upload_seq_ref = useRef(0);
+  const abort_ref = useRef<AbortController | null>(null);
+
+  const cancel = useCallback((): void => {
+    upload_seq_ref.current += 1;
+    abort_ref.current?.abort();
+    abort_ref.current = null;
+    status_ref.current = 'idle';
+    progress_ref.current = 0;
+    error_ref.current = null;
+    on_status_change?.('idle');
+    on_progress?.(0);
+  }, [on_status_change, on_progress]);
 
   const upload = useCallback(
     async (local_uri: string | null): Promise<void> => {
@@ -237,21 +265,35 @@ export function useVideoUpload(deps?: UseVideoUploadDeps): UseVideoUploadResult 
       // await (RNTL solo repinta result.current en su propio ciclo) — cada
       // transición pasa por aquí para que el llamador (step3.tsx) pueda
       // espejarla en estado de React EN VIVO, no solo tras el await final.
+      // Supersede: si hay otro upload en vuelo, este lo reemplaza.
+      if (abort_ref.current) abort_ref.current.abort();
+      upload_seq_ref.current += 1;
+      const my_seq = upload_seq_ref.current;
+      const controller = new AbortController();
+      abort_ref.current = controller;
+      const is_current = (): boolean => upload_seq_ref.current === my_seq;
+
       const set_status = (next: UploadStatus): void => {
+        if (!is_current()) return;
         status_ref.current = next;
         on_status_change?.(next);
       };
       // #150: gemelo de set_status para el progreso — la barra de step5 se
       // anima con cada tick notificado en vivo.
       const set_progress = (next: number): void => {
+        if (!is_current()) return;
         progress_ref.current = next;
         on_progress?.(next);
+      };
+      const set_error = (message: string | null): void => {
+        if (!is_current()) return;
+        error_ref.current = message;
       };
 
       // Guard: no URI seleccionado
       if (!local_uri) {
         set_status('error');
-        error_ref.current = 'No se seleccionó ningún video';
+        set_error('No se seleccionó ningún video');
         set_progress(0);
         return;
       }
@@ -259,7 +301,7 @@ export function useVideoUpload(deps?: UseVideoUploadDeps): UseVideoUploadResult 
       // Marcar como uploading ANTES del primer await — sincrónico en la
       // ejecución del async function, visible vía getter en sync act().
       set_status('uploading');
-      error_ref.current = null;
+      set_error(null);
       set_progress(0);
 
       // Validación local: existencia + techo de tamaño — SÍNCRONA vía la API
@@ -268,12 +310,12 @@ export function useVideoUpload(deps?: UseVideoUploadDeps): UseVideoUploadResult 
       const file = new File(local_uri);
       if (!file.exists) {
         set_status('error');
-        error_ref.current = 'El archivo de video no existe';
+        set_error('El archivo de video no existe');
         return;
       }
       if (file.size > MAX_STREAM_UPLOAD_BYTES) {
         set_status('error');
-        error_ref.current = SIZE_ERROR_MESSAGE;
+        set_error(SIZE_ERROR_MESSAGE);
         return;
       }
 
@@ -286,19 +328,20 @@ export function useVideoUpload(deps?: UseVideoUploadDeps): UseVideoUploadResult 
         const { data, error: mint_error } = await supabase_client.functions.invoke<{
           uploadUrl: string;
           uid: string;
-        }>('mint-upload-url', { body: {} });
+        }>('mint-upload-url', { body: { replace: true } });
+        if (!is_current()) return; // cancelado/superado mientras minteaba
 
         if (mint_error || !data?.uploadUrl || !data?.uid) {
           const code = await extract_error_code(mint_error);
           set_status('error');
-          error_ref.current = map_mint_error_code(code);
+          set_error(map_mint_error_code(code));
           return;
         }
         upload_url = data.uploadUrl;
         stream_uid = data.uid;
       } catch {
         set_status('error');
-        error_ref.current = NEUTRAL_ERROR_MESSAGE;
+        set_error(NEUTRAL_ERROR_MESSAGE);
         return;
       }
 
@@ -314,6 +357,7 @@ export function useVideoUpload(deps?: UseVideoUploadDeps): UseVideoUploadResult 
         httpMethod: 'POST',
         uploadType: UploadType.MULTIPART,
         fieldName: 'file',
+        signal: controller.signal,
         onProgress: ({ bytesSent, totalBytes }) => {
           set_progress(totalBytes > 0 ? Math.min(bytesSent / totalBytes, 0.99) : 0);
         },
@@ -327,9 +371,11 @@ export function useVideoUpload(deps?: UseVideoUploadDeps): UseVideoUploadResult 
         const { status } = await task.uploadAsync();
         stream_upload_ok = status >= 200 && status < 300;
       } catch (err) {
+        if (!is_current()) return; // abortado por cancel()/supersede — silencio
         console.warn('[useVideoUpload] uploadAsync failed, verificando estado real:', err);
         stream_upload_ok = false;
       }
+      if (!is_current()) return; // cancelado/superado mientras subía
 
       if (stream_upload_ok) {
         // Éxito — 'processing': el video queda transcodificando en Stream;
@@ -337,6 +383,7 @@ export function useVideoUpload(deps?: UseVideoUploadDeps): UseVideoUploadResult 
         update({ video_id: stream_uid, cloudflare_uid: stream_uid });
         set_status('processing');
         set_progress(1);
+        abort_ref.current = null;
         return;
       }
 
@@ -347,9 +394,14 @@ export function useVideoUpload(deps?: UseVideoUploadDeps): UseVideoUploadResult 
         interval_ms: verify_interval_ms,
         set_status,
         set_progress,
-        error_ref,
-        update,
+        // Proxy: solo escribe si este upload sigue vigente (cancel/supersede).
+        error_ref: {
+          get current() { return error_ref.current; },
+          set current(v: string | null) { set_error(v); },
+        },
+        update: (patch) => { if (is_current()) update(patch); },
       });
+      if (is_current()) abort_ref.current = null;
     },
 
     [supabase_client, update, check_video_status, verify_attempts, verify_interval_ms, on_status_change, on_progress],
@@ -358,6 +410,7 @@ export function useVideoUpload(deps?: UseVideoUploadDeps): UseVideoUploadResult 
   return useMemo(
     () => ({
       upload,
+      cancel,
       get status(): UploadStatus {
         return status_ref.current;
       },
@@ -369,6 +422,6 @@ export function useVideoUpload(deps?: UseVideoUploadDeps): UseVideoUploadResult 
       },
     }),
 
-    [upload],
+    [upload, cancel],
   );
 }

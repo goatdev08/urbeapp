@@ -63,6 +63,12 @@ type PrefsRow = {
 type QueryRow = {
   id: string;
   price: number;
+  // Quick fix 2026-08-15 — opcionales en el tipo por fail-open (cache/fixtures
+  // sin las columnas nuevas): currency→'MXN', price_visible→true, resto→null.
+  currency?: string | null;
+  price_visible?: boolean | null;
+  half_bathrooms?: number | null;
+  built_square_meters?: number | null;
   address: string;
   property_type: PropertyDetail['property_type'];
   operation_type: PropertyDetail['operation_type'];
@@ -111,8 +117,8 @@ export function usePropertyDetail(id: string): UsePropertyDetailResult {
       const { data: row, error: row_error } = (await supabase
         .from('properties')
         .select(
-          `id, price, address, property_type, operation_type,
-           bedrooms, bathrooms, square_meters, description,
+          `id, price, currency, price_visible, address, property_type, operation_type,
+           bedrooms, bathrooms, half_bathrooms, square_meters, built_square_meters, description,
            pet_friendly, allows_no_guarantor, student_friendly,
            amenities, location, owner_user_id, agency_id,
            users!properties_owner_user_id_fkey(id, phone),
@@ -191,11 +197,15 @@ export function usePropertyDetail(id: string): UsePropertyDetailResult {
       set_data({
         id: row.id,
         price: row.price,
+        currency: row.currency ?? 'MXN',
+        price_visible: row.price_visible ?? true,
         property_type: row.property_type,
         operation_type: row.operation_type,
         bedrooms: row.bedrooms,
         bathrooms: row.bathrooms,
+        half_bathrooms: row.half_bathrooms ?? null,
         square_meters: row.square_meters,
+        built_square_meters: row.built_square_meters ?? null,
         address: row.address,
         description: row.description,
         pet_friendly: row.pet_friendly,

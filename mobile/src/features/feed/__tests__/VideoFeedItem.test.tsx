@@ -173,6 +173,10 @@ function make_property(overrides: Partial<FeedPropertyWithUrl> = {}): FeedProper
   return {
     id: 'propiedad-uuid-A',
     price: 15000,
+    operation_type: 'rent',
+    property_type: 'departamento',
+    currency: 'MXN',
+    price_visible: true,
     address: 'Calle Falsa 123, CDMX',
     bedrooms: 2,
     bathrooms: 1,

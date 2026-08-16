@@ -41,6 +41,14 @@ export interface EditPropertyInput {
   allows_no_guarantor: boolean;
   student_friendly: boolean;
   description: string;
+  // Quick fixes wizard paso 3 (2026-08-15) — OPCIONALES, a diferencia de
+  // bedrooms/bathrooms/square_meters (#142): son campos NUEVOS sobre un
+  // contrato ya publicado, un build instalado viejo nunca los manda. Ausente
+  // (undefined) = "no tocar", igual que `location`. Presente (número o null
+  // explícito) = se aplica.
+  built_square_meters?: number | null;
+  half_bathrooms?: number | null;
+  currency?: "MXN" | "USD";
 }
 
 // ── CallerVerifier ────────────────────────────────────────────────────────────

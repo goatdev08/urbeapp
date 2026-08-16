@@ -21,7 +21,7 @@
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(14);
+select plan(17);
 
 -- ── Fixtures ─────────────────────────────────────────────────────────────────
 -- El trigger handle_new_user (0002) crea public.users al insertar en auth.users.
@@ -53,7 +53,7 @@ values (
   '00000000-0000-0000-0007-000000000020',
   '00000000-0000-0000-0007-000000000010',
   'pending',
-  '{"price": 12000, "description": "descripción editada", "bedrooms": null, "price_visible": false}'::jsonb,
+  '{"price": 12000, "description": "descripción editada", "bedrooms": null, "price_visible": false, "built_square_meters": 210.5, "half_bathrooms": 1, "currency": "USD"}'::jsonb,
   '00000000-0000-0000-0007-000000000001'
 );
 
@@ -125,18 +125,38 @@ select is(
   '8) el snapshot aplica price_visible=false'
 );
 
+-- Quick fixes wizard paso 3 (sesión 2026-08-15, sin tarea de Taskmaster):
+-- built_square_meters/half_bathrooms/currency también son parte del snapshot.
+select is(
+  (select built_square_meters from public.properties where id = '00000000-0000-0000-0007-000000000010'),
+  210.5::numeric,
+  '9) el snapshot aplica built_square_meters'
+);
+
+select is(
+  (select half_bathrooms from public.properties where id = '00000000-0000-0000-0007-000000000010'),
+  1,
+  '10) el snapshot aplica half_bathrooms'
+);
+
+select is(
+  (select currency from public.properties where id = '00000000-0000-0000-0007-000000000010'),
+  'USD',
+  '11) el snapshot aplica currency'
+);
+
 select is(
   (select status::text from public.property_revisions
     where id = '00000000-0000-0000-0007-000000000020'),
   'approved',
-  '9) la revisión queda approved con reviewed_by/reviewed_at'
+  '12) la revisión queda approved con reviewed_by/reviewed_at'
 );
 
 select is(
   (select reviewed_by_admin_id from public.property_revisions
     where id = '00000000-0000-0000-0007-000000000020'),
   '00000000-0000-0000-0007-000000000002'::uuid,
-  '10) reviewed_by_admin_id = el admin que moderó'
+  '13) reviewed_by_admin_id = el admin que moderó'
 );
 
 select is(
@@ -144,7 +164,7 @@ select is(
     where entity_id = '00000000-0000-0000-0007-000000000010'
       and action_type = 'approve'),
   1,
-  '11) la auditoría queda registrada en la MISMA transacción'
+  '14) la auditoría queda registrada en la MISMA transacción'
 );
 
 -- ── Solo status + auditoría (rama suspend / sin-revisión) ────────────────────
@@ -162,7 +182,7 @@ select public.moderate_property_atomic(
 select is(
   (select status::text from public.properties where id = '00000000-0000-0000-0007-000000000010'),
   'suspended',
-  '12) sin snapshot ni revisión: solo mueve status (rama suspend)'
+  '15) sin snapshot ni revisión: solo mueve status (rama suspend)'
 );
 
 -- ── Fault-injection: admin_id inexistente → TODO hace rollback ───────────────
@@ -181,13 +201,13 @@ select throws_ok(
   $$,
   '23503',
   null,
-  '13) admin_id inexistente viola la FK de admin_actions y lanza 23503'
+  '16) admin_id inexistente viola la FK de admin_actions y lanza 23503'
 );
 
 select is(
   (select status::text from public.properties where id = '00000000-0000-0000-0007-000000000010'),
   'suspended',
-  '14) el status NO cambió: el fallo del audit revierte TODA la llamada (el defecto #130 original)'
+  '17) el status NO cambió: el fallo del audit revierte TODA la llamada (el defecto #130 original)'
 );
 
 select * from finish();

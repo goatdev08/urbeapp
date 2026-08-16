@@ -81,11 +81,14 @@ export function useLoadProperty(
            operation_type,
            property_type,
            price,
+           currency,
            address,
            location,
            bedrooms,
            bathrooms,
+           half_bathrooms,
            square_meters,
+           built_square_meters,
            description,
            price_visible,
            pet_friendly,
@@ -131,12 +134,17 @@ export function useLoadProperty(
         operation_type: data.operation_type,
         property_type: data.property_type,
         price: data.price,
+        // Quick fix 2026-08-15: fallback 'MXN' — mismo motivo que price_visible
+        // arriba (filas del mock/columna ausente no deben pisar el default).
+        currency: data.currency ?? 'MXN',
         address: data.address,
         lat: coords?.lat ?? null,
         lng: coords?.lng ?? null,
         bedrooms: data.bedrooms,
         bathrooms: data.bathrooms,
+        half_bathrooms: data.half_bathrooms,
         square_meters: data.square_meters,
+        built_square_meters: data.built_square_meters,
         description: data.description,
         // 73.3: fallback true — filas antiguas del mock/columna ausente no deben
         // pisar el default con undefined (la columna DB es NOT NULL default true).

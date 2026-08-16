@@ -809,14 +809,17 @@ export type Database = {
           amenities: Json
           bathrooms: number | null
           bedrooms: number | null
+          built_square_meters: number | null
           city: string | null
           closed_reason:
             | Database["public"]["Enums"]["property_closed_reason"]
             | null
           contact_count: number
           created_at: string
+          currency: string
           deleted_at: string | null
           description: string | null
+          half_bathrooms: number | null
           id: string
           like_count: number
           location: unknown
@@ -845,14 +848,17 @@ export type Database = {
           amenities?: Json
           bathrooms?: number | null
           bedrooms?: number | null
+          built_square_meters?: number | null
           city?: string | null
           closed_reason?:
             | Database["public"]["Enums"]["property_closed_reason"]
             | null
           contact_count?: number
           created_at?: string
+          currency?: string
           deleted_at?: string | null
           description?: string | null
+          half_bathrooms?: number | null
           id?: string
           like_count?: number
           location: unknown
@@ -881,14 +887,17 @@ export type Database = {
           amenities?: Json
           bathrooms?: number | null
           bedrooms?: number | null
+          built_square_meters?: number | null
           city?: string | null
           closed_reason?:
             | Database["public"]["Enums"]["property_closed_reason"]
             | null
           contact_count?: number
           created_at?: string
+          currency?: string
           deleted_at?: string | null
           description?: string | null
+          half_bathrooms?: number | null
           id?: string
           like_count?: number
           location?: unknown

@@ -213,6 +213,49 @@ describe('useLoadProperty', () => {
     expect(result.current.formState?.square_meters).toBe(90);
   });
 
+  // ── (LP-3b) Quick fix wizard paso 3 (2026-08-15): mapea currency,
+  // half_bathrooms y built_square_meters desde DB ──────────────────────────
+
+  it('(LP-3b) carga_propiedad_ok_mapea_currency_half_bathrooms_built_square_meters', async () => {
+    const mock_supabase = make_mock_supabase_load({
+      property_data: make_db_property({
+        currency: 'USD',
+        half_bathrooms: 1,
+        built_square_meters: 180.5,
+      }),
+    });
+
+    const { result } = await renderHook(
+      () => useLoadProperty(TEST_PROPERTY_ID, { supabase: mock_supabase }),
+      { wrapper }
+    );
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+    expect(result.current.formState?.currency).toBe('USD');
+    expect(result.current.formState?.half_bathrooms).toBe(1);
+    expect(result.current.formState?.built_square_meters).toBe(180.5);
+  });
+
+  it('(LP-3c) carga_propiedad_sin_currency_defaultea_a_MXN: fila legacy sin la columna currency (mock/undefined) no pisa el default con undefined', async () => {
+    const mock_supabase = make_mock_supabase_load({
+      property_data: make_db_property({ currency: undefined }),
+    });
+
+    const { result } = await renderHook(
+      () => useLoadProperty(TEST_PROPERTY_ID, { supabase: mock_supabase }),
+      { wrapper }
+    );
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+    expect(result.current.formState?.currency).toBe('MXN');
+  });
+
   // ── (LP-4) Happy path — mapeo de video existente ─────────────────────────
 
   it('(LP-4) carga_propiedad_ok_mapea_video_existente: storage_path y video_id del primer video aparecen en formState', async () => {

@@ -476,3 +476,47 @@ describe('get_property_payload — price_visible en el payload de salida (73.3)'
     expect(() => get_property_payload(state)).toThrow();
   });
 });
+
+// ===========================================================================
+// get_property_payload — quick fixes wizard paso 3 (sesión 2026-08-15, sin
+// tarea de Taskmaster): currency, built_square_meters, half_bathrooms.
+// ===========================================================================
+
+describe('get_property_payload — campos nuevos del paso 3 (2026-08-15)', () => {
+  it('(P-5) incluye currency del state en el payload', () => {
+    const state = build_full_valid_state({ currency: 'USD' });
+
+    const payload = get_property_payload(state);
+
+    expect(payload.currency).toBe('USD');
+  });
+
+  it('(P-6) currency defaultea a MXN (INITIAL_PUBLISH_FORM_STATE) si el usuario no la toca', () => {
+    const state = build_full_valid_state();
+
+    const payload = get_property_payload(state);
+
+    expect(payload.currency).toBe('MXN');
+  });
+
+  it('(P-7) incluye built_square_meters y half_bathrooms del state en el payload', () => {
+    const state = build_full_valid_state({
+      built_square_meters: 180.5,
+      half_bathrooms: 1,
+    });
+
+    const payload = get_property_payload(state);
+
+    expect(payload.built_square_meters).toBe(180.5);
+    expect(payload.half_bathrooms).toBe(1);
+  });
+
+  it('(P-8) built_square_meters/half_bathrooms son null por default (opcionales, no bloquean el payload)', () => {
+    const state = build_full_valid_state();
+
+    const payload = get_property_payload(state);
+
+    expect(payload.built_square_meters).toBeNull();
+    expect(payload.half_bathrooms).toBeNull();
+  });
+});

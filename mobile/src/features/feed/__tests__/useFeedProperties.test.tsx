@@ -44,6 +44,10 @@ function make_feed_property(
   return {
     id,
     price: 15000,
+    operation_type: 'rent',
+    property_type: 'departamento',
+    currency: 'MXN',
+    price_visible: true,
     address: 'Av. Chapultepec 100, Col. Juárez, CDMX',
     bedrooms: 2,
     bathrooms: 1,

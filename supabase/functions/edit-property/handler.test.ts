@@ -929,3 +929,100 @@ Deno.test("142_description_vacia_EXPLICITA_es_valida", async () => {
   const body = await res.json();
   assertEquals(body.mode, "revision", "borrar la description es cambio crítico §15.5");
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Quick fixes wizard paso 3 (sesión 2026-08-15, sin tarea de Taskmaster):
+// built_square_meters, half_bathrooms, currency.
+//
+// A DIFERENCIA de bedrooms/bathrooms/square_meters (#142, clave SIEMPRE
+// requerida), estos 3 campos son NUEVOS sobre un contrato YA publicado —
+// un build instalado (pre-2026-08-15, aún sin el OTA de este cambio) jamás
+// va a mandarlos. Tratar su ausencia como "body parcial → 400" rompería la
+// edición de TODA propiedad existente para cualquier cliente viejo (viola
+// CLAUDE.md §0.5.2: el contrato se deprecia OTA-primero, nunca al revés).
+// Contrato: ausente = "no tocar" (mismo patrón que `location`, arriba);
+// presente (número o null explícito) = se incluye en el diff/update.
+// ═══════════════════════════════════════════════════════════════════════════
+
+Deno.test("wizard_built_square_meters_ausente_no_es_400_ni_se_incluye", async () => {
+  const du = direct_updater_ok();
+  const res = await handler(post_auth(sin("built_square_meters")), deps({ directPropertyUpdater: du }));
+  assertEquals(res.status, 200, "cliente viejo sin el campo nuevo sigue pudiendo editar");
+  assertEquals(
+    "built_square_meters" in du.calls[0].input,
+    false,
+    "ausente en el body → ausente en el input, nunca se fuerza a null",
+  );
+});
+
+Deno.test("wizard_built_square_meters_presente_se_incluye_en_direct_update", async () => {
+  const du = direct_updater_ok();
+  await handler(
+    post_auth({ ...BASE_INPUT, built_square_meters: 120.5 }),
+    deps({ directPropertyUpdater: du }),
+  );
+  assertEquals(du.calls[0].input.built_square_meters, 120.5);
+});
+
+Deno.test("wizard_built_square_meters_null_explicito_se_incluye", async () => {
+  const du = direct_updater_ok();
+  await handler(
+    post_auth({ ...BASE_INPUT, built_square_meters: null }),
+    deps({ directPropertyUpdater: du }),
+  );
+  assertEquals(du.calls[0].input.built_square_meters, null);
+});
+
+Deno.test("wizard_half_bathrooms_ausente_no_es_400_ni_se_incluye", async () => {
+  const du = direct_updater_ok();
+  const res = await handler(post_auth(sin("half_bathrooms")), deps({ directPropertyUpdater: du }));
+  assertEquals(res.status, 200);
+  assertEquals("half_bathrooms" in du.calls[0].input, false);
+});
+
+Deno.test("wizard_half_bathrooms_presente_se_incluye_en_direct_update", async () => {
+  const du = direct_updater_ok();
+  await handler(
+    post_auth({ ...BASE_INPUT, half_bathrooms: 1 }),
+    deps({ directPropertyUpdater: du }),
+  );
+  assertEquals(du.calls[0].input.half_bathrooms, 1);
+});
+
+Deno.test("wizard_currency_ausente_no_es_400_ni_se_incluye", async () => {
+  const du = direct_updater_ok();
+  const res = await handler(post_auth(sin("currency")), deps({ directPropertyUpdater: du }));
+  assertEquals(res.status, 200, "cliente viejo sin currency sigue pudiendo editar — no se fuerza a MXN");
+  assertEquals("currency" in du.calls[0].input, false);
+});
+
+Deno.test("wizard_currency_presente_se_incluye_en_direct_update", async () => {
+  const du = direct_updater_ok();
+  await handler(
+    post_auth({ ...BASE_INPUT, currency: "USD" }),
+    deps({ directPropertyUpdater: du }),
+  );
+  assertEquals(du.calls[0].input.currency, "USD");
+});
+
+Deno.test("wizard_currency_invalida_retorna_400", async () => {
+  const du = direct_updater_ok();
+  const res = await handler(
+    post_auth({ ...BASE_INPUT, currency: "EUR" }),
+    deps({ directPropertyUpdater: du }),
+  );
+  assertEquals(res.status, 400);
+  assertEquals(du.calls.length, 0);
+});
+
+Deno.test("wizard_campos_nuevos_no_son_criticos_no_disparan_revision", async () => {
+  const ru = revision_upserter_ok();
+  const res = await handler(
+    post_auth({ ...BASE_INPUT, built_square_meters: 200, half_bathrooms: 2, currency: "USD" }),
+    deps({ revisionUpserter: ru }),
+  );
+  assertEquals(res.status, 200);
+  const body = await res.json();
+  assertEquals(body.mode, "direct", "cambiar solo estos 3 campos no es crítico (§15.5)");
+  assertEquals(ru.calls.length, 0);
+});

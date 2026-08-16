@@ -82,6 +82,7 @@ export function useMyProperties(): UseMyPropertiesState {
         .select(
           `id,
            price,
+           currency,
            operation_type,
            property_type,
            status,
@@ -121,6 +122,7 @@ export function useMyProperties(): UseMyPropertiesState {
         return {
           id: row.id,
           price: row.price,
+          currency: row.currency ?? 'MXN',
           operation_type: row.operation_type,
           property_type: row.property_type,
           // ponytail: status tipado vía PropertyRow — el cast no es necesario

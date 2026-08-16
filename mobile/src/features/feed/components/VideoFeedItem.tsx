@@ -139,8 +139,9 @@ function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedIte
       signedUrl: property.signed_url,
       address: property.address,
       price: property.price,
+      currency: property.currency,
     });
-  }, [property.signed_url, property.address, property.price]);
+  }, [property.signed_url, property.address, property.price, property.currency]);
 
   // ── Video player ──────────────────────────────────────────────────────────
   // ponytail: fix #61 — player ESTABLE por instancia. useVideoPlayer recrea el
