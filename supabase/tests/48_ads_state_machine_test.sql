@@ -92,7 +92,7 @@
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(75);
+select plan(92);
 
 create or replace function pg_temp.act_as(p_uid uuid, p_role text default 'authenticated')
 returns void language plpgsql as $$
@@ -189,10 +189,18 @@ select is(
 );
 
 -- ── 1.4) paused → active ────────────────────────────────────────────────────
+-- 🔴 CORRECCIÓN (guardián, review de 169.2): el fixture original sembraba el
+-- ad DIRECTO en 'paused' (paused_at NULL), un estado INALCANZABLE por el SUT
+-- (el único camino a 'paused' es active→paused, que SIEMPRE estampa
+-- paused_at) -- ese fixture incoherente fue lo que forzó un `coalesce`
+-- innecesario en el GREEN. Se alcanza 'paused' EXACTAMENTE como en
+-- producción: active→paused (vía el trigger) y LUEGO paused→active. Dos
+-- transiciones reales = 2 filas de auditoría (MATRIZ8 ajustado de 1 a 2).
 insert into public.ads (id, agency_id, creative_id, title, cta_type, cta_value, status, starts_at, ends_at) values
   ('00000000-0000-0000-0000-000000481014', '00000000-0000-0000-0000-000000481001',
    '00000000-0000-0000-0000-000000481003', 'Ad Matriz 1.4', 'external_url', 'https://ejemplo.mx/4',
-   'paused', (select v_now from test_now_48), (select v_now + interval '30 days' from test_now_48));
+   'active', (select v_now from test_now_48), (select v_now + interval '30 days' from test_now_48));
+update public.ads set status = 'paused' where id = '00000000-0000-0000-0000-000000481014';
 update public.ads set status = 'active' where id = '00000000-0000-0000-0000-000000481014';
 
 select is(
@@ -203,8 +211,8 @@ select is(
 select is(
   (select count(*)::int from public.admin_actions
     where entity_type = 'ad' and entity_id = '00000000-0000-0000-0000-000000481014'),
-  1,
-  'MATRIZ8_paused_a_active_escribe_EXACTAMENTE_una_fila_en_admin_actions'
+  2,
+  'MATRIZ8_active_a_paused_y_paused_a_active_escriben_EXACTAMENTE_2_filas_en_admin_actions_una_por_transicion'
 );
 
 -- ── 1.5) active → expired ───────────────────────────────────────────────────
@@ -321,8 +329,14 @@ insert into public.ads (id, agency_id, creative_id, title, cta_type, cta_value, 
    'rejected', 'motivo original de rechazo',
    (select v_now from test_now_48), (select v_now + interval '30 days' from test_now_48));
 
+-- 🔴 CORRECCIÓN (guardián, review de 169.2): el UPDATE original dejaba
+-- rejection_reason puesto -- el CHECK ads_rejection_reason_matches_status
+-- (169.1) también rechaza esa combinación (23514), así que INVALIDA8 pasaba
+-- "vendado" por ese constraint, no por el trigger. Limpiar rejection_reason
+-- EN LA MISMA sentencia aísla al trigger como el único que puede bloquear.
 select throws_ok(
-  $$ update public.ads set status = 'pending_review' where id = '00000000-0000-0000-0000-000000482014' $$,
+  $$ update public.ads set status = 'pending_review', rejection_reason = null
+      where id = '00000000-0000-0000-0000-000000482014' $$,
   'P0001', 'INVALID_AD_STATUS_TRANSITION',
   'INVALIDA7_rejected_es_terminal_no_se_reabre_hacia_pending_review'
 );
@@ -714,6 +728,43 @@ select is(
   1,
   'AGMATRIZ2_active_a_suspended_escribe_EXACTAMENTE_una_fila_en_admin_actions'
 );
+-- Contenido de la auditoría (guardián: "el conteo no basta") -- action_type y
+-- admin_id, no solo cuántas filas.
+select is(
+  (select action_type from public.admin_actions
+    where entity_type = 'agency' and entity_id = '00000000-0000-0000-0000-000000489011'),
+  'suspend_agency',
+  'AGMATRIZ2B_la_fila_de_auditoria_de_active_a_suspended_tiene_action_type_suspend_agency'
+);
+select is(
+  (select admin_id from public.admin_actions
+    where entity_type = 'agency' and entity_id = '00000000-0000-0000-0000-000000489011'),
+  '00000000-0000-0000-0000-000000480001'::uuid,
+  'AGMATRIZ2C_la_fila_de_auditoria_de_active_a_suspended_registra_el_admin_id_correcto'
+);
+
+-- ── 9.1b) active → suspended SIN admin identificado (defensa en profundidad,
+--     el mutante que el guardián construyó: sin este par, un GUC crudo sin
+--     validar role='admin' sobrevive toda la suite) ─────────────────────────
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-000000489062', 'owner_agsuspendnoadmin_48@urbea.mx');
+insert into public.agencies (id, name, slug, status, created_by_user_id) values
+  ('00000000-0000-0000-0000-000000489061', 'Inmobiliaria Ag Suspend No Admin 48', 'inmo-agsuspendnoadmin-48', 'active',
+   '00000000-0000-0000-0000-000000489062');
+
+select set_config('urbea.admin_actor_id', '', true);
+select pg_temp.act_as(null, 'service_role');
+select throws_ok(
+  $$ update public.agencies set status = 'suspended' where id = '00000000-0000-0000-0000-000000489061' $$,
+  'P0001', 'STATUS_CHANGE_REQUIRES_ADMIN',
+  'AGMATRIZ11_active_a_suspended_SIN_admin_identificado_falla_defensa_en_profundidad_no_basta_el_grant_de_tabla'
+);
+reset role;
+select is(
+  (select status::text from public.agencies where id = '00000000-0000-0000-0000-000000489061'),
+  'active',
+  'AGMATRIZ12_tras_el_intento_bloqueado_sin_admin_la_agencia_sigue_en_active'
+);
 
 -- ── 9.2) suspended → active: válida, exige admin, audita 'agency' ──────────
 insert into auth.users (id, email) values
@@ -732,6 +783,39 @@ select is(
     where entity_type = 'agency' and entity_id = '00000000-0000-0000-0000-000000489021'),
   1,
   'AGMATRIZ4_suspended_a_active_escribe_EXACTAMENTE_una_fila_en_admin_actions'
+);
+select is(
+  (select action_type from public.admin_actions
+    where entity_type = 'agency' and entity_id = '00000000-0000-0000-0000-000000489021'),
+  'reactivate_agency',
+  'AGMATRIZ4B_la_fila_de_auditoria_de_suspended_a_active_tiene_action_type_reactivate_agency'
+);
+select is(
+  (select admin_id from public.admin_actions
+    where entity_type = 'agency' and entity_id = '00000000-0000-0000-0000-000000489021'),
+  '00000000-0000-0000-0000-000000480001'::uuid,
+  'AGMATRIZ4C_la_fila_de_auditoria_de_suspended_a_active_registra_el_admin_id_correcto'
+);
+
+-- ── 9.2b) suspended → active SIN admin identificado ─────────────────────────
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-000000489072', 'owner_agreactivatenoadmin_48@urbea.mx');
+insert into public.agencies (id, name, slug, status, created_by_user_id) values
+  ('00000000-0000-0000-0000-000000489071', 'Inmobiliaria Ag Reactivate No Admin 48', 'inmo-agreactivatenoadmin-48', 'suspended',
+   '00000000-0000-0000-0000-000000489072');
+
+select set_config('urbea.admin_actor_id', '', true);
+select pg_temp.act_as(null, 'service_role');
+select throws_ok(
+  $$ update public.agencies set status = 'active' where id = '00000000-0000-0000-0000-000000489071' $$,
+  'P0001', 'STATUS_CHANGE_REQUIRES_ADMIN',
+  'AGMATRIZ13_suspended_a_active_SIN_admin_identificado_falla_defensa_en_profundidad_no_basta_el_grant_de_tabla'
+);
+reset role;
+select is(
+  (select status::text from public.agencies where id = '00000000-0000-0000-0000-000000489071'),
+  'suspended',
+  'AGMATRIZ14_tras_el_intento_bloqueado_sin_admin_la_agencia_sigue_en_suspended'
 );
 
 -- ── 9.3) pending_approval → suspended SIGUE fallando (no se amplía a esta) ─
@@ -895,10 +979,34 @@ select is(
   'CASCADAPAUSA7_la_suspension_de_la_organizacion_audita_EXACTAMENTE_una_fila_agency'
 );
 select is(
+  (select action_type from public.admin_actions
+    where entity_type = 'agency' and entity_id = '00000000-0000-0000-0000-00000048a011'),
+  'suspend_agency',
+  'CASCADAPAUSA7B_la_fila_de_auditoria_de_la_agencia_tiene_action_type_suspend_agency'
+);
+select is(
+  (select admin_id from public.admin_actions
+    where entity_type = 'agency' and entity_id = '00000000-0000-0000-0000-00000048a011'),
+  '00000000-0000-0000-0000-000000480001'::uuid,
+  'CASCADAPAUSA7C_la_fila_de_auditoria_de_la_agencia_registra_el_admin_id_correcto'
+);
+select is(
   (select count(*)::int from public.admin_actions
     where entity_type = 'ad' and entity_id = '00000000-0000-0000-0000-00000048a021'),
   1,
   'CASCADAPAUSA8_el_ad_movido_por_la_cascada_audita_EXACTAMENTE_una_fila_ad_mismo_contrato_que_la_seccion_1'
+);
+select is(
+  (select action_type from public.admin_actions
+    where entity_type = 'ad' and entity_id = '00000000-0000-0000-0000-00000048a021'),
+  'change_ad_status',
+  'CASCADAPAUSA8B_la_fila_de_auditoria_del_ad_movido_por_la_cascada_tiene_action_type_change_ad_status'
+);
+select is(
+  (select admin_id from public.admin_actions
+    where entity_type = 'ad' and entity_id = '00000000-0000-0000-0000-00000048a021'),
+  '00000000-0000-0000-0000-000000480001'::uuid,
+  'CASCADAPAUSA8C_la_fila_de_auditoria_del_ad_movido_por_la_cascada_registra_el_admin_id_correcto'
 );
 
 -- El ad que SÍ estaba 'active' -- lectura protegida (paused_at/
@@ -949,6 +1057,11 @@ select is(
 --     Determinismo: paused_at fijado a un valor conocido (nunca el reloj
 --     real), mismo patrón que la Sección 8.
 -- ════════════════════════════════════════════════════════════════════════════
+
+-- Admin identificado explícito al inicio de la sección (no depender del GUC
+-- que haya dejado la sección anterior -- mismo criterio de aislamiento que el
+-- resto del archivo).
+select set_config('urbea.admin_actor_id', '00000000-0000-0000-0000-000000480001', true);
 
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-00000048b012', 'owner_cascadareact_48@urbea.mx');
@@ -1031,6 +1144,24 @@ select is((select cascade_paused_at from result_cascadareact_48), null::timestam
 select is((select cascade_pbs from result_cascadareact_48), false,
   'CASCADAREACT5_al_reactivar_paused_by_suspension_del_ad_cascada_vuelve_a_false'
 );
+-- Contenido de la auditoría del ad de la cascada (guardián: "el conteo no
+-- basta") -- 2 filas change_ad_status (pausa + reactivación), admin_id
+-- correcto en la más reciente. Lecturas seguras (admin_actions no cambió de
+-- shape), fuera del bloque protegido.
+select is(
+  (select count(*)::int from public.admin_actions
+    where entity_type = 'ad' and entity_id = '00000000-0000-0000-0000-00000048b021'
+      and action_type = 'change_ad_status'),
+  2,
+  'CASCADAREACT6_el_ad_de_la_cascada_acumula_2_filas_change_ad_status_una_por_transicion_pausa_y_reactivacion'
+);
+select is(
+  (select admin_id from public.admin_actions
+    where entity_type = 'ad' and entity_id = '00000000-0000-0000-0000-00000048b021'
+    order by created_at desc limit 1),
+  '00000000-0000-0000-0000-000000480001'::uuid,
+  'CASCADAREACT7_la_fila_de_auditoria_mas_reciente_del_ad_de_la_cascada_registra_el_admin_id_correcto'
+);
 -- 🔒 El discriminador: el ad pausado A MANO NO revive con la organización.
 select is((select manual_status from result_cascadareact_48), 'paused',
   'DISCRIMINADOR1_un_ad_pausado_a_mano_paused_by_suspension_false_NO_revive_al_reactivar_la_organizacion_sigue_paused'
@@ -1047,18 +1178,40 @@ select is((select manual_pbs from result_cascadareact_48), false,
 --     el `if new.status = 'active'` vigente de handle_agency_status_change
 --     (20260805000010:45+) crea agency_members(owner,active) y promueve al
 --     usuario. En suspended→active eso NO debe volver a correr (o ser
---     demostrablemente idempotente): la membresía sigue en EXACTAMENTE una
---     fila y el rol del owner no cambia. Sin este assert, un GREEN ingenuo
---     que reusa el mismo branch revienta con ALREADY_ACTIVE_MEMBER/
---     MEMBER_OF_OTHER_AGENCY (o, peor, duplica la membresía).
+--     demostrablemente idempotente).
+--
+-- 🔴 CORRECCIÓN (guardián, review de 169.2, patrón exacto de la derivada
+-- #176): los 2 asserts originales de esta sección eran VACUOS.
+--   - "la membresía sigue en exactamente 1 fila": lo garantiza el índice
+--     único agency_members_one_active_per_user, NO el SUT -- contar >1
+--     membresía activa es IMPOSIBLE a nivel de esquema. NOREAPROVE1 (lives_ok)
+--     solo tenía poder por accidente (moría si el INSERT chocaba con ese
+--     mismo índice); con `on conflict do nothing` esta sección quedaría ciega.
+--   - "el rol no cambió": tautológico -- el fixture siembra role='agent' y la
+--     promoción escribe `case when role='admin' then role else 'agent' end`
+--     = 'agent' para un no-admin. Para este fixture NO PUEDE fallar jamás.
+-- Reemplazados por los efectos que SÍ discriminan una reactivación de una
+-- aprobación: approved_by_admin_id NO se re-estampa (semilla con un admin
+-- ORIGINAL distinto al que reactiva, así un re-estampado es detectable) y la
+-- auditoría trae action_type='reactivate_agency' -- NUNCA 'approve_agency'
+-- (bajo el mutante del guardián la auditoría escribió 'approve_agency' para
+-- una reactivación y nadie se enteró porque solo se contaban filas).
 -- ════════════════════════════════════════════════════════════════════════════
+
+-- Admin ORIGINAL que aprobó la agencia en el pasado -- DISTINTO del admin
+-- global (...480001) que hace la reactivación en este test, para que un
+-- re-estampado sea observable (si ambos fueran el mismo admin, el bug pasaría
+-- desapercibido por coincidencia de valores).
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-00000048c001', 'admin_original_noreaprove_48@urbea.mx');
+update public.users set role = 'admin' where id = '00000000-0000-0000-0000-00000048c001';
 
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-00000048c012', 'owner_noreaprove_48@urbea.mx');
 update public.users set role = 'agent' where id = '00000000-0000-0000-0000-00000048c012';
-insert into public.agencies (id, name, slug, status, created_by_user_id) values
+insert into public.agencies (id, name, slug, status, created_by_user_id, approved_by_admin_id) values
   ('00000000-0000-0000-0000-00000048c011', 'Inmobiliaria No Reaprove 48', 'inmo-noreaprove-48', 'suspended',
-   '00000000-0000-0000-0000-00000048c012');
+   '00000000-0000-0000-0000-00000048c012', '00000000-0000-0000-0000-00000048c001');
 -- La membresía owner/active YA existe (la organización estaba activa antes
 -- de suspenderse -- esto NO pasa por el trigger de aprobación, se siembra
 -- directo, tal como el resto de este archivo siembra estados de partida).
@@ -1071,17 +1224,59 @@ select lives_ok(
   'NOREAPROVE1_suspended_a_active_no_lanza_excepcion_no_revienta_por_reintentar_insertar_la_membresia'
 );
 select is(
-  (select count(*)::int from public.agency_members
-    where agency_id = '00000000-0000-0000-0000-00000048c011'
-      and user_id = '00000000-0000-0000-0000-00000048c012'
-      and status = 'active'),
-  1,
-  'NOREAPROVE2_la_membresia_owner_activa_sigue_en_EXACTAMENTE_una_fila_no_se_duplico'
+  (select approved_by_admin_id from public.agencies where id = '00000000-0000-0000-0000-00000048c011'),
+  '00000000-0000-0000-0000-00000048c001'::uuid,
+  'NOREAPROVE2_approved_by_admin_id_NO_se_re_estampa_en_suspended_a_active_sigue_siendo_el_admin_ORIGINAL_no_el_que_reactiva'
 );
 select is(
-  (select role::text from public.users where id = '00000000-0000-0000-0000-00000048c012'),
-  'agent',
-  'NOREAPROVE3_el_rol_del_owner_no_cambio_la_reactivacion_no_re_promociona'
+  (select action_type from public.admin_actions
+    where entity_type = 'agency' and entity_id = '00000000-0000-0000-0000-00000048c011'
+    order by created_at desc limit 1),
+  'reactivate_agency',
+  'NOREAPROVE3_la_auditoria_de_suspended_a_active_trae_action_type_reactivate_agency'
+);
+select is(
+  (select count(*)::int from public.admin_actions
+    where entity_type = 'agency' and entity_id = '00000000-0000-0000-0000-00000048c011'
+      and action_type = 'approve_agency'),
+  0,
+  'NOREAPROVE4_la_reactivacion_NUNCA_se_audita_como_approve_agency_no_re_dispara_los_efectos_de_aprobacion'
+);
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 13) 🔒 CHECK ads_paused_at_matches_status — hace IRREPRESENTABLE el estado
+--     que forzó el `coalesce(now() - old.paused_at, interval '0')` en el
+--     GREEN actual (handle_ad_status_change, línea ~136): status='paused'
+--     con paused_at NULL es inalcanzable por el SUT -- el único camino a
+--     'paused' es active→paused (vía el trigger), que SIEMPRE estampa
+--     paused_at. Si ese estado llegara a existir por un backfill o una
+--     siembra directa de service_role, la reactivación devolvería CERO días
+--     en silencio -- el peor default posible en una feature cuya decisión de
+--     producto es literalmente "no perder días pagados" (D2).
+--     AÚN NO EXISTE (RED vivo, único de esta ronda -- los puntos 1-4 ya
+--     deben pasar contra la migración vigente).
+-- ════════════════════════════════════════════════════════════════════════════
+
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-00000048d002', 'owner_checkpausedat_48@urbea.mx');
+insert into public.agencies (id, name, slug, status, created_by_user_id) values
+  ('00000000-0000-0000-0000-00000048d001', 'Inmobiliaria Check Paused At 48', 'inmo-checkpausedat-48', 'active',
+   '00000000-0000-0000-0000-00000048d002');
+insert into public.ad_creatives (id, agency_id, status) values
+  ('00000000-0000-0000-0000-00000048d003', '00000000-0000-0000-0000-00000048d001', 'ready');
+
+select throws_ok(
+  $$ insert into public.ads (id, agency_id, creative_id, title, cta_type, cta_value, status, starts_at, ends_at) values
+       ('00000000-0000-0000-0000-00000048d011', '00000000-0000-0000-0000-00000048d001',
+        '00000000-0000-0000-0000-00000048d003', 'Ad Check Paused At', 'external_url', 'https://ejemplo.mx/d-11',
+        'paused', now(), now() + interval '30 days') $$,
+  '23514', null,
+  'CHECKPAUSEDAT1_status_paused_con_paused_at_NULL_es_inalcanzable_CHECK_ads_paused_at_matches_status_lo_rechaza'
+);
+select is(
+  (select count(*)::int from public.ads where id = '00000000-0000-0000-0000-00000048d011'),
+  0,
+  'CHECKPAUSEDAT2_el_intento_rechazado_no_dejo_ninguna_fila'
 );
 
 select * from finish();
