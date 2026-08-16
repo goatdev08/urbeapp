@@ -13,6 +13,11 @@
  *
  * Navigation: onPress → '/property/[id]' (Expo Router).
  *
+ * Dos puntos de entrada (180.4): el tab `(tabs)/saved` (no-agentes) y la ruta
+ * del Stack `profile/saved` (la que abre el botón del perfil, porque para un
+ * agente el tab está con `href: null` y no es navegable). Las props solo
+ * ajustan el layout — la pantalla es la misma.
+ *
  * ponytail: sin paginación aquí — la cantidad de guardados es acotada en la demo.
  * Se añade cursor-based loading si el dato lo justifica (tarea futura).
  */
@@ -53,7 +58,24 @@ import { useSavedProperties } from './hooks/useSavedProperties';
 // Pantalla
 // ---------------------------------------------------------------------------
 
-export function SavedScreen(): React.JSX.Element {
+export interface SavedScreenProps {
+  /**
+   * false cuando la pantalla se abre como ruta del Stack (`/profile/saved`),
+   * que NO tiene tab bar debajo: sin esto sobra el despeje inferior.
+   * Default true — el tab `(tabs)/saved` sí la lleva (#65.6/#65.11).
+   */
+  under_floating_tab_bar?: boolean;
+  /**
+   * true cuando la ruta trae header de navegación propio: entonces el inset
+   * superior ya lo aplica el header y este componente no debe repetirlo.
+   */
+  has_header?: boolean;
+}
+
+export function SavedScreen({
+  under_floating_tab_bar = true,
+  has_header = false,
+}: SavedScreenProps = {}): React.JSX.Element {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const tile_width = grid_tile_width(width);
@@ -151,12 +173,18 @@ export function SavedScreen(): React.JSX.Element {
         // #65.11: floating_content_clearance resuelve por plataforma — en
         // iOS (NativeTabs, barra nativa anclada) insets.bottom ya incluye el
         // alto de la barra, solo hace falta un margen chico.
-        { paddingBottom: insets.bottom + floating_content_clearance },
+        {
+          paddingBottom: under_floating_tab_bar
+            ? insets.bottom + floating_content_clearance
+            : insets.bottom + spacing.s_16,
+        },
       ]}
       // 179.2: la grilla es borde a borde y el primer tile llegaba a tocar el
       // status bar (antes lo disimulaba el padding lateral de las cards); esta
       // pantalla no tiene header de navegación propio.
-      ListHeaderComponent={<View style={{ height: insets.top + spacing.s_8 }} />}
+      ListHeaderComponent={
+        <View style={{ height: has_header ? spacing.s_8 : insets.top + spacing.s_8 }} />
+      }
       ListEmptyComponent={
         <View style={styles.empty_wrapper}>
           <EmptyState

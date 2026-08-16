@@ -8805,7 +8805,7 @@
         "id": "180",
         "title": "polish(179): acciones del perfil visibles (editar/guardados o WhatsApp) y stats públicas sin leads",
         "description": "Origen: tarea 179 · Detectado por: usuario (Abraham, 2026-08-16, referencia de Instagram anotada). Dos ajustes tras ver #179 en el dispositivo: (1) 'Editar perfil' y 'Guardados' están escondidos tras el menú ⋯ — pasan a ser botones VISIBLES entre la bio y la grilla, como los de Instagram; en un perfil AJENO ese mismo espacio lo ocupa un botón de contacto por WhatsApp del mismo tamaño y forma. (2) El conteo de leads sale del header por completo: es un dato de gestión que solo se consulta en el CRM y solo el dueño de la cuenta. El perfil público queda en Publicaciones + Me gusta; el propio conserva Guardados como métrica propia. Solo JS/UI: viaja por OTA, sin migraciones.",
-        "details": "FOOTPRINT: mobile/src/features/profile/components/ProfileActions.tsx (NUEVO), ProfileHeader.tsx (monta las acciones tras la bio), ProfessionalStats.tsx (juegos de columnas), ProfileScreen.tsx (quita 'Guardados' y 'Editar perfil' del ProfileMenu, pasa los handlers), hooks/useAgentStats.ts (CRÍTICA, hooks/**: sale `leads` y con él `include_leads`), hooks/useAgentProfile.ts + types.ts (traer users.phone para el WhatsApp del perfil ajeno).\n\nWHATSAPP: reusa open_whatsapp_ef de features/property-detail/utils/whatsapp.ts (deep link + fallback wa.me). NO pasa por useContactAgent/EF contact-agent: esa vía crea un lead y exige property_id, que aquí no existe (el contacto es al agente, no sobre una propiedad). Si el agente no tiene teléfono, el botón no se pinta.\n\nNO se toca: backend, feed, detalle, CRM.",
+        "details": "FOOTPRINT: mobile/src/features/profile/components/ProfileActions.tsx (NUEVO), ProfileHeader.tsx (monta las acciones tras la bio), ProfessionalStats.tsx (juegos de columnas), ProfileScreen.tsx (quita 'Guardados' y 'Editar perfil' del ProfileMenu, pasa los handlers), hooks/useAgentStats.ts (CRÍTICA, hooks/**: sale `leads` y con él `include_leads`), hooks/useAgentProfile.ts + types.ts (traer users.phone para el WhatsApp del perfil ajeno).\n\nWHATSAPP: reusa open_whatsapp_ef de features/property-detail/utils/whatsapp.ts (deep link + fallback wa.me). NO pasa por useContactAgent/EF contact-agent: esa vía crea un lead y exige property_id, que aquí no existe (el contacto es al agente, no sobre una propiedad). Si el agente no tiene teléfono, el botón no se pinta.\n\nNO se toca: backend, feed, detalle, CRM.\n\nDERIVADAS: #184 (usuario — el botón Guardados no navegaba)",
         "testStrategy": "useAgentStats es lógica (hooks/**) → TDD: RED que exija que NO se consulte la tabla leads y que AgentStats ya no exponga `leads`. El resto es UI → pnpm tsc --noEmit + pnpm lint + suite completa + smoke por CLI en iOS y Android: perfil propio (2 botones, stats Publicaciones/Guardados/Me gusta), perfil ajeno (botón de WhatsApp, stats Publicaciones/Me gusta) y que el menú ⋯ ya no duplique las opciones movidas.",
         "status": "done",
         "dependencies": [
@@ -8854,6 +8854,19 @@
           }
         ],
         "updatedAt": "2026-08-16T21:47:09.762Z"
+      },
+      {
+        "id": "184",
+        "title": "fix(180.2): el botón Guardados del perfil no navegaba (href:null del tab)",
+        "description": "Origen: subtarea 180.2 · Detectado por: usuario (Abraham, 2026-08-16, probando el build). El botón 'Guardados' que 180.2 hizo visible no llevaba a ninguna parte. Causa raíz: el tab (tabs)/saved está registrado con href:null para los AGENTES (#65: ese 4º slot lo ocupa Leads para ellos) y expo-router deja de considerar la ruta navegable, así que router.push('/saved') se descartaba EN SILENCIO. El bug no lo introdujo 180.2 — venía desde #65: la opción existía en el menú ⋯ y tampoco funcionaba; hacerla visible fue lo que lo destapó.",
+        "details": "SOLUCIÓN: ruta propia del Stack app/(protected)/profile/saved.tsx ('/profile/saved') que renderiza el MISMO SavedScreen, en vez de tocar la tab bar (componente delicado con dos implementaciones por plataforma: GlassTabBar en Android y NativeTabs en iOS). Bonus: al ser Stack trae header con regreso — entrando desde el perfil no había forma de volver salvo la tab bar. SavedScreen gana 2 props opcionales de layout (under_floating_tab_bar, has_header) con defaults que preservan el comportamiento del tab.\n\nNO se toca: AndroidTabsLayout, IosNativeTabsLayout, GlassTabBar ni la ruta (tabs)/saved que usan los no-agentes.",
+        "testStrategy": "Verificación por CLI: deep link a /profile/saved en iOS (header 'Guardados' + regreso, sin tab bar) y TAP REAL con adb sobre el botón en Android (adb shell input tap) confirmando la navegación. Suite completa + tsc + lint.",
+        "status": "done",
+        "dependencies": [
+          "180"
+        ],
+        "priority": "medium",
+        "subtasks": []
       }
     ],
     "metadata": {
