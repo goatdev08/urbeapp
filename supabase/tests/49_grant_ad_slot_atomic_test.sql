@@ -105,16 +105,26 @@
 --   · cta_value se guarda tal cual para AL MENOS 2 de los 3 valores del enum
 --     ad_cta_type (whatsapp, phone -- external_url ya cubierto en el happy
 --     path) -- el RPC no revalida formato (ver nota F).
+--   · 🔒 title/cta_value viajan VERBATIM, sin normalización suave (sin
+--     btrim, sin lower) -- inputs con espacios al inicio/fin y mayúsculas
+--     mezcladas, asertados contra el literal EXACTO (hallazgo del guardián,
+--     mutantes M7b/M7c de la revisión de PASS: un `lower(btrim(...))`
+--     sobrevivía porque ningún input tenía bordes/mayúsculas que discriminar).
 -- Edge cases del PRD (D3 de 169.1, §17.2, exploración 039 §6):
 --   · p_zones NULL -> 0 filas en ad_zones (inventario nacional), NO es error.
 --   · p_zones '[]'::jsonb -> mismo resultado (0 filas), NO es error.
 --   · p_days omitido -> default 30 (D1 de 169.1).
 --   · app_config tiene la clave 'ads_free' sembrada en true.
 -- Ramas no obvias (invariantes 🔒):
---   · Guard AGENCY_CANNOT_ADVERTISE (P0001, con mensaje exacto) reusando
---     private.org_can_advertise -- can_advertise=false Y organización
---     inexistente caen en el MISMO guard (org_can_advertise ya compone esa
---     lógica, 168.1) -- no dos códigos de error distintos.
+--   · Guard AGENCY_CANNOT_ADVERTISE (P0001, con mensaje exacto) DELEGA en
+--     private.org_can_advertise -- se prueban las 4 causas que ese helper
+--     compone (168.1, 20260815000001:57-67): can_advertise=false,
+--     organización inexistente, SUSPENDIDA (status<>'active') y
+--     SOFT-DELETED (deleted_at no nulo) -- las 2 últimas con
+--     can_advertise=true a propósito, para que una reimplementación ingenua
+--     que solo mire esa columna sea detectable (hallazgo del guardián,
+--     revisión de PASS: mutante que sobrevivía con solo 2 de las 4 causas
+--     cubiertas). Las 4 caen en el MISMO código -- no códigos distintos.
 --   · Un elemento de p_zones con AMBOS ids no nulos revienta el CHECK real
 --     de ad_zones (23514) -- el RPC no lo enmascara ni lo revalida por su
 --     cuenta (mismo criterio que 169.2 con ads_rejection_reason_matches_status).
@@ -136,7 +146,7 @@
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(51);
+select plan(55);
 
 create or replace function pg_temp.act_as(p_uid uuid, p_role text default 'authenticated')
 returns void language plpgsql as $$
@@ -276,12 +286,18 @@ begin
 
   perform set_config('urbea.admin_actor_id', '00000000-0000-0000-0000-000049000001', true);
 
+  -- Título con espacios al inicio/fin y cta_value con mayúsculas mezcladas +
+  -- espacios al inicio/fin -- a propósito (hallazgo del guardián: M7b
+  -- lower(btrim(cta_value)) y M7c btrim(title) sobreviven si ningún input
+  -- tiene bordes/mayúsculas que discriminar). El contrato es "tal cual, sin
+  -- transformar" (nota F de cabecera) -- los asserts HAPPY6/HAPPY8 verifican
+  -- la igualdad EXACTA contra este literal, espacios y mayúsculas incluidos.
   perform public.grant_ad_slot_atomic(
     '00000000-0000-0000-0000-000049040001'::uuid,
     '00000000-0000-0000-0000-000049040003'::uuid,
-    'Anuncio Grant Happy 49',
+    '  Anuncio Grant Happy 49  ',
     'external_url'::ad_cta_type,
-    'https://ejemplo.mx/grant-happy-49',
+    '  https://Ejemplo.MX/Grant-Happy-49  ',
     jsonb_build_array(
       jsonb_build_object('municipality_id', '49001'),
       jsonb_build_object('neighborhood_id', v_neighborhood_id)
@@ -345,16 +361,16 @@ select is(
   'HAPPY5_el_ad_creado_tiene_el_creative_id_correcto'
 );
 select is(
-  (select ads_title from result_happy_49), 'Anuncio Grant Happy 49',
-  'HAPPY6_title_llega_EXACTO_a_la_fila_tal_cual_se_paso_no_solo_no_nulo'
+  (select ads_title from result_happy_49), '  Anuncio Grant Happy 49  ',
+  'HAPPY6_title_llega_EXACTO_a_la_fila_CON_los_espacios_al_inicio_fin_intactos_el_rpc_no_hace_btrim'
 );
 select is(
   (select ads_cta_type from result_happy_49), 'external_url',
   'HAPPY7_cta_type_llega_EXACTO_a_la_fila_tal_cual_se_paso_no_solo_no_nulo'
 );
 select is(
-  (select ads_cta_value from result_happy_49), 'https://ejemplo.mx/grant-happy-49',
-  'HAPPY8_cta_value_llega_EXACTO_a_la_fila_tal_cual_se_paso_no_solo_no_nulo'
+  (select ads_cta_value from result_happy_49), '  https://Ejemplo.MX/Grant-Happy-49  ',
+  'HAPPY8_cta_value_llega_EXACTO_a_la_fila_CON_mayusculas_y_espacios_intactos_el_rpc_no_hace_lower_btrim'
 );
 select is(
   (select ads_starts_at from result_happy_49), (select v_now from test_now_49),
@@ -425,16 +441,21 @@ declare
 begin
   perform set_config('urbea.admin_actor_id', '00000000-0000-0000-0000-000049000001', true);
 
+  -- cta_value con espacios al inicio/fin en ambos (hallazgo del guardián:
+  -- M7b lower(btrim(cta_value)) sobrevive si ningún cta_value tiene bordes
+  -- que discriminar; los teléfonos no tienen mayúsculas, así que el borde es
+  -- la única señal disponible aquí -- sigue siendo un valor plausible, el
+  -- cliente 169.6 recorta espacios antes de enviar en el flujo real).
   perform public.grant_ad_slot_atomic(
     '00000000-0000-0000-0000-000049045001'::uuid,
     '00000000-0000-0000-0000-000049045003'::uuid,
-    'Anuncio CTA WhatsApp 49', 'whatsapp'::ad_cta_type, '5213312345678',
+    'Anuncio CTA WhatsApp 49', 'whatsapp'::ad_cta_type, '  5213312345678  ',
     null, 30
   );
   perform public.grant_ad_slot_atomic(
     '00000000-0000-0000-0000-000049045001'::uuid,
     '00000000-0000-0000-0000-000049045004'::uuid,
-    'Anuncio CTA Phone 49', 'phone'::ad_cta_type, '+523312345678',
+    'Anuncio CTA Phone 49', 'phone'::ad_cta_type, '  +523312345678  ',
     null, 30
   );
 
@@ -452,13 +473,16 @@ exception when others then
   insert into result_cta_49 (ok, err_sqlstate) values (false, sqlstate);
 end $$;
 
+-- Literal esperado verificado empíricamente (ROW(...)::text cita entre
+-- comillas dobles un campo con espacios al inicio/fin -- no es una
+-- transformación del RPC, es cómo Postgres imprime el tipo compuesto).
 select is(
-  (select whatsapp_row from result_cta_49), '(whatsapp,5213312345678)',
-  'CTA1_cta_value_whatsapp_se_guarda_tal_cual_sin_revalidar_formato_en_el_servidor'
+  (select whatsapp_row from result_cta_49), '(whatsapp,"  5213312345678  ")',
+  'CTA1_cta_value_whatsapp_se_guarda_CON_los_espacios_al_inicio_fin_intactos_sin_revalidar_formato_en_el_servidor'
 );
 select is(
-  (select phone_row from result_cta_49), '(phone,+523312345678)',
-  'CTA2_cta_value_phone_se_guarda_tal_cual_sin_revalidar_formato_en_el_servidor'
+  (select phone_row from result_cta_49), '(phone,"  +523312345678  ")',
+  'CTA2_cta_value_phone_se_guarda_CON_los_espacios_al_inicio_fin_intactos_sin_revalidar_formato_en_el_servidor'
 );
 
 -- ════════════════════════════════════════════════════════════════════════════
@@ -634,6 +658,73 @@ select throws_ok(
      ) $$,
   'P0001', 'AGENCY_CANNOT_ADVERTISE',
   'CAP3_organizacion_inexistente_cae_en_el_mismo_guard_AGENCY_CANNOT_ADVERTISE_org_can_advertise_ya_lo_compone'
+);
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 8B) 🔒 Guard AGENCY_CANNOT_ADVERTISE — el RPC DELEGA en
+--     private.org_can_advertise, no reimplementa la consulta (hallazgo del
+--     guardián: el mutante que reemplaza el guard por
+--     `coalesce((select can_advertise from agencies where id=...), false)`
+--     sobrevivía porque el RED solo cubría 2 de las 4 causas que ese helper
+--     compone -- 168.1, 20260815000001_org_advertising_capability.sql:57-67
+--     -- verificado ANTES de escribir estos asserts, no inventado). Las 4
+--     causas (mismo fixture que 46_org_advertising_test.sql:150-183):
+--     id inexistente (CAP3 arriba), can_advertise=false (CAP1 arriba),
+--     deleted_at no nulo, status<>'active' -- las 2 que faltaban aquí. En
+--     AMBOS casos can_advertise=true a propósito (es lo que rompe la
+--     implementación ingenua que solo mira esa columna).
+-- ════════════════════════════════════════════════════════════════════════════
+
+-- ── 8B.1) Organización SUSPENDIDA (status<>'active'), can_advertise=true ───
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-000049081002', 'owner_suspendida_49@urbea.mx');
+insert into public.agencies (id, name, slug, status, created_by_user_id, can_advertise, advertiser_category) values
+  ('00000000-0000-0000-0000-000049081001', 'Inmobiliaria Grant Suspendida 49', 'inmo-grant-suspendida-49', 'suspended',
+   '00000000-0000-0000-0000-000049081002', true, 'otro');
+insert into public.ad_creatives (id, agency_id, status) values
+  ('00000000-0000-0000-0000-000049081003', '00000000-0000-0000-0000-000049081001', 'ready');
+
+select set_config('urbea.admin_actor_id', '00000000-0000-0000-0000-000049000001', true);
+select throws_ok(
+  $$ select public.grant_ad_slot_atomic(
+       '00000000-0000-0000-0000-000049081001'::uuid,
+       '00000000-0000-0000-0000-000049081003'::uuid,
+       'Anuncio Suspendida 49', 'external_url'::ad_cta_type, 'https://ejemplo.mx/suspendida-49',
+       null, 30
+     ) $$,
+  'P0001', 'AGENCY_CANNOT_ADVERTISE',
+  'CAP4_organizacion_suspendida_status_no_activa_es_rechazada_pese_a_can_advertise_true_delegacion_real_en_org_can_advertise'
+);
+select is(
+  (select count(*)::int from public.ads where agency_id = '00000000-0000-0000-0000-000049081001'::uuid),
+  0,
+  'CAP5_atomicidad_no_queda_ningun_ad_creado_para_la_organizacion_suspendida'
+);
+
+-- ── 8B.2) Organización SOFT-DELETED (deleted_at no nulo), can_advertise=true ─
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-000049082002', 'owner_borrada_49@urbea.mx');
+insert into public.agencies (id, name, slug, status, created_by_user_id, can_advertise, advertiser_category, deleted_at) values
+  ('00000000-0000-0000-0000-000049082001', 'Inmobiliaria Grant Borrada 49', 'inmo-grant-borrada-49', 'active',
+   '00000000-0000-0000-0000-000049082002', true, 'otro', now());
+insert into public.ad_creatives (id, agency_id, status) values
+  ('00000000-0000-0000-0000-000049082003', '00000000-0000-0000-0000-000049082001', 'ready');
+
+select set_config('urbea.admin_actor_id', '00000000-0000-0000-0000-000049000001', true);
+select throws_ok(
+  $$ select public.grant_ad_slot_atomic(
+       '00000000-0000-0000-0000-000049082001'::uuid,
+       '00000000-0000-0000-0000-000049082003'::uuid,
+       'Anuncio Borrada 49', 'external_url'::ad_cta_type, 'https://ejemplo.mx/borrada-49',
+       null, 30
+     ) $$,
+  'P0001', 'AGENCY_CANNOT_ADVERTISE',
+  'CAP6_organizacion_soft_deleted_es_rechazada_pese_a_can_advertise_true_delegacion_real_en_org_can_advertise'
+);
+select is(
+  (select count(*)::int from public.ads where agency_id = '00000000-0000-0000-0000-000049082001'::uuid),
+  0,
+  'CAP7_atomicidad_no_queda_ningun_ad_creado_para_la_organizacion_soft_deleted'
 );
 
 -- ════════════════════════════════════════════════════════════════════════════
