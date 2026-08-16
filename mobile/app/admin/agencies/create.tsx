@@ -133,6 +133,8 @@ function map_backend_error(code: string, message?: string): string {
       return 'El correo del propietario ya tiene una cuenta en Urbea.';
     case 'ALREADY_ACTIVE_MEMBER':
       return 'El correo del propietario ya es miembro activo de otra inmobiliaria.';
+    case 'AUTH_INVITE_FAILED':
+      return 'No se pudo enviar el correo de invitación. No se creó ninguna cuenta — reintenta con el mismo correo.';
     default:
       return message ?? 'Ocurrió un error inesperado. Inténtalo de nuevo.';
   }
@@ -273,6 +275,7 @@ export default function CreateAgencyScreen(): React.ReactElement {
       invite_action_link: string;
       plain_token: string;
       token_id: string;
+      email_sent?: boolean;
     };
 
     router.replace({
@@ -281,6 +284,12 @@ export default function CreateAgencyScreen(): React.ReactElement {
         id: response.agency_id,
         plain_token: response.plain_token,
         invite_action_link: response.invite_action_link,
+        owner_email: fields.owner_email.trim(),
+        // 168.5: aditivo (168.4) — string porque los params de router son
+        // siempre string; ausente si el EF no lo reportó (fallback viejo).
+        ...(response.email_sent !== undefined
+          ? { email_sent: String(response.email_sent) }
+          : {}),
       },
     });
   }, [fields, router]);
@@ -377,8 +386,8 @@ export default function CreateAgencyScreen(): React.ReactElement {
           {/* ── Sección: Propietario ──────────────────────────────────── */}
           <Text style={styles.section_title}>Propietario</Text>
           <Text style={styles.section_subtitle}>
-            Se creará una cuenta en Urbea con estos datos y se le enviará una
-            invitación.
+            Se creará una cuenta en Urbea con estos datos y le enviaremos un
+            correo de invitación para activarla.
           </Text>
 
           <FormField

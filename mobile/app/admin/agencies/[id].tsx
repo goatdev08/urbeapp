@@ -172,11 +172,14 @@ function CopyCard({
 
 export default function AgencyDetailScreen(): React.ReactElement {
   const router = useRouter();
-  const { id, plain_token, invite_action_link } = useLocalSearchParams<{
-    id: string;
-    plain_token?: string;
-    invite_action_link?: string;
-  }>();
+  const { id, plain_token, invite_action_link, owner_email, email_sent } =
+    useLocalSearchParams<{
+      id: string;
+      plain_token?: string;
+      invite_action_link?: string;
+      owner_email?: string;
+      email_sent?: string;
+    }>();
 
   const has_credentials =
     (plain_token !== undefined && plain_token.length > 0) ||
@@ -293,6 +296,8 @@ export default function AgencyDetailScreen(): React.ReactElement {
               has_credentials={has_credentials}
               plain_token={plain_token}
               invite_action_link={invite_action_link}
+              owner_email={owner_email}
+              email_sent={email_sent}
               copied_field={copied_field}
               members_count={members.length}
               on_copy_token={() => {
@@ -330,6 +335,8 @@ interface ListHeaderProps {
   has_credentials: boolean;
   plain_token: string | undefined;
   invite_action_link: string | undefined;
+  owner_email: string | undefined;
+  email_sent: string | undefined;
   copied_field: 'token' | 'link' | null;
   members_count: number;
   on_copy_token: () => void;
@@ -340,11 +347,19 @@ function ListHeader({
   has_credentials,
   plain_token,
   invite_action_link,
+  owner_email,
+  email_sent,
   copied_field,
   members_count,
   on_copy_token,
   on_copy_link,
 }: ListHeaderProps): React.ReactElement {
+  // 168.5: el correo es el canal PRIMARIO del alta (inviteUserByEmail, 168.4).
+  // email_sent llega como string por los params de router; solo lo tratamos
+  // como "enviado" con el valor explícito 'true' — nunca lo asumimos.
+  const email_was_sent =
+    email_sent === 'true' && owner_email !== undefined && owner_email.length > 0;
+
   return (
     <View>
       {has_credentials && (
@@ -367,14 +382,44 @@ function ListHeader({
             />
           )}
 
+          {/* Canal primario: aviso de correo enviado (168.5) */}
+          {email_was_sent && (
+            <View style={styles.email_sent_notice}>
+              <Text style={styles.email_sent_title}>
+                ✓ Correo de invitación enviado
+              </Text>
+              <Text style={styles.email_sent_text}>
+                Le enviamos un correo a {owner_email} con el link para
+                activar su cuenta. Es el canal principal — no hace falta
+                compartir nada más.
+              </Text>
+            </View>
+          )}
+
+          {/* Link de respaldo — secundario cuando el correo ya salió */}
           {invite_action_link !== undefined &&
             invite_action_link.length > 0 && (
-              <CopyCard
-                label="Link de invitación (propietario)"
-                value={invite_action_link}
-                copied={copied_field === 'link'}
-                on_copy={on_copy_link}
-              />
+              <View
+                style={
+                  email_was_sent ? styles.backup_link_wrapper : undefined
+                }
+              >
+                {email_was_sent && (
+                  <Text style={styles.backup_link_hint}>
+                    Respaldo — solo si el correo no llega
+                  </Text>
+                )}
+                <CopyCard
+                  label={
+                    email_was_sent
+                      ? 'Link de invitación (respaldo)'
+                      : 'Link de invitación (propietario)'
+                  }
+                  value={invite_action_link}
+                  copied={copied_field === 'link'}
+                  on_copy={on_copy_link}
+                />
+              </View>
             )}
         </View>
       )}
@@ -451,6 +496,38 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#92400E',
     lineHeight: 18,
+  },
+
+  // ── Aviso de correo enviado (canal primario, 168.5) ──────────────────────
+  email_sent_notice: {
+    backgroundColor: '#EAF3EC',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#1A5E4455',
+    padding: 12,
+    marginBottom: 12,
+  },
+  email_sent_title: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLOR_SALVIA,
+    marginBottom: 4,
+  },
+  email_sent_text: {
+    fontSize: 13,
+    color: COLOR_TEXT_PRIMARY,
+    lineHeight: 18,
+  },
+
+  // ── Link de respaldo (secundario cuando el correo ya salió) ──────────────
+  backup_link_wrapper: {
+    opacity: 0.85,
+  },
+  backup_link_hint: {
+    fontSize: 11,
+    fontStyle: 'italic',
+    color: COLOR_TEXT_SECONDARY,
+    marginBottom: 6,
   },
 
   // ── Tarjeta copiable ──────────────────────────────────────────────────────
