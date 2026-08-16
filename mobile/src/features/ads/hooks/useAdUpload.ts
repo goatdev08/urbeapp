@@ -1,20 +1,60 @@
 /**
- * useAdUpload — STUB, fase RED (subtarea 169.7 de Taskmaster). NO implementa
- * lógica de negocio: solo fija la firma pública que el test-author fijó y que
- * el GREEN debe satisfacer. Lanza siempre — el propio acto de invocar el hook
- * debe fallar hasta que exista una implementación real.
+ * useAdUpload — ciclo de subida del creativo de un anuncio (subtarea 169.7).
  *
- * Contrato completo (ver el header de
- * mobile/src/features/ads/__tests__/useAdUpload.test.tsx para el detalle caso
- * por caso): ciclo mint-ad-upload-url → subida del binario a Cloudflare
- * Stream (reusando el patrón de
- * mobile/src/features/publish/hooks/useVideoUpload.ts) → poll del estado del
- * creativo (`ad_creatives.status`, vía un checker inyectable) hasta
- * 'ready' | 'failed'. La duración (169.6, validate_ad_duration_ms) se valida
- * ANTES de tocar el archivo o la red.
+ * REUSO deliberado (CLAUDE.md §0) del pipeline de
+ * mobile/src/features/publish/hooks/useVideoUpload.ts: mismo patrón de
+ * File(local_uri) (expo-file-system v56, getters síncronos .exists/.size),
+ * mismo techo MAX_STREAM_UPLOAD_BYTES=200MB,
+ * file.createUploadTask(uploadUrl, {onProgress, signal}).uploadAsync(), y el
+ * mismo extract_error_code sobre FunctionsHttpError. Este hook NO depende de
+ * ningún wizard/contexto (169.8/169.9 no existen todavía): expone
+ * `cloudflare_uid` directo en vez de escribir a un form ajeno.
+ *
+ * DIFERENCIAS DE CONTRATO frente al hermano (ver header del test para el
+ * detalle caso por caso, D1-D5):
+ *   D1. Tras el 2xx del binario el ciclo NO termina — sigue con un POLL de
+ *       `ad_creatives.status` (checker inyectado) hasta 'ready'|'failed'.
+ *       progress se queda en 0.99 durante el poll; solo llega a 1 en 'ready'.
+ *   D2. La duración (169.6, validate_ad_duration_ms) se valida ANTES de
+ *       construir `File` o tocar la red.
+ *   D3. mint-ad-upload-url (169.4) tiene errores propios: FORBIDDEN (403) y
+ *       AD_UPLOAD_IN_PROGRESS (409, scoped por agencia) — el 409 se traduce
+ *       a un mensaje entendible y DISTINTO del genérico (es un estado
+ *       esperado, no una falla).
+ *   D4. `ad_creatives` no persiste la razón de un 'failed' del poll — como el
+ *       pre-flight (D2) ya validó la duración, cualquier 'failed' que llegue
+ *       del poll es, por eliminación, un fallo de transcodificación.
+ *   D5. El hook cancela automáticamente al desmontar (cleanup de efecto) —
+ *       el hermano no lo hace; aquí se pide explícito que no queden timers
+ *       vivos ni setState sobre un componente desmontado (por eso el cleanup
+ *       NO notifica on_status_change/on_progress, solo aborta en silencio).
  */
 
+import { useCallback, useLayoutEffect, useMemo, useRef } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { File, UploadType } from 'expo-file-system';
+
+import { validate_ad_duration_ms } from '../lib/validation';
+import { extract_error_code } from '@/lib/supabase/edge-errors';
+
+// ponytail: mismo techo que el hermano (useVideoUpload) — direct upload
+// simple de Cloudflare Stream, sin tus. Ver ADR de 68.4 si algún día hace
+// falta resume/>200MB.
+export const MAX_STREAM_UPLOAD_BYTES = 200 * 1024 * 1024;
+
+const SESSION_ERROR_MESSAGE = 'No hay sesión activa. Inicia sesión para publicar.';
+const FORBIDDEN_MESSAGE = 'No tienes permiso para publicar anuncios de esta organización.';
+const AD_UPLOAD_IN_PROGRESS_MESSAGE =
+  'Ya tienes un anuncio subiéndose. Espera a que termine para subir otro.';
+const NEUTRAL_ERROR_MESSAGE = 'Error al subir el anuncio. Verifica tu conexión e intenta de nuevo.';
+const AD_DURATION_INVALID_MESSAGE = 'La duración del video debe ser de entre 6 y 30 segundos.';
+const TRANSCODING_FAILED_MESSAGE = 'El anuncio no se pudo procesar. Intenta subir el video de nuevo.';
+const SIZE_ERROR_MESSAGE = 'El video supera el máximo permitido (200 MB). Intenta con un video más ligero.';
+
+// Defaults del poll (D1) — acotado, mismo criterio que verify_attempts/
+// verify_interval_ms del hermano (#103.2).
+const DEFAULT_POLL_ATTEMPTS = 10;
+const DEFAULT_POLL_INTERVAL_MS = 3000;
 
 /** Estado observable del hook. 'polling' cubre el tramo entre el 2xx del binario y el desenlace del creativo. */
 export type AdUploadStatus = 'idle' | 'uploading' | 'polling' | 'ready' | 'failed';
@@ -58,6 +98,328 @@ export interface UseAdUploadResult {
   cloudflare_uid: string | null;
 }
 
-export function useAdUpload(_deps?: UseAdUploadDeps): UseAdUploadResult {
-  throw new Error('not_implemented');
+// ponytail: import lazy — el cliente real solo se carga cuando no se inyecta
+// uno externo (los tests siempre inyectan su propio mock).
+function get_default_supabase(): SupabaseClient {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  return (require('@/lib/supabase/client') as { supabase: SupabaseClient }).supabase;
+}
+
+/** Mapea el error_code de mint-ad-upload-url a un mensaje en español (D3). */
+function map_mint_error_code(code: string | undefined): string {
+  if (code === 'UNAUTHENTICATED') return SESSION_ERROR_MESSAGE;
+  if (code === 'FORBIDDEN') return FORBIDDEN_MESSAGE;
+  if (code === 'AD_UPLOAD_IN_PROGRESS') return AD_UPLOAD_IN_PROGRESS_MESSAGE;
+  return NEUTRAL_ERROR_MESSAGE;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Checker por defecto — consulta `ad_creatives.status` por cloudflare_uid. Sin fila → 'missing'. */
+async function default_check_ad_creative_status(
+  supabase_client: SupabaseClient,
+  cloudflare_uid: string,
+): Promise<AdCreativeCheckStatus> {
+  const { data, error } = await supabase_client
+    .from('ad_creatives')
+    .select('status')
+    .eq('cloudflare_uid', cloudflare_uid)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) return 'missing';
+  return (data as { status: AdCreativeCheckStatus }).status;
+}
+
+/**
+ * Poll de `ad_creatives.status` hasta 'ready'|'failed' (D1/D4). Duerme ENTRE
+ * intentos (nunca antes del primero). `is_current` corta el loop de
+ * inmediato tras cualquier await (sleep o checker) si el upload fue
+ * cancelado/superado/desmontado mientras tanto — sin eso, un checker que
+ * resuelve tarde dispararía una llamada de más (EC25/EC27).
+ */
+async function poll_until_resolved(params: {
+  cloudflare_uid: string;
+  checker: (cloudflare_uid: string) => Promise<AdCreativeCheckStatus>;
+  attempts: number;
+  interval_ms: number;
+  is_current: () => boolean;
+  set_status: (status: AdUploadStatus) => void;
+  set_progress: (progress: number) => void;
+  set_error: (message: string | null) => void;
+  set_cloudflare_uid: (uid: string | null) => void;
+}): Promise<void> {
+  const {
+    cloudflare_uid,
+    checker,
+    attempts,
+    interval_ms,
+    is_current,
+    set_status,
+    set_progress,
+    set_error,
+    set_cloudflare_uid,
+  } = params;
+
+  set_status('polling');
+  set_progress(0.99);
+
+  try {
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      if (attempt > 0) {
+        await sleep(interval_ms);
+      }
+      if (!is_current()) return; // cancelado/superado/desmontado mientras dormía
+
+      const check_status = await checker(cloudflare_uid);
+      if (!is_current()) return; // cancelado/superado/desmontado mientras el checker resolvía
+
+      if (check_status === 'ready') {
+        set_cloudflare_uid(cloudflare_uid);
+        set_status('ready');
+        set_progress(1);
+        set_error(null);
+        return;
+      }
+
+      if (check_status === 'failed') {
+        // D4: la duración ya se validó en el pre-flight (D2) — por
+        // eliminación, este 'failed' es siempre un fallo de transcodificación.
+        set_status('failed');
+        set_error(TRANSCODING_FAILED_MESSAGE);
+        return;
+      }
+
+      // 'processing' | 'uploading' | 'missing' → sigue en curso, reintentar.
+    }
+  } catch (err) {
+    if (!is_current()) return;
+    console.warn('[useAdUpload] check_ad_creative_status failed:', err);
+    set_status('failed');
+    set_error(NEUTRAL_ERROR_MESSAGE);
+    return;
+  }
+
+  if (!is_current()) return;
+  // Intentos agotados sin 'ready'/'failed'.
+  set_status('failed');
+  set_error(NEUTRAL_ERROR_MESSAGE);
+}
+
+/** Hook que encapsula el ciclo de subida del creativo de un anuncio (mint → binario → poll). */
+export function useAdUpload(deps?: UseAdUploadDeps): UseAdUploadResult {
+  const supabase_client = deps?.supabase ?? get_default_supabase();
+  const check_ad_creative_status = deps?.check_ad_creative_status;
+  const poll_attempts = deps?.poll_attempts ?? DEFAULT_POLL_ATTEMPTS;
+  const poll_interval_ms = deps?.poll_interval_ms ?? DEFAULT_POLL_INTERVAL_MS;
+  const on_status_change = deps?.on_status_change;
+  const on_progress = deps?.on_progress;
+
+  const status_ref = useRef<AdUploadStatus>('idle');
+  const progress_ref = useRef<number>(0);
+  const error_ref = useRef<string | null>(null);
+  const cloudflare_uid_ref = useRef<string | null>(null);
+  // Generación del upload vigente + su AbortController. Un upload cuyo seq ya
+  // no es el actual fue cancelado/superado/desmontado: no escribe nada más.
+  const upload_seq_ref = useRef(0);
+  const abort_ref = useRef<AbortController | null>(null);
+
+  const cancel = useCallback((): void => {
+    upload_seq_ref.current += 1;
+    abort_ref.current?.abort();
+    abort_ref.current = null;
+    status_ref.current = 'idle';
+    progress_ref.current = 0;
+    error_ref.current = null;
+    cloudflare_uid_ref.current = null;
+    on_status_change?.('idle');
+    on_progress?.(0);
+  }, [on_status_change, on_progress]);
+
+  // D5: cancela automáticamente al desmontar. useLayoutEffect (NO useEffect):
+  // el cleanup de un efecto pasivo se difiere al scheduler de React (flush
+  // asíncrono, en un macrotask) — bajo RNTL v14/React 19, `unmount()` es
+  // async y el test solo vacía MICROtasks tras llamarlo, así que un cleanup
+  // pasivo correría DESPUÉS de que la aserción ya leyó el estado viejo
+  // (confirmado empíricamente: con useEffect el abort() del binario llegaba
+  // tarde). El cleanup de useLayoutEffect corre SÍNCRONO en el commit del
+  // unmount, sin depender de ese flush. No notifica on_status_change/
+  // on_progress (el componente ya se está desmontando; llamarlos arriesgaría
+  // un setState sobre un padre desmontado) — solo aborta el binario/poll en
+  // vuelo e invalida el seq para que ningún await pendiente escriba después.
+  useLayoutEffect(() => {
+    return () => {
+      upload_seq_ref.current += 1;
+      abort_ref.current?.abort();
+      abort_ref.current = null;
+    };
+  }, []);
+
+  const upload = useCallback(
+    async (params: UseAdUploadParams): Promise<void> => {
+      const { local_uri, duration_ms } = params;
+
+      // Supersede: si hay otro upload en vuelo, este lo reemplaza.
+      if (abort_ref.current) abort_ref.current.abort();
+      upload_seq_ref.current += 1;
+      const my_seq = upload_seq_ref.current;
+      const controller = new AbortController();
+      abort_ref.current = controller;
+      const is_current = (): boolean => upload_seq_ref.current === my_seq;
+
+      const set_status = (next: AdUploadStatus): void => {
+        if (!is_current()) return;
+        status_ref.current = next;
+        on_status_change?.(next);
+      };
+      const set_progress = (next: number): void => {
+        if (!is_current()) return;
+        progress_ref.current = next;
+        on_progress?.(next);
+      };
+      const set_error = (message: string | null): void => {
+        if (!is_current()) return;
+        error_ref.current = message;
+      };
+      const set_cloudflare_uid = (uid: string | null): void => {
+        if (!is_current()) return;
+        cloudflare_uid_ref.current = uid;
+      };
+
+      // Guard: no URI seleccionado.
+      if (!local_uri) {
+        set_status('failed');
+        set_error('No se seleccionó ningún video');
+        set_progress(0);
+        return;
+      }
+
+      // D2: la duración se valida ANTES de tocar el archivo o la red — mint
+      // NUNCA se invoca con una duración inválida.
+      const duration_check = validate_ad_duration_ms(duration_ms);
+      if (!duration_check.valid) {
+        set_status('failed');
+        set_error(AD_DURATION_INVALID_MESSAGE);
+        set_progress(0);
+        return;
+      }
+
+      // Marcar como uploading ANTES del primer await — sincrónico, visible
+      // vía getter en sync act().
+      set_status('uploading');
+      set_error(null);
+      set_progress(0);
+
+      // Validación local: existencia + techo de tamaño — SÍNCRONA vía la API
+      // de File (v56): .exists/.size son getters síncronos, sin I/O extra.
+      const file = new File(local_uri);
+      if (!file.exists) {
+        set_status('failed');
+        set_error('El archivo de video no existe');
+        return;
+      }
+      if (file.size > MAX_STREAM_UPLOAD_BYTES) {
+        set_status('failed');
+        set_error(SIZE_ERROR_MESSAGE);
+        return;
+      }
+
+      // Paso 1 — mint-ad-upload-url: crea el upload slot en Cloudflare Stream
+      // scoped por organización (169.4) y devuelve { uploadUrl, uid }.
+      let upload_url: string;
+      let stream_uid: string;
+      try {
+        const { data, error: mint_error } = await supabase_client.functions.invoke<{
+          uploadUrl: string;
+          uid: string;
+        }>('mint-ad-upload-url', { body: {} });
+        if (!is_current()) return; // cancelado/superado mientras minteaba
+
+        if (mint_error || !data?.uploadUrl || !data?.uid) {
+          const code = await extract_error_code(mint_error);
+          set_status('failed');
+          set_error(map_mint_error_code(code));
+          return;
+        }
+        upload_url = data.uploadUrl;
+        stream_uid = data.uid;
+      } catch {
+        if (!is_current()) return;
+        set_status('failed');
+        set_error(NEUTRAL_ERROR_MESSAGE);
+        return;
+      }
+
+      // Paso 2 — subida por streaming al Direct Creator Upload de Cloudflare
+      // Stream (mismo POST multipart/form-data que el hermano).
+      const task = file.createUploadTask(upload_url, {
+        httpMethod: 'POST',
+        uploadType: UploadType.MULTIPART,
+        fieldName: 'file',
+        signal: controller.signal,
+        onProgress: ({ bytesSent, totalBytes }) => {
+          set_progress(totalBytes > 0 ? Math.min(bytesSent / totalBytes, 0.99) : 0);
+        },
+      });
+
+      let stream_upload_ok: boolean;
+      try {
+        const { status } = await task.uploadAsync();
+        stream_upload_ok = status >= 200 && status < 300;
+      } catch (err) {
+        if (!is_current()) return; // abortado por cancel()/supersede/unmount — silencio
+        console.warn('[useAdUpload] uploadAsync failed:', err);
+        set_status('failed');
+        set_error(NEUTRAL_ERROR_MESSAGE);
+        return;
+      }
+      if (!is_current()) return; // cancelado/superado mientras subía
+
+      if (!stream_upload_ok) {
+        set_status('failed');
+        set_error(NEUTRAL_ERROR_MESSAGE);
+        return;
+      }
+
+      // D1: el ciclo NO termina aquí como el hermano — sigue con el poll del
+      // creativo hasta 'ready'|'failed'.
+      await poll_until_resolved({
+        cloudflare_uid: stream_uid,
+        checker: check_ad_creative_status ?? ((uid) => default_check_ad_creative_status(supabase_client, uid)),
+        attempts: poll_attempts,
+        interval_ms: poll_interval_ms,
+        is_current,
+        set_status,
+        set_progress,
+        set_error,
+        set_cloudflare_uid,
+      });
+      if (is_current()) abort_ref.current = null;
+    },
+
+    [supabase_client, check_ad_creative_status, poll_attempts, poll_interval_ms, on_status_change, on_progress],
+  );
+
+  return useMemo(
+    () => ({
+      upload,
+      cancel,
+      get status(): AdUploadStatus {
+        return status_ref.current;
+      },
+      get progress(): number {
+        return progress_ref.current;
+      },
+      get error(): string | null {
+        return error_ref.current;
+      },
+      get cloudflare_uid(): string | null {
+        return cloudflare_uid_ref.current;
+      },
+    }),
+
+    [upload, cancel],
+  );
 }

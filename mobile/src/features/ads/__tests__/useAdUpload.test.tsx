@@ -946,7 +946,13 @@ describe('useAdUpload', () => {
 
     const { result, unmount } = await renderHook(() => useAdUpload({ supabase: mock_supabase as never }));
 
-    act(() => {
+    // 🔴 await obligatorio: el act() de RNTL 14 SIEMPRE envuelve el callback en
+    // `async () => await callback()` (act.js:69) — incluso este "síncrono"
+    // devuelve un thenable. Sin await, el tracking de act() queda colgado
+    // ("overlapping act() calls") y el unmount() de más abajo (que SÍ está
+    // envuelto correctamente) no alcanza a flushear su cleanup antes de la
+    // aserción — el mismo gotcha #1 de la subtarea, versión "se coló".
+    await act(async () => {
       void result.current.upload({ local_uri: TEST_LOCAL_URI, duration_ms: VALID_DURATION_MS });
     });
     await act(async () => {
@@ -992,7 +998,10 @@ describe('useAdUpload', () => {
         }),
       );
 
-      act(() => {
+      // 🔴 await obligatorio (mismo motivo que EC26): sin él, el tracking de
+      // act() queda colgado y el unmount() de abajo no flushea su cleanup
+      // (useLayoutEffect) a tiempo — el poll seguía vivo tras desmontar.
+      await act(async () => {
         void result.current.upload({ local_uri: TEST_LOCAL_URI, duration_ms: VALID_DURATION_MS });
       });
       await act(async () => {
