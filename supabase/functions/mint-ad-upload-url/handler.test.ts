@@ -85,10 +85,17 @@
 //   feliz 200; checker (fijo) en 1 → sigue 409 sin llamar a Stream ni insertar
 //
 // ### Autz fail-closed (AdvertiserAuthorizer) — 3 causas, mismo 403 FORBIDDEN
+// NOTA DE HONESTIDAD (guardián, 2026-08-16): a nivel del SEAM del handler, las 3
+// pruebas de causa usan el mismo fake authorizer_forbidden() — documentan que el
+// handler responde igual ante cualquier `{ok:false}`, NO que las 3 causas se
+// distinguen de verdad (eso vive en el adapter, ver
+// _shared/advertiser_authorizer.test.ts).
 // - sin organización (agente sin membresía activa) → 403 FORBIDDEN
 // - organización sin la capacidad de anunciar (org_can_advertise=false) → 403 FORBIDDEN
 // - miembro no-owner/admin (viewer/agent) de una organización que SÍ puede
 //   anunciarse → 403 FORBIDDEN (el rol también fail-closed, no solo la capacidad)
+// - el mensaje del 403 es un LITERAL FIJO y nunca contiene el uid del caller
+//   (el 403 puede filtrar información por el body aunque status/code estén bien)
 // - 403: ni el checker de concurrencia, ni el uploader, ni el registrar se llaman
 //   (fail-closed real, cero efectos secundarios)
 // - el authorizer se consulta con el uid del CALLER (nunca con un agency_id del body)
@@ -669,6 +676,14 @@ Deno.test("reaper_no_regresion_checker_en_1_sigue_409_sin_llamar_stream_ni_inser
 });
 
 // ── Autz fail-closed (AdvertiserAuthorizer) ──────────────────────────────────
+// HONESTIDAD (guardián de 169.4, 2026-08-16): las 3 pruebas siguientes usan el
+// MISMO fake authorizer_forbidden() y las MISMAS aserciones — el fake colapsa
+// las 3 causas de negocio ANTES de que el handler las vea, así que a nivel de
+// ESTE seam (contrato del handler) documentan que el handler responde IGUAL
+// ante cualquier `{ok:false}`, no que las 3 causas se disparen de verdad. La
+// verificación de que las 3 causas se DISTINGUEN correctamente (sin membresía /
+// rol no owner-admin / sin capacidad) vive en el adapter real y está en
+// supabase/functions/_shared/advertiser_authorizer.test.ts (make_advertiser_authorizer).
 
 Deno.test("agente_sin_organizacion_retorna_403_forbidden", async () => {
   const deps = make_deps({ advertiserAuthorizer: authorizer_forbidden() });
@@ -696,6 +711,26 @@ Deno.test("miembro_no_owner_admin_de_organizacion_que_si_puede_anunciar_retorna_
   assertEquals(res.status, 403);
   const body = await res.json();
   assertEquals(body.error.code, "FORBIDDEN");
+});
+
+Deno.test("forbidden_403_mensaje_es_literal_fijo_y_no_filtra_el_uid_del_caller", async () => {
+  // Guardián de 169.4: mutar el handler para que `message` incluya detalle de
+  // autz (o el uid) dejaba los demás tests verdes porque solo fijan status y
+  // error.code. El mensaje del 403 es información hacia el cliente — debe ser
+  // un literal fijo, sin interpolar el uid ni ningún dato del caller.
+  const deps = make_deps({ advertiserAuthorizer: authorizer_forbidden() });
+  const res = await handler(post_request(), deps);
+  const body = await res.json();
+  assertEquals(
+    body.error.message,
+    "No tienes permiso para publicar anuncios de esta organización",
+    "el mensaje del 403 debe ser el literal fijo, no una interpolación con detalle de autz",
+  );
+  assertEquals(
+    body.error.message.includes(AGENT_UID),
+    false,
+    "el mensaje del 403 NUNCA debe filtrar el uid del caller",
+  );
 });
 
 Deno.test("403_forbidden_no_llama_a_checker_uploader_ni_registrar", async () => {

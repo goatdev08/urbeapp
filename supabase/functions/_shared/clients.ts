@@ -87,6 +87,13 @@ import type {
   PropertyFetcher,
   RevisionFinder,
 } from "../moderate-property/types.ts";
+import type {
+  ActiveAdUploadChecker,
+  AdCreativeRegistrar,
+  AdvertiserAuthorizeResult,
+  AdvertiserAuthorizer,
+  RegisterUploadingAdCreativeParams,
+} from "../mint-ad-upload-url/types.ts";
 
 /** Cliente supabase-js con service_role (bypassa RLS y column-grants). */
 export function service_client(): SupabaseClient {
@@ -1471,6 +1478,123 @@ export function make_moderation_writer(client: SupabaseClient): ModerationWriter
         return { ok: false as const, error_code: "DB_ERROR" as const, message: error.message };
       }
       return { ok: true as const };
+    },
+  };
+}
+
+/**
+ * Adaptador real de AdvertiserAuthorizer (subtarea 169.4, mint-ad-upload-url).
+ * Resuelve la organización ACTIVA del caller con una query directa por
+ * user_id — mismo patrón que make_agency_ownership_verifier (69.2), NO el
+ * helper SQL private.agency_role_of (ese lee `(select auth.uid())`, que no
+ * resuelve nada aquí porque este cliente corre con service_role, sin sesión
+ * JWT). El índice único agency_members_one_active_per_user (20260604000003)
+ * garantiza a lo más 1 fila.
+ *
+ * Colapsa TRES causas en el MISMO 403 FORBIDDEN (fail-closed, nunca 404 ni
+ * 500): (a) sin membresía activa, (b) miembro pero no owner/admin, (c) owner/
+ * admin de una organización real pero private.org_can_advertise(agency_id)
+ * (168.1) es false. org_can_advertise se invoca vía RPC — es SQL puro sobre
+ * `agencies`, sin dependencia de auth.uid(), así que service_role puede
+ * llamarla igual que authenticated (EXECUTE sigue en PUBLIC por default, ver
+ * comentario de agency_role_of arriba). El agency_id SIEMPRE sale de esta
+ * resolución server-side — nunca del body.
+ */
+export function make_advertiser_authorizer(
+  client: SupabaseClient,
+): AdvertiserAuthorizer {
+  return {
+    async authorize_advertiser(user_id: string): Promise<AdvertiserAuthorizeResult> {
+      const { data, error } = await client
+        .from("agency_members")
+        .select("agency_id, member_role")
+        .eq("user_id", user_id)
+        .eq("status", "active")
+        .maybeSingle();
+
+      if (error || !data) {
+        return { ok: false, error_code: "FORBIDDEN" };
+      }
+      if (data.member_role !== "owner" && data.member_role !== "admin") {
+        return { ok: false, error_code: "FORBIDDEN" };
+      }
+
+      const { data: can_advertise, error: rpc_error } = await client.rpc(
+        "org_can_advertise",
+        { p_agency_id: data.agency_id },
+      );
+      if (rpc_error || can_advertise !== true) {
+        return { ok: false, error_code: "FORBIDDEN" };
+      }
+
+      return { ok: true, agency_id: data.agency_id as string };
+    },
+  };
+}
+
+/**
+ * Adaptador real de ActiveAdUploadChecker (subtarea 169.4). Calco del reaper
+ * de make_active_upload_checker (103.1 parte B) con tabla y clave PROPIAS:
+ * `ad_creatives` keyeado por agency_id — NUNCA property_videos/agent_id, por
+ * diseño (separación por dominio, ver mint-ad-upload-url/types.ts). Misma
+ * semántica de ventana: 'processing' siempre bloquea (el webhook, 169.5, lo
+ * resuelve solo); 'uploading' solo bloquea si es más reciente que
+ * stale_before (bug #103 heredado, evita el 409 permanente). `ad_creatives`
+ * no tiene columna deleted_at (20260816000005) — sin filtro de soft-delete,
+ * a diferencia de property_videos.
+ */
+export function make_active_ad_upload_checker(
+  client: SupabaseClient,
+): ActiveAdUploadChecker {
+  return {
+    async count_active_ad_uploads(
+      agency_id: string,
+      stale_before: string,
+    ): Promise<number> {
+      const { count, error } = await client
+        .from("ad_creatives")
+        .select("id", { count: "exact", head: true })
+        .eq("agency_id", agency_id)
+        .or(
+          `status.eq.processing,and(status.eq.uploading,created_at.gt.${stale_before})`,
+        );
+
+      if (error) {
+        // Fail-closed: mismo criterio que make_active_upload_checker — un
+        // error de red/DB al chequear concurrencia no debe permitir un
+        // upload que quizás sí colisione.
+        console.error(
+          "count_active_ad_uploads: query falló, fail-closed (1)",
+          error,
+        );
+        return 1;
+      }
+      return count ?? 0;
+    },
+  };
+}
+
+/**
+ * Adaptador real de AdCreativeRegistrar (subtarea 169.4): inserta la fila
+ * 'uploading' en ad_creatives. Shape MÁS ANGOSTO que VideoRegistrar (sin
+ * property_id/position/tus_upload_url, que ad_creatives no tiene — schema de
+ * 169.1, 20260816000005_ads_schema.sql).
+ */
+export function make_ad_creative_registrar(
+  client: SupabaseClient,
+): AdCreativeRegistrar {
+  return {
+    async register_uploading_ad_creative(
+      params: RegisterUploadingAdCreativeParams,
+    ): Promise<void> {
+      const { error } = await client.from("ad_creatives").insert({
+        agency_id: params.agency_id,
+        status: params.status,
+        cloudflare_uid: params.cloudflare_uid,
+      });
+      if (error) {
+        throw new Error(`Insert en ad_creatives falló: ${error.message}`);
+      }
     },
   };
 }
