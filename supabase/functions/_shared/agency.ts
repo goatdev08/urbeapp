@@ -23,6 +23,14 @@ export interface AgencyCreateParams {
   token_hash?: string | undefined;
   /** token_max_uses (7.6): límite de usos del token inicial; null = ilimitado */
   token_max_uses?: number | undefined;
+  /**
+   * can_publish_properties / can_advertise (168.3): reenviados solo cuando el
+   * admin los manda en el payload — undefined si el payload no los trae, para
+   * que la RPC use su propio DEFAULT (mismo default de columna) en vez de
+   * forzar un valor desde el EF.
+   */
+  can_publish_properties?: boolean | undefined;
+  can_advertise?: boolean | undefined;
 }
 
 export type AgencyCreateResult =

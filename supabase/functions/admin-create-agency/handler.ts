@@ -90,6 +90,19 @@ export async function handler(
   const { name, slug, contact_email, contact_name, contact_phone } =
     parsed.data;
 
+  // Params de capacidad (168.3): reenviados a la RPC SOLO si el admin los
+  // manda en el payload, como boolean explícito. undefined si el payload no
+  // los trae (payload viejo de un build instalado) — la RPC usa su propio
+  // DEFAULT (mismo default que la columna), el EF no fuerza ningún valor.
+  const rawBody = raw as Record<string, unknown>;
+  const can_publish_properties =
+    typeof rawBody.can_publish_properties === "boolean"
+      ? rawBody.can_publish_properties
+      : undefined;
+  const can_advertise = typeof rawBody.can_advertise === "boolean"
+    ? rawBody.can_advertise
+    : undefined;
+
   // Validación de campos owner — solo cuando authAdmin está inyectado (flujo 7.5)
   let owner_email: string | undefined;
   let owner_first_name: string | undefined;
@@ -202,6 +215,8 @@ export async function handler(
     created_by_user_id: verifyResult.user_id,
     owner_user_id,
     token_hash,
+    can_publish_properties,
+    can_advertise,
   });
 
   if (!createResult.ok) {

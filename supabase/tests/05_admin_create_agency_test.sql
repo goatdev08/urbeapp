@@ -116,15 +116,21 @@ select throws_ok(
   'created_by_user_id NULL debe ser rechazado por la RPC'
 );
 
--- ── 9) Firma unificada de 9 params con DEFAULTs en los trailing tres ────────────
+-- ── 9) Firma unificada con DEFAULTs en los trailing params ──────────────────
 -- La función única acepta: name, slug, contact_name, contact_phone, contact_email,
 -- created_by_user_id, owner_user_id, token_hash, token_max_uses.
--- Llamadas con 6/7 args resuelven por defaults — no hay overload de 7 params.
+-- Llamadas con 6/7/9 args resuelven por defaults — no hay overload de 6/7/9 params.
+-- 🔄 168.3 (20260816000001): la firma canónica creció de 9 a 11 params
+-- (p_can_publish_properties, p_can_advertise, AL FINAL con DEFAULT) — mismo
+-- patrón de evolución que ya documenta este archivo para 7.4→7.5→7.6 (la
+-- firma "unificada" de esta prueba SIEMPRE trackea el shape vigente, no un
+-- shape histórico; el comportamiento retrocompatible de la firma vieja de 9
+-- params lo prueba supabase/tests/46_org_advertising_test.sql RETRO1).
 select has_function(
   'public',
   'admin_create_agency_atomic',
-  ARRAY['text', 'text', 'text', 'text', 'text', 'uuid', 'uuid', 'text', 'integer'],
-  'admin_create_agency_atomic firma unificada de 9 params (trailing 3 con DEFAULT) debe existir'
+  ARRAY['text', 'text', 'text', 'text', 'text', 'uuid', 'uuid', 'text', 'integer', 'boolean', 'boolean'],
+  'admin_create_agency_atomic firma unificada de 11 params (trailing 5 con DEFAULT, 168.3 agrega capacidad) debe existir'
 );
 
 -- ── 10) Llamada extendida: insert con owner_user_id sin error ────────────────
@@ -180,13 +186,13 @@ select throws_ok(
 -- ── 7.6 RED: token inicial de invitación + admin_actions ─────────────────────
 -- La RPC aún NO acepta p_token_hash ni p_token_max_uses; todos estos tests fallan en RED.
 
--- ── 14) Firma extendida 9 params: incluye p_token_hash text y p_token_max_uses int ──
--- has_function falla porque la función actual tiene 7 params, no 9.
+-- ── 14) Firma extendida: incluye p_token_hash text y p_token_max_uses int ────
+-- 🔄 168.3: mismo shape de 11 params que el test 9 (ver nota ahí).
 select has_function(
   'public',
   'admin_create_agency_atomic',
-  ARRAY['text', 'text', 'text', 'text', 'text', 'uuid', 'uuid', 'text', 'integer'],
-  'admin_create_agency_atomic debe aceptar 9 params incluyendo p_token_hash y p_token_max_uses'
+  ARRAY['text', 'text', 'text', 'text', 'text', 'uuid', 'uuid', 'text', 'integer', 'boolean', 'boolean'],
+  'admin_create_agency_atomic debe aceptar p_token_hash, p_token_max_uses y (168.3) los params de capacidad'
 );
 
 -- ── 15) Llamada con 9 params y token_hash se ejecuta sin error ───────────────

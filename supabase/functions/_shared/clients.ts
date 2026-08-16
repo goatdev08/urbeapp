@@ -358,8 +358,9 @@ function extract_agency_error_code(message: string): string {
 }
 
 /**
- * Adaptador real de AgencyCreator sobre la RPC admin_create_agency_atomic (migración 0016, 9 params).
- * Llama la versión de 9 parámetros que inserta token + admin_actions en la misma transacción.
+ * Adaptador real de AgencyCreator sobre la RPC admin_create_agency_atomic
+ * (168.3: 20260816000001, 11 params). Llama la versión que inserta token +
+ * admin_actions en la misma transacción.
  * Mapea los errores P0001 al error_code de negocio correspondiente.
  */
 export function make_agency_creator(client: SupabaseClient): AgencyCreator {
@@ -367,7 +368,11 @@ export function make_agency_creator(client: SupabaseClient): AgencyCreator {
     async create_atomic(
       params: AgencyCreateParams,
     ): Promise<AgencyCreateResult> {
-      const { data, error } = await client.rpc("admin_create_agency_atomic", {
+      // 168.3: can_publish_properties/can_advertise SOLO se incluyen en la
+      // llamada cuando vienen definidos — si el payload no los trae, la
+      // RPC debe usar su propio DEFAULT (mismo default que la columna), no
+      // un null explícito forzado desde el EF.
+      const rpc_params: Record<string, unknown> = {
         p_name: params.name,
         p_slug: params.slug,
         p_contact_name: params.contact_name ?? null,
@@ -377,7 +382,17 @@ export function make_agency_creator(client: SupabaseClient): AgencyCreator {
         p_owner_user_id: params.owner_user_id ?? null,
         p_token_hash: params.token_hash ?? null,
         p_token_max_uses: params.token_max_uses ?? null,
-      });
+      };
+      if (params.can_publish_properties !== undefined) {
+        rpc_params.p_can_publish_properties = params.can_publish_properties;
+      }
+      if (params.can_advertise !== undefined) {
+        rpc_params.p_can_advertise = params.can_advertise;
+      }
+      const { data, error } = await client.rpc(
+        "admin_create_agency_atomic",
+        rpc_params,
+      );
       if (error) {
         const error_code = extract_agency_error_code(error.message);
         return { ok: false, error_code };
