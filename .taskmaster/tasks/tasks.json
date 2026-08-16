@@ -8363,13 +8363,13 @@
             "title": "RPC grant_ad_slot_atomic (service_role) + siembra de ad_prices y ads_free",
             "description": "🔴 CRÍTICA. El admin otorga el slot en una sola transacción (ad + zonas + vigencia + auditoría). Incluye actualizar el test de app_config que se cae al sembrar.",
             "details": "PLAN · agente=supabase · criticidad=CRÍTICA · impacto-prod=aditivo · footprint=supabase/migrations/20260815000012_grant_ad_slot_rpc.sql (+rollback), supabase/tests/49_grant_ad_slot_atomic_test.sql (ARCHIVO PROPIO — el analista detectó que el plan decía solo \"asserts pgTAP\" sin archivo), supabase/tests/12_stream_schema_test.sql\n\nFIRMA: grant_ad_slot_atomic(p_agency_id uuid, p_creative_id uuid, p_zones jsonb, p_days int default 30) — crea el ad, sus ad_zones y la vigencia EN UNA TRANSACCIÓN, y audita en admin_actions. Solo service_role (revoke execute from public, anon, authenticated). El default de 30 días viene de la decisión D1 (169.1).\n\np_zones vacío o null ⇒ ad SIN filas en ad_zones ⇒ inventario nacional. NO es un error de input — validarlo como tal sería romper el modelo de venta.\n\napp_config.ads_free = true, calco exacto de video_slot_free: en beta el slot lo otorga el admin a mano y NINGÚN pago real ocurre.\n\n⚠️ GOTCHA CONCRETO AL SEMBRAR: supabase/tests/12_stream_schema_test.sql:67 (\"admin lee app_config\") fija count(*)=3 y se CAE al sembrar ads_free. Actualizar ese assert es parte de esta subtarea, no un daño colateral a descubrir en CI. (La línea :37, que cuenta \"where key in (...)\", NO se rompe.)\n\nRED: fault-injection — fallo al insertar ad_zones o la auditoría ⇒ rollback TOTAL, ni ad huérfano ni zonas sueltas (patrón 38_property_video_slots_test.sql) · ejecutable solo por service_role · p_zones vacío crea un ad nacional válido · ad_prices tiene los 3 alcances a 30 días · grep sin resultados: ningún monto de publicidad hardcodeado en TS ni SQL fuera de ad_prices.\n\n✅ La cita de 12_stream_schema_test.sql:67 vs :37 está verificada al 100% por el analista: :67 (count(*)=3) se rompe al sembrar ads_free; :37 (where key in (...)) no. ✅ El \"trigger veneno\" de fault-injection existe tal cual en 38_property_video_slots_test.sql.\n\n<info added on 2026-08-16T00:00:00.000Z>\nPLAN + DECISIÓN DE ABRAHAM (2026-08-16): grant_ad_slot_atomic SÍ debe rechazar cuando la organización tiene can_advertise=false, con un código de error EXPLÍCITO (P0001 AGENCY_CANNOT_ADVERTISE).\n\nHUECO QUE CIERRA (lo detectó el analista, no estaba en el plan original): sin el guard, un admin podía otorgar un slot a una organización sin la capacidad encendida. El cliente nunca vería ese ad (lo tapa el gate de ruta de 169.8), pero la fila EXISTIRÍA en la DB — inconsistencia silenciosa.\n\nSIMETRÍA: es el guard hermano de AGENCY_CANNOT_PUBLISH_PROPERTIES que construyó 168.3 en publish_property_atomic (supabase/migrations/20260816000002). Reusar private.org_can_advertise(uuid) (168.1, ya en main desde el PR #80) — NO reimplementar la consulta.\n\nagente=supabase · skills=urbea-supabase,urbea-testing · criticidad=CRÍTICA (supabase/migrations/**) · impacto-prod=sin riesgo (RPC nueva + app_config key nueva).\n\n⚠️ ROMPE UN TEST EXISTENTE, verificado línea por línea por el analista: 12_stream_schema_test.sql tiene un assert con count(*) SIN filtro sobre app_config (hoy fija 3) que pasa a 4 al sembrar ads_free. Hay que subirlo. El OTRO assert del mismo archivo, con where key in (...) explícito, NO se toca — sigue contando solo las 3 keys viejas. Es reconciliación de fixture, no debilitamiento: el guardián debe poder verlo así.\n</info added on 2026-08-16T00:00:00.000Z>\n\n<info added on 2026-08-16T00:00:00.000Z>\nAISLAMIENTO DE FIXTURES — regla nueva para el RED de esta subtarea (hallazgo del guardián de 169.1, 2026-08-16, y causa raíz del único bloqueante que tuvo 169.1):\n\n47_ads_schema_test.sql comparte fixtures a lo largo de 981 líneas dentro de UNA sola transacción de pgTAP. Consecuencias medidas, no teóricas: (a) GRANT9 reusó un uuid que el fixture dur30 ya había insertado 280 líneas antes → choque de PK → el assert fallaba pase lo que pase la migración; (b) al mutar el CHECK de duración, murió RLS2 — un assert de RLS que no tiene NADA que ver con duración — porque depende de la fila dur30. Un cambio en la sección 8 puede romper la 16.\n\nCÓMO EVITARLO AQUÍ: prefijo de uuid POR SECCIÓN (o gen_random_uuid() + RETURNING), de modo que ninguna sección dependa de las filas de otra. Cuesta nada al escribirlo y ahorra el ciclo de diagnóstico que nos costó 169.1.\n\n─────────────────────────────\n\nHUECO DE COBERTURA HEREDADO DE 169.1 — cerrarlo en el RED de esta subtarea (hallazgo del guardián; el autor del RED de 169.1 también lo marcó como \"no testeado, no inventado\"):\n\nNO existe assert de que `authenticated` reciba 42501 al hacer SELECT sobre ad_zones, pese a que la decisión de diseño es \"ad_zones se consulta EXCLUSIVAMENTE vía RPC\". Hoy está cubierto para anon (GRANT3) y para INSERT (GRANT6), pero no para la LECTURA de authenticated. Ése es justo el assert que atraparía una policy de SELECT agregada por descuido en 170.x. Como 169.3 es la subtarea que define el acceso por RPC a ad_zones (grant_ad_slot_atomic las crea), es su lugar natural. No requiere tarea derivada: 169.3 sigue pending y es el mismo dominio.\n\nMATIZ QUE MIDIÓ EL GUARDIÁN (útil al escribir ese assert): una violación de RLS también levanta 42501, así que un assert que solo mira el SQLSTATE no distingue \"sin grant\" de \"con grant pero sin policy\". Para probar ausencia de grant de verdad hay que mirar pg_class.relacl, no solo el código de error.\n</info added on 2026-08-16T00:00:00.000Z>",
-            "status": "pending",
+            "status": "in-progress",
             "dependencies": [
               1,
               2
             ],
             "testStrategy": "pgTAP: atomicidad con fault-injection, permisos, ad nacional por zonas vacías, siembra de ad_prices, 12_stream_schema_test.sql actualizado y verde. Grep de montos hardcodeados sin resultados.",
-            "updatedAt": "2026-08-16T00:00:00.000Z",
+            "updatedAt": "2026-08-16T19:38:35.542Z",
             "parentId": "169"
           },
           {
@@ -8456,7 +8456,7 @@
             "parentId": "undefined"
           }
         ],
-        "updatedAt": "2026-08-16T19:38:12.560Z"
+        "updatedAt": "2026-08-16T19:38:35.542Z"
       },
       {
         "id": "170",
@@ -8752,7 +8752,7 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-08-16T19:38:12.560Z",
+      "lastModified": "2026-08-16T19:38:35.542Z",
       "taskCount": 178,
       "completedCount": 95,
       "tags": [
