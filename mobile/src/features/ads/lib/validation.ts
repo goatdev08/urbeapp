@@ -3,9 +3,6 @@
  * Sin fetch ni estado: corren al construir el formulario, en el cliente,
  * ANTES de tocar el servidor.
  *
- * STUB fase RED — sin lógica de negocio. Lanza `not_implemented` para que
- * los tests fallen por aserción/excepción, no por import.
- *
  * Contrato fijado por el test-author (169.6):
  *
  * 1) Duración — validate_ad_duration_ms. Rango 6–30 s INCLUSIVE, MISMO
@@ -70,9 +67,24 @@ export const AD_MAX_DURATION_SECONDS = 30;
 export const AD_DURATION_INVALID = 'AD_DURATION_INVALID';
 
 export function validate_ad_duration_ms(
-  _duration_ms: number | null | undefined,
+  duration_ms: number | null | undefined,
 ): AdValidationResult {
-  throw new Error('not_implemented');
+  // Fail-closed: sin duración no hay forma de verificar el mínimo (espejo del
+  // servidor, ver comentario de contrato arriba).
+  if (duration_ms === null || duration_ms === undefined) {
+    return { valid: false, error_code: AD_DURATION_INVALID };
+  }
+
+  // 🔴 Compara sobre el valor CRUDO fraccionario (nunca Math.round antes de
+  // comparar) — 5.7 s no debe redondear a 6 y colarse. Ver 169.5.
+  const duration_seconds = duration_ms / 1000;
+  const valid =
+    duration_seconds >= AD_MIN_DURATION_SECONDS &&
+    duration_seconds <= AD_MAX_DURATION_SECONDS;
+
+  return valid
+    ? { valid: true, error_code: null }
+    : { valid: false, error_code: AD_DURATION_INVALID };
 }
 
 // ---------------------------------------------------------------------------
@@ -84,11 +96,44 @@ export type AdCtaType = 'external_url' | 'whatsapp' | 'phone';
 export const AD_CTA_URL_INVALID = 'AD_CTA_URL_INVALID';
 export const AD_CTA_PHONE_INVALID = 'AD_CTA_PHONE_INVALID';
 
+function validate_ad_cta_url(cta_value: string | null | undefined): AdValidationResult {
+  if (!cta_value) return { valid: false, error_code: AD_CTA_URL_INVALID };
+
+  // ponytail: allowlist de esquema (http/https) en vez de blocklist de
+  // esquemas peligrosos (javascript:, data:, ...) — más simple y más seguro,
+  // porque no depende de enumerar cada esquema malicioso posible. Recorta
+  // espacios de los extremos y despoja \t\n\r EMBEBIDOS antes de decidir el
+  // esquema: son los caracteres que un navegador ignora al parsear un URL, la
+  // vía clásica para colar "java\tscript:" más allá de un check ingenuo.
+  const cleaned = cta_value.trim().replace(/[\t\n\r]/g, '');
+  const valid = /^https?:\/\//i.test(cleaned);
+
+  return valid
+    ? { valid: true, error_code: null }
+    : { valid: false, error_code: AD_CTA_URL_INVALID };
+}
+
+function validate_ad_cta_phone(cta_value: string | null | undefined): AdValidationResult {
+  if (!cta_value) return { valid: false, error_code: AD_CTA_PHONE_INVALID };
+
+  // Misma convención de normalización que
+  // mobile/src/features/property-detail/utils/whatsapp.ts (no es import
+  // directo: ese archivo tiene side-effects de Linking).
+  const digits = cta_value.replace(/\D/g, '');
+  const valid = digits.length >= 10 && digits.length <= 15;
+
+  return valid
+    ? { valid: true, error_code: null }
+    : { valid: false, error_code: AD_CTA_PHONE_INVALID };
+}
+
 export function validate_ad_cta(
-  _cta_type: AdCtaType,
-  _cta_value: string | null | undefined,
+  cta_type: AdCtaType,
+  cta_value: string | null | undefined,
 ): AdValidationResult {
-  throw new Error('not_implemented');
+  return cta_type === 'external_url'
+    ? validate_ad_cta_url(cta_value)
+    : validate_ad_cta_phone(cta_value);
 }
 
 // ---------------------------------------------------------------------------
@@ -104,7 +149,21 @@ export interface AdZoneInput {
 export const AD_ZONE_INVALID = 'AD_ZONE_INVALID';
 
 export function validate_ad_zones(
-  _zones: AdZoneInput[] | null | undefined,
+  zones: AdZoneInput[] | null | undefined,
 ): AdValidationResult {
-  throw new Error('not_implemented');
+  // null/undefined/[] son VÁLIDAS — significan inventario nacional (D3 de
+  // 169.1). Ver comentario de contrato arriba.
+  if (!zones || zones.length === 0) {
+    return { valid: true, error_code: null };
+  }
+
+  // XOR estricto por fila (espejo del CHECK ad_zones_exactly_one_scope): una
+  // sola fila inválida invalida la lista completa.
+  const all_valid = zones.every(
+    (zone) => (zone.municipality_id !== null) !== (zone.neighborhood_id !== null),
+  );
+
+  return all_valid
+    ? { valid: true, error_code: null }
+    : { valid: false, error_code: AD_ZONE_INVALID };
 }

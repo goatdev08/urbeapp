@@ -16,6 +16,23 @@
  *   - Normalización de teléfono: convención de la casa en
  *     mobile/src/features/property-detail/utils/whatsapp.ts
  *     (`phone.replace(/\D/g, '')`).
+ *
+ * ── Arbitraje del guardián (ronda 2, mismo día) ─────────────────────────────
+ * 1) Los `toBe(AD_..._INVALID)` comparaban el resultado contra la MISMA
+ *    constante importada del SUT — consistencia interna, no el valor del
+ *    literal (el guardián renombró AD_DURATION_INVALID a 'AD_BAD_DURATION' y
+ *    la suite siguió en verde). Se ancla cada literal contra su string crudo.
+ * 2) `validate_ad_cta` gana un contrato nuevo: `normalized_value: string |
+ *    null` — el valor YA LIMPIO que el wizard debe persistir (trim para URL,
+ *    solo-dígitos para whatsapp/phone), null si inválido. El campo AÚN NO
+ *    EXISTE en `AdValidationResult` (types.ts de producción) — ese es el
+ *    hueco que el GREEN cierra. Mismo patrón que
+ *    publish/__tests__/validation.test.ts con `price_visible`: extensión
+ *    LOCAL de tipo con `&`, sin tocar el tipo de producción en RED.
+ *    Consecuencia del contrato nuevo: el `.replace(/[\t\n\r]/g, '')` interno
+ *    debe DESAPARECER — bajo una allowlist, despojar caracteres de control
+ *    solo AMPLÍA lo que se acepta (nunca lo que se rechaza) y hace que se
+ *    valide una cadena distinta de la que se guardaría.
  */
 
 import {
@@ -28,8 +45,27 @@ import {
   validate_ad_cta,
   validate_ad_duration_ms,
   validate_ad_zones,
+  type AdCtaType,
+  type AdValidationResult,
   type AdZoneInput,
 } from '@/features/ads/lib/validation';
+
+// ---------------------------------------------------------------------------
+// NOTA DE TIPOS (RED): `normalized_value` aún no existe en `AdValidationResult`
+// de producción — extensión LOCAL de tipo (mismo patrón que
+// publish/__tests__/validation.test.ts con `price_visible`), para no tocar el
+// tipo de producción en fase RED. `cta()` es el único punto de la suite que
+// hace el cast, así los `it` de abajo se leen como si el campo ya existiera.
+// ---------------------------------------------------------------------------
+
+type AdCtaResultWithNormalized = AdValidationResult & { normalized_value: string | null };
+
+function cta(
+  cta_type: AdCtaType,
+  cta_value: string | null | undefined,
+): AdCtaResultWithNormalized {
+  return validate_ad_cta(cta_type, cta_value) as AdCtaResultWithNormalized;
+}
 
 // ===========================================================================
 // Constantes — el rango debe ser exactamente 6..30 s (fuente independiente:
@@ -40,6 +76,22 @@ describe('constantes de duración', () => {
   it('el rango es 6-30 s, espejo del servidor (169.5)', () => {
     expect(AD_MIN_DURATION_SECONDS).toBe(6);
     expect(AD_MAX_DURATION_SECONDS).toBe(30);
+  });
+
+  it('AD_DURATION_INVALID es el literal EXACTO del servidor (stream-webhook/types.ts:106), no solo consistente consigo mismo', () => {
+    // 🔴 Ancla el STRING crudo, no la constante importada — comparar contra
+    // AD_DURATION_INVALID (importada del propio SUT) solo prueba consistencia
+    // interna: renombrar la constante en el SUT dejaría este test en verde
+    // pese a que el código real ya no coincide con el del servidor.
+    expect(AD_DURATION_INVALID).toBe('AD_DURATION_INVALID');
+  });
+});
+
+describe('constantes de códigos de error del CTA/zonas (propios del cliente, sin contraparte en servidor)', () => {
+  it('los tres literales son estables — un rename silencioso del SUT debe reventar aquí', () => {
+    expect(AD_CTA_URL_INVALID).toBe('AD_CTA_URL_INVALID');
+    expect(AD_CTA_PHONE_INVALID).toBe('AD_CTA_PHONE_INVALID');
+    expect(AD_ZONE_INVALID).toBe('AD_ZONE_INVALID');
   });
 });
 
@@ -210,6 +262,54 @@ describe('validate_ad_cta — external_url', () => {
     expect(validate_ad_cta('external_url', undefined).error_code).toBe(AD_CTA_URL_INVALID);
     expect(validate_ad_cta('external_url', '').error_code).toBe(AD_CTA_URL_INVALID);
   });
+
+  it('rechaza "https://" — esquema válido pero host VACÍO, un CTA que no abre nada', () => {
+    const result = validate_ad_cta('external_url', 'https://');
+
+    expect(result.valid).toBe(false);
+    expect(result.error_code).toBe(AD_CTA_URL_INVALID);
+  });
+
+  it('rechaza "http://" — mismo caso de host vacío con el otro esquema permitido', () => {
+    const result = validate_ad_cta('external_url', 'http://');
+
+    expect(result.valid).toBe(false);
+    expect(result.error_code).toBe(AD_CTA_URL_INVALID);
+  });
+
+  it('rechaza "htt\\tps://ejemplo.com" — tab EMBEBIDO dentro del propio esquema (contrato nuevo: ya NO se despoja antes de validar)', () => {
+    // "htt" + "ps" == "https" — el tab está insertado DENTRO de la palabra
+    // "https", no antes. Antes del cambio de contrato, un
+    // .replace(/[\t\n\r]/g,'') interno limpiaba esto a "https://ejemplo.com"
+    // y lo aceptaba — exactamente el hueco que el guardián marcó como
+    // mutante equivalente (d1/d2): bajo una allowlist, despojar caracteres
+    // de control solo AMPLÍA lo aceptado.
+    const result = validate_ad_cta('external_url', 'htt\tps://ejemplo.com');
+
+    expect(result.valid).toBe(false);
+    expect(result.error_code).toBe(AD_CTA_URL_INVALID);
+  });
+
+  it('rechaza "htt\\nps://ejemplo.com" — newline EMBEBIDO dentro del propio esquema, mismo contrato nuevo', () => {
+    const result = validate_ad_cta('external_url', 'htt\nps://ejemplo.com');
+
+    expect(result.valid).toBe(false);
+    expect(result.error_code).toBe(AD_CTA_URL_INVALID);
+  });
+
+  it('normalized_value trae la URL recortada (trim), sin espacios en ningún extremo', () => {
+    const result = cta('external_url', '  https://ejemplo.com  ');
+
+    expect(result.valid).toBe(true);
+    expect(result.normalized_value).toBe('https://ejemplo.com');
+  });
+
+  it('normalized_value es null cuando la URL es inválida — nunca se guarda lo que no se validó', () => {
+    const result = cta('external_url', 'javascript:alert(1)');
+
+    expect(result.valid).toBe(false);
+    expect(result.normalized_value).toBeNull();
+  });
 });
 
 describe('validate_ad_cta — whatsapp (normalización de la casa: phone.replace(/\\D/g, ""))', () => {
@@ -250,6 +350,20 @@ describe('validate_ad_cta — whatsapp (normalización de la casa: phone.replace
     expect(validate_ad_cta('whatsapp', undefined).error_code).toBe(AD_CTA_PHONE_INVALID);
     expect(validate_ad_cta('whatsapp', '').error_code).toBe(AD_CTA_PHONE_INVALID);
   });
+
+  it('normalized_value trae SOLO los dígitos de un número con formato humano — el wizard no debe re-normalizar', () => {
+    const result = cta('whatsapp', '+52 33 1234 5678');
+
+    expect(result.valid).toBe(true);
+    expect(result.normalized_value).toBe('523312345678');
+  });
+
+  it('normalized_value es null cuando el teléfono es inválido', () => {
+    const result = cta('whatsapp', 'abc-def-ghij');
+
+    expect(result.valid).toBe(false);
+    expect(result.normalized_value).toBeNull();
+  });
 });
 
 describe('validate_ad_cta — phone (mismo criterio de normalización que whatsapp, tipo distinto)', () => {
@@ -266,6 +380,13 @@ describe('validate_ad_cta — phone (mismo criterio de normalización que whatsa
 
   it('rechaza null con AD_CTA_PHONE_INVALID', () => {
     expect(validate_ad_cta('phone', null).error_code).toBe(AD_CTA_PHONE_INVALID);
+  });
+
+  it('normalized_value trae SOLO los dígitos también para el tipo "phone" (no solo "whatsapp")', () => {
+    const result = cta('phone', '33-1234-5678');
+
+    expect(result.valid).toBe(true);
+    expect(result.normalized_value).toBe('3312345678');
   });
 });
 
