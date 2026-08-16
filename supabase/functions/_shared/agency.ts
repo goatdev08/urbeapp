@@ -31,6 +31,16 @@ export interface AgencyCreateParams {
    */
   can_publish_properties?: boolean | undefined;
   can_advertise?: boolean | undefined;
+  /**
+   * advertiser_category (168.7): mismo criterio — reenviada solo cuando el
+   * admin la manda en el payload. Necesaria para crear una org
+   * "solo-publicidad" (can_advertise=true) directamente: el CHECK
+   * agencies_categoria_requerida_para_anunciar (20260816000003) rechaza
+   * can_advertise=true sin categoría. Tipada como string (no un enum TS
+   * espejo) — el enum public.advertiser_category en la base es la única
+   * fuente de verdad; un valor inválido lo rechaza la RPC.
+   */
+  advertiser_category?: string | undefined;
 }
 
 export type AgencyCreateResult =

@@ -126,11 +126,16 @@ select throws_ok(
 -- firma "unificada" de esta prueba SIEMPRE trackea el shape vigente, no un
 -- shape histórico; el comportamiento retrocompatible de la firma vieja de 9
 -- params lo prueba supabase/tests/46_org_advertising_test.sql RETRO1).
+-- 🔄 168.7 (20260816000004): la firma creció de 11 a 12 params
+-- (p_advertiser_category, AL FINAL con DEFAULT null) — la RPC de alta ahora
+-- puede sembrar la categoría de una org "solo-publicidad" sin la cual el
+-- CHECK agencies_categoria_requerida_para_anunciar (20260816000003) rechaza
+-- can_advertise=true.
 select has_function(
   'public',
   'admin_create_agency_atomic',
-  ARRAY['text', 'text', 'text', 'text', 'text', 'uuid', 'uuid', 'text', 'integer', 'boolean', 'boolean'],
-  'admin_create_agency_atomic firma unificada de 11 params (trailing 5 con DEFAULT, 168.3 agrega capacidad) debe existir'
+  ARRAY['text', 'text', 'text', 'text', 'text', 'uuid', 'uuid', 'text', 'integer', 'boolean', 'boolean', 'advertiser_category'],
+  'admin_create_agency_atomic firma unificada de 12 params (trailing 6 con DEFAULT, 168.7 agrega advertiser_category) debe existir'
 );
 
 -- ── 10) Llamada extendida: insert con owner_user_id sin error ────────────────
@@ -187,12 +192,12 @@ select throws_ok(
 -- La RPC aún NO acepta p_token_hash ni p_token_max_uses; todos estos tests fallan en RED.
 
 -- ── 14) Firma extendida: incluye p_token_hash text y p_token_max_uses int ────
--- 🔄 168.3: mismo shape de 11 params que el test 9 (ver nota ahí).
+-- 🔄 168.3/168.7: mismo shape de 12 params que el test 9 (ver nota ahí).
 select has_function(
   'public',
   'admin_create_agency_atomic',
-  ARRAY['text', 'text', 'text', 'text', 'text', 'uuid', 'uuid', 'text', 'integer', 'boolean', 'boolean'],
-  'admin_create_agency_atomic debe aceptar p_token_hash, p_token_max_uses y (168.3) los params de capacidad'
+  ARRAY['text', 'text', 'text', 'text', 'text', 'uuid', 'uuid', 'text', 'integer', 'boolean', 'boolean', 'advertiser_category'],
+  'admin_create_agency_atomic debe aceptar p_token_hash, p_token_max_uses, (168.3) los params de capacidad y (168.7) advertiser_category'
 );
 
 -- ── 15) Llamada con 9 params y token_hash se ejecuta sin error ───────────────

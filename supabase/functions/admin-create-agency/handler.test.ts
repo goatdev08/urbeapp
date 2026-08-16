@@ -1151,6 +1151,108 @@ Deno.test(
   },
 );
 
+// ── subtarea #168.7 — advertiser_category llega a create_atomic ─────────────
+// Hueco encontrado por el guardian de 168.7: el cambio que agregó
+// p_advertiser_category (agency.ts + clients.ts + handler.ts) entró a `main`
+// sin un solo test propio. Estos 3 tests fijan con asserts permanentes lo que
+// el guardian ya verificó a mano con sondas desechables.
+//
+// ⚠️ SEAM CUBIERTO: SOLO handler.ts → AgencyCreator.create_atomic (el
+// FakeCreator inyectado captura `creator.calls[0]`). El mapeo condicional
+// `params.advertiser_category !== undefined` → `rpc_params.p_advertiser_category`
+// vive en _shared/clients.ts (make_agency_creator, ~446-448) y NO tiene test
+// aquí — clients.ts no se toca en esta tanda (tarea derivada #174).
+//
+// EDGE CASES (RED→GREEN ya implementado, tests permanentes):
+// ### Happy path
+// - advertiser_category del payload llega a create_atomic como
+//   params.advertiser_category (passthrough tal cual, mismo valor)
+// ### NO-REGRESIÓN (contrato publicado — pasa hoy por diseño)
+// - payload viejo sin advertiser_category → 201 y create_atomic recibe
+//   advertiser_category=undefined (nunca forzado; el DEFAULT vive en la
+//   RPC/columna, no en el EF)
+// ### Rama no obvia
+// - advertiser_category que no es string (p.ej. number) se ignora — el
+//   handler solo reenvía cuando typeof === "string"; nunca propaga el valor
+//   crudo no-string a create_atomic
+
+const PAYLOAD_CON_ADVERTISER_CATEGORY = {
+  ...PAYLOAD_VALIDO,
+  slug: "inmobiliaria-categoria-anuncio-87",
+  advertiser_category: "notaria",
+};
+
+Deno.test(
+  "categoria_168_7_create_atomic_recibe_advertiser_category_del_payload",
+  async () => {
+    const auth = auth_admin_invite_ok();
+    const creator = creator_ok();
+    const res = await handler(
+      post_admin(PAYLOAD_CON_ADVERTISER_CATEGORY),
+      deps_con_auth(verifier_admin_ok(), creator, auth),
+    );
+    assertEquals(res.status, 201);
+    assertEquals(creator.calls.length, 1);
+    assertEquals(
+      // deno-lint-ignore no-explicit-any
+      (creator.calls[0] as any).advertiser_category,
+      "notaria",
+      "create_atomic debe recibir advertiser_category tal como lo mandó el admin en el payload",
+    );
+  },
+);
+
+Deno.test(
+  "categoria_168_7_no_regresion_payload_sin_advertiser_category_no_fuerza_el_param",
+  async () => {
+    const auth = auth_admin_invite_ok();
+    const creator = creator_ok();
+    const res = await handler(
+      post_admin(PAYLOAD_VALIDO),
+      deps_con_auth(verifier_admin_ok(), creator, auth),
+    );
+    assertEquals(
+      res.status,
+      201,
+      "payload viejo sin advertiser_category sigue dando 201",
+    );
+    assertEquals(
+      // deno-lint-ignore no-explicit-any
+      (creator.calls[0] as any).advertiser_category,
+      undefined,
+      "create_atomic NO debe recibir advertiser_category forzado (undefined, no null) cuando el payload no lo manda — el DEFAULT lo pone la RPC/columna, no el EF",
+    );
+  },
+);
+
+Deno.test(
+  "categoria_168_7_advertiser_category_no_string_se_ignora_en_vez_de_propagarse",
+  async () => {
+    const auth = auth_admin_invite_ok();
+    const creator = creator_ok();
+    const payload_con_categoria_invalida = {
+      ...PAYLOAD_VALIDO,
+      slug: "inmobiliaria-categoria-invalida-87",
+      advertiser_category: 12345,
+    };
+    const res = await handler(
+      post_admin(payload_con_categoria_invalida),
+      deps_con_auth(verifier_admin_ok(), creator, auth),
+    );
+    assertEquals(
+      res.status,
+      201,
+      "advertiser_category no-string no debe tumbar la creación de la agencia",
+    );
+    assertEquals(
+      // deno-lint-ignore no-explicit-any
+      (creator.calls[0] as any).advertiser_category,
+      undefined,
+      "un advertiser_category que no es string se ignora (undefined), nunca se propaga tal cual a create_atomic",
+    );
+  },
+);
+
 // ── subtarea #168.4 — invitación del owner por CORREO (inviteUserByEmail) ───
 // El handler.ts actual (sin tocar en esta subtarea) sigue llamando
 // create_owner_invite → admin.generateInviteLink — el fake nuevo implementa

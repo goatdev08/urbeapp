@@ -104,6 +104,13 @@ export async function handler(
   const can_advertise = typeof rawBody.can_advertise === "boolean"
     ? rawBody.can_advertise
     : undefined;
+  // advertiser_category (168.7): mismo criterio — undefined si el payload no
+  // la trae, para que la RPC use su propio DEFAULT (null) en vez de un valor
+  // forzado desde el EF.
+  const advertiser_category =
+    typeof rawBody.advertiser_category === "string"
+      ? rawBody.advertiser_category
+      : undefined;
 
   // Validación de campos owner — solo cuando authAdmin está inyectado (flujo 7.5)
   let owner_email: string | undefined;
@@ -224,6 +231,7 @@ export async function handler(
     token_hash,
     can_publish_properties,
     can_advertise,
+    advertiser_category,
   });
 
   if (!createResult.ok) {

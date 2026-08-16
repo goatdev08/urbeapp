@@ -33,7 +33,7 @@
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(70);
+select plan(71);
 
 create or replace function pg_temp.act_as(p_uid uuid, p_role text default 'authenticated')
 returns void language plpgsql as $$
@@ -138,8 +138,17 @@ select throws_ok(
 );
 
 -- ── 18) Boundary: solo-publicidad (false, true) SÍ respeta "al menos una" ──
+-- Reconciliado 168.7 (2026-08-16): can_advertise=true ahora exige
+-- advertiser_category no nula (agencies_categoria_requerida_para_anunciar,
+-- 20260816000003) -- se agrega la categoría al fixture para seguir cumpliendo
+-- ESE invariante SIN dejar de probar el boundary original de esta sección
+-- (agencies_al_menos_una_capacidad acepta (false, true) como combinación
+-- válida de capacidades). El caso viejo -- (false, true) SIN categoría -- se
+-- cubre por separado en CATREQ8 (sección 10), que prueba que ahora es
+-- rechazado a propósito.
 select lives_ok(
-  $$ update public.agencies set can_publish_properties = false, can_advertise = true
+  $$ update public.agencies set can_publish_properties = false, can_advertise = true,
+       advertiser_category = 'otro'
      where id = '00000000-0000-0000-0000-000000460022' $$,
   'agencies_al_menos_una_capacidad acepta (false, true) — cuenta solo-publicidad'
 );
@@ -603,8 +612,9 @@ select is(
 --     directo ya probado en la sección 3) — la RPC no lo enmascara ni lo
 --     convierte en un error genérico distinto.
 --   · OVERLOAD1: admin_create_agency_atomic tiene EXACTAMENTE una sobrecarga
---     en pg_proc, con 11 parámetros — dos sobrecargas conviviendo dejan la
---     llamada por PostgREST ambigua y rompen el alta desde el cliente
+--     en pg_proc, con 12 parámetros (168.7 agrega p_advertiser_category AL
+--     FINAL con DEFAULT, 20260816000004) — dos sobrecargas conviviendo dejan
+--     la llamada por PostgREST ambigua y rompen el alta desde el cliente
 --     instalado (tan importante como RETRO1).
 -- NO-REGRESIÓN (guardan comportamiento YA vigente en producción; PASAN hoy
 -- por diseño — son la red de seguridad para el create-or-replace de (b), no
@@ -625,7 +635,13 @@ select is(
 drop trigger if exists poison_admin_actions_before_insert on public.admin_actions;
 
 -- ── 8.1) RETRO1 — firma vieja de 9 params == mismo resultado, bajo la función
---         NUEVA de 11 params (no un overload viejo huérfano) ────────────────
+--         NUEVA de 12 params (no un overload viejo huérfano) ────────────────
+-- 🔄 168.7 (2026-08-16): igual que OVERLOAD1 (sección 8.5), este assert trae
+-- embebido un pronargs = 11 -- con la firma creciendo a 12 params
+-- (20260816000004, p_advertiser_category) el mismo tipo de reconciliación de
+-- firma aplica aquí también (mismo mecanismo, misma afirmación: "resuelve
+-- contra la función vigente, no un overload huérfano"). Se actualiza SOLO el
+-- número, nada de lo que el assert afirma cambia.
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-000000468301', 'admin_retrocompat_83@urbea.mx');
 
@@ -652,13 +668,23 @@ select ok(
     and exists (
       select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
        where n.nspname = 'public' and p.proname = 'admin_create_agency_atomic'
-         and p.pronargs = 11
+         and p.pronargs = 12
     )
   ),
-  'RETRO1_llamada_con_la_firma_vieja_de_9_params_sigue_dando_can_publish_properties_true_y_can_advertise_false_resuelta_contra_la_funcion_nueva_de_11_params_no_un_overload_viejo_huerfano'
+  'RETRO1_llamada_con_la_firma_vieja_de_9_params_sigue_dando_can_publish_properties_true_y_can_advertise_false_resuelta_contra_la_funcion_nueva_de_12_params_no_un_overload_viejo_huerfano'
 );
 
 -- ── 8.2) CAP1 — la RPC acepta (false, true): org solo-publicidad ────────────
+-- 🔄 RECONCILIADO 168.7 (2026-08-16), continuación tras el CHECK: la
+-- migración 20260816000004 extiende admin_create_agency_atomic con un 12°
+-- parámetro p_advertiser_category (default null) precisamente para destrabar
+-- este caso — antes (BLOQUEADO, ver historial de la subtarea) la firma de 11
+-- params no tenía forma de mandar la categoría y el INSERT chocaba SIEMPRE
+-- con agencies_categoria_requerida_para_anunciar. Igual que assert 18 y
+-- CAP2-4 (reconciliados sumando advertiser_category al fixture), aquí se
+-- suma el 12° argumento a la llamada — el assert sigue afirmando EXACTAMENTE
+-- lo mismo: la RPC acepta (can_publish_properties=false, can_advertise=true)
+-- sin lanzar excepción y crea la organización solo-publicidad.
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-000000468311', 'owner_solo_publicidad_83@urbea.mx');
 
@@ -670,20 +696,26 @@ select lives_ok(
        '00000000-0000-0000-0000-000000468301'::uuid,
        '00000000-0000-0000-0000-000000468311'::uuid,
        null::text, null::integer,
-       false, true
+       false, true, 'otro'::advertiser_category
      ) $$,
-  'CAP1_la_rpc_acepta_can_publish_properties_false_can_advertise_true_sin_lanzar_excepcion_crea_la_organizacion_solo_publicidad'
+  'CAP1_la_rpc_acepta_can_publish_properties_false_can_advertise_true_advertiser_category_sin_lanzar_excepcion_crea_la_organizacion_solo_publicidad'
 );
 
 -- ── 8.3) CAP2-CAP4 — el owner de una org solo-publicidad NO puede publicar ──
 -- Fixture sembrado DIRECTO (no vía la RPC, que aún no acepta estos params en
 -- RED) para aislar el guard bajo prueba: publish_property_atomic.
+-- Reconciliado 168.7 (2026-08-16): can_advertise=true ahora exige
+-- advertiser_category no nula (agencies_categoria_requerida_para_anunciar,
+-- 20260816000003) -- se agrega la categoría al INSERT directo para seguir
+-- pudiendo sembrar la org solo-publicidad; CAP2-CAP4 siguen probando
+-- EXACTAMENTE lo mismo (el guard AGENCY_CANNOT_PUBLISH_PROPERTIES sobre
+-- publish_property_atomic), ajeno a advertiser_category.
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-000000468321', 'owner_bloqueado_publicar_83@urbea.mx');
 update public.users set role = 'agent' where id = '00000000-0000-0000-0000-000000468321';
-insert into public.agencies (id, name, slug, status, created_by_user_id, can_publish_properties, can_advertise) values
+insert into public.agencies (id, name, slug, status, created_by_user_id, can_publish_properties, can_advertise, advertiser_category) values
   ('00000000-0000-0000-0000-000000468322', 'Inmobiliaria Solo Publicidad 83', 'inmo-solo-publicidad-83', 'active',
-   '00000000-0000-0000-0000-000000468321', false, true);
+   '00000000-0000-0000-0000-000000468321', false, true, 'otro');
 insert into public.agency_members (agency_id, user_id, member_role, status) values
   ('00000000-0000-0000-0000-000000468322', '00000000-0000-0000-0000-000000468321', 'owner', 'active');
 insert into public.property_videos (id, property_id, agent_id, status, position, cloudflare_uid, tus_upload_url) values
@@ -737,16 +769,16 @@ select throws_ok(
   'CHECK1_la_rpc_no_enmascara_el_check_agencies_al_menos_una_capacidad_al_recibir_false_false_mismo_mensaje_explicito_que_el_update_directo'
 );
 
--- ── 8.5) OVERLOAD1 — exactamente UNA sobrecarga en pg_proc, con 11 params ───
+-- ── 8.5) OVERLOAD1 — exactamente UNA sobrecarga en pg_proc, con 12 params ───
 select ok(
   (
     (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
       where n.nspname = 'public' and p.proname = 'admin_create_agency_atomic') = 1
     and
     (select pronargs from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-      where n.nspname = 'public' and p.proname = 'admin_create_agency_atomic' limit 1) = 11
+      where n.nspname = 'public' and p.proname = 'admin_create_agency_atomic' limit 1) = 12
   ),
-  'OVERLOAD1_admin_create_agency_atomic_tiene_exactamente_UNA_sobrecarga_en_pg_proc_con_11_parametros_dos_sobrecargas_dejarian_la_llamada_por_postgrest_ambigua'
+  'OVERLOAD1_admin_create_agency_atomic_tiene_exactamente_UNA_sobrecarga_en_pg_proc_con_12_parametros_dos_sobrecargas_dejarian_la_llamada_por_postgrest_ambigua'
 );
 
 -- ── 8.6) NO-REGRESIÓN — publish_property_atomic (20260809000006 vigente):
@@ -1044,6 +1076,13 @@ select is(
 --     efecto parcial (ni can_advertise encendido ni fila de auditoría), para
 --     no caer en el vacuo de solo verificar "el estado no cambió" sobre una
 --     llamada que ya se sabe que falla.
+--   · CATREQ8 (reconciliación de fixtures, 2026-08-16): reproduce LITERAL el
+--     fixture que el assert 18 (sección 3) usaba antes de este CHECK --
+--     (can_publish_properties=false, can_advertise=true, advertiser_category
+--     NULL) -- y confirma que ahora es rechazado. No es redundante con
+--     CATREQ1 (que deja can_publish_properties en su default true): prueba
+--     que el caso viejo concreto dejó de ser legal A PROPÓSITO por este
+--     CHECK, no por accidente de otro constraint.
 -- ════════════════════════════════════════════════════════════════════════════
 
 -- ⚠️ Fixture pegajoso (ya mordió dos veces en este archivo, FI3/INV4 de la
@@ -1135,6 +1174,22 @@ select is(
   (select count(*)::int from public.admin_actions where entity_id = '00000000-0000-0000-0000-000000461042'),
   0,
   'CATREQ7_tras_el_error_explicito_no_quedo_ninguna_fila_de_auditoria_huerfana'
+);
+
+-- ── CATREQ8) reconciliación 168.7: el fixture LITERAL viejo de assert 18
+--            (false, true, categoría NULL) ahora es rechazado A PROPÓSITO ──
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-000000461051', 'owner_catreq8_46@urbea.mx');
+insert into public.agencies (id, name, slug, status, created_by_user_id) values
+  ('00000000-0000-0000-0000-000000461052', 'Inmobiliaria Catreq8 46', 'inmo-catreq8-46', 'active',
+   '00000000-0000-0000-0000-000000461051');
+
+select throws_ok(
+  $$ update public.agencies set can_publish_properties = false, can_advertise = true
+     where id = '00000000-0000-0000-0000-000000461052' $$,
+  '23514',
+  'new row for relation "agencies" violates check constraint "agencies_categoria_requerida_para_anunciar"',
+  'CATREQ8_el_fixture_literal_viejo_del_assert_18_false_true_categoria_null_ahora_es_rechazado_a_proposito_no_por_accidente'
 );
 
 select * from finish();

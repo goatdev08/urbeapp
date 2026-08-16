@@ -412,8 +412,9 @@ function extract_agency_error_code(message: string): string {
 
 /**
  * Adaptador real de AgencyCreator sobre la RPC admin_create_agency_atomic
- * (168.3: 20260816000001, 11 params). Llama la versión que inserta token +
- * admin_actions en la misma transacción.
+ * (168.3: 20260816000001, 11 params; 168.7: 20260816000004, 12 params con
+ * p_advertiser_category). Llama la versión que inserta token + admin_actions
+ * en la misma transacción.
  * Mapea los errores P0001 al error_code de negocio correspondiente.
  */
 export function make_agency_creator(client: SupabaseClient): AgencyCreator {
@@ -441,6 +442,10 @@ export function make_agency_creator(client: SupabaseClient): AgencyCreator {
       }
       if (params.can_advertise !== undefined) {
         rpc_params.p_can_advertise = params.can_advertise;
+      }
+      // 168.7: mismo criterio — solo se incluye si el payload la trae.
+      if (params.advertiser_category !== undefined) {
+        rpc_params.p_advertiser_category = params.advertiser_category;
       }
       const { data, error } = await client.rpc(
         "admin_create_agency_atomic",
