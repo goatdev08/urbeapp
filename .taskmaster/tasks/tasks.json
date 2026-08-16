@@ -8251,12 +8251,12 @@
             "title": "admin_create_agency_atomic + EF admin-create-agency: params de capacidad con DEFAULT al final",
             "description": "🔴 CRÍTICA + contrato publicado. Dos params nuevos con DEFAULT y al final para que la firma vieja siga dando el mismo resultado, y una organización solo-publicidad que efectivamente no puede publicar propiedades.",
             "details": "PLAN · agente=supabase · criticidad=CRÍTICA · impacto-prod=🔴 CONTRATO PUBLICADO — la firma vieja (9 params con defaults) debe seguir dando el MISMO resultado para los builds instalados (§0.5 regla 2) · footprint=migración con create or replace de la RPC, supabase/functions/admin-create-agency/handler.ts + handler.test.ts, asserts en 46_org_advertising_test.sql\n\nPARAMS: p_can_publish_properties boolean default true, p_can_advertise boolean default false — AL FINAL. El patrón de \"defaults al final\" ya está establecido por la firma actual.\n\n⚠️ GOTCHA DE POSTGRES QUE MUERDE AQUÍ: cambiar la lista de params CREA UNA SOBRECARGA si no coinciden exactamente nombres y tipos. Hay que terminar con UNA sola función (create or replace exacto, o drop de la vieja): dos sobrecargas dejan la llamada por PostgREST ambigua y rompen el alta desde el cliente instalado.\n\nCRITERIO DE PRODUCTO QUE LE DA SENTIDO A LA COLUMNA: se puede crear una organización SOLO-PUBLICIDAD (false, true) y su owner NO puede publicar propiedades — la RLS/RPC de publicación lo bloquea con un código de error EXPLÍCITO, no con un fallo genérico. Sin ese bloqueo, can_publish_properties=false es decorativa.\n\nRED: (1) llamada con la firma vieja == resultado de hoy; (2) llamada con (false,true) crea la organización y su owner recibe error explícito al intentar publicar; (3) (false,false) lo rechaza el CHECK de 168.1; (4) no quedan dos sobrecargas de la función.\n\n🔴 FOOTPRINT INCOMPLETO — CORREGIDO POR EL ANALISTA (2026-08-15): el criterio \"org solo-publicidad no puede publicar propiedades\" exige un bloqueo que HOY NO EXISTE en ningún lado. El lugar natural es publish_property_atomic, que ya tiene un guard análogo (AGENCY_MEMBERSHIP_SUSPENDED, introducido en 20260809000005_publish_property_atomic_video_slot.sql:120-122 y redefinida después por 20260809000006_publish_property_atomic_price_visible.sql). Sumar al footprint: una migración adicional (siguiente número libre, p.ej. 20260815000003) con create or replace de publish_property_atomic que añada el bloqueo AGENCY_CANNOT_PUBLISH_PROPERTIES, más supabase/functions/publish-property/handler.ts + handler.test.ts si el código necesita mapeo HTTP.\n✅ PRECEDENTE EXACTO para el cambio de firma: admin_create_agency_atomic ya pasó por esto en 20260604000016_admin_create_agency_rpc.sql:27-44 (revoke execute + drop function de la firma vieja ANTES de crear la nueva). Repetir ese patrón resuelve el riesgo de sobrecarga ambigua.\n<info added on 2026-08-16T02:22:16.082Z>\nCORRECCIÓN PRE-EJECUCIÓN (analista, 2026-08-15): el create-or-replace de publish_property_atomic DEBE partir de la definición vigente en supabase/migrations/20260809000006_publish_property_atomic_price_visible.sql (create or replace en :34, guard AGENCY_MEMBERSHIP_SUSPENDED en :93, comment en :181), NO de 20260809000005. Verificado: la función se redefine en 5 migraciones (20260625000001, 20260721000001, 20260805000011, 20260809000005, 20260809000006) y la 000006 es la ULTIMA. Copiar el cuerpo de la 000005 pisaria en silencio el guard de precio-visible que YA esta en produccion (regresion 0.5). El guard nuevo AGENCY_CANNOT_PUBLISH_PROPERTIES se agrega SOBRE el cuerpo de la 000006.\n</info added on 2026-08-16T02:22:16.082Z>",
-            "status": "pending",
+            "status": "in-progress",
             "dependencies": [
               1
             ],
             "testStrategy": "pgTAP: firma vieja idéntica, org solo-publicidad bloqueada al publicar, CHECK, unicidad de la firma. Deno: handler.test.ts de admin-create-agency sigue verde con los params nuevos.",
-            "updatedAt": "2026-08-15T00:00:00.000Z",
+            "updatedAt": "2026-08-16T03:32:17.309Z",
             "parentId": "168"
           },
           {
@@ -8303,7 +8303,7 @@
             "parentId": "168"
           }
         ],
-        "updatedAt": "2026-08-16T03:32:06.696Z"
+        "updatedAt": "2026-08-16T03:32:17.309Z"
       },
       {
         "id": "169",
@@ -8636,7 +8636,7 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-08-16T03:32:06.696Z",
+      "lastModified": "2026-08-16T03:32:17.309Z",
       "taskCount": 172,
       "completedCount": 93,
       "tags": [
