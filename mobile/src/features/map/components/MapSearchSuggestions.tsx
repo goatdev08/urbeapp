@@ -7,7 +7,7 @@
  * hairline) sobre colors.surface + borde rgba(227,220,207,0.60) — el mismo
  * borde glass de MapSearchBar/ZoneActiveChip.
  *
- * Cada fila: ícono por tipo (MapPin = colonia · Buildings = municipio) +
+ * Cada fila: ícono por tipo (MapPinSimple = colonia · Buildings = municipio) +
  * nombre + contexto ("Guadalajara, Jal." / "Jalisco") en gray_2.
  *
  * keyboardShouldPersistTaps="handled": el tap en una sugerencia selecciona a
@@ -15,7 +15,7 @@
  */
 import React from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Buildings, MapPin } from 'phosphor-react-native';
+import { Buildings, MapPinSimple } from 'phosphor-react-native';
 
 import { colors, fonts, radii, shadows, spacing } from '@/theme/theme';
 import type { PlaceSuggestion } from '../lib/placeSearch';
@@ -50,7 +50,7 @@ export function MapSearchSuggestions({
             accessibilityLabel={`Buscar ${s.name}, ${s.context}`}
           >
             {s.kind === 'neighborhood' ? (
-              <MapPin size={18} weight="fill" color={colors.primary} />
+              <MapPinSimple size={18} weight="fill" color={colors.primary} />
             ) : (
               <Buildings size={18} weight="fill" color={colors.accent} />
             )}

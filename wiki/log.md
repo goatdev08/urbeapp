@@ -2,6 +2,14 @@
 
 Append-only. Prefijo: `## [YYYY-MM-DD] tipo | título`
 
+## [2026-08-16] polish | #185 Pin único en toda la app — Phosphor `MapPinSimple`
+
+- Pedido de Abraham: el pin de paleta (`map-pin-simple`) sustituye a la gota (`MapPin`) **en todas partes**, tab de Mapa incluido y en las dos plataformas. Un solo cambio en `MapPinIcon.tsx` cubrió los tres mapas (global, detalle y el picker del wizard de publicación); los seis usos inline (dirección del detalle, LocationWall, chip de zona, sugerencias de colonia, estado vacío del feed, tab de Android) se migraron con `perl -pi \bMapPin\b`. Geometría intacta: `MapPinSimple` también remata en punta abajo-centro (y=232 del viewBox 256), así que `anchor={{0.5,1}}` y `centerOffset -size/2` siguen siendo correctos.
+- **El tab de iOS no es un componente, son PNG.** `NativeTabs` solo acepta imágenes (ver #65.10), así que hubo que rasterizar `map-pin-simple-{regular,fill}` @1x/2x/3x. El verde de seleccionado lo sigue poniendo `tintColor` + `renderingMode="template"` — el PNG es solo la silueta, no lleva color.
+- ⚠️ **Gotcha nuevo (costó un ciclo): `qlmanage` aplanó el SVG sobre BLANCO.** El PNG salió 100% opaco y en modo `template` iOS pintó un **cuadrado verde sólido** en lugar del ícono. `sips -g hasAlpha` responde `yes` igual (hay canal alpha… todo en 255), así que no sirve de verificación. Receta corregida para íconos de tab: tras rasterizar, **reconstruir el alpha desde la luminancia** (blanco→0, negro→255, grises→antialias) y dejar el RGB en negro; verificar decodificando el PNG, no con `hasAlpha`. Anotado en [[design-system]].
+- Verificación: tsc 0, lint 0 errores, Jest 1084/1084 (sin tests nuevos: footprint `components/**` + assets, NO crítico por la regla de paths). Smoke por CLI en iOS (tab seleccionado verde y tab inactivo gris, marcadores del mapa) y Android (tab, marcador, **pin central del paso 3 del wizard**, ícono de la dirección en el detalle). Gotcha operativo repetido: el emulador volvió a perder la red (`CTRL-EVENT-BEACON-LOSS` → spinner infinito) y se arregló con cold boot (`adb emu kill` + `-no-snapshot-load`).
+- Solo JS/UI + assets JS: viaja por OTA, sin migraciones ni contratos tocados.
+
 ## [2026-08-16] polish | #180 Acciones visibles en el perfil (editar/guardados o WhatsApp) y leads fuera del header
 
 - Pedido de Abraham tras ver #179 en el dispositivo, con la referencia de Instagram anotada: "Editar perfil" y "Guardados" estaban escondidas tras el menú ⋯ y suben a botones visibles entre la bio y la grilla; en un perfil ajeno ese mismo espacio lo ocupa un botón de **contacto por WhatsApp** del mismo tamaño y forma. Texto a la izquierda, ícono Phosphor a la derecha (`PencilSimple`, `BookmarkSimple`, `WhatsappLogo`). Las dos entradas movidas se quitaron del menú: dos caminos al mismo destino no aportan.

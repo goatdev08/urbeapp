@@ -36,7 +36,7 @@ import {
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { CaretLeft, HouseLine, MapPin } from 'phosphor-react-native';
+import { CaretLeft, HouseLine, MapPinSimple } from 'phosphor-react-native';
 
 import { colors, fonts, layout, spacing } from '@/theme/theme';
 import { ContactAgentButton } from '@/components/ContactAgentButton';
@@ -145,7 +145,7 @@ export function PropertyDetailScreen(): React.JSX.Element {
 
           {/* Dirección completa con icono de ubicación */}
           <View style={styles.address_row}>
-            <MapPin size={16} color={colors.primary} weight="bold" />
+            <MapPinSimple size={16} color={colors.primary} weight="bold" />
             <Text style={styles.address_text}>{data.address}</Text>
           </View>
 
