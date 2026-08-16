@@ -26,11 +26,9 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
-  Bookmarks,
   Briefcase,
   Buildings,
   DotsThreeVertical,
-  PencilSimple,
   SignOut,
   Storefront,
   UserPlus,
@@ -87,11 +85,7 @@ export function ProfileScreen({
   const insets = useSafeAreaInsets();
   const { signOut, user } = useAuth();
   const { loading, error, data } = useAgentProfile(agent_id);
-  // include_leads: `leads` es privado — en un perfil ajeno la RLS devuelve 0 y
-  // el header pintaba "0 Leads" como si el agente no tuviera ninguno (179.1).
-  const { loading: stats_loading, stats } = useAgentStats(agent_id, {
-    include_leads: is_own_profile,
-  });
+  const { loading: stats_loading, stats } = useAgentStats(agent_id);
   // Owner de agencia → opción "Invitar agentes" en el menú (tarea #34)
   const { isOwner } = useAgencyRole();
   const [menu_visible, set_menu_visible] = useState(false);
@@ -131,6 +125,10 @@ export function ProfileScreen({
 
   function handle_edit_profile() {
     router.push('/profile/edit');
+  }
+
+  function handle_saved() {
+    router.push('/saved');
   }
 
   function handle_my_listings() {
@@ -178,14 +176,15 @@ export function ProfileScreen({
   // Items del menú "⋯" — orden: navegación primero, cerrar sesión al final.
   // "Invitar agentes" solo para owners de agencia (#34).
   // "Miembros" para owner Y admin de agencia (#71.6 — gestión delegada §4.10).
-  // "Guardados" vive aquí desde que salió de la tab bar (composición del mockup).
+  // ⚠️ 180.2: "Guardados" y "Editar perfil" YA NO están aquí — subieron a la
+  // fila de acciones visible del header (ProfileActions). Duplicarlas en el
+  // menú daría dos caminos al mismo destino sin ganar nada.
   // "Convertirme en agente" y "Registrar mi inmobiliaria" solo para
   // buscadores (#71.3 / #71.4) — un agent/admin no tiene nada que canjear,
   // solicitar o fundar. Son caminos DISTINTOS: el primero une la cuenta a
   // una inmobiliaria EXISTENTE; el segundo funda una NUEVA (pending_approval,
   // sin cambio de rol hasta 71.5).
   const menu_items: ProfileMenuItem[] = [
-    { key: 'saved', label: 'Guardados', icon: Bookmarks, onPress: () => router.push('/saved') },
     { key: 'listings', label: 'Mis publicaciones', icon: Storefront, onPress: handle_my_listings },
     ...(isOwner
       ? [{ key: 'invite', label: 'Invitar agentes', icon: UserPlus, onPress: handle_invite_agents }]
@@ -199,7 +198,6 @@ export function ProfileScreen({
           { key: 'register_agency', label: 'Registrar mi inmobiliaria', icon: Buildings, onPress: handle_register_agency },
         ]
       : []),
-    { key: 'edit', label: 'Editar perfil', icon: PencilSimple, onPress: handle_edit_profile },
     {
       key: 'signout',
       label: 'Cerrar sesión',
@@ -262,6 +260,8 @@ export function ProfileScreen({
           stats={stats}
           loading={stats_loading}
           is_own_profile={is_own_profile}
+          on_edit_profile={handle_edit_profile}
+          on_saved={handle_saved}
         />
 
         {/* Grilla de propiedades */}

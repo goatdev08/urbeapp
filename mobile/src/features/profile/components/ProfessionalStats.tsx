@@ -8,11 +8,12 @@
  *   1. Deja de ser un "sheet" con sombra centrado bajo la bio: ahora vive en la
  *      fila del avatar (layout de Instagram), sin fondo ni bordes.
  *   2. Las columnas dependen de QUIÉN mira (is_own_profile):
- *        propio → Publicaciones · Leads · Guardados
- *        ajeno  → Publicaciones · Guardados · Me gusta
- *      `leads` es privado (la RLS lo devuelve 0 en perfiles ajenos y se pintaba
- *      "0 Leads" como si el agente no tuviera ninguno); useAgentStats ni
- *      siquiera lo consulta cuando include_leads es false.
+ *        propio → Publicaciones · Guardados · Me gusta
+ *        ajeno  → Publicaciones · Me gusta
+ *      ⚠️ 180.3: "Leads" salió de AMBOS — es un dato de gestión que se consulta
+ *      en el CRM y solo el dueño de la cuenta; `useAgentStats` ya ni lo pide.
+ *      El perfil ajeno tampoco muestra "Guardados": hacia afuera la señal
+ *      pública es cuánto gusta el catálogo, no cuánta gente lo archivó.
  *   3. Ya NO se oculta cuando todo está en 0 — con la fila desaparecida el
  *      avatar quedaba solo en una fila a medias. Instagram también muestra 0s.
  *
@@ -47,17 +48,16 @@ interface StatColumn {
   label: string;
 }
 
-/** Perfil propio: el dueño sí puede ver sus leads. */
+/** Perfil propio: incluye los guardados, señal útil solo para el dueño. */
 const OWN_COLUMNS: StatColumn[] = [
   { key: 'publications', label: 'Publicaciones' },
-  { key: 'leads',        label: 'Leads' },
   { key: 'saves',        label: 'Guardados' },
+  { key: 'likes',        label: 'Me gusta' },
 ];
 
-/** Perfil ajeno: prueba social pública, sin datos privados. */
+/** Perfil ajeno: solo prueba social pública (180.3). */
 const PUBLIC_COLUMNS: StatColumn[] = [
   { key: 'publications', label: 'Publicaciones' },
-  { key: 'saves',        label: 'Guardados' },
   { key: 'likes',        label: 'Me gusta' },
 ];
 
