@@ -56,6 +56,11 @@
  * - no_miembro_con_ads_active_pero_fuera_de_vigencia_omitido
  * - no_miembro_con_ads_pending_review_omitido
  *
+ * ### Ronda 2 (guardián FAIL, 2026-08-16): "no aborta el lote" no tenía un
+ * solo test con MÁS de 1 fila — los 14 datasets previos eran de una sola fila,
+ * donde continue/break/return[] son indistinguibles. Este SÍ diferencia:
+ * - lote_mixto_autorizada_no_autorizada_autorizada_omite_solo_la_del_medio
+ *
  * ### Nunca una URL sin firmar / fail-closed batch-resiliente
  * - token_en_el_path_nunca_query_param
  * - sin_cloudflare_uid_omitida_sin_lanzar
@@ -188,7 +193,11 @@ const OUTSIDER_UID = "00000000-0000-0000-0005-000000000099";
 const AGENCY_ID = "00000000-0000-0000-0006-000000000001";
 const OTHER_AGENCY_ID = "00000000-0000-0000-0006-000000000002";
 const CREATIVE_ID_1 = "00000000-0000-0000-0007-000000000001";
+const CREATIVE_ID_2 = "00000000-0000-0000-0007-000000000002";
+const CREATIVE_ID_3 = "00000000-0000-0000-0007-000000000003";
 const CF_UID_1 = "cf-uid-ad-0000000000000001";
+const CF_UID_2 = "cf-uid-ad-0000000000000002";
+const CF_UID_3 = "cf-uid-ad-0000000000000003";
 
 const NOW_MS = Date.now();
 function iso(offset_ms: number): string {
@@ -352,6 +361,36 @@ Deno.test("no_miembro_con_ads_pending_review_omitido", async () => {
   const minter = make_ad_url_minter(client as never, make_hls_config(private_jwk_base64));
   const result = await minter.mint_ad_urls([CREATIVE_ID_1], OUTSIDER_UID);
   assertEquals(result.length, 0, "CRÍTICO: un ad pending_review NUNCA debe ser visible a un no-miembro — fail-closed");
+});
+
+Deno.test("lote_mixto_autorizada_no_autorizada_autorizada_omite_solo_la_del_medio", async () => {
+  // Diferenciador de continue vs break vs return[] (guardián, ronda 2): con
+  // UNA sola fila los tres son indistinguibles. Con 3 filas en el MISMO
+  // .in(), donde la del medio NO está autorizada, el comportamiento correcto
+  // (continue) debe seguir evaluando la 3ª — break/return[] la perderían.
+  const { private_jwk_base64 } = await generate_test_signing_key();
+  const { client } = make_fake_client_tracked({
+    ad_creatives_data: [
+      make_row({ id: CREATIVE_ID_1, cloudflare_uid: CF_UID_1, agency_id: AGENCY_ID, ads: [] }), // miembro → autorizada
+      make_row({ id: CREATIVE_ID_2, cloudflare_uid: CF_UID_2, agency_id: OTHER_AGENCY_ID, ads: [] }), // ni miembro ni ad activo → NO autorizada
+      make_row({ id: CREATIVE_ID_3, cloudflare_uid: CF_UID_3, agency_id: OTHER_AGENCY_ID, ads: [VIGENTE] }), // pública (ad activo vigente) → autorizada
+    ],
+    agency_members_data: { agency_id: AGENCY_ID },
+  });
+  const minter = make_ad_url_minter(client as never, make_hls_config(private_jwk_base64));
+  const result = await minter.mint_ad_urls([CREATIVE_ID_1, CREATIVE_ID_2, CREATIVE_ID_3], MEMBER_UID);
+
+  assertEquals(
+    result.length,
+    2,
+    "un continue/return[]/break equivocado en la fila del medio produciría 0, 1 (solo la 1ª) o 3 en vez de 2",
+  );
+  const returned_ids = result.map((r) => r.creative_id).sort();
+  assertEquals(
+    returned_ids,
+    [CREATIVE_ID_1, CREATIVE_ID_3].sort(),
+    "deben regresar EXACTAMENTE la 1ª y la 3ª — la del medio se omite SIN abortar ni truncar el resto del lote",
+  );
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

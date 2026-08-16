@@ -63,8 +63,33 @@
 //   thumbnail_url } — nunca property_id/agent_id/status.
 // - EC12: mark_failed de ad_creatives (rama duración inválida) recibe SOLO
 //   { cloudflare_uid, reason_code } — nunca property_id/agent_id.
+//
+// ── Ronda 2 (guardián FAIL, 2026-08-16): 3 huecos ────────────────────────────
+//
+// ### Candado del invariante de orden — mutante "e2" del guardián: validar el
+// valor REDONDEADO pero persistir/decidir con el CRUDO (o viceversa). Ninguna
+// de las duraciones EC2-EC7 cae en (5,6) ni en (30,30.5) — los únicos rangos
+// donde validar-crudo y validar-redondeado DIFIEREN de verdad.
+// - EC13: duration=5.7 → raw < 6 (inválido) pero round(5.7)=6 (válido si se
+//   validara el redondeado) → debe marcar FAILED con AD_DURATION_INVALID,
+//   mark_ready NUNCA se llama. Mata el mutante "valida redondeado".
+// - EC14: duration=30.4 → raw > 30 (inválido) pero round(30.4)=30 (válido si
+//   se validara el redondeado) → debe marcar FAILED, mark_ready NUNCA se
+//   llama. Simétrico de EC13 en el límite superior.
+//
+// ### Fallo del adapter de ad_creatives — DECISIÓN (coordinador, 2026-08-16):
+// se propaga (Cloudflare reintenta), NUNCA se traga a 200. `processing` no
+// tiene ventana de expiración (169.4) — tragarse el error dejaría el creativo
+// atorado ahí para siempre, sin ruta de recuperación.
+// - EC15: adCreativeStatusUpdater.mark_ready RECHAZA (state='ready', property
+//   afecta 0 filas) → respond() debe RECHAZAR también (nunca resolver a una
+//   Response, mucho menos 200); el mensaje re-lanzado debe conservar la causa
+//   original (logueable) Y nombrar 'ad_creatives' (claro, identificable) — no
+//   puede ser un burbujeo crudo sin contexto.
+// - EC16: adCreativeStatusUpdater.mark_failed RECHAZA (state='error', property
+//   afecta 0 filas) → mismo contrato que EC15, rama 'error'.
 
-import { assertEquals } from "@std/assert";
+import { assertEquals, assertRejects } from "@std/assert";
 import { make_stream_webhook_handler } from "./handler.ts";
 import { AD_DURATION_INVALID } from "./types.ts";
 import type {
@@ -310,6 +335,46 @@ Deno.test("ad_ready_duracion_31s_por_encima_del_maximo_marca_failed_con_ad_durat
   assertEquals(ad.failed_calls[0].reason_code, AD_DURATION_INVALID);
 });
 
+// ── Candado del invariante de orden (mutante "e2": validar redondeado, no crudo) ──
+// (5,6) y (30,30.5) son los ÚNICOS rangos donde validar-crudo y
+// validar-redondeado dan veredictos DISTINTOS — EC2-EC7 nunca cayeron ahí.
+
+Deno.test("ad_ready_duracion_5_7s_raw_invalido_aunque_redondeado_de_6_seria_valido_marca_failed", async () => {
+  const payload = ready_payload(5.7);
+  const header = await sign_body(payload);
+  const ad = ad_updater();
+  const deps = make_deps({ adCreativeStatusUpdater: ad });
+  const respond = make_stream_webhook_handler(deps);
+
+  await respond(webhook_request(payload, header));
+
+  assertEquals(
+    ad.ready_calls.length,
+    0,
+    "5.7 crudo es < 6 (inválido): si el handler validara round(5.7)=6 en vez del crudo, esto marcaría ready incorrectamente",
+  );
+  assertEquals(ad.failed_calls.length, 1);
+  assertEquals(ad.failed_calls[0], { cloudflare_uid: AD_STREAM_UID, reason_code: AD_DURATION_INVALID });
+});
+
+Deno.test("ad_ready_duracion_30_4s_raw_invalido_aunque_redondeado_de_30_seria_valido_marca_failed", async () => {
+  const payload = ready_payload(30.4);
+  const header = await sign_body(payload);
+  const ad = ad_updater();
+  const deps = make_deps({ adCreativeStatusUpdater: ad });
+  const respond = make_stream_webhook_handler(deps);
+
+  await respond(webhook_request(payload, header));
+
+  assertEquals(
+    ad.ready_calls.length,
+    0,
+    "30.4 crudo es > 30 (inválido): si el handler validara round(30.4)=30 en vez del crudo, esto marcaría ready incorrectamente",
+  );
+  assertEquals(ad.failed_calls.length, 1);
+  assertEquals(ad.failed_calls[0], { cloudflare_uid: AD_STREAM_UID, reason_code: AD_DURATION_INVALID });
+});
+
 // ── state='error' de Stream ────────────────────────────────────────────────────
 
 Deno.test("ad_error_state_marca_failed_en_ad_creatives_con_el_mismo_reason_del_payload", async () => {
@@ -390,4 +455,57 @@ Deno.test("mark_failed_ad_creatives_recibe_solo_cloudflare_uid_reason_code", asy
     ["cloudflare_uid", "reason_code"],
     "mark_failed de ad_creatives debe recibir SOLO cloudflare_uid+reason_code; nunca property_id/agent_id",
   );
+});
+
+// ── Fallo del adapter de ad_creatives — DECISIÓN: se propaga, nunca a 200 ────
+// `processing` no tiene ventana de expiración (169.4 solo cubre 'uploading') —
+// tragarse el error dejaría el creativo atorado ahí PARA SIEMPRE, sin ruta de
+// recuperación. El reintento de Cloudflare es el único mecanismo de rescate.
+// 🔴 No "arreglar" esto envolviéndolo en un catch que devuelva 200 — es la
+// decisión documentada, no un descuido.
+
+function failing_ad_updater(cause: Error): AdCreativeStatusUpdater {
+  return {
+    mark_ready(_params: MarkAdCreativeReadyParams): Promise<number> {
+      return Promise.reject(cause);
+    },
+    mark_failed(_params: MarkAdCreativeFailedParams): Promise<number> {
+      return Promise.reject(cause);
+    },
+  };
+}
+
+Deno.test("ad_creatives_mark_ready_falla_el_handler_repropaga_nunca_resuelve_a_200", async () => {
+  const payload = ready_payload(20); // duración válida → llega a mark_ready, no a mark_failed
+  const header = await sign_body(payload);
+  const cause = new Error("boom_infra_no_descriptivo_mark_ready");
+  const deps = make_deps({ adCreativeStatusUpdater: failing_ad_updater(cause) });
+  const respond = make_stream_webhook_handler(deps);
+
+  const rejected = await assertRejects(() => respond(webhook_request(payload, header)));
+
+  const message = rejected instanceof Error ? rejected.message : String(rejected);
+  assertEquals(
+    message.includes("boom_infra_no_descriptivo_mark_ready"),
+    true,
+    "el error re-lanzado debe conservar la causa original — logueable, no reemplazada",
+  );
+  assertEquals(
+    message.includes("ad_creatives"),
+    true,
+    "el error re-lanzado debe identificar el componente que falló (claro) — no un burbujeo crudo sin contexto",
+  );
+});
+
+Deno.test("ad_creatives_mark_failed_falla_el_handler_repropaga_nunca_resuelve_a_200", async () => {
+  const cause = new Error("boom_infra_no_descriptivo_mark_failed");
+  const deps = make_deps({ adCreativeStatusUpdater: failing_ad_updater(cause) });
+  const respond = make_stream_webhook_handler(deps);
+  const header = await sign_body(ERROR_PAYLOAD);
+
+  const rejected = await assertRejects(() => respond(webhook_request(ERROR_PAYLOAD, header)));
+
+  const message = rejected instanceof Error ? rejected.message : String(rejected);
+  assertEquals(message.includes("boom_infra_no_descriptivo_mark_failed"), true, "causa original conservada");
+  assertEquals(message.includes("ad_creatives"), true, "componente identificado en el mensaje");
 });

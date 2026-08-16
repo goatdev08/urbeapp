@@ -20,6 +20,7 @@
 
 import { make_stream_webhook_handler } from "./handler.ts";
 import {
+  make_ad_creative_status_updater,
   make_video_event_notifier,
   make_video_status_updater,
   service_client,
@@ -30,6 +31,10 @@ const respond = make_stream_webhook_handler({
   webhookSecret: Deno.env.get("STREAM_WEBHOOK_SECRET") ?? "",
   videoStatusUpdater: make_video_status_updater(client),
   notifier: make_video_event_notifier(),
+  // 169.5 (cierre del hueco, 2026-08-16): SIN esto la rama de anuncios queda
+  // presente en handler.ts pero inalcanzable en producción — property_videos
+  // sigue intentándose primero, ad_creatives solo si afecta 0 filas.
+  adCreativeStatusUpdater: make_ad_creative_status_updater(client),
 });
 
 Deno.serve((req: Request) => respond(req));

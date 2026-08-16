@@ -1613,26 +1613,57 @@ export function make_ad_creative_registrar(
 }
 
 /**
- * STUB RED — subtarea 169.5 (cierre del hueco de adapter, 2026-08-16).
- * Implementación real pendiente (GREEN, agente supabase): calco de
+ * Adaptador real de AdCreativeStatusUpdater (subtarea 169.5, cierre del hueco
+ * reportado tras el GREEN inicial, 2026-08-16). Calco de
  * make_video_status_updater (68.5) pero contra `ad_creatives`/`cloudflare_uid`
- * en vez de `property_videos`, SIN `.is('deleted_at', null)` (esa columna no
- * existe en ad_creatives, 20260816000005_ads_schema.sql). Debe redondear
- * `duration_seconds` (columna `integer`) DESPUÉS de recibirlo — la validación
- * [6,30] contra el valor crudo fraccionario ya ocurrió en stream-webhook/handler.ts
- * ANTES de llegar aquí; ver el contrato completo y las decisiones de diseño
- * (incluida la fijación round-vs-trunc) en
- * _shared/ad_creative_status_updater.test.ts.
+ * en vez de `property_videos` — filtrar por la tabla/columna equivocada haría
+ * que el webhook, en la rama de anuncios, PISARA filas de video de propiedad
+ * (el acoplamiento que la tabla propia de 169 existe para evitar). SIN
+ * `.is('deleted_at', null)`: esa columna no existe en ad_creatives
+ * (20260816000005_ads_schema.sql). `.select('id')` tras el UPDATE es lo que
+ * permite devolver el conteo de filas afectadas — de ese número depende TODA
+ * la rama aditiva del webhook ("¿intento ad_creatives?"), así que nunca se
+ * hardcodea a un valor fijo.
+ *
+ * 🔴 El redondeo vive EXCLUSIVAMENTE AQUÍ, nunca en el handler. El handler
+ * (stream-webhook/handler.ts, handle_ad_ready_transition) ya validó el rango
+ * [6,30] contra `duration_seconds` CRUDO fraccionario ANTES de llamar a este
+ * adapter — este adapter NO re-valida ese rango, solo redondea (Math.round,
+ * nunca trunc/floor: 6.6 debe subir a 7, no bajar a 6) para que el valor quepa
+ * en la columna `integer`. El orden importa: si el redondeo ocurriera ANTES
+ * de la validación, un video de 5.7 s redondearía a 6 y pasaría el mínimo
+ * violándolo en la realidad — por eso persistir+redondear es responsabilidad
+ * de este adapter, y validar es responsabilidad exclusiva del handler.
  */
 export function make_ad_creative_status_updater(
-  _client: SupabaseClient,
+  client: SupabaseClient,
 ): AdCreativeStatusUpdater {
   return {
-    mark_ready(_params: MarkAdCreativeReadyParams): Promise<number> {
-      throw new Error("not_implemented");
+    async mark_ready(params: MarkAdCreativeReadyParams): Promise<number> {
+      const { data, error } = await client
+        .from("ad_creatives")
+        .update({
+          status: "ready",
+          thumbnail_url: params.thumbnail_url,
+          duration_seconds: Math.round(params.duration_seconds),
+        })
+        .eq("cloudflare_uid", params.cloudflare_uid)
+        .select("id");
+      if (error) {
+        throw new Error(`UPDATE ad_creatives (mark_ready) falló: ${error.message}`);
+      }
+      return data?.length ?? 0;
     },
-    mark_failed(_params: MarkAdCreativeFailedParams): Promise<number> {
-      throw new Error("not_implemented");
+    async mark_failed(params: MarkAdCreativeFailedParams): Promise<number> {
+      const { data, error } = await client
+        .from("ad_creatives")
+        .update({ status: "failed" })
+        .eq("cloudflare_uid", params.cloudflare_uid)
+        .select("id");
+      if (error) {
+        throw new Error(`UPDATE ad_creatives (mark_failed) falló: ${error.message}`);
+      }
+      return data?.length ?? 0;
     },
   };
 }
