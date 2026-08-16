@@ -11,7 +11,13 @@ actualizado: 2026-08-16
 ## 🔴 Vigente desde 2026-08-10 — PRODUCCIÓN VIVA
 **Hay personas reales conectadas probando la app y la base se puebla poco a poco.** Todo cambio se piensa para producción: nada de seeds/resets al remoto, migraciones aditivas con rollback, contratos publicados se deprecian en dos pasos (cliente-OTA-primero), y ante duda gana producción. Reglas completas en **CLAUDE.md §0.5**; decisión en [[0009-produccion-viva]]; el gate corre en el analista (Paso 5.5), `/tm-plan` (impacto-prod) y `/tm-tarea` (cierre 6.0).
 
-## Hoy (2026-08-16) — Perfil estilo Instagram (#179): grid 3 columnas, bio completa y stats nuevas
+## Hoy (2026-08-16) — Pin único `MapPinSimple` (#185)
+
+- **✅ #185 en `tarea/185-pin-map-pin-simple`.** Pedido de Abraham: el pin de paleta (`map-pin-simple` de Phosphor) sustituye a la gota en TODA la app — los 3 mapas (vía `MapPinIcon`), la dirección del detalle, el chip de zona, las sugerencias de colonia, el estado vacío del feed y el **tab de Mapa en ambas plataformas** (que conserva el verde al seleccionar). Solo el ícono: geometría, anclas y lógica intactas.
+- ⚠️ **Gotcha que costó un ciclo:** `qlmanage` aplanó el SVG sobre blanco y el tab de iOS (que consume PNG, no componentes) pintó un **cuadrado verde sólido**; `sips -g hasAlpha` decía `yes`. Receta corregida en [[design-system]]: reconstruir el alpha desde la luminancia y verificar decodificando el PNG.
+- Verificado en iOS y Android por CLI (tab activo/inactivo, marcadores, pin del wizard, dirección del detalle); Jest 1084/1084, tsc/lint 0. Solo JS/UI + assets → viaja por OTA.
+
+## Ayer/hoy (2026-08-16) — Perfil estilo Instagram (#179): grid 3 columnas, bio completa y stats nuevas
 
 - **✅ #179 lista en `tarea/179-perfil-instagram`** (worktree aislado desde `origin/main` fresco, porque el checkout principal está en la rama de #169). Pedido de Abraham con dos capturas de perfiles de Instagram como referencia. Detalle en `wiki/log.md` (entrada 2026-08-16) y [[perfil-agente]].
 - **Lo visible:** grilla de **3 columnas borde a borde** en Perfil y Guardados (la card con título/zona/precio se volvió un **tile** de portada 3/4 con badge de operación y precio encima — el `.gcell` del mockup 10 de la identidad ya lo definía así), **bio completa** (se cortaba con `numberOfLines={3}` pese a permitir 280 caracteres) y header con el avatar a la izquierda y las estadísticas a la derecha.

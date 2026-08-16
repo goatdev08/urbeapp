@@ -8867,13 +8867,72 @@
         ],
         "priority": "medium",
         "subtasks": []
+      },
+      {
+        "id": "185",
+        "title": "polish(11): pin unificado — Phosphor MapPinSimple en toda la app (mapas, wizard y tab de Mapa)",
+        "description": "Origen: petición de Abraham (2026-08-16) · Detectado por: usuario. Sustituir el pin actual (Phosphor `MapPin`, la gota clásica) por `MapPinSimple` (id phosphor `map-pin-simple`, el pin de paleta: círculo sobre asta) en TODOS los lugares donde la app dibuja un pin: marcadores del mapa global, mapa del detalle, pin central del wizard de publicación, chips/estados vacíos de búsqueda y el ícono del tab de Mapa en las dos plataformas. El tab de Mapa conserva el comportamiento actual (tinte salvia cuando está seleccionado). Solo cambia el ícono: nada de geometría, anclas ni lógica.",
+        "details": "Inventario (grep MapPin en mobile/src):\n- `src/components/MapPinIcon.tsx` — pin canónico de los tres mapas (PropertyMarker del mapa global, PropertyMap del detalle, MapPicker del wizard). Un solo cambio de import cubre los tres.\n- Usos inline de `MapPin`: PropertyDetailScreen (dirección), LocationWall, ZoneActiveChip, MapSearchSuggestions (fila de colonia), FeedScreen (EmptyState de zona).\n- Tab de Mapa Android: `src/components/AndroidTabsLayout.tsx` dibuja el componente Phosphor directo.\n- Tab de Mapa iOS: `src/components/IosNativeTabsLayout.tsx` NO acepta componentes React — consume PNG @1x/2x/3x de `assets/tab-icons/` (regular + fill). Hay que rasterizar el nuevo ícono desde el path `d` de `node_modules/phosphor-react-native/src/defs/MapPinSimple.tsx` (receta qlmanage + sips, memoria `svg_to_png_qlmanage`) y renombrar las claves a map-pin-simple-*. `renderingMode=\"template\"` sigue tiñendo el PNG con el `tintColor` (salvia) al seleccionar — no hay que generar variantes de color.\n\nGeometría: `MapPinSimple` también tiene la punta abajo-centro (viewBox 256, asta hasta y=232), así que `anchor={{x:0.5,y:1}}` y `centerOffset={{x:0,y:-size/2}}` de PropertyMarker/PropertyMap siguen siendo correctos sin tocarlos.\n\nCriticidad TDD: NO crítica — el footprint es `components/**` y pantallas + assets; ninguna ruta de `hooks/**`, `lib/**`, `utils/**` ni `supabase/**`. Verificación ligera: `pnpm tsc --noEmit`, `pnpm lint`, suite existente verde y smoke por CLI en simulador iOS + emulador Android.\n\nGate §0.5 producción viva: solo JS/UI + assets JS → viaja por OTA, sin migraciones ni contratos tocados.",
+        "testStrategy": "pnpm tsc --noEmit + pnpm lint + pnpm test (suite completa, sin regresiones). Smoke CLI: iOS (xcrun simctl io booted screenshot) y Android (adb exec-out screencap) del tab de Mapa (inactivo y seleccionado en verde), del mapa global con marcadores, del paso de ubicación del wizard y del mapa del detalle.",
+        "status": "done",
+        "dependencies": [
+          "11",
+          "65"
+        ],
+        "priority": "medium",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "MapPinIcon + usos inline → MapPinSimple",
+            "description": "Cambiar el pin canónico y los seis usos inline de `MapPin`.",
+            "details": "`src/components/MapPinIcon.tsx` (cubre PropertyMarker, PropertyMap y el MapPicker del wizard) + PropertyDetailScreen, LocationWall, ZoneActiveChip, MapSearchSuggestions y FeedScreen. Conservar tamaño, color y weight de cada uso; actualizar los docblocks que nombran `MapPin`.\n<info added on 2026-08-16T23:09:38.733Z>\nMapPinIcon.tsx updated from Phosphor MapPin (teardrop) to MapPinSimple (circle + stem, id 'map-pin-simple'); this single change covers all three maps (PropertyMarker in global map, PropertyMap in detail, MapPicker in publish wizard step 3). Inline usages migrated with perl -pi \\bMapPin\\b→MapPinSimple: PropertyDetailScreen.tsx:148 (address, weight bold), LocationWall.tsx:165, ZoneActiveChip.tsx:54, MapSearchSuggestions.tsx:53 (neighborhood row), FeedScreen.tsx:135 (zone EmptyState), and AndroidTabsLayout.tsx:106 (Map tab). Docblocks updated in MapPinIcon and PropertyMarker (including note that MapPinSimple also terminates at bottom-center point, y=232 of viewBox 256 → anchor {0.5,1} and centerOffset -size/2 remain valid, geometry unchanged). Verification: pnpm tsc --noEmit 0 errors, pnpm lint 0 errors (68 pre-existing warnings), pnpm test 95 suites / 1084 tests green.\n</info added on 2026-08-16T23:09:38.733Z>",
+            "testStrategy": "pnpm tsc --noEmit + pnpm lint + pnpm test.",
+            "status": "done",
+            "dependencies": [],
+            "priority": "medium",
+            "subtasks": [],
+            "parentId": "undefined",
+            "updatedAt": "2026-08-16T23:19:41.850Z"
+          },
+          {
+            "id": 2,
+            "title": "Tab de Mapa en ambas plataformas (Android componente, iOS PNG rasterizados)",
+            "description": "Mismo ícono en la barra de tabs, conservando el tinte salvia al seleccionar.",
+            "details": "Android: `AndroidTabsLayout.tsx` pasa `MapPinSimple` a `tab_icon`. iOS: rasterizar regular+fill @1x/2x/3x desde el path de `MapPinSimple` (qlmanage + sips), guardarlos como `map-pin-simple-{regular,fill}[@2x,@3x].png` en `assets/tab-icons/`, apuntar `ICON_SOURCES.map` a los nuevos y borrar los PNG viejos de `map-pin-*`.\n<info added on 2026-08-16T23:19:03.661Z>\nI'll analyze the codebase to understand the context of this task and generate the appropriate update.Based on my analysis of the codebase and the user's request, here is the new text that should be appended to the subtask's details:\n\nImplementado en AndroidTabsLayout.tsx:106 (prop tabBarIcon pasa MapPinSimple directamente via tab_icon helper) y IosNativeTabsLayout.tsx:109-116 (ICON_SOURCES.map actualizado a map-pin-simple-{regular,fill}.png). Assets nuevos generados en mobile/assets/tab-icons/ (6 PNG: regular+fill × @1x/2x/3x, 24/48/72 px). GOTCHA crítico: qlmanage -t -s <size> -o . map-pin.svg rasteriza el SVG sobre FONDO BLANCO con alpha=255 → iOS pintaba un cuadrado verde sólido en el tab seleccionado (tintColor tiñe TODO el píxel, no solo el foreground). sips -g hasAlpha contestaba 'yes' (hay canal alpha, pero con todos los píxeles opacos) así que no sirve para detectar el problema. Fix: script que reconstruye el alpha desde la luminancia del PNG aplanado (blanco →0, negro →255, deja RGB en negro puro) + downsample con box filter a 72/48/24 px + verificación decodificando el PNG y trazando un mapa ASCII del alpha. Todas las densidades verificadas con tintColor salvia en el simulador. Archivos map-pin-*.png viejos borrados. Receta y scripts documentados en wiki/conceptos/design-system.md sección \"Rasterización de íconos Phosphor para iOS tabs\".\n</info added on 2026-08-16T23:19:03.661Z>",
+            "testStrategy": "Smoke por CLI: tab de Mapa inactivo y seleccionado (verde) en iOS y Android.",
+            "status": "done",
+            "dependencies": [
+              1
+            ],
+            "priority": "medium",
+            "subtasks": [],
+            "parentId": "undefined",
+            "updatedAt": "2026-08-16T23:19:43.606Z"
+          },
+          {
+            "id": 3,
+            "title": "Verificación en dispositivo + ingest al vault",
+            "description": "Smoke de los cuatro mapas y actualización de wiki.",
+            "details": "Smoke CLI iOS + Android: mapa global, detalle, paso de ubicación del wizard, tab. Vault: `wiki/conceptos/mapa-busqueda.md` / la página donde vive el pin canónico, `wiki/codebase/mapa-codebase.md` y una línea en `wiki/log.md`.\n<info added on 2026-08-16T23:19:28.763Z>\nVerificación smoke completada en ambas plataformas contra Metro 8083 (backend REMOTO). iOS (iPhone 17 Pro): tab Mapa seleccionado muestra pin relleno salvia, tab inactivo muestra pin de contorno gris, marcadores del mapa global renderizan el pin nuevo (salvia para renta, arcilla para venta). Android (emulador urbea): tab Mapa muestra el pin nuevo en verde, marcador del mapa renderizado, pin central del paso 3 del wizard de publicación verificado (solicitado explícitamente por Abraham), ícono de dirección en detalle de propiedad confirmado.\n\nGotcha operativo registrado: emulador perdió conectividad de red (CTRL-EVENT-BEACON-LOSS causó spinner infinito en auth), solucionado con cold boot (adb emu kill + emulator -no-snapshot-load). Al finalizar smoke, emulador restaurado apuntando a Metro 8081 y app detenida con force-stop (cumpliendo regla de cuota: detalle y feed reproducen video de Cloudflare Stream que se factura).\n\nVault actualizado: wiki/conceptos/mapa-y-ubicacion.md actualizado con pin canónico MapPinSimple, wiki/conceptos/design-system.md incluye gotcha de qlmanage/alpha para rasterización de SVG, wiki/codebase/mapa-codebase.md actualizado con referencias a componentes modificados, entrada agregada a wiki/log.md.\n</info added on 2026-08-16T23:19:28.763Z>",
+            "testStrategy": "Capturas por CLI + suites verdes.",
+            "status": "done",
+            "dependencies": [
+              2
+            ],
+            "priority": "medium",
+            "subtasks": [],
+            "parentId": "undefined",
+            "updatedAt": "2026-08-16T23:19:45.402Z"
+          }
+        ],
+        "updatedAt": "2026-08-16T23:19:45.402Z"
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-08-16T21:47:09.762Z",
-      "taskCount": 180,
-      "completedCount": 97,
+      "lastModified": "2026-08-16T23:19:45.403Z",
+      "taskCount": 182,
+      "completedCount": 99,
       "tags": [
         "master"
       ]

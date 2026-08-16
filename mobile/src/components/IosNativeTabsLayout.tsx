@@ -107,8 +107,13 @@ const ICON_SOURCES = {
     selected: require('../../assets/tab-icons/house-line-fill.png'),
   },
   map: {
-    default: require('../../assets/tab-icons/map-pin-regular.png'),
-    selected: require('../../assets/tab-icons/map-pin-fill.png'),
+    // `map-pin-simple` (no la gota `map-pin`): mismo ícono que MapPinIcon y que
+    // el tab de Android — decisión de Abraham 2026-08-16. Rasterizado con la
+    // misma receta que el resto (path `d` de MapPinSimple.tsx → svg → qlmanage
+    // + sips @1x/2x/3x); el tinte salvia del estado seleccionado lo sigue
+    // poniendo `tintColor` + renderingMode="template", no el PNG.
+    default: require('../../assets/tab-icons/map-pin-simple-regular.png'),
+    selected: require('../../assets/tab-icons/map-pin-simple-fill.png'),
   },
   publish: {
     default: require('../../assets/tab-icons/plus-regular.png'),
