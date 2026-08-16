@@ -33,7 +33,7 @@
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(48);
+select plan(58);
 
 create or replace function pg_temp.act_as(p_uid uuid, p_role text default 'authenticated')
 returns void language plpgsql as $$
@@ -555,6 +555,285 @@ select is(
   (select count(*)::int from public.admin_actions where entity_id = '00000000-0000-0000-0000-000000460442'),
   0,
   'INV4_agencia_borrada_no_quedo_ninguna_fila_de_auditoria_tras_el_intento_fallido'
+);
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 8) subtarea #168.3 — admin_create_agency_atomic + guard AGENCY_CANNOT_PUBLISH_
+--    PROPERTIES en publish_property_atomic — params de capacidad con DEFAULT
+--    al final (RED 2026-08-15).
+--
+-- SUT (AÚN NO EXISTE): una migración GREEN debe:
+--   (a) reemplazar public.admin_create_agency_atomic (hoy 9 params, migración
+--       20260604000016) por UNA función de 11 params — p_can_publish_properties
+--       boolean default true, p_can_advertise boolean default false, AL FINAL
+--       (mismo patrón "defaults al final" que ya usa esa función) — con DROP
+--       explícito del overload viejo ANTES del CREATE (precedente exacto:
+--       20260604000016:27-44), para terminar con UNA sola función en pg_proc
+--       (dos sobrecargas dejan la llamada por PostgREST ambigua).
+--   (b) reemplazar public.publish_property_atomic partiendo EXACTAMENTE del
+--       cuerpo vigente en 20260809000006_publish_property_atomic_price_visible.sql
+--       (create or replace :34, guard AGENCY_MEMBERSHIP_SUSPENDED :93, comment
+--       :181) — NO de 20260809000005 — agregando SOBRE ese cuerpo un guard
+--       nuevo: si la agencia resuelta del publicante tiene
+--       can_publish_properties = false, RAISE 'AGENCY_CANNOT_PUBLISH_PROPERTIES'
+--       con errcode P0001, ANTES del INSERT en properties. El guard de precio
+--       visible (p_price_visible / coalesce) y AGENCY_MEMBERSHIP_SUSPENDED
+--       deben sobrevivir intactos (riesgo real: un create or replace reescribe
+--       el cuerpo entero y puede pisarlos en silencio).
+--
+-- ── Edge cases enumerados (paso 1 del protocolo test-author) ────────────────
+-- Happy path / retrocompatibilidad del contrato publicado (§0.5 regla 2):
+--   · RETRO1: llamar admin_create_agency_atomic con la firma vieja de 9 params
+--     (tal como la llaman hoy los builds instalados vía la EF) sigue dando
+--     EXACTAMENTE el mismo resultado (can_publish_properties=true,
+--     can_advertise=false por default de columna) bajo la firma NUEVA de 11
+--     params — no basta con que la llamada no truene, además debe resolverse
+--     contra la función de 11 args (no quedar huérfana en un overload viejo).
+-- Ramas no obvias (criterio de producto de la columna, org solo-publicidad):
+--   · CAP1: la RPC acepta (p_can_publish_properties=false, p_can_advertise=true)
+--     sin lanzar excepción — crea la organización solo-publicidad.
+--   · CAP2: el owner de esa organización recibe un error EXPLÍCITO
+--     (AGENCY_CANNOT_PUBLISH_PROPERTIES, P0001) al intentar publicar una
+--     propiedad — no un fallo genérico ni un no-op silencioso.
+--   · CAP3/CAP4: atomicidad del bloqueo — no queda ninguna propiedad creada ni
+--     ningún video enlazado tras el intento bloqueado.
+-- Boundary / error:
+--   · CHECK1: (false, false) vía la RPC lo rechaza el CHECK
+--     agencies_al_menos_una_capacidad (mismo mensaje explícito que el UPDATE
+--     directo ya probado en la sección 3) — la RPC no lo enmascara ni lo
+--     convierte en un error genérico distinto.
+--   · OVERLOAD1: admin_create_agency_atomic tiene EXACTAMENTE una sobrecarga
+--     en pg_proc, con 11 parámetros — dos sobrecargas conviviendo dejan la
+--     llamada por PostgREST ambigua y rompen el alta desde el cliente
+--     instalado (tan importante como RETRO1).
+-- NO-REGRESIÓN (guardan comportamiento YA vigente en producción; PASAN hoy
+-- por diseño — son la red de seguridad para el create-or-replace de (b), no
+-- capacidad nueva; mismo patrón que la sección 6 "no regresión" de este mismo
+-- archivo):
+--   · NOREG1: AGENCY_MEMBERSHIP_SUSPENDED sigue vivo tras el create or replace.
+--   · NOREG2: p_price_visible=false sigue escribiéndose en la fila real.
+--   · NOREG3: p_price_visible omitido sigue defaulteando a true.
+-- ════════════════════════════════════════════════════════════════════════════
+
+-- ⚠️ Fixture pegajoso (hallazgo del guardian de 168.2): el trigger "veneno"
+-- creado en la sección 7.4 (línea ~500) sobre admin_actions NUNCA se dropea en
+-- este archivo. Si no se dropea aquí, cualquier INSERT a admin_actions de esta
+-- sección aborta la transacción en cascada y los asserts que dependen de
+-- auditoría quedan vacuos. Esta sección no depende de admin_actions
+-- directamente, pero se dropea de todas formas por higiene y porque
+-- admin_create_agency_atomic SÍ escribe en admin_actions internamente.
+drop trigger if exists poison_admin_actions_before_insert on public.admin_actions;
+
+-- ── 8.1) RETRO1 — firma vieja de 9 params == mismo resultado, bajo la función
+--         NUEVA de 11 params (no un overload viejo huérfano) ────────────────
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-000000468301', 'admin_retrocompat_83@urbea.mx');
+
+create temp table result_retrocompat_83 (agency_id uuid);
+insert into result_retrocompat_83 (agency_id)
+select agency_id from public.admin_create_agency_atomic(
+  'Org Retrocompat 83'::text,
+  'org-retrocompat-83'::text,
+  'Contacto Retrocompat'::text,
+  '+52 55 0000 0083'::text,
+  'contacto-retrocompat-83@urbea.mx'::text,
+  '00000000-0000-0000-0000-000000468301'::uuid,
+  null::uuid,
+  null::text,
+  null::integer
+);
+
+select ok(
+  (
+    (select can_publish_properties from public.agencies
+      where id = (select agency_id from result_retrocompat_83)) = true
+    and (select can_advertise from public.agencies
+      where id = (select agency_id from result_retrocompat_83)) = false
+    and exists (
+      select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.proname = 'admin_create_agency_atomic'
+         and p.pronargs = 11
+    )
+  ),
+  'RETRO1_llamada_con_la_firma_vieja_de_9_params_sigue_dando_can_publish_properties_true_y_can_advertise_false_resuelta_contra_la_funcion_nueva_de_11_params_no_un_overload_viejo_huerfano'
+);
+
+-- ── 8.2) CAP1 — la RPC acepta (false, true): org solo-publicidad ────────────
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-000000468311', 'owner_solo_publicidad_83@urbea.mx');
+
+select lives_ok(
+  $$ select agency_id from public.admin_create_agency_atomic(
+       'Org Solo Publicidad 83'::text,
+       'org-solo-publicidad-83'::text,
+       null::text, null::text, null::text,
+       '00000000-0000-0000-0000-000000468301'::uuid,
+       '00000000-0000-0000-0000-000000468311'::uuid,
+       null::text, null::integer,
+       false, true
+     ) $$,
+  'CAP1_la_rpc_acepta_can_publish_properties_false_can_advertise_true_sin_lanzar_excepcion_crea_la_organizacion_solo_publicidad'
+);
+
+-- ── 8.3) CAP2-CAP4 — el owner de una org solo-publicidad NO puede publicar ──
+-- Fixture sembrado DIRECTO (no vía la RPC, que aún no acepta estos params en
+-- RED) para aislar el guard bajo prueba: publish_property_atomic.
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-000000468321', 'owner_bloqueado_publicar_83@urbea.mx');
+update public.users set role = 'agent' where id = '00000000-0000-0000-0000-000000468321';
+insert into public.agencies (id, name, slug, status, created_by_user_id, can_publish_properties, can_advertise) values
+  ('00000000-0000-0000-0000-000000468322', 'Inmobiliaria Solo Publicidad 83', 'inmo-solo-publicidad-83', 'active',
+   '00000000-0000-0000-0000-000000468321', false, true);
+insert into public.agency_members (agency_id, user_id, member_role, status) values
+  ('00000000-0000-0000-0000-000000468322', '00000000-0000-0000-0000-000000468321', 'owner', 'active');
+insert into public.property_videos (id, property_id, agent_id, status, position, cloudflare_uid, tus_upload_url) values
+  ('00000000-0000-0000-0000-000000468323', null, '00000000-0000-0000-0000-000000468321', 'ready', 1,
+   'cfuid-83-solopublicidad', 'https://upload.example/solo-publicidad-83');
+
+select throws_ok(
+  $$
+    select property_id from public.publish_property_atomic(
+      p_user_id             => '00000000-0000-0000-0000-000000468321'::uuid,
+      p_operation_type      => 'rent',
+      p_property_type       => 'departamento',
+      p_price               => 9500.00,
+      p_address             => 'Calle Solo Publicidad 83',
+      p_lat                 => 20.6,
+      p_lng                 => -103.6,
+      p_cloudflare_uid      => 'cfuid-83-solopublicidad'
+    )
+  $$,
+  'P0001', 'AGENCY_CANNOT_PUBLISH_PROPERTIES',
+  'CAP2_el_owner_de_una_organizacion_solo_publicidad_recibe_error_explicito_agency_cannot_publish_properties_al_intentar_publicar_no_un_fallo_generico'
+);
+
+select is(
+  (select count(*)::int from public.properties where owner_user_id = '00000000-0000-0000-0000-000000468321'),
+  0,
+  'CAP3_atomicidad_del_bloqueo_no_quedo_ninguna_propiedad_creada_tras_el_intento_bloqueado'
+);
+select is(
+  (select property_id from public.property_videos where id = '00000000-0000-0000-0000-000000468323'),
+  null,
+  'CAP4_atomicidad_del_bloqueo_el_video_en_vuelo_sigue_sin_enlazar_tras_el_intento_bloqueado'
+);
+
+-- ── 8.4) CHECK1 — (false, false) vía la RPC lo rechaza el mismo CHECK ───────
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-000000468331', 'owner_check_rpc_83@urbea.mx');
+
+select throws_ok(
+  $$ select agency_id from public.admin_create_agency_atomic(
+       'Org Sin Capacidad 83'::text,
+       'org-sin-capacidad-83'::text,
+       null::text, null::text, null::text,
+       '00000000-0000-0000-0000-000000468301'::uuid,
+       '00000000-0000-0000-0000-000000468331'::uuid,
+       null::text, null::integer,
+       false, false
+     ) $$,
+  '23514',
+  'new row for relation "agencies" violates check constraint "agencies_al_menos_una_capacidad"',
+  'CHECK1_la_rpc_no_enmascara_el_check_agencies_al_menos_una_capacidad_al_recibir_false_false_mismo_mensaje_explicito_que_el_update_directo'
+);
+
+-- ── 8.5) OVERLOAD1 — exactamente UNA sobrecarga en pg_proc, con 11 params ───
+select ok(
+  (
+    (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'public' and p.proname = 'admin_create_agency_atomic') = 1
+    and
+    (select pronargs from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'public' and p.proname = 'admin_create_agency_atomic' limit 1) = 11
+  ),
+  'OVERLOAD1_admin_create_agency_atomic_tiene_exactamente_UNA_sobrecarga_en_pg_proc_con_11_parametros_dos_sobrecargas_dejarian_la_llamada_por_postgrest_ambigua'
+);
+
+-- ── 8.6) NO-REGRESIÓN — publish_property_atomic (20260809000006 vigente):
+--         AGENCY_MEMBERSHIP_SUSPENDED y p_price_visible sobreviven intactos
+--         al create-or-replace de (b). PASAN hoy por diseño (comportamiento
+--         YA vigente en producción) — son la red de seguridad, no capacidad
+--         nueva; mismo patrón que la sección 6 de este archivo.
+-- ════════════════════════════════════════════════════════════════════════════
+
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-000000468341', 'agente_suspendido_noregresion_83@urbea.mx'),
+  ('00000000-0000-0000-0000-000000468342', 'agente_pricevisible_noregresion_83@urbea.mx');
+update public.users set role = 'agent'
+  where id in ('00000000-0000-0000-0000-000000468341', '00000000-0000-0000-0000-000000468342');
+
+insert into public.agencies (id, name, slug, status, created_by_user_id) values
+  ('00000000-0000-0000-0000-000000468343', 'Inmobiliaria Suspendida NoRegresion 83', 'inmo-suspendida-noregresion-83', 'active',
+   '00000000-0000-0000-0000-000000468341');
+insert into public.agency_members (agency_id, user_id, member_role, status) values
+  ('00000000-0000-0000-0000-000000468343', '00000000-0000-0000-0000-000000468341', 'owner', 'suspended');
+insert into public.property_videos (id, property_id, agent_id, status, position, cloudflare_uid, tus_upload_url) values
+  ('00000000-0000-0000-0000-000000468344', null, '00000000-0000-0000-0000-000000468341', 'ready', 1,
+   'cfuid-83-suspendido-noregresion', 'https://upload.example/suspendido-noregresion-83');
+
+-- ── NOREG1 ───────────────────────────────────────────────────────────────────
+select throws_ok(
+  $$
+    select property_id from public.publish_property_atomic(
+      p_user_id             => '00000000-0000-0000-0000-000000468341'::uuid,
+      p_operation_type      => 'rent',
+      p_property_type       => 'departamento',
+      p_price               => 7200.00,
+      p_address             => 'Calle Suspendido NoRegresion 83',
+      p_lat                 => 19.7,
+      p_lng                 => -99.7,
+      p_cloudflare_uid      => 'cfuid-83-suspendido-noregresion'
+    )
+  $$,
+  'P0001', 'AGENCY_MEMBERSHIP_SUSPENDED',
+  'NOREG1_el_guard_agency_membership_suspended_de_20260809000006_sigue_vivo_no_se_pierde_al_agregar_el_guard_nuevo'
+);
+
+insert into public.property_videos (id, property_id, agent_id, status, position, cloudflare_uid, tus_upload_url) values
+  ('00000000-0000-0000-0000-000000468345', null, '00000000-0000-0000-0000-000000468342', 'ready', 1,
+   'cfuid-83-pricevisible-false-noregresion', 'https://upload.example/pricevisible-false-noregresion-83'),
+  ('00000000-0000-0000-0000-000000468346', null, '00000000-0000-0000-0000-000000468342', 'ready', 2,
+   'cfuid-83-pricevisible-default-noregresion', 'https://upload.example/pricevisible-default-noregresion-83');
+
+create temp table result_pricevisible_false_83 (property_id uuid);
+insert into result_pricevisible_false_83 (property_id)
+select property_id from public.publish_property_atomic(
+  p_user_id             => '00000000-0000-0000-0000-000000468342'::uuid,
+  p_operation_type      => 'rent',
+  p_property_type       => 'departamento',
+  p_price               => 6600.00,
+  p_address             => 'Calle Price Visible False NoRegresion 83',
+  p_lat                 => 19.8,
+  p_lng                 => -99.8,
+  p_cloudflare_uid      => 'cfuid-83-pricevisible-false-noregresion',
+  p_price_visible       => false
+);
+
+-- ── NOREG2 ───────────────────────────────────────────────────────────────────
+select is(
+  (select price_visible from public.properties where id = (select property_id from result_pricevisible_false_83)),
+  false,
+  'NOREG2_el_guard_de_precio_visible_de_20260809000006_sigue_vivo_p_price_visible_false_llega_a_la_fila_real'
+);
+
+create temp table result_pricevisible_default_83 (property_id uuid);
+insert into result_pricevisible_default_83 (property_id)
+select property_id from public.publish_property_atomic(
+  p_user_id             => '00000000-0000-0000-0000-000000468342'::uuid,
+  p_operation_type      => 'rent',
+  p_property_type       => 'departamento',
+  p_price               => 6700.00,
+  p_address             => 'Calle Price Visible Default NoRegresion 83',
+  p_lat                 => 19.9,
+  p_lng                 => -99.9,
+  p_cloudflare_uid      => 'cfuid-83-pricevisible-default-noregresion'
+);
+
+-- ── NOREG3 ───────────────────────────────────────────────────────────────────
+select is(
+  (select price_visible from public.properties where id = (select property_id from result_pricevisible_default_83)),
+  true,
+  'NOREG3_el_guard_de_precio_visible_de_20260809000006_sigue_vivo_p_price_visible_omitido_sigue_defaulteando_a_true'
 );
 
 select * from finish();

@@ -70,6 +70,16 @@
 // ### Ramas de reglas no obvias
 // - RPC falla tras crear owner → deleteUser(owner_user_id) llamado; respuesta no es 201
 // - owner ya con membresía activa (ALREADY_ACTIVE_MEMBER) → deleteUser llamado; 409
+//
+// EDGE CASES (RED) — subtarea #168.3 (params de capacidad con DEFAULT al final):
+// ### Ramas de reglas no obvias
+// - payload con can_publish_properties/can_advertise → create_atomic los recibe
+//   TAL CUAL en sus params (RPC de 168.3 aún no wireada — falla en RED)
+// ### NO-REGRESIÓN (contrato publicado — pasan hoy por diseño, red de seguridad):
+// - invite_action_link SIGUE presente en la respuesta 201 con owner (builds
+//   instalados de mobile/app/admin/agencies/[id].tsx y create.tsx lo consumen)
+// - payload viejo (sin can_publish_properties/can_advertise) sigue dando 201
+//   y create_atomic no recibe esos campos forzados a un valor — quedan ausentes
 
 import { assertEquals, assertExists } from "@std/assert";
 import { generate_invitation_code, sha256_hex } from "../_shared/crypto.ts";
@@ -922,5 +932,104 @@ Deno.test(
     const hash2 = await sha256_hex("urbea-test-token-determinismo");
     assertEquals(hash1, hash2, "sha256_hex debe devolver el mismo hash para el mismo input");
     assertEquals(hash1.length, 64, "sha256 hex debe tener siempre 64 chars");
+  },
+);
+
+// ── subtarea #168.3 — params de capacidad con DEFAULT al final ──────────────
+// admin_create_agency_atomic gana p_can_publish_properties/p_can_advertise
+// (DEFAULT al final). El EF debe: (a) pasar esos campos a create_atomic
+// cuando el admin los manda en el payload, (b) NO romper con un payload viejo
+// que no los manda, (c) seguir devolviendo invite_action_link — contrato
+// publicado que consumen builds instalados de mobile/app/admin/agencies/.
+
+const PAYLOAD_CON_CAPACIDAD = {
+  ...PAYLOAD_VALIDO,
+  slug: "inmobiliaria-solo-publicidad-83",
+  can_publish_properties: false,
+  can_advertise: true,
+};
+
+Deno.test(
+  "capacidad_168_3_create_atomic_recibe_can_publish_properties_y_can_advertise_del_payload",
+  async () => {
+    // RED: el handler HOY no lee ni reenvía estos campos — create_atomic los
+    // recibe undefined, no los valores del payload (false, true).
+    const auth = auth_admin_invite_ok();
+    const creator = creator_ok();
+    const res = await handler(
+      post_admin(PAYLOAD_CON_CAPACIDAD),
+      deps_con_auth(verifier_admin_ok(), creator, auth),
+    );
+    assertEquals(res.status, 201);
+    assertEquals(creator.calls.length, 1);
+    assertEquals(
+      // deno-lint-ignore no-explicit-any
+      (creator.calls[0] as any).can_publish_properties,
+      false,
+      "create_atomic debe recibir can_publish_properties=false tal como lo mandó el admin en el payload",
+    );
+    assertEquals(
+      // deno-lint-ignore no-explicit-any
+      (creator.calls[0] as any).can_advertise,
+      true,
+      "create_atomic debe recibir can_advertise=true tal como lo mandó el admin en el payload",
+    );
+  },
+);
+
+Deno.test(
+  "capacidad_168_3_no_regresion_payload_viejo_sin_capacidad_sigue_dando_201",
+  async () => {
+    // NO-REGRESIÓN (pasa hoy por diseño): un build instalado que NUNCA manda
+    // can_publish_properties/can_advertise (payload viejo, PAYLOAD_VALIDO) no
+    // debe romperse — 201 igual que siempre, y create_atomic no recibe esos
+    // campos forzados a ningún valor (quedan ausentes, no false/true por defecto
+    // del lado del EF -- el default vive en la RPC/columna, no en la EF).
+    const auth = auth_admin_invite_ok();
+    const creator = creator_ok();
+    const res = await handler(
+      post_admin(PAYLOAD_VALIDO),
+      deps_con_auth(verifier_admin_ok(), creator, auth),
+    );
+    assertEquals(res.status, 201, "payload viejo sin campos de capacidad sigue dando 201");
+    assertEquals(
+      // deno-lint-ignore no-explicit-any
+      (creator.calls[0] as any).can_publish_properties,
+      undefined,
+      "create_atomic NO debe recibir can_publish_properties forzado cuando el payload no lo manda",
+    );
+    assertEquals(
+      // deno-lint-ignore no-explicit-any
+      (creator.calls[0] as any).can_advertise,
+      undefined,
+      "create_atomic NO debe recibir can_advertise forzado cuando el payload no lo manda",
+    );
+  },
+);
+
+Deno.test(
+  "capacidad_168_3_contrato_publicado_invite_action_link_sigue_presente_en_201_con_owner",
+  async () => {
+    // NO-REGRESIÓN (pasa hoy por diseño): mobile/app/admin/agencies/[id].tsx y
+    // create.tsx:269-283 consumen invite_action_link desde builds instalados.
+    // El EF de 168.3 NO puede dejar de devolver esta llave al agregar los
+    // params de capacidad.
+    const auth = auth_admin_invite_ok();
+    const creator = creator_ok();
+    const res = await handler(
+      post_admin(PAYLOAD_CON_CAPACIDAD),
+      deps_con_auth(verifier_admin_ok(), creator, auth),
+    );
+    assertEquals(res.status, 201);
+    const body = await res.json();
+    assertExists(
+      body.invite_action_link,
+      "invite_action_link debe seguir presente en la respuesta 201 — contrato publicado, builds instalados dependen de esta llave",
+    );
+    assertEquals(
+      typeof body.invite_action_link,
+      "string",
+      "invite_action_link debe seguir siendo string",
+    );
   },
 );
