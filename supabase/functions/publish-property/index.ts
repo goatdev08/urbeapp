@@ -83,6 +83,9 @@ Deno.serve((req: Request) => {
         p_description: params.description ?? null,
         p_cloudflare_uid: params.cloudflare_uid,
         p_property_status: params.property_status,
+        p_built_square_meters: params.built_square_meters ?? null,
+        p_half_bathrooms: params.half_bathrooms ?? null,
+        p_currency: params.currency,
       });
 
       if (error) {

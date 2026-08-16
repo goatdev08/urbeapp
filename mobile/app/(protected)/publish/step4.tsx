@@ -16,7 +16,6 @@ import {
   SafeAreaView,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   TextInput,
   View,
@@ -26,6 +25,19 @@ import { useRouter } from 'expo-router';
 
 import { usePublishForm } from '@/features/publish/store/PublishFormContext';
 import { PrimaryButton } from '@/components/PrimaryButton';
+import { FilterChipGroup } from '@/components/FilterChipGroup';
+
+// ---------------------------------------------------------------------------
+// Características — chips seleccionables (tarea #167, reemplaza los 3 Switch).
+// Los 3 campos siguen siendo booleanos en PublishFormState/DB; el chip es
+// solo la presentación (checked ↔ seleccionado).
+// ---------------------------------------------------------------------------
+
+const CHARACTERISTIC_OPTIONS = [
+  { value: 'pet_friendly', label: 'Acepta mascotas' },
+  { value: 'allows_no_guarantor', label: 'Sin aval / fiador' },
+  { value: 'student_friendly', label: 'Apto estudiantes' },
+];
 
 // ---------------------------------------------------------------------------
 // Tokens (alineados con step1/step2/step3)
@@ -37,7 +49,6 @@ const COLOR_TEXT_SECONDARY = '#6B7280';
 const COLOR_BORDER = '#E5E7EB';
 const COLOR_INPUT_BG = '#FFFFFF';
 const COLOR_HINT = '#9CA3AF';
-const COLOR_ACCENT = '#1A5E44'; // SALVIA
 
 // ---------------------------------------------------------------------------
 // Screen
@@ -51,6 +62,24 @@ export default function Step4Screen() {
 
   const handle_description_change = useCallback(
     (text: string) => update({ description: text }),
+    [update],
+  );
+
+  // Chips seleccionados — deriva los 3 booleanos a un array de values.
+  const selected_characteristics = [
+    state.pet_friendly && 'pet_friendly',
+    state.allows_no_guarantor && 'allows_no_guarantor',
+    state.student_friendly && 'student_friendly',
+  ].filter((v): v is string => Boolean(v));
+
+  const handle_characteristics_change = useCallback(
+    (next: string[]) => {
+      update({
+        pet_friendly: next.includes('pet_friendly'),
+        allows_no_guarantor: next.includes('allows_no_guarantor'),
+        student_friendly: next.includes('student_friendly'),
+      });
+    },
     [update],
   );
 
@@ -96,44 +125,15 @@ export default function Step4Screen() {
           />
           <Text style={styles.field_hint}>Opcional</Text>
 
-          {/* ── Características (niche toggles) ─────────────────────── */}
+          {/* ── Características (chips seleccionables, #167) ────────────── */}
           <Text style={[styles.section_label, styles.section_gap]}>
             Características
           </Text>
-          <View style={styles.toggles_card}>
-            <View style={styles.toggle_row}>
-              <Text style={styles.toggle_label}>Acepta mascotas</Text>
-              <Switch
-                value={state.pet_friendly}
-                onValueChange={(value) => update({ pet_friendly: value })}
-                trackColor={{ false: COLOR_BORDER, true: COLOR_ACCENT }}
-                thumbColor="#FFFFFF"
-                accessibilityLabel="Acepta mascotas"
-              />
-            </View>
-            <View style={styles.toggle_divider} />
-            <View style={styles.toggle_row}>
-              <Text style={styles.toggle_label}>Sin aval / fiador</Text>
-              <Switch
-                value={state.allows_no_guarantor}
-                onValueChange={(value) => update({ allows_no_guarantor: value })}
-                trackColor={{ false: COLOR_BORDER, true: COLOR_ACCENT }}
-                thumbColor="#FFFFFF"
-                accessibilityLabel="Sin aval o fiador"
-              />
-            </View>
-            <View style={styles.toggle_divider} />
-            <View style={styles.toggle_row}>
-              <Text style={styles.toggle_label}>Apto estudiantes</Text>
-              <Switch
-                value={state.student_friendly}
-                onValueChange={(value) => update({ student_friendly: value })}
-                trackColor={{ false: COLOR_BORDER, true: COLOR_ACCENT }}
-                thumbColor="#FFFFFF"
-                accessibilityLabel="Apto para estudiantes"
-              />
-            </View>
-          </View>
+          <FilterChipGroup
+            options={CHARACTERISTIC_OPTIONS}
+            selected={selected_characteristics}
+            onChange={handle_characteristics_change}
+          />
 
           {/* Espacio final para que el contenido no quede bajo el botón */}
           <View style={styles.bottom_spacer} />
@@ -224,32 +224,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: COLOR_HINT,
     marginTop: 4,
-  },
-
-  // ── Toggles niche ────────────────────────────────────────────────────────
-  toggles_card: {
-    backgroundColor: COLOR_INPUT_BG,
-    borderWidth: 1,
-    borderColor: COLOR_BORDER,
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  toggle_row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-  },
-  toggle_label: {
-    fontSize: 15,
-    color: COLOR_TEXT_PRIMARY,
-    flex: 1,
-  },
-  toggle_divider: {
-    height: 1,
-    backgroundColor: COLOR_BORDER,
-    marginHorizontal: 14,
   },
 
   // ── CTA ──────────────────────────────────────────────────────────────────

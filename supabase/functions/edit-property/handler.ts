@@ -39,6 +39,7 @@ const PROPERTY_TYPES = new Set<string>([
   "oficina",
   "terreno",
 ]);
+const CURRENCIES = new Set<string>(["MXN", "USD"]);
 
 // ── Validación del payload ─────────────────────────────────────────────────────
 
@@ -157,6 +158,29 @@ function parse_edit_property_input(raw: unknown): ParseResult {
   // location: OPCIONAL — ausente = "el usuario no tocó el mapa" (no se evalúa).
   if (typeof obj.location === "string") {
     data.location = obj.location;
+  }
+
+  // Quick fixes wizard paso 3 (2026-08-15): built_square_meters/half_bathrooms/
+  // currency son OPCIONALES (backward-compat con clientes viejos — ver types.ts).
+  // Presente (número o null explícito) → se incluye; ausente → se omite (no se
+  // fuerza a null, a diferencia de bedrooms/bathrooms/square_meters de #142).
+  if ("built_square_meters" in obj) {
+    if (obj.built_square_meters !== null && typeof obj.built_square_meters !== "number") {
+      return invalid("built_square_meters debe ser número o null");
+    }
+    data.built_square_meters = obj.built_square_meters as number | null;
+  }
+  if ("half_bathrooms" in obj) {
+    if (obj.half_bathrooms !== null && typeof obj.half_bathrooms !== "number") {
+      return invalid("half_bathrooms debe ser número o null");
+    }
+    data.half_bathrooms = obj.half_bathrooms as number | null;
+  }
+  if (obj.currency !== undefined && obj.currency !== null) {
+    if (typeof obj.currency !== "string" || !CURRENCIES.has(obj.currency)) {
+      return invalid("currency debe ser 'MXN' o 'USD'");
+    }
+    data.currency = obj.currency as "MXN" | "USD";
   }
 
   return { success: true, data };

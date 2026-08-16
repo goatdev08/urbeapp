@@ -15,6 +15,14 @@
 
 export type OperationType = 'rent' | 'sale' | 'both';
 
+/**
+ * Moneda de `price` — solo etiqueta (sin conversión de tipo de cambio).
+ * 'both' de OperationType se mantiene en el tipo/DB por compat con filas
+ * existentes, pero el wizard (step1) ya no lo ofrece como opción — quick fix
+ * 2026-08-15, sin tarea de Taskmaster.
+ */
+export type Currency = 'MXN' | 'USD';
+
 export type PropertyType =
   | 'casa'
   | 'departamento'
@@ -34,9 +42,16 @@ export interface PublishFormState {
 
   // Step 3 (73.3) — detalles obligatorios: precio, dirección y ubicación
   price: number | null;
+  /** Moneda de `price` — quick fix 2026-08-15, default 'MXN' (mismo default que la columna). */
+  currency: Currency;
   bedrooms: number | null;
   bathrooms: number | null;
+  /** Medios baños — quick fix 2026-08-15, opcional, a lado de bathrooms. */
+  half_bathrooms: number | null;
+  /** Superficie de TERRENO (m²) — desde 2026-08-15 separada de built_square_meters. */
   square_meters: number | null;
+  /** Superficie CONSTRUIDA (m²) — quick fix 2026-08-15, opcional, a lado de square_meters. */
+  built_square_meters: number | null;
   address: string;
   lat: number | null;
   lng: number | null;
@@ -74,9 +89,12 @@ export interface PublishFormPayload {
   operation_type: OperationType;
   property_type: PropertyType;
   price: number;
+  currency: Currency;
   bedrooms: number | null;
   bathrooms: number | null;
+  half_bathrooms: number | null;
   square_meters: number | null;
+  built_square_meters: number | null;
   address: string;
   lat: number;
   lng: number;
@@ -96,9 +114,12 @@ export const INITIAL_PUBLISH_FORM_STATE: PublishFormState = {
   operation_type: null,
   property_type: null,
   price: null,
+  currency: 'MXN',
   bedrooms: null,
   bathrooms: null,
+  half_bathrooms: null,
   square_meters: null,
+  built_square_meters: null,
   address: '',
   lat: null,
   lng: null,

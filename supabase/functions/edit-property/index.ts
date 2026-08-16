@@ -113,6 +113,17 @@ Deno.serve((req: Request) => {
       if (input.location !== undefined) {
         update_payload.location = input.location;
       }
+      // Quick fixes wizard paso 3 (2026-08-15) — mismo patrón condicional que
+      // location: ausentes del input (cliente viejo) no se tocan.
+      if (input.built_square_meters !== undefined) {
+        update_payload.built_square_meters = input.built_square_meters;
+      }
+      if (input.half_bathrooms !== undefined) {
+        update_payload.half_bathrooms = input.half_bathrooms;
+      }
+      if (input.currency !== undefined) {
+        update_payload.currency = input.currency;
+      }
 
       const { error } = await client
         .from("properties")

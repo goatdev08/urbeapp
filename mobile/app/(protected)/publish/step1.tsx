@@ -36,10 +36,13 @@ import type { OperationType } from '@/features/publish/store/types';
 // Opciones — valores de DB con etiquetas en español
 // ---------------------------------------------------------------------------
 
+// Quick fix 2026-08-15 (sin tarea de Taskmaster): 'both' se retira del wizard
+// — sigue viva en el enum/DB por compat con propiedades ya publicadas con esa
+// operación (filtros, tarjetas y detalle la siguen mostrando), pero ya no se
+// puede ELEGIR al publicar/editar desde aquí.
 const OPERATION_OPTIONS: { value: OperationType; label: string }[] = [
   { value: 'rent', label: 'Renta' },
   { value: 'sale', label: 'Venta' },
-  { value: 'both', label: 'Ambos' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -85,7 +88,7 @@ export default function Step1Screen() {
 
         {/* ── Sección: Tipo de operación ─────────────────────────────── */}
         <Text style={styles.section_label}>Tipo de operación</Text>
-        {/* ponytail: row en vez de grid — solo 3 opciones siempre caben en una fila */}
+        {/* ponytail: row en vez de grid — solo 2 opciones siempre caben en una fila */}
         <View style={styles.row_group}>
           {OPERATION_OPTIONS.map(({ value, label }) => (
             <View key={value} style={styles.row_item}>

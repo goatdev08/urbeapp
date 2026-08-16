@@ -209,6 +209,35 @@ describe('useDraftAutosave', () => {
     jest.useRealTimers();
   });
 
+  // ── Quick fix wizard paso 3 (2026-08-15, sin tarea de Taskmaster): el
+  // payload del draft también incluye currency/built_square_meters/half_bathrooms ──
+
+  it('(EC-1b) insert_incluye_currency_built_square_meters_half_bathrooms', async () => {
+    const mock_supabase = make_mock_supabase_draft({});
+    jest.useFakeTimers();
+
+    await render_autosave(
+      build_state({
+        ...MINIMUM_DRAFT_FIELDS,
+        currency: 'USD',
+        built_square_meters: 180.5,
+        half_bathrooms: 1,
+      }),
+      mock_supabase,
+    );
+
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(DRAFT_AUTOSAVE_DEBOUNCE_MS);
+    });
+
+    const [insert_payload] = mock_supabase._mock_insert.mock.calls[0] as [Record<string, unknown>];
+    expect(insert_payload.currency).toBe('USD');
+    expect(insert_payload.built_square_meters).toBe(180.5);
+    expect(insert_payload.half_bathrooms).toBe(1);
+
+    jest.useRealTimers();
+  });
+
   // ── (EC-2) Segunda escritura hace UPDATE, reusa el id del draft ────────────
 
   it('(EC-2) segunda_escritura_hace_update_reusa_id: tras el primer draft creado, un cambio posterior hace UPDATE (no un segundo INSERT)', async () => {

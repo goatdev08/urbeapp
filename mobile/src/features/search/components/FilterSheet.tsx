@@ -41,7 +41,7 @@ import { colors, fonts, radii, spacing } from '@/theme/theme';
 import { useFilters } from '../filterStore';
 import { parse_price, validate_price_form } from '../validation';
 import { BedroomsSelector } from './BedroomsSelector';
-import { FilterChipGroup } from './FilterChipGroup';
+import { FilterChipGroup } from '@/components/FilterChipGroup';
 import { RadiusSelector } from './RadiusSelector';
 import { ZoneAutocomplete } from './ZoneAutocomplete';
 

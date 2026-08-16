@@ -1,5 +1,8 @@
 /**
  * FilterChipGroup.tsx — Multi-select de chips/pills reutilizable (#12.2).
+ * Promovido a componente cross-feature (mobile/src/components/) en la tarea
+ * #167 (chips de características en el wizard de publicación, step4) — antes
+ * vivía solo en features/search/.
  *
  * Componente controlado que permite selección múltiple independiente.
  * Tocar una pill la agrega al array `selected`; tocarla de nuevo la quita.
@@ -8,9 +11,9 @@
  *   activo:   fondo primary_tint, texto primary
  *   inactivo: fondo paper_2, texto gray_2
  *
- * Diseñado para ser reutilizado en FilterSheet para las secciones de
- * Operación (rent/sale) y Tipo de propiedad (casa/depto/local/oficina/terreno),
- * y en cualquier filtro de selección múltiple que se agregue en el futuro.
+ * Reusado por FilterSheet (Operación, Tipo de propiedad) y por el wizard de
+ * publicación (step4, características pet_friendly/allows_no_guarantor/
+ * student_friendly) — cualquier filtro/selección múltiple futuro lo reusa.
  *
  * Contrato:
  *   options:  { value: string; label: string }[]  — opciones disponibles

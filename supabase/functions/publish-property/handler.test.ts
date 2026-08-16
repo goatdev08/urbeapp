@@ -302,6 +302,65 @@ Deno.test("contrato_price_visible_no_booleano_defaultea_a_true_no_coacciona", as
   assertEquals(publisher.calls[0].price_visible, true);
 });
 
+// ── Quick fixes wizard paso 3 (sesión 2026-08-15, sin tarea de Taskmaster):
+// built_square_meters, half_bathrooms, currency ──────────────────────────────
+
+Deno.test("contrato_publisher_recibe_built_square_meters_del_payload", async () => {
+  const publisher = publisher_ok();
+  await handler(
+    post_agente({ ...PAYLOAD_VALIDO, built_square_meters: 120.5 }),
+    deps_validos(publisher),
+  );
+  assertEquals(publisher.calls[0].built_square_meters, 120.5);
+});
+
+Deno.test("contrato_publisher_recibe_built_square_meters_null_si_ausente", async () => {
+  const publisher = publisher_ok();
+  await handler(post_agente(PAYLOAD_VALIDO), deps_validos(publisher));
+  assertEquals(publisher.calls[0].built_square_meters, null);
+});
+
+Deno.test("contrato_publisher_recibe_half_bathrooms_del_payload", async () => {
+  const publisher = publisher_ok();
+  await handler(
+    post_agente({ ...PAYLOAD_VALIDO, half_bathrooms: 1 }),
+    deps_validos(publisher),
+  );
+  assertEquals(publisher.calls[0].half_bathrooms, 1);
+});
+
+Deno.test("contrato_publisher_recibe_half_bathrooms_null_si_ausente", async () => {
+  const publisher = publisher_ok();
+  await handler(post_agente(PAYLOAD_VALIDO), deps_validos(publisher));
+  assertEquals(publisher.calls[0].half_bathrooms, null);
+});
+
+Deno.test("contrato_publisher_recibe_currency_del_payload", async () => {
+  const publisher = publisher_ok();
+  await handler(
+    post_agente({ ...PAYLOAD_VALIDO, currency: "USD" }),
+    deps_validos(publisher),
+  );
+  assertEquals(publisher.calls[0].currency, "USD");
+});
+
+Deno.test("contrato_publisher_recibe_currency_default_mxn_si_ausente", async () => {
+  // Payload sin currency (caller viejo) → default 'MXN', igual que la columna.
+  const publisher = publisher_ok();
+  await handler(post_agente(PAYLOAD_VALIDO), deps_validos(publisher));
+  assertEquals(publisher.calls[0].currency, "MXN");
+});
+
+Deno.test("validacion_currency_invalida_retorna_400", async () => {
+  const publisher = publisher_ok();
+  const res = await handler(
+    post_agente({ ...PAYLOAD_VALIDO, currency: "EUR" }),
+    deps_validos(publisher),
+  );
+  assertEquals(res.status, 400);
+  assertEquals(publisher.calls.length, 0);
+});
+
 Deno.test("happy_path_publisher_recibe_video_status_ready", async () => {
   const publisher = publisher_ok();
   await handler(post_agente(PAYLOAD_VALIDO), deps_validos(publisher));

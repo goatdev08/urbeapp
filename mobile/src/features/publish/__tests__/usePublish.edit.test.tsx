@@ -351,6 +351,30 @@ describe('usePublish — edit mode invoca EF edit-property (73.6)', () => {
     expect(body.owner_user_id).toBeUndefined();
   });
 
+  it('(EC-12b) edit_mode_invoke_body_incluye_currency_built_square_meters_half_bathrooms (quick fix 2026-08-15)', async () => {
+    const { result, mock_supabase } = await setup_edit_mode({
+      form_fields: {
+        ...VALID_FORM_EDIT_NO_VIDEO,
+        currency: 'USD',
+        built_square_meters: 180.5,
+        half_bathrooms: 1,
+      },
+    });
+
+    await act(async () => {
+      await result.current.sut.publish();
+    });
+
+    const [, invoke_opts] = mock_supabase._mock_invoke.mock.calls.find(
+      ([fn_name]) => fn_name === 'edit-property',
+    ) as [string, { body: Record<string, unknown> }];
+    const body = invoke_opts.body;
+
+    expect(body.currency).toBe('USD');
+    expect(body.built_square_meters).toBe(180.5);
+    expect(body.half_bathrooms).toBe(1);
+  });
+
   it('(EC-13) edit_mode_invoke_body_incluye_property_id_correcto: el body incluye property_id = TEST_PROPERTY_ID', async () => {
     const { result, mock_supabase } = await setup_edit_mode({});
 
