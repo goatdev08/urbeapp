@@ -33,7 +33,7 @@
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(63);
+select plan(70);
 
 create or replace function pg_temp.act_as(p_uid uuid, p_role text default 'authenticated')
 returns void language plpgsql as $$
@@ -1000,6 +1000,141 @@ select is(
     where id = (select property_id from result_wizard_omiteCurrency_83)),
   '(305,1,MXN)',
   'NOREG6_p_currency_omitido_sigue_defaulteando_a_MXN_el_mismo_default_que_hizo_el_backfill_de_las_20_propiedades_ya_en_produccion_tras_el_create_or_replace_de_168_3'
+);
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 10) subtarea #168.7 — CHECK: encender can_advertise exige advertiser_category
+--     (RED 2026-08-16, checkpoint tras 168.4 — hallazgo del guardian de 168.2:
+--     advertiser_category = p_category es INCONDICIONAL en
+--     20260815000002_set_org_advertising_rpc.sql:71-73, así que
+--     set_org_advertising_atomic(id, true) SIN p_category deja can_advertise=true
+--     con categoría NULL -- el estado que 169-171 no pueden servir).
+--
+-- SUT (AÚN NO EXISTE, RED 2026-08-16): una migración GREEN debe:
+--   (a) agregar sobre public.agencies un CHECK NOMBRADO
+--       agencies_categoria_requerida_para_anunciar
+--       check (not (can_advertise and advertiser_category is null))
+--       -- mismo patrón/estilo que 20260815000001, constraint
+--       agencies_al_menos_una_capacidad (mensaje de Postgres verificado
+--       literal, no solo "algo truena").
+--   (b) la RPC public.set_org_advertising_atomic debe validar ANTES de tocar
+--       la fila: si p_enabled = true y p_category is null -> RAISE explícito
+--       'ADVERTISER_CATEGORY_REQUIRED' con errcode P0001 (mismo criterio que
+--       AGENCY_NOT_FOUND en la misma función), para que el caller nunca vea un
+--       23514 crudo del constraint ni deje la fila en un estado a medio
+--       actualizar.
+--
+-- ── Edge cases enumerados (paso 1 del protocolo test-author) ────────────────
+-- Boundary / error (los invariantes que cierran el hueco):
+--   · CATREQ1: can_advertise=true + advertiser_category NULL es rechazado por
+--     el CHECK, con el mensaje EXACTO de Postgres (nombra la relación y el
+--     constraint, igual que agencies_al_menos_una_capacidad) -- no basta con
+--     que truene, el mensaje discrimina ESTE constraint de cualquier otro.
+--   · CATREQ2: can_advertise=true + categoría no nula SÍ pasa el CHECK.
+--   🔴 Protege producción:
+--   · CATREQ3: can_advertise=false + categoría NULL sigue siendo válido -- es
+--     el estado por defecto de TODA fila preexistente (las agencies reales de
+--     hoy). Si este assert falla, el CHECK rompe producción.
+--   · CATREQ4: apagar can_advertise en una organización que YA tenía categoría
+--     asignada (categoría no nula, ahora inactiva) no truena -- el CHECK solo
+--     restringe la combinación (true, null), no (false, no-null).
+--   · CATREQ5-7: la RPC set_org_advertising_atomic(id, true) SIN p_category da
+--     un error EXPLÍCITO propio (P0001 'ADVERTISER_CATEGORY_REQUIRED'), no un
+--     23514 crudo del constraint ni un no-op silencioso -- y no deja NINGÚN
+--     efecto parcial (ni can_advertise encendido ni fila de auditoría), para
+--     no caer en el vacuo de solo verificar "el estado no cambió" sobre una
+--     llamada que ya se sabe que falla.
+-- ════════════════════════════════════════════════════════════════════════════
+
+-- ⚠️ Fixture pegajoso (ya mordió dos veces en este archivo, FI3/INV4 de la
+-- sección 7): el trigger "veneno" de la sección 7.4 se dropea en la sección 8
+-- (línea ~625) mucho antes de llegar aquí -- pero se re-dropea de forma
+-- defensiva (if exists, idempotente) porque CATREQ5-7 llaman la RPC, que
+-- audita en admin_actions.
+drop trigger if exists poison_admin_actions_before_insert on public.admin_actions;
+
+-- ── CATREQ1) can_advertise=true + advertiser_category NULL -> rechazado ────
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-000000461001', 'owner_catreq1_46@urbea.mx');
+insert into public.agencies (id, name, slug, status, created_by_user_id) values
+  ('00000000-0000-0000-0000-000000461002', 'Inmobiliaria Catreq1 46', 'inmo-catreq1-46', 'active',
+   '00000000-0000-0000-0000-000000461001');
+
+select throws_ok(
+  $$ update public.agencies set can_advertise = true
+     where id = '00000000-0000-0000-0000-000000461002' $$,
+  '23514',
+  'new row for relation "agencies" violates check constraint "agencies_categoria_requerida_para_anunciar"',
+  'CATREQ1_can_advertise_true_con_advertiser_category_null_es_rechazado_por_el_check_con_mensaje_explicito'
+);
+
+-- ── CATREQ2) can_advertise=true + categoría no nula -> SÍ pasa el CHECK ────
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-000000461011', 'owner_catreq2_46@urbea.mx');
+insert into public.agencies (id, name, slug, status, created_by_user_id) values
+  ('00000000-0000-0000-0000-000000461012', 'Inmobiliaria Catreq2 46', 'inmo-catreq2-46', 'active',
+   '00000000-0000-0000-0000-000000461011');
+
+select lives_ok(
+  $$ update public.agencies set can_advertise = true, advertiser_category = 'otro'
+     where id = '00000000-0000-0000-0000-000000461012' $$,
+  'CATREQ2_can_advertise_true_con_categoria_no_nula_pasa_el_check'
+);
+
+-- ── CATREQ3) 🔴 protege producción: can_advertise=false + categoría NULL
+--            sigue siendo válido -- el default de TODA fila preexistente ────
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-000000461021', 'owner_catreq3_46@urbea.mx');
+insert into public.agencies (id, name, slug, status, created_by_user_id) values
+  ('00000000-0000-0000-0000-000000461022', 'Inmobiliaria Catreq3 46', 'inmo-catreq3-46', 'active',
+   '00000000-0000-0000-0000-000000461021');
+
+select lives_ok(
+  $$ update public.agencies set name = 'Inmobiliaria Catreq3 46 Renombrada'
+     where id = '00000000-0000-0000-0000-000000461022' $$,
+  'CATREQ3_can_advertise_false_con_advertiser_category_null_sigue_siendo_valido_estado_por_defecto_de_toda_fila_preexistente_si_esto_falla_se_rompe_produccion'
+);
+
+-- ── CATREQ4) apagar can_advertise en una org que YA tenía categoría no truena ─
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-000000461031', 'owner_catreq4_46@urbea.mx');
+insert into public.agencies (id, name, slug, status, created_by_user_id, can_advertise, advertiser_category) values
+  ('00000000-0000-0000-0000-000000461032', 'Inmobiliaria Catreq4 46', 'inmo-catreq4-46', 'active',
+   '00000000-0000-0000-0000-000000461031', true, 'mudanzas');
+
+select lives_ok(
+  $$ update public.agencies set can_advertise = false
+     where id = '00000000-0000-0000-0000-000000461032' $$,
+  'CATREQ4_apagar_can_advertise_en_una_organizacion_que_tenia_categoria_asignada_no_truena'
+);
+
+-- ── CATREQ5-7) la RPC sin p_category da error EXPLÍCITO propio, no 23514
+--              crudo ni estado inválido, y sin efectos parciales ───────────
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-000000461041', 'owner_catreq5_46@urbea.mx');
+insert into public.agencies (id, name, slug, status, created_by_user_id) values
+  ('00000000-0000-0000-0000-000000461042', 'Inmobiliaria Catreq5 46', 'inmo-catreq5-46', 'active',
+   '00000000-0000-0000-0000-000000461041');
+
+-- Reusa el admin_id ya sembrado en la sección 7.3 (460401, role='admin').
+select pg_temp.act_as('00000000-0000-0000-0000-000000460401', 'service_role');
+select throws_ok(
+  $$ select public.set_org_advertising_atomic('00000000-0000-0000-0000-000000461042'::uuid, true) $$,
+  'P0001',
+  'ADVERTISER_CATEGORY_REQUIRED',
+  'CATREQ5_set_org_advertising_atomic_sin_p_category_da_error_explicito_p0001_advertiser_category_required_no_un_23514_crudo_del_constraint'
+);
+reset role;
+
+select is(
+  (select can_advertise from public.agencies where id = '00000000-0000-0000-0000-000000461042'),
+  false,
+  'CATREQ6_tras_el_error_explicito_can_advertise_no_quedo_encendido_sin_efecto_parcial'
+);
+select is(
+  (select count(*)::int from public.admin_actions where entity_id = '00000000-0000-0000-0000-000000461042'),
+  0,
+  'CATREQ7_tras_el_error_explicito_no_quedo_ninguna_fila_de_auditoria_huerfana'
 );
 
 select * from finish();
