@@ -1,12 +1,21 @@
 ---
 tipo: estado
-actualizado: 2026-08-15
+actualizado: 2026-08-16
 ---
 
 
 # Estado actual
 
 > Narrativa de "dónde estamos hoy". El **qué sigue / qué está hecho** vive en **Taskmaster** (`task-master list`), no aquí.
+
+## 🔴 Vigente desde 2026-08-10 — PRODUCCIÓN VIVA
+**Hay personas reales conectadas probando la app y la base se puebla poco a poco.** Todo cambio se piensa para producción: nada de seeds/resets al remoto, migraciones aditivas con rollback, contratos publicados se deprecian en dos pasos (cliente-OTA-primero), y ante duda gana producción. Reglas completas en **CLAUDE.md §0.5**; decisión en [[0009-produccion-viva]]; el gate corre en el analista (Paso 5.5), `/tm-plan` (impacto-prod) y `/tm-tarea` (cierre 6.0).
+
+## Hoy (2026-08-16) — #168 (organización con capacidad de publicidad + invitación por correo) lista en código, sin desplegar
+
+- **✅ #168 CERRADA en `tarea/168-org-can-advertise` (7 subtareas, TDD estricto en las críticas, guardian PASS ×3 con mutation testing).** `agencies` gana capacidades (`can_publish_properties`/`can_advertise`/`advertiser_category`) sin crear entidad nueva; la invitación del owner al dar de alta una organización ahora se **manda por correo de verdad** (`inviteUserByEmail`, verificado E2E contra Mailpit local) en vez de solo generar un link para copiar. Detalle técnico completo + las 2 decisiones de Abraham (fail-closed del correo, CHECK de categoría) en `wiki/log.md` (entrada 2026-08-16) y [[inmobiliarias-y-agentes]].
+- **🔴 NADA aplicado al remoto.** Gate de producción viva verificado: 6 migraciones aditivas (cero DROP/TRUNCATE/DELETE fuera de los rollbacks), 0 filas reales violan el CHECK nuevo, `admin_create_agency_atomic`/`publish_property_atomic` mantienen exactamente 1 overload cada una y las firmas viejas siguen resolviendo por defaults, 0 `select('*')` sobre `agencies` en servidor ni cliente. **Bloqueante antes de desplegar:** el checklist de Resend en `docs/TODO-pendientes.md` §1.1 — falta config remota (API key + dominio + SMTP) **y** un fix de 1 línea (`OWNER_INVITE_REDIRECT_TO` apunta a una ruta sin `useSessionFromDeepLink` montado).
+- **Orden de deploy cuando se autorice:** migración (RPC nueva de 12 params) → deploy de la EF `admin-create-agency` (que llama esos params) → OTA de mobile — mismo orden que #167 exigió (migración antes que el OTA, porque el cliente depende de columnas/RPCs nuevas).
 
 ## Hoy (2026-08-15) — Quick fixes del wizard de publicación (paso 3/4), sesión directa
 

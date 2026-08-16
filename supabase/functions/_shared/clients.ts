@@ -28,6 +28,8 @@ import type {
   CreateUserParams,
   GenerateInviteLinkParams,
   GenerateInviteLinkResponse,
+  InviteByEmailParams,
+  InviteByEmailResponse,
 } from "./auth_user.ts";
 import type {
   InvitationRedeemer,
@@ -162,6 +164,14 @@ export function make_invitation_db(client: SupabaseClient): InvitationDb {
   };
 }
 
+// 168.4: destino del deep link que GoTrue anexa al correo real de invitación
+// (el token de sesión viaja en el fragmento de la URL, mismo mecanismo que
+// requestPasswordReset en mobile/src/features/auth/context.tsx). Sin ruta
+// dedicada de aceptación de invitación todavía (168.5), se apunta a la raíz
+// de la app — dentro del patrón permitido `urbea://*` (supabase/config.toml
+// additional_redirect_urls). Cambiar aquí cuando 168.5 defina la pantalla.
+const OWNER_INVITE_REDIRECT_TO = "urbea://";
+
 /** Adaptador real de AuthAdminClient sobre supabase.auth.admin. */
 export function make_auth_admin(client: SupabaseClient): AuthAdminClient {
   return {
@@ -195,6 +205,49 @@ export function make_auth_admin(client: SupabaseClient): AuthAdminClient {
         data: {
           user: { id: data.user.id },
           action_link: data.properties.action_link,
+        },
+        error: null,
+      };
+    },
+    /**
+     * 168.4: envío REAL del correo de invitación (plantilla "Invite user" de
+     * GoTrue + el SMTP configurado — Mailpit en local, Resend en remoto tras
+     * 168.6). A diferencia de generateLink, inviteUserByEmail NO devuelve
+     * action_link en su respuesta (el link solo viaja en el correo que GoTrue
+     * ya mandó) — se recupera un link de RESPALDO con un segundo
+     * generateLink(type:'magiclink') sobre el usuario que acaba de crearse
+     * ('invite' fallaría aquí con "already registered", porque el usuario ya
+     * existe a esta altura). Fail-open en el backup: si ese segundo link no
+     * se puede generar, el correo YA se mandó (email_sent:true igual) y el
+     * link de respaldo queda como cadena vacía en vez de tumbar el flujo.
+     */
+    async inviteUserByEmail(
+      params: InviteByEmailParams,
+    ): Promise<InviteByEmailResponse> {
+      const { data, error } = await client.auth.admin.inviteUserByEmail(
+        params.email,
+        {
+          redirectTo: params.redirectTo ?? OWNER_INVITE_REDIRECT_TO,
+          data: params.data,
+        },
+      );
+      if (error || !data?.user) {
+        return {
+          data: null,
+          error: error
+            ? { message: error.message }
+            : { message: "inviteUserByEmail devolvió sin data" },
+        };
+      }
+      const backup = await client.auth.admin.generateLink({
+        type: "magiclink",
+        email: params.email,
+      });
+      return {
+        data: {
+          user: { id: data.user.id },
+          action_link: backup.data?.properties?.action_link ?? "",
+          email_sent: true,
         },
         error: null,
       };
@@ -358,8 +411,10 @@ function extract_agency_error_code(message: string): string {
 }
 
 /**
- * Adaptador real de AgencyCreator sobre la RPC admin_create_agency_atomic (migración 0016, 9 params).
- * Llama la versión de 9 parámetros que inserta token + admin_actions en la misma transacción.
+ * Adaptador real de AgencyCreator sobre la RPC admin_create_agency_atomic
+ * (168.3: 20260816000001, 11 params; 168.7: 20260816000004, 12 params con
+ * p_advertiser_category). Llama la versión que inserta token + admin_actions
+ * en la misma transacción.
  * Mapea los errores P0001 al error_code de negocio correspondiente.
  */
 export function make_agency_creator(client: SupabaseClient): AgencyCreator {
@@ -367,7 +422,11 @@ export function make_agency_creator(client: SupabaseClient): AgencyCreator {
     async create_atomic(
       params: AgencyCreateParams,
     ): Promise<AgencyCreateResult> {
-      const { data, error } = await client.rpc("admin_create_agency_atomic", {
+      // 168.3: can_publish_properties/can_advertise SOLO se incluyen en la
+      // llamada cuando vienen definidos — si el payload no los trae, la
+      // RPC debe usar su propio DEFAULT (mismo default que la columna), no
+      // un null explícito forzado desde el EF.
+      const rpc_params: Record<string, unknown> = {
         p_name: params.name,
         p_slug: params.slug,
         p_contact_name: params.contact_name ?? null,
@@ -377,7 +436,21 @@ export function make_agency_creator(client: SupabaseClient): AgencyCreator {
         p_owner_user_id: params.owner_user_id ?? null,
         p_token_hash: params.token_hash ?? null,
         p_token_max_uses: params.token_max_uses ?? null,
-      });
+      };
+      if (params.can_publish_properties !== undefined) {
+        rpc_params.p_can_publish_properties = params.can_publish_properties;
+      }
+      if (params.can_advertise !== undefined) {
+        rpc_params.p_can_advertise = params.can_advertise;
+      }
+      // 168.7: mismo criterio — solo se incluye si el payload la trae.
+      if (params.advertiser_category !== undefined) {
+        rpc_params.p_advertiser_category = params.advertiser_category;
+      }
+      const { data, error } = await client.rpc(
+        "admin_create_agency_atomic",
+        rpc_params,
+      );
       if (error) {
         const error_code = extract_agency_error_code(error.message);
         return { ok: false, error_code };

@@ -23,6 +23,24 @@ export interface AgencyCreateParams {
   token_hash?: string | undefined;
   /** token_max_uses (7.6): límite de usos del token inicial; null = ilimitado */
   token_max_uses?: number | undefined;
+  /**
+   * can_publish_properties / can_advertise (168.3): reenviados solo cuando el
+   * admin los manda en el payload — undefined si el payload no los trae, para
+   * que la RPC use su propio DEFAULT (mismo default de columna) en vez de
+   * forzar un valor desde el EF.
+   */
+  can_publish_properties?: boolean | undefined;
+  can_advertise?: boolean | undefined;
+  /**
+   * advertiser_category (168.7): mismo criterio — reenviada solo cuando el
+   * admin la manda en el payload. Necesaria para crear una org
+   * "solo-publicidad" (can_advertise=true) directamente: el CHECK
+   * agencies_categoria_requerida_para_anunciar (20260816000003) rechaza
+   * can_advertise=true sin categoría. Tipada como string (no un enum TS
+   * espejo) — el enum public.advertiser_category en la base es la única
+   * fuente de verdad; un valor inválido lo rechaza la RPC.
+   */
+  advertiser_category?: string | undefined;
 }
 
 export type AgencyCreateResult =

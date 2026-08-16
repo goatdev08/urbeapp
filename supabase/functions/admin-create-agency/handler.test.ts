@@ -70,6 +70,43 @@
 // ### Ramas de reglas no obvias
 // - RPC falla tras crear owner → deleteUser(owner_user_id) llamado; respuesta no es 201
 // - owner ya con membresía activa (ALREADY_ACTIVE_MEMBER) → deleteUser llamado; 409
+//
+// EDGE CASES (RED) — subtarea #168.3 (params de capacidad con DEFAULT al final):
+// ### Ramas de reglas no obvias
+// - payload con can_publish_properties/can_advertise → create_atomic los recibe
+//   TAL CUAL en sus params (RPC de 168.3 aún no wireada — falla en RED)
+// ### NO-REGRESIÓN (contrato publicado — pasan hoy por diseño, red de seguridad):
+// - invite_action_link SIGUE presente en la respuesta 201 con owner (builds
+//   instalados de mobile/app/admin/agencies/[id].tsx y create.tsx lo consumen)
+// - payload viejo (sin can_publish_properties/can_advertise) sigue dando 201
+//   y create_atomic no recibe esos campos forzados a un valor — quedan ausentes
+//
+// EDGE CASES (RED) — subtarea #168.4 (invitación del owner por CORREO):
+// Hoy _shared/clients.ts:180 usa auth.admin.generateLink({type:'invite'}) que
+// GENERA el link pero NO lo envía. 168.4 cambia el seam a inviteUserByEmail
+// (GoTrue manda el correo real con su plantilla "Invite user" + SMTP — la
+// entrega E2E se verifica en local contra Mailpit, patrón 72.3/72.5; ese paso
+// es manual y no vive en este archivo). El doble de AuthAdmin evoluciona de
+// forma ADITIVA: inviteUserByEmail es un método NUEVO y OPCIONAL en
+// FakeAuthAdmin — generateInviteLink sigue existiendo, los 50 tests previos
+// no lo tocan.
+// ### Happy path (envío exitoso)
+// - inviteUserByEmail invocado exactamente 1 vez con el email del owner
+// - respuesta 201 trae email_sent: true
+// ### Contrato publicado (🔴 el más importante)
+// - invite_action_link SIGUE presente en la respuesta 201 en el camino nuevo
+//   (con envío por correo) — no solo como respaldo del fallo
+// ### Envío fallido — la organización SÍ se crea
+// - email_sent: false pero create_atomic SÍ es llamado (fallo de envío no es fatal)
+// - la respuesta 201 trae el invite_action_link como link de respaldo
+// - deleteUser NO se llama cuando el único problema fue el envío del correo
+// ### Fault-injection / compensación (🔴 no deja basura)
+// - RPC falla tras invitar por correo (el owner ya existe en Auth) →
+//   deleteUser(owner_user_id) compensa — mismo patrón que 7.5, ejercitado
+//   sobre el seam nuevo
+// ### Retrocompatibilidad
+// - payload viejo (mismos campos que 168.3, sin nada nuevo) sigue dando 201
+//   y email_sent aparece como boolean — aditivo, nunca un requisito nuevo
 
 import { assertEquals, assertExists } from "@std/assert";
 import { generate_invitation_code, sha256_hex } from "../_shared/crypto.ts";
@@ -113,6 +150,24 @@ interface GenInviteLinkParams {
 
 interface GenInviteLinkResponse {
   data: { user: { id: string }; action_link: string } | null;
+  error: { message: string } | null;
+}
+
+// ── Tipos provisionales para el seam de invitación por CORREO (168.4) ───────
+// Estos tipos se mueven a _shared/auth_user.ts en la fase GREEN. email_sent
+// vive DENTRO de `data` en éxito: un fallo de ENTREGA del correo (SMTP) no es
+// un fallo de creación de cuenta — la cuenta del owner sí quedó creada, así
+// que no es un `error`, sino un `ok:true` con email_sent:false y el
+// action_link como respaldo (decisión de contrato fijada en 168.4).
+
+interface InviteByEmailParams {
+  email: string;
+  redirectTo?: string;
+  data?: Record<string, unknown>;
+}
+
+interface InviteByEmailResponse {
+  data: { user: { id: string }; action_link: string; email_sent: boolean } | null;
   error: { message: string } | null;
 }
 
@@ -187,6 +242,11 @@ interface FakeAuthAdmin {
   deleteUser(uid: string): Promise<void>;
   // createUser presente para satisfacer AuthAdminClient en GREEN
   createUser(params: unknown): Promise<unknown>;
+  // 168.4: seam NUEVO y OPCIONAL — envío real del correo de invitación.
+  // Aditivo a propósito: los fakes de 7.5/168.3 no lo declaran y siguen
+  // compilando (generateInviteLink sigue siendo miembro requerido).
+  invite_email_calls?: InviteByEmailParams[];
+  inviteUserByEmail?(params: InviteByEmailParams): Promise<InviteByEmailResponse>;
 }
 
 function auth_admin_invite_ok(): FakeAuthAdmin {
@@ -227,6 +287,73 @@ function auth_admin_invite_email_duplicate(): FakeAuthAdmin {
     },
     createUser(_params: unknown): Promise<unknown> {
       return Promise.resolve({ data: null, error: { message: "not used" } });
+    },
+  };
+}
+
+// ── Factories de fakes — inviteUserByEmail (168.4, envío real por correo) ───
+// generateInviteLink se implementa en AMBAS para que el handler.ts actual
+// (que hoy solo llama create_owner_invite → generateInviteLink) siga
+// completando su flujo sin lanzar — el RED se produce por ASERCIÓN sobre
+// email_sent / invite_email_calls, nunca por una excepción de "method missing".
+
+function auth_admin_invite_by_email_ok(): FakeAuthAdmin {
+  return {
+    invite_calls: [],
+    delete_calls: [],
+    invite_email_calls: [],
+    generateInviteLink(params: GenInviteLinkParams): Promise<GenInviteLinkResponse> {
+      this.invite_calls.push(params);
+      return Promise.resolve({
+        data: { user: { id: OWNER_ID }, action_link: INVITE_LINK },
+        error: null,
+      });
+    },
+    inviteUserByEmail(params: InviteByEmailParams): Promise<InviteByEmailResponse> {
+      this.invite_email_calls!.push(params);
+      return Promise.resolve({
+        data: { user: { id: OWNER_ID }, action_link: INVITE_LINK, email_sent: true },
+        error: null,
+      });
+    },
+    deleteUser(uid: string): Promise<void> {
+      this.delete_calls.push(uid);
+      return Promise.resolve();
+    },
+    createUser(_params: unknown): Promise<unknown> {
+      return Promise.resolve({ data: null, error: { message: "not used in 168.4" } });
+    },
+  };
+}
+
+function auth_admin_invite_by_email_send_failed(): FakeAuthAdmin {
+  // El correo NO se pudo entregar (p.ej. SMTP caído), pero la cuenta del
+  // owner SÍ quedó creada — no es fatal: la organización se crea igual y el
+  // action_link queda como link de respaldo (contrato fijado en 168.4).
+  return {
+    invite_calls: [],
+    delete_calls: [],
+    invite_email_calls: [],
+    generateInviteLink(params: GenInviteLinkParams): Promise<GenInviteLinkResponse> {
+      this.invite_calls.push(params);
+      return Promise.resolve({
+        data: { user: { id: OWNER_ID }, action_link: INVITE_LINK },
+        error: null,
+      });
+    },
+    inviteUserByEmail(params: InviteByEmailParams): Promise<InviteByEmailResponse> {
+      this.invite_email_calls!.push(params);
+      return Promise.resolve({
+        data: { user: { id: OWNER_ID }, action_link: INVITE_LINK, email_sent: false },
+        error: null,
+      });
+    },
+    deleteUser(uid: string): Promise<void> {
+      this.delete_calls.push(uid);
+      return Promise.resolve();
+    },
+    createUser(_params: unknown): Promise<unknown> {
+      return Promise.resolve({ data: null, error: { message: "not used in 168.4" } });
     },
   };
 }
@@ -922,5 +1049,435 @@ Deno.test(
     const hash2 = await sha256_hex("urbea-test-token-determinismo");
     assertEquals(hash1, hash2, "sha256_hex debe devolver el mismo hash para el mismo input");
     assertEquals(hash1.length, 64, "sha256 hex debe tener siempre 64 chars");
+  },
+);
+
+// ── subtarea #168.3 — params de capacidad con DEFAULT al final ──────────────
+// admin_create_agency_atomic gana p_can_publish_properties/p_can_advertise
+// (DEFAULT al final). El EF debe: (a) pasar esos campos a create_atomic
+// cuando el admin los manda en el payload, (b) NO romper con un payload viejo
+// que no los manda, (c) seguir devolviendo invite_action_link — contrato
+// publicado que consumen builds instalados de mobile/app/admin/agencies/.
+
+const PAYLOAD_CON_CAPACIDAD = {
+  ...PAYLOAD_VALIDO,
+  slug: "inmobiliaria-solo-publicidad-83",
+  can_publish_properties: false,
+  can_advertise: true,
+};
+
+Deno.test(
+  "capacidad_168_3_create_atomic_recibe_can_publish_properties_y_can_advertise_del_payload",
+  async () => {
+    // RED: el handler HOY no lee ni reenvía estos campos — create_atomic los
+    // recibe undefined, no los valores del payload (false, true).
+    const auth = auth_admin_invite_ok();
+    const creator = creator_ok();
+    const res = await handler(
+      post_admin(PAYLOAD_CON_CAPACIDAD),
+      deps_con_auth(verifier_admin_ok(), creator, auth),
+    );
+    assertEquals(res.status, 201);
+    assertEquals(creator.calls.length, 1);
+    assertEquals(
+      // deno-lint-ignore no-explicit-any
+      (creator.calls[0] as any).can_publish_properties,
+      false,
+      "create_atomic debe recibir can_publish_properties=false tal como lo mandó el admin en el payload",
+    );
+    assertEquals(
+      // deno-lint-ignore no-explicit-any
+      (creator.calls[0] as any).can_advertise,
+      true,
+      "create_atomic debe recibir can_advertise=true tal como lo mandó el admin en el payload",
+    );
+  },
+);
+
+Deno.test(
+  "capacidad_168_3_no_regresion_payload_viejo_sin_capacidad_sigue_dando_201",
+  async () => {
+    // NO-REGRESIÓN (pasa hoy por diseño): un build instalado que NUNCA manda
+    // can_publish_properties/can_advertise (payload viejo, PAYLOAD_VALIDO) no
+    // debe romperse — 201 igual que siempre, y create_atomic no recibe esos
+    // campos forzados a ningún valor (quedan ausentes, no false/true por defecto
+    // del lado del EF -- el default vive en la RPC/columna, no en la EF).
+    const auth = auth_admin_invite_ok();
+    const creator = creator_ok();
+    const res = await handler(
+      post_admin(PAYLOAD_VALIDO),
+      deps_con_auth(verifier_admin_ok(), creator, auth),
+    );
+    assertEquals(res.status, 201, "payload viejo sin campos de capacidad sigue dando 201");
+    assertEquals(
+      // deno-lint-ignore no-explicit-any
+      (creator.calls[0] as any).can_publish_properties,
+      undefined,
+      "create_atomic NO debe recibir can_publish_properties forzado cuando el payload no lo manda",
+    );
+    assertEquals(
+      // deno-lint-ignore no-explicit-any
+      (creator.calls[0] as any).can_advertise,
+      undefined,
+      "create_atomic NO debe recibir can_advertise forzado cuando el payload no lo manda",
+    );
+  },
+);
+
+Deno.test(
+  "capacidad_168_3_contrato_publicado_invite_action_link_sigue_presente_en_201_con_owner",
+  async () => {
+    // NO-REGRESIÓN (pasa hoy por diseño): mobile/app/admin/agencies/[id].tsx y
+    // create.tsx:269-283 consumen invite_action_link desde builds instalados.
+    // El EF de 168.3 NO puede dejar de devolver esta llave al agregar los
+    // params de capacidad.
+    const auth = auth_admin_invite_ok();
+    const creator = creator_ok();
+    const res = await handler(
+      post_admin(PAYLOAD_CON_CAPACIDAD),
+      deps_con_auth(verifier_admin_ok(), creator, auth),
+    );
+    assertEquals(res.status, 201);
+    const body = await res.json();
+    assertExists(
+      body.invite_action_link,
+      "invite_action_link debe seguir presente en la respuesta 201 — contrato publicado, builds instalados dependen de esta llave",
+    );
+    assertEquals(
+      typeof body.invite_action_link,
+      "string",
+      "invite_action_link debe seguir siendo string",
+    );
+  },
+);
+
+// ── subtarea #168.7 — advertiser_category llega a create_atomic ─────────────
+// Hueco encontrado por el guardian de 168.7: el cambio que agregó
+// p_advertiser_category (agency.ts + clients.ts + handler.ts) entró a `main`
+// sin un solo test propio. Estos 3 tests fijan con asserts permanentes lo que
+// el guardian ya verificó a mano con sondas desechables.
+//
+// ⚠️ SEAM CUBIERTO: SOLO handler.ts → AgencyCreator.create_atomic (el
+// FakeCreator inyectado captura `creator.calls[0]`). El mapeo condicional
+// `params.advertiser_category !== undefined` → `rpc_params.p_advertiser_category`
+// vive en _shared/clients.ts (make_agency_creator, ~446-448) y NO tiene test
+// aquí — clients.ts no se toca en esta tanda (tarea derivada #174).
+//
+// EDGE CASES (RED→GREEN ya implementado, tests permanentes):
+// ### Happy path
+// - advertiser_category del payload llega a create_atomic como
+//   params.advertiser_category (passthrough tal cual, mismo valor)
+// ### NO-REGRESIÓN (contrato publicado — pasa hoy por diseño)
+// - payload viejo sin advertiser_category → 201 y create_atomic recibe
+//   advertiser_category=undefined (nunca forzado; el DEFAULT vive en la
+//   RPC/columna, no en el EF)
+// ### Rama no obvia
+// - advertiser_category que no es string (p.ej. number) se ignora — el
+//   handler solo reenvía cuando typeof === "string"; nunca propaga el valor
+//   crudo no-string a create_atomic
+
+const PAYLOAD_CON_ADVERTISER_CATEGORY = {
+  ...PAYLOAD_VALIDO,
+  slug: "inmobiliaria-categoria-anuncio-87",
+  advertiser_category: "notaria",
+};
+
+Deno.test(
+  "categoria_168_7_create_atomic_recibe_advertiser_category_del_payload",
+  async () => {
+    const auth = auth_admin_invite_ok();
+    const creator = creator_ok();
+    const res = await handler(
+      post_admin(PAYLOAD_CON_ADVERTISER_CATEGORY),
+      deps_con_auth(verifier_admin_ok(), creator, auth),
+    );
+    assertEquals(res.status, 201);
+    assertEquals(creator.calls.length, 1);
+    assertEquals(
+      // deno-lint-ignore no-explicit-any
+      (creator.calls[0] as any).advertiser_category,
+      "notaria",
+      "create_atomic debe recibir advertiser_category tal como lo mandó el admin en el payload",
+    );
+  },
+);
+
+Deno.test(
+  "categoria_168_7_no_regresion_payload_sin_advertiser_category_no_fuerza_el_param",
+  async () => {
+    const auth = auth_admin_invite_ok();
+    const creator = creator_ok();
+    const res = await handler(
+      post_admin(PAYLOAD_VALIDO),
+      deps_con_auth(verifier_admin_ok(), creator, auth),
+    );
+    assertEquals(
+      res.status,
+      201,
+      "payload viejo sin advertiser_category sigue dando 201",
+    );
+    assertEquals(
+      // deno-lint-ignore no-explicit-any
+      (creator.calls[0] as any).advertiser_category,
+      undefined,
+      "create_atomic NO debe recibir advertiser_category forzado (undefined, no null) cuando el payload no lo manda — el DEFAULT lo pone la RPC/columna, no el EF",
+    );
+  },
+);
+
+Deno.test(
+  "categoria_168_7_advertiser_category_no_string_se_ignora_en_vez_de_propagarse",
+  async () => {
+    const auth = auth_admin_invite_ok();
+    const creator = creator_ok();
+    const payload_con_categoria_invalida = {
+      ...PAYLOAD_VALIDO,
+      slug: "inmobiliaria-categoria-invalida-87",
+      advertiser_category: 12345,
+    };
+    const res = await handler(
+      post_admin(payload_con_categoria_invalida),
+      deps_con_auth(verifier_admin_ok(), creator, auth),
+    );
+    assertEquals(
+      res.status,
+      201,
+      "advertiser_category no-string no debe tumbar la creación de la agencia",
+    );
+    assertEquals(
+      // deno-lint-ignore no-explicit-any
+      (creator.calls[0] as any).advertiser_category,
+      undefined,
+      "un advertiser_category que no es string se ignora (undefined), nunca se propaga tal cual a create_atomic",
+    );
+  },
+);
+
+// ── subtarea #168.4 — invitación del owner por CORREO (inviteUserByEmail) ───
+// El handler.ts actual (sin tocar en esta subtarea) sigue llamando
+// create_owner_invite → admin.generateInviteLink — el fake nuevo implementa
+// AMBOS métodos para que ese camino viejo complete sin lanzar; el RED sale
+// de las aserciones sobre email_sent / invite_email_calls, que hoy no existen.
+
+// ── Happy path: envío exitoso ────────────────────────────────────────────────
+
+Deno.test(
+  "correo_168_4_envio_exitoso_invoca_el_seam_inviteUserByEmail_con_email_del_owner",
+  async () => {
+    const auth = auth_admin_invite_by_email_ok();
+    const creator = creator_ok();
+    await handler(
+      post_admin(PAYLOAD_VALIDO),
+      deps_con_auth(verifier_admin_ok(), creator, auth),
+    );
+    assertEquals(
+      auth.invite_email_calls!.length,
+      1,
+      "inviteUserByEmail debe ser invocado exactamente una vez para mandar el correo real",
+    );
+    assertEquals(
+      auth.invite_email_calls![0].email,
+      PAYLOAD_VALIDO.owner_email,
+      "inviteUserByEmail debe recibir el email del owner del payload",
+    );
+  },
+);
+
+Deno.test(
+  "correo_168_4_envio_exitoso_respuesta_201_trae_email_sent_true",
+  async () => {
+    const auth = auth_admin_invite_by_email_ok();
+    const creator = creator_ok();
+    const res = await handler(
+      post_admin(PAYLOAD_VALIDO),
+      deps_con_auth(verifier_admin_ok(), creator, auth),
+    );
+    assertEquals(res.status, 201);
+    const body = await res.json();
+    assertEquals(
+      body.email_sent,
+      true,
+      "la respuesta 201 debe traer email_sent:true cuando el correo se envió exitosamente",
+    );
+  },
+);
+
+// ── Contrato publicado (🔴 el más importante) ────────────────────────────────
+
+Deno.test(
+  "correo_168_4_contrato_publicado_invite_action_link_sigue_presente_en_el_camino_con_envio",
+  async () => {
+    // Builds instalados (mobile/app/admin/agencies/[id].tsx:175-374,
+    // create.tsx:269-283) leen invite_action_link por params. Debe seguir
+    // presente incluso cuando el correo SÍ se manda por email — no solo
+    // como respaldo del camino de fallo.
+    const auth = auth_admin_invite_by_email_ok();
+    const creator = creator_ok();
+    const res = await handler(
+      post_admin(PAYLOAD_VALIDO),
+      deps_con_auth(verifier_admin_ok(), creator, auth),
+    );
+    assertEquals(res.status, 201);
+    const body = await res.json();
+    assertEquals(
+      body.email_sent,
+      true,
+      "precondición: este test cubre el camino nuevo (con envío por correo exitoso)",
+    );
+    assertExists(
+      body.invite_action_link,
+      "invite_action_link debe seguir presente — contrato publicado, builds instalados dependen de esta llave",
+    );
+    assertEquals(
+      body.invite_action_link,
+      INVITE_LINK,
+      "invite_action_link debe ser el link generado, no perderse al agregar el envío por correo",
+    );
+  },
+);
+
+// ── Envío fallido: la organización SÍ se crea (168.4) ───────────────────────
+
+Deno.test(
+  "correo_168_4_envio_fallido_organizacion_se_crea_igual_con_email_sent_false",
+  async () => {
+    const auth = auth_admin_invite_by_email_send_failed();
+    const creator = creator_ok();
+    const res = await handler(
+      post_admin(PAYLOAD_VALIDO),
+      deps_con_auth(verifier_admin_ok(), creator, auth),
+    );
+    assertEquals(
+      res.status,
+      201,
+      "un fallo de ENTREGA del correo (no de creación de cuenta) no debe bloquear la creación de la organización",
+    );
+    const body = await res.json();
+    assertEquals(
+      body.email_sent,
+      false,
+      "email_sent debe ser false cuando el correo no se pudo entregar",
+    );
+    assertEquals(
+      creator.calls.length,
+      1,
+      "create_atomic SÍ debe ser llamado — un fallo de envío no es fatal para la creación de la organización",
+    );
+  },
+);
+
+Deno.test(
+  "correo_168_4_envio_fallido_respuesta_trae_link_de_respaldo",
+  async () => {
+    const auth = auth_admin_invite_by_email_send_failed();
+    const creator = creator_ok();
+    const res = await handler(
+      post_admin(PAYLOAD_VALIDO),
+      deps_con_auth(verifier_admin_ok(), creator, auth),
+    );
+    assertEquals(res.status, 201);
+    const body = await res.json();
+    assertEquals(
+      body.email_sent,
+      false,
+      "precondición: este test cubre el camino de envío fallido",
+    );
+    assertEquals(
+      body.invite_action_link,
+      INVITE_LINK,
+      "invite_action_link debe seguir en la respuesta como link de respaldo cuando el correo falla (168.5 lo mostrará como camino principal)",
+    );
+  },
+);
+
+Deno.test(
+  "correo_168_4_envio_fallido_no_dispara_compensacion_deleteUser",
+  async () => {
+    // Un fallo de ENTREGA del correo no es un fallo de cuenta ni de
+    // organización — no hay nada que revertir. deleteUser es solo para
+    // cuando la RPC falla después de crear al owner (fault-injection abajo).
+    const auth = auth_admin_invite_by_email_send_failed();
+    const creator = creator_ok();
+    await handler(
+      post_admin(PAYLOAD_VALIDO),
+      deps_con_auth(verifier_admin_ok(), creator, auth),
+    );
+    assertEquals(
+      auth.invite_email_calls!.length,
+      1,
+      "precondición: el flujo debe pasar por el seam inviteUserByEmail",
+    );
+    assertEquals(
+      auth.delete_calls.length,
+      0,
+      "deleteUser NO debe llamarse cuando el único problema fue el envío del correo",
+    );
+  },
+);
+
+// ── Fault-injection / compensación con el seam nuevo (168.4) ────────────────
+
+Deno.test(
+  "correo_168_4_fault_injection_rpc_falla_tras_invite_por_correo_deleteUser_compensa",
+  async () => {
+    // Mismo patrón que rpc_falla_despues_de_crear_owner_deleteUser_llamado_compensacion
+    // (7.5), ejercitando el seam NUEVO: inviteUserByEmail crea al owner, la
+    // RPC falla después, y NO debe quedar ni usuario huérfano ni organización
+    // a medias.
+    const auth = auth_admin_invite_by_email_ok();
+    const creator = creator_error("DB_ERROR");
+    const res = await handler(
+      post_admin(PAYLOAD_VALIDO),
+      deps_con_auth(verifier_admin_ok(), creator, auth),
+    );
+    assertEquals(
+      auth.invite_email_calls!.length,
+      1,
+      "el flujo debe pasar por inviteUserByEmail antes de llamar a la RPC",
+    );
+    assertEquals(
+      res.status >= 400,
+      true,
+      "cuando la RPC falla tras invitar por correo, la respuesta no debe ser 201",
+    );
+    assertEquals(
+      auth.delete_calls.length,
+      1,
+      "deleteUser debe ejecutarse como compensación — no debe quedar un usuario huérfano en Auth",
+    );
+    assertEquals(
+      auth.delete_calls[0],
+      OWNER_ID,
+      "deleteUser debe compensar exactamente al owner creado por inviteUserByEmail",
+    );
+  },
+);
+
+// ── Retrocompatibilidad (168.4) ──────────────────────────────────────────────
+
+Deno.test(
+  "correo_168_4_retrocompatibilidad_payload_viejo_sigue_dando_201_y_gana_email_sent_aditivamente",
+  async () => {
+    // Un payload IDÉNTICO al que ya mandan los builds instalados (mismos
+    // campos de 168.3, sin nada nuevo) debe seguir dando 201 — email_sent es
+    // un campo NUEVO y ADITIVO en la respuesta, nunca un requisito nuevo del
+    // payload.
+    const auth = auth_admin_invite_by_email_ok();
+    const creator = creator_ok();
+    const res = await handler(
+      post_admin(PAYLOAD_CON_CAPACIDAD),
+      deps_con_auth(verifier_admin_ok(), creator, auth),
+    );
+    assertEquals(
+      res.status,
+      201,
+      "un payload viejo (mismos campos que 168.3) debe seguir dando 201",
+    );
+    const body = await res.json();
+    assertEquals(
+      typeof body.email_sent,
+      "boolean",
+      "email_sent debe aparecer como boolean en la respuesta — aditivo, no rompe el payload viejo",
+    );
   },
 );

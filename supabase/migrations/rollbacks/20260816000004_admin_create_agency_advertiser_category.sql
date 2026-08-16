@@ -1,0 +1,152 @@
+-- Rollback: 20260816000004_admin_create_agency_advertiser_category.sql
+--
+-- Restaura EXACTAMENTE el body de 20260816000001 — admin_create_agency_atomic
+-- vuelve a NO aceptar p_advertiser_category (11 params).
+
+revoke execute on function public.admin_create_agency_atomic(
+  text, text, text, text, text, uuid, uuid, text, integer, boolean, boolean, public.advertiser_category
+) from service_role;
+
+drop function if exists public.admin_create_agency_atomic(
+  text, text, text, text, text, uuid, uuid, text, integer, boolean, boolean, public.advertiser_category
+);
+
+create or replace function public.admin_create_agency_atomic(
+  p_name                    text,
+  p_slug                    text,
+  p_contact_name            text,
+  p_contact_phone           text,
+  p_contact_email           text,
+  p_created_by_user_id      uuid,
+  p_owner_user_id           uuid    default null,
+  p_token_hash              text    default null,
+  p_token_max_uses          integer default null,
+  p_can_publish_properties  boolean default true,
+  p_can_advertise           boolean default false
+)
+returns table(agency_id uuid, agency_member_id uuid, token_id uuid)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_agency_id  uuid;
+  v_member_id  uuid;
+  v_token_id   uuid;
+  v_constraint text;
+begin
+  if p_created_by_user_id is null then
+    raise exception 'created_by_user_id es requerido'
+      using errcode = 'P0001';
+  end if;
+
+  begin
+    insert into public.agencies (
+      name,
+      slug,
+      contact_name,
+      contact_phone,
+      contact_email,
+      status,
+      created_by_user_id,
+      can_publish_properties,
+      can_advertise
+    )
+    values (
+      p_name,
+      p_slug,
+      p_contact_name,
+      p_contact_phone,
+      p_contact_email,
+      'active',
+      p_created_by_user_id,
+      p_can_publish_properties,
+      p_can_advertise
+    )
+    returning id into v_agency_id;
+
+  exception
+    when unique_violation then
+      get stacked diagnostics v_constraint = constraint_name;
+      if v_constraint = 'agencies_slug_unique_active' then
+        raise exception 'SLUG_DUPLICATE' using errcode = 'P0001';
+      else
+        raise exception 'NAME_DUPLICATE' using errcode = 'P0001';
+      end if;
+  end;
+
+  if p_owner_user_id is not null then
+    begin
+      insert into public.agency_members (agency_id, user_id, member_role, status)
+      values (v_agency_id, p_owner_user_id, 'owner', 'active')
+      returning id into v_member_id;
+    exception
+      when unique_violation then
+        raise exception 'ALREADY_ACTIVE_MEMBER' using errcode = 'P0001';
+    end;
+
+    update public.users
+      set role      = 'agent',
+          agency_id = v_agency_id
+      where id = p_owner_user_id;
+  end if;
+
+  if p_token_hash is not null then
+    insert into public.agency_invitation_tokens (
+      agency_id,
+      token,
+      created_by_user_id,
+      max_uses,
+      current_uses
+    )
+    values (
+      v_agency_id,
+      p_token_hash,
+      p_created_by_user_id,
+      p_token_max_uses,
+      0
+    )
+    returning id into v_token_id;
+  end if;
+
+  insert into public.admin_actions (
+    admin_id,
+    action_type,
+    entity_type,
+    entity_id,
+    new_values
+  )
+  values (
+    p_created_by_user_id,
+    'create_agency',
+    'agency',
+    v_agency_id,
+    jsonb_build_object(
+      'name',                    p_name,
+      'slug',                    p_slug,
+      'owner_user_id',           p_owner_user_id,
+      'agency_member_id',        v_member_id,
+      'token_id',                v_token_id,
+      'can_publish_properties',  p_can_publish_properties,
+      'can_advertise',           p_can_advertise
+    )
+  );
+
+  return query select v_agency_id, v_member_id, v_token_id;
+end;
+$$;
+
+comment on function public.admin_create_agency_atomic(
+  text, text, text, text, text, uuid, uuid, text, integer, boolean, boolean
+) is
+  'Subtarea #168.3: acepta p_can_publish_properties (default true) y '
+  'p_can_advertise (default false) — mismos defaults que las columnas de '
+  'agencies (20260815000001). Una llamada con la firma vieja de 9 params '
+  '(builds instalados) resuelve con esos defaults, comportamiento idéntico '
+  'al de hoy. El CHECK agencies_al_menos_una_capacidad se aplica sobre el '
+  'INSERT sin enmascararlo. Resto idéntico a 20260604000016 (token + '
+  'admin_actions).';
+
+grant execute on function public.admin_create_agency_atomic(
+  text, text, text, text, text, uuid, uuid, text, integer, boolean, boolean
+) to service_role;

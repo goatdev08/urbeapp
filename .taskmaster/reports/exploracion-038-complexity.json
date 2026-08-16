@@ -1,0 +1,29 @@
+{
+	"meta": {
+		"generatedAt": "2026-08-11T03:22:11.839Z",
+		"tasksAnalyzed": 2,
+		"totalTasks": 149,
+		"analysisCount": 2,
+		"thresholdScore": 5,
+		"projectName": "Task Master",
+		"usedResearch": false
+	},
+	"complexityAnalysis": [
+		{
+			"taskId": 148,
+			"taskTitle": "producto(10.2): hero de video con colapso por scroll en el detalle",
+			"complexityScore": 9,
+			"recommendedSubtasks": 10,
+			"expansionPrompt": "Break down the collapsing video hero implementation into: (1) HTML preview of 3 states for approval, (2) Critical TDD-path: pure function lib/heroCollapse.ts with progress/hysteresis/manual_paused logic, (3) Restructure PropertyDetailScreen to Animated.ScrollView with fixed-height hero + transform, (4) Wire auto-play/pause with useAnimatedReaction + runOnJS + mounted guard, (5) Manual play/pause button (reuse VideoFeedItem pattern), (6) Overlay handling: back_btn out of hero + fade for action_overlay and badge, (7) Gesture.Pan for fullscreen expansion + chevron/handle + exit gesture and button, (8) Remove AmenityChips file + move PropertyMap to 2nd position + gesture conflict resolution, (9) Fix step5.tsx preview infinite loop + pause on blur (part b of #106), (10) Android performance profiling with dumpsys gfxinfo and optional fallback to approach C if needed. Ensure each subtask has clear success criteria and that critical-path items (lib/) follow RED-first TDD.",
+			"reasoning": "This is a VERY HIGH complexity task (9/10). First collapsing header pattern in the entire codebase (grep found ZERO existing Animated.ScrollView/useScrollViewOffset usage). Requires: (a) novel animation architecture with scroll-driven video state machine, (b) CRITICAL TDD path for lib/heroCollapse.ts per deterministic rule (mobile/**/lib/**), (c) platform-parity gesture handling (iOS/Android behave differently on overscroll), (d) performance validation with measurable threshold (dumpsys gfxinfo ≤5% janky, p95≤24ms) with declared fallback, (e) mounted_ref guard against 'shared object already released' crash during unmount, (f) HTML preview gate before RN port (branding §8), (g) no-regression criteria for #44 (back button visibility), (h) gesture conflict resolution with react-native-maps, (i) absorbs part (b) of cancelled task #106. The exploration doc is 431 lines with 18 resolved questions, 13 edge cases, and explicit trade-offs (quota burn accepted). Estimated 10 subtasks minimum to maintain clear separation between critical (RED-first) and light verification paths."
+		},
+		{
+			"taskId": 149,
+			"taskTitle": "producto(10.4): chips compactos de características en el wizard step4",
+			"complexityScore": 4,
+			"recommendedSubtasks": 4,
+			"expansionPrompt": "Break down the chip migration into: (1) Promote FilterChipGroup to mobile/src/components/ChipGroup.tsx via git mv + update FilterSheet import (verify single consumer at FilterSheet.tsx:44,258,274), (2) Remove toggles_card from step4.tsx and mount ChipGroup as compact row below description with theme.ts tokens only for chip section, (3) Implement inline string[] ⟷ 3 booleans mapper in screen (strict boolean, never tri-state) with copy 'Pet friendly'/'Sin aval'/'Estudiantes' and full accessibilityLabels, (4) Verify publish AND edit against real stack (complete body contract from #142) + FilterSheet regression with screenshots. Ensure each boolean is written to PublishFormState and survives edit-property round-trip.",
+			"reasoning": "This is MEDIUM-LOW complexity (4/10). Independent from task 148 (no file overlap). The component FilterChipGroup already exists, is multi-select controlled, has ZERO tests, and has a single consumer (FilterSheet.tsx). The promotion is a straightforward git mv + import update. The main work is: (a) removing toggles_card (Switch-based UI), (b) mounting the chip UI, (c) inline mapping logic (presentational, deliberately kept out of lib/ to avoid critical path), (d) verification against real stack to catch #142-style silent data loss. No database changes, no Edge Functions, no native modules. The exploration doc explicitly calls this 'M/S' level and notes it can deliver much earlier than task A. Estimated 4 subtasks to cover promotion, UI replacement, data contract verification, and regression testing."
+		}
+	]
+}

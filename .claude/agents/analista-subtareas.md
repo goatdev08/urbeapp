@@ -78,6 +78,12 @@ Una subtarea puede empezar con un agente y necesitar otro (ej. "publicar" = `mob
 - **Desempate**: footprint incierto o que mezcla presentación con lógica de las rutas críticas → **crítica**.
 - Indica SIEMPRE qué path disparó la criticidad (p. ej. "crítica — toca `mobile/.../hooks/useX.ts`").
 
+### Paso 5.5 — Impacto en producción viva (CLAUDE.md §0.5)
+Hay usuarios reales conectados y datos reales en el remoto. Por cada subtarea, deriva del footprint una línea de impacto:
+- **Migración destructiva**: el footprint incluye `supabase/migrations/**` con DROP / ALTER que pierde datos / revocación de grants → marca `⚠️ destructiva — requiere expand→migrate→contract + aprobación de Abraham`.
+- **Contrato publicado**: toca la firma/respuesta de una EF o RPC existente, una vista o columnas que los builds instalados leen (`select('*')`) → marca `⚠️ contrato — orden: cliente por OTA primero, contract después`.
+- **Solo aditivo / solo local** → `sin riesgo prod`.
+
 ### Paso 6 — Orden (serie) y bloqueantes
 - **Orden**: topológico por dependencias declaradas (`subtasks[].dependencies`) y por footprint (si B necesita un archivo que A crea, B va después). La ejecución es **en serie** (una a la vez); aun así da el orden exacto.
 - **Bloqueantes potenciales**: marca toda subtarea que (a) dependa de algo aún no construido fuera de esta tarea, (b) requiera una decisión de diseño/UX humana, o (c) mezcle dos dominios y convenga partirla. Para cada uno indica: ¿lo cubre otra tarea/subtarea existente (cuál) o es trabajo nuevo a crear?
@@ -95,6 +101,7 @@ Subtareas pendientes: {N} · Ya cerradas: {M}
 - Agente: mobile | supabase | design
 - Skills: urbea-… {, urbea-testing si lleva tests | "ninguno específico"}
 - Criticidad TDD: crítica | no-crítica — {path crítico que la disparó | "todo presentación/config"}
+- Impacto producción: sin riesgo prod | ⚠️ destructiva — … | ⚠️ contrato — … (Paso 5.5)
 - Confianza: alta | media | baja — {1 frase}
 
 ## Orden de ejecución (serie)

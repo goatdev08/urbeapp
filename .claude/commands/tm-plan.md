@@ -15,10 +15,11 @@ Ubicación en el workflow: **`/tm-explore` (idea → tarea) → `/tm-plan <id>` 
 4. **Preguntas de diseño**: si el análisis o los conceptos marcan decisiones (UX, approach, alcance), usa `AskUserQuestion` (una sola llamada, máx 4). Aplica las respuestas.
 5. **Registra el plan** en cada subtarea:
    ```bash
-   task-master update-subtask --id=<id>.<n> --prompt="PLAN: approach · decisiones del usuario · agente=<dominio> · skills=<…> · criticidad=<crítica|no> · footprint=<paths>"
+   task-master update-subtask --id=<id>.<n> --prompt="PLAN: approach · decisiones del usuario · agente=<dominio> · skills=<…> · criticidad=<crítica|no> · impacto-prod=<sin riesgo|destructiva: plan expand→contract|contrato: OTA primero> · footprint=<paths>"
    ```
 6. **Cierre**: "✅ Plan listo. Ejecuta `/tm-tarea <id>` (o `/tm-tarea <id> auto`)."
 
 ## Reglas
+- 🔴 **Producción viva (CLAUDE.md §0.5):** hay usuarios reales conectados. Si el analista marca `⚠️ destructiva` o `⚠️ contrato` en alguna subtarea, la pregunta de diseño correspondiente (plan expand→migrate→contract / orden OTA-primero) es **obligatoria** en el paso 4 — no se planea por default un cambio que rompe builds instalados o pierde datos.
 - No edites código — solo análisis + registro en Taskmaster.
 - CLI siempre. Decisiones genuinas → al usuario; triviales → default sensato anotado en la subtarea.
