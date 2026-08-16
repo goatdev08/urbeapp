@@ -8377,12 +8377,12 @@
             "title": "EF mint-ad-upload-url (scope agency_id, maxDuration 30 s)",
             "description": "🔴 CRÍTICA. Calco de mint-upload-url con dos invariantes propios: duración máxima 30 s y concurrencia scoped por organización sobre ad_creatives — sin tocar el checker existente.",
             "details": "PLAN · agente=supabase · criticidad=CRÍTICA (supabase/functions/**) · impacto-prod=EF nueva, sin contrato previo que romper · footprint=supabase/functions/mint-ad-upload-url/ (handler.ts + handler.test.ts + index.ts)\n\nDIFERENCIA 1 — duración: maxDurationSeconds=30 hacia Cloudflare Stream (propiedades usa 120). El MÍNIMO de 6 s no lo puede imponer Stream ⇒ se valida al pasar a ready (169.5) y al elegir el archivo en el cliente (169.6).\n\nDIFERENCIA 2 — concurrencia, y es el punto fino: el 409 de mint-upload-url está scoped por agent_id SOBRE property_videos (handler.ts:45 documenta la regla, :77 usa agent_id). Como ad_creatives es OTRA TABLA, ese checker nunca ve filas de anuncios: un owner que además es agente puede tener un video de propiedad en vuelo y subir un anuncio al mismo tiempo, SIN tocar una línea del checker existente. El anuncio tiene su propio invariante, scoped por agency_id sobre ad_creatives. Separación por dominio, no por condicionales — y eso es justo lo que hay que testear explícitamente, porque es el beneficio que justificó la tabla propia.\n\nAUTZ fail-closed: solo miembro owner/admin de una organización con private.org_can_advertise. Un agente sin organización, o con organización sin la capacidad, recibe 403 (no un 404 que filtre información, no un 500).\n\nRED: 409 propio cuando ya hay un creativo uploading/processing de ESA organización · NO hay 409 cruzado con un property_video en vuelo del mismo usuario · 403 sin capacidad · nunca devuelve credenciales de Stream al cliente.\n\n✅ Citas verificadas: mint-upload-url/handler.ts:45 es el comentario \"Concurrencia por agente (§13.2, fail-closed)\" y :77 es literalmente agent_id: uid dentro de register_uploading_video.\n🔴 BLOQUEANTE DE CADENA: private.org_can_advertise la crea la tarea 168 (pending). 169.4 no puede cerrar su autz real hasta que 168 esté done.\n\n<info added on 2026-08-16T00:00:00.000Z>\nPLAN + CORRECCIÓN DEL ANALISTA (2026-08-16): las CITAS DE LÍNEA del plan están desfasadas — la sustancia se sostiene, las líneas no. El comentario \"Concurrencia por agente (§13.2, fail-closed)\" está en mint-upload-url/handler.ts:67-68 (el plan citaba :45) y el agent_id: uid dentro de register_uploading_video está en :101 (el plan citaba :77; la :77 real es el 409 del error_response). RE-GREPEAR al escribir el RED, no confiar en los números del plan.\n\nHALLAZGO CENTRAL CONFIRMADO: el 409 de concurrencia de mint-upload-url está scoped por agent_id sobre property_videos. Como ad_creatives es TABLA PROPIA, el checker existente jamás ve una fila de anuncio → 169.4 no hereda ese 409 y no hay que tocar el checker viejo. Eso es exactamente lo que queríamos.\n\nagente=supabase · skills=urbea-supabase,urbea-testing · criticidad=CRÍTICA (supabase/functions/**) · impacto-prod=sin riesgo (EF nueva, sin contrato previo que romper).\n\nAutz fail-closed vía private.org_can_advertise (168.1, ya en main). maxDuration 30 s al pedir la URL a Cloudflare Stream. ⚠️ Cuota real: verificar y PARAR.\n</info added on 2026-08-16T00:00:00.000Z>",
-            "status": "pending",
+            "status": "in-progress",
             "dependencies": [
               1
             ],
             "testStrategy": "Deno con DI pura: 409 propio, ausencia de 409 cruzado con property_videos, 403 sin capacidad, credenciales no filtradas. Verificar contra el stack local real, no solo dobles.",
-            "updatedAt": "2026-08-16T00:00:00.000Z",
+            "updatedAt": "2026-08-16T20:26:34.864Z",
             "parentId": "169"
           },
           {
@@ -8456,7 +8456,7 @@
             "parentId": "undefined"
           }
         ],
-        "updatedAt": "2026-08-16T20:26:17.737Z"
+        "updatedAt": "2026-08-16T20:26:34.864Z"
       },
       {
         "id": "170",
@@ -8780,7 +8780,7 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-08-16T20:26:17.737Z",
+      "lastModified": "2026-08-16T20:26:34.864Z",
       "taskCount": 180,
       "completedCount": 95,
       "tags": [
