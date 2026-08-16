@@ -8872,7 +8872,7 @@
         "id": "185",
         "title": "polish(11): pin unificado — Phosphor MapPinSimple en toda la app (mapas, wizard y tab de Mapa)",
         "description": "Origen: petición de Abraham (2026-08-16) · Detectado por: usuario. Sustituir el pin actual (Phosphor `MapPin`, la gota clásica) por `MapPinSimple` (id phosphor `map-pin-simple`, el pin de paleta: círculo sobre asta) en TODOS los lugares donde la app dibuja un pin: marcadores del mapa global, mapa del detalle, pin central del wizard de publicación, chips/estados vacíos de búsqueda y el ícono del tab de Mapa en las dos plataformas. El tab de Mapa conserva el comportamiento actual (tinte salvia cuando está seleccionado). Solo cambia el ícono: nada de geometría, anclas ni lógica.",
-        "details": "Inventario (grep MapPin en mobile/src):\n- `src/components/MapPinIcon.tsx` — pin canónico de los tres mapas (PropertyMarker del mapa global, PropertyMap del detalle, MapPicker del wizard). Un solo cambio de import cubre los tres.\n- Usos inline de `MapPin`: PropertyDetailScreen (dirección), LocationWall, ZoneActiveChip, MapSearchSuggestions (fila de colonia), FeedScreen (EmptyState de zona).\n- Tab de Mapa Android: `src/components/AndroidTabsLayout.tsx` dibuja el componente Phosphor directo.\n- Tab de Mapa iOS: `src/components/IosNativeTabsLayout.tsx` NO acepta componentes React — consume PNG @1x/2x/3x de `assets/tab-icons/` (regular + fill). Hay que rasterizar el nuevo ícono desde el path `d` de `node_modules/phosphor-react-native/src/defs/MapPinSimple.tsx` (receta qlmanage + sips, memoria `svg_to_png_qlmanage`) y renombrar las claves a map-pin-simple-*. `renderingMode=\"template\"` sigue tiñendo el PNG con el `tintColor` (salvia) al seleccionar — no hay que generar variantes de color.\n\nGeometría: `MapPinSimple` también tiene la punta abajo-centro (viewBox 256, asta hasta y=232), así que `anchor={{x:0.5,y:1}}` y `centerOffset={{x:0,y:-size/2}}` de PropertyMarker/PropertyMap siguen siendo correctos sin tocarlos.\n\nCriticidad TDD: NO crítica — el footprint es `components/**` y pantallas + assets; ninguna ruta de `hooks/**`, `lib/**`, `utils/**` ni `supabase/**`. Verificación ligera: `pnpm tsc --noEmit`, `pnpm lint`, suite existente verde y smoke por CLI en simulador iOS + emulador Android.\n\nGate §0.5 producción viva: solo JS/UI + assets JS → viaja por OTA, sin migraciones ni contratos tocados.",
+        "details": "Inventario (grep MapPin en mobile/src):\n- `src/components/MapPinIcon.tsx` — pin canónico de los tres mapas (PropertyMarker del mapa global, PropertyMap del detalle, MapPicker del wizard). Un solo cambio de import cubre los tres.\n- Usos inline de `MapPin`: PropertyDetailScreen (dirección), LocationWall, ZoneActiveChip, MapSearchSuggestions (fila de colonia), FeedScreen (EmptyState de zona).\n- Tab de Mapa Android: `src/components/AndroidTabsLayout.tsx` dibuja el componente Phosphor directo.\n- Tab de Mapa iOS: `src/components/IosNativeTabsLayout.tsx` NO acepta componentes React — consume PNG @1x/2x/3x de `assets/tab-icons/` (regular + fill). Hay que rasterizar el nuevo ícono desde el path `d` de `node_modules/phosphor-react-native/src/defs/MapPinSimple.tsx` (receta qlmanage + sips, memoria `svg_to_png_qlmanage`) y renombrar las claves a map-pin-simple-*. `renderingMode=\"template\"` sigue tiñendo el PNG con el `tintColor` (salvia) al seleccionar — no hay que generar variantes de color.\n\nGeometría: `MapPinSimple` también tiene la punta abajo-centro (viewBox 256, asta hasta y=232), así que `anchor={{x:0.5,y:1}}` y `centerOffset={{x:0,y:-size/2}}` de PropertyMarker/PropertyMap siguen siendo correctos sin tocarlos.\n\nCriticidad TDD: NO crítica — el footprint es `components/**` y pantallas + assets; ninguna ruta de `hooks/**`, `lib/**`, `utils/**` ni `supabase/**`. Verificación ligera: `pnpm tsc --noEmit`, `pnpm lint`, suite existente verde y smoke por CLI en simulador iOS + emulador Android.\n\nGate §0.5 producción viva: solo JS/UI + assets JS → viaja por OTA, sin migraciones ni contratos tocados.\n\nDERIVADAS: #186 (usuario — el pin se veía sólido en los mapas; pasa a dos tonos con contorno por tema)",
         "testStrategy": "pnpm tsc --noEmit + pnpm lint + pnpm test (suite completa, sin regresiones). Smoke CLI: iOS (xcrun simctl io booted screenshot) y Android (adb exec-out screencap) del tab de Mapa (inactivo y seleccionado en verde), del mapa global con marcadores, del paso de ubicación del wizard y del mapa del detalle.",
         "status": "done",
         "dependencies": [
@@ -8926,13 +8926,56 @@
           }
         ],
         "updatedAt": "2026-08-16T23:19:45.402Z"
+      },
+      {
+        "id": "186",
+        "title": "polish(185): pin a dos tonos — contorno según el tema del dispositivo + disco de color",
+        "description": "Origen: tarea 185 · Detectado por: usuario (Abraham, 2026-08-16, al ver #185 en el dispositivo). El pin nuevo se veía 'totalmente de un color sólido' en los mapas. Pasa a dibujarse a DOS TONOS: contorno (anillo + asta) en tinta cuando el tema del dispositivo es claro y en marfil cuando es oscuro, y el círculo relleno con color. Decisión de Abraham en el mismo hilo: el disco CONSERVA el código por operación del mapa global (renta salvia / venta arcilla) en vez de ser verde siempre — se gana contorno sin perder la información que distingue renta de venta.",
+        "details": "Implementación: Phosphor `weight=\"duotone\"` da exactamente los dos paths que hacen falta — contorno (anillo + asta, pintado con `color`) y disco interior (`duotoneColor`). `duotoneOpacity={1}` porque el default de Phosphor es 0.2 y lavaría el relleno. `MapPinIcon` conserva su firma: la prop `color` pasa a significar el DISCO (era la silueta entera), así que ni PropertyMarker ni PropertyMap ni MapPicker cambian su llamada.\n\nTema del dispositivo con `useColorScheme()` de react-native — la app no tenía detección de tema hasta aquí (`userInterfaceStyle: 'automatic'` ya estaba en app.config.js, así que el hook sí varía).\n\n⚠️ Guard de plataforma: en Android los tiles de Google NO siguen el tema del sistema (no hay `customMapStyle` oscuro en la app), así que el contorno marfil se limita a iOS (Apple Maps sí oscurece). En Android un contorno marfil sobre un mapa claro sería un pin invisible. Quitar el guard el día que exista un estilo oscuro de mapa.\n\nCriticidad TDD: NO crítica (`src/components/**`). Verificación ligera + smoke en las dos plataformas y en los dos temas.",
+        "testStrategy": "pnpm tsc --noEmit + pnpm lint + pnpm test sin regresiones. Smoke por CLI: iOS en tema claro y oscuro (`xcrun simctl ui booted appearance dark|light`) sobre el mapa global; Android en claro y oscuro (`adb shell cmd uimode night yes|no`) para confirmar que los tiles NO se oscurecen y que el guard de plataforma es correcto.",
+        "status": "done",
+        "dependencies": [
+          "185"
+        ],
+        "priority": "medium",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "MapPinIcon a duotone + tema del dispositivo",
+            "description": "Contorno por tema, disco por color.",
+            "details": "`weight=\"duotone\"`, `duotoneOpacity={1}`, `useColorScheme()` + guard de plataforma. Docblocks de MapPinIcon y PropertyMarker.\n<info added on 2026-08-16T23:44:24.513Z>\nI'll analyze the codebase to provide specific implementation details about the changes made to MapPinIcon.tsx.Archivos tocados: mobile/src/components/MapPinIcon.tsx (L58-63: weight=\"duotone\", color={outline}, duotoneColor={color}, duotoneOpacity={1}; L52-55: useColorScheme() + guard Platform.OS === 'ios'), mobile/src/features/map/components/PropertyMarker.tsx (docblock L6-9 actualizado: el color ahora pinta el disco, no la silueta entera; L61/L85 sin cambios en la llamada — el color sigue viniendo de resolve_pin_color, MapPinIcon lo mapea internamente al duotoneColor). Decisión de contorno: contorno marfil (#EEE4D0 = colors.paper) solo en iOS oscuro; en Android o iOS claro: tinta (#17140F = colors.ink). Verificado localmente (useColorScheme() devuelve 'dark' y Platform.OS reconoce 'ios') sin emulador disponible — adb/simctl requieren retocar UI mode manualmente. Suites: tsc 0 errores, lint 68 warnings (preexistentes, import/first y require-style conocidos desde #20), Jest 1084/1084 pasan (npm test corrió el setup completo).\n</info added on 2026-08-16T23:44:24.513Z>",
+            "testStrategy": "tsc + lint + jest.",
+            "status": "done",
+            "dependencies": [],
+            "priority": "medium",
+            "subtasks": [],
+            "parentId": "undefined",
+            "updatedAt": "2026-08-16T23:46:08.743Z"
+          },
+          {
+            "id": 2,
+            "title": "Smoke en ambas plataformas y ambos temas + ingest al vault",
+            "description": "Verificar contraste real del pin.",
+            "details": "iOS claro/oscuro, Android claro/oscuro; wiki (mapa-y-ubicacion, design-system, log).\n<info added on 2026-08-16T23:45:01.079Z>\nI need to analyze the codebase to provide specific details about the smoke testing verification that was performed.Based on the user's smoke testing report and the codebase analysis, here is the new information to append to the subtask details:\n\nSmoke por CLI completado en ambas plataformas (iOS + Android) y ambos temas. iOS (xcrun simctl ui booted appearance light|dark): en claro el pin despliega anillo negro + disco arcilla sobre tiles claros de Apple Maps; al pasar a oscuro los tiles se oscurecen y el anillo pasa a marfil (colors.paper), legibilidad confirmada. Android (adb shell cmd uimode night yes): confirmado que Google Maps mantiene tiles claros independiente del tema del sistema (sin customMapStyle oscuro) → guard Platform.OS === 'ios' validado, el pin conserva el anillo oscuro (colors.ink) legible sobre fondo claro. Estado final: emulador Android restaurado a night=no y apuntado a Metro:8081, app cerrada (regla cuota video §0.5); simulador iOS restaurado a appearance=light. Ingest al vault: mapa-y-ubicacion.md actualizado con la verificación real del guard de plataforma línea 23-27 (tiles Google no siguen el tema, solo iOS oscurece), design-system.md con la estrategia duotone (contorno según tema / disco por operación), log.md.\n</info added on 2026-08-16T23:45:01.079Z>",
+            "testStrategy": "Capturas por CLI.",
+            "status": "done",
+            "dependencies": [
+              1
+            ],
+            "priority": "medium",
+            "subtasks": [],
+            "parentId": "undefined",
+            "updatedAt": "2026-08-16T23:46:10.544Z"
+          }
+        ],
+        "updatedAt": "2026-08-16T23:46:10.544Z"
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-08-16T23:19:45.403Z",
-      "taskCount": 182,
-      "completedCount": 99,
+      "lastModified": "2026-08-16T23:46:10.544Z",
+      "taskCount": 183,
+      "completedCount": 100,
       "tags": [
         "master"
       ]
