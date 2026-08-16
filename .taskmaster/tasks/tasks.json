@@ -8390,12 +8390,12 @@
             "title": "stream-webhook extendido de forma ADITIVA + EF mint-ad-urls",
             "description": "🔴 CRÍTICA + no-regresión estricta. La rama de anuncios solo se alcanza cuando el UPDATE sobre property_videos afecta 0 filas; la suite Deno existente debe pasar sin modificarse.",
             "details": "PLAN · agente=supabase · criticidad=CRÍTICA + NO-REGRESIÓN ESTRICTA · impacto-prod=el webhook lo llama Cloudflare, no los builds instalados ⇒ no hay contrato de cliente que romper, pero SÍ un flujo vivo que no puede degradarse · footprint=supabase/functions/stream-webhook/handler.ts (rama nueva) con su suite existente SIN MODIFICAR, supabase/functions/mint-ad-urls/ (nueva)\n\nLA RAMA ADITIVA: hoy el webhook hace UPDATE ... WHERE cloudflare_uid = $1 sobre property_videos, y su comportamiento ante 0 filas YA ES \"200 idempotente\" (handler.ts:100 lo documenta: uid desconocido o transición ya aplicada). La extensión intenta property_videos y SOLO si afecta 0 filas intenta ad_creatives. Por construcción la rama nueva es INALCANZABLE para cualquier video de propiedad ⇒ la suite Deno existente debe pasar SIN TOCARSE. 🔴 Si hubo que modificarla, la rama no fue aditiva y hay que rehacerla — ese es el criterio de aceptación, no una recomendación.\n\nAl pasar a ready se valida la duración 6–30 s con código propio AD_DURATION_INVALID: Stream ya capó el máximo en 30, pero el mínimo de 6 solo se puede verificar contra la duración REAL que reporta el webhook.\n\nmint-ad-urls: calco de mint-poster-urls — batch, autz FAIL-CLOSED POR ITEM (un item no autorizado no contamina el resto ni aborta el lote), NUNCA devuelve una URL sin firmar. Reusa sign_stream_token / build_poster_url de _shared/clients.ts.\n\n🔴 Recordatorio caro de #68: el token firmado RS256 va en el PATH, no en ?token= — 36 tests no cazaron eso en su momento porque estaban contra dobles. Verificar contra el stack local real.\n\n⚠️ CUOTA: al probar el pipeline, verificar que reproduce y PARAR — los minutos de Cloudflare Stream se facturan.\n\n✅ Citas verificadas: stream-webhook/handler.ts:99-100 dice literalmente que mark_ready/mark_failed pueden afectar 0 filas y la respuesta sigue 200. sign_stream_token (_shared/clients.ts:423) y build_poster_url (:470) existen y son reusables.\n\n<info added on 2026-08-16T00:00:00.000Z>\nPLAN + CORRECCIÓN DEL ANALISTA (2026-08-16): sign_stream_token y build_poster_url existen y son reusables en _shared/clients.ts, pero en las líneas :497 y :544 reales — el plan citaba :423/:470. Re-grepear.\n\nRAMA ADITIVA CONFIRMADA VIABLE: stream-webhook/handler.ts:99-100 ya documenta textualmente que mark_ready/mark_failed pueden afectar 0 filas y que la respuesta sigue siendo 200. Por eso el patrón \"intentar property_videos; si afecta 0 filas, intentar ad_creatives\" encaja sin romper nada.\n\nagente=supabase · skills=urbea-supabase,urbea-testing · criticidad=CRÍTICA (supabase/functions/**) · impacto-prod=⚠️ CONTRATO VIVO. Matiz importante: stream-webhook NO lo llaman los builds instalados, lo llama Cloudflare — así que no aplica la regla de OTA-primero. Pero es un flujo vivo que no puede degradarse. GATE DE ACEPTACIÓN: la suite Deno existente de stream-webhook debe pasar SIN MODIFICARSE. Si hay que tocarla, el diseño de la rama aditiva está mal.\n\nmint-ad-urls: calco de mint-poster-urls — nunca una URL sin firmar, autz fail-closed POR ITEM.\n⚠️ Cuota real: el creativo recorriendo uploading→processing→ready ejercita Stream de verdad. Verificar y PARAR.\n</info added on 2026-08-16T00:00:00.000Z>",
-            "status": "pending",
+            "status": "in-progress",
             "dependencies": [
               1
             ],
             "testStrategy": "Deno: creativo recorre uploading→processing→ready contra el webhook REAL de Stream en local (no un mock); la suite existente de stream-webhook pasa SIN modificarse; duración fuera de rango ⇒ failed con AD_DURATION_INVALID; mint-ad-urls nunca emite URL sin firmar y deniega item ajeno sin filtrar existencia.",
-            "updatedAt": "2026-08-16T00:00:00.000Z",
+            "updatedAt": "2026-08-16T21:28:29.540Z",
             "parentId": "169"
           },
           {
@@ -8456,7 +8456,7 @@
             "parentId": "undefined"
           }
         ],
-        "updatedAt": "2026-08-16T21:28:22.019Z"
+        "updatedAt": "2026-08-16T21:28:29.540Z"
       },
       {
         "id": "170",
@@ -8794,7 +8794,7 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-08-16T21:28:22.020Z",
+      "lastModified": "2026-08-16T21:28:29.540Z",
       "taskCount": 181,
       "completedCount": 95,
       "tags": [

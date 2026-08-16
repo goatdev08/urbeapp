@@ -94,6 +94,7 @@ import type {
   AdvertiserAuthorizer,
   RegisterUploadingAdCreativeParams,
 } from "../mint-ad-upload-url/types.ts";
+import type { AdUrlMinter, MintedAdUrl } from "../mint-ad-urls/types.ts";
 
 /** Cliente supabase-js con service_role (bypassa RLS y column-grants). */
 export function service_client(): SupabaseClient {
@@ -1604,6 +1605,26 @@ export function make_ad_creative_registrar(
       if (error) {
         throw new Error(`Insert en ad_creatives falló: ${error.message}`);
       }
+    },
+  };
+}
+
+/**
+ * STUB RED — subtarea 169.5. Implementación real pendiente (GREEN): calco de
+ * make_poster_url_minter (89.1) reusando sign_stream_token/build_poster_url,
+ * pero contra ad_creatives (ownership por agency_id directo + resolución de la
+ * agencia del caller vía agency_members, mismo mecanismo que
+ * make_advertiser_authorizer) en vez de property_videos⋈properties. Ver el
+ * contrato completo y las decisiones de diseño documentadas en
+ * _shared/ad_url_minter.test.ts y mint-ad-urls/types.ts.
+ */
+export function make_ad_url_minter(
+  _client: SupabaseClient,
+  _hlsConfig?: HlsSignerConfig,
+): AdUrlMinter {
+  return {
+    mint_ad_urls(_creative_ids: string[], _caller_id: string): Promise<MintedAdUrl[]> {
+      throw new Error("not_implemented");
     },
   };
 }
