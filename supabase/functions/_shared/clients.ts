@@ -59,6 +59,9 @@ import type {
   VideoRegistrar,
 } from "../mint-upload-url/types.ts";
 import type {
+  AdCreativeStatusUpdater,
+  MarkAdCreativeFailedParams,
+  MarkAdCreativeReadyParams,
   MarkVideoFailedParams,
   MarkVideoReadyParams,
   VideoEventNotifier,
@@ -1610,21 +1613,137 @@ export function make_ad_creative_registrar(
 }
 
 /**
- * STUB RED — subtarea 169.5. Implementación real pendiente (GREEN): calco de
+ * STUB RED — subtarea 169.5 (cierre del hueco de adapter, 2026-08-16).
+ * Implementación real pendiente (GREEN, agente supabase): calco de
+ * make_video_status_updater (68.5) pero contra `ad_creatives`/`cloudflare_uid`
+ * en vez de `property_videos`, SIN `.is('deleted_at', null)` (esa columna no
+ * existe en ad_creatives, 20260816000005_ads_schema.sql). Debe redondear
+ * `duration_seconds` (columna `integer`) DESPUÉS de recibirlo — la validación
+ * [6,30] contra el valor crudo fraccionario ya ocurrió en stream-webhook/handler.ts
+ * ANTES de llegar aquí; ver el contrato completo y las decisiones de diseño
+ * (incluida la fijación round-vs-trunc) en
+ * _shared/ad_creative_status_updater.test.ts.
+ */
+export function make_ad_creative_status_updater(
+  _client: SupabaseClient,
+): AdCreativeStatusUpdater {
+  return {
+    mark_ready(_params: MarkAdCreativeReadyParams): Promise<number> {
+      throw new Error("not_implemented");
+    },
+    mark_failed(_params: MarkAdCreativeFailedParams): Promise<number> {
+      throw new Error("not_implemented");
+    },
+  };
+}
+
+/** Fila cruda de la query ad_creatives ⋈ ads usada por make_ad_url_minter. */
+interface AdCreativeUrlRow {
+  id: string;
+  agency_id: string;
+  cloudflare_uid: string | null;
+  duration_seconds: number | null;
+  status: string;
+  ads: { status: string; starts_at: string; ends_at: string }[] | null;
+}
+
+/**
+ * Adaptador real de AdUrlMinter (subtarea 169.5): calco de
  * make_poster_url_minter (89.1) reusando sign_stream_token/build_poster_url,
- * pero contra ad_creatives (ownership por agency_id directo + resolución de la
- * agencia del caller vía agency_members, mismo mecanismo que
- * make_advertiser_authorizer) en vez de property_videos⋈properties. Ver el
- * contrato completo y las decisiones de diseño documentadas en
- * _shared/ad_url_minter.test.ts y mint-ad-urls/types.ts.
+ * pero contra ad_creatives (ownership por agency_id directo — NO join a
+ * properties) en vez de property_videos⋈properties. service_role bypassa
+ * RLS — el filtro de abajo, hecho en JS, es la ÚNICA barrera de seguridad
+ * (fail-closed, nunca se olvida).
+ *
+ * 1. Resuelve la agencia ACTIVA del caller — MISMA query que
+ *    make_advertiser_authorizer (169.4): agency_members.select('agency_id')
+ *    .eq('user_id',caller_id).eq('status','active').maybeSingle(). SIN el
+ *    paso adicional de org_can_advertise: mint-ad-urls solo lee, no publica.
+ * 2. Trae ad_creatives ⋈ ads (reverse FK ads.creative_id) filtrando
+ *    status='ready' AND id IN (creative_ids).
+ * 3. Autoriza cada fila: agency_id === agencia del caller (cualquier estado
+ *    del creativo, ya filtrado a 'ready' arriba) O algún `ads` embebido con
+ *    status='active' AND now() BETWEEN starts_at AND ends_at (público y
+ *    vigente — el análogo de "properties.status='active'"). No autorizado →
+ *    se OMITE, sin distinguir "no existe" de "no autorizado".
+ * 4. Sin cloudflare_uid en la fila → se OMITE.
+ * 5. Firma reusando sign_stream_token/build_poster_url (mismo mecanismo que
+ *    make_poster_url_minter): token EN EL PATH, nunca query param. ad_creatives
+ *    NO tiene columna thumbnail_pct — se le pasa siempre `null` (usa el
+ *    default 50% de build_poster_url). Error de firma (JWK inválido, hlsConfig
+ *    ausente) → se OMITE esa fila, SIN lanzar — el batch nunca se rompe por
+ *    un item.
+ *
+ * ponytail: batch degradado — un error de red/DB en cualquiera de las dos
+ * queries devuelve [] en vez de lanzar, mismo patrón que make_poster_url_minter.
  */
 export function make_ad_url_minter(
-  _client: SupabaseClient,
-  _hlsConfig?: HlsSignerConfig,
+  client: SupabaseClient,
+  hlsConfig?: HlsSignerConfig,
 ): AdUrlMinter {
   return {
-    mint_ad_urls(_creative_ids: string[], _caller_id: string): Promise<MintedAdUrl[]> {
-      throw new Error("not_implemented");
+    async mint_ad_urls(
+      creative_ids: string[],
+      caller_id: string,
+    ): Promise<MintedAdUrl[]> {
+      if (creative_ids.length === 0) return [];
+
+      const { data: member_row } = await client
+        .from("agency_members")
+        .select("agency_id")
+        .eq("user_id", caller_id)
+        .eq("status", "active")
+        .maybeSingle();
+      const caller_agency_id = (member_row as { agency_id: string } | null)?.agency_id ?? null;
+
+      const { data, error } = await client
+        .from("ad_creatives")
+        .select("id, agency_id, cloudflare_uid, duration_seconds, status, ads(status, starts_at, ends_at)")
+        .in("id", creative_ids)
+        .eq("status", "ready");
+
+      if (error) return [];
+
+      const rows = (data as unknown) as AdCreativeUrlRow[];
+      const now = new Date();
+
+      const results: MintedAdUrl[] = [];
+      for (const row of rows) {
+        const is_owner_member = caller_agency_id !== null && row.agency_id === caller_agency_id;
+        const has_active_vigente_ad = (row.ads ?? []).some((ad) => {
+          if (ad.status !== "active") return false;
+          const starts_at = new Date(ad.starts_at);
+          const ends_at = new Date(ad.ends_at);
+          return starts_at <= now && now <= ends_at;
+        });
+
+        const authorized = is_owner_member || has_active_vigente_ad;
+        if (!authorized) {
+          continue;
+        }
+
+        if (!row.cloudflare_uid || !hlsConfig) {
+          continue;
+        }
+
+        try {
+          const { token, domain } = await sign_stream_token(
+            row.cloudflare_uid,
+            hlsConfig,
+          );
+          const posterUrl = build_poster_url(
+            domain,
+            token,
+            null, // ad_creatives no tiene thumbnail_pct — siempre el default 50%
+            row.duration_seconds,
+          );
+          results.push({ creative_id: row.id, posterUrl });
+        } catch {
+          // fail-closed: JWK inválido u otro error de firmado → excluir solo esta fila
+        }
+      }
+
+      return results;
     },
   };
 }
