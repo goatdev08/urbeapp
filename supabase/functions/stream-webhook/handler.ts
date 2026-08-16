@@ -112,6 +112,37 @@ async function handle_ad_ready_transition(
   await updater.mark_ready({ cloudflare_uid, thumbnail_url, duration_seconds: raw_duration });
 }
 
+/**
+ * 🔴 DECISIÓN TOMADA (coordinador, 2026-08-16): un fallo de infraestructura en
+ * la rama de ad_creatives SE PROPAGA — nunca se traga a un 200. No "arreglar"
+ * esto envolviéndolo en un catch que devuelva 200; es la decisión documentada,
+ * no un descuido.
+ *
+ * Por qué: `ad_creatives.status='processing'` NO tiene ventana de expiración
+ * (169.4 — el reaper solo cubre 'uploading'). Si este error se tragara aquí,
+ * el creativo quedaría atorado en 'processing' PARA SIEMPRE, sin ruta de
+ * recuperación. El reintento de Cloudflare sobre este mismo webhook es el
+ * ÚNICO mecanismo que lo rescata — dejar que la excepción llegue a
+ * Deno.serve (→ 500 + reintento) es la conducta correcta, no un efecto
+ * colateral.
+ *
+ * Esto NUNCA ocurre ante un `cloudflare_uid` desconocido (ese caso afecta 0
+ * filas y sigue devolviendo 200 normal, como siempre) — solo ante un fallo
+ * REAL de infraestructura sobre `ad_creatives` (red/DB), donde reintentar SÍ
+ * es lo correcto. El mensaje re-lanzado conserva la causa original
+ * (logueable, nunca reemplazada) y nombra explícitamente 'ad_creatives' — un
+ * webhook que atiende dos dominios (property_videos Y ad_creatives) necesita
+ * poder identificar cuál falló solo con el mensaje.
+ */
+async function run_ad_creatives_branch(action: () => Promise<unknown>): Promise<void> {
+  try {
+    await action();
+  } catch (cause) {
+    const cause_message = cause instanceof Error ? cause.message : String(cause);
+    throw new Error(`Rama de anuncios (ad_creatives) falló: ${cause_message}`);
+  }
+}
+
 // ── Handler ───────────────────────────────────────────────────────────────
 
 export function make_stream_webhook_handler(
@@ -162,7 +193,10 @@ export function make_stream_webhook_handler(
         duration_seconds: raw_duration,
       });
       if (property_rows_affected === 0 && deps.adCreativeStatusUpdater) {
-        await handle_ad_ready_transition(deps.adCreativeStatusUpdater, uid, thumbnail_url, raw_duration);
+        const adCreativeStatusUpdater = deps.adCreativeStatusUpdater;
+        await run_ad_creatives_branch(() =>
+          handle_ad_ready_transition(adCreativeStatusUpdater, uid, thumbnail_url, raw_duration)
+        );
       }
       await deps.notifier.notify_video_event("video_ready", uid);
     } else if (state === "error") {
@@ -172,7 +206,10 @@ export function make_stream_webhook_handler(
         failure_reason: reason,
       });
       if (property_rows_affected === 0 && deps.adCreativeStatusUpdater) {
-        await deps.adCreativeStatusUpdater.mark_failed({ cloudflare_uid: uid, reason_code: reason });
+        const adCreativeStatusUpdater = deps.adCreativeStatusUpdater;
+        await run_ad_creatives_branch(() =>
+          adCreativeStatusUpdater.mark_failed({ cloudflare_uid: uid, reason_code: reason })
+        );
       }
       await deps.notifier.notify_video_event("video_failed", uid);
     }
