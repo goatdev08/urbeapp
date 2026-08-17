@@ -57,7 +57,7 @@ El cliente **no** puede llamar a `org_can_advertise` (el wrapper `public` está 
 
 ## Lo que NO existe todavía
 - **Ningún pago.** El slot lo otorga el admin a mano con `grant_ad_slot_atomic` (`service_role`); `ads.purchase_id` queda NULL toda la beta, listo para que Stripe solo lo llene ([[monetizacion-pago-por-video]]).
-- **Ninguna ruta para que el anunciante cree su campaña** — el wizard solo persiste el creativo. Derivada **#187**.
+- **Ninguna ruta para que el anunciante cree su campaña** — el wizard solo persiste el creativo. Derivada **#191**.
 - **La UI de moderación admin** llega con #81; en beta se modera por Studio/SQL, igual que #71.5.
 - **Servir los anuncios en el feed** es la tarea siguiente (170), no ésta.
 
