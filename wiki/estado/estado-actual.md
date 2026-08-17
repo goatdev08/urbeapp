@@ -11,6 +11,12 @@ actualizado: 2026-08-16
 ## 🔴 Vigente desde 2026-08-10 — PRODUCCIÓN VIVA
 **Hay personas reales conectadas probando la app y la base se puebla poco a poco.** Todo cambio se piensa para producción: nada de seeds/resets al remoto, migraciones aditivas con rollback, contratos publicados se deprecian en dos pasos (cliente-OTA-primero), y ante duda gana producción. Reglas completas en **CLAUDE.md §0.5**; decisión en [[0009-produccion-viva]]; el gate corre en el analista (Paso 5.5), `/tm-plan` (impacto-prod) y `/tm-tarea` (cierre 6.0).
 
+## Hoy (2026-08-16) — Fix: tab Guardados sin título para usuarios no-agente (#187)
+
+- **✅ #187 en `tarea/187-guardados-tab-titulo`, mergeada (PR #87).** Reporte de Abraham: el tab de Guardados (entrada directa, usuarios normales) no pintaba ningún título arriba — el otro acceso (botón del perfil → `/profile/saved`) sí trae Stack header con "Guardados". Fix aditivo: cuando `!has_header`, el `ListHeaderComponent` de `SavedScreen.tsx` pinta el título, mismo patrón ya usado en el tab CRM.
+- **⚠️ Sin verificación interactiva del camino del tab** en esta sesión: las 4 cuentas demo remotas son agent/admin (Guardados-tab es `href:null` para agentes) y `simctl` no soporta taps en iOS. Se verificó que el camino Stack (`/profile/saved`) sigue igual y `tsc`/`lint` en verde. Abraham decidió mergear de todos modos (cambio de solo-texto, patrón ya probado).
+- **📤 OTA enviado** a ambos canales (Android `preview` runtime `374ba3dd…`, iOS `production` runtime `ca62b26a…` — coinciden con los builds instalados, entrega real no NO-OP).
+
 ## Hoy (2026-08-16) — Pin único `MapPinSimple` (#185)
 
 - **✅ #185 en `tarea/185-pin-map-pin-simple`.** Pedido de Abraham: el pin de paleta (`map-pin-simple` de Phosphor) sustituye a la gota en TODA la app — los 3 mapas (vía `MapPinIcon`), la dirección del detalle, el chip de zona, las sugerencias de colonia, el estado vacío del feed y el **tab de Mapa en ambas plataformas** (que conserva el verde al seleccionar). Solo el ícono: geometría, anclas y lógica intactas.
