@@ -31,9 +31,14 @@
  * contra un backend que aún no tiene las columnas/tablas.
  *
  * `can_advertise` selecciona una columna que los tipos generados
- * (supabase/types/database.types.ts) todavía NO conocen — el mismo drift de
- * schema que este hook está diseñado para tolerar en runtime (ver arriba).
- * Cast local a un tipo mínimo en vez de `as never`/`any` disperso.
+ * (supabase/types/database.types.ts) todavía NO conocen — la regeneración
+ * lleva 10 migraciones de retraso (última en `ae35346`, tarea 167;
+ * `grep -c can_advertise` da 0). Sin el cast, tsc falla con
+ * `TS2322: SelectQueryError<"column 'can_advertise' does not exist...">`.
+ * El cast NO es lo que hace al hook tolerante en runtime — eso lo hace el
+ * chequeo de `agency_error` más abajo (testeado por EC-3/4/5); el cast solo
+ * evita que el compilador bloquee un `select` que el runtime SÍ maneja.
+ * Ver tarea derivada #186 (regenerar los tipos).
  */
 
 import { useEffect, useState } from 'react';
@@ -60,8 +65,9 @@ export interface UseCanAdvertiseResult {
 }
 
 type MemberRoleRow = { agency_id: string; member_role: string } | null;
-// can_advertise aún no está en los tipos generados (schema drift deliberado,
-// ver docblock) — tipo local mínimo para esta query, no `any`.
+// ponytail: cast táctico — can_advertise no está en los tipos generados
+// (10 migraciones de retraso, derivada #186 los regenera). Local, 3 campos,
+// no `any` disperso; techo conocido: se retira cuando #186 cierre.
 type AgencyCapabilityRow = { can_advertise: boolean; deleted_at: string | null; status: string } | null;
 
 export function useCanAdvertise(): UseCanAdvertiseResult {
@@ -73,7 +79,16 @@ export function useCanAdvertise(): UseCanAdvertiseResult {
     let ignore = false;
 
     async function fetch_capability(): Promise<void> {
-      if (!ignore) set_loading(true);
+      // Reinicia AMBOS al arrancar cada resolución (no solo loading): un
+      // cambio de user?.id no debe dejar el can_advertise=true del usuario
+      // anterior visible mientras la nueva consulta está pendiente (EC-21) —
+      // la promesa del docblock ("can_advertise=false SIEMPRE que
+      // loading=true") debe cumplirse también a mitad de una transición de
+      // sesión, no solo en el montaje inicial.
+      if (!ignore) {
+        set_loading(true);
+        set_can_advertise(false);
+      }
 
       // Sin sesión — estado seguro, ninguna query se dispara.
       if (!user?.id) {
