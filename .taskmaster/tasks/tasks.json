@@ -8430,13 +8430,13 @@
             "title": "Gate de capacidad por RUTA: hook useCanAdvertise + Redirect (sin can_advertise la ruta NO existe)",
             "description": "Ligera (OTA). Wizard corto video→título→CTA→zonas→revisión. El gating es de RUTA, no de botón, y el selector de zonas reusa search_places de #157.",
             "details": "PLAN · agente=mobile · criticidad=NO crítica (verificación ligera) · impacto-prod=OTA · footprint=mobile/app/(protected)/ads/new/*.tsx\n\n⚠️ La carpeta ads/ no existe en mobile/app/(protected)/ (hoy: (tabs), agency, profile, property, publish, upgrade.tsx). Vecinas de referencia: publish/, agency/.\n\n🔴 GATING REAL: sin can_advertise la RUTA NO EXISTE — no basta ocultar el botón, porque un deep link la alcanzaría igual. Patrón del gating de my-listings / invitaciones (#34.3): la ruta redirige o no se monta.\n\nPASOS: video (6–30 s) → título → CTA → zonas → enviar a revisión. El wizard deja el ad en pending_review y NUNCA en active: pasar a active es exclusivo del admin (169.2).\n\nREUSO OBLIGATORIO antes de escribir componentes nuevos: SelectionCard y StepIndicator del design system; para el selector de zonas, usePlaceSearch / MapSearchSuggestions de #157 contra la RPC search_places. Consultar wiki/codebase/mapa-codebase.md primero.\n\n⚠️ CLAUDE.md §8: la pantalla NO está en urbea-identidad-visual.html ni en el prototipo standalone. El techo de alcance es un wizard equivalente al de publicación, sin UI inventada; si hace falta un componente de firma nuevo, sale como tarea derivada, no se improvisa aquí.\n\n✅ Los 4 componentes a reusar existen tal cual: SelectionCard (mobile/src/features/publish/components/SelectionCard.tsx), StepIndicator (mobile/src/components/StepIndicator.tsx), usePlaceSearch (mobile/src/features/map/hooks/usePlaceSearch.ts) y MapSearchSuggestions (mobile/src/features/map/components/MapSearchSuggestions.tsx).\n✅ Verificado que \"ads\"/\"anuncio\" NO aparecen en urbea-identidad-visual.html ni en el prototipo standalone: no hay pantalla de referencia, el techo es el wizard de publicación.\nSkills: urbea-expo + urbea-testing (aunque sea ligera, el wizard lleva smoke).\n\n<info added on 2026-08-16T00:00:00.000Z>\nPLAN (decisión de Abraham 2026-08-16, tras el análisis de subtareas): esta subtarea se PARTIÓ en dos.\n169.8 = SOLO el gate de capacidad. 169.9 = las pantallas del wizard.\n\nPOR QUÉ: el plan original marcaba 169.8 como \"ligera (OTA)\". Es INCORRECTO. El criterio de aceptación (\"sin la capacidad la RUTA no existe, no basta ocultar el botón\") se implementa en este repo con un hook que consulta la capacidad + <Redirect> de Expo Router — patrón vivo en mobile/app/(protected)/agency/invitations.tsx:26,32,50,66 (useAgencyRole().isOwner + Redirect). Ese hook cae en mobile/**/hooks/** → CRÍTICA por la regla determinista de CLAUDE.md §5, sin excepción.\n\nagente=mobile · skills=urbea-expo,urbea-testing · criticidad=CRÍTICA (TDD estricto: RED → GREEN → guardian) · impacto-prod=sin riesgo (JS puro, viaja por OTA) · footprint=mobile/src/features/ads/hooks/useCanAdvertise.ts (nuevo) + __tests__, mobile/app/(protected)/ads/_layout.tsx (gate por ruta).\n\n🔴 CRITERIO DE ACEPTACIÓN AÑADIDO (decisión de Abraham 2026-08-16, estrategia de release): el gate debe FALLAR CERRADO si la columna agencies.can_advertise o las tablas de anuncios NO existen todavía en el backend. Razón: 168–172 se mergean progresivamente a main pero NO se despliega nada hasta que la épica esté probada; si en ese intervalo sale un OTA urgente por otra causa, el JS de anuncios viaja igual (el OTA sube el working dir completo de main) contra un backend que aún no tiene el schema. Un error de query (42703 column does not exist / 42P01 relation does not exist) debe resolverse como \"no puede anunciar\" — nunca como \"sí puede\" ni como pantalla rota. El RED debe incluir ese caso explícitamente.\n\nDECIDIR AQUÍ: si el gate extiende mobile/src/features/leads/hooks/useAgencyRole.ts (lo consumen también CRMScreen, agency/invitations.tsx y agency/members.tsx → no-regresión obligatoria) o si es un hook nuevo dedicado. Preferencia por defecto: hook NUEVO (useCanAdvertise), para no ampliar la superficie de un hook que ya tiene 3 consumidores vivos.\n</info added on 2026-08-16T00:00:00.000Z>",
-            "status": "pending",
+            "status": "in-progress",
             "dependencies": [
               6,
               7
             ],
             "testStrategy": "pnpm tsc --noEmit, pnpm lint, smoke por CLI: la ruta no existe sin capacidad (probar con deep link), el wizard completo deja el ad en pending_review. Terminar en stopApp.",
-            "updatedAt": "2026-08-16T00:00:00.000Z",
+            "updatedAt": "2026-08-17T00:20:40.967Z",
             "parentId": "169"
           },
           {
@@ -8456,7 +8456,7 @@
             "parentId": "undefined"
           }
         ],
-        "updatedAt": "2026-08-17T00:20:30.260Z"
+        "updatedAt": "2026-08-17T00:20:40.967Z"
       },
       {
         "id": "170",
@@ -8944,7 +8944,7 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-08-17T00:20:30.260Z",
+      "lastModified": "2026-08-17T00:20:40.967Z",
       "taskCount": 185,
       "completedCount": 97,
       "tags": [
