@@ -103,9 +103,27 @@
  * - (EC-15) loading_inicial_true_can_advertise_false_primera_query_pendiente
  * - (EC-16) loading_true_can_advertise_false_segunda_query_pendiente
  * - (EC-17) tras_resolver_loading_false
+ *
+ * ### Argumentos de las queries (guardián 2026-08-16 — precedente #155
+ * Guardados: scoping por user_id roto en silencio con cuentas admin)
+ * Sin estos asserts, el hook podría consultar la membresía de OTRA persona
+ * (user_id fijo), la de un miembro EXPULSADO (status:'removed') o la
+ * capacidad de OTRA organización (agency_id fijo) y los EC-1..17 seguirían
+ * en verde — el mock encadenable anterior ignoraba lo que se le pasaba a
+ * `.eq()`. El mock ahora es TOLERANTE a la forma de la cadena (cualquier
+ * método encadenable registra su llamada y devuelve el mismo proxy — un
+ * refactor de `.eq().eq()` a `.match({...})` no revienta con TypeError) pero
+ * ESTRICTO en verificar los argumentos reales.
+ * - (EC-18) agency_members_query_usa_el_user_id_real_del_caller_no_uno_fijo
+ * - (EC-19) agency_members_query_filtra_status_active_literal
+ * - (EC-20) agencies_query_usa_el_agency_id_resuelto_por_la_query_1_no_uno_fijo
+ *
+ * ### Invariante de transición de sesión (pedido por el coordinador — la
+ * dará por buena 169.9)
+ * - (EC-21) cambio_de_usuario_resetea_can_advertise_a_false_de_inmediato
  */
 
-import { renderHook } from '@testing-library/react-native';
+import { renderHook, act } from '@testing-library/react-native';
 
 // ---------------------------------------------------------------------------
 // Mock de useAuth — ANTES de cualquier import del SUT.
@@ -151,10 +169,49 @@ type MembersResult = { data: MembersRow; error: { code?: string; message: string
 type AgenciesRow = { can_advertise: boolean; deleted_at: string | null; status: string } | null;
 type AgenciesResult = { data: AgenciesRow; error: { code?: string; message: string } | null };
 
+/** Una llamada encadenable capturada: { method: 'eq', args: ['user_id', uid] }, etc. */
+type RecordedCall = { method: string; args: unknown[] };
+
+/**
+ * Builder encadenable TOLERANTE A LA FORMA de la cadena, ESTRICTO en los
+ * ARGUMENTOS (guardián 2026-08-16). Cualquier método (`select`, `eq`,
+ * `match`, `is`, ...) queda registrado en `calls` y devuelve el MISMO proxy
+ * — así un refactor que NO cambia comportamiento (p.ej. `.eq().eq()` →
+ * `.match({user_id, status})`) no revienta el mock con
+ * `TypeError: maybeSingle is not a function` (el defecto que tenía el mock
+ * anterior: quitar UN .eq() tumbaba 16 tests con un TypeError en vez de con
+ * una aserción). `maybeSingle()`/`single()` cortan la cadena y resuelven la
+ * promesa inyectada — nunca un builder vacío (lección de 169.7: el mock
+ * responde de verdad).
+ */
+function make_chainable_query(result: unknown, calls: RecordedCall[]): Record<string, (...args: unknown[]) => unknown> {
+  const resolved_promise = result instanceof Promise ? result : Promise.resolve(result);
+  const proxy: Record<string, (...args: unknown[]) => unknown> = new Proxy(
+    {},
+    {
+      get(_target, prop: string) {
+        if (prop === 'maybeSingle' || prop === 'single') {
+          return () => resolved_promise;
+        }
+        return (...args: unknown[]) => {
+          calls.push({ method: prop, args });
+          return proxy;
+        };
+      },
+    },
+  );
+  return proxy;
+}
+
+/** Busca la PRIMERA llamada registrada a `method` — para asertar sus argumentos reales. */
+function find_call(calls: RecordedCall[], method: string): RecordedCall | undefined {
+  return calls.find((c) => c.method === method);
+}
+
 /**
  * Mock de `supabase.from(table)` enrutado por nombre de tabla — cada tabla
- * tiene su propia cadena encadenable que RESUELVE de verdad (nunca un
- * builder vacío que reviente con TypeError, lección de 169.7).
+ * tiene su propia cadena encadenable (`make_chainable_query`) que RESUELVE
+ * de verdad.
  *
  * agency_members: .select(...).eq('user_id', uid).eq('status', 'active').maybeSingle()
  * agencies:       .select('can_advertise, deleted_at, status').eq('id', agency_id).maybeSingle()
@@ -168,29 +225,22 @@ function make_supabase_mock(opts: {
     agencies_result = { data: { can_advertise: true, deleted_at: null, status: 'active' }, error: null },
   } = opts;
 
-  const members_maybe_single = jest.fn().mockReturnValue(
-    members_result instanceof Promise ? members_result : Promise.resolve(members_result),
-  );
-  const members_eq_status = jest.fn().mockReturnValue({ maybeSingle: members_maybe_single });
-  const members_eq_user = jest.fn().mockReturnValue({ eq: members_eq_status });
-  const members_select = jest.fn().mockReturnValue({ eq: members_eq_user });
+  const members_calls: RecordedCall[] = [];
+  const agencies_calls: RecordedCall[] = [];
 
-  const agencies_maybe_single = jest.fn().mockReturnValue(
-    agencies_result instanceof Promise ? agencies_result : Promise.resolve(agencies_result),
-  );
-  const agencies_eq_id = jest.fn().mockReturnValue({ maybeSingle: agencies_maybe_single });
-  const agencies_select = jest.fn().mockReturnValue({ eq: agencies_eq_id });
+  const members_builder = make_chainable_query(members_result, members_calls);
+  const agencies_builder = make_chainable_query(agencies_result, agencies_calls);
 
   const from = jest.fn((table: string) => {
-    if (table === 'agency_members') return { select: members_select };
-    if (table === 'agencies') return { select: agencies_select };
+    if (table === 'agency_members') return members_builder;
+    if (table === 'agencies') return agencies_builder;
     throw new Error(`tabla no mockeada en el test: ${table}`);
   });
 
   return {
     from,
-    _members: { select: members_select, eq_user: members_eq_user, eq_status: members_eq_status, maybe_single: members_maybe_single },
-    _agencies: { select: agencies_select, eq_id: agencies_eq_id, maybe_single: agencies_maybe_single },
+    _members: { calls: members_calls },
+    _agencies: { calls: agencies_calls },
   };
 }
 
@@ -312,7 +362,8 @@ describe('useCanAdvertise', () => {
 
     await renderHook(() => useCanAdvertise());
 
-    const select_arg = mock._agencies.select.mock.calls[0]?.[0] as string;
+    const select_call = find_call(mock._agencies.calls, 'select');
+    const select_arg = select_call?.args[0] as string;
     expect(select_arg).toEqual(expect.stringContaining('can_advertise'));
     expect(select_arg).toEqual(expect.stringContaining('deleted_at'));
     expect(select_arg).toEqual(expect.stringContaining('status'));
@@ -433,5 +484,91 @@ describe('useCanAdvertise', () => {
     const { result } = await renderHook(() => useCanAdvertise());
 
     expect(result.current.loading).toBe(false);
+  });
+
+  // ── Argumentos de las queries (guardián — precedente #155 Guardados) ──────
+
+  it('(EC-18) agency_members_query_usa_el_user_id_real_del_caller_no_uno_fijo: useAuth() devuelve un usuario DISTINTO del habitual → la query filtra .eq("user_id", <ese id>), no un literal fijo en el hook', async () => {
+    const OTHER_USER_ID = 'usuario-uuid-DISTINTO-169-8-scoping';
+    mock_use_auth.mockReturnValue({
+
+      user: { id: OTHER_USER_ID } as any,
+      session: null,
+      isLoading: false,
+      signIn: jest.fn(),
+      signOut: jest.fn(),
+      requestPasswordReset: jest.fn(),
+      updatePassword: jest.fn(),
+    } as any);
+    const mock = make_supabase_mock();
+    mock_supabase_holder.client = mock;
+
+    await renderHook(() => useCanAdvertise());
+
+    const user_id_call = mock._members.calls.find(
+      (c) => c.method === 'eq' && c.args[0] === 'user_id',
+    );
+    expect(user_id_call?.args).toEqual(['user_id', OTHER_USER_ID]);
+  });
+
+  it('(EC-19) agency_members_query_filtra_status_active_literal: la query 1 filtra .eq("status", "active") — un miembro EXPULSADO (status="removed") no debe ni siquiera aparecer en el resultado', async () => {
+    const mock = make_supabase_mock();
+    mock_supabase_holder.client = mock;
+
+    await renderHook(() => useCanAdvertise());
+
+    const status_call = mock._members.calls.find(
+      (c) => c.method === 'eq' && c.args[0] === 'status',
+    );
+    expect(status_call?.args).toEqual(['status', 'active']);
+  });
+
+  it('(EC-20) agencies_query_usa_el_agency_id_resuelto_por_la_query_1_no_uno_fijo: la query 1 resuelve un agency_id DISTINTO del habitual → la query 2 filtra .eq("id", <ese agency_id>), no un literal fijo en el hook', async () => {
+    const OTHER_AGENCY_ID = 'agencia-uuid-DISTINTA-169-8-scoping';
+    mock_supabase_holder.client = make_supabase_mock({
+      members_result: { data: { agency_id: OTHER_AGENCY_ID, member_role: 'owner' }, error: null },
+    });
+
+    await renderHook(() => useCanAdvertise());
+
+    const id_call = mock_supabase_holder.client._agencies.calls.find(
+      (c) => c.method === 'eq' && c.args[0] === 'id',
+    );
+    expect(id_call?.args).toEqual(['id', OTHER_AGENCY_ID]);
+  });
+
+  // ── Invariante de transición de sesión ─────────────────────────────────────
+
+  it('(EC-21) cambio_de_usuario_resetea_can_advertise_a_false_de_inmediato: tras resolver true para el usuario A, un cambio a un usuario B (nueva query pendiente) debe dejar can_advertise=false DE INMEDIATO — no conservar el true del usuario anterior mientras loading=true', async () => {
+    mock_supabase_holder.client = make_supabase_mock({
+      members_result: { data: { agency_id: TEST_AGENCY_ID, member_role: 'owner' }, error: null },
+      agencies_result: { data: { can_advertise: true, deleted_at: null, status: 'active' }, error: null },
+    });
+
+    const { result, rerender } = await renderHook(() => useCanAdvertise());
+
+    expect(result.current.can_advertise).toBe(true);
+    expect(result.current.loading).toBe(false);
+
+    // Cambio de sesión a un usuario B distinto — la nueva consulta queda pendiente.
+    const pending = new Promise<never>(() => {});
+    mock_supabase_holder.client = make_supabase_mock({ members_result: pending });
+    mock_use_auth.mockReturnValue({
+
+      user: { id: 'usuario-uuid-OTRO-169-8-transicion' } as any,
+      session: null,
+      isLoading: false,
+      signIn: jest.fn(),
+      signOut: jest.fn(),
+      requestPasswordReset: jest.fn(),
+      updatePassword: jest.fn(),
+    } as any);
+
+    await act(async () => {
+      rerender(undefined);
+    });
+
+    expect(result.current.loading).toBe(true);
+    expect(result.current.can_advertise).toBe(false);
   });
 });
