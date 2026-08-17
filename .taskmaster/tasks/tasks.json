@@ -8969,6 +8969,20 @@
           }
         ],
         "updatedAt": "2026-08-16T23:46:10.544Z"
+      },
+      {
+        "id": "187",
+        "title": "fix(saved): título \"Guardados\" visible en el tab directo (usuarios no-agente)",
+        "description": "El tab (tabs)/saved (entrada directa para usuarios normales) no pintaba ningún título arriba — solo un espaciador. El otro acceso (botón del perfil → /profile/saved) sí trae el Stack header con el título \"Guardados\". Se agrega el mismo título dentro del ListHeaderComponent cuando has_header=false, mirando el patrón ya usado en el tab CRM (título h1 + paddingHorizontal layout.screen_inset).",
+        "details": "Archivo: mobile/src/features/saved/SavedScreen.tsx. Cuando !has_header, el ListHeaderComponent ahora renderiza un View con paddingTop insets.top+s_16 + Text \"Guardados\" (type_scale.h1, color ink), en vez del espaciador plano. Cuando has_header=true (ruta del Stack) se conserva el espaciador chico sin cambios — ese camino ya tiene su propio título vía Stack.Screen options. Estilos nuevos: styles.header (paddingHorizontal layout.screen_inset, paddingBottom s_16) y styles.title (type_scale.h1, color ink) — mismo patrón que src/features/leads/screens/CRMScreen.tsx (título de tab sin Stack header).",
+        "testStrategy": "pnpm tsc --noEmit + pnpm lint verdes. Smoke iOS: verificado que el acceso vía Stack (/profile/saved) sigue mostrando su header con back-button + \"Guardados\" sin cambios (screenshot). El acceso directo por tab requiere una cuenta no-agente (las 4 cuentas demo remotas son agent/admin) — no se pudo generar una cuenta buscador de prueba dentro de esta sesión sin registrar una cuenta nueva; el cambio es aditivo (solo agrega texto donde antes no había nada) y reusa exactamente el patrón ya probado de CRMScreen.",
+        "status": "done",
+        "dependencies": [
+          "180"
+        ],
+        "priority": "medium",
+        "subtasks": [],
+        "updatedAt": "2026-08-16T00:00:00.000Z"
       }
     ],
     "metadata": {

@@ -2,6 +2,13 @@
 
 Append-only. Prefijo: `## [YYYY-MM-DD] tipo | título`
 
+## [2026-08-16] fix | #187 Tab "Guardados" sin título para usuarios no-agente
+
+- Reporte de Abraham: el tab de Guardados (entrada directa, usuarios normales) no mostraba ningún título arriba, a diferencia de abrirlo desde el botón del perfil (`/profile/saved`), que sí trae Stack header con "Guardados".
+- Causa: `SavedScreen.tsx` nunca tuvo header propio por diseño (grid borde a borde) — el `ListHeaderComponent` era solo un espaciador cuando `has_header=false` (el caso del tab). El acceso vía Stack (`has_header=true`) sí pinta título porque trae su propio `Stack.Screen options={{ title: 'Guardados' }}`.
+- Fix: cuando `!has_header`, el `ListHeaderComponent` ahora pinta un título "Guardados" (h1, `layout.screen_inset`) — mismo patrón ya usado en el tab CRM (`CRMScreen.tsx`, título de tab sin Stack header). Aditivo puro, sin tocar lógica de datos.
+- No se pudo probar el camino del tab interactivamente en esta sesión (las 4 cuentas demo remotas son agent/admin, no hay cuenta "buscador" y `simctl` no soporta taps en iOS) — se verificó que el camino Stack (`/profile/saved`) sigue funcionando igual tras el cambio.
+
 ## [2026-08-16] polish | #186 El pin de los mapas, a dos tonos: contorno por tema + disco de color
 
 - Derivada de #185, reporte de Abraham al verlo en el dispositivo: "en los mapas se ve totalmente de un color sólido". Ahora el pin se dibuja con **contorno** (anillo + asta) y **disco interior** de color.
