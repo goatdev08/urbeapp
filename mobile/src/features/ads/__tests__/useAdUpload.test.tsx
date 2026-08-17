@@ -41,12 +41,20 @@
  *   D4. `ad_creatives` (20260816000005_ads_schema.sql) NO tiene columna de
  *       razón de falla — el servidor (169.5) COLAPSA el motivo de
  *       'failed' (AD_DURATION_INVALID vs. fallo real de transcodificación)
- *       en el mismo status. Por eso la única forma real de que el cliente
- *       distinga esos dos 'failed' es ATAJAR la duración inválida en el
- *       PRE-FLIGHT (D2, antes de subir nada): si el pre-flight ya validó
- *       [6,30]s, cualquier 'failed' que llegue del poll es, por
- *       eliminación, un fallo de transcodificación — mensaje genérico
- *       distinto del de duración. Ver EC-POLL-FAILED.
+ *       en el mismo status. Por eso el cliente distingue esos dos 'failed'
+ *       ATAJANDO la duración inválida en el PRE-FLIGHT (D2, antes de subir
+ *       nada): si el pre-flight ya validó [6,30]s, un 'failed' que llegue
+ *       del poll es, CASI SIEMPRE por eliminación, un fallo de
+ *       transcodificación — mensaje genérico distinto del de duración. NO es
+ *       una garantía absoluta: cliente y servidor miden la duración por
+ *       separado (el cliente compara `duration_ms` del picker/metadata del
+ *       contenedor; el servidor, la duración cruda que reporta Cloudflare
+ *       tras decodificar — VFR y discrepancias de contenedor pueden mover el
+ *       valor real a un lado u otro de un límite, p.ej. 6.01s del picker vs.
+ *       5.99s de Cloudflare). En ese caso de borde el usuario vería el
+ *       mensaje de transcodificación para un 'failed' que en realidad fue
+ *       por duración — un matiz anotado aquí, no resuelto por esta subtarea.
+ *       Ver EC-POLL-FAILED.
  *   D5. Sin useEffect de limpieza, desmontar el componente NO detendría un
  *       upload/poll en vuelo (el hermano tiene ese hueco: step5.tsx nunca
  *       llama a .cancel() en su unmount). Este hook SÍ registra un cleanup
@@ -93,10 +101,28 @@
  *   el punto central de la subtarea — DISTINTO del mensaje neutro.
  * - (EC12) mint_502_stream_upload_failed_mensaje_neutro_otros_codigos.
  *
- * ### Boundary / error del binario a Stream
- * - (EC13) stream_upload_no_2xx_falla_sin_iniciar_poll: el checker NUNCA se
- *   invoca si el binario no llegó.
- * - (EC14) stream_upload_excepcion_red_mensaje_neutro_sin_crash.
+ * ### Boundary / error del binario a Stream — VERIFICA antes de fallar (#103)
+ * Lección heredada del hermano (tarea #103 + subtarea 103.2): uploadAsync()
+ * puede lanzar o resolver no-2xx aunque el binario SÍ haya llegado completo a
+ * Stream (falso negativo). Copiar el pipeline sin copiar el arreglo hereda el
+ * bug — y aquí es peor: mint-ad-upload-url no tiene ventana de expiración
+ * para 'processing' (solo 'uploading' tiene stale_before), así que un falso
+ * negativo tratado como fallo real deja un creativo huérfano y bloquea a la
+ * organización con 409 hasta liberar la fila a mano. Contrato: ante
+ * excepción O no-2xx, el hook consulta el checker (MISMO poll_until_resolved
+ * del camino feliz, D1) ANTES de declarar 'failed'.
+ * - (EC13) stream_upload_no_2xx_verifica_antes_de_fallar_creativo_llego_
+ *   status_ready: checker confirma 'ready' → status=ready, NO failed.
+ * - (EC13b) stream_upload_no_2xx_checker_confirma_que_nunca_llego_status_
+ *   failed_neutro: agotados los intentos sin 'ready'/'failed' → falla igual.
+ * - (EC14) stream_upload_excepcion_verifica_antes_de_fallar_creativo_llego_
+ *   status_ready: mismo contrato vía excepción del binario. check_ad_
+ *   creative_status INYECTADO EXPLÍCITO (mutante o1 del guardián: sin
+ *   inyectarlo cae al checker por defecto contra un mock sin `.from()` y el
+ *   test pasa por la razón equivocada).
+ * - (EC14b) stream_upload_excepcion_checker_confirma_failed_mensaje_de_
+ *   transcodificacion_no_neutro: el checker confirma 'failed' → mensaje de
+ *   transcodificación (D4), corta de inmediato.
  * - (EC15) progreso_cap_099_durante_binario_via_onProgress.
  * - (EC16) progreso_permanece_099_tras_2xx_hasta_que_el_poll_resuelve_ready
  *   (D1 — el punto donde este hook diverge del hermano).
@@ -121,6 +147,20 @@
  *   produce llamadas nuevas al checker (no quedan timers vivos).
  * - (EC28) segundo_upload_supersede_al_primero_solo_el_segundo_persiste_
  *   cloudflare_uid.
+ *
+ * ### Checker POR DEFECTO — canal real del poll en producción (antes sin cobertura)
+ * - (EC29) checker_por_defecto_consulta_ad_creatives_por_cloudflare_uid_no_
+ *   property_videos: sin check_ad_creative_status inyectado, el adapter real
+ *   consulta la tabla/columna correctas.
+ * - (EC30) checker_por_defecto_sin_fila_se_trata_como_en_curso_no_como_ready:
+ *   fila ausente ≠ éxito inmediato.
+ *
+ * ### 'uploading' + on_status_change (contrato sin cobertura previa)
+ * - (EC31) status_uploading_visible_de_inmediato_tras_iniciar_antes_del_mint.
+ * - (EC32) on_status_change_notifica_la_secuencia_completa_uploading_
+ *   polling_ready.
+ * - (EC33) on_status_change_notifica_uploading_luego_failed_en_camino_de_
+ *   error_de_mint.
  */
 
 import { renderHook, act } from '@testing-library/react-native';
@@ -212,6 +252,43 @@ function make_mock_supabase(opts: { invoke_result?: { data: unknown; error: unkn
     functions: { invoke: mock_invoke },
     _mock_invoke: mock_invoke,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Mock de la cadena `supabase.from('ad_creatives').select('status')
+// .eq('cloudflare_uid', uid).maybeSingle()` — para ejercer el checker POR
+// DEFECTO (cuando NO se inyecta check_ad_creative_status) con un colaborador
+// real, no un test double a medida. Mismo punto ciego que en 169.4: el canal
+// real del poll en producción nunca se ejercía con éxito en ningún test.
+// ---------------------------------------------------------------------------
+
+function make_mock_ad_creatives_query(opts: { row?: { status: string } | null; error?: unknown } = {}) {
+  const { row = null, error = null } = opts;
+  const mock_maybe_single = jest.fn().mockResolvedValue({ data: row, error });
+  const mock_eq = jest.fn().mockReturnValue({ maybeSingle: mock_maybe_single });
+  const mock_select = jest.fn().mockReturnValue({ eq: mock_eq });
+  const mock_from = jest.fn().mockReturnValue({ select: mock_select });
+  return {
+    from: mock_from,
+    _mock_from: mock_from,
+    _mock_select: mock_select,
+    _mock_eq: mock_eq,
+    _mock_maybe_single: mock_maybe_single,
+  };
+}
+
+/** Supabase mockeado completo (mint + checker por defecto) — para los tests que NO inyectan check_ad_creative_status. */
+function make_mock_supabase_with_default_checker(opts: {
+  invoke_result?: { data: unknown; error: unknown };
+  query_row?: { status: string } | null;
+  query_error?: unknown;
+}) {
+  const base = opts.invoke_result === undefined ? make_mock_supabase({}) : make_mock_supabase({ invoke_result: opts.invoke_result });
+  const query =
+    opts.query_error === undefined
+      ? make_mock_ad_creatives_query({ row: opts.query_row ?? null })
+      : make_mock_ad_creatives_query({ row: opts.query_row ?? null, error: opts.query_error });
+  return { ...base, ...query };
 }
 
 /** FunctionsHttpError con el body { error: { code, message } } que emiten las EFs de Urbea. */
@@ -343,8 +420,17 @@ describe('useAdUpload', () => {
     expect(result_below.current.error).toBe(AD_DURATION_INVALID_MESSAGE);
     expect(mock_supabase_below._mock_invoke).not.toHaveBeenCalled();
 
+    // check_ad_creative_status inyectado a propósito: esta rama SÍ completa el
+    // ciclo hasta el poll (duración válida → mint → binario 2xx) y sin checker
+    // caería al adapter por defecto contra un mock que no tiene .from()
+    // (TypeError ruidoso en un run verde — limpieza pedida por el guardián).
     const mock_supabase_at = make_mock_supabase({});
-    const { result: result_at } = await renderHook(() => useAdUpload({ supabase: mock_supabase_at as never }));
+    const { result: result_at } = await renderHook(() =>
+      useAdUpload({
+        supabase: mock_supabase_at as never,
+        check_ad_creative_status: jest.fn().mockResolvedValue('ready'),
+      }),
+    );
     await act(async () => {
       await result_at.current.upload({ local_uri: TEST_LOCAL_URI, duration_ms: 6000 });
     });
@@ -354,8 +440,15 @@ describe('useAdUpload', () => {
   // ── (EC6) Boundary del máximo: 30000ms válido, 30001ms inválido ──────────
 
   it('(EC6) duracion_boundary_maximo_30000ms_valida_30001ms_invalida', async () => {
+    // Mismo motivo que EC5: checker inyectado para no caer al adapter por
+    // defecto sin .from() mockeado.
     const mock_supabase_at = make_mock_supabase({});
-    const { result: result_at } = await renderHook(() => useAdUpload({ supabase: mock_supabase_at as never }));
+    const { result: result_at } = await renderHook(() =>
+      useAdUpload({
+        supabase: mock_supabase_at as never,
+        check_ad_creative_status: jest.fn().mockResolvedValue('ready'),
+      }),
+    );
     await act(async () => {
       await result_at.current.upload({ local_uri: TEST_LOCAL_URI, duration_ms: 30000 });
     });
@@ -484,9 +577,30 @@ describe('useAdUpload', () => {
     expect(result.current.error).toBe(NEUTRAL_ERROR_MESSAGE);
   });
 
-  // ── (EC13) Binario no-2xx: NO inicia el poll ──────────────────────────────
+  // ── (EC13/EC14) Binario no-2xx o excepción: VERIFICA antes de fallar (#103) ──
+  // Lección heredada del hermano (tarea #103 completa + subtarea 103.2):
+  // uploadAsync() puede lanzar o resolver no-2xx aunque el binario SÍ haya
+  // llegado completo a Stream (falso negativo leyendo la respuesta HTTP).
+  // Copiar el pipeline sin copiar el arreglo hereda el bug a sabiendas — y
+  // aquí es peor: mint-ad-upload-url NO tiene ventana de expiración para
+  // 'processing' (types.ts — solo 'uploading' tiene stale_before), así que un
+  // falso negativo tratado como fallo real deja al creativo huérfano
+  // ('processing' en el servidor, 'failed' en el cliente) y bloquea a la
+  // organización con 409 AD_UPLOAD_IN_PROGRESS hasta que alguien libere la
+  // fila a mano. Contrato: ante excepción O no-2xx, el hook consulta el
+  // checker ANTES de declarar 'failed' — MISMO poll_until_resolved que el
+  // camino feliz (D1), no una rama paralela: si el creativo ya llegó
+  // ('ready'/'processing'), sigue como si el binario hubiera dado 2xx; si el
+  // checker confirma que no llegó, falla igual.
+  //
+  // check_ad_creative_status SIEMPRE inyectado explícito en estos tests
+  // (mutante o1 del guardián): sin inyectarlo, el flujo cae al checker por
+  // defecto contra un mock sin `.from()` y el resultante TypeError se
+  // atrapa en el mismo catch que un fallo real de verificación — el test
+  // pasaría por la razón EQUIVOCADA (indistinguible de "sí verificó y no
+  // había fila"), no porque el hook realmente verificó y confirmó el estado.
 
-  it('(EC13) stream_upload_no_2xx_falla_sin_iniciar_poll: uploadAsync status=500 → status=failed, checker NUNCA invocado', async () => {
+  it("(EC13) stream_upload_no_2xx_verifica_antes_de_fallar_creativo_llego_status_ready: uploadAsync resuelve 500 pero el checker confirma 'ready' (#103) → status=ready, NO failed", async () => {
     const upload_task = make_mock_upload_task({ status: 500 });
     const file_instance = make_mock_file({ upload_task });
     MockFile.mockImplementation(() => file_instance as never);
@@ -494,7 +608,95 @@ describe('useAdUpload', () => {
     const mock_checker = jest.fn().mockResolvedValue('ready');
 
     const { result } = await renderHook(() =>
-      useAdUpload({ supabase: mock_supabase as never, check_ad_creative_status: mock_checker }),
+      useAdUpload({
+        supabase: mock_supabase as never,
+        check_ad_creative_status: mock_checker,
+        poll_attempts: 3,
+        poll_interval_ms: 0,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.upload({ local_uri: TEST_LOCAL_URI, duration_ms: VALID_DURATION_MS });
+    });
+
+    expect(mock_checker).toHaveBeenCalledWith(STREAM_UID);
+    expect(result.current.status).toBe('ready');
+    expect(result.current.error).toBeNull();
+    expect(result.current.cloudflare_uid).toBe(STREAM_UID);
+  });
+
+  it("(EC13b) stream_upload_no_2xx_checker_confirma_que_nunca_llego_status_failed_neutro: uploadAsync resuelve 500 y el checker jamás confirma 'ready'/'failed' → agotados los intentos, falla igual con el mensaje neutro", async () => {
+    const upload_task = make_mock_upload_task({ status: 500 });
+    const file_instance = make_mock_file({ upload_task });
+    MockFile.mockImplementation(() => file_instance as never);
+    const mock_supabase = make_mock_supabase({});
+    const mock_checker = jest.fn().mockResolvedValue('missing');
+    const POLL_ATTEMPTS = 3;
+
+    const { result } = await renderHook(() =>
+      useAdUpload({
+        supabase: mock_supabase as never,
+        check_ad_creative_status: mock_checker,
+        poll_attempts: POLL_ATTEMPTS,
+        poll_interval_ms: 0,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.upload({ local_uri: TEST_LOCAL_URI, duration_ms: VALID_DURATION_MS });
+    });
+
+    expect(mock_checker).toHaveBeenCalledTimes(POLL_ATTEMPTS);
+    expect(result.current.status).toBe('failed');
+    expect(result.current.error).toBe(NEUTRAL_ERROR_MESSAGE);
+    expect(result.current.cloudflare_uid).toBeNull();
+  });
+
+  it("(EC14) stream_upload_excepcion_verifica_antes_de_fallar_creativo_llego_status_ready: uploadAsync LANZA (falso negativo, mismo error de #103) pero el checker confirma 'ready' → status=ready, NO failed", async () => {
+    const upload_task: MockUploadTask = {
+      uploadAsync: jest.fn().mockRejectedValue(new Error('Unable to upload a file: Failed to read response')),
+    };
+    const file_instance = make_mock_file({ upload_task });
+    MockFile.mockImplementation(() => file_instance as never);
+    const mock_supabase = make_mock_supabase({});
+    // Inyectado a propósito (mutante o1): sin esto cae al checker por
+    // defecto y el test pasaría por la razón equivocada.
+    const mock_checker = jest.fn().mockResolvedValue('ready');
+
+    const { result } = await renderHook(() =>
+      useAdUpload({
+        supabase: mock_supabase as never,
+        check_ad_creative_status: mock_checker,
+        poll_attempts: 3,
+        poll_interval_ms: 0,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.upload({ local_uri: TEST_LOCAL_URI, duration_ms: VALID_DURATION_MS });
+    });
+
+    expect(mock_checker).toHaveBeenCalledWith(STREAM_UID);
+    expect(result.current.status).toBe('ready');
+    expect(result.current.error).toBeNull();
+    expect(result.current.cloudflare_uid).toBe(STREAM_UID);
+  });
+
+  it("(EC14b) stream_upload_excepcion_checker_confirma_failed_mensaje_de_transcodificacion_no_neutro: uploadAsync lanza y el checker confirma 'failed' → status=failed con el mensaje de transcodificación (D4), NO el neutro, corta de inmediato", async () => {
+    const upload_task: MockUploadTask = { uploadAsync: jest.fn().mockRejectedValue(new Error('network fail')) };
+    const file_instance = make_mock_file({ upload_task });
+    MockFile.mockImplementation(() => file_instance as never);
+    const mock_supabase = make_mock_supabase({});
+    const mock_checker = jest.fn().mockResolvedValue('failed');
+
+    const { result } = await renderHook(() =>
+      useAdUpload({
+        supabase: mock_supabase as never,
+        check_ad_creative_status: mock_checker,
+        poll_attempts: 5,
+        poll_interval_ms: 0,
+      }),
     );
 
     await act(async () => {
@@ -502,25 +704,10 @@ describe('useAdUpload', () => {
     });
 
     expect(result.current.status).toBe('failed');
-    expect(mock_checker).not.toHaveBeenCalled();
-  });
-
-  // ── (EC14) Excepción de red en el binario ─────────────────────────────────
-
-  it('(EC14) stream_upload_excepcion_red_mensaje_neutro_sin_crash', async () => {
-    const upload_task: MockUploadTask = { uploadAsync: jest.fn().mockRejectedValue(new Error('network fail')) };
-    const file_instance = make_mock_file({ upload_task });
-    MockFile.mockImplementation(() => file_instance as never);
-    const mock_supabase = make_mock_supabase({});
-
-    const { result } = await renderHook(() => useAdUpload({ supabase: mock_supabase as never }));
-
-    await act(async () => {
-      await result.current.upload({ local_uri: TEST_LOCAL_URI, duration_ms: VALID_DURATION_MS });
-    });
-
-    expect(result.current.status).toBe('failed');
-    expect(result.current.error).toBe(NEUTRAL_ERROR_MESSAGE);
+    expect(result.current.error).toBe(TRANSCODING_FAILED_MESSAGE);
+    expect(result.current.error).not.toBe(NEUTRAL_ERROR_MESSAGE);
+    // Corta de inmediato — no agota poll_attempts esperando un desenlace que ya llegó.
+    expect(mock_checker).toHaveBeenCalledTimes(1);
   });
 
   // ── (EC15) Progreso — cap 0.99 durante el binario ─────────────────────────
@@ -545,8 +732,15 @@ describe('useAdUpload', () => {
     };
     MockFile.mockImplementation(() => file_instance as never);
     const mock_supabase = make_mock_supabase({});
+    // Checker inyectado: resolve_upload({status:200}) al final de este test
+    // deja el binario en 2xx, y el ciclo sigue al poll (D1) — sin checker
+    // caería al adapter por defecto contra un mock sin .from() (TypeError
+    // ruidoso en un run que por lo demás está en verde).
+    const mock_checker = jest.fn().mockResolvedValue('ready');
 
-    const { result } = await renderHook(() => useAdUpload({ supabase: mock_supabase as never }));
+    const { result } = await renderHook(() =>
+      useAdUpload({ supabase: mock_supabase as never, check_ad_creative_status: mock_checker }),
+    );
 
     act(() => {
       void result.current.upload({ local_uri: TEST_LOCAL_URI, duration_ms: VALID_DURATION_MS });
@@ -569,6 +763,7 @@ describe('useAdUpload', () => {
 
     await act(async () => {
       resolve_upload({ status: 200 });
+      await flush_microtasks(6);
     });
   });
 
@@ -1076,5 +1271,128 @@ describe('useAdUpload', () => {
 
     expect(result.current.status).toBe('ready');
     expect(result.current.cloudflare_uid).toBe(SECOND_UID);
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Checker POR DEFECTO (cuando NO se inyecta check_ad_creative_status) — es
+  // el canal REAL del poll en producción y en el resto de este archivo NUNCA
+  // se ejerce con éxito (guardián de 169.7, mismo punto ciego que 169.4:
+  // mutantes m3 -tabla equivocada- y m4 -sin fila ⇒ 'ready'- sobrevivían
+  // porque ningún test corría el adapter real hasta el final).
+  // ═══════════════════════════════════════════════════════════════════════
+
+  it("(EC29) checker_por_defecto_consulta_ad_creatives_por_cloudflare_uid_no_property_videos: sin check_ad_creative_status inyectado, el adapter real consulta la tabla/columna correctas y resuelve", async () => {
+    const upload_task = make_mock_upload_task({ status: 200 });
+    const file_instance = make_mock_file({ upload_task });
+    MockFile.mockImplementation(() => file_instance as never);
+    const mock_supabase = make_mock_supabase_with_default_checker({ query_row: { status: 'ready' } });
+
+    const { result } = await renderHook(() =>
+      useAdUpload({ supabase: mock_supabase as never, poll_attempts: 3, poll_interval_ms: 0 }),
+    );
+
+    await act(async () => {
+      await result.current.upload({ local_uri: TEST_LOCAL_URI, duration_ms: VALID_DURATION_MS });
+    });
+
+    expect(mock_supabase._mock_from).toHaveBeenCalledWith('ad_creatives');
+    expect(mock_supabase._mock_eq).toHaveBeenCalledWith('cloudflare_uid', STREAM_UID);
+    expect(result.current.status).toBe('ready');
+    expect(result.current.cloudflare_uid).toBe(STREAM_UID);
+  });
+
+  it("(EC30) checker_por_defecto_sin_fila_se_trata_como_en_curso_no_como_ready: maybeSingle() resuelve data=null (fila aún no visible) → NO es éxito inmediato; reintenta y, agotados los intentos, termina failed con el mensaje neutro", async () => {
+    const upload_task = make_mock_upload_task({ status: 200 });
+    const file_instance = make_mock_file({ upload_task });
+    MockFile.mockImplementation(() => file_instance as never);
+    const mock_supabase = make_mock_supabase_with_default_checker({ query_row: null });
+    const POLL_ATTEMPTS = 3;
+
+    const { result } = await renderHook(() =>
+      useAdUpload({ supabase: mock_supabase as never, poll_attempts: POLL_ATTEMPTS, poll_interval_ms: 0 }),
+    );
+
+    await act(async () => {
+      await result.current.upload({ local_uri: TEST_LOCAL_URI, duration_ms: VALID_DURATION_MS });
+    });
+
+    expect(mock_supabase._mock_maybe_single).toHaveBeenCalledTimes(POLL_ATTEMPTS);
+    expect(result.current.status).toBe('failed');
+    expect(result.current.error).toBe(NEUTRAL_ERROR_MESSAGE);
+    expect(result.current.cloudflare_uid).toBeNull();
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // 'uploading' (contrato, nadie lo asertaba) + on_status_change (en las deps,
+  // ningún test lo pasaba) — cobertura barata pedida por el guardián
+  // (mutantes l4/m1/m2/m6).
+  // ═══════════════════════════════════════════════════════════════════════
+
+  it("(EC31) status_uploading_visible_de_inmediato_tras_iniciar_antes_del_mint: nada más llamar upload(), sync (antes del primer await), status='uploading'", async () => {
+    const mock_supabase = make_mock_supabase({});
+    const mock_checker = jest.fn().mockResolvedValue('ready');
+    const { result } = await renderHook(() =>
+      useAdUpload({ supabase: mock_supabase as never, check_ad_creative_status: mock_checker }),
+    );
+
+    act(() => {
+      void result.current.upload({ local_uri: TEST_LOCAL_URI, duration_ms: VALID_DURATION_MS });
+    });
+
+    expect(result.current.status).toBe('uploading');
+
+    // Drena la promesa para no dejar nada colgado entre tests.
+    await act(async () => {
+      await flush_microtasks(8);
+    });
+  });
+
+  it("(EC32) on_status_change_notifica_la_secuencia_completa_uploading_polling_ready: en el camino feliz, notifica EXACTAMENTE 'uploading' → 'polling' → 'ready', en ese orden", async () => {
+    const upload_task = make_mock_upload_task({ status: 200 });
+    const file_instance = make_mock_file({ upload_task });
+    MockFile.mockImplementation(() => file_instance as never);
+    const mock_supabase = make_mock_supabase({});
+    const mock_checker = jest.fn().mockResolvedValue('ready');
+    const mock_on_status_change = jest.fn();
+
+    const { result } = await renderHook(() =>
+      useAdUpload({
+        supabase: mock_supabase as never,
+        check_ad_creative_status: mock_checker,
+        on_status_change: mock_on_status_change,
+        poll_attempts: 3,
+        poll_interval_ms: 0,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.upload({ local_uri: TEST_LOCAL_URI, duration_ms: VALID_DURATION_MS });
+    });
+
+    const statuses = mock_on_status_change.mock.calls.map((c) => c[0] as string);
+    expect(statuses).toEqual(['uploading', 'polling', 'ready']);
+    expect(result.current.status).toBe('ready');
+  });
+
+  it("(EC33) on_status_change_notifica_uploading_luego_failed_en_camino_de_error_de_mint: un 409 en mint (rama de falla temprana, sin llegar al binario) notifica 'uploading' → 'failed', nunca 'polling' ni 'ready'", async () => {
+    const ef_error = make_ef_error(
+      { code: 'AD_UPLOAD_IN_PROGRESS', message: 'Ya tienes un anuncio en curso; espera a que termine' },
+      409,
+    );
+    const mock_supabase = make_mock_supabase({ invoke_result: { data: null, error: ef_error } });
+    const mock_on_status_change = jest.fn();
+
+    const { result } = await renderHook(() =>
+      useAdUpload({ supabase: mock_supabase as never, on_status_change: mock_on_status_change }),
+    );
+
+    await act(async () => {
+      await result.current.upload({ local_uri: TEST_LOCAL_URI, duration_ms: VALID_DURATION_MS });
+    });
+
+    const statuses = mock_on_status_change.mock.calls.map((c) => c[0] as string);
+    expect(statuses).toEqual(['uploading', 'failed']);
+    expect(result.current.status).toBe('failed');
+    expect(result.current.error).toBe(AD_UPLOAD_IN_PROGRESS_MESSAGE);
   });
 });
