@@ -8445,18 +8445,18 @@
             "description": "Origen: partición de 169.8 (decisión de Abraham 2026-08-16). Las PANTALLAS del wizard de alta de anuncio, ya detrás del gate de capacidad que construye 169.8.",
             "details": "agente=mobile · skills=urbea-expo,urbea-design · criticidad=LIGERA (pantallas/navegación → tsc + lint + smoke) · impacto-prod=sin riesgo (JS puro, OTA) · footprint=mobile/app/(protected)/ads/new/*.tsx.\n\nREUSO CONFIRMADO por el analista (los 4 componentes existen tal cual): SelectionCard, StepIndicator, usePlaceSearch y MapSearchSuggestions. El selector de zonas reusa search_places de #157 — NO se escribe búsqueda nueva.\n\nTECHO DE ALCANCE (CLAUDE.md §8): \"ads\"/\"anuncio\" NO aparecen ni en urbea-identidad-visual.html ni en el prototipo standalone — verificado por el analista. El techo visual es el wizard de PUBLICACIÓN de propiedad: se calca su layout y su lenguaje visual, no se inventa UI nueva. Lo que falte respecto de esos mockups es trabajo nuevo vía add-task, no alcance de esta subtarea.\n\nToda la validación de entrada (duración 6–30 s, CTA, zonas) vive en 169.6 — esta subtarea la CONSUME, no la reimplementa.",
             "testStrategy": "Verificación ligera: pnpm tsc --noEmit y pnpm lint (ambos DESDE mobile/, nunca desde la raíz del repo) + smoke por CLI en emulador (adb, nunca computer-use). Sin cuota de Stream: esta subtarea no reproduce video.",
-            "status": "pending",
+            "status": "in-progress",
             "dependencies": [
               6,
               7,
               8
             ],
             "priority": "medium",
-            "updatedAt": "2026-08-16T00:00:00.000Z",
+            "updatedAt": "2026-08-17T00:56:45.987Z",
             "parentId": "undefined"
           }
         ],
-        "updatedAt": "2026-08-17T00:56:37.177Z"
+        "updatedAt": "2026-08-17T00:56:45.987Z"
       },
       {
         "id": "170",
@@ -8958,7 +8958,7 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-08-17T00:56:37.177Z",
+      "lastModified": "2026-08-17T00:56:45.987Z",
       "taskCount": 186,
       "completedCount": 97,
       "tags": [
