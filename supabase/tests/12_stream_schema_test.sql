@@ -7,6 +7,18 @@
 begin;
 select plan(17);
 
+-- 🔴 GOTCHA reconciliado (subtarea #169.3, 2026-08-16): el assert de la
+-- sección 6 (línea ~68) fijaba count(*)=3 SIN filtro sobre app_config. La
+-- migración 20260816000005_ads_schema.sql (169.3) siembra una 4ª clave
+-- ('ads_free', calco de video_slot_free) -- ese count(*) crudo se cae en
+-- cuanto la siembra existe. Es reconciliación de fixture (el admin ahora ve
+-- 4 filas reales, comportamiento correcto), NO debilitamiento del test: la
+-- línea de arriba (~38), que cuenta `where key in (...)` explícito sobre las
+-- 3 claves viejas, NO se toca -- sigue siendo la aserción con dientes contra
+-- un seed accidentalmente distinto. Antipatrón evitado en el archivo NUEVO de
+-- esta subtarea (49_grant_ad_slot_atomic_test.sql): todo count(*) ahí filtra
+-- por sus propias fixtures (derivada #175, el count(*) absoluto sin filtro).
+
 -- ── 1) El enum gana el valor 'archived' (aditivo, no destructivo) ─────────────
 select ok(
   'archived' = any(enum_range(null::property_video_status)::text[]),
@@ -64,7 +76,9 @@ reset role;
 
 -- ── 6) El admin SÍ lee app_config (canal de gestión) ──────────────────────────
 select pg_temp.act_as('00000000-0000-0000-0000-0000000cf002');
-select is((select count(*) from public.app_config)::int, 3, 'admin lee app_config');
+-- 3 -> 4 (subtarea #169.3): la siembra de app_config.ads_free agrega una 4ª
+-- fila real. Ver comentario de cabecera "GOTCHA reconciliado" arriba.
+select is((select count(*) from public.app_config)::int, 4, 'admin lee app_config');
 reset role;
 
 select * from finish();

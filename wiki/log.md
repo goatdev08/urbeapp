@@ -1,6 +1,16 @@
 # Bitácora del proyecto
 
-Append-only. Prefijo: `## [YYYY-MM-DD] tipo | título`
+Append-only. Prefijo: `## [YYYY-MM-DD] tipo | título`.
+
+## [2026-08-17] feat | #169 Anuncios: creativo 6–30 s, campaña por zona y moderación admin (Tarea B de la exploración 039)
+
+- Épica de publicidad completa de punta a punta salvo el envío: 4 tablas + máquina de estados + RPC de otorgamiento + 3 EFs + validación, hook de subida, gate de ruta y wizard. **Nada desplegado** — decisión de Abraham: 168–172 se mergean progresivamente pero no sale ni migración ni EF ni OTA hasta que la épica esté probada. La feature además nace apagada por datos (`can_advertise` default false).
+- **Decisiones de Abraham:** suspender la organización **pausa el reloj** (conserva los días) — lo que obligó a extender la máquina de estados de `agencies` con `active↔suspended`, porque la decisión presuponía un estado al que no se podía llegar; y cerrar 169.9 sin el RPC self-service, derivándolo (#191).
+- **Los tres bugs que solo cazó mutar y medir, no leer:** (1) el adapter llamaba `client.rpc()` a una función del esquema `private`, que **PostgREST no expone** → la EF devolvía **403 a todo anunciante legítimo** con 32 tests en verde; solo lo destapó una sonda real contra Postgres. (2) Un mutante que validaba la duración **redondeada** y persistía la cruda dejaba pasar un video de 5.7 s con la suite entera verde — ninguna duración de prueba caía en (5,6). (3) `useAdUpload` había **perdido el verify-before-failing de #103** al copiar el pipeline del hermano: un falso negativo de Stream dejaba el creativo en `processing` sin ventana de expiración y el 409 se volvía permanente, con el `cloudflare_uid` perdido.
+- **Patrón que se repitió cuatro veces:** código y comentarios que **afirman una defensa que no existe**. Un `coalesce` que era un fixture incoherente; un `.replace()` que bajo allowlist solo ampliaba lo aceptado; un `useLayoutEffect` "confirmado empíricamente" contra un experimento que nunca lo confirmó; literales de error comparados contra la constante del propio módulo. En los cuatro casos la prosa era excelente y sustituía a la verificación.
+- **Aditividad como criterio de aceptación, no recomendación:** la rama de anuncios de `stream-webhook` solo se alcanza si el UPDATE sobre `property_videos` afecta 0 filas, y la suite existente pasa **sin tocarse** (el último commit que la modificó sigue siendo el de la tarea 68). El guardián además distinguió que la aditividad se sostenía **para datos** pero no **para superficie de fallo**: un error del lado de anuncios podía tumbar la respuesta de un video de propiedad.
+- Suites: pgTAP **1016 → 1319** (50 archivos), Deno **1170**, Jest **1197**. Guardián PASS en las 8 subtareas críticas (2 con FAIL previo). Mejora de flujo: `tdd-guard.sh` ahora reconoce `.tsx`/`.jsx`.
+- **Pendientes reales:** smoke de deep link contra el gate (el simulador lo usa otra sesión) y 7 derivadas registradas con su evidencia (#181–#183 y #188–#191).
 
 ## [2026-08-16] fix | #187 Tab "Guardados" sin título para usuarios no-agente
 

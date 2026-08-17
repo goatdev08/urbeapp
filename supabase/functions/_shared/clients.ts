@@ -59,6 +59,9 @@ import type {
   VideoRegistrar,
 } from "../mint-upload-url/types.ts";
 import type {
+  AdCreativeStatusUpdater,
+  MarkAdCreativeFailedParams,
+  MarkAdCreativeReadyParams,
   MarkVideoFailedParams,
   MarkVideoReadyParams,
   VideoEventNotifier,
@@ -87,6 +90,14 @@ import type {
   PropertyFetcher,
   RevisionFinder,
 } from "../moderate-property/types.ts";
+import type {
+  ActiveAdUploadChecker,
+  AdCreativeRegistrar,
+  AdvertiserAuthorizeResult,
+  AdvertiserAuthorizer,
+  RegisterUploadingAdCreativeParams,
+} from "../mint-ad-upload-url/types.ts";
+import type { AdUrlMinter, MintedAdUrl } from "../mint-ad-urls/types.ts";
 
 /** Cliente supabase-js con service_role (bypassa RLS y column-grants). */
 export function service_client(): SupabaseClient {
@@ -1471,6 +1482,299 @@ export function make_moderation_writer(client: SupabaseClient): ModerationWriter
         return { ok: false as const, error_code: "DB_ERROR" as const, message: error.message };
       }
       return { ok: true as const };
+    },
+  };
+}
+
+/**
+ * Adaptador real de AdvertiserAuthorizer (subtarea 169.4, mint-ad-upload-url).
+ * Resuelve la organización ACTIVA del caller con una query directa por
+ * user_id — mismo patrón que make_agency_ownership_verifier (69.2), NO el
+ * helper SQL private.agency_role_of (ese lee `(select auth.uid())`, que no
+ * resuelve nada aquí porque este cliente corre con service_role, sin sesión
+ * JWT). El índice único agency_members_one_active_per_user (20260604000003)
+ * garantiza a lo más 1 fila.
+ *
+ * Colapsa TRES causas en el MISMO 403 FORBIDDEN (fail-closed, nunca 404 ni
+ * 500): (a) sin membresía activa, (b) miembro pero no owner/admin, (c) owner/
+ * admin de una organización real pero sin la capacidad de anunciar.
+ *
+ * ⚠️ FIX del guardián (2026-08-16, sonda contra el stack local): la capacidad
+ * se resuelve vía `public.org_can_advertise` (20260816000008), un wrapper que
+ * DELEGA en `private.org_can_advertise` (168.1) — PostgREST/`client.rpc()` NO
+ * puede alcanzar el esquema `private` directo (ésa es su función; ver
+ * 20260815000001), así que llamar el nombre de la función privada devolvía
+ * SIEMPRE PGRST202 (función no encontrada) y colapsaba el authorize en
+ * FORBIDDEN para el 100% de los anunciantes, sin importar sus datos. El
+ * wrapper está restringido a `service_role` (revoke explícito de
+ * public/anon/authenticated en la propia migración) — no abre a PostgREST una
+ * capacidad que hasta ahora era privada. El agency_id SIEMPRE sale de esta
+ * resolución server-side — nunca del body.
+ */
+export function make_advertiser_authorizer(
+  client: SupabaseClient,
+): AdvertiserAuthorizer {
+  return {
+    async authorize_advertiser(user_id: string): Promise<AdvertiserAuthorizeResult> {
+      const { data, error } = await client
+        .from("agency_members")
+        .select("agency_id, member_role")
+        .eq("user_id", user_id)
+        .eq("status", "active")
+        .maybeSingle();
+
+      if (error || !data) {
+        return { ok: false, error_code: "FORBIDDEN" };
+      }
+      if (data.member_role !== "owner" && data.member_role !== "admin") {
+        return { ok: false, error_code: "FORBIDDEN" };
+      }
+
+      // Wrapper público (20260816000008) — NUNCA el nombre de la función
+      // private.* directo, PostgREST no lo resuelve (PGRST202, ver docblock).
+      const { data: can_advertise, error: rpc_error } = await client.rpc(
+        "org_can_advertise",
+        { p_agency_id: data.agency_id },
+      );
+      if (rpc_error || can_advertise !== true) {
+        return { ok: false, error_code: "FORBIDDEN" };
+      }
+
+      return { ok: true, agency_id: data.agency_id as string };
+    },
+  };
+}
+
+/**
+ * Adaptador real de ActiveAdUploadChecker (subtarea 169.4). Calco del reaper
+ * de make_active_upload_checker (103.1 parte B) con tabla y clave PROPIAS:
+ * `ad_creatives` keyeado por agency_id — NUNCA property_videos/agent_id, por
+ * diseño (separación por dominio, ver mint-ad-upload-url/types.ts). Misma
+ * semántica de ventana: 'processing' siempre bloquea (el webhook, 169.5, lo
+ * resuelve solo); 'uploading' solo bloquea si es más reciente que
+ * stale_before (bug #103 heredado, evita el 409 permanente). `ad_creatives`
+ * no tiene columna deleted_at (20260816000005) — sin filtro de soft-delete,
+ * a diferencia de property_videos.
+ */
+export function make_active_ad_upload_checker(
+  client: SupabaseClient,
+): ActiveAdUploadChecker {
+  return {
+    async count_active_ad_uploads(
+      agency_id: string,
+      stale_before: string,
+    ): Promise<number> {
+      const { count, error } = await client
+        .from("ad_creatives")
+        .select("id", { count: "exact", head: true })
+        .eq("agency_id", agency_id)
+        .or(
+          `status.eq.processing,and(status.eq.uploading,created_at.gt.${stale_before})`,
+        );
+
+      if (error) {
+        // Fail-closed: mismo criterio que make_active_upload_checker — un
+        // error de red/DB al chequear concurrencia no debe permitir un
+        // upload que quizás sí colisione.
+        console.error(
+          "count_active_ad_uploads: query falló, fail-closed (1)",
+          error,
+        );
+        return 1;
+      }
+      return count ?? 0;
+    },
+  };
+}
+
+/**
+ * Adaptador real de AdCreativeRegistrar (subtarea 169.4): inserta la fila
+ * 'uploading' en ad_creatives. Shape MÁS ANGOSTO que VideoRegistrar (sin
+ * property_id/position/tus_upload_url, que ad_creatives no tiene — schema de
+ * 169.1, 20260816000005_ads_schema.sql).
+ */
+export function make_ad_creative_registrar(
+  client: SupabaseClient,
+): AdCreativeRegistrar {
+  return {
+    async register_uploading_ad_creative(
+      params: RegisterUploadingAdCreativeParams,
+    ): Promise<void> {
+      const { error } = await client.from("ad_creatives").insert({
+        agency_id: params.agency_id,
+        status: params.status,
+        cloudflare_uid: params.cloudflare_uid,
+      });
+      if (error) {
+        throw new Error(`Insert en ad_creatives falló: ${error.message}`);
+      }
+    },
+  };
+}
+
+/**
+ * Adaptador real de AdCreativeStatusUpdater (subtarea 169.5, cierre del hueco
+ * reportado tras el GREEN inicial, 2026-08-16). Calco de
+ * make_video_status_updater (68.5) pero contra `ad_creatives`/`cloudflare_uid`
+ * en vez de `property_videos` — filtrar por la tabla/columna equivocada haría
+ * que el webhook, en la rama de anuncios, PISARA filas de video de propiedad
+ * (el acoplamiento que la tabla propia de 169 existe para evitar). SIN
+ * `.is('deleted_at', null)`: esa columna no existe en ad_creatives
+ * (20260816000005_ads_schema.sql). `.select('id')` tras el UPDATE es lo que
+ * permite devolver el conteo de filas afectadas — de ese número depende TODA
+ * la rama aditiva del webhook ("¿intento ad_creatives?"), así que nunca se
+ * hardcodea a un valor fijo.
+ *
+ * 🔴 El redondeo vive EXCLUSIVAMENTE AQUÍ, nunca en el handler. El handler
+ * (stream-webhook/handler.ts, handle_ad_ready_transition) ya validó el rango
+ * [6,30] contra `duration_seconds` CRUDO fraccionario ANTES de llamar a este
+ * adapter — este adapter NO re-valida ese rango, solo redondea (Math.round,
+ * nunca trunc/floor: 6.6 debe subir a 7, no bajar a 6) para que el valor quepa
+ * en la columna `integer`. El orden importa: si el redondeo ocurriera ANTES
+ * de la validación, un video de 5.7 s redondearía a 6 y pasaría el mínimo
+ * violándolo en la realidad — por eso persistir+redondear es responsabilidad
+ * de este adapter, y validar es responsabilidad exclusiva del handler.
+ */
+export function make_ad_creative_status_updater(
+  client: SupabaseClient,
+): AdCreativeStatusUpdater {
+  return {
+    async mark_ready(params: MarkAdCreativeReadyParams): Promise<number> {
+      const { data, error } = await client
+        .from("ad_creatives")
+        .update({
+          status: "ready",
+          thumbnail_url: params.thumbnail_url,
+          duration_seconds: Math.round(params.duration_seconds),
+        })
+        .eq("cloudflare_uid", params.cloudflare_uid)
+        .select("id");
+      if (error) {
+        throw new Error(`UPDATE ad_creatives (mark_ready) falló: ${error.message}`);
+      }
+      return data?.length ?? 0;
+    },
+    async mark_failed(params: MarkAdCreativeFailedParams): Promise<number> {
+      const { data, error } = await client
+        .from("ad_creatives")
+        .update({ status: "failed" })
+        .eq("cloudflare_uid", params.cloudflare_uid)
+        .select("id");
+      if (error) {
+        throw new Error(`UPDATE ad_creatives (mark_failed) falló: ${error.message}`);
+      }
+      return data?.length ?? 0;
+    },
+  };
+}
+
+/** Fila cruda de la query ad_creatives ⋈ ads usada por make_ad_url_minter. */
+interface AdCreativeUrlRow {
+  id: string;
+  agency_id: string;
+  cloudflare_uid: string | null;
+  duration_seconds: number | null;
+  status: string;
+  ads: { status: string; starts_at: string; ends_at: string }[] | null;
+}
+
+/**
+ * Adaptador real de AdUrlMinter (subtarea 169.5): calco de
+ * make_poster_url_minter (89.1) reusando sign_stream_token/build_poster_url,
+ * pero contra ad_creatives (ownership por agency_id directo — NO join a
+ * properties) en vez de property_videos⋈properties. service_role bypassa
+ * RLS — el filtro de abajo, hecho en JS, es la ÚNICA barrera de seguridad
+ * (fail-closed, nunca se olvida).
+ *
+ * 1. Resuelve la agencia ACTIVA del caller — MISMA query que
+ *    make_advertiser_authorizer (169.4): agency_members.select('agency_id')
+ *    .eq('user_id',caller_id).eq('status','active').maybeSingle(). SIN el
+ *    paso adicional de org_can_advertise: mint-ad-urls solo lee, no publica.
+ * 2. Trae ad_creatives ⋈ ads (reverse FK ads.creative_id) filtrando
+ *    status='ready' AND id IN (creative_ids).
+ * 3. Autoriza cada fila: agency_id === agencia del caller (cualquier estado
+ *    del creativo, ya filtrado a 'ready' arriba) O algún `ads` embebido con
+ *    status='active' AND now() BETWEEN starts_at AND ends_at (público y
+ *    vigente — el análogo de "properties.status='active'"). No autorizado →
+ *    se OMITE, sin distinguir "no existe" de "no autorizado".
+ * 4. Sin cloudflare_uid en la fila → se OMITE.
+ * 5. Firma reusando sign_stream_token/build_poster_url (mismo mecanismo que
+ *    make_poster_url_minter): token EN EL PATH, nunca query param. ad_creatives
+ *    NO tiene columna thumbnail_pct — se le pasa siempre `null` (usa el
+ *    default 50% de build_poster_url). Error de firma (JWK inválido, hlsConfig
+ *    ausente) → se OMITE esa fila, SIN lanzar — el batch nunca se rompe por
+ *    un item.
+ *
+ * ponytail: batch degradado — un error de red/DB en cualquiera de las dos
+ * queries devuelve [] en vez de lanzar, mismo patrón que make_poster_url_minter.
+ */
+export function make_ad_url_minter(
+  client: SupabaseClient,
+  hlsConfig?: HlsSignerConfig,
+): AdUrlMinter {
+  return {
+    async mint_ad_urls(
+      creative_ids: string[],
+      caller_id: string,
+    ): Promise<MintedAdUrl[]> {
+      if (creative_ids.length === 0) return [];
+
+      const { data: member_row } = await client
+        .from("agency_members")
+        .select("agency_id")
+        .eq("user_id", caller_id)
+        .eq("status", "active")
+        .maybeSingle();
+      const caller_agency_id = (member_row as { agency_id: string } | null)?.agency_id ?? null;
+
+      const { data, error } = await client
+        .from("ad_creatives")
+        .select("id, agency_id, cloudflare_uid, duration_seconds, status, ads(status, starts_at, ends_at)")
+        .in("id", creative_ids)
+        .eq("status", "ready");
+
+      if (error) return [];
+
+      const rows = (data as unknown) as AdCreativeUrlRow[];
+      const now = new Date();
+
+      const results: MintedAdUrl[] = [];
+      for (const row of rows) {
+        const is_owner_member = caller_agency_id !== null && row.agency_id === caller_agency_id;
+        const has_active_vigente_ad = (row.ads ?? []).some((ad) => {
+          if (ad.status !== "active") return false;
+          const starts_at = new Date(ad.starts_at);
+          const ends_at = new Date(ad.ends_at);
+          return starts_at <= now && now <= ends_at;
+        });
+
+        const authorized = is_owner_member || has_active_vigente_ad;
+        if (!authorized) {
+          continue;
+        }
+
+        if (!row.cloudflare_uid || !hlsConfig) {
+          continue;
+        }
+
+        try {
+          const { token, domain } = await sign_stream_token(
+            row.cloudflare_uid,
+            hlsConfig,
+          );
+          const posterUrl = build_poster_url(
+            domain,
+            token,
+            null, // ad_creatives no tiene thumbnail_pct — siempre el default 50%
+            row.duration_seconds,
+          );
+          results.push({ creative_id: row.id, posterUrl });
+        } catch {
+          // fail-closed: JWK inválido u otro error de firmado → excluir solo esta fila
+        }
+      }
+
+      return results;
     },
   };
 }
