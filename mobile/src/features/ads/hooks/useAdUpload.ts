@@ -12,9 +12,15 @@
  *
  * DIFERENCIAS DE CONTRATO frente al hermano (ver header del test para el
  * detalle caso por caso, D1-D5):
- *   D1. Tras el 2xx del binario el ciclo NO termina — sigue con un POLL de
- *       `ad_creatives.status` (checker inyectado) hasta 'ready'|'failed'.
- *       progress se queda en 0.99 durante el poll; solo llega a 1 en 'ready'.
+ *   D1. Tras el binario (2xx O no-2xx/excepción) el ciclo NO termina — sigue
+ *       con un POLL de `ad_creatives.status` (checker inyectado) hasta
+ *       'ready'|'failed'. progress se queda en 0.99 durante el poll; solo
+ *       llega a 1 en 'ready'. Esto incluye "verificar antes de fallar"
+ *       (#103, lección heredada del hermano): uploadAsync() puede lanzar o
+ *       resolver no-2xx aunque el binario SÍ haya llegado completo a Stream
+ *       (falso negativo leyendo la respuesta HTTP) — el 2xx feliz y el
+ *       no-2xx/excepción CONFLUYEN en el mismo poll, nunca declaran 'failed'
+ *       sin antes consultar el estado real del creativo.
  *   D2. La duración (169.6, validate_ad_duration_ms) se valida ANTES de
  *       construir `File` o tocar la red.
  *   D3. mint-ad-upload-url (169.4) tiene errores propios: FORBIDDEN (403) y
@@ -22,15 +28,19 @@
  *       a un mensaje entendible y DISTINTO del genérico (es un estado
  *       esperado, no una falla).
  *   D4. `ad_creatives` no persiste la razón de un 'failed' del poll — como el
- *       pre-flight (D2) ya validó la duración, cualquier 'failed' que llegue
- *       del poll es, por eliminación, un fallo de transcodificación.
+ *       pre-flight (D2) ya validó la duración, un 'failed' que llegue del
+ *       poll es CASI SIEMPRE, por eliminación, un fallo de transcodificación
+ *       (no una garantía absoluta: cliente y servidor miden la duración por
+ *       separado — VFR/discrepancias de contenedor pueden mover el valor
+ *       real a un lado u otro de un límite; matiz sin resolver por esta
+ *       subtarea, ver el header del test).
  *   D5. El hook cancela automáticamente al desmontar (cleanup de efecto) —
  *       el hermano no lo hace; aquí se pide explícito que no queden timers
  *       vivos ni setState sobre un componente desmontado (por eso el cleanup
  *       NO notifica on_status_change/on_progress, solo aborta en silencio).
  */
 
-import { useCallback, useLayoutEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { File, UploadType } from 'expo-file-system';
 
@@ -185,8 +195,9 @@ async function poll_until_resolved(params: {
       }
 
       if (check_status === 'failed') {
-        // D4: la duración ya se validó en el pre-flight (D2) — por
-        // eliminación, este 'failed' es siempre un fallo de transcodificación.
+        // D4: la duración ya se validó en el pre-flight (D2) — casi siempre,
+        // por eliminación, este 'failed' es un fallo de transcodificación
+        // (matiz sin resolver por esta subtarea, ver header del hook/test).
         set_status('failed');
         set_error(TRANSCODING_FAILED_MESSAGE);
         return;
@@ -238,18 +249,13 @@ export function useAdUpload(deps?: UseAdUploadDeps): UseAdUploadResult {
     on_progress?.(0);
   }, [on_status_change, on_progress]);
 
-  // D5: cancela automáticamente al desmontar. useLayoutEffect (NO useEffect):
-  // el cleanup de un efecto pasivo se difiere al scheduler de React (flush
-  // asíncrono, en un macrotask) — bajo RNTL v14/React 19, `unmount()` es
-  // async y el test solo vacía MICROtasks tras llamarlo, así que un cleanup
-  // pasivo correría DESPUÉS de que la aserción ya leyó el estado viejo
-  // (confirmado empíricamente: con useEffect el abort() del binario llegaba
-  // tarde). El cleanup de useLayoutEffect corre SÍNCRONO en el commit del
-  // unmount, sin depender de ese flush. No notifica on_status_change/
-  // on_progress (el componente ya se está desmontando; llamarlos arriesgaría
-  // un setState sobre un padre desmontado) — solo aborta el binario/poll en
-  // vuelo e invalida el seq para que ningún await pendiente escriba después.
-  useLayoutEffect(() => {
+  // D5: cancela automáticamente al desmontar (mismo patrón de efecto de
+  // limpieza que el hermano podría tener, pero no tiene — aquí es contrato
+  // explícito). NO notifica on_status_change/on_progress (el componente ya
+  // se está desmontando; llamarlos arriesgaría un setState sobre un padre
+  // desmontado) — solo aborta el binario/poll en vuelo e invalida el seq
+  // para que ningún await pendiente escriba después.
+  useEffect(() => {
     return () => {
       upload_seq_ref.current += 1;
       abort_ref.current?.abort();
@@ -364,27 +370,34 @@ export function useAdUpload(deps?: UseAdUploadDeps): UseAdUploadResult {
         },
       });
 
+      // #103 (lección heredada del hermano, tarea #103 + subtarea 103.2):
+      // uploadAsync() puede LANZAR o resolver no-2xx aunque el binario SÍ
+      // haya llegado completo a Stream (falso negativo leyendo la respuesta
+      // HTTP). Copiar el pipeline sin copiar el arreglo hereda el bug — y
+      // aquí es peor: mint-ad-upload-url NO tiene ventana de expiración para
+      // 'processing' (types.ts — solo 'uploading' tiene stale_before), así
+      // que un falso negativo tratado como fallo real dejaría al creativo
+      // huérfano y bloquearía a la organización con 409 AD_UPLOAD_IN_PROGRESS
+      // hasta liberar la fila a mano. Por eso `stream_upload_ok` NO decide un
+      // 'failed' aquí — solo se usa para decidir si hace falta el warning; el
+      // 2xx feliz Y el no-2xx/excepción CONFLUYEN en el MISMO
+      // poll_until_resolved de abajo (D1): verifica el estado real del
+      // creativo antes de declarar 'failed'.
       let stream_upload_ok: boolean;
       try {
         const { status } = await task.uploadAsync();
         stream_upload_ok = status >= 200 && status < 300;
       } catch (err) {
         if (!is_current()) return; // abortado por cancel()/supersede/unmount — silencio
-        console.warn('[useAdUpload] uploadAsync failed:', err);
-        set_status('failed');
-        set_error(NEUTRAL_ERROR_MESSAGE);
-        return;
+        console.warn('[useAdUpload] uploadAsync failed, verificando estado real antes de fallar (#103):', err);
+        stream_upload_ok = false;
       }
       if (!is_current()) return; // cancelado/superado mientras subía
 
       if (!stream_upload_ok) {
-        set_status('failed');
-        set_error(NEUTRAL_ERROR_MESSAGE);
-        return;
+        console.warn('[useAdUpload] binario no confirmó 2xx, verificando estado real antes de fallar (#103)');
       }
 
-      // D1: el ciclo NO termina aquí como el hermano — sigue con el poll del
-      // creativo hasta 'ready'|'failed'.
       await poll_until_resolved({
         cloudflare_uid: stream_uid,
         checker: check_ad_creative_status ?? ((uid) => default_check_ad_creative_status(supabase_client, uid)),
