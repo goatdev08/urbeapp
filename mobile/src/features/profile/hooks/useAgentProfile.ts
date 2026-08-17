@@ -83,7 +83,7 @@ export function useAgentProfile(agent_id: string): UseAgentProfileState {
         // "more than one relationship was found".
         const user_query = supabase
           .from('users')
-          .select('bio, created_at, agencies!users_agency_id_fkey(name)')
+          .select('bio, phone, created_at, agencies!users_agency_id_fkey(name)')
           .eq('id', agent_id)
           .single();
 
@@ -131,6 +131,7 @@ export function useAgentProfile(agent_id: string): UseAgentProfileState {
             full_name: prefs?.full_name ?? null,
             profile_photo_url: prefs?.profile_photo_url ?? null,
             bio: user_data.bio,
+            phone: user_data.phone,
             member_since: user_data.created_at,
             agency_name: raw_agency?.name ?? null,
           },

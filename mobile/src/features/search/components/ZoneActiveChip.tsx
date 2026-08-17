@@ -7,7 +7,7 @@
  * `filters.area != null` (zona activa desde "Buscar en esta zona", #56.4):
  *   - Forma: pill (radii.r_pill), un solo `TouchableOpacity` presionable —
  *     todo el chip dispara `on_press`, sin sub-botón separado para "Quitar".
- *   - Contenido: ícono `MapPin` (Phosphor, mismo ícono que property-detail /
+ *   - Contenido: ícono `MapPinSimple` (Phosphor, mismo ícono que property-detail /
  *     location) + "Zona activa" + "· Quitar" en semibold para distinguir la
  *     acción. type_scale.body reducido a 14/18 (mismo ajuste que AreaSearchPill).
  *   - Padding: vertical spacing.s_12, horizontal spacing.s_16. Sombra: shadows.sm.
@@ -25,7 +25,7 @@
  */
 import React from 'react';
 import { StyleProp, StyleSheet, Text, TouchableOpacity, ViewStyle } from 'react-native';
-import { MapPin } from 'phosphor-react-native';
+import { MapPinSimple } from 'phosphor-react-native';
 
 import { colors, fonts, radii, shadows, spacing, type_scale } from '@/theme/theme';
 
@@ -51,7 +51,7 @@ export function ZoneActiveChip({ on_press, dark = false, label = 'Zona activa', 
       accessibilityRole="button"
       accessibilityLabel={`${label}. Quitar filtro de zona`}
     >
-      <MapPin size={16} weight="fill" color={dark ? colors.primary_soft : colors.primary} />
+      <MapPinSimple size={16} weight="fill" color={dark ? colors.primary_soft : colors.primary} />
       <Text style={[styles.label, dark && styles.label_dark]} numberOfLines={1}>
         {label}{' '}
         <Text style={[styles.action, dark && styles.action_dark]}>· Quitar</Text>

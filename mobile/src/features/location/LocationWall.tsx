@@ -25,7 +25,7 @@
 import React, { useEffect, useState } from 'react';
 import { Linking, Platform, StyleSheet, Text, View } from 'react-native';
 import * as Location from 'expo-location';
-import { MapPin } from 'phosphor-react-native';
+import { MapPinSimple } from 'phosphor-react-native';
 
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { theme } from '@/theme/theme';
@@ -162,7 +162,7 @@ export function LocationWall({ variant }: LocationWallProps): React.ReactElement
   return (
     <View style={styles.container}>
       <View style={styles.icon_ring}>
-        <MapPin size={40} color={theme.colors.primary} weight="fill" />
+        <MapPinSimple size={40} color={theme.colors.primary} weight="fill" />
       </View>
 
       <Text style={styles.title}>{copy.title}</Text>

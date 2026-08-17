@@ -22,7 +22,7 @@ import {
 } from 'react-native';
 import { FlashList, type ListRenderItemInfo } from '@shopify/flash-list';
 import { useRouter } from 'expo-router';
-import { MagnifyingGlass, MapPin, SlidersHorizontal, VideoCamera } from 'phosphor-react-native';
+import { MagnifyingGlass, MapPinSimple, SlidersHorizontal, VideoCamera } from 'phosphor-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, spacing } from '@/theme/theme';
@@ -132,7 +132,7 @@ export function FeedScreen() {
           {filters.area != null ? (
             <EmptyState
               dark
-              icon={MapPin}
+              icon={MapPinSimple}
               message="No hay publicaciones en esta zona"
               subtitle="Prueba mover el mapa o limpia la zona."
               cta_label="Limpiar zona"

@@ -31,7 +31,7 @@
  * La ruta crm.tsx añade un Redirect como segunda capa de seguridad.
  */
 import { Tabs, useRouter, useSegments } from 'expo-router';
-import { BookmarkSimple, HouseLine, type Icon, MapPin, Plus, Ranking, UserCircle } from 'phosphor-react-native';
+import { BookmarkSimple, HouseLine, type Icon, MapPinSimple, Plus, Ranking, UserCircle } from 'phosphor-react-native';
 import { Pressable, StyleSheet, View, type ColorValue } from 'react-native';
 
 import { colors, shadows } from '@/theme/theme';
@@ -103,7 +103,7 @@ export function AndroidTabsLayout() {
       />
       <Tabs.Screen
         name="map"
-        options={{ title: 'Mapa', tabBarIcon: tab_icon(MapPin) }}
+        options={{ title: 'Mapa', tabBarIcon: tab_icon(MapPinSimple) }}
       />
       <Tabs.Screen
         name="publish"

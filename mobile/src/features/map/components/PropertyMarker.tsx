@@ -1,10 +1,12 @@
 /**
  * PropertyMarker.tsx — marcador de propiedad individual para el mapa global (#11.4).
  *
- * Diseño (flash 2026-07-06): pin canónico MapPinIcon (Phosphor MapPin, fill) —
+ * Diseño (flash 2026-07-06): pin canónico MapPinIcon (Phosphor MapPinSimple) —
  * solo el icono, sin price tag ni isotipo. Mismo pin en MapPicker y PropertyMap.
  *
- * Color por operación:
+ * Color por operación — desde #186 pinta el DISCO del pin, no la silueta entera
+ * (el contorno lo pone MapPinIcon según el tema del dispositivo). El código de
+ * color se conserva: es lo que distingue renta de venta de un vistazo.
  *   rent         → colors.primary (salvia #5A8A5E)
  *   sale | both  → colors.accent  (arcilla #9A7150)
  *

@@ -26,11 +26,9 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
-  Bookmarks,
   Briefcase,
   Buildings,
   DotsThreeVertical,
-  PencilSimple,
   SignOut,
   Storefront,
   UserPlus,
@@ -129,6 +127,13 @@ export function ProfileScreen({
     router.push('/profile/edit');
   }
 
+  function handle_saved() {
+    // ⚠️ NO '/saved': ese tab está con href:null para agentes y expo-router
+    // descarta el push en silencio (el botón no hacía nada). Ver el docblock
+    // de app/(protected)/profile/saved.tsx.
+    router.push('/profile/saved');
+  }
+
   function handle_my_listings() {
     router.push('/profile/my-listings');
   }
@@ -174,14 +179,15 @@ export function ProfileScreen({
   // Items del menú "⋯" — orden: navegación primero, cerrar sesión al final.
   // "Invitar agentes" solo para owners de agencia (#34).
   // "Miembros" para owner Y admin de agencia (#71.6 — gestión delegada §4.10).
-  // "Guardados" vive aquí desde que salió de la tab bar (composición del mockup).
+  // ⚠️ 180.2: "Guardados" y "Editar perfil" YA NO están aquí — subieron a la
+  // fila de acciones visible del header (ProfileActions). Duplicarlas en el
+  // menú daría dos caminos al mismo destino sin ganar nada.
   // "Convertirme en agente" y "Registrar mi inmobiliaria" solo para
   // buscadores (#71.3 / #71.4) — un agent/admin no tiene nada que canjear,
   // solicitar o fundar. Son caminos DISTINTOS: el primero une la cuenta a
   // una inmobiliaria EXISTENTE; el segundo funda una NUEVA (pending_approval,
   // sin cambio de rol hasta 71.5).
   const menu_items: ProfileMenuItem[] = [
-    { key: 'saved', label: 'Guardados', icon: Bookmarks, onPress: () => router.push('/saved') },
     { key: 'listings', label: 'Mis publicaciones', icon: Storefront, onPress: handle_my_listings },
     ...(isOwner
       ? [{ key: 'invite', label: 'Invitar agentes', icon: UserPlus, onPress: handle_invite_agents }]
@@ -195,7 +201,6 @@ export function ProfileScreen({
           { key: 'register_agency', label: 'Registrar mi inmobiliaria', icon: Buildings, onPress: handle_register_agency },
         ]
       : []),
-    { key: 'edit', label: 'Editar perfil', icon: PencilSimple, onPress: handle_edit_profile },
     {
       key: 'signout',
       label: 'Cerrar sesión',
@@ -253,10 +258,14 @@ export function ProfileScreen({
         showsVerticalScrollIndicator={false}
       >
         {/* Cabecera del agente */}
-        <ProfileHeader profile={data} stats={stats} loading={stats_loading} />
-
-        {/* Separador visual entre header y la grilla */}
-        <View style={styles.divider} />
+        <ProfileHeader
+          profile={data}
+          stats={stats}
+          loading={stats_loading}
+          is_own_profile={is_own_profile}
+          on_edit_profile={handle_edit_profile}
+          on_saved={handle_saved}
+        />
 
         {/* Grilla de propiedades */}
         <PropertiesGrid
@@ -318,12 +327,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.paper_2,
-  },
-
-  divider: {
-    height: 1,
-    backgroundColor: colors.paper_3,
-    marginHorizontal: spacing.s_16,
-    marginBottom: spacing.s_16,
   },
 });

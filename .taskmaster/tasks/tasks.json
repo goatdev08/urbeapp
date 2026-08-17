@@ -8914,6 +8914,135 @@
         "updatedAt": "2026-08-16T23:00:00.000Z"
       },
       {
+        "id": "184",
+        "title": "fix(180.2): el botón Guardados del perfil no navegaba (href:null del tab)",
+        "description": "Origen: subtarea 180.2 · Detectado por: usuario (Abraham, 2026-08-16, probando el build). El botón 'Guardados' que 180.2 hizo visible no llevaba a ninguna parte. Causa raíz: el tab (tabs)/saved está registrado con href:null para los AGENTES (#65: ese 4º slot lo ocupa Leads para ellos) y expo-router deja de considerar la ruta navegable, así que router.push('/saved') se descartaba EN SILENCIO. El bug no lo introdujo 180.2 — venía desde #65: la opción existía en el menú ⋯ y tampoco funcionaba; hacerla visible fue lo que lo destapó.",
+        "details": "SOLUCIÓN: ruta propia del Stack app/(protected)/profile/saved.tsx ('/profile/saved') que renderiza el MISMO SavedScreen, en vez de tocar la tab bar (componente delicado con dos implementaciones por plataforma: GlassTabBar en Android y NativeTabs en iOS). Bonus: al ser Stack trae header con regreso — entrando desde el perfil no había forma de volver salvo la tab bar. SavedScreen gana 2 props opcionales de layout (under_floating_tab_bar, has_header) con defaults que preservan el comportamiento del tab.\n\nNO se toca: AndroidTabsLayout, IosNativeTabsLayout, GlassTabBar ni la ruta (tabs)/saved que usan los no-agentes.",
+        "testStrategy": "Verificación por CLI: deep link a /profile/saved en iOS (header 'Guardados' + regreso, sin tab bar) y TAP REAL con adb sobre el botón en Android (adb shell input tap) confirmando la navegación. Suite completa + tsc + lint.",
+        "status": "done",
+        "dependencies": [
+          "180"
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": "185",
+        "title": "polish(11): pin unificado — Phosphor MapPinSimple en toda la app (mapas, wizard y tab de Mapa)",
+        "description": "Origen: petición de Abraham (2026-08-16) · Detectado por: usuario. Sustituir el pin actual (Phosphor `MapPin`, la gota clásica) por `MapPinSimple` (id phosphor `map-pin-simple`, el pin de paleta: círculo sobre asta) en TODOS los lugares donde la app dibuja un pin: marcadores del mapa global, mapa del detalle, pin central del wizard de publicación, chips/estados vacíos de búsqueda y el ícono del tab de Mapa en las dos plataformas. El tab de Mapa conserva el comportamiento actual (tinte salvia cuando está seleccionado). Solo cambia el ícono: nada de geometría, anclas ni lógica.",
+        "details": "Inventario (grep MapPin en mobile/src):\n- `src/components/MapPinIcon.tsx` — pin canónico de los tres mapas (PropertyMarker del mapa global, PropertyMap del detalle, MapPicker del wizard). Un solo cambio de import cubre los tres.\n- Usos inline de `MapPin`: PropertyDetailScreen (dirección), LocationWall, ZoneActiveChip, MapSearchSuggestions (fila de colonia), FeedScreen (EmptyState de zona).\n- Tab de Mapa Android: `src/components/AndroidTabsLayout.tsx` dibuja el componente Phosphor directo.\n- Tab de Mapa iOS: `src/components/IosNativeTabsLayout.tsx` NO acepta componentes React — consume PNG @1x/2x/3x de `assets/tab-icons/` (regular + fill). Hay que rasterizar el nuevo ícono desde el path `d` de `node_modules/phosphor-react-native/src/defs/MapPinSimple.tsx` (receta qlmanage + sips, memoria `svg_to_png_qlmanage`) y renombrar las claves a map-pin-simple-*. `renderingMode=\"template\"` sigue tiñendo el PNG con el `tintColor` (salvia) al seleccionar — no hay que generar variantes de color.\n\nGeometría: `MapPinSimple` también tiene la punta abajo-centro (viewBox 256, asta hasta y=232), así que `anchor={{x:0.5,y:1}}` y `centerOffset={{x:0,y:-size/2}}` de PropertyMarker/PropertyMap siguen siendo correctos sin tocarlos.\n\nCriticidad TDD: NO crítica — el footprint es `components/**` y pantallas + assets; ninguna ruta de `hooks/**`, `lib/**`, `utils/**` ni `supabase/**`. Verificación ligera: `pnpm tsc --noEmit`, `pnpm lint`, suite existente verde y smoke por CLI en simulador iOS + emulador Android.\n\nGate §0.5 producción viva: solo JS/UI + assets JS → viaja por OTA, sin migraciones ni contratos tocados.\n\nDERIVADAS: #186 (usuario — el pin se veía sólido en los mapas; pasa a dos tonos con contorno por tema)",
+        "testStrategy": "pnpm tsc --noEmit + pnpm lint + pnpm test (suite completa, sin regresiones). Smoke CLI: iOS (xcrun simctl io booted screenshot) y Android (adb exec-out screencap) del tab de Mapa (inactivo y seleccionado en verde), del mapa global con marcadores, del paso de ubicación del wizard y del mapa del detalle.",
+        "status": "done",
+        "dependencies": [
+          "11",
+          "65"
+        ],
+        "priority": "medium",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "MapPinIcon + usos inline → MapPinSimple",
+            "description": "Cambiar el pin canónico y los seis usos inline de `MapPin`.",
+            "details": "`src/components/MapPinIcon.tsx` (cubre PropertyMarker, PropertyMap y el MapPicker del wizard) + PropertyDetailScreen, LocationWall, ZoneActiveChip, MapSearchSuggestions y FeedScreen. Conservar tamaño, color y weight de cada uso; actualizar los docblocks que nombran `MapPin`.\n<info added on 2026-08-16T23:09:38.733Z>\nMapPinIcon.tsx updated from Phosphor MapPin (teardrop) to MapPinSimple (circle + stem, id 'map-pin-simple'); this single change covers all three maps (PropertyMarker in global map, PropertyMap in detail, MapPicker in publish wizard step 3). Inline usages migrated with perl -pi \\bMapPin\\b→MapPinSimple: PropertyDetailScreen.tsx:148 (address, weight bold), LocationWall.tsx:165, ZoneActiveChip.tsx:54, MapSearchSuggestions.tsx:53 (neighborhood row), FeedScreen.tsx:135 (zone EmptyState), and AndroidTabsLayout.tsx:106 (Map tab). Docblocks updated in MapPinIcon and PropertyMarker (including note that MapPinSimple also terminates at bottom-center point, y=232 of viewBox 256 → anchor {0.5,1} and centerOffset -size/2 remain valid, geometry unchanged). Verification: pnpm tsc --noEmit 0 errors, pnpm lint 0 errors (68 pre-existing warnings), pnpm test 95 suites / 1084 tests green.\n</info added on 2026-08-16T23:09:38.733Z>",
+            "testStrategy": "pnpm tsc --noEmit + pnpm lint + pnpm test.",
+            "status": "done",
+            "dependencies": [],
+            "priority": "medium",
+            "subtasks": [],
+            "parentId": "undefined",
+            "updatedAt": "2026-08-16T23:19:41.850Z"
+          },
+          {
+            "id": 2,
+            "title": "Tab de Mapa en ambas plataformas (Android componente, iOS PNG rasterizados)",
+            "description": "Mismo ícono en la barra de tabs, conservando el tinte salvia al seleccionar.",
+            "details": "Android: `AndroidTabsLayout.tsx` pasa `MapPinSimple` a `tab_icon`. iOS: rasterizar regular+fill @1x/2x/3x desde el path de `MapPinSimple` (qlmanage + sips), guardarlos como `map-pin-simple-{regular,fill}[@2x,@3x].png` en `assets/tab-icons/`, apuntar `ICON_SOURCES.map` a los nuevos y borrar los PNG viejos de `map-pin-*`.\n<info added on 2026-08-16T23:19:03.661Z>\nI'll analyze the codebase to understand the context of this task and generate the appropriate update.Based on my analysis of the codebase and the user's request, here is the new text that should be appended to the subtask's details:\n\nImplementado en AndroidTabsLayout.tsx:106 (prop tabBarIcon pasa MapPinSimple directamente via tab_icon helper) y IosNativeTabsLayout.tsx:109-116 (ICON_SOURCES.map actualizado a map-pin-simple-{regular,fill}.png). Assets nuevos generados en mobile/assets/tab-icons/ (6 PNG: regular+fill × @1x/2x/3x, 24/48/72 px). GOTCHA crítico: qlmanage -t -s <size> -o . map-pin.svg rasteriza el SVG sobre FONDO BLANCO con alpha=255 → iOS pintaba un cuadrado verde sólido en el tab seleccionado (tintColor tiñe TODO el píxel, no solo el foreground). sips -g hasAlpha contestaba 'yes' (hay canal alpha, pero con todos los píxeles opacos) así que no sirve para detectar el problema. Fix: script que reconstruye el alpha desde la luminancia del PNG aplanado (blanco →0, negro →255, deja RGB en negro puro) + downsample con box filter a 72/48/24 px + verificación decodificando el PNG y trazando un mapa ASCII del alpha. Todas las densidades verificadas con tintColor salvia en el simulador. Archivos map-pin-*.png viejos borrados. Receta y scripts documentados en wiki/conceptos/design-system.md sección \"Rasterización de íconos Phosphor para iOS tabs\".\n</info added on 2026-08-16T23:19:03.661Z>",
+            "testStrategy": "Smoke por CLI: tab de Mapa inactivo y seleccionado (verde) en iOS y Android.",
+            "status": "done",
+            "dependencies": [
+              1
+            ],
+            "priority": "medium",
+            "subtasks": [],
+            "parentId": "undefined",
+            "updatedAt": "2026-08-16T23:19:43.606Z"
+          },
+          {
+            "id": 3,
+            "title": "Verificación en dispositivo + ingest al vault",
+            "description": "Smoke de los cuatro mapas y actualización de wiki.",
+            "details": "Smoke CLI iOS + Android: mapa global, detalle, paso de ubicación del wizard, tab. Vault: `wiki/conceptos/mapa-busqueda.md` / la página donde vive el pin canónico, `wiki/codebase/mapa-codebase.md` y una línea en `wiki/log.md`.\n<info added on 2026-08-16T23:19:28.763Z>\nVerificación smoke completada en ambas plataformas contra Metro 8083 (backend REMOTO). iOS (iPhone 17 Pro): tab Mapa seleccionado muestra pin relleno salvia, tab inactivo muestra pin de contorno gris, marcadores del mapa global renderizan el pin nuevo (salvia para renta, arcilla para venta). Android (emulador urbea): tab Mapa muestra el pin nuevo en verde, marcador del mapa renderizado, pin central del paso 3 del wizard de publicación verificado (solicitado explícitamente por Abraham), ícono de dirección en detalle de propiedad confirmado.\n\nGotcha operativo registrado: emulador perdió conectividad de red (CTRL-EVENT-BEACON-LOSS causó spinner infinito en auth), solucionado con cold boot (adb emu kill + emulator -no-snapshot-load). Al finalizar smoke, emulador restaurado apuntando a Metro 8081 y app detenida con force-stop (cumpliendo regla de cuota: detalle y feed reproducen video de Cloudflare Stream que se factura).\n\nVault actualizado: wiki/conceptos/mapa-y-ubicacion.md actualizado con pin canónico MapPinSimple, wiki/conceptos/design-system.md incluye gotcha de qlmanage/alpha para rasterización de SVG, wiki/codebase/mapa-codebase.md actualizado con referencias a componentes modificados, entrada agregada a wiki/log.md.\n</info added on 2026-08-16T23:19:28.763Z>",
+            "testStrategy": "Capturas por CLI + suites verdes.",
+            "status": "done",
+            "dependencies": [
+              2
+            ],
+            "priority": "medium",
+            "subtasks": [],
+            "parentId": "undefined",
+            "updatedAt": "2026-08-16T23:19:45.402Z"
+          }
+        ],
+        "updatedAt": "2026-08-16T23:19:45.402Z"
+      },
+      {
+        "id": "186",
+        "title": "polish(185): pin a dos tonos — contorno según el tema del dispositivo + disco de color",
+        "description": "Origen: tarea 185 · Detectado por: usuario (Abraham, 2026-08-16, al ver #185 en el dispositivo). El pin nuevo se veía 'totalmente de un color sólido' en los mapas. Pasa a dibujarse a DOS TONOS: contorno (anillo + asta) en tinta cuando el tema del dispositivo es claro y en marfil cuando es oscuro, y el círculo relleno con color. Decisión de Abraham en el mismo hilo: el disco CONSERVA el código por operación del mapa global (renta salvia / venta arcilla) en vez de ser verde siempre — se gana contorno sin perder la información que distingue renta de venta.",
+        "details": "Implementación: Phosphor `weight=\"duotone\"` da exactamente los dos paths que hacen falta — contorno (anillo + asta, pintado con `color`) y disco interior (`duotoneColor`). `duotoneOpacity={1}` porque el default de Phosphor es 0.2 y lavaría el relleno. `MapPinIcon` conserva su firma: la prop `color` pasa a significar el DISCO (era la silueta entera), así que ni PropertyMarker ni PropertyMap ni MapPicker cambian su llamada.\n\nTema del dispositivo con `useColorScheme()` de react-native — la app no tenía detección de tema hasta aquí (`userInterfaceStyle: 'automatic'` ya estaba en app.config.js, así que el hook sí varía).\n\n⚠️ Guard de plataforma: en Android los tiles de Google NO siguen el tema del sistema (no hay `customMapStyle` oscuro en la app), así que el contorno marfil se limita a iOS (Apple Maps sí oscurece). En Android un contorno marfil sobre un mapa claro sería un pin invisible. Quitar el guard el día que exista un estilo oscuro de mapa.\n\nCriticidad TDD: NO crítica (`src/components/**`). Verificación ligera + smoke en las dos plataformas y en los dos temas.",
+        "testStrategy": "pnpm tsc --noEmit + pnpm lint + pnpm test sin regresiones. Smoke por CLI: iOS en tema claro y oscuro (`xcrun simctl ui booted appearance dark|light`) sobre el mapa global; Android en claro y oscuro (`adb shell cmd uimode night yes|no`) para confirmar que los tiles NO se oscurecen y que el guard de plataforma es correcto.",
+        "status": "done",
+        "dependencies": [
+          "185"
+        ],
+        "priority": "medium",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "MapPinIcon a duotone + tema del dispositivo",
+            "description": "Contorno por tema, disco por color.",
+            "details": "`weight=\"duotone\"`, `duotoneOpacity={1}`, `useColorScheme()` + guard de plataforma. Docblocks de MapPinIcon y PropertyMarker.\n<info added on 2026-08-16T23:44:24.513Z>\nI'll analyze the codebase to provide specific implementation details about the changes made to MapPinIcon.tsx.Archivos tocados: mobile/src/components/MapPinIcon.tsx (L58-63: weight=\"duotone\", color={outline}, duotoneColor={color}, duotoneOpacity={1}; L52-55: useColorScheme() + guard Platform.OS === 'ios'), mobile/src/features/map/components/PropertyMarker.tsx (docblock L6-9 actualizado: el color ahora pinta el disco, no la silueta entera; L61/L85 sin cambios en la llamada — el color sigue viniendo de resolve_pin_color, MapPinIcon lo mapea internamente al duotoneColor). Decisión de contorno: contorno marfil (#EEE4D0 = colors.paper) solo en iOS oscuro; en Android o iOS claro: tinta (#17140F = colors.ink). Verificado localmente (useColorScheme() devuelve 'dark' y Platform.OS reconoce 'ios') sin emulador disponible — adb/simctl requieren retocar UI mode manualmente. Suites: tsc 0 errores, lint 68 warnings (preexistentes, import/first y require-style conocidos desde #20), Jest 1084/1084 pasan (npm test corrió el setup completo).\n</info added on 2026-08-16T23:44:24.513Z>",
+            "testStrategy": "tsc + lint + jest.",
+            "status": "done",
+            "dependencies": [],
+            "priority": "medium",
+            "subtasks": [],
+            "parentId": "undefined",
+            "updatedAt": "2026-08-16T23:46:08.743Z"
+          },
+          {
+            "id": 2,
+            "title": "Smoke en ambas plataformas y ambos temas + ingest al vault",
+            "description": "Verificar contraste real del pin.",
+            "details": "iOS claro/oscuro, Android claro/oscuro; wiki (mapa-y-ubicacion, design-system, log).\n<info added on 2026-08-16T23:45:01.079Z>\nI need to analyze the codebase to provide specific details about the smoke testing verification that was performed.Based on the user's smoke testing report and the codebase analysis, here is the new information to append to the subtask details:\n\nSmoke por CLI completado en ambas plataformas (iOS + Android) y ambos temas. iOS (xcrun simctl ui booted appearance light|dark): en claro el pin despliega anillo negro + disco arcilla sobre tiles claros de Apple Maps; al pasar a oscuro los tiles se oscurecen y el anillo pasa a marfil (colors.paper), legibilidad confirmada. Android (adb shell cmd uimode night yes): confirmado que Google Maps mantiene tiles claros independiente del tema del sistema (sin customMapStyle oscuro) → guard Platform.OS === 'ios' validado, el pin conserva el anillo oscuro (colors.ink) legible sobre fondo claro. Estado final: emulador Android restaurado a night=no y apuntado a Metro:8081, app cerrada (regla cuota video §0.5); simulador iOS restaurado a appearance=light. Ingest al vault: mapa-y-ubicacion.md actualizado con la verificación real del guard de plataforma línea 23-27 (tiles Google no siguen el tema, solo iOS oscurece), design-system.md con la estrategia duotone (contorno según tema / disco por operación), log.md.\n</info added on 2026-08-16T23:45:01.079Z>",
+            "testStrategy": "Capturas por CLI.",
+            "status": "done",
+            "dependencies": [
+              1
+            ],
+            "priority": "medium",
+            "subtasks": [],
+            "parentId": "undefined",
+            "updatedAt": "2026-08-16T23:46:10.544Z"
+          }
+        ],
+        "updatedAt": "2026-08-16T23:46:10.544Z"
+      },
+      {
+        "id": "187",
+        "title": "fix(saved): título \"Guardados\" visible en el tab directo (usuarios no-agente)",
+        "description": "El tab (tabs)/saved (entrada directa para usuarios normales) no pintaba ningún título arriba — solo un espaciador. El otro acceso (botón del perfil → /profile/saved) sí trae el Stack header con el título \"Guardados\". Se agrega el mismo título dentro del ListHeaderComponent cuando has_header=false, mirando el patrón ya usado en el tab CRM (título h1 + paddingHorizontal layout.screen_inset).",
+        "details": "Archivo: mobile/src/features/saved/SavedScreen.tsx. Cuando !has_header, el ListHeaderComponent ahora renderiza un View con paddingTop insets.top+s_16 + Text \"Guardados\" (type_scale.h1, color ink), en vez del espaciador plano. Cuando has_header=true (ruta del Stack) se conserva el espaciador chico sin cambios — ese camino ya tiene su propio título vía Stack.Screen options. Estilos nuevos: styles.header (paddingHorizontal layout.screen_inset, paddingBottom s_16) y styles.title (type_scale.h1, color ink) — mismo patrón que src/features/leads/screens/CRMScreen.tsx (título de tab sin Stack header).",
+        "testStrategy": "pnpm tsc --noEmit + pnpm lint verdes. Smoke iOS: verificado que el acceso vía Stack (/profile/saved) sigue mostrando su header con back-button + \"Guardados\" sin cambios (screenshot). El acceso directo por tab requiere una cuenta no-agente (las 4 cuentas demo remotas son agent/admin) — no se pudo generar una cuenta buscador de prueba dentro de esta sesión sin registrar una cuenta nueva; el cambio es aditivo (solo agrega texto donde antes no había nada) y reusa exactamente el patrón ya probado de CRMScreen.",
+        "status": "done",
+        "dependencies": [
+          "180"
+        ],
+        "priority": "medium",
+        "subtasks": [],
+        "updatedAt": "2026-08-16T00:00:00.000Z"
+      },
+      {
         "id": "188",
         "title": "hardening(169.5): ad_creatives sin ventana de expiración para 'processing'",
         "description": "Origen: subtarea 169.5 · Detectado por: guardian de 169.5, corrigiendo el rationale del orquestador. Un creativo atorado en 'processing' NO tiene ventana de expiración — el reaper de 169.4 (STALE_UPLOAD_MS) solo cubre 'uploading'. En 169.5 se decidió que el webhook PROPAGUE el error (500 + reintento de Cloudflare) en vez de tragárselo, con el argumento de que el reintento es la única ruta de recuperación. El guardián precisó el matiz que lo vuelve insuficiente: **el reintento de Stream es una ventana FINITA con backoff, no indefinida**. Si ad_creatives está caída más allá de esa ventana, el creativo se atora igual — y ahora sin ningún mecanismo detrás. La decisión de 169.5 compra tiempo, no durabilidad.",
@@ -8973,8 +9102,8 @@
     "metadata": {
       "version": "1.0.0",
       "lastModified": "2026-08-17T02:14:24.592Z",
-      "taskCount": 187,
-      "completedCount": 98,
+      "taskCount": 191,
+      "completedCount": 102,
       "tags": [
         "master"
       ]
