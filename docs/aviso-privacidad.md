@@ -6,7 +6,7 @@
 >
 > Falta antes de activarlo: (1) revisión de un abogado en materia de **LFPDPPP** (datos del responsable, domicilio, medios para ejercer derechos ARCO, autoridad ante la que reclamar); (2) decidir el efecto en usuarios existentes — publicarlo como versión vigente **fuerza re-consentimiento a todas las cuentas** ([[legal-consentimientos]]); (3) cerrar la deuda **#116**, porque hoy el sistema comparte más de lo que este texto promete.
 >
-> 🔴 **La sección 5 (publicidad) describe algo que TODAVÍA NO EXISTE en producción** — se redacta por delante como gate de la tarea #170, para que el texto se apruebe antes de construir y no al revés. Publicar este aviso **antes** de que la tarea 170 esté desplegada prometería un tratamiento que no ocurre; publicarlo **después** de encender los anuncios sería recabar sin avisar. El orden correcto es: aprobar el texto → construir → sembrar la versión con `is_current=false` → desplegar 170 → **flip**. Ver el anexo técnico: cuatro de las promesas de §5 están marcadas ⏳ y una (k-anonimato) todavía **no tiene mecanismo**.
+> 🔴 **La sección 5 (publicidad) describe algo que TODAVÍA NO EXISTE en producción** — se redacta por delante como gate de la tarea #170, para que el texto se apruebe antes de construir y no al revés. Publicar este aviso **antes** de que la tarea 170 esté desplegada prometería un tratamiento que no ocurre; publicarlo **después** de encender los anuncios sería recabar sin avisar. El orden correcto es: aprobar el texto → construir → sembrar la versión con `is_current=false` → desplegar 170 → **flip**. Ver el anexo técnico: las promesas de §5 están marcadas ⏳ mientras su mecanismo no exista. **Se eliminó a propósito la promesa de k-anonimato** del borrador anterior: no hay umbral definido ni implementado, y prometer por escrito una garantía estadística que nadie calcula es peor que no prometerla.
 
 ---
 
@@ -61,9 +61,9 @@ Entre las propiedades del feed pueden aparecer **videos de anunciantes** — neg
 
 **Qué registramos cuando ves un anuncio:** que se te mostró, cuánto tiempo lo viste, si tocaste su botón, y la zona y la sesión en las que ocurrió. Ese registro queda ligado a tu cuenta dentro de nuestros sistemas.
 
-**Qué ve el anunciante: nunca tu identidad.** No recibe tu nombre, tu correo, tu teléfono, tu ubicación ni ningún identificador tuyo — tampoco uno seudonimizado. Recibe **totales por zona y por periodo**: cuántas veces se mostró su anuncio, cuánto se vio en promedio y cuántas personas tocaron su botón. Y los recibe únicamente cuando esos totales agrupan a suficientes personas como para que ninguna sea identificable dentro del número.
+**Qué ve el anunciante: nunca tu identidad.** No recibe tu nombre, tu correo, tu teléfono, tu ubicación ni ningún identificador tuyo — tampoco uno seudonimizado. Hoy los anunciantes **no tienen ningún acceso a nuestros sistemas**: no existe panel, consulta ni exportación para ellos. Lo único que reciben es un reporte que les entregamos nosotros, con **totales por zona y por periodo**: cuántas veces se mostró su anuncio, cuánto se vio en promedio y cuántas personas tocaron su botón.
 
-**Cuánto lo conservamos:** el registro detallado se borra a los **90 días**. Los totales mensuales por zona, que ya no permiten llegar a una persona, se conservan como base de facturación al anunciante.
+**Cuánto lo conservamos:** el registro detallado se conserva un máximo de **90 días** y después se elimina. Los totales mensuales por zona, que ya no permiten llegar a una persona, se conservan como base de facturación al anunciante.
 
 **Si tocas el botón de un anuncio, sales de Urbea.** Se abre WhatsApp, tu marcador telefónico o el sitio del anunciante. Desde ese momento, lo que compartas lo trata ese anunciante bajo **su propio** aviso de privacidad, no bajo éste — y si lo contactas por WhatsApp o por teléfono, verá tu número.
 
@@ -102,9 +102,9 @@ Correspondencia entre las promesas de arriba y lo que las hace cumplir. El inven
 | §4 "nunca ve tus preferencias" | `user_prefs_select` = fila propia o admin | inventario en `privacidad-datos.md` |
 | §2 "registramos tu comportamiento de video" | `events_raw` (`video_view`, `video_completed`, `app_open`) | `33_`, `35_` |
 | §5 "el anunciante nunca ve tu identidad" | ⏳ **por construir (170.5)**: `ad_impressions` sin policy de `select` para `authenticated`; el anunciante solo llega al rollup | ⏳ pgTAP de 170.5 |
-| §5 "el registro detallado se borra a los 90 días" | ⏳ **por construir (170.5)**: `purge_ad_impressions()`; ⚠️ **sin programador todavía** (decisión de Abraham 2026-08-17: `pg_cron` no está instalado y a 90 días no hay nada que purgar) — la promesa **no se cumple sola** hasta que alguien la programe | ⏳ pgTAP de 170.5 |
+| §5 "se conserva un máximo de 90 días" | ⏳ **por construir (170.5)**: `purge_ad_impressions()`; ⚠️ **sin programador todavía** (decisión de Abraham 2026-08-17: `pg_cron` no está instalado y a 90 días no hay nada que purgar) — la promesa **no se cumple sola** hasta que alguien la programe | ⏳ pgTAP de 170.5 |
 | §5 "elegimos por el lugar, no por quién eres" | ⏳ **por construir (170.2)**: `ads_for_zone` recibe zona/coordenadas, **nunca** el historial del usuario | ⏳ pgTAP de 170.2 |
-| §5 "nadie identificable dentro del número" (k-anonimato) | ⏳ **sin mecanismo todavía**: el umbral k no está definido ni implementado; hoy no existe superficie por la que un anunciante consulte nada | ⏳ — |
+| §5 "los anunciantes no tienen ningún acceso a nuestros sistemas" | **cierto hoy sin mecanismo nuevo**: no existe rol, panel, RPC ni EF que un anunciante pueda invocar para leer impresiones. Deja de ser cierto en cuanto #172 construya el panel de métricas — ese día hay que reescribir este renglón y §5, y decidir el umbral de agregación | inventario de grants en `privacidad-datos.md` |
 
 ⚠️ **Contradicciones vivas entre este texto y el sistema** (deuda #116, cerrarlas antes de publicar):
 
