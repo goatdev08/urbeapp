@@ -148,9 +148,10 @@ import { useVideoUpload } from '../hooks/useVideoUpload';
 const TEST_LOCAL_URI = 'file:///data/user/0/com.urbea/cache/video.mp4';
 const STREAM_UID = 'stream-uid-mint-test-abc123';
 const SIGNED_UPLOAD_URL = 'https://upload.videodelivery.net/tus-session/abc123';
-// 200 MB — techo del direct upload simple de Cloudflare Stream (decisión
-// 68.4). Literal independiente, NO importado de la constante del SUT.
-const MAX_STREAM_UPLOAD_BYTES = 200 * 1024 * 1024;
+// 500 MiB — techo de producto (192.2, antes 200 MB = límite del POST básico de
+// Stream; ahora la subida va por TUS resumable). Literal independiente, NO
+// importado de la constante del SUT (= MAX_VIDEO_SIZE_BYTES de validation.ts).
+const MAX_STREAM_UPLOAD_BYTES = 524288000;
 
 const SESSION_ERROR_MESSAGE = 'No hay sesión activa. Inicia sesión para publicar.';
 const NEUTRAL_ERROR_MESSAGE = 'Error al subir el video. Verifica tu conexión e intenta de nuevo.';
@@ -293,9 +294,9 @@ describe('useVideoUpload', () => {
     expect(mock_update).not.toHaveBeenCalled();
   });
 
-  // ── (EC3a/EC3b) Techo de 200 MB — boundary exacto ────────────────────────
+  // ── (EC3a/EC3b) Techo de 500 MB — boundary exacto (192.2) ────────────────────────
 
-  it('(EC3a) excede_200mb_no_invoca_mint_upload_url: file.size > 200MB → status=error con mensaje de tamaño, sin invocar mint-upload-url', async () => {
+  it('(EC3a) excede_500mb_no_invoca_mint_upload_url: file.size > 500MB → status=error con mensaje de tamaño, sin invocar mint-upload-url', async () => {
     const file_instance = make_mock_file({ size: MAX_STREAM_UPLOAD_BYTES + 1 });
     MockFile.mockImplementation(() => file_instance as never);
     const mock_supabase = make_mock_supabase({});
@@ -309,12 +310,12 @@ describe('useVideoUpload', () => {
     });
 
     expect(result.current.status).toBe('error');
-    expect(result.current.error).toMatch(/200/);
+    expect(result.current.error).toMatch(/500/);
     expect(mock_supabase._mock_invoke).not.toHaveBeenCalled();
     expect(mock_update).not.toHaveBeenCalled();
   });
 
-  it('(EC3b) exactamente_200mb_si_procede: file.size = 200MB exacto → SÍ invoca mint-upload-url', async () => {
+  it('(EC3b) exactamente_500mb_si_procede: file.size = 500MB exacto → SÍ invoca mint-upload-url', async () => {
     const file_instance = make_mock_file({ size: MAX_STREAM_UPLOAD_BYTES });
     MockFile.mockImplementation(() => file_instance as never);
     const mock_supabase = make_mock_supabase({});
@@ -1030,8 +1031,10 @@ describe('useVideoUpload', () => {
     await act(async () => {
       await result.current.upload(TEST_LOCAL_URI);
     });
+    // 192.2: `size_bytes` viaja en el body para que la EF cree el upload por
+    // TUS (único camino >200 MB) con Upload-Length exacto.
     expect(mock_supabase._mock_invoke).toHaveBeenCalledWith('mint-upload-url', {
-      body: { replace: true },
+      body: { replace: true, size_bytes: 50 * 1024 * 1024 },
     });
   });
 
@@ -1168,5 +1171,175 @@ describe('useVideoUpload', () => {
     expect(mock_update).toHaveBeenCalledTimes(1);
     expect(mock_update).toHaveBeenCalledWith({ video_id: SECOND_UID, cloudflare_uid: SECOND_UID });
     expect(result.current.status).toBe('processing');
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 192.2 — rama TUS: la EF responde protocol:'tus' → subida chunked resumable
+  // ═══════════════════════════════════════════════════════════════════════════
+  // El hook NO implementa el protocolo (vive en lib/tusUpload.ts, probado
+  // aparte): recibe un `tus_uploader` inyectable (default = tus_upload real
+  // sobre expo-file-system) y solo decide la RAMA por `data.protocol`:
+  //   'tus'   → tus_uploader({ url, file, signal, on_progress }); createUploadTask
+  //             (POST básico) NO se llama.
+  //   otro/ausente → POST multipart de siempre (todos los tests de arriba).
+  // Éxito → mismo desenlace que el 2xx básico; fallo → verify_before_failing;
+  // aborted → silencio (cancel/supersede ya dejó el estado en idle).
+
+  describe('rama TUS (protocol:"tus")', () => {
+    const TUS_URL = 'https://upload.cloudflarestream.com/tus/abc?tusv2=true';
+
+    function make_mock_supabase_tus(size_bytes = 250 * 1024 * 1024) {
+      return {
+        supabase: make_mock_supabase({
+          invoke_result: { data: { uploadUrl: TUS_URL, uid: STREAM_UID, protocol: 'tus' }, error: null },
+        }),
+        file: make_mock_file({ size: size_bytes }),
+      };
+    }
+
+    it('(TU-1) protocol_tus_usa_tus_uploader_con_url_file_signal_y_NO_createUploadTask; ok → processing + update + progress 1', async () => {
+      const { supabase, file } = make_mock_supabase_tus();
+      MockFile.mockImplementation(() => file as never);
+      const tus_uploader = jest.fn().mockResolvedValue({ ok: true });
+
+      const { result } = await renderHook(() =>
+        useVideoUpload({ supabase: supabase as never, tus_uploader }),
+      );
+      await act(async () => {
+        await result.current.upload(TEST_LOCAL_URI);
+      });
+
+      expect(tus_uploader).toHaveBeenCalledTimes(1);
+      const args = tus_uploader.mock.calls[0][0];
+      expect(args.url).toBe(TUS_URL);
+      expect(args.file).toBe(file);
+      expect(args.signal).toBeInstanceOf(AbortSignal);
+      expect(typeof args.on_progress).toBe('function');
+      expect(file.createUploadTask).not.toHaveBeenCalled();
+
+      expect(result.current.status).toBe('processing');
+      expect(result.current.progress).toBe(1);
+      expect(mock_update).toHaveBeenCalledWith({ video_id: STREAM_UID, cloudflare_uid: STREAM_UID });
+    });
+
+    it('(TU-2) tus_failed_pasa_por_verify_before_failing (checker consultado; ready → processing)', async () => {
+      const { supabase, file } = make_mock_supabase_tus();
+      MockFile.mockImplementation(() => file as never);
+      const tus_uploader = jest.fn().mockResolvedValue({ ok: false, reason: 'failed' });
+      const mock_check_video_status = jest.fn().mockResolvedValue('ready');
+
+      const { result } = await renderHook(() =>
+        useVideoUpload({
+          supabase: supabase as never,
+          tus_uploader,
+          check_video_status: mock_check_video_status,
+          verify_attempts: 3,
+          verify_interval_ms: 0,
+        }),
+      );
+      await act(async () => {
+        await result.current.upload(TEST_LOCAL_URI);
+      });
+
+      expect(mock_check_video_status).toHaveBeenCalledWith(STREAM_UID);
+      expect(result.current.status).toBe('processing');
+      expect(mock_update).toHaveBeenCalledWith({ video_id: STREAM_UID, cloudflare_uid: STREAM_UID });
+    });
+
+    it('(TU-2b) tus_failed_y_checker_missing_agotado → error neutro sin update', async () => {
+      const { supabase, file } = make_mock_supabase_tus();
+      MockFile.mockImplementation(() => file as never);
+      const tus_uploader = jest.fn().mockResolvedValue({ ok: false, reason: 'failed' });
+      const mock_check_video_status = jest.fn().mockResolvedValue('missing');
+
+      const { result } = await renderHook(() =>
+        useVideoUpload({
+          supabase: supabase as never,
+          tus_uploader,
+          check_video_status: mock_check_video_status,
+          verify_attempts: 2,
+          verify_interval_ms: 0,
+        }),
+      );
+      await act(async () => {
+        await result.current.upload(TEST_LOCAL_URI);
+      });
+
+      expect(result.current.status).toBe('error');
+      expect(result.current.error).toBe(NEUTRAL_ERROR_MESSAGE);
+      expect(mock_update).not.toHaveBeenCalled();
+    });
+
+    it('(TU-3) tus_aborted_no_escribe_nada (cancel dejó idle; ni verify ni error)', async () => {
+      const { supabase, file } = make_mock_supabase_tus();
+      MockFile.mockImplementation(() => file as never);
+      let hook_cancel: (() => void) | null = null;
+      const tus_uploader = jest.fn().mockImplementation(async () => {
+        hook_cancel?.();
+        return { ok: false, reason: 'aborted' };
+      });
+      const mock_check_video_status = jest.fn().mockResolvedValue('ready');
+      const statuses: string[] = [];
+
+      const { result } = await renderHook(() =>
+        useVideoUpload({
+          supabase: supabase as never,
+          tus_uploader,
+          check_video_status: mock_check_video_status,
+          on_status_change: (s) => statuses.push(s),
+        }),
+      );
+      hook_cancel = () => result.current.cancel();
+      await act(async () => {
+        await result.current.upload(TEST_LOCAL_URI);
+      });
+
+      expect(result.current.status).toBe('idle');
+      expect(result.current.error).toBeNull();
+      expect(mock_check_video_status).not.toHaveBeenCalled();
+      expect(mock_update).not.toHaveBeenCalled();
+      expect(statuses).toEqual(['uploading', 'idle']);
+    });
+
+    it('(TU-4) on_progress_del_tus_se_reporta_en_vivo_con_tope_0.99_antes_del_exito', async () => {
+      const { supabase, file } = make_mock_supabase_tus();
+      MockFile.mockImplementation(() => file as never);
+      const tus_uploader = jest.fn().mockImplementation(async ({ on_progress }) => {
+        on_progress(0.25);
+        on_progress(1); // el lib reporta 1 al cerrar el último chunk; el hook lo capa
+        return { ok: true };
+      });
+      const ticks: number[] = [];
+
+      const { result } = await renderHook(() =>
+        useVideoUpload({ supabase: supabase as never, tus_uploader, on_progress: (p) => ticks.push(p) }),
+      );
+      await act(async () => {
+        await result.current.upload(TEST_LOCAL_URI);
+      });
+
+      expect(ticks).toEqual([0, 0.25, 0.99, 1]);
+      expect(result.current.progress).toBe(1);
+    });
+
+    it('(TU-5) protocol_basic_o_ausente_conserva_el_POST_multipart (no llama a tus_uploader)', async () => {
+      const file = make_mock_file({});
+      MockFile.mockImplementation(() => file as never);
+      const tus_uploader = jest.fn();
+      const mock_supabase = make_mock_supabase({
+        invoke_result: { data: { uploadUrl: SIGNED_UPLOAD_URL, uid: STREAM_UID, protocol: 'basic' }, error: null },
+      });
+
+      const { result } = await renderHook(() =>
+        useVideoUpload({ supabase: mock_supabase as never, tus_uploader }),
+      );
+      await act(async () => {
+        await result.current.upload(TEST_LOCAL_URI);
+      });
+
+      expect(tus_uploader).not.toHaveBeenCalled();
+      expect(file.createUploadTask).toHaveBeenCalledTimes(1);
+      expect(result.current.status).toBe('processing');
+    });
   });
 });

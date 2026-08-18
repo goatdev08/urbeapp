@@ -194,6 +194,10 @@ function uploader_ok(result: StreamDirectUploadResult): FakeStreamUploadCreator 
       this.calls.push(params);
       return Promise.resolve(result);
     },
+    // 192.1: los tests legados NUNCA mandan size_bytes → este camino no debe tocarse.
+    create_tus_upload(): Promise<StreamDirectUploadResult> {
+      return Promise.reject(new Error("create_tus_upload no debe llamarse sin size_bytes"));
+    },
   } as FakeStreamUploadCreator;
 }
 
@@ -203,6 +207,9 @@ function uploader_throws(): FakeStreamUploadCreator {
     create_direct_upload(params: StreamDirectUploadParams): Promise<StreamDirectUploadResult> {
       this.calls.push(params);
       return Promise.reject(new Error("cloudflare stream direct_upload failed"));
+    },
+    create_tus_upload(): Promise<StreamDirectUploadResult> {
+      return Promise.reject(new Error("create_tus_upload no debe llamarse sin size_bytes"));
     },
   } as FakeStreamUploadCreator;
 }
@@ -665,4 +672,195 @@ Deno.test("(RP-5) body_invalido_no_json_se_trata_como_sin_replace", async () => 
   const res = await handler(post_request_with_body("{not json"), deps);
   assertEquals(res.status, 200, "un body ilegible no debe romper el flujo viejo");
   assertEquals(canceller.calls.length, 0);
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// RED — 192.1: subida por TUS (resumable) cuando el cliente manda `size_bytes`
+// ═════════════════════════════════════════════════════════════════════════════
+// Origen: tester real (2026-08-17) bloqueado por "El video supera el máximo
+// permitido (200 MB)". 200 MB es el techo del direct upload BÁSICO (POST
+// multipart) de Cloudflare Stream; para 500 MB (MAX_VIDEO_SIZE_BYTES del
+// cliente) hay que crear el upload por TUS: POST /stream?direct_user=true con
+// Upload-Length → el `Location` de la respuesta es la URL de PATCH del cliente.
+//
+// Contrato retro-compatible (§0.5 — builds instalados siguen mandando solo
+// { replace }): el nuevo cliente añade `size_bytes` al body.
+//   - size_bytes entero válido → streamUploadCreator.create_tus_upload({ creator,
+//     maxDurationSeconds, requireSignedURLs, uploadLength }) — create_direct_upload
+//     NO se llama; 200 { uploadUrl, uid, protocol: 'tus' }.
+//   - sin size_bytes (o inválido: no entero, ≤0, string) → camino básico EXACTO
+//     de hoy; 200 { uploadUrl, uid, protocol: 'basic' }.
+//   - size_bytes > MAX_UPLOAD_SIZE_BYTES (524288000) → 400 VIDEO_TOO_LARGE, sin
+//     tocar Stream ni la tabla. == 524288000 → OK.
+//   - create_tus_upload lanza → 502 STREAM_UPLOAD_FAILED, sin insert.
+//   - replace:true + size_bytes → canceller corre Y luego TUS (ambos flags).
+//   - la fila insertada guarda tus_upload_url = Location y cloudflare_uid = uid.
+//
+// SEAM nuevo: StreamUploadCreator.create_tus_upload (DI, fake) — nunca red real.
+
+import {
+  MAX_UPLOAD_SIZE_BYTES,
+  type StreamTusUploadParams,
+} from "./types.ts";
+
+const TUS_LOCATION = "https://upload.cloudflarestream.com/tus/aaaaaaaabbbbccccdddd000000000002?tusv2=true";
+const TUS_UID = "aaaaaaaabbbbccccdddd000000000002";
+const TUS_RESULT: StreamDirectUploadResult = { uploadURL: TUS_LOCATION, uid: TUS_UID };
+const SIZE_250MB = 250 * 1024 * 1024;
+
+interface FakeStreamUploadCreatorBoth extends StreamUploadCreator {
+  basic_calls: StreamDirectUploadParams[];
+  tus_calls: StreamTusUploadParams[];
+}
+
+function uploader_both(
+  opts: { tus_throws?: boolean } = {},
+): FakeStreamUploadCreatorBoth {
+  return {
+    basic_calls: [],
+    tus_calls: [],
+    create_direct_upload(params: StreamDirectUploadParams): Promise<StreamDirectUploadResult> {
+      this.basic_calls.push(params);
+      return Promise.resolve(STREAM_RESULT);
+    },
+    create_tus_upload(params: StreamTusUploadParams): Promise<StreamDirectUploadResult> {
+      this.tus_calls.push(params);
+      if (opts.tus_throws) return Promise.reject(new Error("cloudflare stream tus create failed"));
+      return Promise.resolve(TUS_RESULT);
+    },
+  } as FakeStreamUploadCreatorBoth;
+}
+
+Deno.test("(T-0) MAX_UPLOAD_SIZE_BYTES_es_500_MiB_espejo_de_MAX_VIDEO_SIZE_BYTES_del_cliente", () => {
+  assertEquals(MAX_UPLOAD_SIZE_BYTES, 524288000);
+});
+
+Deno.test("(T-1) size_bytes_valido_crea_upload_por_tus_con_uploadLength_y_no_llama_al_basico", async () => {
+  const uploader = uploader_both();
+  const deps = make_deps({ streamUploadCreator: uploader });
+  const res = await handler(
+    post_request_with_body(JSON.stringify({ replace: true, size_bytes: SIZE_250MB })),
+    deps,
+  );
+  assertEquals(res.status, 200);
+  assertEquals(uploader.tus_calls.length, 1, "create_tus_upload exactamente una vez");
+  assertEquals(uploader.tus_calls[0], {
+    creator: AGENT_UID,
+    maxDurationSeconds: 120,
+    requireSignedURLs: true,
+    uploadLength: SIZE_250MB,
+  });
+  assertEquals(uploader.basic_calls.length, 0, "el POST básico NO debe usarse cuando hay size_bytes");
+});
+
+Deno.test("(T-2) tus_responde_uploadUrl_uid_y_protocol_tus_e_inserta_location_como_tus_upload_url", async () => {
+  const registrar = registrar_ok();
+  const deps = make_deps({ streamUploadCreator: uploader_both(), videoRegistrar: registrar });
+  const res = await handler(
+    post_request_with_body(JSON.stringify({ size_bytes: SIZE_250MB })),
+    deps,
+  );
+  const body = await res.json();
+  assertEquals(body, { uploadUrl: TUS_LOCATION, uid: TUS_UID, protocol: "tus" });
+  assertEquals(registrar.calls.length, 1);
+  assertEquals(registrar.calls[0].cloudflare_uid, TUS_UID);
+  assertEquals(registrar.calls[0].tus_upload_url, TUS_LOCATION);
+  assertEquals(registrar.calls[0].status, "uploading");
+  assertEquals(registrar.calls[0].property_id, null);
+});
+
+Deno.test("(T-3) sin_size_bytes_conserva_el_camino_basico_y_responde_protocol_basic", async () => {
+  const uploader = uploader_both();
+  const deps = make_deps({ streamUploadCreator: uploader });
+  const res = await handler(post_request_with_body(JSON.stringify({ replace: true })), deps);
+  const body = await res.json();
+  assertEquals(uploader.basic_calls.length, 1);
+  assertEquals(uploader.tus_calls.length, 0);
+  assertEquals(body, { uploadUrl: STREAM_UPLOAD_URL, uid: STREAM_UID, protocol: "basic" });
+});
+
+Deno.test("(T-3b) sin_body_en_absoluto_conserva_el_camino_basico", async () => {
+  const uploader = uploader_both();
+  const deps = make_deps({ streamUploadCreator: uploader });
+  const res = await handler(post_request(), deps);
+  assertEquals(res.status, 200);
+  assertEquals(uploader.basic_calls.length, 1);
+  assertEquals(uploader.tus_calls.length, 0);
+});
+
+Deno.test("(T-4) size_bytes_mayor_al_maximo_retorna_400_VIDEO_TOO_LARGE_sin_tocar_stream_ni_tabla", async () => {
+  const uploader = uploader_both();
+  const registrar = registrar_ok();
+  const deps = make_deps({ streamUploadCreator: uploader, videoRegistrar: registrar });
+  const res = await handler(
+    post_request_with_body(JSON.stringify({ size_bytes: MAX_UPLOAD_SIZE_BYTES + 1 })),
+    deps,
+  );
+  assertEquals(res.status, 400);
+  const body = await res.json();
+  assertEquals(body.error.code, "VIDEO_TOO_LARGE");
+  assertEquals(typeof body.error.message, "string");
+  assertEquals(uploader.tus_calls.length, 0);
+  assertEquals(uploader.basic_calls.length, 0);
+  assertEquals(registrar.calls.length, 0);
+});
+
+Deno.test("(T-4b) size_bytes_exactamente_el_maximo_es_valido_y_va_por_tus", async () => {
+  const uploader = uploader_both();
+  const deps = make_deps({ streamUploadCreator: uploader });
+  const res = await handler(
+    post_request_with_body(JSON.stringify({ size_bytes: MAX_UPLOAD_SIZE_BYTES })),
+    deps,
+  );
+  assertEquals(res.status, 200);
+  assertEquals(uploader.tus_calls.length, 1);
+  assertEquals(uploader.tus_calls[0].uploadLength, MAX_UPLOAD_SIZE_BYTES);
+});
+
+Deno.test("(T-5) size_bytes_invalido_se_ignora_y_cae_al_camino_basico", async () => {
+  for (const bad of ["abc", 0, -1, 1.5, null, true]) {
+    const uploader = uploader_both();
+    const deps = make_deps({ streamUploadCreator: uploader });
+    const res = await handler(post_request_with_body(JSON.stringify({ size_bytes: bad })), deps);
+    assertEquals(res.status, 200, `size_bytes=${JSON.stringify(bad)} no debe romper el flujo`);
+    assertEquals(uploader.tus_calls.length, 0, `size_bytes=${JSON.stringify(bad)} no debe ir por tus`);
+    assertEquals(uploader.basic_calls.length, 1, `size_bytes=${JSON.stringify(bad)} debe ir por básico`);
+  }
+});
+
+Deno.test("(T-6) create_tus_upload_lanza_retorna_502_STREAM_UPLOAD_FAILED_sin_insertar", async () => {
+  const registrar = registrar_ok();
+  const deps = make_deps({
+    streamUploadCreator: uploader_both({ tus_throws: true }),
+    videoRegistrar: registrar,
+  });
+  const res = await handler(post_request_with_body(JSON.stringify({ size_bytes: SIZE_250MB })), deps);
+  assertEquals(res.status, 502);
+  const body = await res.json();
+  assertEquals(body.error.code, "STREAM_UPLOAD_FAILED");
+  assertEquals(registrar.calls.length, 0, "cero filas huérfanas");
+});
+
+Deno.test("(T-7) replace_true_y_size_bytes_juntos_corre_canceller_y_luego_tus", async () => {
+  const canceller = canceller_ok();
+  const uploader = uploader_both();
+  const deps = make_deps({ pendingUploadCanceller: canceller, streamUploadCreator: uploader });
+  const res = await handler(
+    post_request_with_body(JSON.stringify({ replace: true, size_bytes: SIZE_250MB })),
+    deps,
+  );
+  assertEquals(res.status, 200);
+  assertEquals(canceller.calls.length, 1, "replace sigue funcionando junto a size_bytes");
+  assertEquals(uploader.tus_calls.length, 1);
+});
+
+Deno.test("(T-8) tus_con_concurrencia_activa_retorna_409_sin_llamar_a_stream", async () => {
+  const uploader = uploader_both();
+  const deps = make_deps({
+    activeUploadChecker: checker_count({ [AGENT_UID]: 1 }),
+    streamUploadCreator: uploader,
+  });
+  const res = await handler(post_request_with_body(JSON.stringify({ size_bytes: SIZE_250MB })), deps);
+  assertEquals(res.status, 409);
+  assertEquals(uploader.tus_calls.length, 0);
 });

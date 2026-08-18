@@ -2,6 +2,16 @@
 
 Append-only. Prefijo: `## [YYYY-MM-DD] tipo | título`.
 
+## [2026-08-17] fix | #192 Límite de video subido a 500 MB — subida por TUS resumable
+
+- Origen: tester real bloqueado en el paso 5 del wizard con "El video supera el máximo permitido (200 MB)" (screenshot de Abraham). 200 MB era el techo del direct upload BÁSICO de Cloudflare Stream (POST multipart); `validation.ts` ya prometía 500 MB (`MAX_VIDEO_SIZE_BYTES`) pero `useVideoUpload` clampaba a 200 porque era lo único que ese camino aguantaba.
+- **EF `mint-upload-url`**: contrato NUEVO retro-compatible — el cliente manda `size_bytes` en el body → la EF crea el upload por **TUS** (`POST /accounts/{id}/stream?direct_user=true`, headers `Tus-Resumable`/`Upload-Length`/`Upload-Creator`/`Upload-Metadata`; la respuesta 201 trae `Location`+`stream-media-id`) y responde `protocol:'tus'`; sin `size_bytes` (builds instalados) el POST básico de siempre queda intacto y responde `protocol:'basic'`. `size_bytes` > 524288000 → 400 `VIDEO_TOO_LARGE` antes de tocar Stream ni la tabla.
+- **Cliente**: `lib/tusUpload.ts` nuevo — `tus_upload` PURO (source/sink inyectados) sube en chunks de 16 MiB con PATCH `Upload-Offset` secuenciales; ante un fallo hace **HEAD** para preguntarle al servidor dónde quedó realmente (el chunk pudo haber llegado aunque la respuesta se perdiera) y reanuda desde ahí — techo 5 fallos CONSECUTIVOS, se reinicia tras un chunk exitoso. Adaptadores reales sobre `expo-file-system`: `FileHandle.readBytes` por rango (sin cargar el video entero) + `createUploadTask` PATCH streaming desde un temporal en `Paths.cache` (se borra siempre). `useVideoUpload` gana la rama `protocol==='tus'`, con la básica intacta.
+- **Decisión (ponytail):** se descartó `tus-js-client` — su lector para RN mete el binario completo en un Blob nativo (500 MB en RAM = OOM en Android real, el mismo problema que ya resolvió #52 para el camino legado). El protocolo TUS que hacía falta son 3 headers y un loop; `createUploadTask` ya da streaming nativo con progreso real.
+- TDD estricto (EF + hook + lib son críticas): RED 12 (Deno) + 23 (Jest) fallos por aserción → GREEN 46 Deno + 52 Jest; suites completas 1189 Deno / 1220 Jest en verde, tsc/lint 0.
+- Orden de deploy (§0.5, retro-compatible): EF primero (`supabase functions deploy mint-upload-url --import-map supabase/functions/deno.json --use-api`) — no rompe nada porque los builds instalados no mandan `size_bytes` — luego OTA del cliente.
+- **Smoke E2E con video real (250 MB) delegado a un tester humano** por instrucción explícita de Abraham durante la sesión ("no lo testes, lo va a hacer otro tester y yo te aviso") — no verificado directamente en esta sesión.
+
 ## [2026-08-17] feat | #169 Anuncios: creativo 6–30 s, campaña por zona y moderación admin (Tarea B de la exploración 039)
 
 - Épica de publicidad completa de punta a punta salvo el envío: 4 tablas + máquina de estados + RPC de otorgamiento + 3 EFs + validación, hook de subida, gate de ruta y wizard. **Nada desplegado** — decisión de Abraham: 168–172 se mergean progresivamente pero no sale ni migración ni EF ni OTA hasta que la épica esté probada. La feature además nace apagada por datos (`can_advertise` default false).
