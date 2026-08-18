@@ -78,7 +78,13 @@ reset role;
 select pg_temp.act_as('00000000-0000-0000-0000-0000000cf002');
 -- 3 -> 4 (subtarea #169.3): la siembra de app_config.ads_free agrega una 4ª
 -- fila real. Ver comentario de cabecera "GOTCHA reconciliado" arriba.
-select is((select count(*) from public.app_config)::int, 4, 'admin lee app_config');
+-- 4 -> 7 (subtarea #170.1, exploración 039 "Tarea C"): la siembra del kill-switch
+-- de publicidad en el feed agrega 3 filas más (ads_enabled, ad_frequency_n,
+-- ad_max_per_session -- ver supabase/tests/50_ads_feed_config_test.sql). Mismo
+-- criterio que 169.3: reconciliación de fixture (el admin ahora ve 7 filas
+-- reales), NO debilitamiento del test -- la línea de arriba (~38), filtrada por
+-- `where key in (...)`, sigue sin tocarse.
+select is((select count(*) from public.app_config)::int, 7, 'admin lee app_config');
 reset role;
 
 select * from finish();
