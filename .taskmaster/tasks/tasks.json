@@ -9104,7 +9104,7 @@
         "description": "Origen: subtarea 68.4 · Detectado por: usuario (tester real, screenshot 2026-08-17: 'El video supera el máximo permitido (200 MB)'). El techo de 200 MB NO es un número arbitrario: es el máximo del direct upload BÁSICO (POST multipart) de Cloudflare Stream. validation.ts ya declara 500 MB (MAX_VIDEO_SIZE_BYTES) pero useVideoUpload clampa a 200 porque es lo que ese camino aguanta. Para 500 MB hay que subir por TUS (resumable, chunked; Stream admite hasta 30 GB) — la columna property_videos.tus_upload_url existe desde #68 para esto. Autorizado por Abraham.",
         "details": "Contrato NUEVO retro-compatible (§0.5): el cliente manda `size_bytes` en el body de mint-upload-url → la EF crea el upload por TUS (POST /accounts/{id}/stream?direct_user=true con Tus-Resumable/Upload-Length/Upload-Creator/Upload-Metadata) y responde {uploadUrl:<Location>, uid:<stream-media-id>, protocol:'tus'}; sin size_bytes (builds instalados) → camino básico intacto (protocol:'basic'). size_bytes > 500 MB → 400 VIDEO_TOO_LARGE. Cliente: MAX_STREAM_UPLOAD_BYTES → MAX_VIDEO_SIZE_BYTES (500 MB, reuso de validation.ts); si protocol==='tus' sube en chunks de 16 MiB (múltiplo de 256 KiB, ≥5 MiB, ≤200 MiB como exige Stream) con PATCH Upload-Offset via lib/tusUpload.ts: FileHandle.readBytes → archivo temporal en Paths.cache → createUploadTask PATCH BINARY_CONTENT (streaming nativo + progreso real) → borrar temp; ante fallo de un chunk, HEAD → Upload-Offset y reanuda (techo de reintentos); si protocol!=='tus' conserva el POST básico (orden de deploy EF/OTA independiente). Orden de deploy: EF primero (retro-compatible) → OTA. DERIVADAS: —",
         "testStrategy": "TDD estricto (EF + hook + lib son críticas). Deno: handler.test.ts (+size_bytes → create_tus_upload con Upload-Length; sin size_bytes → create_direct_upload como hoy; >500 MB → 400; size_bytes no entero → básico; protocol en la respuesta) + adapter test del creator TUS (headers y parseo de Location/stream-media-id con fetch fake). Jest: tusUpload.test.ts (chunking exacto por offsets, headers PATCH, progreso acumulado, HEAD-resync tras fallo, abort, límite de reintentos, temp borrado siempre) + useVideoUpload.test.tsx (size_bytes en el body, límite 500 MB, rama tus vs básica). Smoke E2E contra Stream real con video >200 MB en simulador; verificar processing→ready por webhook y PARAR (cuota).",
-        "status": "in-progress",
+        "status": "review",
         "dependencies": [
           "68",
           "103"
@@ -9140,20 +9140,21 @@
             "title": "Deploy EF → smoke E2E Stream real (>200 MB) → OTA → vault",
             "description": "Orden EF-primero. Verificar processing→ready y parar. Ingest vault + log + estado.",
             "details": "",
-            "status": "pending",
+            "status": "review",
             "dependencies": [
               2
             ],
             "testStrategy": "",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-08-18T05:21:10.143Z"
           }
         ],
-        "updatedAt": "2026-08-18T03:22:34.855Z"
+        "updatedAt": "2026-08-18T05:21:11.967Z"
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-08-18T03:22:34.855Z",
+      "lastModified": "2026-08-18T05:21:11.967Z",
       "taskCount": 192,
       "completedCount": 102,
       "tags": [
