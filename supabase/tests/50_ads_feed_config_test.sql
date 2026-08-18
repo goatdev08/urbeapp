@@ -222,19 +222,41 @@ select throws_ok(
 reset role;
 
 -- ════════════════════════════════════════════════════════════════════════════
--- 8) Idempotencia del seed + el flip se refleja en la RPC SIN recompilar.
---    Simula el ciclo real: operador flipea a mano -> un redeploy re-siembra (mismo
---    literal canónico que el plan de la subtarea fija) -> el flip debe SOBREVIVIR
---    (semántica `on conflict (key) do nothing`, nunca `do update`) -> la RPC, en la
---    MISMA sesión de authenticated sin publicar app ni OTA, ya ve el valor nuevo.
+-- 8) El flip se refleja en la RPC SIN recompilar.
+--
+-- 🔴 LIMITACIÓN DE ESTE ASSERT (fix post-revisión del guardián, GREEN de #170.1):
+-- el statement `insert ... on conflict (key) do nothing` de aquí abajo es un LITERAL
+-- escrito a mano en el test, NO una re-ejecución de la migración real. El runner de
+-- `supabase test db` solo monta el archivo de test -- NO monta `supabase/migrations/`
+-- (se probó `\i` contra la migración real y no aplica en este runner) -- así que el
+-- test 17 NO puede ejercer el SUT (el seed de la migración) para esta afirmación.
+-- Lo único que el assert 17 verifica es la semántica de Postgres para
+-- `on conflict (key) do nothing` en general (que un valor existente sobrevive) --
+-- eso NUNCA puede fallar, sin importar qué escriba la migración real. El guardián lo
+-- demostró por mutación: mutar la migración a `on conflict (key) do update` y el
+-- archivo siguió en 20/20 -- exactamente el antipatrón del test 12 original (aserción
+-- contra una constante del andamiaje, no contra el SUT), con otra ropa.
+--
+-- Por qué NO se cablea al SUT (decisión del orquestador, no de este archivo): extraer
+-- el seed a una función `private.*` solo para poder testearla agrega superficie de
+-- producción por testabilidad (viola la escalera de `ponytail`), y el escenario que
+-- el mutante ejercita -- editar una migración YA aplicada -- no es un camino de
+-- despliegue real: las migraciones son append-only; un futuro re-seed sería OTRO
+-- archivo de migración, con sus PROPIOS tests pgTAP -- ésa es la protección real
+-- contra un `do update` que resetee el flip del operador, no este assert.
+--
+-- Lo que el assert 17 SÍ verifica, honestamente: la semántica ELEGIDA para un
+-- kill-switch (`do nothing`, nunca `do update`) preserva un valor existente si algo
+-- alguna vez re-ejecuta ese literal exacto. Documenta la semántica requerida y sirve
+-- de referencia para quien escriba la migración (y cualquier migración de re-seed
+-- futura), pero NO es evidencia de que la migración real la use.
 -- ════════════════════════════════════════════════════════════════════════════
 
 select pg_temp.act_as(null, 'service_role');
 update public.app_config set value = 'true'::jsonb where key = 'ads_enabled';
 reset role;
 
--- Re-aplicar el seed canónico (literal fijado por el plan de #170.1, independiente de
--- lo que la migración real termine escribiendo) con la semántica correcta:
+-- Literal de referencia (NO es la migración real -- ver limitación arriba):
 insert into public.app_config (key, value) values
   ('ads_enabled',        'false'::jsonb),
   ('ad_frequency_n',     '8'::jsonb),
@@ -244,7 +266,7 @@ on conflict (key) do nothing;
 select is(
   (select (value)::boolean from public.app_config where key = 'ads_enabled'),
   true,
-  '17) IDEMPOTENCIA: re-aplicar el seed (on conflict do nothing) NO resetea un flip manual del operador -- ads_enabled sigue en true'
+  '17) semántica DO NOTHING (no ejerce el seed real de la migración -- ver comentario arriba): re-aplicar el literal de referencia con on conflict do nothing preserva un valor existente -- ads_enabled sigue en true'
 );
 
 select pg_temp.act_as('00000000-0000-0000-0000-000000500001');
