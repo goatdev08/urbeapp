@@ -9126,13 +9126,14 @@
             "id": 2,
             "title": "Cliente: lib/tusUpload.ts (chunked PATCH resumable) + useVideoUpload a 500 MB con rama tus",
             "description": "RED→GREEN Jest; techo MAX_VIDEO_SIZE_BYTES; body size_bytes; protocol.",
-            "details": "",
-            "status": "pending",
+            "details": "<info added on 2026-08-18T03:22:28.164Z>\nImplementation complete on mobile. Created lib/tusUpload.ts with pure resumable upload logic and adapters for Expo FileSystem (reads chunks on demand, no full-file-in-RAM). Hook useVideoUpload updated to 500 MB, sends size_bytes in request body, branches on protocol:'tus' from EF response.\n\n**Files:**\n- mobile/src/features/publish/lib/tusUpload.ts (new, 350 LOC core + Expo adapters)\n- mobile/src/features/publish/hooks/useVideoUpload.ts (updated: MAX_VIDEO_SIZE_BYTES 500 MB, size_bytes field, tus branch)\n- mobile/src/features/publish/lib/__tests__/tusUpload.test.ts (new, 15 tests: chunking, progress, server offset HEAD-resync, consecutive retries, abort, finally-close guarantee)\n- mobile/src/features/publish/hooks/__tests__/useVideoUpload.test.tsx (added 6 TU-* unit + EC3a/b edge cases 500 MB + CX-1 context with size_bytes)\n\n**Test Results:**\n- RED: 23 failures (new assertions)\n- GREEN: 52/52 new tests passing\n- Full Jest suite: 1220/1220 passing\n- tsc --noEmit: 0 errors\n- pnpm lint: 0 errors\n\n**Design Decision:**\nRejected tus-js-client dependency after reading source — its React Native reader loads entire file into Blob in memory, defeating chunked streaming goal. Custom implementation reads 16 MiB chunks on demand via FileSystem.readAsStringAsync with base64. Chunk size 16 MiB chosen as multiple of 256 KiB within Cloudflare Stream accepted range [5, 200] MiB.\n\n**Backward Compatibility:**\nBranch 'basic' (direct PUT <200 MB) preserved in hook. Client can deploy OTA independently of EF — missing protocol field defaults to basic path. EF responds protocol:'tus' only when size_bytes triggers TUS creation server-side.\n</info added on 2026-08-18T03:22:28.164Z>",
+            "status": "done",
             "dependencies": [
               1
             ],
             "testStrategy": "",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-08-18T03:22:34.855Z"
           },
           {
             "id": 3,
@@ -9147,12 +9148,12 @@
             "parentId": "undefined"
           }
         ],
-        "updatedAt": "2026-08-18T03:15:26.708Z"
+        "updatedAt": "2026-08-18T03:22:34.855Z"
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-08-18T03:15:26.708Z",
+      "lastModified": "2026-08-18T03:22:34.855Z",
       "taskCount": 192,
       "completedCount": 102,
       "tags": [
