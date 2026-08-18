@@ -83,7 +83,7 @@
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(76);
+select plan(90);
 
 create or replace function pg_temp.act_as(p_uid uuid, p_role text default 'authenticated')
 returns void language plpgsql as $$
@@ -132,7 +132,18 @@ end $$;
 
 -- Contexto compartido (neighborhood_id real, bigint) para reusar en varios
 -- bloques DO posteriores sin repetir el lookup.
+-- 🔴 fix guardian/coordinador (170.5): service_role NO es superusuario
+-- (rolsuper=false, solo rolbypassrls=true) y bypassrls NO cubre grants de
+-- TABLA -- una temp table creada por el rol de conexión (postgres) sigue
+-- siendo ilegible/inescribible para service_role sin un GRANT explícito,
+-- exactamente el mismo motivo por el que ya se otorga a authenticated/anon
+-- más abajo (ver result_auth_select). Sin este grant, todo bloque `set local
+-- role service_role` que toque test_ctx truena con "permission denied for
+-- table test_ctx" -- silenciosamente capturado por el `exception when others`
+-- y reportado como si el SUT hubiera fallado, cuando el problema era el
+-- andamiaje del test.
 create temp table test_ctx (neighborhood_id bigint);
+grant select on test_ctx to service_role;
 insert into test_ctx
   select id from public.mx_neighborhoods where source_key = 'test-adsimp-51-001';
 
@@ -264,6 +275,135 @@ select col_type_is('public', 'ad_impressions_monthly', 'year_month', 'date', 'CO
 select has_column('public', 'ad_impressions_monthly', 'impressions', 'COL46_monthly_impressions_existe');
 
 -- ════════════════════════════════════════════════════════════════════════════
+-- 3b) 🔴 FAIL-CLOSED — public.ad_impressions_monthly (fix guardián 170.5:
+--    Bloqueante 2). El rollup PERMANENTE (nunca se purga, conserva
+--    comportamiento por colonia para siempre) NO TENÍA ningún assert de
+--    RLS/grants -- solo shape. El guardián mutó con `grant select to
+--    authenticated` + una policy `using (true)` y la suite pasó incluso con
+--    datos presentes. Asimetría real con ad_impressions (confirmada contra
+--    la migración real 20260817000002, sección 2): aquí NO hay NINGÚN grant
+--    de SELECT para authenticated (a diferencia de ad_impressions, que sí
+--    tiene grant con RLS vacío) -- por eso el resultado esperado es 42501
+--    (error de permiso), NUNCA "0 filas".
+-- ════════════════════════════════════════════════════════════════════════════
+
+select is(
+  coalesce((select relrowsecurity from pg_class c join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relname = 'ad_impressions_monthly'), false),
+  true, 'RLS2_ad_impressions_monthly_tiene_row_level_security_enabled'
+);
+
+select pg_temp.act_as(null, 'anon');
+select throws_ok($$ select count(*) from public.ad_impressions_monthly $$, '42501', null,
+  'GRANTM1_anon_no_puede_leer_ad_impressions_monthly_permission_denied');
+reset role;
+
+select pg_temp.act_as('00000000-0000-0000-0000-000000510102', 'authenticated');
+select throws_ok($$ select count(*) from public.ad_impressions_monthly $$, '42501', null,
+  'GRANTM2_authenticated_no_puede_leer_ad_impressions_monthly_permission_denied_NO_es_0_filas_asimetria_con_ad_impressions');
+reset role;
+
+select pg_temp.act_as('00000000-0000-0000-0000-000000510102', 'authenticated');
+select throws_ok(
+  $$ insert into public.ad_impressions_monthly
+       (agency_id, ad_id, municipality_id, neighborhood_id, year_month, impressions, views, completions, cta_taps)
+     values
+       ('00000000-0000-0000-0000-000000510201', '00000000-0000-0000-0000-000000510401',
+        '51001', null, date '2026-07-01', 1, 1, 1, 1) $$,
+  '42501', null,
+  'GRANTM3_authenticated_no_puede_INSERT_directo_en_ad_impressions_monthly'
+);
+reset role;
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 3c) 🟡 LLAVE NATURAL de ad_impressions_monthly + CHECK de contadores >= 0
+--    (fix guardián 170.5: Quinto). AÚN NO EXISTEN en el GREEN actual --
+--    Abraham va a cerrar la unicidad (unique nulls not distinct: los ids de
+--    zona son NULLABLE y un UNIQUE normal NO deduplica NULLs en Postgres,
+--    dos filas "nacionales" NULL/NULL para el mismo agency_id+ad_id+
+--    year_month se tratarían como distintas y fragmentarían el rollup).
+--    FALLARÁN hasta que la migración cambie -- es el RED de este arreglo,
+--    no un defecto del test.
+-- ════════════════════════════════════════════════════════════════════════════
+
+select is(
+  (select count(*)::int from pg_constraint c
+     join pg_class t on t.oid = c.conrelid join pg_namespace n on n.oid = t.relnamespace
+    where n.nspname = 'public' and t.relname = 'ad_impressions_monthly' and c.contype = 'u'
+      and pg_get_constraintdef(c.oid) ilike '%nulls not distinct%'
+      and pg_get_constraintdef(c.oid) ilike '%agency_id%'
+      and pg_get_constraintdef(c.oid) ilike '%ad_id%'
+      and pg_get_constraintdef(c.oid) ilike '%municipality_id%'
+      and pg_get_constraintdef(c.oid) ilike '%neighborhood_id%'
+      and pg_get_constraintdef(c.oid) ilike '%year_month%'),
+  1,
+  'UNIQ1_ad_impressions_monthly_tiene_unique_nulls_not_distinct_sobre_agency_ad_municipio_colonia_mes'
+);
+
+-- Comportamiento real (no solo catálogo): dos filas NACIONALES (ambos ids de
+-- zona NULL) para el MISMO agency_id/ad_id/year_month -- un UNIQUE normal no
+-- las vería duplicadas (NULL <> NULL); NULLS NOT DISTINCT sí debe rechazar
+-- la segunda. Corre como el rol de conexión (postgres, superusuario) -- no
+-- hace falta impersonar ni otorgar grants nuevos para probar un constraint.
+create temp table result_monthly_unique (attempt int, ok boolean, err_sqlstate text);
+do $$
+begin
+  begin
+    insert into public.ad_impressions_monthly
+      (agency_id, ad_id, municipality_id, neighborhood_id, year_month, impressions) values
+      ('00000000-0000-0000-0000-000000510201', '00000000-0000-0000-0000-000000510401', null, null, date '2026-06-01', 5);
+    insert into result_monthly_unique values (1, true, null);
+  exception when others then
+    insert into result_monthly_unique values (1, false, sqlstate);
+  end;
+  begin
+    insert into public.ad_impressions_monthly
+      (agency_id, ad_id, municipality_id, neighborhood_id, year_month, impressions) values
+      ('00000000-0000-0000-0000-000000510201', '00000000-0000-0000-0000-000000510401', null, null, date '2026-06-01', 7);
+    insert into result_monthly_unique values (2, true, null);
+  exception when others then
+    insert into result_monthly_unique values (2, false, sqlstate);
+  end;
+exception when others then
+  insert into result_monthly_unique values (0, false, sqlstate);
+end $$;
+
+select is((select ok from result_monthly_unique where attempt = 1), true,
+  'UNIQ2_primera_fila_nacional_agency_ad_year_month_ambos_ids_de_zona_null_se_inserta_sin_problema');
+select is(coalesce((select err_sqlstate from result_monthly_unique where attempt = 2), 'NONE'), '23505',
+  'UNIQ3_segunda_fila_NACIONAL_mismo_agency_ad_year_month_AMBOS_null_viola_unique_nulls_not_distinct_no_fragmenta_el_rollup');
+
+-- CHECK contadores >= 0, uno por columna.
+select throws_ok(
+  $$ insert into public.ad_impressions_monthly
+       (agency_id, ad_id, municipality_id, neighborhood_id, year_month, impressions)
+     values ('00000000-0000-0000-0000-000000510201', '00000000-0000-0000-0000-000000510401', '51001', null, date '2026-08-01', -1) $$,
+  '23514', null,
+  'CHK1_impressions_negativo_es_rechazado_por_check_mayor_o_igual_a_0'
+);
+select throws_ok(
+  $$ insert into public.ad_impressions_monthly
+       (agency_id, ad_id, municipality_id, neighborhood_id, year_month, views)
+     values ('00000000-0000-0000-0000-000000510201', '00000000-0000-0000-0000-000000510401', '51001', null, date '2026-08-01', -1) $$,
+  '23514', null,
+  'CHK2_views_negativo_es_rechazado_por_check_mayor_o_igual_a_0'
+);
+select throws_ok(
+  $$ insert into public.ad_impressions_monthly
+       (agency_id, ad_id, municipality_id, neighborhood_id, year_month, completions)
+     values ('00000000-0000-0000-0000-000000510201', '00000000-0000-0000-0000-000000510401', '51001', null, date '2026-08-01', -1) $$,
+  '23514', null,
+  'CHK3_completions_negativo_es_rechazado_por_check_mayor_o_igual_a_0'
+);
+select throws_ok(
+  $$ insert into public.ad_impressions_monthly
+       (agency_id, ad_id, municipality_id, neighborhood_id, year_month, cta_taps)
+     values ('00000000-0000-0000-0000-000000510201', '00000000-0000-0000-0000-000000510401', '51001', null, date '2026-08-01', -1) $$,
+  '23514', null,
+  'CHK4_cta_taps_negativo_es_rechazado_por_check_mayor_o_igual_a_0'
+);
+
+-- ════════════════════════════════════════════════════════════════════════════
 -- 4) public.purge_ad_impressions() existe (catálogo puro)
 -- ════════════════════════════════════════════════════════════════════════════
 
@@ -280,9 +420,43 @@ select throws_ok($$ select count(*) from public.ad_impressions $$, '42501', null
   'GRANT1_anon_no_puede_leer_ad_impressions_permission_denied');
 reset role;
 
--- authenticated: CUALQUIER JWT -> select funciona (hay grant) pero devuelve
--- 0 filas (RLS sin ninguna policy de SELECT). Probado con 2 usuarios
--- DISTINTOS -- ninguno es "el dueño", porque no existe tal concepto aquí.
+-- 🔴 fix guardián (170.5): Bloqueante 1. FAILCLOSED1/2 corrían ANTES de que
+-- hubiera NINGUNA fila en ad_impressions -- sobre una tabla vacía, RLS
+-- fail-closed y una policy fugada `using (true)` dan el MISMO resultado
+-- observable (0 filas). El guardián lo demostró: metió esa policy y la
+-- suite pasó 78/78; con datos reales una sonda REST filtró user_id/
+-- session_id de terceros. Fix: sembrar 2 filas REALES por service_role
+-- ANTES de leer -- una con user_id = el MISMO `sub` del JWT que la lee
+-- después, para probar que NI SIQUIERA su propia "dueña" la ve (en esta
+-- tabla no existe el concepto de dueño -- es la base facturable del
+-- anunciante). Compuesto anti-vacío (mismo patrón que PURGE3/4/5):
+-- 'service_role_ve:N -> authenticated_ve:M' con N hardcodeado a la fuente
+-- independiente (2 filas sembradas) -- si la siembra no se materializa, N
+-- no será 2 y el assert falla ruidoso, no pasa por casualidad.
+create temp table result_failclosed_seed (ok boolean, cnt int);
+grant insert on result_failclosed_seed to service_role;
+do $$
+declare v_cnt int;
+begin
+  execute format('set local role %I', 'service_role');
+  insert into public.ad_impressions
+    (id, ad_id, agency_id, user_id, session_id, shown_at, watched_ms, viewed, completed) values
+    ('00000000-0000-0000-0000-000000510110', '00000000-0000-0000-0000-000000510401',
+     '00000000-0000-0000-0000-000000510201', '00000000-0000-0000-0000-000000510102', -- user_a: MISMO sub que intentará leerla abajo
+     '00000000-0000-0000-0000-000000510960', now(), 4000, true, false),
+    ('00000000-0000-0000-0000-000000510111', '00000000-0000-0000-0000-000000510401',
+     '00000000-0000-0000-0000-000000510201', '00000000-0000-0000-0000-000000510103', -- user_b
+     '00000000-0000-0000-0000-000000510961', now(), 4500, true, false);
+  select count(*) into v_cnt from public.ad_impressions;
+  insert into result_failclosed_seed values (true, v_cnt);
+  reset role;
+exception when others then
+  insert into result_failclosed_seed values (false, -1);
+end $$;
+
+-- authenticated: CUALQUIER JWT -> 0 filas, INCLUSO la propia "dueña" del
+-- user_id de una fila real recién sembrada. Probado con 2 usuarios
+-- DISTINTOS.
 create temp table result_auth_select (label text, ok boolean, cnt int);
 grant insert on result_auth_select to authenticated, anon;
 do $$
@@ -311,12 +485,16 @@ exception when others then
 end $$;
 
 select is(
-  (select ok::text || ':' || cnt::text from result_auth_select where label = 'user_a'),
-  'true:0', 'FAILCLOSED1_authenticated_user_a_lee_ad_impressions_sin_error_y_ve_0_filas'
+  'service_role_ve:' || coalesce((select cnt::text from result_failclosed_seed), 'ERR')
+  || '->authenticated_ve:' || coalesce((select cnt::text from result_auth_select where label = 'user_a'), 'ERR'),
+  'service_role_ve:2->authenticated_ve:0',
+  'FAILCLOSED1_authenticated_user_a_es_la_MISMA_persona_duena_del_user_id_de_una_fila_real_y_AUN_ASI_ve_0_filas_no_existe_concepto_de_dueno'
 );
 select is(
-  (select ok::text || ':' || cnt::text from result_auth_select where label = 'user_b'),
-  'true:0', 'FAILCLOSED2_authenticated_user_b_CUALQUIER_JWT_tambien_ve_0_filas_sin_error'
+  'service_role_ve:' || coalesce((select cnt::text from result_failclosed_seed), 'ERR')
+  || '->authenticated_ve:' || coalesce((select cnt::text from result_auth_select where label = 'user_b'), 'ERR'),
+  'service_role_ve:2->authenticated_ve:0',
+  'FAILCLOSED2_authenticated_user_b_CUALQUIER_JWT_tambien_ve_0_filas_con_datos_reales_presentes_sin_fuga'
 );
 
 -- authenticated: NO puede INSERT (sin grant) -> 42501. Razón de ser de la
@@ -347,6 +525,7 @@ reset role;
 -- service_role: SÍ puede INSERT y SÍ puede SELECT (bypassrls=true + grants
 -- explícitos) -- prueba positiva de que el único rol autorizado funciona.
 create temp table result_service_role_write (ok boolean, cnt int);
+grant insert on result_service_role_write to service_role;
 do $$
 declare v_cnt int;
 begin
@@ -377,6 +556,7 @@ select is(
 
 -- 2º INSERT con el MISMO id -> viola la PK (23505), "no duplica".
 create temp table result_dup_id (attempt int, ok boolean, err_sqlstate text);
+grant insert on result_dup_id to service_role;
 do $$
 begin
   execute format('set local role %I', 'service_role');
@@ -416,6 +596,7 @@ select is(coalesce((select err_sqlstate from result_dup_id where attempt = 2), '
 -- del batch (el tap al CTA) -> sigue habiendo 1 sola fila y cta_tapped_at
 -- quedó actualizado.
 create temp table result_cta_upsert (ok boolean, cnt int, cta_tapped text);
+grant insert on result_cta_upsert to service_role;
 do $$
 declare v_tap timestamptz := now();
 begin
@@ -487,6 +668,7 @@ reset role;
 -- ════════════════════════════════════════════════════════════════════════════
 
 create temp table result_purge_seed (ok boolean);
+grant insert on result_purge_seed to service_role;
 do $$
 begin
   execute format('set local role %I', 'service_role');
@@ -500,7 +682,17 @@ begin
      '00000000-0000-0000-0000-000000510951', now() - interval '90 days', 20000, true, true, now() - interval '90 days'),
     ('00000000-0000-0000-0000-000000510603', '00000000-0000-0000-0000-000000510401',
      '00000000-0000-0000-0000-000000510201', '00000000-0000-0000-0000-000000510102',
-     '00000000-0000-0000-0000-000000510952', now() - interval '10 days', 20000, true, true, now() - interval '10 days');
+     '00000000-0000-0000-0000-000000510952', now() - interval '10 days', 20000, true, true, now() - interval '10 days'),
+    -- 🔴 fix guardián (170.5), Tercero: MUTANTE F. shown_at RECIENTE (1 día,
+    -- lo manda el cliente y NO es de fiar -- un cliente malicioso podría
+    -- mandar cualquier fecha) pero created_at (server-side, default now())
+    -- de hace 91 días. Si la purga filtrara por shown_at en vez de
+    -- created_at, esta fila sería INMORTAL -- un cliente podría volver
+    -- cualquier impresión imborrable con solo mandar una fecha futura,
+    -- rompiendo la promesa escrita del aviso de privacidad §5.
+    ('00000000-0000-0000-0000-000000510604', '00000000-0000-0000-0000-000000510401',
+     '00000000-0000-0000-0000-000000510201', '00000000-0000-0000-0000-000000510102',
+     '00000000-0000-0000-0000-000000510953', now() - interval '1 day', 20000, true, true, now() - interval '91 days');
   insert into public.ad_impressions_monthly
     (agency_id, ad_id, municipality_id, neighborhood_id, year_month, impressions, views, completions, cta_taps)
     values
@@ -511,6 +703,61 @@ begin
 exception when others then
   insert into result_purge_seed values (false);
 end $$;
+
+-- 🔴 fix guardian/coordinador (170.5), 3er caso del antipatrón "assert que no
+-- puede fallar": si la siembra de arriba falla (result_purge_seed.ok=false),
+-- las 3 filas NUNCA existieron -- y entonces "la fila de 91d fue BORRADA"
+-- (val='false' tras la purga) pasaría en VACÍO: una purga correcta y una
+-- purga que no hace absolutamente nada dan el MISMO resultado observable
+-- sobre una tabla vacía. La purga es justo lo que sostiene la promesa
+-- escrita del aviso de privacidad §5 -- no puede depender de un assert que
+-- no puede fallar. Blindaje en dos capas:
+--   (a) PRECONDICIÓN DURA (PURGE0a/PURGE0b) ANTES de llamar la purga: si la
+--       siembra no se materializó, estos 2 asserts fallan de forma explícita
+--       y ruidosa (no silenciosa) -- capturado en result_purge_preseed,
+--       leído por el rol de conexión (postgres, bypassrls) para no
+--       depender de otro grant.
+--   (b) Los 3 asserts de retención (PURGE3/4/5) dejan de comparar solo el
+--       estado "después" -- comparan "¿existía ANTES?" concatenado con
+--       "¿existe DESPUÉS?" en un solo string. Si la fila nunca existió, el
+--       "antes" ya es 'false', y ningún mutante (purga no-op, purga que
+--       borra todo, purga que nunca corrió) puede producir el string
+--       esperado 'true->false' (borrada) o 'true->true' (conservada) sobre
+--       datos que nunca estuvieron ahí. Esto es lo que hace que el mutante
+--       "cuerpo vacío" mate PURGE3 y el mutante "borra todo sin filtro"
+--       mate PURGE4/PURGE5 (demostrado por SAVEPOINT, ver bitácora).
+create temp table result_purge_preseed (label text, val text);
+do $$
+begin
+  insert into result_purge_preseed values ('raw_rows_seeded',
+    (select count(*)::int from public.ad_impressions
+      where id in ('00000000-0000-0000-0000-000000510601',
+                   '00000000-0000-0000-0000-000000510602',
+                   '00000000-0000-0000-0000-000000510603',
+                   '00000000-0000-0000-0000-000000510604'))::text);
+  insert into result_purge_preseed values ('row_91d_exists_before_purge',
+    (exists(select 1 from public.ad_impressions where id = '00000000-0000-0000-0000-000000510601'))::text);
+  insert into result_purge_preseed values ('row_90d_exists_before_purge',
+    (exists(select 1 from public.ad_impressions where id = '00000000-0000-0000-0000-000000510602'))::text);
+  insert into result_purge_preseed values ('row_10d_exists_before_purge',
+    (exists(select 1 from public.ad_impressions where id = '00000000-0000-0000-0000-000000510603'))::text);
+  insert into result_purge_preseed values ('row_mutantF_exists_before_purge',
+    (exists(select 1 from public.ad_impressions where id = '00000000-0000-0000-0000-000000510604'))::text);
+  insert into result_purge_preseed
+    select 'monthly_seeded',
+      impressions::text || ':' || views::text || ':' || completions::text || ':' || cta_taps::text
+      from public.ad_impressions_monthly
+     where agency_id = '00000000-0000-0000-0000-000000510201'
+       and ad_id = '00000000-0000-0000-0000-000000510401'
+       and year_month = date '2026-05-01';
+exception when others then
+  insert into result_purge_preseed values ('error', 'ERR');
+end $$;
+
+select is(coalesce((select val from result_purge_preseed where label = 'raw_rows_seeded'), 'ERR'), '4',
+  'PURGE0a_precondicion_dura_las_4_filas_sembradas_EXISTEN_antes_de_llamar_la_purga');
+select is(coalesce((select val from result_purge_preseed where label = 'monthly_seeded'), 'ERR'), '1234:567:89:12',
+  'PURGE0b_precondicion_dura_el_rollup_mensual_sembrado_EXISTE_con_los_totales_esperados_antes_de_purgar');
 
 create temp table result_purge_call (ok boolean);
 do $$
@@ -530,6 +777,8 @@ begin
     (exists(select 1 from public.ad_impressions where id = '00000000-0000-0000-0000-000000510602'))::text);
   insert into result_purge_check values ('row_10d_exists_after_purge',
     (exists(select 1 from public.ad_impressions where id = '00000000-0000-0000-0000-000000510603'))::text);
+  insert into result_purge_check values ('row_mutantF_exists_after_purge',
+    (exists(select 1 from public.ad_impressions where id = '00000000-0000-0000-0000-000000510604'))::text);
 exception when others then
   insert into result_purge_check values ('error', 'ERR');
 end $$;
@@ -558,18 +807,56 @@ end $$;
 
 select is((select ok from result_purge_seed), true, 'PURGE1_sembrar_3_filas_de_ad_impressions_mas_el_rollup_no_lanza_excepcion');
 select is((select ok from result_purge_call), true, 'PURGE2_llamar_a_purge_ad_impressions_no_lanza_excepcion');
-select is(coalesce((select val from result_purge_check where label = 'row_91d_exists_after_purge'), 'ERR'), 'false',
-  'PURGE3_una_fila_de_91_dias_de_antiguedad_es_BORRADA_por_la_purga');
-select is(coalesce((select val from result_purge_check where label = 'row_90d_exists_after_purge'), 'ERR'), 'true',
-  'PURGE4_una_fila_de_EXACTAMENTE_90_dias_frontera_se_CONSERVA_no_se_borra');
-select is(coalesce((select val from result_purge_check where label = 'row_10d_exists_after_purge'), 'ERR'), 'true',
-  'PURGE5_una_fila_de_10_dias_bien_dentro_de_la_ventana_se_CONSERVA');
+-- PURGE3/4/5: compuestos "existía ANTES -> existe DESPUÉS" en un solo string
+-- (blindaje anti-vacío, ver comentario arriba) -- ya NO comparan solo el
+-- estado final aislado.
+select is(
+  coalesce((select val from result_purge_preseed where label = 'row_91d_exists_before_purge'), 'ERR')
+  || '->' ||
+  coalesce((select val from result_purge_check where label = 'row_91d_exists_after_purge'), 'ERR'),
+  'true->false',
+  'PURGE3_una_fila_de_91_dias_de_antiguedad_EXISTIA_antes_y_es_BORRADA_por_la_purga'
+);
+select is(
+  coalesce((select val from result_purge_preseed where label = 'row_90d_exists_before_purge'), 'ERR')
+  || '->' ||
+  coalesce((select val from result_purge_check where label = 'row_90d_exists_after_purge'), 'ERR'),
+  'true->true',
+  'PURGE4_una_fila_de_EXACTAMENTE_90_dias_frontera_EXISTIA_antes_y_se_CONSERVA_no_se_borra'
+);
+select is(
+  coalesce((select val from result_purge_preseed where label = 'row_10d_exists_before_purge'), 'ERR')
+  || '->' ||
+  coalesce((select val from result_purge_check where label = 'row_10d_exists_after_purge'), 'ERR'),
+  'true->true',
+  'PURGE5_una_fila_de_10_dias_bien_dentro_de_la_ventana_EXISTIA_antes_y_se_CONSERVA'
+);
+-- 🔴 fix guardián (170.5), Tercero: MUTANTE F. Prueba que la purga filtra
+-- por created_at (server-side, no de fiar el cliente) y NO por shown_at
+-- (cliente-controlado). Esta fila tiene shown_at RECIENTE (1 día) pero
+-- created_at de 91 días -- si mutas el DELETE para filtrar por shown_at,
+-- esta fila sobrevive (se vuelve INMORTAL) y este assert muere. Con la
+-- migración real (filtra por created_at) se borra igual que PURGE3.
+select is(
+  coalesce((select val from result_purge_preseed where label = 'row_mutantF_exists_before_purge'), 'ERR')
+  || '->' ||
+  coalesce((select val from result_purge_check where label = 'row_mutantF_exists_after_purge'), 'ERR'),
+  'true->false',
+  'PURGE_MUTF_fila_con_shown_at_reciente_pero_created_at_de_91_dias_es_BORRADA_la_purga_filtra_por_created_at_NO_por_shown_at_controlado_por_el_cliente'
+);
 select is(coalesce((select val from result_monthly_after_purge), 'ERR'), '1234:567:89:12',
   'PURGE6_ad_impressions_monthly_sembrada_de_antemano_SIGUE_INTACTA_tras_la_purga_el_crudo_caduca_el_agregado_no');
 select is((select count(*)::int from result_cron_job), 1,
   'CRON1_existe_exactamente_1_fila_en_cron_job_para_purge_ad_impressions_daily');
-select is(coalesce((select schedule from result_cron_job), 'NONE'), '0 3 * * *',
-  'CRON2_el_schedule_del_job_es_diario_0_3_menos_diario_a_las_3am');
+-- 🔴 fix guardián (170.5), Cuarto: el servidor corre en UTC y pg_cron
+-- interpreta el schedule en la zona del servidor -- '0 3 * * *' son las
+-- 21:00 en Ciudad de México (hora pico del feed), NO las 3am. México
+-- central es UTC-6 fijo todo el año (sin horario de verano desde 2022), así
+-- que 3am CDMX = 9am UTC. El literal correcto y esperado es '0 9 * * *'.
+-- Este assert FALLA hasta que la migración cambie -- es el RED de este
+-- arreglo, no un defecto del test (decisión pendiente de Abraham).
+select is(coalesce((select schedule from result_cron_job), 'NONE'), '0 9 * * *',
+  'CRON2_el_schedule_del_job_es_0_9_UTC_equivalente_a_las_3am_hora_Ciudad_de_Mexico_NO_hora_pico');
 select is(coalesce((select command from result_cron_job), 'NONE'), 'select public.purge_ad_impressions();',
   'CRON3_el_command_del_job_es_exactamente_select_public_purge_ad_impressions');
 
