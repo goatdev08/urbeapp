@@ -1,16 +1,30 @@
 // supabase/functions/mint-upload-url/handler.ts
 // Edge Function: mintea un upload slot de un solo uso en Cloudflare Stream
 // (Direct Creator Upload) para el agente autenticado, upload-first.
-// Flujo: OPTIONS → método → auth → concurrencia (§13.2) → Stream → insert → 200.
+// Flujo: OPTIONS → método → auth → body (replace/size_bytes) → techo de tamaño
+//        → concurrencia (§13.2) → Stream (TUS si size_bytes, básico si no) → insert → 200.
 
 import type { MintUploadUrlDeps, MintUploadUrlResponse } from "./types.ts";
 import { handle_cors_preflight } from "../_shared/cors.ts";
 import { error_response, json_response } from "../_shared/response.ts";
 import {
+  MAX_UPLOAD_SIZE_BYTES,
   STALE_UPLOAD_MS,
   STREAM_MAX_DURATION_SECONDS,
   STREAM_REQUIRE_SIGNED_URLS,
 } from "./types.ts";
+
+/**
+ * 192.1 — `size_bytes` del body: entero positivo → TUS; cualquier otra cosa
+ * (ausente, string, 0, negativo, decimal, null) → undefined = camino básico.
+ * Tolerante a propósito: un body raro NUNCA debe romper el contrato viejo.
+ */
+function parse_size_bytes(parsed: unknown): number | undefined {
+  if (typeof parsed !== "object" || parsed === null) return undefined;
+  const raw = (parsed as { size_bytes?: unknown }).size_bytes;
+  if (typeof raw !== "number" || !Number.isInteger(raw) || raw <= 0) return undefined;
+  return raw;
+}
 
 export async function handler(req: Request, deps?: MintUploadUrlDeps): Promise<Response> {
   // 1. Preflight CORS
@@ -45,12 +59,25 @@ export async function handler(req: Request, deps?: MintUploadUrlDeps): Promise<R
   //     pendientes NO asociados a propiedad del propio caller antes de contar.
   //     Body ausente/ilegible → sin replace (contrato viejo intacto).
   let replace = false;
+  let size_bytes: number | undefined;
   try {
     const parsed: unknown = await req.json();
     replace = typeof parsed === "object" && parsed !== null &&
       (parsed as { replace?: unknown }).replace === true;
+    size_bytes = parse_size_bytes(parsed);
   } catch {
     replace = false;
+    size_bytes = undefined;
+  }
+
+  // 4c. 192.1 — techo de tamaño (2ª capa; el cliente ya valida MAX_VIDEO_SIZE_BYTES).
+  //     Antes de cancelar pendientes, contar concurrencia o tocar Stream.
+  if (size_bytes !== undefined && size_bytes > MAX_UPLOAD_SIZE_BYTES) {
+    return error_response(
+      "VIDEO_TOO_LARGE",
+      `El video supera el máximo permitido (${Math.round(MAX_UPLOAD_SIZE_BYTES / (1024 * 1024))} MB)`,
+      400,
+    );
   }
   if (replace && deps.pendingUploadCanceller) {
     try {
@@ -79,13 +106,19 @@ export async function handler(req: Request, deps?: MintUploadUrlDeps): Promise<R
   }
 
   // 6. Crear el upload en Stream. Falla → 502, SIN insertar (cero filas huérfanas).
+  //    192.1: con size_bytes → TUS (Upload-Length exacto; único camino >200 MB);
+  //    sin él → POST básico intacto para los builds instalados.
+  const protocol: "tus" | "basic" = size_bytes !== undefined ? "tus" : "basic";
   let stream_result;
   try {
-    stream_result = await deps.streamUploadCreator.create_direct_upload({
+    const base = {
       creator: uid,
       maxDurationSeconds: STREAM_MAX_DURATION_SECONDS,
       requireSignedURLs: STREAM_REQUIRE_SIGNED_URLS,
-    });
+    };
+    stream_result = size_bytes !== undefined
+      ? await deps.streamUploadCreator.create_tus_upload({ ...base, uploadLength: size_bytes })
+      : await deps.streamUploadCreator.create_direct_upload(base);
   } catch {
     return error_response(
       "STREAM_UPLOAD_FAILED",
@@ -116,6 +149,7 @@ export async function handler(req: Request, deps?: MintUploadUrlDeps): Promise<R
   const body: MintUploadUrlResponse = {
     uploadUrl: stream_result.uploadURL,
     uid: stream_result.uid,
+    protocol,
   };
   return json_response(body, 200);
 }

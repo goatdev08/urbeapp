@@ -7,15 +7,22 @@
 //   2. Invariante de concurrencia POR AGENTE (regla §13.2, fail-closed): si el agente ya
 //      tiene >=1 video en status IN ('uploading','processing') AND deleted_at IS NULL
 //      → 409 UPLOAD_IN_PROGRESS, sin llamar a Stream ni insertar.
-//   3. Crea el upload en Stream — POST
-//      https://api.cloudflare.com/client/v4/accounts/{STREAM_ACCOUNT_ID}/stream/direct_upload
-//      con { maxDurationSeconds: 120, requireSignedURLs: true, creator: uid }.
+//   3. Crea el upload en Stream. DOS caminos según el body (192.1, retro-compatible):
+//      · body.size_bytes entero válido (cliente nuevo) → TUS resumable: POST
+//        .../stream?direct_user=true con Upload-Length=size_bytes; la respuesta
+//        trae `Location` (URL de PATCH del cliente) y `stream-media-id` (uid).
+//        Es lo único que aguanta >200 MB (techo del POST básico); el cliente sube
+//        en chunks de 16 MiB. size_bytes > MAX_UPLOAD_SIZE_BYTES → 400 VIDEO_TOO_LARGE.
+//      · sin size_bytes (builds instalados) → POST /stream/direct_upload básico,
+//        EXACTAMENTE como siempre.
 //      Si Stream falla (no-2xx o success:false) → 502 STREAM_UPLOAD_FAILED, SIN insertar
 //      (cero filas huérfanas).
 //   4. Inserta property_videos(agent_id=uid, property_id=NULL, status='uploading', position=1,
 //      cloudflare_uid=<uid de Stream>, tus_upload_url=<uploadURL de Stream>).
 //      Si el insert falla → 500 INTERNAL_ERROR.
-//   5. 200 { uploadUrl, uid } — uid es el que Stream asignó al video (NO el uid del agente).
+//   5. 200 { uploadUrl, uid, protocol } — uid es el que Stream asignó al video (NO el
+//      uid del agente); protocol 'tus'|'basic' le dice al cliente cómo subir (los
+//      builds viejos lo ignoran: siempre reciben 'basic' porque no mandan size_bytes).
 
 export const STREAM_MAX_DURATION_SECONDS = 120;
 export const STREAM_REQUIRE_SIGNED_URLS = true;
@@ -92,8 +99,13 @@ export interface StreamUploadCreator {
   ): Promise<StreamDirectUploadResult>;
 }
 
-// stub RED 192.1 — valor real en GREEN
-export const MAX_UPLOAD_SIZE_BYTES = 0;
+// ── MAX_UPLOAD_SIZE_BYTES — techo del binario por TUS (192.1) ─────────────────
+// Espejo EXACTO de `MAX_VIDEO_SIZE_BYTES` del cliente (mobile/src/features/
+// publish/validation.ts = 500 MiB). El cliente lo valida antes de tocar la red;
+// aquí es la 2ª capa (frontera de confianza): size_bytes mayor → 400
+// VIDEO_TOO_LARGE sin llamar a Stream. Stream admite hasta 30 GB por TUS — el
+// techo es de PRODUCTO (maxDurationSeconds=120 ya acota el volumen real).
+export const MAX_UPLOAD_SIZE_BYTES = 524288000;
 
 // ── VideoRegistrar — inserta la fila 'uploading' (upload-first, property_id NULL) ─
 // Lanza (throw) si el insert falla — el handler lo traduce a 500 INTERNAL_ERROR.
@@ -140,5 +152,6 @@ export interface MintUploadUrlDeps {
 export interface MintUploadUrlResponse {
   uploadUrl: string;
   uid: string;
-  protocol?: "basic" | "tus";
+  /** Cómo debe subir el cliente: 'tus' (PATCH resumable) o 'basic' (POST multipart). */
+  protocol: "basic" | "tus";
 }
