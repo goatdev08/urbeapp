@@ -808,8 +808,13 @@ export function make_active_upload_checker(
  * o success:false — el handler lo traduce a 502 STREAM_UPLOAD_FAILED.
  * Variables de entorno requeridas: STREAM_ACCOUNT_ID, STREAM_API_TOKEN.
  */
-export function make_stream_upload_creator(): StreamUploadCreator {
+export function make_stream_upload_creator(
+  _fetch_impl: typeof fetch = fetch,
+): StreamUploadCreator {
   return {
+    create_tus_upload() {
+      return Promise.reject(new Error("stub RED 192.1"));
+    },
     async create_direct_upload(
       params: StreamDirectUploadParams,
     ): Promise<StreamDirectUploadResult> {

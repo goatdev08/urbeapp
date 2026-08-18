@@ -78,11 +78,22 @@ export interface StreamDirectUploadResult {
   uid: string;
 }
 
+export interface StreamTusUploadParams extends StreamDirectUploadParams {
+  /** Tamaño exacto del binario en bytes — header `Upload-Length` de TUS. */
+  uploadLength: number;
+}
+
 export interface StreamUploadCreator {
   create_direct_upload(
     params: StreamDirectUploadParams,
   ): Promise<StreamDirectUploadResult>;
+  create_tus_upload(
+    params: StreamTusUploadParams,
+  ): Promise<StreamDirectUploadResult>;
 }
+
+// stub RED 192.1 — valor real en GREEN
+export const MAX_UPLOAD_SIZE_BYTES = 0;
 
 // ── VideoRegistrar — inserta la fila 'uploading' (upload-first, property_id NULL) ─
 // Lanza (throw) si el insert falla — el handler lo traduce a 500 INTERNAL_ERROR.
@@ -129,4 +140,5 @@ export interface MintUploadUrlDeps {
 export interface MintUploadUrlResponse {
   uploadUrl: string;
   uid: string;
+  protocol?: "basic" | "tus";
 }
