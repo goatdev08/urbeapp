@@ -28,7 +28,10 @@ Luego el `guardian` verifica (anti-cheat + cobertura + `pnpm tsc`/lint/test). No
 - **Smells — solo si el diff no es trivial**: Speculative Generality (abstracción/columna/parámetro sin necesidad presente) · Duplicated Code (expresión de política repetida en 2+ policies → helper en schema `private`) · Mysterious Name (nombre que no revela intención) · Primitive Obsession (string/número donde va un enum o domain type). Heurísticas, no bloqueos: corrige si es barato; si no, anótalo en la bitácora.
 
 ## Documentar
-`task-master update-subtask --id=<id>.<n> --prompt="hecho: migración/función (rutas), invariantes cubiertas, tests, comandos"`.
+escribe tu nota (`hecho: migración/función (rutas), invariantes cubiertas, tests, y la SALIDA REAL de los comandos`) en un archivo y regístrala con `node .taskmaster/scripts/tm-log.mjs --id=<id>.<n> --file=<ruta>`.
+🔴 **BITÁCORA: NUNCA uses `task-master update-subtask` ni `update-task`.** Parafrasean el texto con un modelo (el 2026-08-17 uno inventó un resultado de verificación que nunca se corrió) y re-tipan los `task.id`. Escribe tu nota en un archivo y regístrala verbatim con:
+`node .taskmaster/scripts/tm-log.mjs --id=<id>.<n> --file=<ruta>`
+
 
 ## Bloqueantes
 No inventes. Documenta `BLOQUEANTE: …` en la subtarea y repórtalo (¿otra tarea/subtarea o trabajo nuevo?). El orquestador decide.

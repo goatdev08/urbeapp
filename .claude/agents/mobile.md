@@ -31,10 +31,13 @@ El testing en dispositivo virtual **jamás** usa el MCP de computer-use ni autom
 - Está bien que la ventana del emulador se abra y robe foco un instante al arrancar; lo prohibido es controlar mouse/teclado del host durante el testing.
 
 ## Documentar (bitácora en Taskmaster)
-Al terminar: `task-master update-subtask --id=<id>.<n> --prompt="hecho: archivos (rutas), decisiones, comandos corridos, resultado de verificación"`.
+Al terminar: escribe tu nota (`hecho: archivos (rutas), decisiones, comandos corridos, y la SALIDA REAL de la verificación`) en un archivo y regístrala con `node .taskmaster/scripts/tm-log.mjs --id=<id>.<n> --file=<ruta>`.
+🔴 **BITÁCORA: NUNCA uses `task-master update-subtask` ni `update-task`.** Parafrasean el texto con un modelo (el 2026-08-17 uno inventó un resultado de verificación que nunca se corrió) y re-tipan los `task.id`. Escribe tu nota en un archivo y regístrala verbatim con:
+`node .taskmaster/scripts/tm-log.mjs --id=<id>.<n> --file=<ruta>`
+
 
 ## Bloqueantes
-Si te topas con un bloqueante (falta una Edge Function, una tabla, una decisión de diseño): **no lo inventes**. Documenta `task-master update-subtask --id=<id>.<n> --prompt="BLOQUEANTE: …"` y repórtalo en tu output indicando si parece **cubierto por otra tarea/subtarea** (cuál) o **trabajo nuevo**. El orquestador decide.
+Si te topas con un bloqueante (falta una Edge Function, una tabla, una decisión de diseño): **no lo inventes**. Documéntalo con `tm-log.mjs` (el texto abre con `BLOQUEANTE:`) y repórtalo en tu output indicando si parece **cubierto por otra tarea/subtarea** (cuál) o **trabajo nuevo**. El orquestador decide.
 
 ## Output (estructurado)
 `Estado: ÉXITO | BLOQUEADO | TESTS-ROJOS` · Subtarea · Archivos tocados (rutas) · Verificación (tsc/lint/smoke) · `Conformidad spec: OK | desviaciones (cuáles)` · Si BLOQUEADO: qué falta y dónde debería resolverse.

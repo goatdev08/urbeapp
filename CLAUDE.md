@@ -45,11 +45,15 @@ Decisiones de fondo: `wiki/decisiones/0003` (vault), `0004` (Taskmaster), `0006`
 - Provider: `claude-code/sonnet` (sin API key, $0). Tag activo: `master`.
 - Consultar: `task-master list` · `task-master next` · `task-master show <id>`.
 - Estado: `task-master set-status --id=<id> --status=<pending|in-progress|review|done|deferred|cancelled>`.
-- Documentar (bitácora): `task-master update-subtask --id=<id>.<n> --prompt="…"` · `task-master update-task <id> "<cambio>"`.
+- Documentar (bitácora): 🔴 **`node .taskmaster/scripts/tm-log.mjs --id=<id>[.<n>] --file=<ruta>`** — NUNCA `update-subtask` ni `update-task` (ver gotcha abajo).
 - Descomponer: `task-master expand --id=<id>` / `--all`.
 - Nuevo trabajo: `task-master add-task --prompt="…"` · `task-master add-subtask --parent=<id> --title="…"`.
 - 🔴 **GOTCHA (2026-07-12): los comandos que generan JSON estructurado (`generateObject`) están ROTOS en este entorno.** El provider `claude-code` (`ai-sdk-provider-claude-code@2.3.0`) duplica `tool_use` ids → `API Error 400 "tool_use ids must be unique"` → exit 1 → 0 resultado. Afecta a **`add-task`, `expand`, `parse-prd`, `analyze-complexity`, `update-task`**. **NO es un update pendiente** (0.43.1 ya es la última) **ni son los hooks** (descartado por aislamiento). Ver [[taskmaster_addtask_provider_broken]].
-  - ✅ **SÍ funcionan** (úsalos normal): `update-subtask` (bitácora, usa `generateText`), `list`, `show`, `next`, `set-status`, `add-dependency`, `validate-dependencies`, `add-subtask --title` (manual, sin `--prompt`).
+  - ✅ **SÍ funcionan** (úsalos normal): `list`, `show`, `next`, `set-status`, `add-dependency`, `validate-dependencies`, `add-subtask --title` (manual, sin `--prompt`).
+- 🔴 **GOTCHA (2026-08-18): `update-subtask` NO se usa para la bitácora, aunque técnicamente "funcione".** Manda el texto a un modelo que lo **parafrasea**, y el 2026-08-17 **inventó un resultado de verificación** ("FALLA (10/13 casos)") cuando el archivo de test todavía no existía. Además re-tipa los 193 `task.id` de string a int en cada llamada.
+  - **Reemplazo obligatorio para TODA la bitácora (orquestador y agentes):** `node .taskmaster/scripts/tm-log.mjs --id=<tarea>[.<subtarea>] --file=<ruta-al-texto>`. Escribe el mismo bloque `<info added on ISO>` byte por byte, sin IA; respalda en `.bak`, verifica el round-trip contra el disco y valida los invariantes del esquema.
+  - Si algo re-tipó los ids igual: `node .taskmaster/scripts/repair-ids.mjs`.
+  - **Regla del registro:** la bitácora describe lo que se hizo; los resultados de verificación se **pegan de la salida real del comando**, jamás se narran de memoria.
   - **Workaround para crear/expandir**: genera el contenido tú y **escríbelo directo en `.taskmaster/tasks/tasks.json`** (respaldo `.bak` + validar con `task-master list`/`validate-dependencies`). Esquema: tag `master`→`tasks[]`; task `id`=**string**, `dependencies`=lista de strings; subtask `id`=**int**; campos `id,title,description,details,testStrategy,status,dependencies,priority,subtasks,updatedAt`.
 
 ## 4.5 Capa de planeación previa — `/tm-explore`
@@ -73,10 +77,10 @@ La criticidad **no se juzga**: se **deriva** del footprint de la subtarea. El an
 2. **Contexto** — lee las páginas del vault que la tarea toca (vía `mapa-codebase.md`).
 3. **Arrancar** — `task-master set-status --id=<id> --status=in-progress`.
 4. **Por cada subtarea `<id>.<n>`:**
-   1. *(plan)* `task-master update-subtask --id=<id>.<n> --prompt="plan: enfoque elegido"`.
+   1. *(plan)* `node .taskmaster/scripts/tm-log.mjs --id=<id>.<n> --file=<plan.md>`.
    2. Implementa el cambio (**PNPM** para todo).
    3. *(bitácora)* **Documenta lo hecho EN la subtarea** — el log que se releerá:
-      `task-master update-subtask --id=<id>.<n> --prompt="hecho: archivos (rutas), decisiones, comandos, resultado de verificación"`.
+      `node .taskmaster/scripts/tm-log.mjs --id=<id>.<n> --file=<hecho.md>` — archivos (rutas), decisiones, comandos y **la salida real** de la verificación.
       Se relee con `task-master show <id>.<n>`.
    4. **Verifica** antes de cerrar: `pnpm tsc --noEmit`, `pnpm lint`, tests/app según aplique.
    5. Cierra: `task-master set-status --id=<id>.<n> --status=done`.

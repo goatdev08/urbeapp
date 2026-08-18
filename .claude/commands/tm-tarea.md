@@ -47,12 +47,12 @@ Por cada subtarea pendiente:
    - `rm -f .taskmaster/.current-red`.
 3. **Si NO crítica**: invoca el **agente de dominio** asignado (implementa + verificación ligera `pnpm tsc --noEmit`/`pnpm lint`/smoke).
 4. **Bloqueante** reportado → §5.
-5. `task-master update-subtask --id=<id>.<n> --prompt="<resumen del agente>"` (si no lo hizo ya).
+5. Bitácora: escribe el resumen del agente en un archivo y `node .taskmaster/scripts/tm-log.mjs --id=<id>.<n> --file=<ruta>`. 🔴 **Nunca `update-subtask`** — parafrasea con IA (llegó a inventar un resultado de verificación) y re-tipa los `task.id`.
 6. `task-master set-status --id=<id>.<n> --status=done`.
 7. **Normal**: checkpoint antes de la siguiente. **`auto`**: continúa.
 
 ### 5 — Manejo de bloqueantes
-1. `task-master update-subtask --id=<id>.<n> --prompt="BLOQUEANTE: <desc>"`.
+1. `node .taskmaster/scripts/tm-log.mjs --id=<id>.<n> --file=<bloqueante.md>` (el texto abre con `BLOQUEANTE:`).
 2. Clasifica (con `task-master list`):
    - **Cubierto por otra tarea/subtarea** → `task-master add-dependency --id=<id>.<n> --depends-on=<esa>`; `task-master set-status --id=<id>.<n> --status=blocked`; sigue con la siguiente subtarea desbloqueada.
    - **Trabajo nuevo** → `task-master add-task --prompt="<desc>"` o `task-master add-subtask --parent=<id> --title="<desc>"`; documenta; `add-dependency`.
