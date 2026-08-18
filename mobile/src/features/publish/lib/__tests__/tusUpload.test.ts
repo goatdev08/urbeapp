@@ -182,7 +182,7 @@ describe('tus_upload — progreso', () => {
     await tus_upload({ url: URL, source, sink, chunk_bytes: 10 * MiB, on_progress: (f) => ticks.push(f) });
     // chunk 1: 5/20, 10/20 · chunk 2: 15/20, 20/20 · final: 1
     expect(ticks).toEqual([0.25, 0.5, 0.75, 1, 1]);
-    for (let i = 1; i < ticks.length; i += 1) expect(ticks[i]).toBeGreaterThanOrEqual(ticks[i - 1]);
+    for (let i = 1; i < ticks.length; i += 1) expect(ticks[i]).toBeGreaterThanOrEqual(ticks[i - 1] ?? 0);
   });
 });
 
