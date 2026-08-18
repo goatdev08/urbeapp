@@ -9115,10 +9115,12 @@
             "id": 1,
             "title": "EF mint-upload-url: creación TUS cuando llega size_bytes (retro-compatible)",
             "description": "handler + types + adapter create_tus_upload en _shared/clients.ts; RED→GREEN Deno.",
-            "details": "",
-            "status": "pending",
+            "details": "<info added on 2026-08-18T03:15:19.275Z>\nExpanded EF mint-upload-url to support TUS protocol for large videos (>200 MB threshold). Modified handler to inspect size_bytes parameter: when present and >200 MB, calls new create_tus_upload adapter in _shared/clients.ts and returns protocol:'tus' with uploadURL; otherwise falls back to existing basic direct-upload flow with protocol:'basic'. Returns 400 VIDEO_TOO_LARGE for videos exceeding 500 MB limit. Contract is fully backward-compatible: existing clients (no size_bytes) continue using basic protocol without changes. Types updated in types.ts to reflect TUS response shape. Wrote comprehensive test coverage: handler.test.ts with 9 test cases (T-0 through T-8) covering happy path, backward compatibility, size thresholds, error handling, and retro-compatible behavior. Added 8 unit tests (A-1 through A-8) in _shared/stream_upload_creator.test.ts for the TUS upload creator adapter including fetch injection for testability. All tests moved from RED (12 assertion failures) to GREEN: 46/46 passing in mint-upload-url suite, full Deno test suite at 1189/1189 passing. Type checking clean with deno check on both mint-upload-url and mint-ad-upload-url functions. Implementation files: supabase/functions/mint-upload-url/handler.ts, supabase/functions/mint-upload-url/types.ts, supabase/functions/_shared/clients.ts, test files handler.test.ts and stream_upload_creator.test.ts.\n</info added on 2026-08-18T03:15:19.275Z>",
+            "status": "done",
             "dependencies": [],
-            "testStrategy": ""
+            "testStrategy": "",
+            "updatedAt": "2026-08-18T03:15:26.708Z",
+            "parentId": "undefined"
           },
           {
             "id": 2,
@@ -9129,7 +9131,8 @@
             "dependencies": [
               1
             ],
-            "testStrategy": ""
+            "testStrategy": "",
+            "parentId": "undefined"
           },
           {
             "id": 3,
@@ -9140,16 +9143,17 @@
             "dependencies": [
               2
             ],
-            "testStrategy": ""
+            "testStrategy": "",
+            "parentId": "undefined"
           }
         ],
-        "updatedAt": "2026-08-17T00:00:00.000Z"
+        "updatedAt": "2026-08-18T03:15:26.708Z"
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-08-17T02:14:24.592Z",
-      "taskCount": 191,
+      "lastModified": "2026-08-18T03:15:26.708Z",
+      "taskCount": 192,
       "completedCount": 102,
       "tags": [
         "master"
