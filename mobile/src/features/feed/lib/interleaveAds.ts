@@ -1,0 +1,77 @@
+/**
+ * interleaveAds.ts — función PURA que intercala anuncios en el feed.
+ *
+ * Subtarea Taskmaster: 170.3 — interleaveAds.ts: función PURA con 8
+ * invariantes (dependencia de 170.1 app_config y 170.2 ads_for_zone; el
+ * contrato de esta función vive aparte de ambos: recibe `properties` y `ads`
+ * YA resueltos y solo decide EL ORDEN de intercalado).
+ *
+ * FASE RED — STUB. Sin lógica de negocio: lanza siempre para que
+ * mobile/src/features/feed/__tests__/interleaveAds.test.ts falle por
+ * ASERCIÓN/EXCEPCIÓN, nunca por import roto. La implementación GREEN va en
+ * una sesión aparte.
+ *
+ * POR QUÉ VIVE AQUÍ Y NO EN EL HOOK (arquitectura, doc de exploración 039,
+ * opción c): la lógica que decide QUÉ VE EL USUARIO y QUÉ SE FACTURA
+ * (impresiones) tiene que ser una función pura y determinista, testeable sin
+ * mocks de tiempo/random — eso la mete en la vía TDD CRÍTICA de CLAUDE.md §5
+ * por vivir bajo `**​/lib/**`. Metida dentro de un hook con estado sería
+ * intesteable.
+ */
+
+import type { FeedPropertyWithUrl } from '../types';
+
+/**
+ * Anuncio elegible para el feed, forma devuelta por la RPC public.ads_for_zone
+ * (subtarea 170.2, supabase/migrations/20260818000002_ads_for_zone.sql) — SIN
+ * transformar: interleave_ads solo reordena, nunca reescribe estos campos.
+ */
+export interface FeedAd {
+  id: string;
+  title: string;
+  description: string;
+  cta_type: string;
+  cta_value: string;
+  cloudflare_uid: string;
+  agency_name: string;
+  /** null si la agencia no tiene logo cargado. */
+  agency_logo_url: string | null;
+}
+
+/** Ítem heterogéneo del feed: una propiedad de siempre, o un anuncio intercalado. */
+export type FeedItem =
+  | { kind: 'property'; property: FeedPropertyWithUrl }
+  | { kind: 'ad'; ad: FeedAd };
+
+export interface InterleaveAdsOptions {
+  /** Mínimo de propiedades entre dos anuncios consecutivos (app_config.ad_frequency_n, 170.1). */
+  every_n: number;
+  /** Tope de anuncios por SESIÓN, contando llamadas/páginas previas (app_config.ad_max_per_session). */
+  max_per_session: number;
+  /** Items mínimos entre dos apariciones del MISMO anuncio (2×every_n en producción; parámetro del caller, no derivado aquí). */
+  min_gap_between_repeats: number;
+  /** Anuncios ya mostrados en ESTA sesión antes de esta llamada (páginas/refetch previos). */
+  already_shown_count: number;
+  /**
+   * true (primera página real del feed) → invariante "nunca posición 0" se
+   * aplica: la llamada exige `every_n` propiedades antes del primer anuncio.
+   * false (páginas de continuación: el índice 0 de ESTE array no es la
+   * posición 0 del feed completo) → el primer anuncio puede caer en el
+   * índice 0 de esta llamada si ya está due.
+   */
+  skip_first_position: boolean;
+}
+
+/**
+ * Intercala `ads` dentro de `properties` respetando los 8 invariantes de la
+ * subtarea 170.3 (ver bitácora de la subtarea para el detalle completo).
+ * Pura y determinista: misma entrada → misma salida, sin fecha/hora ni
+ * aleatoriedad, sin mutar `properties` ni `ads`.
+ */
+export function interleave_ads(
+  _properties: FeedPropertyWithUrl[],
+  _ads: FeedAd[],
+  _opts: InterleaveAdsOptions
+): FeedItem[] {
+  throw new Error('interleave_ads: not_implemented (RED — 170.3)');
+}
