@@ -18,21 +18,16 @@
  * debe importar `feed_key_extractor` en vez de mantener la lambda inline
  * `(item) => item.id` que asumía un solo tipo homogéneo.
  *
- * FASE RED — STUB. Sin lógica de negocio: lanza siempre para que
- * mobile/src/features/feed/__tests__/feedKeyExtractor.test.ts falle por
- * ASERCIÓN/EXCEPCIÓN, nunca por import roto. La implementación GREEN va en
- * una sesión aparte.
- *
- * CONTRATO fijado por este test-author: `${item.kind}:${id}` — prefijo por
- * `kind` ANTES del id (gotcha ya pagado en este repo, ver
+ * FASE GREEN (170.4). CONTRATO fijado por el test-author: `${item.kind}:${id}`
+ * -- prefijo por `kind` ANTES del id (gotcha ya pagado en este repo, ver
  * flatlist_numcolumns_row_keys.md: FlashList advierte y rompe el render si
- * dos items comparten key). Un uuid de `ad` podría, en teoría, colisionar
+ * dos items comparten key). Un uuid de `ad` podria, en teoria, colisionar
  * con un uuid de `property`; el prefijo por kind lo hace imposible aunque
  * los ids literales colisionen byte a byte.
  */
 
 import type { FeedItem } from './interleaveAds';
 
-export function feed_key_extractor(_item: FeedItem): string {
-  throw new Error('feed_key_extractor: not_implemented (RED — 170.4)');
+export function feed_key_extractor(item: FeedItem): string {
+  return item.kind === 'property' ? `property:${item.property.id}` : `ad:${item.ad.id}`;
 }

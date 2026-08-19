@@ -19,12 +19,15 @@ import { AppState, type AppStateStatus } from 'react-native';
 import { useFocusEffect } from 'expo-router'; // SDK 56: useFocusEffect en expo-router, NO en @react-navigation/native
 import type { FlashListProps, ViewToken } from '@shopify/flash-list';
 
-import type { FeedPropertyWithUrl } from '../types';
+import type { FeedItem } from '../lib/interleaveAds';
 
 // ViewabilityConfigCallbackPairs no se re-exporta en el index público de flash-list v2,
 // por lo que se deriva de FlashListProps para evitar imports de sub-paths privados.
+// 170.4: FeedItem (heterogéneo, propiedades+anuncios) — el hook es genérico en
+// runtime (solo usa `index`, nunca el shape del item), por eso este es
+// puramente un cambio de TIPO, sin comportamiento nuevo que testear aquí.
 type FeedViewabilityPairs = NonNullable<
-  FlashListProps<FeedPropertyWithUrl>['viewabilityConfigCallbackPairs']
+  FlashListProps<FeedItem>['viewabilityConfigCallbackPairs']
 >;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -84,7 +87,7 @@ export function useFeedActiveIndex(): UseFeedActiveIndexResult {
         onViewableItemsChanged: ({
           viewableItems,
         }: {
-          viewableItems: ViewToken<FeedPropertyWithUrl>[];
+          viewableItems: ViewToken<FeedItem>[];
         }) => {
           const most_visible = viewableItems[0];
           if (

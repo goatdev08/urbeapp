@@ -463,6 +463,8 @@ describe('useFeedProperties — cap de sesión se sostiene entre loadInitial y l
     expect(ad_count_after_page2).toBe(2);
     // Pero las propiedades de la página 2 sí se acumulan con normalidad (5 + 3 = 8).
     expect(property_count_after_page2).toBe(8);
-    expect(result.current.data).toHaveLength(11);
+    // 2 anuncios + 8 propiedades = 10. El literal original decía 11, en
+    // contradicción aritmética con los dos asserts de arriba en este MISMO test.
+    expect(result.current.data).toHaveLength(10);
   });
 });

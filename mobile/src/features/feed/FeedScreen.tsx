@@ -32,14 +32,13 @@ import { FilterSheet } from '../search/components/FilterSheet';
 import { ZoneActiveChip } from '../search/components/ZoneActiveChip';
 
 import { VideoFeedItem } from './components/VideoFeedItem';
+import { AdFeedItem } from './components/AdFeedItem';
 import { FeedSkeleton } from './components/FeedSkeleton';
 import { release_splash } from '@/lib/splash-gate';
 import { useFeedActiveIndex } from './hooks/useFeedActiveIndex';
 import { useFeedProperties } from './hooks/useFeedProperties';
-import type { FeedPropertyWithUrl } from './types';
-
-// ponytail: module-level — referencia estable, sin deps de closure.
-const key_extractor = (item: FeedPropertyWithUrl): string => item.id;
+import { feed_key_extractor } from './lib/feedKeyExtractor';
+import type { FeedItem } from './lib/interleaveAds';
 
 export function FeedScreen() {
   const { height } = useWindowDimensions();
@@ -62,9 +61,12 @@ export function FeedScreen() {
   // garantiza que solo re-renderizan los dos ítems cuya prop `isActive` cambia
   // (el que sale y el que entra); el resto son bailout.
   const render_item = useCallback(
-    ({ item, index }: ListRenderItemInfo<FeedPropertyWithUrl>) => (
-      <VideoFeedItem property={item} isActive={isItemActive(index)} />
-    ),
+    ({ item, index }: ListRenderItemInfo<FeedItem>) =>
+      item.kind === 'ad' ? (
+        <AdFeedItem ad={item.ad} isActive={isItemActive(index)} />
+      ) : (
+        <VideoFeedItem property={item.property} isActive={isItemActive(index)} />
+      ),
     [isItemActive],
   );
 
@@ -181,7 +183,7 @@ export function FeedScreen() {
               directamente (extiende Omit<ScrollViewProps, 'maintainVisibleContentPosition'>). */}
           <FlashList
             data={data}
-            keyExtractor={key_extractor}
+            keyExtractor={feed_key_extractor}
             renderItem={render_item}
             snapToInterval={height}
             snapToAlignment="start"
