@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 // supabase/functions/record-ad-impressions/types.ts
 // Tipos y contratos de DI para la Edge Function record-ad-impressions —
 // subtarea 170.6. Solo interfaces + funciones PURAS (stub RED, sin lógica);
@@ -47,17 +49,42 @@ export interface CallerVerifier {
  */
 export const AD_IMPRESSION_ID_NAMESPACE = "45eeb944-da5b-442f-8139-0a2bc3efe50b";
 
+
+function uuid_string_to_bytes(uuid: string): Uint8Array {
+  const hex = uuid.replace(/-/g, "");
+  const bytes = new Uint8Array(16);
+  for (let i = 0; i < 16; i++) {
+    bytes[i] = parseInt(hex.substring(i * 2, i * 2 + 2), 16);
+  }
+  return bytes;
+}
+
+function bytes_to_uuid_string(bytes: Uint8Array): string {
+  const hex = Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 /**
  * id = uuid_v5(AD_IMPRESSION_ID_NAMESPACE, `${user_id}:${ad_id}:${session_id}`).
  * `user_id` SIEMPRE es el `sub` del JWT del caller, NUNCA un valor del
  * payload. Determinista: el mismo trío produce SIEMPRE el mismo id;
  * cambiar cualquiera de los tres produce un id distinto (RFC 4122 §4.3).
- * RED: stub sin implementar — ver handler.test.ts para los valores exactos
- * esperados (verificados con uuid5 independiente, `python3 -c "import
- * uuid; ..."`).
+ * Valores esperados verificados de forma independiente con
+ * `python3 -c "import uuid; print(uuid.uuid5(...))"` — ver handler.test.ts.
  */
-export function derive_impression_id(_user_id: string, _ad_id: string, _session_id: string): string {
-  throw new Error("not_implemented");
+export function derive_impression_id(user_id: string, ad_id: string, session_id: string): string {
+  const namespace_bytes = uuid_string_to_bytes(AD_IMPRESSION_ID_NAMESPACE);
+  const name_bytes = new TextEncoder().encode(`${user_id}:${ad_id}:${session_id}`);
+  const combined = new Uint8Array(namespace_bytes.length + name_bytes.length);
+  combined.set(namespace_bytes);
+  combined.set(name_bytes, namespace_bytes.length);
+
+  const hash = new Uint8Array(createHash('sha1').update(combined).digest());
+  const uuid_bytes = hash.slice(0, 16);
+  // RFC 4122 §4.3: version 5, variant RFC 4122.
+  uuid_bytes[6] = (uuid_bytes[6] & 0x0f) | 0x50;
+  uuid_bytes[8] = (uuid_bytes[8] & 0x3f) | 0x80;
+  return bytes_to_uuid_string(uuid_bytes);
 }
 
 // ── Umbral de "viewed" (#193 — la EF es la fuente de verdad, no existía) ───
@@ -65,9 +92,9 @@ export function derive_impression_id(_user_id: string, _ad_id: string, _session_
 /** watched_ms >= este umbral ⇒ viewed=true. Paridad con YouTube (cuenta vista a los 3s). */
 export const VIEWED_THRESHOLD_MS = 3000;
 
-/** true solo si watched_ms es un número finito >= VIEWED_THRESHOLD_MS. RED: stub. */
-export function is_ad_viewed(_watched_ms: number): boolean {
-  throw new Error("not_implemented");
+/** true solo si watched_ms es un número finito >= VIEWED_THRESHOLD_MS. */
+export function is_ad_viewed(watched_ms: number): boolean {
+  return Number.isFinite(watched_ms) && watched_ms >= VIEWED_THRESHOLD_MS;
 }
 
 // ── Ads — datos crudos, sin pre-filtrar (la decisión de elegibilidad vive en el handler) ──

@@ -98,6 +98,14 @@ import type {
   RegisterUploadingAdCreativeParams,
 } from "../mint-ad-upload-url/types.ts";
 import type { AdUrlMinter, MintedAdUrl } from "../mint-ad-urls/types.ts";
+import type {
+  AdRecord,
+  AdsRepository,
+  ImpressionRow,
+  ImpressionsWriter,
+  ResolvedZone,
+  ZoneResolver,
+} from "../record-ad-impressions/types.ts";
 
 /** Cliente supabase-js con service_role (bypassa RLS y column-grants). */
 export function service_client(): SupabaseClient {
@@ -1775,6 +1783,63 @@ export function make_ad_url_minter(
       }
 
       return results;
+    },
+  };
+}
+
+// ── record-ad-impressions (subtarea 170.6) ──────────────────────────────────
+
+/** AdsRepository real: trae los ads TAL CUAL están en la tabla, sin filtrar
+ * por status ni vigencia — la decisión de elegibilidad vive en el handler. */
+export function make_ads_repository(client: SupabaseClient): AdsRepository {
+  return {
+    async fetch_ads(ad_ids: string[]): Promise<AdRecord[]> {
+      if (ad_ids.length === 0) return [];
+      const { data, error } = await client
+        .from("ads")
+        .select("id, agency_id, status, starts_at, ends_at")
+        .in("id", ad_ids);
+      if (error) throw error;
+      return (data ?? []) as AdRecord[];
+    },
+  };
+}
+
+/** ZoneResolver real: delega en la RPC public.resolve_ad_zone (misma regla
+ * de resolución por coordenadas que public.ads_for_zone — colonia por
+ * ST_Intersects, fallback a bbox de municipio, NULL/NULL sin match). */
+export function make_zone_resolver(client: SupabaseClient): ZoneResolver {
+  return {
+    async resolve_zone(lat: number, lng: number): Promise<ResolvedZone> {
+      const { data, error } = await client
+        .rpc("resolve_ad_zone", { p_lat: lat, p_lng: lng })
+        .single();
+      if (error) throw error;
+      const row = data as { municipality_id: string | null; neighborhood_id: number | null };
+      return { municipality_id: row.municipality_id, neighborhood_id: row.neighborhood_id };
+    },
+  };
+}
+
+/** ImpressionsWriter real. upsert_impressions hace upsert por `id` (PK) —
+ * idempotente junto con unique(user_id, ad_id, session_id) de #193.
+ * record_cta_tap es un UPDATE (no upsert): su firma solo conoce (id,
+ * cta_tapped_at), así que estructuralmente no puede tocar
+ * watched_ms/viewed/completed; si la fila aún no existe (CTA que adelanta al
+ * batch de impresiones) no hace nada — fire-and-forget, sin error. */
+export function make_impressions_writer(client: SupabaseClient): ImpressionsWriter {
+  return {
+    async upsert_impressions(rows: ImpressionRow[]): Promise<void> {
+      if (rows.length === 0) return;
+      const { error } = await client.from("ad_impressions").upsert(rows, { onConflict: "id" });
+      if (error) throw error;
+    },
+    async record_cta_tap(id: string, cta_tapped_at: string): Promise<void> {
+      const { error } = await client
+        .from("ad_impressions")
+        .update({ cta_tapped_at })
+        .eq("id", id);
+      if (error) throw error;
     },
   };
 }

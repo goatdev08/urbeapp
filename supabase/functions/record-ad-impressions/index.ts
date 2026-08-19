@@ -1,33 +1,25 @@
 // supabase/functions/record-ad-impressions/index.ts
-// Entry point de producción — STUB, fase RED (subtarea 170.6). CallerVerifier
-// es infraestructura genérica (idéntica a mint-ad-urls/mint-poster-urls,
-// JWT → uid); AdsRepository/ZoneResolver/ImpressionsWriter son la lógica de
-// negocio de esta EF y quedan sin implementar a propósito (GREEN, fuera de
-// esta fase) — lanzan not_implemented si algo llega a invocarlos.
+// Entry point de producción — GREEN, subtarea 170.6. Construye las
+// dependencias reales (supabase-js service_role) e inyecta al handler. La
+// lógica de negocio (elegibilidad, derivación del id, umbral de viewed)
+// vive en handler.ts/types.ts; los adapters (AdsRepository/ZoneResolver/
+// ImpressionsWriter) viven en _shared/clients.ts
+// (make_ads_repository/make_zone_resolver/make_impressions_writer), mismo
+// patrón que make_ad_url_minter (169.5) — los tests importan handler.ts
+// directo y NO pasan por este archivo.
 //
-// Deploy (mismo gotcha que mint-ad-urls, documentado ahí): si esta EF
-// termina importando _shared/clients.ts, el deploy necesita
+// Deploy (mismo gotcha que mint-ad-urls, documentado ahí): esta EF importa
+// _shared/clients.ts →
 //   supabase functions deploy record-ad-impressions --import-map supabase/functions/deno.json --use-api
 
-import type { SupabaseClient } from "@supabase/supabase-js";
-import { createClient } from "@supabase/supabase-js";
 import { handler } from "./handler.ts";
-import type {
-  AdRecord,
-  AdsRepository,
-  CallerVerifier,
-  CallerVerifyResult,
-  ImpressionRow,
-  ImpressionsWriter,
-  ResolvedZone,
-  ZoneResolver,
-} from "./types.ts";
-
-function service_client(): SupabaseClient {
-  const url = Deno.env.get("SUPABASE_URL")!;
-  const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-  return createClient(url, key);
-}
+import {
+  make_ads_repository,
+  make_impressions_writer,
+  make_zone_resolver,
+  service_client,
+} from "../_shared/clients.ts";
+import type { CallerVerifier, CallerVerifyResult } from "./types.ts";
 
 Deno.serve((req: Request) => {
   const client = service_client();
@@ -46,32 +38,11 @@ Deno.serve((req: Request) => {
     },
   };
 
-  const adsRepository: AdsRepository = {
-    fetch_ads(_ad_ids: string[]): Promise<AdRecord[]> {
-      throw new Error("not_implemented");
-    },
-  };
-
-  const zoneResolver: ZoneResolver = {
-    resolve_zone(_lat: number, _lng: number): Promise<ResolvedZone> {
-      throw new Error("not_implemented");
-    },
-  };
-
-  const impressionsWriter: ImpressionsWriter = {
-    upsert_impressions(_rows: ImpressionRow[]): Promise<void> {
-      throw new Error("not_implemented");
-    },
-    record_cta_tap(_id: string, _cta_tapped_at: string): Promise<void> {
-      throw new Error("not_implemented");
-    },
-  };
-
   return handler(req, {
     callerVerifier,
-    adsRepository,
-    zoneResolver,
-    impressionsWriter,
+    adsRepository: make_ads_repository(client),
+    zoneResolver: make_zone_resolver(client),
+    impressionsWriter: make_impressions_writer(client),
     now: () => new Date(),
   });
 });
