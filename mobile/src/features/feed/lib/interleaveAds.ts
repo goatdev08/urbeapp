@@ -67,11 +67,57 @@ export interface InterleaveAdsOptions {
  * subtarea 170.3 (ver bitácora de la subtarea para el detalle completo).
  * Pura y determinista: misma entrada → misma salida, sin fecha/hora ni
  * aleatoriedad, sin mutar `properties` ni `ads`.
+ *
+ * Algoritmo (recorrido único + contador, ponytail: nada de motor de reglas):
+ * - `since_last_ad` cuenta propiedades emitidas desde el último anuncio.
+ *   Arranca en 0 si `skip_first_position` (exige `every_n` propiedades antes
+ *   del primer anuncio) o en `every_n` si no (el primer anuncio puede caer
+ *   en la posición 0 si ya está "due").
+ * - Cuando `since_last_ad >= every_n` y queda presupuesto de sesión, se
+ *   busca el primer anuncio del pool (round-robin determinista) cuya última
+ *   aparición esté a >= `min_gap_between_repeats` posiciones; si ninguno
+ *   califica se difiere el intercalado (nunca se rompe el invariante 5).
  */
 export function interleave_ads(
-  _properties: FeedPropertyWithUrl[],
-  _ads: FeedAd[],
-  _opts: InterleaveAdsOptions
+  properties: FeedPropertyWithUrl[],
+  ads: FeedAd[],
+  opts: InterleaveAdsOptions
 ): FeedItem[] {
-  throw new Error('interleave_ads: not_implemented (RED — 170.3)');
+  const { every_n, max_per_session, min_gap_between_repeats, already_shown_count, skip_first_position } = opts;
+  const budget = max_per_session - already_shown_count;
+
+  if (properties.length === 0) return [];
+  if (ads.length === 0 || budget <= 0) {
+    return properties.map((property) => ({ kind: 'property', property }));
+  }
+
+  const result: FeedItem[] = [];
+  const last_shown_at = new Map<string, number>(); // ad.id -> índice en `result`
+  let since_last_ad = skip_first_position ? 0 : every_n;
+  let ads_used = 0;
+  let pool_cursor = 0;
+
+  for (const property of properties) {
+    if (ads_used < budget && since_last_ad >= every_n) {
+      const current_pos = result.length;
+      for (let k = 0; k < ads.length; k++) {
+        const idx = (pool_cursor + k) % ads.length;
+        const candidate = ads[idx]!;
+        const last_pos = last_shown_at.get(candidate.id);
+        if (last_pos === undefined || current_pos - last_pos >= min_gap_between_repeats) {
+          result.push({ kind: 'ad', ad: candidate });
+          last_shown_at.set(candidate.id, current_pos);
+          pool_cursor = (idx + 1) % ads.length;
+          ads_used++;
+          since_last_ad = 0;
+          break;
+        }
+      }
+    }
+
+    result.push({ kind: 'property', property });
+    since_last_ad++;
+  }
+
+  return result;
 }
