@@ -23,18 +23,26 @@ import type {
 } from "./types.ts";
 import { derive_impression_id, is_ad_viewed } from "./types.ts";
 
-function is_nonempty_string(v: unknown): v is string {
-  return typeof v === "string" && v !== "";
+// Fix guardián 170.6 (V4a) — ad_id/session_id son columnas `uuid not null`
+// en Postgres, no strings arbitrarios. Validarlas por FORMA aquí (antes de
+// fetch_ads/upsert_impressions) es lo que permite el rechazo POR ITEM: un
+// string no-uuid nunca llega a los adapters reales, que fallarían la
+// llamada COMPLETA (22P02) por una sola fila. Ver
+// ads_repo_uuid_validating/writer_uuid_validating en handler.test.ts.
+const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
+function is_uuid_string(v: unknown): v is string {
+  return typeof v === "string" && UUID_RE.test(v);
 }
 
 /** Validación estructural mínima del item — malformado (ad_id/session_id
- * vacíos o de tipo incorrecto) se rechaza ANTES de llegar a fetch_ads. */
+ * ausentes o sin formato uuid) se rechaza ANTES de llegar a fetch_ads. */
 function is_well_formed_impression(item: unknown): item is AdImpressionEventInput {
   if (typeof item !== "object" || item === null) return false;
   const r = item as Record<string, unknown>;
   return (
-    is_nonempty_string(r.ad_id) &&
-    is_nonempty_string(r.session_id) &&
+    is_uuid_string(r.ad_id) &&
+    is_uuid_string(r.session_id) &&
     typeof r.shown_at === "string" &&
     typeof r.watched_ms === "number" &&
     typeof r.lat === "number" &&
@@ -45,7 +53,7 @@ function is_well_formed_impression(item: unknown): item is AdImpressionEventInpu
 function is_well_formed_cta_tap(item: unknown): item is { ad_id: string; session_id: string; cta_tapped_at: string } {
   if (typeof item !== "object" || item === null) return false;
   const r = item as Record<string, unknown>;
-  return is_nonempty_string(r.ad_id) && is_nonempty_string(r.session_id) && typeof r.cta_tapped_at === "string";
+  return is_uuid_string(r.ad_id) && is_uuid_string(r.session_id) && typeof r.cta_tapped_at === "string";
 }
 
 function is_ad_eligible(ad: AdRecord, now: Date): boolean {

@@ -1826,13 +1826,45 @@ export function make_zone_resolver(client: SupabaseClient): ZoneResolver {
  * record_cta_tap es un UPDATE (no upsert): su firma solo conoce (id,
  * cta_tapped_at), así que estructuralmente no puede tocar
  * watched_ms/viewed/completed; si la fila aún no existe (CTA que adelanta al
- * batch de impresiones) no hace nada — fire-and-forget, sin error. */
+ * batch de impresiones) no hace nada — fire-and-forget, sin error.
+ *
+ * Fix guardián 170.6 (V1) — `onConflict:"id"` SOLO (sin `ignoreDuplicates`)
+ * es un UPDATE de TODAS las columnas: reenviar el mismo id (reintento de
+ * red) degradaba una fila ya facturada (watched_ms/viewed/completed volvían
+ * a 0/false). `ignoreDuplicates: true` (INSERT ... ON CONFLICT DO NOTHING)
+ * es la opción elegida — el reenvío no toca la fila en absoluto, lo cual es
+ * correcto porque cta_tapped_at (la única columna legítimamente mutable
+ * tras el insert) NUNCA pasa por este método: la escribe record_cta_tap,
+ * con su propia firma acotada. Alternativa descartada: un
+ * `on conflict do update` acotado a columnas monótonas (quedarse con el
+ * watched_ms MAYOR) — más código para el mismo resultado observable, ya que
+ * ninguna columna de upsert_impressions debe cambiar tras el insert inicial.
+ *
+ * Fix guardián 170.6 (V4b) — el batch es UN SOLO INSERT multi-fila: si
+ * Postgres rechaza el statement completo (22P02 por un uuid con formato
+ * inválido en una sola fila, u otra violación), se perdían también las
+ * filas válidas del mismo lote. Fallback fail-closed POR ITEM (misma
+ * lección de #73 / mismo criterio que mint-poster-urls/mint-ad-urls): si el
+ * upsert batch falla, se reintenta fila por fila para persistir las
+ * válidas, y se relanza el error al final para no ocultar el fallo (el
+ * caller decide qué hacer con la excepción). */
 export function make_impressions_writer(client: SupabaseClient): ImpressionsWriter {
   return {
     async upsert_impressions(rows: ImpressionRow[]): Promise<void> {
       if (rows.length === 0) return;
-      const { error } = await client.from("ad_impressions").upsert(rows, { onConflict: "id" });
-      if (error) throw error;
+      const { error } = await client
+        .from("ad_impressions")
+        .upsert(rows, { onConflict: "id", ignoreDuplicates: true });
+      if (!error) return;
+
+      let last_error: unknown = error;
+      for (const row of rows) {
+        const { error: row_error } = await client
+          .from("ad_impressions")
+          .upsert([row], { onConflict: "id", ignoreDuplicates: true });
+        if (row_error) last_error = row_error;
+      }
+      throw last_error;
     },
     async record_cta_tap(id: string, cta_tapped_at: string): Promise<void> {
       const { error } = await client

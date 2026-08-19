@@ -13,10 +13,12 @@
 -- (lat, lng) — no conoce "zona declarada" (ads_for_zone sí, para el
 -- ordenamiento zona-vista > GPS del feed, que es un concern distinto).
 --
--- security definer + search_path fijo (public, extensions, pg_temp) +
--- funciones PostGIS calificadas — mismo patrón que
--- properties_within_radius / ads_for_zone. SOLO service_role la llama (la
--- EF corre con la service_role key); sin grant a authenticated/anon.
+-- security definer + search_path fijo (public, pg_temp) — SIN extensions,
+-- misma paridad EXACTA que ads_for_zone: todas las llamadas PostGIS ya van
+-- calificadas extensions.*, así que excluir extensions del search_path es
+-- seguro y es la defensa (no depender de que `extensions` esté primero en
+-- la resolución de nombres). SOLO service_role la llama (la EF corre con la
+-- service_role key); sin grant a authenticated/anon.
 --
 -- Idempotente: create or replace + revoke/grant repetibles.
 -- Rollback: supabase/migrations/rollbacks/20260819000002_resolve_ad_zone.sql
@@ -31,7 +33,7 @@ returns table (
 )
 language plpgsql
 security definer
-set search_path = public, extensions, pg_temp
+set search_path = public, pg_temp
 as $$
 declare
   v_neighborhood_id bigint;
