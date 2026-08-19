@@ -109,7 +109,7 @@
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(76);
+select plan(106);
 
 create or replace function pg_temp.act_as(p_uid uuid, p_role text default 'authenticated')
 returns void language plpgsql as $$
@@ -220,6 +220,21 @@ insert into public.ads (id, agency_id, creative_id, title, cta_type, cta_value, 
    'active', (select v_now from test_now_53), (select v_now + interval '30 days' from test_now_53)),
   ('00000000-0000-0000-0000-000000530312', '00000000-0000-0000-0000-000000530101',
    '00000000-0000-0000-0000-000000530204', 'Ad Creativo Failed 53', 'phone', '+5213300000312',
+   'active', (select v_now from test_now_53), (select v_now + interval '30 days' from test_now_53));
+
+-- ── Ads: 3 violadores NACIONALES (SIN ninguna fila en ad_zones, igual que el
+--    control 530301) -- los 9 violadores de arriba están TODOS zonados a A1,
+--    así que la rama 100% nacional (D3 de 169.1) nunca se ejercitaba contra
+--    un ad inelegible. Ausentes en CALL5 (sección 6, punto 100% nacional).
+insert into public.ads (id, agency_id, creative_id, title, cta_type, cta_value, status, starts_at, ends_at) values
+  ('00000000-0000-0000-0000-000000530317', '00000000-0000-0000-0000-000000530101',
+   '00000000-0000-0000-0000-000000530201', 'Ad Nacional Pending Review 53', 'phone', '+5213300000317',
+   'pending_review', (select v_now from test_now_53), (select v_now + interval '30 days' from test_now_53)),
+  ('00000000-0000-0000-0000-000000530318', '00000000-0000-0000-0000-000000530101',
+   '00000000-0000-0000-0000-000000530201', 'Ad Nacional Vigencia Vencida 53', 'phone', '+5213300000318',
+   'active', (select v_now - interval '60 days' from test_now_53), (select v_now - interval '10 days' from test_now_53)),
+  ('00000000-0000-0000-0000-000000530319', '00000000-0000-0000-0000-000000530101',
+   '00000000-0000-0000-0000-000000530204', 'Ad Nacional Creativo Failed 53', 'phone', '+5213300000319',
    'active', (select v_now from test_now_53), (select v_now + interval '30 days' from test_now_53));
 
 -- ── Ads: para las transiciones REALES (antes=activo/visible, después=status
@@ -520,6 +535,105 @@ select is((select count(*)::int from result_call4_rows where id = '00000000-0000
   'CALL4_BBOX3_municipio_B_ausente_el_bbox_que_matchea_es_el_de_A');
 
 -- ════════════════════════════════════════════════════════════════════════════
+-- 5b) Fallback por bbox — BORDES por eje. El municipio A tiene
+--    bbox_min_lat=19.20, bbox_max_lat=19.60, bbox_min_lng=-99.50,
+--    bbox_max_lng=-99.00. Puntos a 0.01° del bbox_max de CADA eje por
+--    separado (lng fijo en rango cuando se prueba lat, y viceversa), NUNCA
+--    dentro de ningún polígono (colonia A1/B1 están lejísimos de estos
+--    puntos). Un punto a solo 0.01° del borde muere con CUALQUIER inflado
+--    ≥0.05° (todos los reportados: 0.05, 0.10, 0.50, 1.00, 2.00, 5.00,
+--    10.00 -- el punto cae DENTRO del bbox inflado en los 7 casos) y, al
+--    fijar el otro eje bien adentro del rango, también muere si se borra la
+--    condición de ESE eje en particular (el eje fijo sigue matcheando solo).
+-- ════════════════════════════════════════════════════════════════════════════
+
+-- ── LAT — justo AFUERA del bbox_max_lat (19.61 > 19.60), lng bien adentro.
+create temp table result_call_bbox_lat_out (ok boolean, err_sqlstate text);
+create temp table result_call_bbox_lat_out_rows (id uuid);
+do $$
+begin
+  insert into result_call_bbox_lat_out_rows
+  select id from public.ads_for_zone(19.61, -99.25, null, null);
+  insert into result_call_bbox_lat_out values (true, null);
+exception when others then
+  insert into result_call_bbox_lat_out values (false, sqlstate);
+end $$;
+
+select is((select ok from result_call_bbox_lat_out), true, 'BBOXEDGE_LAT_OUT1_no_lanza_excepcion');
+select is((select count(*)::int from result_call_bbox_lat_out_rows), 1,
+  'BBOXEDGE_LAT_OUT2_conteo_exacto_1_solo_el_nacional_el_punto_esta_0_01_grados_afuera_del_bbox_max_lat');
+select is((select count(*)::int from result_call_bbox_lat_out_rows where id = '00000000-0000-0000-0000-000000530301'), 1,
+  'BBOXEDGE_LAT_OUT3_nacional_presente_confirma_que_la_llamada_no_esta_rota');
+select is((select count(*)::int from result_call_bbox_lat_out_rows where id = '00000000-0000-0000-0000-000000530303'), 0,
+  'BBOXEDGE_LAT_OUT4_municipio_A_ausente_0_01_grados_afuera_del_borde_de_latitud_mata_inflados_de_0_05_a_10_grados_y_borrar_la_condicion_de_latitud'
+);
+
+-- ── LAT — justo ADENTRO del bbox_max_lat (19.59 < 19.60), mismo lng.
+create temp table result_call_bbox_lat_in (ok boolean, err_sqlstate text);
+create temp table result_call_bbox_lat_in_rows (id uuid);
+do $$
+begin
+  insert into result_call_bbox_lat_in_rows
+  select id from public.ads_for_zone(19.59, -99.25, null, null);
+  insert into result_call_bbox_lat_in values (true, null);
+exception when others then
+  insert into result_call_bbox_lat_in values (false, sqlstate);
+end $$;
+
+select is((select ok from result_call_bbox_lat_in), true, 'BBOXEDGE_LAT_IN1_no_lanza_excepcion');
+select is((select count(*)::int from result_call_bbox_lat_in_rows), 2,
+  'BBOXEDGE_LAT_IN2_conteo_exacto_2_nacional_mas_municipio_A_el_punto_esta_0_01_grados_adentro_del_bbox_max_lat');
+select is((select count(*)::int from result_call_bbox_lat_in_rows where id = '00000000-0000-0000-0000-000000530303'), 1,
+  'BBOXEDGE_LAT_IN3_municipio_A_presente_justo_adentro_del_borde_de_latitud');
+select is((select count(*)::int from result_call_bbox_lat_in_rows where id = '00000000-0000-0000-0000-000000530301'), 1,
+  'BBOXEDGE_LAT_IN4_nacional_tambien_presente');
+select is((select count(*)::int from result_call_bbox_lat_in_rows where id = '00000000-0000-0000-0000-000000530302'), 0,
+  'BBOXEDGE_LAT_IN5_colonia_A1_ausente_el_punto_sigue_fuera_de_todo_poligono_solo_matchea_el_bbox');
+
+-- ── LNG — justo AFUERA del bbox_max_lng (-98.99 > -99.00), lat bien adentro.
+create temp table result_call_bbox_lng_out (ok boolean, err_sqlstate text);
+create temp table result_call_bbox_lng_out_rows (id uuid);
+do $$
+begin
+  insert into result_call_bbox_lng_out_rows
+  select id from public.ads_for_zone(19.40, -98.99, null, null);
+  insert into result_call_bbox_lng_out values (true, null);
+exception when others then
+  insert into result_call_bbox_lng_out values (false, sqlstate);
+end $$;
+
+select is((select ok from result_call_bbox_lng_out), true, 'BBOXEDGE_LNG_OUT1_no_lanza_excepcion');
+select is((select count(*)::int from result_call_bbox_lng_out_rows), 1,
+  'BBOXEDGE_LNG_OUT2_conteo_exacto_1_solo_el_nacional_el_punto_esta_0_01_grados_afuera_del_bbox_max_lng');
+select is((select count(*)::int from result_call_bbox_lng_out_rows where id = '00000000-0000-0000-0000-000000530301'), 1,
+  'BBOXEDGE_LNG_OUT3_nacional_presente_confirma_que_la_llamada_no_esta_rota');
+select is((select count(*)::int from result_call_bbox_lng_out_rows where id = '00000000-0000-0000-0000-000000530303'), 0,
+  'BBOXEDGE_LNG_OUT4_municipio_A_ausente_0_01_grados_afuera_del_borde_de_longitud_mata_inflados_de_0_05_a_10_grados_y_borrar_la_condicion_de_longitud'
+);
+
+-- ── LNG — justo ADENTRO del bbox_max_lng (-99.01 < -99.00), misma lat.
+create temp table result_call_bbox_lng_in (ok boolean, err_sqlstate text);
+create temp table result_call_bbox_lng_in_rows (id uuid);
+do $$
+begin
+  insert into result_call_bbox_lng_in_rows
+  select id from public.ads_for_zone(19.40, -99.01, null, null);
+  insert into result_call_bbox_lng_in values (true, null);
+exception when others then
+  insert into result_call_bbox_lng_in values (false, sqlstate);
+end $$;
+
+select is((select ok from result_call_bbox_lng_in), true, 'BBOXEDGE_LNG_IN1_no_lanza_excepcion');
+select is((select count(*)::int from result_call_bbox_lng_in_rows), 2,
+  'BBOXEDGE_LNG_IN2_conteo_exacto_2_nacional_mas_municipio_A_el_punto_esta_0_01_grados_adentro_del_bbox_max_lng');
+select is((select count(*)::int from result_call_bbox_lng_in_rows where id = '00000000-0000-0000-0000-000000530303'), 1,
+  'BBOXEDGE_LNG_IN3_municipio_A_presente_justo_adentro_del_borde_de_longitud');
+select is((select count(*)::int from result_call_bbox_lng_in_rows where id = '00000000-0000-0000-0000-000000530301'), 1,
+  'BBOXEDGE_LNG_IN4_nacional_tambien_presente');
+select is((select count(*)::int from result_call_bbox_lng_in_rows where id = '00000000-0000-0000-0000-000000530302'), 0,
+  'BBOXEDGE_LNG_IN5_colonia_A1_ausente_el_punto_sigue_fuera_de_todo_poligono_solo_matchea_el_bbox');
+
+-- ════════════════════════════════════════════════════════════════════════════
 -- 6) Fuera de TODO — ni polígono ni bbox matchean ⇒ SOLO inventario nacional.
 --    🔒 Este es el assert central de la subtarea: el hueco del dataset nunca
 --    se convierte en "sin anuncios" -- aquí ni siquiera hay municipio.
@@ -546,7 +660,38 @@ select is(
   'CALL5_INVARIANTE2_fuera_de_TODO_poligono_Y_TODO_bbox_solo_queda_el_inventario_NACIONAL_nunca_vacio'
 );
 select is((select count(*)::int from result_call5_rows), 1,
-  'CALL5_conteo_exacto_1_solo_el_nacional');
+  'CALL5_conteo_exacto_1_los_otros_3_nacionales_inelegibles_530317_18_19_fueron_filtrados_no_es_que_solo_haya_uno');
+
+-- Los 3 violadores NACIONALES (sin ad_zones, sección 0) deben quedar fuera
+-- AQUÍ TAMBIÉN -- es la única llamada 100% nacional del archivo, la que
+-- ejercita la rama "not exists ad_zones" contra un ad realmente inelegible.
+select is((select count(*)::int from result_call5_rows where id = '00000000-0000-0000-0000-000000530317'), 0,
+  'CALL5_ELEG10_ad_nacional_pending_review_no_sale_ni_en_la_rama_100_nacional');
+select is((select count(*)::int from result_call5_rows where id = '00000000-0000-0000-0000-000000530318'), 0,
+  'CALL5_ELEG11_ad_nacional_vigencia_vencida_no_sale_ni_en_la_rama_100_nacional');
+select is((select count(*)::int from result_call5_rows where id = '00000000-0000-0000-0000-000000530319'), 0,
+  'CALL5_ELEG12_ad_nacional_creativo_failed_no_sale_ni_en_la_rama_100_nacional');
+
+-- ANCLAJE DE FIXTURE (hallazgo F01 del guardián, 2do arbitraje): sin esto, borrar
+-- los INSERT de 530317/318/319 deja los 3 asserts de arriba en VERDE -- afirmarían
+-- una defensa sobre ads que no existen. Es el antipatrón que ya mordió 7 veces en
+-- esta épica. Se ancla la EXISTENCIA y el MECANISMO que hace inelegible a cada uno,
+-- con el mismo patrón que TRANS1-4.
+select is((select status::text from public.ads where id = '00000000-0000-0000-0000-000000530317'),
+  'pending_review',
+  'FIXTURE_ANCLA1_530317_existe_y_es_pending_review_lo_que_hace_real_a_CALL5_ELEG10');
+select is((select (ends_at < now())::boolean from public.ads where id = '00000000-0000-0000-0000-000000530318'),
+  true,
+  'FIXTURE_ANCLA2_530318_existe_y_su_vigencia_esta_VENCIDA_lo_que_hace_real_a_CALL5_ELEG11');
+select is((select c.status::text from public.ads a join public.ad_creatives c on c.id = a.creative_id
+           where a.id = '00000000-0000-0000-0000-000000530319'),
+  'failed',
+  'FIXTURE_ANCLA3_530319_existe_y_su_creativo_esta_failed_lo_que_hace_real_a_CALL5_ELEG12');
+select is((select count(*)::int from public.ad_zones
+           where ad_id in ('00000000-0000-0000-0000-000000530317',
+                           '00000000-0000-0000-0000-000000530318',
+                           '00000000-0000-0000-0000-000000530319')), 0,
+  'FIXTURE_ANCLA4_los_3_violadores_son_NACIONALES_de_verdad_cero_filas_en_ad_zones_sin_esto_probarian_la_rama_zonada');
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- 7) Simetría + "sale en cualquier zona" — ST_Intersects contra la OTRA
@@ -662,6 +807,56 @@ select is(
   'true->false',
   'DEMO192_1_antes_activo_y_visible_en_CALL1_despues_de_editar_description_pending_review_y_ausente_en_CALL_AFTER'
 );
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 9) Duplicación por ad_zones múltiples — un ad puede tener VARIAS filas en
+--    ad_zones (caso real: un anunciante compra la colonia Y su municipio, o
+--    varias colonias). Un `left join ad_zones` en vez del `exists` produciría
+--    una fila POR CADA fila de ad_zones que matchee -- este ad tiene 2 filas
+--    que matchean SIMULTÁNEAMENTE la misma consulta (neighborhood_id=A1 Y
+--    municipality_id=53001, y resolver la colonia A1 SIEMPRE resuelve
+--    también su municipio -- ver el join de la función). Insertado DESPUÉS
+--    de las transiciones de la sección 8 para no alterar sus conteos.
+-- ════════════════════════════════════════════════════════════════════════════
+
+insert into public.ads (id, agency_id, creative_id, title, cta_type, cta_value, status, description, starts_at, ends_at) values
+  ('00000000-0000-0000-0000-000000530320', '00000000-0000-0000-0000-000000530101',
+   '00000000-0000-0000-0000-000000530201', 'Ad Multi Zona Duplicado 53', 'phone', '+5213300000320',
+   'active', 'Colonia A1 y municipio A simultaneos 53',
+   (select v_now from test_now_53), (select v_now + interval '30 days' from test_now_53));
+insert into public.ad_zones (ad_id, neighborhood_id) values
+  ('00000000-0000-0000-0000-000000530320', (select neighborhood_a1_id from test_ctx_53));
+insert into public.ad_zones (ad_id, municipality_id) values
+  ('00000000-0000-0000-0000-000000530320', '53001');
+
+create temp table result_call_dup (ok boolean, err_sqlstate text);
+create temp table result_call_dup_rows (id uuid);
+do $$
+begin
+  insert into result_call_dup_rows
+  select id from public.ads_for_zone(19.31, -99.29, null, null);
+  insert into result_call_dup values (true, null);
+exception when others then
+  insert into result_call_dup values (false, sqlstate);
+end $$;
+
+select is((select ok from result_call_dup), true, 'DUP1_no_lanza_excepcion');
+-- 4 = nacional(530301) + colonia_A1(530302) + municipio_A(530303) + el ad
+-- multi-zona(530320) -- los 4 ads de la sección 8 YA transicionaron y quedan
+-- fuera (paused/rejected/expired/pending_review), igual que en CALL_AFTER.
+select is((select count(*)::int from result_call_dup_rows), 4,
+  'DUP2_conteo_exacto_4_el_ad_multi_zona_no_se_duplico_pese_a_matchear_DOS_filas_de_ad_zones_a_la_vez');
+select is((select count(*)::int from result_call_dup_rows where id = '00000000-0000-0000-0000-000000530320'), 1,
+  'DUP3_el_ad_con_neighborhood_A1_Y_municipality_53001_a_la_vez_sale_EXACTAMENTE_UNA_VEZ_no_dos'
+);
+select is((select count(*)::int from result_call_dup_rows where id = '00000000-0000-0000-0000-000000530301'), 1,
+  'DUP4_nacional_sigue_presente_confirma_que_la_llamada_no_esta_rota');
+
+-- ANCLAJE DE FIXTURE (hallazgo F02 del guardián): sin esto, borrar las 2 filas de
+-- ad_zones de 530320 deja DUP2/DUP3 en VERDE -- el ad pasaría a NACIONAL, saldría
+-- una vez igual, y el test dejaría de probar la no-duplicación sin ponerse rojo.
+select is((select count(*)::int from public.ad_zones where ad_id = '00000000-0000-0000-0000-000000530320'), 2,
+  'FIXTURE_ANCLA5_530320_matchea_DOS_filas_de_ad_zones_a_la_vez_sin_esto_DUP2_y_DUP3_no_prueban_nada');
 
 select * from finish();
 rollback;
