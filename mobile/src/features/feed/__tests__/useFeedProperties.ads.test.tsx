@@ -75,6 +75,8 @@ jest.mock('@/lib/supabase/client', () => ({
   },
 }));
 
+import { emitPropertyDeleted } from '@/lib/propertyEvents';
+
 import { useFeedProperties } from '../hooks/useFeedProperties';
 import { fetchFeedProperties } from '../lib/feedProperties';
 import type { FeedAd, FeedItem } from '../lib/interleaveAds';
@@ -419,11 +421,12 @@ describe('useFeedProperties — cap de sesión se sostiene entre loadInitial y l
   //
   // Traza a mano de la página 1 — interleave_ads([P0..P4], [AD_A],
   // {every_n:1, max_per_session:2, min_gap:2, already_shown_count:0, skip_first:true}):
-  //   P0: since(0)>=1, budget 0<2, AD_A nunca mostrado → inserta AD en pos 0 → push P0.
-  //   P1: since(1)>=1, budget 1<2, AD_A last_pos=0, pos_actual=2, gap=2>=2 → inserta AD en pos 2 → push P1.
-  //   P2: since(1)>=1, budget 2<2? NO (cupo agotado) → push P2 sin ad.
-  //   P3, P4: mismo — cupo agotado, solo propiedades.
-  //   Resultado página 1: [AD,P0,AD,P1,P2,P3,P4] → 2 ads (exactamente max_per_session).
+  //   P0: since(0)>=1? NO (skip_first_position arranca since en 0) → push P0 sin ad. since=1.
+  //   P1: since(1)>=1, ads_used(0)<budget(2), AD_A nunca mostrado → inserta AD ANTES de P1 → push AD,P1. since=0→1.
+  //   P2: since(1)>=1, ads_used(1)<budget(2), AD_A last_pos=1, pos_actual=3, gap=3-1=2>=2 → inserta AD ANTES de P2 → push AD,P2. since=0→1.
+  //   P3: since(1)>=1, ads_used(2)<budget(2)? NO (cupo agotado) → push P3 sin ad.
+  //   P4: mismo — cupo agotado, solo propiedad.
+  //   Resultado página 1: [P0,AD,P1,AD,P2,P3,P4] → 2 ads (exactamente max_per_session), NUNCA en posición 0 (skip_first_position=true).
   //
   // Página 2 (loadMore, skip_first_position=false, already_shown_count=2
   // ACUMULADO de la página 1) — budget = max_per_session(2) - already_shown(2) = 0
@@ -466,5 +469,186 @@ describe('useFeedProperties — cap de sesión se sostiene entre loadInitial y l
     // 2 anuncios + 8 propiedades = 10. El literal original decía 11, en
     // contradicción aritmética con los dos asserts de arriba en este MISMO test.
     expect(result.current.data).toHaveLength(10);
+  });
+
+  // Config con cupo HOLGADO (2 de 3 gastados en la página 1, queda 1 para la
+  // página 2) — a diferencia de EC-CAP-1, aquí SÍ debe aparecer un anuncio
+  // nuevo en loadMore. Este mismo test ancla `skip_first_position` EXACTO:
+  // con every_n=1, `skip_first_position=true` bloquea el anuncio en el
+  // primer ítem de la llamada (since arranca en 0, 0>=1 es falso) mientras
+  // que `skip_first_position=false` (loadMore) lo permite (since arranca en
+  // every_n=1, 1>=1 es verdadero) — por eso el anuncio nuevo cae EXACTO en
+  // el primer ítem de la página 2, no en el segundo.
+  //
+  // Traza a mano de la página 1 — interleave_ads([P0,P1,P2], [AD_A],
+  // {every_n:1, max_per_session:3, min_gap:2, already_shown_count:0, skip_first:true}):
+  //   P0: since(0)>=1? NO → push P0 sin ad. since=1.
+  //   P1: since(1)>=1, ads_used(0)<budget(3), AD_A nunca mostrado → inserta AD ANTES de P1 → push AD,P1. since=0→1.
+  //   P2: since(1)>=1, ads_used(1)<budget(3), AD_A last_pos=1, pos_actual=3, gap=3-1=2>=2 → inserta AD ANTES de P2 → push AD,P2. since=0→1.
+  //   Resultado página 1: [P0,AD,P1,AD,P2] → 2 ads. already_shown_ref acumula a 2.
+  //
+  // Traza a mano de la página 2 (loadMore, skip_first_position=false,
+  // already_shown_count=2 acumulado) — interleave_ads([Q0,Q1], [AD_A],
+  // {every_n:1, max_per_session:3, min_gap:2, already_shown_count:2, skip_first:false}):
+  //   budget = max_per_session(3) - already_shown_count(2) = 1.
+  //   since arranca en every_n(1) (skip_first_position=false).
+  //   Q0: since(1)>=1, ads_used(0)<budget(1), AD_A nunca mostrado EN ESTA LLAMADA
+  //       (last_shown_at es local a cada llamada de interleave_ads) → inserta AD ANTES de Q0 → push AD,Q0. since=0→1.
+  //   Q1: since(1)>=1, ads_used(1)<budget(1)? NO (cupo de la llamada agotado) → push Q1 sin ad.
+  //   Resultado página 2: [AD,Q0,Q1] → 1 ad nuevo, EXACTO en el primer ítem de la página.
+  it('(EC-CAP-2) loadMore_con_cupo_holgado_compone_un_anuncio_nuevo_y_lo_ubica_segun_skip_first_position_false: con 1 lugar de cupo restante, la página 2 trae exactamente 1 anuncio nuevo y cae en el primer ítem de esa página (since arranca en every_n, no en 0)', async () => {
+    const P0 = make_property('cap2-p0');
+    const P1 = make_property('cap2-p1');
+    const P2 = make_property('cap2-p2');
+    const Q0 = make_property('cap2-q0');
+    const Q1 = make_property('cap2-q1');
+    const AD_A = make_ad('cap2-ad-a');
+
+    mock_fetch_feed_properties
+      .mockResolvedValueOnce({ data: [P0, P1, P2], nextCursor: 'cursor-cap2-page-2' })
+      .mockResolvedValueOnce({ data: [Q0, Q1], nextCursor: null });
+
+    mock_supabase.rpc!.mockImplementation((fn: string) => {
+      if (fn === 'ads_feed_config')
+        return Promise.resolve({ data: [make_config({ ads_enabled: true, ad_frequency_n: 1, ad_max_per_session: 3 })], error: null });
+      if (fn === 'ads_for_zone') return Promise.resolve({ data: [AD_A], error: null });
+      throw new Error(`llamada inesperada a ${fn}`);
+    });
+
+    const { result } = await render_loaded_hook();
+
+    // Presencia (no vacua): la página 1 ya trajo 2 anuncios — ancla previa
+    // antes de medir el efecto de loadMore.
+    expect(result.current.data).toEqual([
+      { kind: 'property', property: P0 },
+      { kind: 'ad', ad: AD_A },
+      { kind: 'property', property: P1 },
+      { kind: 'ad', ad: AD_A },
+      { kind: 'property', property: P2 },
+    ]);
+
+    await act(async () => {
+      await result.current.loadMore();
+    });
+
+    // Traza exacta completa: 2 ads de la página 1 + 1 ad NUEVO de la página 2,
+    // ubicado en el primer ítem de la página (skip_first_position=false).
+    expect(result.current.data).toEqual([
+      { kind: 'property', property: P0 },
+      { kind: 'ad', ad: AD_A },
+      { kind: 'property', property: P1 },
+      { kind: 'ad', ad: AD_A },
+      { kind: 'property', property: P2 },
+      { kind: 'ad', ad: AD_A },
+      { kind: 'property', property: Q0 },
+      { kind: 'property', property: Q1 },
+    ]);
+  });
+
+  // El plan de 170.4 (decisión de seam 5) es explícito: `already_shown_count`
+  // "nunca se resetea en refetch" — pull-to-refresh recarga la página pero el
+  // cupo de anuncios sigue siendo el de la SESIÓN completa. EC-CAP-1 solo
+  // recorre loadInitial → loadMore; este test cierra el hueco con refetch.
+  //
+  // Traza a mano de loadInitial — interleave_ads([R0,R1,R2], [AD_A],
+  // {every_n:1, max_per_session:2, min_gap:2, already_shown_count:0, skip_first:true}):
+  //   R0: since(0)>=1? NO → push R0 sin ad. since=1.
+  //   R1: since(1)>=1, ads_used(0)<budget(2), AD_A nunca mostrado → inserta AD ANTES de R1 → push AD,R1. since=0→1.
+  //   R2: since(1)>=1, ads_used(1)<budget(2), AD_A last_pos=1, pos_actual=3, gap=2>=2 → inserta AD ANTES de R2 → push AD,R2. since=0→1.
+  //   Resultado: [R0,AD,R1,AD,R2] → 2 ads (= max_per_session). already_shown_ref acumula a 2.
+  //
+  // Traza a mano de refetch (nueva página S0..S3, already_shown_count=2
+  // ACUMULADO, NO reseteado) — budget = max_per_session(2) - already_shown(2) = 0
+  // → interleave_ads devuelve SOLO propiedades (guard de budget<=0), sin
+  // importar que every_n=1 vuelva a estar "due" en cada una: [S0,S1,S2,S3].
+  it('(EC-CAP-3) refetch_no_resetea_el_cupo_de_sesion_y_no_trae_anuncios_nuevos: tras agotar el cupo en loadInitial, refetch() reemplaza el feed por SOLO las propiedades nuevas, sin anuncios', async () => {
+    const R0 = make_property('cap3-r0');
+    const R1 = make_property('cap3-r1');
+    const R2 = make_property('cap3-r2');
+    const S0 = make_property('cap3-s0');
+    const S1 = make_property('cap3-s1');
+    const S2 = make_property('cap3-s2');
+    const S3 = make_property('cap3-s3');
+    const AD_A = make_ad('cap3-ad-a');
+
+    mock_fetch_feed_properties
+      .mockResolvedValueOnce({ data: [R0, R1, R2], nextCursor: null })
+      .mockResolvedValueOnce({ data: [S0, S1, S2, S3], nextCursor: null });
+
+    mock_supabase.rpc!.mockImplementation((fn: string) => {
+      if (fn === 'ads_feed_config')
+        return Promise.resolve({ data: [make_config({ ads_enabled: true, ad_frequency_n: 1, ad_max_per_session: 2 })], error: null });
+      if (fn === 'ads_for_zone') return Promise.resolve({ data: [AD_A], error: null });
+      throw new Error(`llamada inesperada a ${fn}`);
+    });
+
+    const { result } = await render_loaded_hook();
+
+    // Presencia (no vacua): loadInitial SÍ agotó el cupo — 2 anuncios reales.
+    expect(result.current.data).toEqual([
+      { kind: 'property', property: R0 },
+      { kind: 'ad', ad: AD_A },
+      { kind: 'property', property: R1 },
+      { kind: 'ad', ad: AD_A },
+      { kind: 'property', property: R2 },
+    ]);
+
+    await act(async () => {
+      await result.current.refetch();
+    });
+
+    // refetch() REEMPLAZA data (no acumula, a diferencia de loadMore) por las
+    // 4 propiedades nuevas SIN anuncios — si el hook reseteara el cupo, esta
+    // igualdad fallaría porque volverían a aparecer anuncios intercalados.
+    expect(result.current.data).toEqual(props_only([S0, S1, S2, S3]));
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Remoción optimista (55.2) con lista heterogénea — onPropertyDeleted no
+// debe tocar los anuncios, solo el item 'property' cuyo id matchea.
+// ─────────────────────────────────────────────────────────────────────────
+describe('useFeedProperties — onPropertyDeleted preserva los anuncios del feed heterogéneo', () => {
+  // Traza a mano de interleave_ads([P0,P1], [AD_A],
+  // {every_n:1, max_per_session:1, min_gap:2, already_shown_count:0, skip_first:true}):
+  //   P0: since(0)>=1? NO → push P0 sin ad. since=1.
+  //   P1: since(1)>=1, ads_used(0)<budget(1), AD_A nunca mostrado → inserta AD ANTES de P1 → push AD,P1.
+  //   Resultado: [P0,AD_A,P1] — exactamente el patrón [propiedad, anuncio, propiedad].
+  it('(EC-DEL-1) borrar_una_propiedad_no_elimina_los_anuncios_del_feed_en_caliente: con data=[P0,AD,P1], emitPropertyDeleted(P0.id) deja EXACTAMENTE [AD,P1] — el anuncio sigue en su sitio y solo desaparece la propiedad borrada', async () => {
+    const P0 = make_property('del-p0');
+    const P1 = make_property('del-p1');
+    const AD_A = make_ad('del-ad-a');
+    mock_fetch_feed_properties.mockResolvedValue({ data: [P0, P1], nextCursor: null });
+    mock_supabase.rpc!.mockImplementation((fn: string) => {
+      if (fn === 'ads_feed_config')
+        return Promise.resolve({ data: [make_config({ ads_enabled: true, ad_frequency_n: 1, ad_max_per_session: 1 })], error: null });
+      if (fn === 'ads_for_zone') return Promise.resolve({ data: [AD_A], error: null });
+      throw new Error(`llamada inesperada a ${fn}`);
+    });
+
+    const { result, unmount } = await render_loaded_hook();
+
+    // Presencia previa (no vacua): el feed en efecto compuso [P0,AD_A,P1]
+    // antes del borrado — si esto fallara, "el ad sigue" de abajo sería vacuo.
+    expect(result.current.data).toEqual([
+      { kind: 'property', property: P0 },
+      { kind: 'ad', ad: AD_A },
+      { kind: 'property', property: P1 },
+    ]);
+
+    await act(async () => {
+      emitPropertyDeleted(P0.id);
+    });
+
+    // El anuncio SIGUE presente y la propiedad borrada desaparece — un solo
+    // toEqual ancla presencia (AD_A, P1) y ausencia (P0) sobre el MISMO array.
+    expect(result.current.data).toEqual([
+      { kind: 'ad', ad: AD_A },
+      { kind: 'property', property: P1 },
+    ]);
+
+    await act(async () => {
+      unmount();
+    });
   });
 });
