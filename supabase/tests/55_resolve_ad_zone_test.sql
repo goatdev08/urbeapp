@@ -16,10 +16,28 @@
 --      (el hueco de cobertura DCAH) -> SOLO municipality_id, neighborhood_id NULL.
 --   3) punto fuera de todo -> NULL/NULL (inventario nacional, nunca rechaza).
 --   4) colonia gana sobre bbox cuando el punto cae en ambos a la vez.
+--
+-- Z7 (fix guardián 170.6) — grants/prosecdef/search_path, mismo estándar que
+-- 53_ads_for_zone_test.sql (SIG4/SIG5/GRANT1/GRANT2): la migración afirma en
+-- su propio comentario "SOLO service_role la invoca" pero, sin este bloque,
+-- ningún test verificaba prosecdef, el valor EXACTO de search_path ni los
+-- grants — dejar EXECUTE a `authenticated` hoy no rompería ni un solo test.
+-- 🔴 SIG_SEARCH_PATH se escribe contra el valor CORRECTO ('public, pg_temp',
+-- igual que ads_for_zone) a propósito: la migración actual tiene
+-- 'public, extensions, pg_temp' (una entrada de más, innecesaria porque
+-- ST_Intersects/ST_SetSRID/geography ya se llaman SIEMPRE calificados como
+-- extensions.*) -- este test queda en ROJO hasta que el GREEN la corrija.
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(6);
+select plan(11);
+
+create or replace function pg_temp.act_as(p_uid uuid, p_role text default 'authenticated')
+returns void language plpgsql as $$
+begin
+  execute format('set local role %I', p_role);
+  perform set_config('request.jwt.claims', json_build_object('sub', p_uid)::text, true);
+end $$;
 
 -- Fixtures self-contained, aislados con state '59' (fuera del rango real
 -- 01-32 INEGI y de los usados por otros archivos de test).
@@ -92,6 +110,52 @@ select isnt(
   null,
   'PRIORITY1_colonia_gana_sobre_bbox_cuando_el_punto_cae_en_ambos'
 );
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- Z7 — 5) prosecdef, search_path EXACTO y grants (fix guardián 170.6).
+-- ════════════════════════════════════════════════════════════════════════════
+
+select is(
+  (select prosecdef from pg_proc where proname = 'resolve_ad_zone' and pronamespace = 'public'::regnamespace),
+  true,
+  'SIG4_resolve_ad_zone_es_security_definer'
+);
+
+select is(
+  (select proconfig::text[] @> array['search_path=public, pg_temp'] from pg_proc
+    where proname = 'resolve_ad_zone' and pronamespace = 'public'::regnamespace),
+  true,
+  'SIG5_search_path_fijo_a_public_pg_temp_sin_extensions_de_mas_igual_que_ads_for_zone'
+);
+
+select pg_temp.act_as(null, 'anon');
+select throws_ok(
+  $$ select * from public.resolve_ad_zone(19.31, -99.29) $$,
+  '42501', null,
+  'GRANT1_anon_no_puede_ejecutar_resolve_ad_zone_sin_grant_de_execute'
+);
+reset role;
+
+select pg_temp.act_as('00000000-0000-0000-0000-000000550001', 'authenticated');
+select throws_ok(
+  $$ select * from public.resolve_ad_zone(19.31, -99.29) $$,
+  '42501', null,
+  'GRANT2_authenticated_TAMPOCO_puede_ejecutar_resolve_ad_zone_a_diferencia_de_ads_for_zone_esta_es_SOLO_de_service_role'
+);
+reset role;
+
+select pg_temp.act_as(null, 'service_role');
+create temp table result_grant_service_55 (ok boolean, err_sqlstate text);
+do $$
+begin
+  perform count(*) from public.resolve_ad_zone(19.31, -99.29);
+  insert into result_grant_service_55 values (true, null);
+exception when others then
+  insert into result_grant_service_55 values (false, sqlstate);
+end $$;
+reset role;
+select is((select ok from result_grant_service_55), true,
+  'GRANT3_service_role_SI_puede_ejecutar_resolve_ad_zone');
 
 select * from finish();
 rollback;

@@ -217,11 +217,13 @@ const DEFAULT_ZONE: ResolvedZone = { municipality_id: "51001", neighborhood_id: 
 
 // ── Fakes — CallerVerifier ───────────────────────────────────────────────────
 
-function caller_ok(user_id: string): CallerVerifier & { calls: number } {
+function caller_ok(user_id: string): CallerVerifier & { calls: number; received_headers: Array<string | null> } {
   return {
     calls: 0,
-    verify_caller(_authHeader: string | null): Promise<CallerVerifyResult> {
+    received_headers: [],
+    verify_caller(authHeader: string | null): Promise<CallerVerifyResult> {
       this.calls++;
+      this.received_headers.push(authHeader);
       return Promise.resolve({ ok: true, user_id });
     },
   };
@@ -256,6 +258,32 @@ function ads_repo_throws(): AdsRepository & { calls: string[][] } {
     fetch_ads(ad_ids: string[]): Promise<AdRecord[]> {
       this.calls.push(ad_ids);
       return Promise.reject(new Error("db caída"));
+    },
+  };
+}
+
+const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
+/**
+ * Fix guardián 170.6 (V4a) — simula el comportamiento REAL de
+ * `.from("ads").select(...).in("id", ad_ids)` de _shared/clients.ts contra
+ * Postgres: si CUALQUIER ad_id del arreglo no tiene formato uuid, Postgres
+ * no puede castear el filtro y la llamada COMPLETA falla (22P02) -- no solo
+ * el item problemático. El FakeWriter/AdsRepository plano de este archivo
+ * acepta cualquier string y por eso el hueco (V4) era invisible.
+ */
+function ads_repo_uuid_validating(records: AdRecord[]): AdsRepository & { calls: string[][] } {
+  return {
+    calls: [],
+    fetch_ads(ad_ids: string[]): Promise<AdRecord[]> {
+      this.calls.push(ad_ids);
+      if (ad_ids.some((id) => !UUID_RE.test(id))) {
+        return Promise.reject(
+          Object.assign(new Error('invalid input syntax for type uuid'), { code: "22P02" }),
+        );
+      }
+      const set = new Set(ad_ids);
+      return Promise.resolve(records.filter((r) => set.has(r.id)));
     },
   };
 }
@@ -300,6 +328,38 @@ function writer_ok(): FakeWriter {
     upsert_calls: [],
     cta_calls: [],
     upsert_impressions(rows: ImpressionRow[]): Promise<void> {
+      this.upsert_calls.push(rows);
+      return Promise.resolve();
+    },
+    record_cta_tap(id: string, cta_tapped_at: string): Promise<void> {
+      this.cta_calls.push({ id, cta_tapped_at });
+      return Promise.resolve();
+    },
+  } as FakeWriter;
+}
+
+/**
+ * Fix guardián 170.6 (V4a) — simula el comportamiento REAL de
+ * `upsert(rows, {onConflict:'id'})` de _shared/clients.ts contra Postgres:
+ * el batch entero es UN SOLO INSERT multi-fila -- si CUALQUIER fila tiene
+ * un `session_id`/`id`/`ad_id`/`user_id` sin formato uuid (la columna es
+ * `uuid not null`), el statement COMPLETO se rechaza (22P02), no solo la
+ * fila problemática. El `writer_ok()` plano acepta cualquier string y por
+ * eso el hueco (V4) era invisible con 52/52 verde.
+ */
+function writer_uuid_validating(): FakeWriter {
+  return {
+    upsert_calls: [],
+    cta_calls: [],
+    upsert_impressions(rows: ImpressionRow[]): Promise<void> {
+      const bad = rows.some((r) =>
+        !UUID_RE.test(r.id) || !UUID_RE.test(r.ad_id) || !UUID_RE.test(r.user_id) || !UUID_RE.test(r.session_id)
+      );
+      if (bad) {
+        return Promise.reject(
+          Object.assign(new Error("invalid input syntax for type uuid"), { code: "22P02" }),
+        );
+      }
       this.upsert_calls.push(rows);
       return Promise.resolve();
     },
@@ -564,6 +624,35 @@ Deno.test("vector_193_respuesta_200_identica_no_distingue_fila_nueva_de_existent
   assertEquals(Object.keys(body1).includes("exists") || Object.keys(body1).includes("created"), false);
 });
 
+// Fix guardián 170.6 (V2) — el equivalente EXACTO del vector de arriba pero
+// en la ruta cta_taps. `AdCtaTapInput.user_id` declara en su propio
+// comentario "Ignorados en silencio" -- prosa que afirmaba una defensa sin
+// ningún test: el mutante
+//   derive_impression_id((item as ...).user_id ?? user_id, item.ad_id, item.session_id)
+// sobrevivía con 52/52 verde porque ningún cta_tap del batch mandaba nunca
+// un user_id ajeno.
+Deno.test("vector_193_cta_taps_persona_a_no_puede_producir_el_id_de_cta_tap_de_la_fila_de_b", async () => {
+  const writer = writer_ok();
+  const deps = make_deps({ callerVerifier: caller_ok(CALLER_UID), impressionsWriter: writer });
+  await handler(
+    post_request({
+      cta_taps: [
+        cta_item({
+          // deno-lint-ignore no-explicit-any
+          ...({ user_id: OTHER_UID } as any),
+        }),
+      ],
+    }),
+    deps,
+  );
+  const written_id = writer.cta_calls[0].id;
+  assertEquals(written_id, EXPECTED_ID_BASE, "el id del cta_tap debe derivarse SIEMPRE del user_id del JWT (A), nunca del payload");
+  const would_be_bs_id = derive_impression_id(OTHER_UID, AD_ACTIVE, SESSION_1);
+  if (written_id === would_be_bs_id) {
+    throw new Error("A jamás debe poder producir el id de cta_tap de la fila de B");
+  }
+});
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Rechazo de elegibilidad — boundary = deps.now(), NUNCA shown_at
 // ═══════════════════════════════════════════════════════════════════════════
@@ -701,6 +790,69 @@ Deno.test("elegibilidad_boundary_ends_at_exacto_now_es_aceptado_inclusive", asyn
   );
   const body = await res.json();
   assertEquals(body.impressions_accepted, 1, "ends_at === now debe ser boundary INCLUSIVE, igual que SQL BETWEEN");
+  assertEquals(body.impressions_rejected, 0);
+});
+
+// Fix guardián 170.6 (V3) — el reloj de elegibilidad debe ser SIEMPRE
+// deps.now(), NUNCA shown_at. La cabecera del archivo (líneas 68/568) lo
+// afirma pero `shown_at` solo aparece como default del fixture
+// (NOW.toISOString()) en TODOS los tests de arriba: ningún test lo varía,
+// así que nada distinguía las dos fuentes de tiempo. Aquí se retrodata/
+// adelanta shown_at deliberadamente MIENTRAS deps.now() se queda fijo en
+// NOW, para que el boundary real solo pueda venir de deps.now().
+Deno.test("elegibilidad_usa_deps_now_nunca_shown_at_ad_expirado_por_el_reloj_pero_shown_at_retrodatado_dentro_de_vigencia_se_rechaza", async () => {
+  const writer = writer_ok();
+  const deps = make_deps({
+    adsRepository: ads_repo([AD_JUST_EXPIRED_RECORD, AD_ACTIVE_RECORD]),
+    impressionsWriter: writer,
+    now: () => NOW,
+  });
+  const res = await handler(
+    post_request({
+      impressions: [
+        // AD_JUST_EXPIRED_RECORD.ends_at = NOW-1ms (ya expiró SEGÚN deps.now()).
+        // shown_at se retrodata a NOW-1día -- DENTRO de la vigencia del ad si
+        // el boundary (erróneamente) usara shown_at en vez de deps.now().
+        impression_item({ ad_id: AD_JUST_EXPIRED_1MS, session_id: SESSION_2, shown_at: iso_plus(NOW, -DAY_MS) }),
+        impression_item({ ad_id: AD_ACTIVE, session_id: SESSION_1 }),
+      ],
+    }),
+    deps,
+  );
+  const body = await res.json();
+  assertEquals(
+    body.impressions_rejected,
+    1,
+    "el boundary de vigencia debe usar deps.now(), NUNCA un shown_at retrodatado por el cliente para colar un ad ya expirado",
+  );
+  assertEquals(body.impressions_accepted, 1);
+  assertEquals(writer.upsert_calls[0].every((r) => r.ad_id !== AD_JUST_EXPIRED_1MS), true);
+});
+
+Deno.test("elegibilidad_usa_deps_now_nunca_shown_at_ad_vigente_por_el_reloj_pero_shown_at_declarado_fuera_de_vigencia_se_acepta", async () => {
+  const writer = writer_ok();
+  const deps = make_deps({
+    adsRepository: ads_repo([AD_ACTIVE_RECORD]),
+    impressionsWriter: writer,
+    now: () => NOW,
+  });
+  const res = await handler(
+    post_request({
+      impressions: [
+        // AD_ACTIVE_RECORD es vigente SEGÚN deps.now() (NOW). shown_at se
+        // declara 10 días en el futuro -- FUERA de la vigencia real del ad
+        // si el boundary (erróneamente) usara shown_at.
+        impression_item({ ad_id: AD_ACTIVE, session_id: SESSION_1, shown_at: iso_plus(NOW, 10 * DAY_MS) }),
+      ],
+    }),
+    deps,
+  );
+  const body = await res.json();
+  assertEquals(
+    body.impressions_accepted,
+    1,
+    "el boundary de vigencia debe usar deps.now(), NUNCA un shown_at declarado fuera de vigencia por el cliente",
+  );
   assertEquals(body.impressions_rejected, 0);
 });
 
@@ -907,6 +1059,58 @@ Deno.test("batch_parcial_item_malformado_ad_id_vacio_no_tumba_el_lote", async ()
   assertEquals(ads.calls[0].includes(""), false, "el item malformado no debe entrar a fetch_ads");
 });
 
+// Fix guardián 170.6 (V4a) — is_well_formed_impression valida session_id/
+// ad_id como *string no vacío*, pero las columnas son `uuid not null`.
+// Contra los adapters REALES (simulados aquí por ads_repo_uuid_validating /
+// writer_uuid_validating, ver arriba), un formato inválido no tumba solo el
+// item: tumba TODO el lote (fetch_ads o upsert_impressions lanzan para la
+// llamada COMPLETA), perdiendo también las impresiones válidas. Con el
+// FakeWriter/AdsRepository plano (que acepta cualquier string) este hueco
+// era invisible. Ver también record-ad-impressions/adapter.local.test.ts
+// (V4b, contra Postgres real, no un fake).
+Deno.test("batch_parcial_session_id_no_uuid_valido_contra_writer_que_simula_postgres_no_debe_tumbar_el_lote", async () => {
+  const writer = writer_uuid_validating();
+  const ads = ads_repo([AD_ACTIVE_RECORD, AD_ACTIVE_2_RECORD]);
+  const deps = make_deps({ adsRepository: ads, impressionsWriter: writer });
+  const res = await handler(
+    post_request({
+      impressions: [
+        impression_item({ ad_id: AD_ACTIVE, session_id: "no-es-uuid" }),
+        impression_item({ ad_id: AD_ACTIVE_2, session_id: SESSION_1 }),
+      ],
+    }),
+    deps,
+  );
+  assertEquals(res.status, 200, "un session_id con formato uuid inválido NO debe tumbar el lote completo");
+  const body = await res.json();
+  assertEquals(body.impressions_accepted, 1);
+  assertEquals(body.impressions_rejected, 1);
+  assertEquals(writer.upsert_calls.length, 1);
+  assertEquals(writer.upsert_calls[0].length, 1);
+  assertEquals(writer.upsert_calls[0][0].ad_id, AD_ACTIVE_2);
+});
+
+Deno.test("batch_parcial_ad_id_no_uuid_valido_contra_ads_repository_que_simula_postgres_no_debe_tumbar_el_lote", async () => {
+  const writer = writer_ok();
+  const ads = ads_repo_uuid_validating([AD_ACTIVE_RECORD]);
+  const deps = make_deps({ adsRepository: ads, impressionsWriter: writer });
+  const res = await handler(
+    post_request({
+      impressions: [
+        impression_item({ ad_id: "no-es-uuid-ad", session_id: SESSION_2 }),
+        impression_item({ ad_id: AD_ACTIVE, session_id: SESSION_1 }),
+      ],
+    }),
+    deps,
+  );
+  assertEquals(res.status, 200, "un ad_id con formato uuid inválido NO debe tumbar fetch_ads para el batch completo");
+  const body = await res.json();
+  assertEquals(body.impressions_accepted, 1);
+  assertEquals(body.impressions_rejected, 1);
+  assertEquals(writer.upsert_calls[0].length, 1);
+  assertEquals(writer.upsert_calls[0][0].ad_id, AD_ACTIVE);
+});
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Auth (frontera de confianza, fail-closed)
 // ═══════════════════════════════════════════════════════════════════════════
@@ -921,6 +1125,22 @@ Deno.test("sin_authorization_header_retorna_401_nada_se_llama", async () => {
   assertEquals(body.error.code, "UNAUTHENTICATED");
   assertEquals(ads.calls.length, 0);
   assertEquals(writer.upsert_calls.length, 0);
+});
+
+// Fix guardián 170.6 (M32/M33) — ambos fakes CallerVerifier nombraban su
+// parámetro `_authHeader` y no lo miraban: cambiar el handler para llamar
+// verify_caller("Bearer forjado") o verify_caller(null) dejaba la suite
+// verde igual (32 tests en 169). Este assert cierra el hueco: el header
+// EXACTO de la petición debe llegar intacto al verificador.
+Deno.test("caller_verifier_recibe_el_authorization_header_exacto_de_la_peticion_no_forjado_no_null", async () => {
+  const caller = caller_ok(CALLER_UID);
+  const deps = make_deps({ callerVerifier: caller });
+  await handler(post_request({ impressions: [impression_item()] }), deps);
+  assertEquals(
+    caller.received_headers,
+    ["Bearer fake.jwt.token"],
+    "el JWT real de la petición debe llegar intacto a verify_caller, nunca forjado ni null",
+  );
 });
 
 Deno.test("jwt_invalido_callerVerifier_falla_retorna_401_nada_se_llama", async () => {
