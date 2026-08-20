@@ -9,6 +9,7 @@ import {
   make_video_status_checker,
   service_client,
 } from "../_shared/clients.ts";
+import { extract_publish_error_code } from "./types.ts";
 import type {
   CallerVerifier,
   CallerVerifyResult,
@@ -89,12 +90,12 @@ Deno.serve((req: Request) => {
       });
 
       if (error) {
-        // Fix 100: distinguir AGENCY_MEMBERSHIP_SUSPENDED (P0001 tipado del RPC)
-        // del resto de fallas de DB — mismo patrón que extract_agency_error_code
-        // en _shared/clients.ts. El handler mapea ese código a 403.
-        const error_code = error.message.includes("AGENCY_MEMBERSHIP_SUSPENDED")
-          ? "AGENCY_MEMBERSHIP_SUSPENDED"
-          : "DB_ERROR";
+        // Fix 100 + #173: distinguir los P0001 tipados del RPC del resto de
+        // fallas de DB. El mapeo ya NO vive inline aquí: es una función pura en
+        // types.ts, porque inline era inalcanzable para los tests y así fue como
+        // AGENCY_CANNOT_PUBLISH_PROPERTIES se perdió en un DB_ERROR genérico
+        // durante 168.3 sin que ninguna suite lo notara.
+        const error_code = extract_publish_error_code(error.message);
         return {
           ok: false,
           error_code,
