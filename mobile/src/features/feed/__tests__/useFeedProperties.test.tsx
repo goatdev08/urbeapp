@@ -11,6 +11,25 @@
 
 import { renderHook, act } from '@testing-library/react-native';
 
+// ── Adaptación de ACCESO por 170.4 (feed heterogéneo) ────────────────────────
+// `data` pasó de FeedPropertyWithUrl[] a FeedItem[] = {kind:'property'|'ad'}.
+// Ningún assert de comportamiento de 55.2 cambia: siguen probando que el id
+// borrado desaparece, que los supervivientes CONSERVAN SU REFERENCIA (para que
+// el video en reproducción no se reinicie) y que su signed_url se mantiene.
+// `find_property` devuelve la PROPIEDAD, no el envoltorio, justamente para que
+// la comparación de identidad de EC-2 siga siendo sobre el mismo objeto que
+// antes -- comparar envoltorios probaría algo distinto y más débil.
+import type { FeedItem } from '../lib/interleaveAds';
+
+type FeedPropertyItem = Extract<FeedItem, { kind: 'property' }>;
+const is_property = (it: FeedItem): it is FeedPropertyItem => it.kind === 'property';
+
+const property_ids = (items: FeedItem[]): string[] =>
+  items.filter(is_property).map((it) => it.property.id);
+
+const find_property = (items: FeedItem[], id: string) =>
+  items.filter(is_property).find((it) => it.property.id === id)?.property;
+
 jest.mock('../lib/feedProperties', () => ({
   fetchFeedProperties: jest.fn(),
 }));
@@ -96,7 +115,7 @@ async function render_loaded_hook() {
 describe('useFeedProperties — suscripción a onPropertyDeleted (55.2)', () => {
   it('(EC-1) id_borrado_desaparece_del_estado_tras_emitPropertyDeleted: tras emitPropertyDeleted(idB), data ya no contiene idB y su longitud baja de 3 a 2', async () => {
     const { result } = await render_loaded_hook();
-    expect(result.current.data.map((p) => p.id)).toEqual([
+    expect(property_ids(result.current.data)).toEqual([
       PROP_A.id,
       PROP_B.id,
       PROP_C.id,
@@ -107,13 +126,13 @@ describe('useFeedProperties — suscripción a onPropertyDeleted (55.2)', () => 
     });
 
     expect(result.current.data).toHaveLength(2);
-    expect(result.current.data.map((p) => p.id)).not.toContain(PROP_B.id);
+    expect(property_ids(result.current.data)).not.toContain(PROP_B.id);
   });
 
   it('(EC-2) otros_items_conservan_identidad_y_signed_url: al borrar idB, los objetos idA/idC restantes mantienen su misma referencia y signed_url (el video en reproducción no se reinicia)', async () => {
     const { result } = await render_loaded_hook();
-    const prop_a_before = result.current.data.find((p) => p.id === PROP_A.id);
-    const prop_c_before = result.current.data.find((p) => p.id === PROP_C.id);
+    const prop_a_before = find_property(result.current.data, PROP_A.id);
+    const prop_c_before = find_property(result.current.data, PROP_C.id);
     expect(prop_a_before).toBeDefined();
     expect(prop_c_before).toBeDefined();
 
@@ -123,8 +142,8 @@ describe('useFeedProperties — suscripción a onPropertyDeleted (55.2)', () => 
 
     expect(result.current.data).toHaveLength(2);
 
-    const prop_a_after = result.current.data.find((p) => p.id === PROP_A.id);
-    const prop_c_after = result.current.data.find((p) => p.id === PROP_C.id);
+    const prop_a_after = find_property(result.current.data, PROP_A.id);
+    const prop_c_after = find_property(result.current.data, PROP_C.id);
 
     expect(prop_a_after).toBe(prop_a_before);
     expect(prop_c_after).toBe(prop_c_before);
@@ -145,7 +164,7 @@ describe('useFeedProperties — suscripción a onPropertyDeleted (55.2)', () => 
     });
 
     expect(result.current.data).toHaveLength(2);
-    expect(result.current.data.map((p) => p.id)).toEqual([PROP_A.id, PROP_C.id]);
+    expect(property_ids(result.current.data)).toEqual([PROP_A.id, PROP_C.id]);
   });
 
   it('(EC-4) desmontar_limpia_la_suscripcion_unsubscribe_invocado: el hook se suscribe una vez al montar y llama la función de unsubscribe devuelta al desmontar', async () => {

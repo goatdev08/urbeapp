@@ -25,7 +25,10 @@ El **branding está en pausa hasta indicación expresa del cliente** (tarea #19,
 No crítica (visual): `pnpm tsc --noEmit`, `pnpm lint`, y que los componentes monten. Revisión visual con el cliente.
 
 ## Documentar
-`task-master update-subtask --id=<id>.<n> --prompt="hecho: tokens/componentes/pantallas (rutas + links Figma), decisiones de diseño"`.
+escribe tu nota (`hecho: tokens/componentes/pantallas (rutas + links Figma), decisiones de diseño`) en un archivo y regístrala con `node .taskmaster/scripts/tm-log.mjs --id=<id>.<n> --file=<ruta>`.
+🔴 **BITÁCORA: NUNCA uses `task-master update-subtask` ni `update-task`.** Parafrasean el texto con un modelo (el 2026-08-17 uno inventó un resultado de verificación que nunca se corrió) y re-tipan los `task.id`. Escribe tu nota en un archivo y regístrala verbatim con:
+`node .taskmaster/scripts/tm-log.mjs --id=<id>.<n> --file=<ruta>`
+
 
 ## Bloqueantes / Output
 Si falta una definición del cliente, repórtalo (no inventes identidad de marca sin aprobación). Output: `Estado` · Subtarea · Archivos + links Figma · Si BLOQUEADO: qué decisión del cliente falta.

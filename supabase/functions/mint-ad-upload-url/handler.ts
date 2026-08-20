@@ -13,6 +13,7 @@ import type { MintAdUploadUrlDeps, MintAdUploadUrlResponse } from "./types.ts";
 import { handle_cors_preflight } from "../_shared/cors.ts";
 import { error_response, json_response } from "../_shared/response.ts";
 import {
+  STALE_PROCESSING_MS,
   STALE_UPLOAD_MS,
   STREAM_MAX_DURATION_SECONDS,
   STREAM_REQUIRE_SIGNED_URLS,
@@ -68,13 +69,19 @@ export async function handler(
   // 6. Concurrencia POR ORGANIZACIÓN (ad_creatives, tabla PROPIA — nunca
   //    property_videos): si la agencia ya tiene >=1 creativo en
   //    uploading/processing → 409, sin llamar a Stream ni insertar.
-  //    `stale_before` (reaper, bug #103 heredado) descarta 'uploading'
-  //    colgados hace más de STALE_UPLOAD_MS — 'processing' nunca expira aquí
-  //    (lo resuelve el webhook, 169.5).
+    //    AMBOS estados expiran (#188): `stale_before` descarta 'uploading'
+    //    colgados hace más de STALE_UPLOAD_MS (reaper, bug #103 heredado), y
+    //    `stale_processing_before` descarta 'processing' colgados hace más de
+    //    STALE_PROCESSING_MS. Antes 'processing' no expiraba nunca —se
+    //    confiaba en el reintento del webhook (169.5)—, y como ese reintento
+    //    es una ventana finita con backoff, un creativo atorado bloqueaba a
+    //    la organización para siempre.
   const stale_before = new Date(Date.now() - STALE_UPLOAD_MS).toISOString();
+  const stale_processing_before = new Date(Date.now() - STALE_PROCESSING_MS).toISOString();
   const active_count = await deps.activeAdUploadChecker.count_active_ad_uploads(
     agency_id,
     stale_before,
+    stale_processing_before,
   );
   if (active_count >= 1) {
     return error_response(

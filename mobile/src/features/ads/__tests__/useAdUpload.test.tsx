@@ -391,14 +391,46 @@ describe('useAdUpload', () => {
     expect(mock_supabase._mock_invoke).not.toHaveBeenCalled();
   });
 
-  // ── (EC4) Duración null — fail-closed ─────────────────────────────────────
+  // ── (EC4) Duración null — fail-OPEN (#189) ───────────────────────────────
+  //
+  // Antes esto era fail-closed y dejaba a la persona con un picker Android
+  // viejo SIN RUTA: en el mismo teléfono podía publicar una propiedad
+  // (publish/validation.ts es fail-open y lo documenta) pero jamás un
+  // anuncio. Ahora sube, y el servidor —que mide la duración real de
+  // Cloudflare— decide. Si la rechaza, el poll trae la razón y el mensaje es
+  // el correcto (ver EC-POLL-FAILED-DURATION), no el de transcodificación.
 
-  it('(EC4) duracion_null_fail_closed_no_invoca_mint: sin duration_ms no hay forma de verificar el mínimo (mismo criterio que 169.6/169.5)', async () => {
+  it('(EC4) #189 duracion_null_fail_open_si_invoca_mint: el picker no la reporta, no es motivo para bloquear — el servidor revalida', async () => {
+    const upload_task = make_mock_upload_task({ status: 200 });
+    const file_instance = make_mock_file({ upload_task });
+    MockFile.mockImplementation(() => file_instance as never);
+    const mock_supabase = make_mock_supabase({});
+    const mock_checker = jest.fn().mockResolvedValue('ready');
+
+    const { result } = await renderHook(() =>
+      useAdUpload({
+        supabase: mock_supabase as never,
+        check_ad_creative_status: mock_checker,
+        poll_attempts: 3,
+        poll_interval_ms: 0,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.upload({ local_uri: TEST_LOCAL_URI, duration_ms: null });
+    });
+
+    expect(mock_supabase._mock_invoke).toHaveBeenCalled();
+    expect(result.current.status).toBe('ready');
+    expect(result.current.error).toBeNull();
+  });
+
+  it('(EC4b) #189 CASO PAREADO: fail-open es SOLO para la duración ausente — una conocida fuera de rango sigue sin llegar a mint', async () => {
     const mock_supabase = make_mock_supabase({});
     const { result } = await renderHook(() => useAdUpload({ supabase: mock_supabase as never }));
 
     await act(async () => {
-      await result.current.upload({ local_uri: TEST_LOCAL_URI, duration_ms: null });
+      await result.current.upload({ local_uri: TEST_LOCAL_URI, duration_ms: 40_000 });
     });
 
     expect(result.current.status).toBe('failed');
@@ -902,6 +934,105 @@ describe('useAdUpload', () => {
     // Corta de inmediato — no agota poll_attempts esperando un desenlace que ya llegó.
     expect(mock_checker).toHaveBeenCalledTimes(1);
     expect(result.current.cloudflare_uid).toBeNull();
+  });
+
+  // ── RED #189: el poll deja de ADIVINAR y lee la razón real ───────────────
+  //
+  // `ad_creatives` no guardaba por qué falló, así que este hook infería "por
+  // eliminación, esto es transcodificación". La inferencia SOLO se sostenía
+  // mientras el pre-flight fuera fail-closed ante duración ausente — abrir el
+  // fail-open sin arreglar esto habría convertido un mensaje equivocado pero
+  // inmediato en uno equivocado Y CARO: minutos de Cloudflare Stream quemados
+  // para decirle a la persona "error de transcodificación" cuando su video
+  // dura 40 s. Las dos mitades son inseparables.
+  //
+  // El checker por defecto ahora devuelve 'failed_duration' cuando la razón es
+  // AD_DURATION_INVALID. Es un desenlace DERIVADO, no un status de la tabla —
+  // mismo precedente que 'missing', que tampoco existe en ad_creatives.status.
+
+  it("(EC-POLL-FAILED-DURATION) #189 'failed_duration' del poll produce el mensaje de DURACIÓN, no el de transcodificación", async () => {
+    const upload_task = make_mock_upload_task({ status: 200 });
+    const file_instance = make_mock_file({ upload_task });
+    MockFile.mockImplementation(() => file_instance as never);
+    const mock_supabase = make_mock_supabase({});
+    const mock_checker = jest.fn().mockResolvedValue('failed_duration');
+
+    const { result } = await renderHook(() =>
+      useAdUpload({
+        supabase: mock_supabase as never,
+        check_ad_creative_status: mock_checker,
+        poll_attempts: 5,
+        poll_interval_ms: 0,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.upload({ local_uri: TEST_LOCAL_URI, duration_ms: null });
+    });
+
+    expect(result.current.status).toBe('failed');
+    expect(result.current.error).toBe(AD_DURATION_INVALID_MESSAGE);
+    expect(result.current.error).not.toBe(TRANSCODING_FAILED_MESSAGE);
+    expect(mock_checker).toHaveBeenCalledTimes(1);
+  });
+
+  it("(EC-DEFAULT-CHECKER-REASON) #189 el checker por DEFECTO lee failure_reason y traduce AD_DURATION_INVALID a 'failed_duration'", async () => {
+    const upload_task = make_mock_upload_task({ status: 200 });
+    const file_instance = make_mock_file({ upload_task });
+    MockFile.mockImplementation(() => file_instance as never);
+    const mock_supabase = make_mock_supabase_with_default_checker({
+      query_row: { status: 'failed', failure_reason: 'AD_DURATION_INVALID' } as never,
+    });
+
+    const { result } = await renderHook(() =>
+      useAdUpload({ supabase: mock_supabase as never, poll_attempts: 3, poll_interval_ms: 0 }),
+    );
+
+    await act(async () => {
+      await result.current.upload({ local_uri: TEST_LOCAL_URI, duration_ms: null });
+    });
+
+    // El select debe pedir la columna: sin ella el checker no puede distinguir.
+    expect(mock_supabase._mock_select).toHaveBeenCalledWith('status, failure_reason');
+    expect(result.current.error).toBe(AD_DURATION_INVALID_MESSAGE);
+  });
+
+  it("(EC-DEFAULT-CHECKER-REASON-B) #189 CASO PAREADO: failure_reason null sigue dando el mensaje de transcodificación", async () => {
+    const upload_task = make_mock_upload_task({ status: 200 });
+    const file_instance = make_mock_file({ upload_task });
+    MockFile.mockImplementation(() => file_instance as never);
+    const mock_supabase = make_mock_supabase_with_default_checker({
+      query_row: { status: 'failed', failure_reason: null } as never,
+    });
+
+    const { result } = await renderHook(() =>
+      useAdUpload({ supabase: mock_supabase as never, poll_attempts: 3, poll_interval_ms: 0 }),
+    );
+
+    await act(async () => {
+      await result.current.upload({ local_uri: TEST_LOCAL_URI, duration_ms: VALID_DURATION_MS });
+    });
+
+    expect(result.current.error).toBe(TRANSCODING_FAILED_MESSAGE);
+  });
+
+  it("(EC-DEFAULT-CHECKER-REASON-C) #189 una razón de Cloudflare tampoco es duración: mensaje de transcodificación", async () => {
+    const upload_task = make_mock_upload_task({ status: 200 });
+    const file_instance = make_mock_file({ upload_task });
+    MockFile.mockImplementation(() => file_instance as never);
+    const mock_supabase = make_mock_supabase_with_default_checker({
+      query_row: { status: 'failed', failure_reason: 'ERR_NON_VIDEO_FILE' } as never,
+    });
+
+    const { result } = await renderHook(() =>
+      useAdUpload({ supabase: mock_supabase as never, poll_attempts: 3, poll_interval_ms: 0 }),
+    );
+
+    await act(async () => {
+      await result.current.upload({ local_uri: TEST_LOCAL_URI, duration_ms: VALID_DURATION_MS });
+    });
+
+    expect(result.current.error).toBe(TRANSCODING_FAILED_MESSAGE);
   });
 
   // ── (EC20) Poll: 'missing' se trata como en curso (reintenta) ────────────

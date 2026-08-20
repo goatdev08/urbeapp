@@ -1,0 +1,472 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Urbea — Preview AdFeedItem (gate de diseño 170.8)</title>
+<style>
+  /* ═══════════════════════════════════════════════════════════════════════
+     FUENTES — fallback de sistema (restricción: sin CDN/fuentes remotas).
+     La app real usa Space Grotesk (display) + Hanken Grotesk (sans) vía
+     @expo-google-fonts (mobile/src/theme/theme.ts). Aquí se aproxima con
+     system-ui + tracking ajustado; NO es la tipografía final.
+     ═══════════════════════════════════════════════════════════════════════ */
+  :root{
+    --font-display: -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    --font-sans: -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+
+    /* ── Tokens REALES copiados byte-a-byte de mobile/src/theme/theme.ts ──
+       (no de la referencia visual estática urbea-identidad-visual.html, que
+       quedó desactualizada tras el flash 2026-07-06: primary pasó de Salvia
+       #5A8A5E al verde del logo #1A5E44). */
+    --primary:       #1A5E44;
+    --primary_soft:  #5E9379;
+    --primary_tint:  #DCE8E1;
+    --accent:        #9A7150;
+    --accent_soft:   #C2A07C;
+    --accent_tint:   #EADBCE;
+    --ink_feed:      #17140F;
+    --ink:           #1E1A15;
+    --paper:         #F6F2EB;
+    --gray_1:        #A39A8C;
+    --gray_2:        #857C70;
+    --whatsapp:      #25D366;
+    --white:         #FFFFFF;
+  }
+
+  *{ box-sizing:border-box; }
+  body{
+    margin:0;
+    background:#EDE7DC;
+    color:var(--ink);
+    font-family:var(--font-sans);
+    padding:28px;
+  }
+
+  /* ── Spec panel ─────────────────────────────────────────────────────── */
+  .spec{
+    max-width:1180px;
+    margin:0 auto 32px;
+    background:var(--white);
+    border:1px solid #DDD3C2;
+    border-radius:16px;
+    padding:22px 26px;
+    box-shadow:0 8px 22px -8px rgba(30,22,12,.14);
+  }
+  .spec h1{
+    font-family:var(--font-display);
+    font-size:20px;
+    letter-spacing:-0.2px;
+    margin:0 0 4px;
+  }
+  .spec .sub{
+    font-size:12.5px;
+    color:var(--gray_2);
+    margin:0 0 14px;
+  }
+  .spec ol{ margin:0; padding-left:20px; font-size:13.5px; line-height:1.55; }
+  .spec li{ margin-bottom:6px; }
+  .spec b{ color:var(--ink); }
+  .tag{
+    display:inline-block;
+    font-size:10px;
+    font-weight:700;
+    letter-spacing:.04em;
+    text-transform:uppercase;
+    padding:2px 7px;
+    border-radius:5px;
+    margin-right:6px;
+  }
+  .tag-mine{ background:var(--accent_tint); color:#5E4226; }
+  .tag-existing{ background:var(--primary_tint); color:#123A2C; }
+  .tag-tension{ background:#F6DCC9; color:#7A3C1A; }
+
+  /* ── Layout de teléfonos ────────────────────────────────────────────── */
+  .row{
+    max-width:1300px;
+    margin:0 auto;
+    display:flex;
+    gap:26px;
+    overflow-x:auto;
+    padding-bottom:10px;
+  }
+  .col{ flex:0 0 auto; width:250px; }
+  .col h2{
+    font-family:var(--font-display);
+    font-size:14px;
+    margin:0 0 4px;
+    color:var(--ink);
+  }
+  .col .desc{
+    font-size:11.5px;
+    color:var(--gray_2);
+    line-height:1.4;
+    margin:0 0 12px;
+    min-height:44px;
+  }
+
+  .phone{
+    width:250px;
+    height:541px; /* 390:844 escalado a 250 de ancho */
+    border-radius:34px;
+    background:var(--ink_feed);
+    position:relative;
+    overflow:hidden;
+    box-shadow:0 18px 40px -14px rgba(20,15,8,.45), 0 0 0 8px #0C0A07;
+  }
+  .statusbar{
+    position:absolute; top:0; left:0; right:0; height:28px;
+    display:flex; align-items:center; justify-content:center;
+    z-index:20;
+  }
+  .notch{
+    width:70px; height:18px; background:#0C0A07; border-radius:10px;
+  }
+
+  /* Placeholder de video — gradiente sólido, representa el frame del anuncio/propiedad */
+  .video-ph{
+    position:absolute; inset:0;
+    background: linear-gradient(155deg,#3A3226 0%, #23201A 55%, #17140F 100%);
+  }
+  .video-ph.ad{
+    background: linear-gradient(155deg,#40352A 0%, #2A2118 55%, #17140F 100%);
+  }
+  .video-ph::after{
+    content:"";
+    position:absolute; inset:0;
+    background:
+      radial-gradient(circle at 30% 24%, rgba(255,255,255,.06), transparent 40%),
+      radial-gradient(circle at 75% 70%, rgba(255,255,255,.04), transparent 45%);
+  }
+
+  .gradient{
+    position:absolute; inset:0;
+    background: linear-gradient(180deg,
+      rgba(23,20,15,.35) 0%,
+      transparent 26%,
+      transparent 52%,
+      rgba(23,20,15,.88) 100%);
+    pointer-events:none;
+  }
+
+  /* ── Rail derecho (solo propiedad) ─────────────────────────────────── */
+  .rail{
+    position:absolute; right:10px; bottom:118px;
+    display:flex; flex-direction:column; gap:14px; align-items:center;
+    z-index:10;
+  }
+  .rbtn{
+    width:34px; height:34px; border-radius:17px;
+    background:rgba(23,20,15,.36); border:1px solid rgba(255,255,255,.2);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .rbtn.wa{ background:var(--whatsapp); border:none; }
+  .rbtn svg{ width:16px; height:16px; }
+
+  /* ── Info inferior (propiedad) ─────────────────────────────────────── */
+  .info{
+    position:absolute; left:12px; right:52px; bottom:78px; z-index:10;
+  }
+  .agent-row{ display:flex; align-items:center; gap:7px; margin-bottom:9px; }
+  .avatar{
+    width:24px; height:24px; border-radius:12px;
+    background:#6f5742; border:1.5px solid var(--primary_soft);
+    display:flex; align-items:center; justify-content:center;
+    font-size:10px; font-weight:700; color:var(--paper);
+  }
+  .agent-name{ font-size:11px; font-weight:700; color:var(--paper); }
+
+  .chips{ display:flex; gap:5px; margin-bottom:6px; }
+  .chip{
+    font-size:9px; font-weight:700; letter-spacing:.02em;
+    padding:3.5px 8px; border-radius:999px; color:#fff;
+  }
+  .chip.renta{ background:var(--primary); }
+  .chip.tipo{
+    background:rgba(23,20,15,.36); border:1px solid rgba(255,255,255,.2);
+    color:var(--paper);
+  }
+
+  .address{
+    font-family:var(--font-display); font-weight:700;
+    font-size:14.5px; line-height:1.15; letter-spacing:-.1px;
+    color:var(--paper); margin-bottom:3px;
+  }
+  .price{
+    font-family:var(--font-display); font-weight:700;
+    font-size:16.5px; color:#fff; margin-bottom:6px;
+  }
+  .specs{ display:flex; align-items:center; gap:5px; font-size:10px; color:rgba(246,242,235,.85); }
+  .specs .div{ width:1px; height:9px; background:rgba(194,194,189,.35); margin:0 2px; }
+
+  /* ═══════════════════════════════════════════════════════════════════
+     AD ITEM — badge "Patrocinado" + CTA + título
+     ═══════════════════════════════════════════════════════════════════ */
+
+  /* Badge — decisión: reusa accent_soft (#C2A07C) sólido + texto ink, NO
+     primary/accent puros (esos ya significan Renta/Venta en el chip de
+     operación — reusarlos para el badge legal crearía ambigüedad de color).
+     Icono de megáfono + texto uppercase (type_scale.caption existente). */
+  .ad-badge{
+    display:inline-flex; align-items:center; gap:4px;
+    background:var(--accent_soft);
+    color:var(--ink);
+    font-size:9.5px; font-weight:700; letter-spacing:.05em;
+    text-transform:uppercase;
+    padding:5px 9px 5px 7px;
+    border-radius:999px;
+    z-index:15;
+  }
+  .ad-badge svg{ width:11px; height:11px; }
+
+  /* Variante A — badge FIJO arriba, aislado del bloque inferior. Persiste
+     sin competir con título/CTA; posición constante independiente del
+     contenido del anuncio. */
+  .badge-top{
+    position:absolute; top:40px; left:12px; z-index:15;
+  }
+
+  /* Variante B — badge integrado como primera línea del bloque inferior,
+     mismo lugar donde la propiedad pone sus chips de Renta/Venta+Tipo.
+     Consistente con la gramática visual existente, pero comparte espacio
+     visual con el título y el botón CTA. */
+  .badge-inline{ margin-bottom:8px; }
+
+  .ad-info{
+    position:absolute; left:14px; right:14px; bottom:26px; z-index:10;
+  }
+  .advertiser{
+    font-size:10.5px; font-weight:600; color:rgba(246,242,235,.75);
+    margin-bottom:4px;
+  }
+  .ad-title{
+    font-family:var(--font-display); font-weight:700;
+    font-size:17px; line-height:1.2; letter-spacing:-.1px;
+    color:var(--paper); margin-bottom:12px;
+  }
+
+  .cta{
+    width:100%;
+    display:flex; align-items:center; justify-content:center; gap:7px;
+    padding:12px 14px;
+    border-radius:999px;
+    font-size:13.5px; font-weight:700;
+    color:#fff;
+    border:none;
+  }
+  .cta svg{ width:16px; height:16px; }
+  .cta.external{ background:var(--primary); }
+  .cta.wa{ background:var(--whatsapp); }
+  .cta.phone{ background:var(--primary); }
+
+  /* ── Close-up comparativo (tensión + CTA teléfono) ─────────────────── */
+  .closeups{
+    max-width:1300px; margin:34px auto 0;
+    display:flex; gap:22px; flex-wrap:wrap;
+  }
+  .closeup{
+    flex:1 1 320px;
+    background:var(--ink_feed);
+    border-radius:16px;
+    padding:18px;
+    position:relative;
+    min-height:110px;
+  }
+  .closeup .lab{
+    font-size:11px; font-weight:700; color:var(--paper);
+    text-transform:uppercase; letter-spacing:.04em;
+    margin-bottom:12px; opacity:.7;
+  }
+
+  footer{
+    max-width:1180px; margin:36px auto 0;
+    font-size:11.5px; color:var(--gray_2); line-height:1.6;
+  }
+</style>
+</head>
+<body>
+
+  <div class="spec">
+    <h1>AdFeedItem — preview aprobable (subtarea 170.8)</h1>
+    <p class="sub">
+      <span class="tag tag-existing">token existente</span> ya vive en theme.ts ·
+      <span class="tag tag-mine">decisión mía</span> propuesta nueva, pendiente de tu aprobación ·
+      <span class="tag tag-tension">tensión sin resolver</span> dos variantes reales, decides tú
+    </p>
+    <ol>
+      <li><b>Badge "Patrocinado"</b> <span class="tag tag-mine">mía</span> — color <code>accent_soft</code> (#C2A07C) <span class="tag tag-existing">existente</span>, sólido con texto tinta, NO <code>primary</code>/<code>accent</code> puros porque esos ya son el color de los chips Renta/Venta — reusarlos aquí crearía ambigüedad justo en el elemento con obligación legal. Es persistente: no se desvanece, no depende de scroll ni de reproducción.</li>
+      <li><b>Posición del badge</b> <span class="tag tag-tension">tensión</span> — Variante A (columnas 2 y 4): badge FIJO arriba, aislado, misma posición siempre. Variante B (columna 3): badge integrado como primera línea del bloque inferior, igual que la propiedad pone sus chips Renta/Tipo — consistente con la gramática existente pero comparte espacio con el título y el CTA. No la resolví por mi cuenta: es exactamente el caso "badge compitiendo con el overlay" que pide el gate.</li>
+      <li><b>CTA único, ancho completo</b> <span class="tag tag-mine">mía</span> — WhatsApp reusa <code>colors.whatsapp</code> <span class="tag tag-existing">existente</span> (mismo verde que el botón del rail en PropertyOverlay.tsx); enlace externo y teléfono reusan <code>colors.primary</code> <span class="tag tag-existing">existente</span> con ícono distinto. Un solo botón, no un rail — el anuncio no es "likeable".</li>
+      <li><b>Sin rail de acciones</b> <span class="tag tag-mine">mía</span> — no hay like/guardar/compartir en el anuncio (la subtarea solo pide badge+CTA+título). Si el cliente quiere "compartir" en fase 2, es trabajo nuevo.</li>
+      <li><b>Nombre del anunciante</b> <span class="tag tag-mine">mía, opcional</span> — línea chica sobre el título ("Aseguradora GNP"). No la pide la subtarea; la agregué por transparencia (quién paga el anuncio). Fácil de quitar si el cliente prefiere solo badge+título+CTA.</li>
+      <li>Fuentes/colores son los <b>tokens reales</b> de <code>mobile/src/theme/theme.ts</code> (verificados línea por línea), no el resumen de CLAUDE.md §8 que quedó desactualizado — <code>primary</code> es el verde del logo <code>#1A5E44</code>, no Salvia <code>#5A8A5E</code>.</li>
+    </ol>
+  </div>
+
+  <div class="row">
+
+    <!-- ═══════════ 1. PROPIEDAD (referencia real, para comparar) ═══════════ -->
+    <div class="col">
+      <h2>1 · Propiedad (real)</h2>
+      <p class="desc">Reconstruido de VideoFeedItem.tsx + PropertyOverlay.tsx tal como existen hoy — sin cambios.</p>
+      <div class="phone">
+        <div class="video-ph"></div>
+        <div class="gradient"></div>
+        <div class="statusbar"><div class="notch"></div></div>
+
+        <div class="rail">
+          <div class="rbtn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M12 21s-7-4.5-9.5-9C1 8 2.5 4 6.5 4c2 0 3.5 1.2 4.5 2.8C12 5.2 13.5 4 15.5 4c4 0 5.5 4 4 8-2.5 4.5-9.5 9-9.5 9z"/></svg>
+          </div>
+          <div class="rbtn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M6 3h12v18l-6-4-6 4V3z"/></svg>
+          </div>
+          <div class="rbtn wa">
+            <svg viewBox="0 0 24 24" fill="#fff"><path d="M12 2a10 10 0 0 0-8.6 15L2 22l5.2-1.4A10 10 0 1 0 12 2zm0 18a8 8 0 0 1-4.1-1.1l-.3-.2-3 .8.8-2.9-.2-.3A8 8 0 1 1 12 20z"/></svg>
+          </div>
+          <div class="rbtn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><circle cx="18" cy="5" r="2.4"/><circle cx="6" cy="12" r="2.4"/><circle cx="18" cy="19" r="2.4"/><path d="M8.2 10.7 15.8 6.3M8.2 13.3l7.6 4.4"/></svg>
+          </div>
+        </div>
+
+        <div class="info">
+          <div class="agent-row">
+            <div class="avatar">M</div>
+            <span class="agent-name">María Ruiz</span>
+          </div>
+          <div class="chips">
+            <span class="chip renta">Renta</span>
+            <span class="chip tipo">Departamento</span>
+          </div>
+          <div class="address">Av. Chapultepec 340, Americana</div>
+          <div class="price">$15,000 MXN</div>
+          <div class="specs">
+            <span>🛏 2</span><div class="div"></div><span>🛁 2</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════ 2. AD — enlace externo, badge variante A (fijo arriba) ═══════════ -->
+    <div class="col">
+      <h2>2 · Anuncio — enlace externo</h2>
+      <p class="desc">CTA <code>external_url</code>. Badge variante A: fijo arriba, aislado del bloque inferior.</p>
+      <div class="phone">
+        <div class="video-ph ad"></div>
+        <div class="gradient"></div>
+        <div class="statusbar"><div class="notch"></div></div>
+
+        <div class="ad-badge badge-top">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 10v4a1 1 0 0 0 1 1h3l5 4V5L7 9H4a1 1 0 0 0-1 1zm13.5 2a3.5 3.5 0 0 0-2-3.16v6.32A3.5 3.5 0 0 0 16.5 12z"/></svg>
+          Patrocinado
+        </div>
+
+        <div class="ad-info">
+          <div class="advertiser">Créditos Hipotecarios BX</div>
+          <div class="ad-title">Tu crédito hipotecario aprobado en 48 horas</div>
+          <button class="cta external">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M14 4h6v6M20 4 10 14M6 4H4v16h16v-2"/></svg>
+            Visitar sitio
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════ 3. AD — WhatsApp, badge variante B (integrado) ═══════════ -->
+    <div class="col">
+      <h2>3 · Anuncio — WhatsApp</h2>
+      <p class="desc">CTA <code>whatsapp</code>. Badge variante B: integrado como 1ª línea del bloque inferior (compite con título/CTA).</p>
+      <div class="phone">
+        <div class="video-ph ad"></div>
+        <div class="gradient"></div>
+        <div class="statusbar"><div class="notch"></div></div>
+
+        <div class="ad-info">
+          <div class="ad-badge badge-inline">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 10v4a1 1 0 0 0 1 1h3l5 4V5L7 9H4a1 1 0 0 0-1 1zm13.5 2a3.5 3.5 0 0 0-2-3.16v6.32A3.5 3.5 0 0 0 16.5 12z"/></svg>
+            Patrocinado
+          </div>
+          <div class="advertiser">Seguros Arrendamiento MX</div>
+          <div class="ad-title">Cotiza tu seguro de arrendamiento hoy</div>
+          <button class="cta wa">
+            <svg viewBox="0 0 24 24" fill="#fff"><path d="M12 2a10 10 0 0 0-8.6 15L2 22l5.2-1.4A10 10 0 1 0 12 2zm0 18a8 8 0 0 1-4.1-1.1l-.3-.2-3 .8.8-2.9-.2-.3A8 8 0 1 1 12 20z"/></svg>
+            Cotizar por WhatsApp
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════ 4. AD — teléfono, badge variante A ═══════════ -->
+    <div class="col">
+      <h2>4 · Anuncio — teléfono</h2>
+      <p class="desc">CTA <code>phone</code>. Badge variante A otra vez, para comparar el mismo criterio en dos anuncios distintos.</p>
+      <div class="phone">
+        <div class="video-ph ad"></div>
+        <div class="gradient"></div>
+        <div class="statusbar"><div class="notch"></div></div>
+
+        <div class="ad-badge badge-top">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 10v4a1 1 0 0 0 1 1h3l5 4V5L7 9H4a1 1 0 0 0-1 1zm13.5 2a3.5 3.5 0 0 0-2-3.16v6.32A3.5 3.5 0 0 0 16.5 12z"/></svg>
+          Patrocinado
+        </div>
+
+        <div class="ad-info">
+          <div class="advertiser">Mudanzas Express GDL</div>
+          <div class="ad-title">Mudanza el mismo día, cotización gratis</div>
+          <button class="cta phone">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.3 1.8.6 2.6a2 2 0 0 1-.5 2.1L8 9.6a16 16 0 0 0 6 6l1.2-1.2a2 2 0 0 1 2.1-.5c.8.3 1.7.5 2.6.6a2 2 0 0 1 1.7 2z"/></svg>
+            Llamar ahora
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ═══════ Close-up: badge A vs B lado a lado + degradación sin app destino ═══════ -->
+  <div class="closeups">
+    <div class="closeup">
+      <div class="lab">Variante A — badge fijo (columnas 2 y 4)</div>
+      <div class="ad-badge" style="position:static; display:inline-flex;">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 10v4a1 1 0 0 0 1 1h3l5 4V5L7 9H4a1 1 0 0 0-1 1zm13.5 2a3.5 3.5 0 0 0-2-3.16v6.32A3.5 3.5 0 0 0 16.5 12z"/></svg>
+        Patrocinado
+      </div>
+      <p style="color:rgba(246,242,235,.65); font-size:11.5px; margin:12px 0 0; line-height:1.5;">
+        Siempre en el mismo lugar de la pantalla, sin importar el largo del título del anuncio.
+        Más seguro para la obligación legal (nunca lo tapa un título largo de 2 líneas), pero es
+        un elemento que HOY no existe en ningún ítem del feed — introduce una posición nueva.
+      </p>
+    </div>
+    <div class="closeup">
+      <div class="lab">Variante B — badge integrado (columna 3)</div>
+      <div class="ad-badge" style="position:static; display:inline-flex;">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 10v4a1 1 0 0 0 1 1h3l5 4V5L7 9H4a1 1 0 0 0-1 1zm13.5 2a3.5 3.5 0 0 0-2-3.16v6.32A3.5 3.5 0 0 0 16.5 12z"/></svg>
+        Patrocinado
+      </div>
+      <p style="color:rgba(246,242,235,.65); font-size:11.5px; margin:12px 0 0; line-height:1.5;">
+        Mismo lugar donde la propiedad pone sus chips Renta/Tipo — coherente con la gramática ya
+        aprendida. Riesgo: con un título de 2 líneas empuja el CTA hacia abajo, y en pantallas
+        chicas puede acercarse al home indicator/tab bar.
+      </p>
+    </div>
+    <div class="closeup">
+      <div class="lab">Degradación — sin app destino (WhatsApp no instalado)</div>
+      <div style="background:var(--paper); border-radius:12px; padding:14px; margin-top:2px;">
+        <div style="font-family:var(--font-display); font-weight:700; font-size:13px; color:var(--ink); margin-bottom:6px;">No se pudo abrir WhatsApp</div>
+        <div style="font-size:11.5px; color:var(--gray_2); line-height:1.5;">Este anuncio requiere WhatsApp instalado. Copia el número o intenta desde otro dispositivo.</div>
+        <div style="margin-top:10px; display:inline-block; background:var(--primary); color:#fff; font-size:11px; font-weight:700; padding:7px 12px; border-radius:999px;">Copiar número</div>
+      </div>
+      <p style="color:rgba(246,242,235,.65); font-size:11.5px; margin:10px 0 0; line-height:1.5;">
+        Requisito de la subtarea: el CTA nunca crashea ni se queda mudo. Mensaje + acción de
+        respaldo (copiar número) en vez de un toque que no hace nada.
+      </p>
+    </div>
+  </div>
+
+  <footer>
+    <p><b>Qué NO se decidió aquí</b> — el copy final del badge ("Patrocinado" vs "Publicidad") se fija con esta aprobación, no antes; se propone "Patrocinado" (más cercano al lenguaje coloquial que "Publicidad", que suena a interrupción). El frequency cap, el targeting por zona y el modelo de datos son de la migración/RPC (tarea C, footprint aparte) — este archivo es SOLO la superficie visual.</p>
+    <p>Archivo autocontenido, sin dependencias externas. Para verlo en Chrome: <code>cd /Users/fru/Dev/urbea && python3 -m http.server 8791</code> → <code>http://127.0.0.1:8791/urbea-preview-anuncio-feed.html</code> (file:// bloqueado por el MCP de Chrome).</p>
+  </footer>
+
+</body>
+</html>

@@ -2,6 +2,16 @@
 
 Append-only. Prefijo: `## [YYYY-MM-DD] tipo | título`.
 
+## [2026-08-20] feat | #170 Anuncios en el feed, y el cierre de 15 tareas derivadas
+
+- **Tarea 170 completa** (9 subtareas): kill-switch, `ads_for_zone`, `interleaveAds`, composición del feed, `ad_impressions` + purga a 90 días, EF `record-ad-impressions`, `adImpressionQueue`, `AdFeedItem` real y el aviso de privacidad v2.0 **sembrado sin publicar**. Sigue sin desplegarse nada.
+- **Regla nueva de trabajo (Abraham):** dejar de generar derivadas más rápido de lo que se ejecutan. Cuando aparece un hallazgo **se decide y se ataca en el momento**. Se cerraron **15** en una sesión: #177, #178, #181, #182, #183, #188, #189, #190, #191, #199, #193, #194, #195, #196, #197, #198.
+- **El patrón que se repitió, y que vale más que cualquiera de los fixes:** varias tareas estaban *a medias por definición*. #194 nombraba `ads_for_zone` pero el mismo `limit 1` sin `order by` vivía también en `resolve_ad_zone` — una decide dónde se **sirve** el anuncio y la otra dónde se **cobra** la impresión; arreglar solo una habría *garantizado* la discrepancia en vez de dejarla al azar. #189 parecía sobre fail-open y en realidad era que `ad_creatives` perdía la razón del fallo, lo que obligaba al cliente a adivinar. #183 y #188 eran la misma ventana vista desde dos lados.
+- **Mutación como método, incluida contra uno mismo.** Tres tests escritos en esta sesión resultaron vacuos o flaky y solo se supo al mutarlos: un assert de allowlist que pasaba por la regex de candidatos, un comentario que afirmaba una defensa que el código no tenía (la defensa real estaba en otro lado), y asserts de medición que dependían del reloj de pared.
+- **Decisiones de Abraham:** «vista» **diverge a propósito** entre anuncios (≥3 s, facturable) y propiedades (sin umbral); el fallback por bbox gana el **de menor área**; el fail-soft de anuncios **deja rastro** en `events_raw`; y añadir la URL de reproducción firmada del anuncio, sin la cual el anuncio era una tarjeta estática en un feed de video.
+- **Lo que NO se hizo, dicho aquí para que no se descubra después:** la ventana de `processing` (1 h) **no se midió** contra el pipeline real — se eligió por asimetría de consecuencias; la medición en un Android viejo que pedía #189 no se puede hacer con el emulador disponible; el smoke en emulador de 170.8 espera al despliegue; y la precedencia por **id** de colonia/municipio sigue sin llamador (hay un assert que lo fija para que no se olvide).
+- **Para el día del deploy:** #189 y #191 **invierten** el orden habitual — migración primero, OTA después. Queda escrito en sus bitácoras.
+- Ver [[publicidad-anuncios]], [[privacidad-datos]], [[crm-leads]].
 ## [2026-08-17] fix | #192 Límite de video subido a 500 MB — subida por TUS resumable
 
 - Origen: tester real bloqueado en el paso 5 del wizard con "El video supera el máximo permitido (200 MB)" (screenshot de Abraham). 200 MB era el techo del direct upload BÁSICO de Cloudflare Stream (POST multipart); `validation.ts` ya prometía 500 MB (`MAX_VIDEO_SIZE_BYTES`) pero `useVideoUpload` clampaba a 200 porque era lo único que ese camino aguantaba.

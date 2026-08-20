@@ -13,6 +13,25 @@ actualizado: 2026-08-17
 
 # Estado actual
 
+## Dónde estamos (2026-08-20)
+
+**Rama `tarea/170-anuncios-feed`, nada desplegado.** La épica de publicidad quedó completa de punta a punta: la tarea **#170** (9 subtareas) y **15 tareas derivadas** cerradas en una sola sesión — #177, #178, #181, #182, #183, #188, #189, #190, #191, #192, #193, #194, #195, #196, #197, #198.
+
+**Regla de trabajo nueva (Abraham):** se estaban creando derivadas más rápido de lo que se ejecutaban. Ahora, cuando aparece un hallazgo, **se decide y se ataca en el momento** en vez de derivar una tarea. La regla corregida: un hallazgo se vuelve tarea derivada solo si la tarea origen **ya está mergeada a `main`**; si la rama sigue viva, se ataca ahí.
+
+**Suites:** `tsc` 0 · **1321** Jest (106 suites) · **1263** Deno · **1654** pgTAP (61 archivos) · lint 0 errores. Cada migración con rollback **probado ejecutándolo**, no afirmado.
+
+### Lo que falta antes de desplegar
+1. **El smoke en emulador** de 170.8 — espera al despliegue, porque hoy el emulador apunta a un backend sin las tablas de anuncios. Termina en `stopApp` y verifica cuota (ver el video y **PARAR**).
+2. **Aprobación del texto** del aviso de privacidad v2.0 y su **revisión legal** (LFPDPPP). Está sembrado con `is_current=false`: el flip es decisión de Abraham y **fuerza re-consentimiento a todos los usuarios vivos** (verificado contra `pending_legal_consents()`, no supuesto).
+3. 🔴 **Orden de release invertido en #189 y #191:** migración PRIMERO, OTA después — el cliente hace `select('status, failure_reason')` y llama a `create_ad_campaign_atomic`. Es el inverso del precedente #116.
+
+### Decisiones abiertas, anotadas para no descubrirlas después
+- La ventana de `processing` (**1 h**, #188) **no se midió** contra el pipeline real: se eligió por asimetría de consecuencias (quedarse corto molesta; quedarse largo bloquea a una organización). Cambiarla es una línea por dominio y hay un test que falla si se cambia de un solo lado.
+- La **vigencia de una campaña self-service se fija al crear, no al aprobar** (#191): `starts_at`/`ends_at` son NOT NULL. En beta no hay pago; el día que lo haya, se revisa.
+- La precedencia por **id** de colonia/municipio de `ads_for_zone` **sigue sin llamador** (#195). Hay un assert que lo fija para que no se vuelva una defensa afirmada.
+
+
 > Narrativa de "dónde estamos hoy". El **qué sigue / qué está hecho** vive en **Taskmaster** (`task-master list`), no aquí.
 
 ## 🔴 Vigente desde 2026-08-10 — PRODUCCIÓN VIVA

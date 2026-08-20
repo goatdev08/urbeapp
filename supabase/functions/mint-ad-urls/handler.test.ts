@@ -88,10 +88,13 @@ const CREATIVE_ID_3 = "00000000-0000-0000-0000-000000000203";
 const URL_1: MintedAdUrl = {
   creative_id: CREATIVE_ID_1,
   posterUrl: "https://videodelivery.net/fake-ad-token-1/thumbnails/thumbnail.jpg?time=15.0s",
+  // 170.8: mismo token que el póster, a propósito (una sola firma por creativo).
+  videoUrl: "https://videodelivery.net/fake-ad-token-1/manifest/video.m3u8",
 };
 const URL_2: MintedAdUrl = {
   creative_id: CREATIVE_ID_2,
   posterUrl: "https://videodelivery.net/fake-ad-token-2/thumbnails/thumbnail.jpg?time=10.0s",
+  videoUrl: "https://videodelivery.net/fake-ad-token-2/manifest/video.m3u8",
 };
 
 // ── Fakes — CallerVerifier ───────────────────────────────────────────────────

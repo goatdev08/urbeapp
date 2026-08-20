@@ -30,15 +30,12 @@
  * sin desplegar el schema — un OTA urgente en ese intervalo llevaría este JS
  * contra un backend que aún no tiene las columnas/tablas.
  *
- * `can_advertise` selecciona una columna que los tipos generados
- * (supabase/types/database.types.ts) todavía NO conocen — la regeneración
- * lleva 10 migraciones de retraso (última en `ae35346`, tarea 167;
- * `grep -c can_advertise` da 0). Sin el cast, tsc falla con
- * `TS2322: SelectQueryError<"column 'can_advertise' does not exist...">`.
- * El cast NO es lo que hace al hook tolerante en runtime — eso lo hace el
- * chequeo de `agency_error` más abajo (testeado por EC-3/4/5); el cast solo
- * evita que el compilador bloquee un `select` que el runtime SÍ maneja.
- * Ver tarea derivada #186 (regenerar los tipos).
+ * Los `select` de este hook se tipan solos contra los tipos generados
+ * (supabase/types/database.types.ts, regenerados en #190). Hubo un cast
+ * `as unknown as` sobre la fila de `agencies` mientras esos tipos llevaban 10
+ * migraciones de retraso y `can_advertise` no existía para el compilador; el
+ * cast nunca aportó nada a la tolerancia en runtime — esa la da y la ha dado
+ * siempre el chequeo de `agency_error` de abajo (testeado por EC-3/4/5).
  */
 
 import { useEffect, useState } from 'react';
@@ -63,12 +60,6 @@ export interface UseCanAdvertiseResult {
   /** true mientras se resuelve la capacidad. Nunca deja can_advertise=true mientras loading=true. */
   loading: boolean;
 }
-
-type MemberRoleRow = { agency_id: string; member_role: string } | null;
-// ponytail: cast táctico — can_advertise no está en los tipos generados
-// (10 migraciones de retraso, derivada #186 los regenera). Local, 3 campos,
-// no `any` disperso; techo conocido: se retira cuando #186 cierre.
-type AgencyCapabilityRow = { can_advertise: boolean; deleted_at: string | null; status: string } | null;
 
 export function useCanAdvertise(): UseCanAdvertiseResult {
   const { user } = useAuth();
@@ -108,14 +99,12 @@ export function useCanAdvertise(): UseCanAdvertiseResult {
 
       if (ignore) return;
 
-      const member_row = member as MemberRoleRow;
-
       // Fail-fast: error, sin membresía activa, o rol fuera de owner/admin
       // ⇒ can_advertise=false SIN consultar agencies.
       if (
         member_error ||
-        !member_row ||
-        (member_row.member_role !== 'owner' && member_row.member_role !== 'admin')
+        !member ||
+        (member.member_role !== 'owner' && member.member_role !== 'admin')
       ) {
         set_can_advertise(false);
         set_loading(false);
@@ -125,21 +114,19 @@ export function useCanAdvertise(): UseCanAdvertiseResult {
       const { data: agency, error: agency_error } = await supabase
         .from('agencies')
         .select('can_advertise, deleted_at, status')
-        .eq('id', member_row.agency_id)
+        .eq('id', member.agency_id)
         .maybeSingle();
 
       if (ignore) return;
-
-      const agency_row = agency as unknown as AgencyCapabilityRow;
 
       // Fail cerrado ante CUALQUIER error (42703/42P01/red) o combinación
       // que no sea exactamente activa + no borrada + can_advertise=true.
       const enabled =
         !agency_error &&
-        agency_row !== null &&
-        agency_row.deleted_at === null &&
-        agency_row.status === 'active' &&
-        agency_row.can_advertise === true;
+        agency !== null &&
+        agency.deleted_at === null &&
+        agency.status === 'active' &&
+        agency.can_advertise === true;
 
       set_can_advertise(enabled);
       set_loading(false);

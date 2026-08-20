@@ -37,9 +37,53 @@ export const STREAM_REQUIRE_SIGNED_URLS = true;
 // (solo para 'uploading'; 'processing' no tiene ventana porque el webhook lo
 // resuelve solo) vive en el adapter real (_shared/clients.ts).
 // ponytail: 15 min fijo, no configurable — una subida legítima en red muy mala
-// (>15 min para <200 MB) podría abrir un segundo slot antes de que la primera
-// termine; el tope de tamaño (200 MB) hace ese escenario improbable en la demo.
+// podría abrir un segundo slot antes de que la primera termine.
+// ⚠️ REVISADO AL MERGEAR #192 (2026-08-20): el argumento original decía que el
+// tope de 200 MB hacía ese escenario "improbable". Ya NO es cierto — #192 subió
+// el tope a 500 MB por TUS, y 500 MB por datos móviles pasa de 15 min sin
+// esfuerzo. Se DEJA en 15 min a propósito: el error en esta dirección es que se
+// abra un segundo slot a alguien cuya subida sigue viva (molesto, acotado, se
+// cura solo); el error en la otra es dejar una fila 'uploading' colgada
+// bloqueando a su dueño, que es exactamente el bug #103 que ya se pagó.
 export const STALE_UPLOAD_MS = 15 * 60 * 1000;
+
+// ── STALE_PROCESSING_MS — ventana de expiración de 'processing' (tarea #188) ──
+//
+// 🔴 ANTES NO EXISTÍA, y esa ausencia era el defecto: 'processing' contaba
+// SIEMPRE en el 409 de concurrencia, sin expiración. El argumento era que el
+// webhook (169.5) lo resolvía solo — pero el reintento de Cloudflare es una
+// ventana FINITA con backoff. Si la base está caída más allá de esa ventana,
+// la fila se atora y bloquea a su dueño PARA SIEMPRE. Es el mismo bug #103 que
+// ya se pagó para 'uploading', un estado más adelante.
+//
+// POR QUÉ 1 HORA Y NO 15 MIN: no es el mismo número que STALE_UPLOAD_MS y no
+// puede serlo. Una fila 'uploading' vieja es un upload que nunca llegó a
+// Stream — expirarla rápido es gratis. Una fila 'processing' es un video que
+// Stream está transcodificando de verdad, y una ventana corta mataría
+// transcodificaciones válidas.
+//
+// ⚠️ HONESTIDAD SOBRE ESTE NÚMERO: la tarea pedía MEDIRLO contra el pipeline
+// real antes de fijarlo, y no se midió — no hay anuncios desplegados y medirlo
+// quemaría cuota de Stream. Se eligió por asimetría de consecuencias, que sí
+// es defendible: quedarse CORTO permite que alguien inicie un segundo upload
+// mientras el primero aún transcodifica (molesto, acotado); quedarse LARGO
+// bloquea a una organización durante todo ese tiempo (grave). Ante la duda,
+// corto. La hora se dimensionó sobre el peor caso realista de ENTONCES (subida
+// de hasta 200 MB por datos móviles + transcodificación de un video de ≤30 s),
+// medido desde `created_at`, que es cuando arrancó la subida — no cuando empezó
+// la transcodificación.
+// ⚠️ REVISADO AL MERGEAR #192 (2026-08-20): ese peor caso creció 2.5x — #192
+// subió el tope a 500 MB por TUS, y la ventana se mide desde `created_at`, así
+// que la subida se come buena parte de la hora antes de que la transcodificación
+// empiece siquiera. La hora YA NO cubre el peor caso con holgura. Se deja igual
+// porque la asimetría de arriba no cambió: quedarse corto es el error barato.
+// Ninguna de las dos ramas podía ver esto sola — #188 fijó la ventana con el
+// tope viejo mientras #192 movía el tope en paralelo.
+//
+// Cambiar este valor es UNA LÍNEA, y upload_window_parity.test.ts falla si se
+// cambia de un solo lado.
+export const STALE_PROCESSING_MS = 60 * 60 * 1000;
+
 
 // ── CallerVerifier — mismo contrato que mint-r2-url (solo autenticación) ─────
 // No hay chequeo de rol aquí: cualquier agente autenticado puede pedir un upload slot;
@@ -67,7 +111,11 @@ export interface CallerVerifier {
 // tiene ventana porque el webhook lo resuelve solo.
 
 export interface ActiveUploadChecker {
-  count_active_uploads(agent_id: string, stale_before: string): Promise<number>;
+  count_active_uploads(
+    agent_id: string,
+    stale_before: string,
+    stale_processing_before: string,
+  ): Promise<number>;
 }
 
 // ── StreamUploadCreator — adapter de Direct Creator Upload de Cloudflare Stream ─

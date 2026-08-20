@@ -19,10 +19,14 @@
 //   nunca que el checker LEE ad_creatives. Este archivo cierra esa mitad
 //   verificando la tabla y la columna de la query real.
 //
-// - (h) — 'processing' gana ventana de expiración en el filtro real. La
-//   semántica correcta es: 'processing' SIEMPRE cuenta (el webhook, 169.5, lo
-//   resuelve solo — no hay fila colgada); 'uploading' SOLO cuenta si es más
-//   reciente que stale_before (reaper, bug #103 heredado). El test de abajo
+// - (h) — la ventana de cada estado. 🔴 #188 CAMBIÓ ESTA SEMÁNTICA: antes
+//   'processing' contaba SIEMPRE, sin expiración, con el argumento de que el
+//   webhook (169.5) lo resolvía solo. El guardián de 169.5 precisó el matiz
+//   que lo volvía insuficiente: el reintento de Cloudflare es una ventana
+//   FINITA con backoff, así que un creativo atorado en 'processing' bloqueaba
+//   a su organización PARA SIEMPRE. Ahora AMBOS estados tienen ventana, con
+//   umbrales distintos: 'uploading' expira rápido (nunca llegó a Stream);
+//   'processing' expira lento (Stream puede tardar legítimamente). El test de abajo
 //   asserta la QUERY QUE SE CONSTRUYE (el string exacto que se le pasa al
 //   filtro `.or()` de PostgREST), NO una reimplementación de esa semántica en
 //   el fake — evita el borde tautológico que el guardián marcó en la suite
@@ -44,7 +48,7 @@
 // - select_usa_id_con_count_exact_y_head_true
 //
 // ### Filtro real de estado/ventana (mutante "h" — query construida, no reimplementada)
-// - filtro_or_incluye_processing_sin_ventana_y_uploading_con_stale_before_exacto
+// - filtro_or_da_ventana_a_processing_Y_a_uploading
 //
 // ### Wiring del resultado
 // - count_de_la_respuesta_se_retorna_tal_cual
@@ -123,13 +127,14 @@ function make_fake_client(response: CountResponse) {
 
 const AGENCY_ID = "10000000-0000-0000-0000-000000000001";
 const STALE_BEFORE = "2026-08-16T00:00:00.000Z";
+const STALE_PROCESSING_BEFORE = "2026-08-15T23:00:00.000Z";
 
 // ── Tabla y columna de scope (mutante "j") ────────────────────────────────────
 
 Deno.test("consulta_la_tabla_ad_creatives_no_property_videos", async () => {
   const fake = make_fake_client({ count: 0, error: null });
   const checker = make_active_ad_upload_checker(fake.client as never);
-  await checker.count_active_ad_uploads(AGENCY_ID, STALE_BEFORE);
+  await checker.count_active_ad_uploads(AGENCY_ID, STALE_BEFORE, STALE_PROCESSING_BEFORE);
   assertEquals(
     fake.from_calls,
     ["ad_creatives"],
@@ -140,7 +145,7 @@ Deno.test("consulta_la_tabla_ad_creatives_no_property_videos", async () => {
 Deno.test("filtra_por_agency_id_no_por_agent_id", async () => {
   const fake = make_fake_client({ count: 0, error: null });
   const checker = make_active_ad_upload_checker(fake.client as never);
-  await checker.count_active_ad_uploads(AGENCY_ID, STALE_BEFORE);
+  await checker.count_active_ad_uploads(AGENCY_ID, STALE_BEFORE, STALE_PROCESSING_BEFORE);
   const agency_call = fake.builder.eq_calls.find((c) => c.column === "agency_id");
   assertEquals(agency_call?.value, AGENCY_ID, "el filtro debe ser eq(agency_id, ...)");
   const agent_call = fake.builder.eq_calls.find((c) => c.column === "agent_id");
@@ -156,7 +161,7 @@ Deno.test("filtra_por_agency_id_no_por_agent_id", async () => {
 Deno.test("select_usa_id_con_count_exact_y_head_true", async () => {
   const fake = make_fake_client({ count: 0, error: null });
   const checker = make_active_ad_upload_checker(fake.client as never);
-  await checker.count_active_ad_uploads(AGENCY_ID, STALE_BEFORE);
+  await checker.count_active_ad_uploads(AGENCY_ID, STALE_BEFORE, STALE_PROCESSING_BEFORE);
   assertEquals(
     fake.builder.select_calls[0],
     { columns: "id", options: { count: "exact", head: true } },
@@ -166,13 +171,16 @@ Deno.test("select_usa_id_con_count_exact_y_head_true", async () => {
 
 // ── Filtro real de estado/ventana (mutante "h") ───────────────────────────────
 
-Deno.test("filtro_or_incluye_processing_sin_ventana_y_uploading_con_stale_before_exacto", async () => {
+Deno.test("filtro_or_da_ventana_a_processing_Y_a_uploading", async () => {
   const fake = make_fake_client({ count: 0, error: null });
   const checker = make_active_ad_upload_checker(fake.client as never);
-  await checker.count_active_ad_uploads(AGENCY_ID, STALE_BEFORE);
+  await checker.count_active_ad_uploads(AGENCY_ID, STALE_BEFORE, STALE_PROCESSING_BEFORE);
   assertEquals(
     fake.builder.or_calls,
-    [`status.eq.processing,and(status.eq.uploading,created_at.gt.${STALE_BEFORE})`],
+    [
+      `and(status.eq.processing,created_at.gt.${STALE_PROCESSING_BEFORE}),` +
+      `and(status.eq.uploading,created_at.gt.${STALE_BEFORE})`,
+    ],
     "'processing' debe ir SIN condición de fecha (sin ventana); 'uploading' debe ir con " +
       "created_at.gt.<stale_before> EXACTO — si 'processing' ganara una ventana, este string cambiaría",
   );
@@ -180,24 +188,35 @@ Deno.test("filtro_or_incluye_processing_sin_ventana_y_uploading_con_stale_before
 
 // ── Wiring del resultado ──────────────────────────────────────────────────────
 
+Deno.test("las_dos_ventanas_son_umbrales_DISTINTOS_en_la_query", async () => {
+  // Caso pareado: sin esto, un GREEN que usara el MISMO timestamp para ambos
+  // estados pasaría el test de arriba igual.
+  const fake = make_fake_client({ count: 0, error: null });
+  const checker = make_active_ad_upload_checker(fake.client as never);
+  await checker.count_active_ad_uploads(AGENCY_ID, "AAA", "BBB");
+  const filter = fake.builder.or_calls[0];
+  assertEquals(filter.includes("status.eq.processing,created_at.gt.BBB"), true);
+  assertEquals(filter.includes("status.eq.uploading,created_at.gt.AAA"), true);
+});
+
 Deno.test("count_de_la_respuesta_se_retorna_tal_cual", async () => {
   const fake = make_fake_client({ count: 3, error: null });
   const checker = make_active_ad_upload_checker(fake.client as never);
-  const result = await checker.count_active_ad_uploads(AGENCY_ID, STALE_BEFORE);
+  const result = await checker.count_active_ad_uploads(AGENCY_ID, STALE_BEFORE, STALE_PROCESSING_BEFORE);
   assertEquals(result, 3);
 });
 
 Deno.test("count_null_se_normaliza_a_cero", async () => {
   const fake = make_fake_client({ count: null, error: null });
   const checker = make_active_ad_upload_checker(fake.client as never);
-  const result = await checker.count_active_ad_uploads(AGENCY_ID, STALE_BEFORE);
+  const result = await checker.count_active_ad_uploads(AGENCY_ID, STALE_BEFORE, STALE_PROCESSING_BEFORE);
   assertEquals(result, 0);
 });
 
 Deno.test("error_de_la_query_falla_cerrado_retorna_1", async () => {
   const fake = make_fake_client({ count: null, error: { message: "connection timeout" } });
   const checker = make_active_ad_upload_checker(fake.client as never);
-  const result = await checker.count_active_ad_uploads(AGENCY_ID, STALE_BEFORE);
+  const result = await checker.count_active_ad_uploads(AGENCY_ID, STALE_BEFORE, STALE_PROCESSING_BEFORE);
   assertEquals(
     result,
     1,
