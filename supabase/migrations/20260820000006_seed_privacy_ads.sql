@@ -1,14 +1,55 @@
-# Aviso de Privacidad — Urbea
+-- Migración 20260820000006 — seed del aviso de privacidad v2.0 (subtarea #170.9).
+--
+-- 🔴 DECISIÓN DE ABRAHAM (D3, /tm-plan 2026-08-15): esta migración SIEMBRA la
+-- versión nueva con is_current = FALSE. Publicarla es un UPDATE aparte que él
+-- dispara cuando elija el momento.
+--
+-- POR QUÉ NO SE PUBLICA AQUÍ: poner una versión como vigente FUERZA
+-- re-consentimiento a TODOS los usuarios vivos —la maquinaria de #72.6
+-- (pending_legal_consents() + legal-wall INLINE, no ruta) ya está montada y
+-- probada en 3 consumidores— y eso no puede caer por sorpresa en medio de una
+-- demo con inversores. Así el PR de 170 se mergea sin disparar el muro legal.
+--
+-- CONTEXTO QUE HACE ESTO URGENTE Y NO BUROCRÁTICO: el aviso VIGENTE hoy es un
+-- placeholder de 113 caracteres que personas reales ya aceptaron.
+--
+-- 🔴 EL FLIP, ESCRITO Y ENSAYADO — NO se improvisa el día que toque.
+-- `terms_versions_one_current_per_doctype` (20260604000004:50-51) es UNIQUE
+-- sobre (doc_type) WHERE is_current is true, así que apagar el viejo y
+-- encender el nuevo TIENEN que ir en la MISMA transacción y EN ESE ORDEN:
+--
+--   begin;
+--     update public.terms_versions set is_current = false
+--      where doc_type = 'privacy' and is_current;
+--     update public.terms_versions set is_current = true
+--      where doc_type = 'privacy' and version = '2.0';
+--   commit;
+--
+-- El orden inverso lo RECHAZA el índice. supabase/tests/61_* ensaya los dos y
+-- asserta que el equivocado falla — para que "en este orden" sea un requisito
+-- verificado y no una preferencia de estilo.
+--
+-- QUÉ TEXTO SE SIEMBRA, exactamente: el título de docs/aviso-privacidad.md más
+-- las secciones 1 a 9. Se dejan FUERA, a propósito:
+--   · el anexo técnico, que dice explícitamente "no forma parte del aviso al
+--     usuario";
+--   · las notas de cabecera del borrador (⚠️ BORRADOR TÉCNICO, pendientes
+--     legales, el 🔴 sobre el orden de publicación). Son mensajes del equipo
+--     para el equipo — sembrarlas sería mostrarle a una persona el andamio en
+--     vez del documento.
+-- Siguen DENTRO los `[Pendiente legal: ...]` de las secciones 1, 6 y 7: esos
+-- sí son parte del texto, y su presencia es justamente la señal de que este
+-- aviso no debe hacerse vigente sin revisión de un abogado.
+--
+-- ADITIVA: un INSERT que no colisiona con el índice porque is_current=false.
+-- Idempotente: on conflict (doc_type, version) do nothing.
+-- Rollback: supabase/migrations/rollbacks/20260820000006_seed_privacy_ads.sql
 
-> ⚠️ **BORRADOR TÉCNICO. NO ESTÁ VIGENTE Y NO DEBE PUBLICARSE SIN REVISIÓN LEGAL.**
->
-> Lo vigente hoy en `terms_versions` (`doc_type='privacy'`, v1.0) es un **placeholder de 113 caracteres** que usuarios reales ya aceptaron. Este documento es su reemplazo propuesto: describe con exactitud lo que el sistema hace **hoy**, verificado contra el esquema y las políticas RLS del proyecto `urbea-app` el 2026-08-08.
->
-> Falta antes de activarlo: (1) revisión de un abogado en materia de **LFPDPPP** (datos del responsable, domicilio, medios para ejercer derechos ARCO, autoridad ante la que reclamar); (2) decidir el efecto en usuarios existentes — publicarlo como versión vigente **fuerza re-consentimiento a todas las cuentas** ([[legal-consentimientos]]); (3) cerrar la deuda **#116**, porque hoy el sistema comparte más de lo que este texto promete.
->
-> 🔴 **La sección 5 (publicidad) describe algo que TODAVÍA NO EXISTE en producción** — se redacta por delante como gate de la tarea #170, para que el texto se apruebe antes de construir y no al revés. Publicar este aviso **antes** de que la tarea 170 esté desplegada prometería un tratamiento que no ocurre; publicarlo **después** de encender los anuncios sería recabar sin avisar. El orden correcto es: aprobar el texto → construir → sembrar la versión con `is_current=false` → desplegar 170 → **flip**. Ver el anexo técnico: las promesas de §5 están marcadas ⏳ mientras su mecanismo no exista. **Se eliminó a propósito la promesa de k-anonimato** del borrador anterior: no hay umbral definido ni implementado, y prometer por escrito una garantía estadística que nadie calcula es peor que no prometerla.
-
----
+insert into public.terms_versions (doc_type, version, content, is_current, effective_from)
+values (
+  'privacy',
+  '2.0',
+  '# Aviso de Privacidad — Urbea
 
 ## 1. Quién trata tus datos
 
@@ -88,32 +129,8 @@ En infraestructura de Supabase (base de datos y almacenamiento) y Cloudflare Str
 ## 9. Cambios a este aviso
 
 Publicaremos cualquier cambio en la aplicación con su número de versión y fecha. Si el cambio es sustancial, te pediremos aceptarlo de nuevo antes de continuar usando el servicio.
-
----
-
-## Anexo técnico (no forma parte del aviso al usuario)
-
-Correspondencia entre las promesas de arriba y lo que las hace cumplir. El inventario completo está en `wiki/conceptos/privacidad-datos.md`.
-
-| Promesa | Mecanismo | Prueba |
-| --- | --- | --- |
-| §4 "antes del contacto no ve nada tuyo" (identidad) | `users_select` + `private.can_view_user_as_lead_searcher` | `supabase/tests/08_rls_lead_searcher_test.sql` |
-| §4 "antes del contacto no ve nada tuyo" (comportamiento) | `events_raw_select` + `private.can_view_user_events` | `supabase/tests/35_lead_privacy_test.sql` (PRIV1, PRIV5, PRIV9) |
-| §4 "acceso retroactivo a TODAS sus publicaciones" | misma policy: la propiedad debe ser del agente del lead | `35_` (PRIV3), y PRIV4 acota que no alcanza a otros agentes |
-| §4 "si el lead se elimina, el acceso se revoca" | el permiso se deriva de un lead con `deleted_at is null` | `35_` (PRIV11) |
-| §4 "nunca ve tus preferencias" | `user_prefs_select` = fila propia o admin | inventario en `privacidad-datos.md` |
-| §2 "registramos tu comportamiento de video" | `events_raw` (`video_view`, `video_completed`, `app_open`) | `33_`, `35_` |
-| §2 "diagnóstico de la app" | `events_raw` (`ads_fetch_failed`, #196): fila con `event_type`, `user_id`, `session_id` y `payload:{stage}` — **exactamente cuatro claves**, sin `property_id`, sin coordenadas, sin `ad_id`. `user_id` no es opcional: la policy `events_raw_insert` exige `user_id = auth.uid()`, así que sin usuario no se escribe. Dedupe por (sesión, tramo) para que una caída no genere una fila por scroll | `mobile/src/features/feed/__tests__/adsFailureSignal.test.ts` (EC-2 fija el conjunto EXACTO de claves; un campo de más rompe el test) |
-| §5 "el anunciante nunca ve tu identidad" | ✅ **vivo (170.5)**: `ad_impressions` con RLS activa y **cero policies** — `authenticated` conserva el `grant select` a propósito para que el fallo sea "0 filas" y no un `42501` que revele la existencia de la tabla; `ad_impressions_monthly` no tiene ni grant. El anunciante solo llegará al rollup (#171) | `supabase/tests/51_ad_impressions_test.sql` |
-| §5 "se conserva un máximo de 90 días" | ✅ **vivo (170.5)**: `purge_ad_impressions()` **programada con `pg_cron`** (`purge_ad_impressions_daily`, `0 9 * * *`, verificado en `cron.job`) — decisión de Abraham 2026-08-17, revisada: su primera respuesta fue dejar la función sin programador, y la cambió al ver que el aviso pasaba a prometer el plazo por escrito. Una retención que nadie ejecuta es una defensa afirmada que no existe, en un documento legal | `supabase/tests/51_ad_impressions_test.sql`: la purga borra >90d, respeta <90d, y el job existe en `cron.job` |
-| §5 "elegimos por el lugar, no por quién eres" | ✅ **vivo (170.2)**: `ads_for_zone` recibe zona/coordenadas, **nunca** el historial del usuario — su firma no admite un `user_id` siquiera | `supabase/tests/53_ads_for_zone_test.sql`, `55_resolve_ad_zone_test.sql` |
-| §5 "los anunciantes no tienen ningún acceso a nuestros sistemas" | **cierto hoy sin mecanismo nuevo**: no existe rol, panel, RPC ni EF que un anunciante pueda invocar para leer impresiones. Deja de ser cierto en cuanto #172 construya el panel de métricas — ese día hay que reescribir este renglón y §5, y decidir el umbral de agregación | inventario de grants en `privacidad-datos.md` |
-| §5 "lo que ves escrito es la dirección que se abre" | `linkify_description` no acepta markdown: cada enlace se pinta con SU PROPIA URL como texto visible, y cada candidato pasa por la MISMA allowlist http/https de `validate_ad_cta` (no una copia) | `mobile/src/features/ads/__tests__/adCtaLink.test.ts` (EC-10 fija `value === url` en todo enlace; EC-11b es el que muere si se quita la allowlist) |
-| §5 "el anuncio va marcado como Patrocinado" | badge montado FUERA del bloque de contenido, sin condicionar a `isActive` ni al scroll | `mobile/src/features/feed/__tests__/AdFeedItem.test.tsx` (EC-2: visible también con el ítem inactivo) |
-
-📐 **Definición de «vista», y por qué hay dos** (decisión de Abraham 2026-08-20, tarea #197). El número que se le factura a un anunciante cuenta una vista a partir de **3 s** de reproducción, decidido en el servidor por `record-ad-impressions` (el cliente puede declarar lo que quiera; se ignora y se deriva de `watched_ms`). El número de reproducciones que ve un **agente inmobiliario** sobre su propiedad NO tiene umbral: `video_view` se escribe en cuanto el video se vuelve activo. Miden cosas distintas a propósito — una es base de cobro, la otra es señal de interés — y **no deben sumarse ni compararse**. Está escrito en `wiki/conceptos/publicidad-anuncios.md` y en `wiki/conceptos/crm-leads.md` para que la explicación no dependa de que alguien se acuerde.
-
-⚠️ **Contradicciones vivas entre este texto y el sistema** (deuda #116, cerrarlas antes de publicar):
-
-1. §4 promete que el teléfono se comparte solo con el agente contactado. Hoy `users_select` expone correo y teléfono de **todo agente verificado** a cualquier usuario autenticado. Afecta a los agentes, no a los compradores — pero el aviso también los cubre.
-2. §4 enumera los datos compartidos sin incluir la fecha de nacimiento; el PRD §19.4 pide *edad calculada*. Hoy el agente con lead puede leer la **fecha exacta**.
+',
+  false,
+  now()
+)
+on conflict (doc_type, version) do nothing;
