@@ -76,15 +76,22 @@ reset role;
 
 -- ── 6) El admin SÍ lee app_config (canal de gestión) ──────────────────────────
 select pg_temp.act_as('00000000-0000-0000-0000-0000000cf002');
--- 3 -> 4 (subtarea #169.3): la siembra de app_config.ads_free agrega una 4ª
--- fila real. Ver comentario de cabecera "GOTCHA reconciliado" arriba.
--- 4 -> 7 (subtarea #170.1, exploración 039 "Tarea C"): la siembra del kill-switch
--- de publicidad en el feed agrega 3 filas más (ads_enabled, ad_frequency_n,
--- ad_max_per_session -- ver supabase/tests/50_ads_feed_config_test.sql). Mismo
--- criterio que 169.3: reconciliación de fixture (el admin ahora ve 7 filas
--- reales), NO debilitamiento del test -- la línea de arriba (~38), filtrada por
--- `where key in (...)`, sigue sin tocarse.
-select is((select count(*) from public.app_config)::int, 7, 'admin lee app_config');
+-- 🔴 #181 — ESTE ASSERT YA NO CUENTA LA CARDINALIDAD GLOBAL.
+-- Historia: era count(*)=3 sin filtro, y se reconcilió a 4 (#169.3, siembra de
+-- ads_free) y luego a 7 (#170.1, kill-switch del feed). Tres pagos por la
+-- misma bomba: un count(*) sin filtro queda acoplado al SEED GLOBAL, así que
+-- cualquier migración futura que siembre una clave rompe un test que no tiene
+-- nada que ver con ella. La derivada #175 nació del mismo antipatrón.
+-- Ahora filtra por las MISMAS 3 claves que la sección 4, que nunca se rompió
+-- justamente porque ya filtraba. El diente contra RLS se conserva entero: el
+-- assert hermano de arriba (authenticated) sigue viendo 0 — y ese SÍ puede ir
+-- sin filtro, porque "0 filas" no depende de cuántas existan.
+select is(
+  (select count(*) from public.app_config
+     where key in ('video_slot_free', 'archived_retention_days', 'signed_url_ttl_seconds'))::int,
+  3,
+  'admin lee app_config'
+);
 reset role;
 
 select * from finish();
