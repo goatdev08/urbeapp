@@ -72,9 +72,23 @@ function make_queue(opts: { invoke?: jest.Mock } = {}) {
   return { queue, invoke };
 }
 
+interface PostBody {
+  impressions: unknown[];
+  cta_taps: unknown[];
+}
+
 /** Cuerpos de cada POST a la EF, en orden. */
-function bodies(invoke: jest.Mock): { impressions: unknown[]; cta_taps: unknown[] }[] {
-  return invoke.mock.calls.map((c) => (c[1] as { body: { impressions: unknown[]; cta_taps: unknown[] } }).body);
+function bodies(invoke: jest.Mock): PostBody[] {
+  return invoke.mock.calls.map((c) => (c[1] as { body: PostBody }).body);
+}
+
+/** El cuerpo del POST n-ésimo. Falla el test si no hubo tantos POST. */
+function body_at(invoke: jest.Mock, index: number): PostBody {
+  const body = bodies(invoke).at(index);
+  if (!body) {
+    throw new Error(`se esperaba al menos ${index + 1} POST a la EF, hubo ${invoke.mock.calls.length}`);
+  }
+  return body;
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -86,7 +100,7 @@ describe('adImpressionQueue — qué se manda', () => {
 
     expect(invoke).toHaveBeenCalledTimes(1);
     expect(invoke.mock.calls[0][0]).toBe('record-ad-impressions');
-    expect(bodies(invoke)[0].impressions).toEqual([
+    expect(body_at(invoke, 0).impressions).toEqual([
       {
         ad_id: AD_1,
         session_id: SESSION_A,
@@ -105,7 +119,7 @@ describe('adImpressionQueue — qué se manda', () => {
     queue.enqueue_impression(make_exposure());
     await queue.flush();
 
-    const item = bodies(invoke)[0].impressions[0] as Record<string, unknown>;
+    const item = body_at(invoke, 0).impressions[0] as Record<string, unknown>;
     expect(Object.keys(item).sort()).toEqual(
       ['ad_id', 'completed', 'device', 'lat', 'lng', 'session_id', 'shown_at', 'watched_ms'].sort(),
     );
@@ -146,7 +160,7 @@ describe('adImpressionQueue — 🔴 REQUISITO 1: una exposición, un solo enví
     queue.enqueue_impression(make_exposure({ ad_id: AD_2 }));
     await queue.flush();
 
-    expect(bodies(invoke)[0].impressions).toHaveLength(2);
+    expect(body_at(invoke, 0).impressions).toHaveLength(2);
   });
 
   it('(EC-6) una sesión DISTINTA sí vuelve a emitir el mismo anuncio', async () => {
@@ -155,7 +169,7 @@ describe('adImpressionQueue — 🔴 REQUISITO 1: una exposición, un solo enví
     queue.enqueue_impression(make_exposure({ session_id: SESSION_B }));
     await queue.flush();
 
-    expect(bodies(invoke)[0].impressions).toHaveLength(2);
+    expect(body_at(invoke, 0).impressions).toHaveLength(2);
   });
 });
 
@@ -170,7 +184,7 @@ describe('adImpressionQueue — flush', () => {
     await Promise.resolve();
 
     expect(invoke).toHaveBeenCalledTimes(1);
-    expect(bodies(invoke)[0].impressions).toHaveLength(AD_IMPRESSION_BATCH_SIZE);
+    expect(body_at(invoke, 0).impressions).toHaveLength(AD_IMPRESSION_BATCH_SIZE);
   });
 
   it('(EC-8) flush() con la cola vacía NO llama a la EF', async () => {
@@ -189,7 +203,7 @@ describe('adImpressionQueue — 🔴 REQUISITO 2: el tap nunca adelanta a su imp
     await queue.flush();
 
     expect(invoke).toHaveBeenCalledTimes(1);
-    const body = bodies(invoke)[0];
+    const body = body_at(invoke, 0);
     expect(body.impressions).toHaveLength(1);
     expect(body.cta_taps).toEqual([
       { ad_id: AD_1, session_id: SESSION_A, cta_tapped_at: '2026-08-20T12:00:05.000Z' },
@@ -214,7 +228,7 @@ describe('adImpressionQueue — 🔴 REQUISITO 2: el tap nunca adelanta a su imp
     await queue.flush();
 
     expect(invoke).toHaveBeenCalledTimes(1);
-    const body = bodies(invoke)[0];
+    const body = body_at(invoke, 0);
     expect(body.impressions).toHaveLength(1);
     expect(body.cta_taps).toHaveLength(1);
   });
@@ -227,8 +241,20 @@ describe('adImpressionQueue — 🔴 REQUISITO 2: el tap nunca adelanta a su imp
     await queue.flush();
 
     expect(invoke).toHaveBeenCalledTimes(2);
-    expect(bodies(invoke)[1].impressions).toHaveLength(0);
-    expect(bodies(invoke)[1].cta_taps).toHaveLength(1);
+    expect(body_at(invoke, 1).impressions).toHaveLength(0);
+    expect(body_at(invoke, 1).cta_taps).toHaveLength(1);
+  });
+
+  it('(EC-12b) report_cta_tap por sí solo no dispara ningún POST', async () => {
+    // Lo que realmente aporta no disparar flush desde report_cta_tap: no
+    // fabricar un POST de un solo evento por cada toque. NO es lo que impide
+    // que el tap adelante a su impresión — eso lo hace el guard de flush, y
+    // está verificado por mutación (ver el comentario del módulo).
+    const { queue, invoke } = make_queue();
+    queue.enqueue_impression(make_exposure());
+    queue.report_cta_tap({ ad_id: AD_1, session_id: SESSION_A, cta_tapped_at: '2026-08-20T12:00:05.000Z' });
+    await Promise.resolve();
+    expect(invoke).not.toHaveBeenCalled();
   });
 
   it('(EC-13) doble tap del mismo par produce UN solo tap', async () => {
@@ -238,7 +264,7 @@ describe('adImpressionQueue — 🔴 REQUISITO 2: el tap nunca adelanta a su imp
     queue.report_cta_tap({ ad_id: AD_1, session_id: SESSION_A, cta_tapped_at: '2026-08-20T12:00:06.000Z' });
     await queue.flush();
 
-    expect(bodies(invoke)[0].cta_taps).toHaveLength(1);
+    expect(body_at(invoke, 0).cta_taps).toHaveLength(1);
   });
 });
 
