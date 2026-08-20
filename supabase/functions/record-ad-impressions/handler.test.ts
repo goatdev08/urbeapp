@@ -331,9 +331,11 @@ function writer_ok(): FakeWriter {
       this.upsert_calls.push(rows);
       return Promise.resolve();
     },
-    record_cta_tap(id: string, cta_tapped_at: string): Promise<void> {
+    record_cta_tap(id: string, cta_tapped_at: string): Promise<number> {
       this.cta_calls.push({ id, cta_tapped_at });
-      return Promise.resolve();
+      // #198: por defecto el tap matchea (1 fila). Los tests del tap huérfano
+      // sobreescriben este método para devolver 0.
+      return Promise.resolve(1);
     },
   } as FakeWriter;
 }
@@ -363,9 +365,11 @@ function writer_uuid_validating(): FakeWriter {
       this.upsert_calls.push(rows);
       return Promise.resolve();
     },
-    record_cta_tap(id: string, cta_tapped_at: string): Promise<void> {
+    record_cta_tap(id: string, cta_tapped_at: string): Promise<number> {
       this.cta_calls.push({ id, cta_tapped_at });
-      return Promise.resolve();
+      // #198: por defecto el tap matchea (1 fila). Los tests del tap huérfano
+      // sobreescriben este método para devolver 0.
+      return Promise.resolve(1);
     },
   } as FakeWriter;
 }
@@ -1224,7 +1228,16 @@ Deno.test("body_vacio_ambos_ausentes_200_contadores_en_cero_nada_se_llama", asyn
   const res = await handler(post_request({}), deps);
   assertEquals(res.status, 200);
   const body = await res.json();
-  assertEquals(body, { impressions_accepted: 0, impressions_rejected: 0, cta_taps_recorded: 0 });
+  // #198: la respuesta gana cta_taps_orphaned. Este assert compara la forma
+  // EXACTA a propósito y por eso cazó el campo nuevo — reconciliarlo aquí es
+  // lo correcto; relajarlo a toMatchObject seria destruir el unico assert que
+  // detecta un campo de mas en un contrato de respuesta.
+  assertEquals(body, {
+    impressions_accepted: 0,
+    impressions_rejected: 0,
+    cta_taps_recorded: 0,
+    cta_taps_orphaned: 0,
+  });
   assertEquals(ads.calls.length, 0);
   assertEquals(writer.upsert_calls.length, 0);
   assertEquals(writer.cta_calls.length, 0);
@@ -1274,12 +1287,14 @@ Deno.test("deps_undefined_retorna_500_internal_error", async () => {
 // Forma invariante
 // ═══════════════════════════════════════════════════════════════════════════
 
-Deno.test("respuesta_200_tiene_forma_de_los_3_contadores_numericos", async () => {
+Deno.test("respuesta_200_tiene_forma_de_los_4_contadores_numericos", async () => {
   const res = await handler(post_request({ impressions: [impression_item()] }), make_deps());
   const body = await res.json();
   assertEquals(typeof body.impressions_accepted, "number");
   assertEquals(typeof body.impressions_rejected, "number");
   assertEquals(typeof body.cta_taps_recorded, "number");
+  // #198 — el 4o: sin el, un tap huerfano seria indistinguible de uno escrito.
+  assertEquals(typeof body.cta_taps_orphaned, "number");
 });
 
 Deno.test("error_respuesta_tiene_forma_error_code_message", async () => {
@@ -1289,4 +1304,47 @@ Deno.test("error_respuesta_tiene_forma_error_code_message", async () => {
   assertExists(body.error);
   assertEquals(typeof body.error.code, "string");
   assertEquals(typeof body.error.message, "string");
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// #198 — el tap HUÉRFANO deja de ser invisible.
+//
+// record_cta_tap es un UPDATE: si el tap llega antes que su impresión, no
+// matchea ninguna fila. Eso NO se arregla dejando que el UPDATE cree la fila
+// (reabriría la superficie que cerró el bloqueante V1). Se arregla haciendo
+// que el sistema pueda RESPONDER cuántos taps se perdieron — hoy
+// `cta_taps_recorded` se incrementaba por cada tap PROCESADO, así que un tap
+// huérfano sumaba igual y el contador mentía.
+//
+// La disciplina del cliente (170.7: el tap viaja en el mismo POST que su
+// impresión o en uno posterior, nunca antes) reduce el caso; NO lo elimina,
+// porque el cliente controla el orden en que EMITE, no en que los POST
+// LLEGAN. Por eso hace falta la señal, no solo la disciplina.
+// ═══════════════════════════════════════════════════════════════════════════
+
+Deno.test("198_tap_que_matchea_cuenta_como_recorded_y_no_como_orphaned", async () => {
+  const writer = writer_ok();
+  const deps = make_deps({ impressionsWriter: writer });
+  const res = await handler(post_request({ cta_taps: [cta_item()] }), deps);
+  const body = await res.json();
+  assertEquals(body.cta_taps_recorded, 1);
+  assertEquals(body.cta_taps_orphaned, 0);
+});
+
+Deno.test("198_tap_HUERFANO_no_cuenta_como_recorded_y_SI_como_orphaned", async () => {
+  const writer = writer_ok();
+  // El writer reporta 0 filas afectadas: la impresion todavia no existe.
+  writer.record_cta_tap = (id: string, cta_tapped_at: string): Promise<number> => {
+    writer.cta_calls.push({ id, cta_tapped_at });
+    return Promise.resolve(0);
+  };
+  const deps = make_deps({ impressionsWriter: writer });
+  const res = await handler(post_request({ cta_taps: [cta_item()] }), deps);
+  const body = await res.json();
+  assertEquals(
+    body.cta_taps_recorded,
+    0,
+    "un tap que no escribio ninguna fila NO puede contarse como registrado",
+  );
+  assertEquals(body.cta_taps_orphaned, 1, "debe reportarse como huerfano para que el fallo sea visible");
 });

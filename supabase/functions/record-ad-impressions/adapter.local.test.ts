@@ -281,3 +281,62 @@ Deno.test({
   sanitizeOps: false,
   sanitizeResources: false,
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// RED #198 — el tap HUÉRFANO se pierde en silencio, y el contador miente.
+//
+// record_cta_tap es un UPDATE (a propósito: su firma acotada es lo que impide
+// estructuralmente que toque watched_ms/viewed/completed, el fix del
+// bloqueante V1). La consecuencia no buscada: si el tap llega ANTES que su
+// impresión, no matchea ninguna fila y NO PASA NADA — sin error, sin rastro.
+//
+// Y el contador de la respuesta lo tapa: `cta_taps_recorded` se incrementa por
+// cada tap PROCESADO, no por cada tap que efectivamente escribió. Un tap
+// huérfano suma igual. En un producto donde el CTA es lo que se factura por
+// clic, ese es el evento más caro y el que peor falla.
+//
+// El arreglo NO es hacer que el UPDATE pueda crear la fila (eso reabriría la
+// superficie que V1 cerró). Es que el adapter DIGA cuántas filas tocó, para
+// que el sistema pueda responder "cuántos taps se perdieron".
+// ═══════════════════════════════════════════════════════════════════════════
+
+Deno.test({
+  name: "198_record_cta_tap_devuelve_1_cuando_la_fila_existe",
+  fn: async () => {
+    const { ad_id, agency_id, cleanup } = await seed_agency_and_ad();
+    try {
+      const writer = make_impressions_writer(client);
+      const id = crypto.randomUUID();
+      const user_id = crypto.randomUUID();
+      const session_id = crypto.randomUUID();
+      await writer.upsert_impressions([make_row({ id, ad_id, agency_id, user_id, session_id })]);
+
+      const affected = await writer.record_cta_tap(id, new Date().toISOString());
+      assertEquals(affected, 1, "un tap sobre una impresion existente debe reportar 1 fila afectada");
+    } finally {
+      await cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "198_record_cta_tap_devuelve_0_cuando_el_tap_es_HUERFANO",
+  fn: async () => {
+    const { cleanup } = await seed_agency_and_ad();
+    try {
+      const writer = make_impressions_writer(client);
+      // Un id derivado que NUNCA se escribio: es exactamente el caso "el tap
+      // adelanto a su batch de impresiones".
+      const orphan_id = crypto.randomUUID();
+
+      const affected = await writer.record_cta_tap(orphan_id, new Date().toISOString());
+      assertEquals(
+        affected,
+        0,
+        "un tap sin impresion debe reportar 0 filas — hoy devuelve void y se pierde mudo",
+      );
+    } finally {
+      await cleanup();
+    }
+  },
+});

@@ -153,7 +153,9 @@ export interface ImpressionsWriter {
   /** Upsert EXCLUSIVO del tap al CTA. La firma SOLO acepta (id,
    * cta_tapped_at): estructuralmente no puede tocar watched_ms/viewed/
    * completed porque el método no los recibe. */
-  record_cta_tap(id: string, cta_tapped_at: string): Promise<void>;
+  /** Devuelve cuántas filas afectó (#198): 0 = tap HUÉRFANO, llegó antes que
+   *  su impresión y NO se escribió. Sigue siendo un UPDATE a propósito. */
+  record_cta_tap(id: string, cta_tapped_at: string): Promise<number>;
 }
 
 // ── Input crudo del cliente (batch) ─────────────────────────────────────────
@@ -206,5 +208,10 @@ export interface RecordAdImpressionsDeps {
 export interface RecordAdImpressionsResponse {
   impressions_accepted: number;
   impressions_rejected: number;
+  /** Taps que efectivamente escribieron su fila. */
   cta_taps_recorded: number;
+  /** #198: taps bien formados que NO matchearon ninguna impresión — llegaron
+   *  antes que su batch. No es un error del cliente ni del servidor: es la
+   *  única señal de un evento facturable que se perdió. */
+  cta_taps_orphaned: number;
 }

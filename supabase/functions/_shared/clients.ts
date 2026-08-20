@@ -1885,12 +1885,23 @@ export function make_impressions_writer(client: SupabaseClient): ImpressionsWrit
       }
       throw last_error;
     },
-    async record_cta_tap(id: string, cta_tapped_at: string): Promise<void> {
-      const { error } = await client
+    /**
+     * #198: devuelve CUÁNTAS filas tocó. Sigue siendo un UPDATE —no puede
+     * crear la fila, y esa restricción es deliberada (es lo que impide
+     * estructuralmente que toque watched_ms/viewed/completed, fix del
+     * bloqueante V1)— pero ahora un tap HUÉRFANO (llegó antes que su
+     * impresión) es DISTINGUIBLE de uno que escribió. Antes devolvía void y
+     * el tap se perdía sin error, sin contador y sin rastro; en un producto
+     * donde el CTA se factura por clic, ese es el evento más caro.
+     */
+    async record_cta_tap(id: string, cta_tapped_at: string): Promise<number> {
+      const { data, error } = await client
         .from("ad_impressions")
         .update({ cta_tapped_at })
-        .eq("id", id);
+        .eq("id", id)
+        .select("id");
       if (error) throw error;
+      return data?.length ?? 0;
     },
   };
 }

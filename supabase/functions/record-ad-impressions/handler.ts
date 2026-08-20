@@ -115,6 +115,7 @@ export async function handler(req: Request, deps?: RecordAdImpressionsDeps): Pro
         impressions_accepted: 0,
         impressions_rejected: 0,
         cta_taps_recorded: 0,
+        cta_taps_orphaned: 0,
       };
       return json_response(empty, 200);
     }
@@ -180,17 +181,23 @@ export async function handler(req: Request, deps?: RecordAdImpressionsDeps): Pro
 
     // 8. cta_taps — método EXCLUSIVO (id, cta_tapped_at); nunca dispara upsert_impressions.
     let cta_taps_recorded = 0;
+    let cta_taps_orphaned = 0;
     for (const item of cta_taps_raw) {
       if (!is_well_formed_cta_tap(item)) continue;
       const id = derive_impression_id(user_id, item.ad_id, item.session_id);
-      await deps!.impressionsWriter.record_cta_tap(id, item.cta_tapped_at);
-      cta_taps_recorded++;
+      const affected = await deps!.impressionsWriter.record_cta_tap(id, item.cta_tapped_at);
+      // #198: se cuenta lo que REALMENTE pasó, no lo que se intentó. Un tap
+      // huérfano (0 filas) antes sumaba a cta_taps_recorded y el contador
+      // mentía sobre un evento que se factura por clic.
+      if (affected > 0) cta_taps_recorded++;
+      else cta_taps_orphaned++;
     }
 
     const response: RecordAdImpressionsResponse = {
       impressions_accepted: rows.length,
       impressions_rejected,
       cta_taps_recorded,
+      cta_taps_orphaned,
     };
     return json_response(response, 200);
   } catch {
