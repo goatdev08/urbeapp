@@ -57,11 +57,32 @@ La rama del webhook es **aditiva**: solo se alcanza cuando el UPDATE sobre `prop
 
 El cliente **no** puede llamar a `org_can_advertise` (el wrapper `public` está revocado a `authenticated` a propósito), así que espeja las 4 causas leyendo columnas — con filtrado **explícito en el hook**, porque la policy `agencies_select` deja al manager ver su agencia aunque esté suspendida o soft-deleted.
 
+## Servir los anuncios en el feed (#170)
+
+El feed es heterogéneo: `interleave_ads` (pura, 8 invariantes) decide dónde cae cada anuncio, y `useFeedProperties` lo compone tras cada fetch. **Fail-soft absoluto**: cualquier fallo del kill-switch, de `ads_for_zone` o de la firma degrada a feed de solo propiedades, sin error visible.
+
+🔴 **Degradar en silencio hacia el usuario y hacia el operador son dos decisiones distintas** (#196). Desde el negocio, «la RPC lleva tres días fallando» se veía igual que «no hay inventario contratado». Ahora el fail-soft deja rastro: un `ads_fetch_failed` en `events_raw` con **exactamente cuatro claves** (sin `property_id`, sin coordenadas, sin `ad_id`), deduplicado por (sesión, tramo). El dedupe se marca **después** del insert exitoso — marcarlo al intentar dejaría que un error transitorio silenciara la señal el resto de la sesión.
+
+🔴 **Un anuncio sin URL firmada NO se sirve** (#170.8). Una impresión que el anunciante paga y que no muestra su video es peor que no servir el anuncio, y se registraría igual porque el registro no sabe si el video pintó.
+
+**La zona vista gana sobre el GPS** (#195), pero solo por PUNTO: cuando hay «buscar en esta zona» activa, `ads_for_zone` recibe el centro del área. La precedencia por **id** de colonia/municipio sigue sin llamador — ese id vive solo en el `useState` de `MapScreen` — y hay un assert que lo fija para que no se vuelva una defensa afirmada que nadie ejerce.
+
+## Medición e impresiones (#170.5–170.7)
+
+`ad_impressions` es base de **facturación**, así que la escribe una EF con `service_role`: RLS activa y **cero policies**.
+
+🔴 **El id lo deriva el SERVIDOR** (#193): `uuid_v5(ns, "user_id:ad_id:session_id")` con el `user_id` del JWT. El cliente dejó de mandarlo. Construir el id de otra persona exige conocer su `user_id`, que no sale de nuestros sistemas — el vector se **elimina**, no se blinda.
+
+🔴 **`ON CONFLICT DO NOTHING` = gana la primera escritura**, lo contrario de lo que sugiere «upsert». Por eso `adImpressionQueue` marca el par (sesión, anuncio) al ENCOLAR, no al enviar: el dedupe **gatea la emisión**. Y como solo se encola al TERMINAR la exposición, la cola nunca contiene un `watched_ms` parcial.
+
+🔴 **El tap al CTA nunca viaja en un POST anterior al de su impresión.** `record_cta_tap` es un UPDATE (su firma acotada es lo que impide que toque `watched_ms`/`viewed`/`completed`), así que un tap que llega antes no matchea nada y se pierde — y es el evento que se factura por clic. La defensa es el guard de `flush`, **no** que `report_cta_tap` no dispare flush (comprobado por mutación). La otra mitad es `cta_taps_orphaned` (#198): el cliente controla el orden en que EMITE, no en que los POST LLEGAN.
+
 ## Lo que NO existe todavía
 - **Ningún pago.** El slot lo otorga el admin a mano con `grant_ad_slot_atomic` (`service_role`); `ads.purchase_id` queda NULL toda la beta, listo para que Stripe solo lo llene ([[monetizacion-pago-por-video]]).
-- **Ninguna ruta para que el anunciante cree su campaña** — el wizard solo persiste el creativo. Derivada **#191**.
+- ~~Ninguna ruta para que el anunciante cree su campaña~~ — **cerrado en #191**: `create_ad_campaign_atomic`, security definer y granted a `authenticated`. 🔒 La agencia sale del JWT, nunca de un parámetro. Nace en `pending_review`; activarla sigue siendo exclusivo del admin.
 - **La UI de moderación admin** llega con #81; en beta se modera por Studio/SQL, igual que #71.5.
-- **Servir los anuncios en el feed** es la tarea siguiente (170), no ésta.
+- ~~Servir los anuncios en el feed~~ — **hecho en #170** (ver arriba).
+- ⚠️ **La vigencia se fija al CREAR, no al aprobar** (`starts_at`/`ends_at` son NOT NULL): si la campaña queda días en `pending_review`, esos días se consumen. En beta no hay pago y la aprobación es rápida; el día que haya dinero, esto se revisa.
 
 ## Dos definiciones de «vista», divergentes A PROPÓSITO (#197)
 
