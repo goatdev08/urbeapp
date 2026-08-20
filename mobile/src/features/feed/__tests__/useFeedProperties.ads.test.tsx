@@ -59,6 +59,15 @@ jest.mock('../lib/feedProperties', () => ({
   fetchFeedProperties: jest.fn(),
 }));
 
+// #196: el store de dedupe de la señal de fallo es un singleton de módulo, así
+// que sin un session_id distinto por test el segundo test del archivo quedaría
+// deduplicado contra el primero. Se mockea appSession en vez de exponer un
+// `reset()` de solo-test en el código de producción.
+let mock_session_counter = 0;
+jest.mock('../lib/appSession', () => ({
+  get_app_session_id: () => `test-session-${mock_session_counter}`,
+}));
+
 const mock_use_location = jest.fn().mockReturnValue({ coords: null, status: 'loading' });
 jest.mock('@/features/location/LocationProvider', () => ({
   useLocation: () => mock_use_location(),
@@ -68,7 +77,7 @@ jest.mock('@/features/location/LocationProvider', () => ({
 // borra por completo para reproducir el mock legado de los 14 archivos
 // preexistentes). El prefijo `mock_` es lo que permite a Jest referenciarlo
 // dentro del factory de jest.mock (hoisting).
-const mock_supabase: { rpc?: jest.Mock } = { rpc: jest.fn() };
+const mock_supabase: { rpc?: jest.Mock; auth?: unknown; from?: jest.Mock } = { rpc: jest.fn() };
 jest.mock('@/lib/supabase/client', () => ({
   get supabase() {
     return mock_supabase;
@@ -167,10 +176,28 @@ function ads_feed_config_calls(): unknown[] {
   return (mock_supabase.rpc as jest.Mock).mock.calls.filter((call) => call[0] === 'ads_feed_config');
 }
 
+/** Inserts capturados en events_raw (la señal de #196). */
+let mock_events_insert: jest.Mock;
+
+function ads_failure_signals(): { stage: string }[] {
+  return mock_events_insert.mock.calls.map((call) => {
+    const row = call[0] as { payload?: { stage?: string } };
+    return { stage: row.payload?.stage ?? '(sin stage)' };
+  });
+}
+
 beforeEach(() => {
   jest.clearAllMocks();
+  mock_session_counter += 1;
   mock_use_location.mockReturnValue({ coords: DEFAULT_COORDS, status: 'granted' });
   mock_supabase.rpc = jest.fn();
+  mock_events_insert = jest.fn().mockResolvedValue({ error: null });
+  mock_supabase.auth = {
+    getSession: jest
+      .fn()
+      .mockResolvedValue({ data: { session: { user: { id: 'user-196-uuid' } } }, error: null }),
+  };
+  mock_supabase.from = jest.fn().mockReturnValue({ insert: mock_events_insert });
 });
 
 async function render_loaded_hook() {
@@ -410,6 +437,157 @@ describe('useFeedProperties — fail-soft absoluto ante fallos de ads_for_zone',
   // argumentos correctos, no el orden temporal exacto; el orden estricto
   // "solo tras éxito" es un boundary sin contraparte observable por Jest sin
   // reintroducir el mismo antipatrón (ver bitácora de la subtarea).
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// RED #196 — el fail-soft debe dejar RASTRO (sin cambiar el fail-soft)
+//
+// "La RPC lleva tres días fallando" se ve hoy EXACTAMENTE IGUAL que "no hay
+// inventario contratado en esa zona". Estos asserts exigen la señal lateral
+// SIN relajar un solo invariante de 170.4: en cada caso se sigue verificando
+// que el feed degrada limpio (propiedades tal cual, error null).
+//
+// El caso pareado del final es obligatorio: sin él, un GREEN que emitiera la
+// señal SIEMPRE pasaría todos los demás.
+// ─────────────────────────────────────────────────────────────────────────
+describe('useFeedProperties — #196: el fail-soft deja rastro para el operador', () => {
+  const PROP_A = make_property('feed-prop-signal-a');
+  const PROP_B = make_property('feed-prop-signal-b');
+
+  function mock_config_enabled() {
+    return Promise.resolve({
+      data: [make_config({ ads_enabled: true, ad_frequency_n: 8, ad_max_per_session: 5 })],
+      error: null,
+    });
+  }
+
+  beforeEach(() => {
+    mock_fetch_feed_properties.mockResolvedValue({ data: [PROP_A, PROP_B], nextCursor: null });
+  });
+
+  it("(EC-SIG-1) error explícito de ads_for_zone: sigue degradando limpio Y emite exactamente una señal de tramo 'zone'", async () => {
+    mock_supabase.rpc!.mockImplementation((fn: string) => {
+      if (fn === 'ads_feed_config') return mock_config_enabled();
+      if (fn === 'ads_for_zone') return Promise.resolve({ data: null, error: { message: 'PGRST: función falló' } });
+      throw new Error(`llamada inesperada a ${fn}`);
+    });
+
+    const { result } = await render_loaded_hook();
+
+    expect(result.current.data).toEqual(props_only([PROP_A, PROP_B]));
+    expect(result.current.error).toBeNull();
+    expect(ads_failure_signals()).toEqual([{ stage: 'zone' }]);
+  });
+
+  it("(EC-SIG-2) promesa rechazada de ads_for_zone: una señal de tramo 'zone'", async () => {
+    mock_supabase.rpc!.mockImplementation((fn: string) => {
+      if (fn === 'ads_feed_config') return mock_config_enabled();
+      if (fn === 'ads_for_zone') return Promise.reject(new Error('upstream request timeout'));
+      throw new Error(`llamada inesperada a ${fn}`);
+    });
+
+    const { result } = await render_loaded_hook();
+
+    expect(result.current.data).toEqual(props_only([PROP_A, PROP_B]));
+    expect(ads_failure_signals()).toEqual([{ stage: 'zone' }]);
+  });
+
+  it("(EC-SIG-3) respuesta malformada de ads_for_zone: una señal de tramo 'zone'", async () => {
+    mock_supabase.rpc!.mockImplementation((fn: string) => {
+      if (fn === 'ads_feed_config') return mock_config_enabled();
+      if (fn === 'ads_for_zone') return Promise.resolve({ data: { unexpected: true }, error: null });
+      throw new Error(`llamada inesperada a ${fn}`);
+    });
+
+    const { result } = await render_loaded_hook();
+
+    expect(result.current.data).toEqual(props_only([PROP_A, PROP_B]));
+    expect(ads_failure_signals()).toEqual([{ stage: 'zone' }]);
+  });
+
+  it("(EC-SIG-4) falla el propio kill-switch: una señal de tramo 'config', y ads_for_zone nunca se invoca", async () => {
+    mock_supabase.rpc!.mockImplementation((fn: string) => {
+      if (fn === 'ads_feed_config') return Promise.reject(new Error('network error'));
+      throw new Error(`llamada inesperada a ${fn}`);
+    });
+
+    const { result } = await render_loaded_hook();
+
+    expect(result.current.data).toEqual(props_only([PROP_A, PROP_B]));
+    expect(ads_for_zone_calls()).toHaveLength(0);
+    expect(ads_failure_signals()).toEqual([{ stage: 'config' }]);
+  });
+
+  it('(EC-SIG-5) 🔴 CASO PAREADO: el camino feliz NO emite ninguna señal', async () => {
+    // ad_frequency_n=1 a propósito: con el 8 del resto del bloque y solo 2
+    // propiedades ningún slot estaría "due" y el feed saldría sin anuncios —
+    // el assert de "sí hubo anuncio" no probaría nada.
+    mock_supabase.rpc!.mockImplementation((fn: string) => {
+      if (fn === 'ads_feed_config') {
+        return Promise.resolve({
+          data: [make_config({ ads_enabled: true, ad_frequency_n: 1, ad_max_per_session: 5 })],
+          error: null,
+        });
+      }
+      if (fn === 'ads_for_zone') return Promise.resolve({ data: [make_ad('ad-signal-happy')], error: null });
+      throw new Error(`llamada inesperada a ${fn}`);
+    });
+
+    const { result } = await render_loaded_hook();
+
+    expect(as_feed_items(result.current.data).some((item) => item.kind === 'ad')).toBe(true);
+    expect(ads_failure_signals()).toEqual([]);
+  });
+
+  it("(EC-SIG-6) 🔴 apagado deliberado NO es un fallo: ads_enabled=false no emite señal", async () => {
+    mock_supabase.rpc!.mockImplementation((fn: string) => {
+      if (fn === 'ads_feed_config') {
+        return Promise.resolve({ data: [make_config({ ads_enabled: false })], error: null });
+      }
+      throw new Error(`llamada inesperada a ${fn}`);
+    });
+
+    const { result } = await render_loaded_hook();
+
+    expect(result.current.data).toEqual(props_only([PROP_A, PROP_B]));
+    expect(ads_failure_signals()).toEqual([]);
+  });
+
+  it('(EC-SIG-7) dedupe entre páginas: loadInitial + loadMore fallando el mismo tramo emiten UNA sola señal', async () => {
+    mock_fetch_feed_properties
+      .mockResolvedValueOnce({ data: [PROP_A], nextCursor: 'cursor-1' })
+      .mockResolvedValueOnce({ data: [PROP_B], nextCursor: null });
+    mock_supabase.rpc!.mockImplementation((fn: string) => {
+      if (fn === 'ads_feed_config') return mock_config_enabled();
+      if (fn === 'ads_for_zone') return Promise.reject(new Error('sigue caída'));
+      throw new Error(`llamada inesperada a ${fn}`);
+    });
+
+    const rendered = await renderHook(() => useFeedProperties());
+    await act(async () => {
+      await rendered.result.current.loadInitial();
+    });
+    await act(async () => {
+      await rendered.result.current.loadMore();
+    });
+
+    expect(ads_for_zone_calls()).toHaveLength(2);
+    expect(ads_failure_signals()).toEqual([{ stage: 'zone' }]);
+  });
+
+  it('(EC-SIG-8) 🔴 si la propia señal falla, el feed NO se rompe (fire-and-forget)', async () => {
+    mock_events_insert.mockRejectedValue(new Error('offline'));
+    mock_supabase.rpc!.mockImplementation((fn: string) => {
+      if (fn === 'ads_feed_config') return mock_config_enabled();
+      if (fn === 'ads_for_zone') return Promise.reject(new Error('upstream timeout'));
+      throw new Error(`llamada inesperada a ${fn}`);
+    });
+
+    const { result } = await render_loaded_hook();
+
+    expect(result.current.data).toEqual(props_only([PROP_A, PROP_B]));
+    expect(result.current.error).toBeNull();
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────
