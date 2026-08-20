@@ -24,6 +24,8 @@ Urbea (el "responsable"). *[Pendiente legal: razón social, RFC, domicilio y cor
 
 **Lo que aceptaste:** guardamos qué versión de los términos y de este aviso aceptaste, y cuándo.
 
+**Diagnóstico de la app:** cuando una parte de la aplicación falla —por ejemplo, si no logramos cargar los anuncios del feed— registramos que ocurrió el fallo, en qué tramo y en qué sesión, ligado a tu cuenta. **No registramos qué estabas viendo, ni dónde estabas, ni ningún contenido**: solo que algo no funcionó, para poder darnos cuenta y arreglarlo. Nadie fuera de Urbea tiene acceso a estos registros.
+
 ## 3. Para qué los usamos
 
 - Crear y mantener tu cuenta, y verificar tu identidad al iniciar sesión.
@@ -101,6 +103,7 @@ Correspondencia entre las promesas de arriba y lo que las hace cumplir. El inven
 | §4 "si el lead se elimina, el acceso se revoca" | el permiso se deriva de un lead con `deleted_at is null` | `35_` (PRIV11) |
 | §4 "nunca ve tus preferencias" | `user_prefs_select` = fila propia o admin | inventario en `privacidad-datos.md` |
 | §2 "registramos tu comportamiento de video" | `events_raw` (`video_view`, `video_completed`, `app_open`) | `33_`, `35_` |
+| §2 "diagnóstico de la app" | `events_raw` (`ads_fetch_failed`, #196): fila con `event_type`, `user_id`, `session_id` y `payload:{stage}` — **exactamente cuatro claves**, sin `property_id`, sin coordenadas, sin `ad_id`. `user_id` no es opcional: la policy `events_raw_insert` exige `user_id = auth.uid()`, así que sin usuario no se escribe. Dedupe por (sesión, tramo) para que una caída no genere una fila por scroll | `mobile/src/features/feed/__tests__/adsFailureSignal.test.ts` (EC-2 fija el conjunto EXACTO de claves; un campo de más rompe el test) |
 | §5 "el anunciante nunca ve tu identidad" | ✅ **vivo (170.5)**: `ad_impressions` con RLS activa y **cero policies** — `authenticated` conserva el `grant select` a propósito para que el fallo sea "0 filas" y no un `42501` que revele la existencia de la tabla; `ad_impressions_monthly` no tiene ni grant. El anunciante solo llegará al rollup (#171) | `supabase/tests/51_ad_impressions_test.sql` |
 | §5 "se conserva un máximo de 90 días" | ✅ **vivo (170.5)**: `purge_ad_impressions()` **programada con `pg_cron`** (`purge_ad_impressions_daily`, `0 9 * * *`, verificado en `cron.job`) — decisión de Abraham 2026-08-17, revisada: su primera respuesta fue dejar la función sin programador, y la cambió al ver que el aviso pasaba a prometer el plazo por escrito. Una retención que nadie ejecuta es una defensa afirmada que no existe, en un documento legal | `supabase/tests/51_ad_impressions_test.sql`: la purga borra >90d, respeta <90d, y el job existe en `cron.job` |
 | §5 "elegimos por el lugar, no por quién eres" | ✅ **vivo (170.2)**: `ads_for_zone` recibe zona/coordenadas, **nunca** el historial del usuario — su firma no admite un `user_id` siquiera | `supabase/tests/53_ads_for_zone_test.sql`, `55_resolve_ad_zone_test.sql` |

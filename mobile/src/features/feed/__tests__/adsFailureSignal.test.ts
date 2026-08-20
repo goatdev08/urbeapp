@@ -61,12 +61,12 @@ const SESSION_B = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 
 function make_client(overrides: { insert?: jest.Mock; session?: unknown; get_session?: jest.Mock } = {}) {
   const insert = overrides.insert ?? jest.fn().mockResolvedValue({ error: null });
+  // `'session' in overrides` y no `??`: con nullish coalescing, pasar
+  // `session: null` (el caso EC-6, "sin sesión") caería al default y el test
+  // no probaría nada.
+  const session = 'session' in overrides ? overrides.session : { user: { id: USER_ID } };
   const get_session =
-    overrides.get_session ??
-    jest.fn().mockResolvedValue({
-      data: { session: overrides.session ?? { user: { id: USER_ID } } },
-      error: null,
-    });
+    overrides.get_session ?? jest.fn().mockResolvedValue({ data: { session }, error: null });
   return {
     client: {
       auth: { getSession: get_session },

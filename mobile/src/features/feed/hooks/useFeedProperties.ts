@@ -45,6 +45,13 @@ import { useLocation } from '@/features/location/LocationProvider';
 import type { FilterState } from '@/features/search/types';
 import { onPropertyDeleted } from '@/lib/propertyEvents';
 
+import { get_app_session_id } from '../lib/appSession';
+import {
+  ads_failure_store,
+  report_ads_failure,
+  type AdsFailureClient,
+  type AdsFailureStage,
+} from '../lib/adsFailureSignal';
 import { fetchFeedProperties, type FeedPropertiesDeps } from '../lib/feedProperties';
 import { interleave_ads, type FeedAd, type FeedItem } from '../lib/interleaveAds';
 import type { FeedPropertyWithUrl } from '../types';
@@ -73,6 +80,22 @@ const to_property_items = (properties: FeedPropertyWithUrl[]): FeedItem[] =>
   properties.map((property) => ({ kind: 'property', property }));
 
 /**
+ * #196: deja rastro del fail-soft SIN cambiarlo. Fire-and-forget deliberado
+ * (`void`, nunca `await`): el feed no espera a la telemetría, y
+ * report_ads_failure jamás rechaza, así que este `void` no puede producir una
+ * promesa colgada. 🔴 Solo se llama ante un FALLO — `ads_enabled=false` es un
+ * apagado deliberado, no un fallo, y no emite nada (EC-SIG-6).
+ */
+function signal_ads_failure(client: unknown, stage: AdsFailureStage): void {
+  void report_ads_failure({
+    client: client as AdsFailureClient,
+    session_id: get_app_session_id(),
+    stage,
+    store: ads_failure_store,
+  });
+}
+
+/**
  * Compone `properties` con anuncios intercalados, o degrada a solo-propiedades
  * ante CUALQUIER falla (gate 170.1 / fail-soft absoluto). `already_shown_ref`
  * se actualiza in-place con los anuncios usados en ESTA llamada.
@@ -91,11 +114,17 @@ async function compose_feed_items(
   let config: AdsFeedConfigRow;
   try {
     const { data, error } = await call_rpc('ads_feed_config');
-    if (error || !Array.isArray(data) || data.length === 0 || !data[0]?.ads_enabled) {
+    if (error || !Array.isArray(data) || data.length === 0) {
+      signal_ads_failure(client, 'config');
+      return to_property_items(properties);
+    }
+    if (!data[0]?.ads_enabled) {
+      // Kill-switch apagado a propósito: NO es un fallo, no se señala.
       return to_property_items(properties);
     }
     config = data[0] as AdsFeedConfigRow;
   } catch {
+    signal_ads_failure(client, 'config');
     return to_property_items(properties);
   }
 
@@ -107,9 +136,13 @@ async function compose_feed_items(
       p_neighborhood_id: null,
       p_municipality_id: null,
     });
-    if (error || !Array.isArray(data)) return to_property_items(properties);
+    if (error || !Array.isArray(data)) {
+      signal_ads_failure(client, 'zone');
+      return to_property_items(properties);
+    }
     ads = data as FeedAd[];
   } catch {
+    signal_ads_failure(client, 'zone');
     return to_property_items(properties);
   }
 
