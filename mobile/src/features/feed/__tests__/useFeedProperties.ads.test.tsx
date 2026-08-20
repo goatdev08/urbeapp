@@ -168,6 +168,20 @@ function make_config(overrides: { ads_enabled?: boolean; ad_frequency_n?: number
   };
 }
 
+/**
+ * 170.8: el anuncio que SALE del hook ya trae sus URLs firmadas (mint-ad-urls),
+ * así que el esperado no es el fixture crudo. Este helper aplica el mismo
+ * mapeo que el mock por defecto de mint-ad-urls del beforeEach — si un día
+ * divergen, los tests de composición lo dicen de inmediato.
+ */
+function minted(ad: FeedAd): FeedAd {
+  return {
+    ...ad,
+    poster_url: `https://videodelivery.net/tok-${ad.creative_id}/thumbnails/thumbnail.jpg`,
+    video_url: `https://videodelivery.net/tok-${ad.creative_id}/manifest/video.m3u8`,
+  };
+}
+
 /** Property-only items — atajo para armar el esperado del feed sin anuncios. */
 function props_only(properties: FeedPropertyWithUrl[]): FeedItem[] {
   return properties.map((property) => ({ kind: 'property', property }));
@@ -353,7 +367,7 @@ describe('useFeedProperties — composición con ads_enabled=true (happy path)',
       { kind: 'property', property: properties[1]! },
       { kind: 'property', property: properties[2]! },
       { kind: 'property', property: properties[3]! },
-      { kind: 'ad', ad: AD_A },
+      { kind: 'ad', ad: minted(AD_A) },
       { kind: 'property', property: properties[4]! },
       { kind: 'property', property: properties[5]! },
       { kind: 'property', property: properties[6]! },
@@ -521,8 +535,9 @@ describe('useFeedProperties — 170.8: firma de la URL de reproducción del anun
 
     await render_loaded_hook();
 
-    expect(mint_calls()).toHaveLength(1);
-    expect(mint_calls()[0].body.creative_ids.sort()).toEqual(
+    const calls = mint_calls();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.body.creative_ids.sort()).toEqual(
       ['creative-ad-mint-1', 'creative-ad-mint-2'].sort(),
     );
   });
@@ -565,9 +580,16 @@ describe('useFeedProperties — 170.8: firma de la URL de reproducción del anun
 
     const { result } = await render_loaded_hook();
 
-    const ads = as_feed_items(result.current.data).filter((i) => i.kind === 'ad');
-    expect(ads).toHaveLength(1);
-    expect((ads[0] as { kind: 'ad'; ad: FeedAd }).ad.id).toBe('ad-firmado');
+    const served_ids = as_feed_items(result.current.data)
+      .filter((i) => i.kind === 'ad')
+      .map((i) => (i as { kind: 'ad'; ad: FeedAd }).ad.id);
+
+    // Se asserta IDENTIDAD, no conteo: con every_n=1 interleave_ads repite el
+    // único anuncio superviviente varias veces, así que un toHaveLength(1)
+    // fallaría por una razón que no tiene nada que ver con la firma.
+    expect(served_ids.length).toBeGreaterThan(0);
+    expect(new Set(served_ids)).toEqual(new Set(['ad-firmado']));
+    expect(served_ids).not.toContain('ad-sin-firma');
   });
 
   it('(EC-MINT-4) si mint-ad-urls falla entero, FAIL-SOFT: feed sin anuncios, sin error visible', async () => {
@@ -946,9 +968,9 @@ describe('useFeedProperties — cap de sesión se sostiene entre loadInitial y l
     // antes de medir el efecto de loadMore.
     expect(result.current.data).toEqual([
       { kind: 'property', property: P0 },
-      { kind: 'ad', ad: AD_A },
+      { kind: 'ad', ad: minted(AD_A) },
       { kind: 'property', property: P1 },
-      { kind: 'ad', ad: AD_A },
+      { kind: 'ad', ad: minted(AD_A) },
       { kind: 'property', property: P2 },
     ]);
 
@@ -960,11 +982,11 @@ describe('useFeedProperties — cap de sesión se sostiene entre loadInitial y l
     // ubicado en el primer ítem de la página (skip_first_position=false).
     expect(result.current.data).toEqual([
       { kind: 'property', property: P0 },
-      { kind: 'ad', ad: AD_A },
+      { kind: 'ad', ad: minted(AD_A) },
       { kind: 'property', property: P1 },
-      { kind: 'ad', ad: AD_A },
+      { kind: 'ad', ad: minted(AD_A) },
       { kind: 'property', property: P2 },
-      { kind: 'ad', ad: AD_A },
+      { kind: 'ad', ad: minted(AD_A) },
       { kind: 'property', property: Q0 },
       { kind: 'property', property: Q1 },
     ]);
@@ -1012,9 +1034,9 @@ describe('useFeedProperties — cap de sesión se sostiene entre loadInitial y l
     // Presencia (no vacua): loadInitial SÍ agotó el cupo — 2 anuncios reales.
     expect(result.current.data).toEqual([
       { kind: 'property', property: R0 },
-      { kind: 'ad', ad: AD_A },
+      { kind: 'ad', ad: minted(AD_A) },
       { kind: 'property', property: R1 },
-      { kind: 'ad', ad: AD_A },
+      { kind: 'ad', ad: minted(AD_A) },
       { kind: 'property', property: R2 },
     ]);
 
@@ -1057,7 +1079,7 @@ describe('useFeedProperties — onPropertyDeleted preserva los anuncios del feed
     // antes del borrado — si esto fallara, "el ad sigue" de abajo sería vacuo.
     expect(result.current.data).toEqual([
       { kind: 'property', property: P0 },
-      { kind: 'ad', ad: AD_A },
+      { kind: 'ad', ad: minted(AD_A) },
       { kind: 'property', property: P1 },
     ]);
 
@@ -1068,7 +1090,7 @@ describe('useFeedProperties — onPropertyDeleted preserva los anuncios del feed
     // El anuncio SIGUE presente y la propiedad borrada desaparece — un solo
     // toEqual ancla presencia (AD_A, P1) y ausencia (P0) sobre el MISMO array.
     expect(result.current.data).toEqual([
-      { kind: 'ad', ad: AD_A },
+      { kind: 'ad', ad: minted(AD_A) },
       { kind: 'property', property: P1 },
     ]);
 

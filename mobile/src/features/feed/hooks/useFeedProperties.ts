@@ -79,6 +79,41 @@ type AdsFeedConfigRow = {
 const to_property_items = (properties: FeedPropertyWithUrl[]): FeedItem[] =>
   properties.map((property) => ({ kind: 'property', property }));
 
+/** Fila de mint-ad-urls. */
+type MintedAdUrlRow = { creative_id: string; posterUrl: string; videoUrl: string };
+
+/**
+ * Pide a mint-ad-urls las URLs firmadas de estos anuncios y devuelve SOLO los
+ * que quedaron firmados. `null` = la EF falló entera (distinto de "firmó cero",
+ * que es una lista vacía y también deja el feed sin anuncios pero por una razón
+ * legítima: ningún creativo autorizado/disponible).
+ */
+async function mint_ad_urls(client: unknown, ads: FeedAd[]): Promise<FeedAd[] | null> {
+  const invoke = (client as { functions?: { invoke?: unknown } } | null | undefined)?.functions?.invoke;
+  if (typeof invoke !== 'function') return null;
+  const call = invoke as (name: string, opts: unknown) => Promise<{ data: unknown; error: unknown }>;
+
+  const { data, error } = await call('mint-ad-urls', {
+    body: { creative_ids: ads.map((ad) => ad.creative_id) },
+  });
+  if (error) return null;
+
+  const urls = (data as { urls?: unknown } | null | undefined)?.urls;
+  if (!Array.isArray(urls)) return null;
+
+  const by_creative = new Map(
+    (urls as MintedAdUrlRow[]).map((row) => [row.creative_id, row]),
+  );
+
+  const signed: FeedAd[] = [];
+  for (const ad of ads) {
+    const minted = by_creative.get(ad.creative_id);
+    // Sin firma no se sirve: ver el comentario de compose_feed_items.
+    if (minted) signed.push({ ...ad, video_url: minted.videoUrl, poster_url: minted.posterUrl });
+  }
+  return signed;
+}
+
 /**
  * #196: deja rastro del fail-soft SIN cambiarlo. Fire-and-forget deliberado
  * (`void`, nunca `await`): el feed no espera a la telemetría, y
@@ -155,6 +190,29 @@ async function compose_feed_items(
   } catch {
     signal_ads_failure(client, 'zone');
     return to_property_items(properties);
+  }
+
+  // 170.8 — FIRMA DE LA URL DE REPRODUCCIÓN.
+  // ads_for_zone da el creative_id pero no una URL reproducible: los creativos
+  // de Stream tienen requireSignedURLs. mint-ad-urls (169.5, ampliada en 170.8)
+  // devuelve póster y manifest HLS firmados con el MISMO token.
+  //
+  // 🔴 Un anuncio cuya URL no se pudo firmar NO SE SIRVE. Una impresión que el
+  // anunciante PAGA y que no muestra su video es peor que no servir el anuncio
+  // — y se registraría igual, porque el registro de impresiones no sabe si el
+  // video llegó a pintar.
+  if (ads.length > 0) {
+    try {
+      const signed = await mint_ad_urls(client, ads);
+      if (signed === null) {
+        signal_ads_failure(client, 'mint');
+        return to_property_items(properties);
+      }
+      ads = signed;
+    } catch {
+      signal_ads_failure(client, 'mint');
+      return to_property_items(properties);
+    }
   }
 
   const items = interleave_ads(properties, ads, {

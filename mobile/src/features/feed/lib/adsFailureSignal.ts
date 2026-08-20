@@ -43,8 +43,13 @@
  */
 export const ADS_FETCH_FAILED_EVENT_TYPE = 'ads_fetch_failed';
 
-/** Qué tramo del pipeline de anuncios falló. */
-export type AdsFailureStage = 'config' | 'zone';
+/**
+ * Qué tramo del pipeline de anuncios falló.
+ * 'mint' (170.8) = no se pudieron firmar las URLs de reproducción, así que no
+ * se sirvió ningún anuncio aunque sí hubiera inventario elegible — un fallo
+ * especialmente engañoso desde fuera, porque `ads_for_zone` respondió bien.
+ */
+export type AdsFailureStage = 'config' | 'zone' | 'mint';
 
 export interface AdsFailureStore {
   has_seen: (session_id: string, stage: AdsFailureStage) => boolean;
