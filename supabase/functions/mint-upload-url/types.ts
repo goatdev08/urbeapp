@@ -34,6 +34,37 @@ export const STREAM_REQUIRE_SIGNED_URLS = true;
 // termine; el tope de tamaño (200 MB) hace ese escenario improbable en la demo.
 export const STALE_UPLOAD_MS = 15 * 60 * 1000;
 
+// ── STALE_PROCESSING_MS — ventana de expiración de 'processing' (tarea #188) ──
+//
+// 🔴 ANTES NO EXISTÍA, y esa ausencia era el defecto: 'processing' contaba
+// SIEMPRE en el 409 de concurrencia, sin expiración. El argumento era que el
+// webhook (169.5) lo resolvía solo — pero el reintento de Cloudflare es una
+// ventana FINITA con backoff. Si la base está caída más allá de esa ventana,
+// la fila se atora y bloquea a su dueño PARA SIEMPRE. Es el mismo bug #103 que
+// ya se pagó para 'uploading', un estado más adelante.
+//
+// POR QUÉ 1 HORA Y NO 15 MIN: no es el mismo número que STALE_UPLOAD_MS y no
+// puede serlo. Una fila 'uploading' vieja es un upload que nunca llegó a
+// Stream — expirarla rápido es gratis. Una fila 'processing' es un video que
+// Stream está transcodificando de verdad, y una ventana corta mataría
+// transcodificaciones válidas.
+//
+// ⚠️ HONESTIDAD SOBRE ESTE NÚMERO: la tarea pedía MEDIRLO contra el pipeline
+// real antes de fijarlo, y no se midió — no hay anuncios desplegados y medirlo
+// quemaría cuota de Stream. Se eligió por asimetría de consecuencias, que sí
+// es defendible: quedarse CORTO permite que alguien inicie un segundo upload
+// mientras el primero aún transcodifica (molesto, acotado); quedarse LARGO
+// bloquea a una organización durante todo ese tiempo (grave). Ante la duda,
+// corto. Una hora cubre con holgura el peor caso realista (subida de hasta
+// 200 MB por datos móviles + transcodificación de un video de ≤30 s), medido
+// desde `created_at`, que es cuando arrancó la subida — no cuando empezó la
+// transcodificación.
+//
+// Cambiar este valor es UNA LÍNEA, y upload_window_parity.test.ts falla si se
+// cambia de un solo lado.
+export const STALE_PROCESSING_MS = 60 * 60 * 1000;
+
+
 // ── CallerVerifier — mismo contrato que mint-r2-url (solo autenticación) ─────
 // No hay chequeo de rol aquí: cualquier agente autenticado puede pedir un upload slot;
 // la invariante de negocio real es la de concurrencia (ActiveUploadChecker).
@@ -60,7 +91,11 @@ export interface CallerVerifier {
 // tiene ventana porque el webhook lo resuelve solo.
 
 export interface ActiveUploadChecker {
-  count_active_uploads(agent_id: string, stale_before: string): Promise<number>;
+  count_active_uploads(
+    agent_id: string,
+    stale_before: string,
+    stale_processing_before: string,
+  ): Promise<number>;
 }
 
 // ── StreamUploadCreator — adapter de Direct Creator Upload de Cloudflare Stream ─

@@ -135,6 +135,7 @@
 import { assertEquals, assertExists } from "@std/assert";
 import { handler } from "./handler.ts";
 import {
+  STALE_PROCESSING_MS,
   STALE_UPLOAD_MS,
   STREAM_MAX_DURATION_SECONDS,
   type AdCreativeRegistrar,
@@ -252,14 +253,18 @@ function checker_count_by_agency(
 // invoca, con un count FIJO (no filtra por edad; eso lo testea el fake de abajo).
 
 interface FakeActiveAdUploadCheckerWithArgs extends ActiveAdUploadChecker {
-  calls: Array<{ agency_id: string; stale_before?: string }>;
+  calls: Array<{ agency_id: string; stale_before?: string; stale_processing_before?: string }>;
 }
 
 function checker_count_capturing_args(count = 0): FakeActiveAdUploadCheckerWithArgs {
   return {
     calls: [],
-    count_active_ad_uploads(agency_id: string, stale_before?: string): Promise<number> {
-      this.calls.push({ agency_id, stale_before });
+    count_active_ad_uploads(
+      agency_id: string,
+      stale_before?: string,
+      stale_processing_before?: string,
+    ): Promise<number> {
+      this.calls.push({ agency_id, stale_before, stale_processing_before });
       return Promise.resolve(count);
     },
   } as FakeActiveAdUploadCheckerWithArgs;
@@ -863,4 +868,37 @@ Deno.test("error_respuesta_sigue_forma_error_code_message", async () => {
   assertExists(body.error, "respuesta de error debe tener campo 'error'");
   assertEquals(typeof body.error.code, "string", "error.code debe ser string");
   assertEquals(typeof body.error.message, "string", "error.message debe ser string");
+});
+
+// ── #188 — el handler también pasa la ventana de 'processing' ────────────────
+
+Deno.test("188_handler_de_anuncios_pasa_stale_processing_before_y_DISTINTO_de_stale_before", async () => {
+  const checker = checker_count_capturing_args(0);
+  const deps = make_deps({ activeAdUploadChecker: checker });
+
+  const before_call_ms = Date.now();
+  await handler(post_request(), deps);
+  const after_call_ms = Date.now();
+
+  const { stale_before, stale_processing_before } = checker.calls[0];
+  assertExists(
+    stale_processing_before,
+    "el handler debe pasar stale_processing_before — sin este assert, un handler que " +
+      "calculara la ventana y no la pasara al checker pasaría todo lo demás",
+  );
+
+  const ms = Date.parse(stale_processing_before as string);
+  assertEquals(Number.isNaN(ms), false, "debe ser una fecha ISO parseable");
+
+  const TOLERANCE_MS = 5000;
+  const within = ms >= before_call_ms - STALE_PROCESSING_MS - TOLERANCE_MS &&
+    ms <= after_call_ms - STALE_PROCESSING_MS + TOLERANCE_MS;
+  assertEquals(within, true, "stale_processing_before debe caer a STALE_PROCESSING_MS en el pasado");
+
+  // Caso pareado: los dos umbrales NO pueden ser el mismo valor.
+  assertEquals(
+    stale_before === stale_processing_before,
+    false,
+    "processing y uploading deben recibir umbrales distintos, no el mismo timestamp",
+  );
 });

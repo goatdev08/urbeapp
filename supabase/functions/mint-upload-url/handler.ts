@@ -7,6 +7,7 @@ import type { MintUploadUrlDeps, MintUploadUrlResponse } from "./types.ts";
 import { handle_cors_preflight } from "../_shared/cors.ts";
 import { error_response, json_response } from "../_shared/response.ts";
 import {
+  STALE_PROCESSING_MS,
   STALE_UPLOAD_MS,
   STREAM_MAX_DURATION_SECONDS,
   STREAM_REQUIRE_SIGNED_URLS,
@@ -69,7 +70,13 @@ export async function handler(req: Request, deps?: MintUploadUrlDeps): Promise<R
   //    (reaper, 103.1 parte B) descarta 'uploading' colgados hace más de
   //    STALE_UPLOAD_MS — 'processing' nunca expira aquí (lo resuelve el webhook).
   const stale_before = new Date(Date.now() - STALE_UPLOAD_MS).toISOString();
-  const active_count = await deps.activeUploadChecker.count_active_uploads(uid, stale_before);
+  // #188: 'processing' también expira, con su propia ventana (más larga).
+  const stale_processing_before = new Date(Date.now() - STALE_PROCESSING_MS).toISOString();
+  const active_count = await deps.activeUploadChecker.count_active_uploads(
+    uid,
+    stale_before,
+    stale_processing_before,
+  );
   if (active_count >= 1) {
     return error_response(
       "UPLOAD_IN_PROGRESS",

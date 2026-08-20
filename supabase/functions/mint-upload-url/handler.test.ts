@@ -87,6 +87,7 @@
 import { assertEquals, assertExists } from "@std/assert";
 import { handler } from "./handler.ts";
 import {
+  STALE_PROCESSING_MS,
   STALE_UPLOAD_MS,
   type ActiveUploadChecker,
   type CallerVerifier,
@@ -168,14 +169,18 @@ function checker_count(
 // handler lo invoca (o no lo invoca — hoy no lo pasa, por eso queda undefined).
 
 interface FakeActiveUploadCheckerWithArgs extends ActiveUploadChecker {
-  calls: Array<{ agent_id: string; stale_before?: string }>;
+  calls: Array<{ agent_id: string; stale_before?: string; stale_processing_before?: string }>;
 }
 
 function checker_count_capturing_args(count = 0): FakeActiveUploadCheckerWithArgs {
   return {
     calls: [],
-    count_active_uploads(agent_id: string, stale_before?: string): Promise<number> {
-      this.calls.push({ agent_id, stale_before });
+    count_active_uploads(
+      agent_id: string,
+      stale_before?: string,
+      stale_processing_before?: string,
+    ): Promise<number> {
+      this.calls.push({ agent_id, stale_before, stale_processing_before });
       return Promise.resolve(count);
     },
   } as FakeActiveUploadCheckerWithArgs;
@@ -665,4 +670,37 @@ Deno.test("(RP-5) body_invalido_no_json_se_trata_como_sin_replace", async () => 
   const res = await handler(post_request_with_body("{not json"), deps);
   assertEquals(res.status, 200, "un body ilegible no debe romper el flujo viejo");
   assertEquals(canceller.calls.length, 0);
+});
+
+// ── #188 — el handler también pasa la ventana de 'processing' ────────────────
+
+Deno.test("188_handler_pasa_stale_processing_before_una_hora_atras_y_DISTINTO_de_stale_before", async () => {
+  const checker = checker_count_capturing_args(0);
+  const deps = make_deps({ activeUploadChecker: checker });
+
+  const before_call_ms = Date.now();
+  await handler(post_request(), deps);
+  const after_call_ms = Date.now();
+
+  const { stale_before, stale_processing_before } = checker.calls[0];
+  assertExists(
+    stale_processing_before,
+    "el handler debe pasar stale_processing_before — sin este assert, un handler que " +
+      "calculara la ventana y no la pasara al checker pasaría todo lo demás",
+  );
+
+  const ms = Date.parse(stale_processing_before as string);
+  assertEquals(Number.isNaN(ms), false, "debe ser una fecha ISO parseable");
+
+  const TOLERANCE_MS = 5000;
+  const within = ms >= before_call_ms - STALE_PROCESSING_MS - TOLERANCE_MS &&
+    ms <= after_call_ms - STALE_PROCESSING_MS + TOLERANCE_MS;
+  assertEquals(within, true, "stale_processing_before debe caer a STALE_PROCESSING_MS en el pasado");
+
+  // Caso pareado: los dos umbrales NO pueden ser el mismo valor.
+  assertEquals(
+    stale_before === stale_processing_before,
+    false,
+    "processing y uploading deben recibir umbrales distintos, no el mismo timestamp",
+  );
 });

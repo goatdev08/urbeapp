@@ -787,13 +787,22 @@ export function make_active_upload_checker(
   client: SupabaseClient,
 ): ActiveUploadChecker {
   return {
-    async count_active_uploads(agent_id: string, stale_before: string): Promise<number> {
+    async count_active_uploads(
+      agent_id: string,
+      stale_before: string,
+      stale_processing_before: string,
+    ): Promise<number> {
       const { count, error } = await client
         .from("property_videos")
         .select("id", { count: "exact", head: true })
         .eq("agent_id", agent_id)
         .is("deleted_at", null)
-        .or(`status.eq.processing,and(status.eq.uploading,created_at.gt.${stale_before})`);
+        // #188: AMBOS estados tienen ventana ahora, con umbrales distintos.
+        // 'processing' sin ventana bloqueaba al agente para siempre.
+        .or(
+          `and(status.eq.processing,created_at.gt.${stale_processing_before}),` +
+            `and(status.eq.uploading,created_at.gt.${stale_before})`,
+        );
 
       if (error) {
         // Fail-closed: un error de red/DB al chequear concurrencia no debe
@@ -1571,13 +1580,18 @@ export function make_active_ad_upload_checker(
     async count_active_ad_uploads(
       agency_id: string,
       stale_before: string,
+      stale_processing_before: string,
     ): Promise<number> {
       const { count, error } = await client
         .from("ad_creatives")
         .select("id", { count: "exact", head: true })
         .eq("agency_id", agency_id)
+        // #188: idéntico al de property_videos, palabra por palabra — la
+        // VENTANA se unifica (#183); el SCOPE (tabla y clave) sigue separado
+        // a propósito.
         .or(
-          `status.eq.processing,and(status.eq.uploading,created_at.gt.${stale_before})`,
+          `and(status.eq.processing,created_at.gt.${stale_processing_before}),` +
+            `and(status.eq.uploading,created_at.gt.${stale_before})`,
         );
 
       if (error) {
