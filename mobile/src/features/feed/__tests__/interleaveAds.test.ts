@@ -92,6 +92,7 @@ function make_properties(n: number, prefix = 'prop'): FeedPropertyWithUrl[] {
 function make_ad(id: string): FeedAd {
   return {
     id,
+    creative_id: `creative-${id}`,
     title: `Anuncio ${id}`,
     description: `Descripción del anuncio ${id}`,
     cta_type: 'external_url',

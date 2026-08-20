@@ -25,7 +25,7 @@
 //      el token va SIEMPRE en el PATH, nunca como query param `?token=`
 //      (recordatorio caro de #68: 36 tests con dobles no cazaron esto en su
 //      momento porque nunca ejercitaron la URL real).
-//   5. 200 { urls: [{ creative_id, posterUrl }] } — SOLO los autorizados+disponibles.
+//   5. 200 { urls: [{ creative_id, posterUrl, videoUrl }] } — SOLO los autorizados+disponibles.
 
 // ── CallerVerifier — mismo contrato que mint-poster-urls / mint-thumbnail-url ──
 // Cualquier usuario autenticado puede pedir URLs; la autorización real es
@@ -44,6 +44,9 @@ export interface CallerVerifier {
 export interface MintedAdUrl {
   creative_id: string;
   posterUrl: string;
+  /** 170.8: manifest HLS firmado con el MISMO token que el póster. Sin esto el
+   *  anuncio era una tarjeta estática dentro de un feed de video. */
+  videoUrl: string;
 }
 
 // ── AdUrlMinter — batch, auth combinada por item ───────────────────────────────

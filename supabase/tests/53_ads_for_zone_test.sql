@@ -21,7 +21,7 @@
 --     p_lat double precision, p_lng double precision,
 --     p_neighborhood_id bigint default null, p_municipality_id text default null
 --   ) returns table (
---     id uuid, title text, description text, cta_type ad_cta_type,
+--     id uuid, creative_id uuid, title text, description text, cta_type ad_cta_type,
 --     cta_value text, cloudflare_uid text, agency_name text, agency_logo_url text
 --   )
 --   -- firma de retorno EXACTA fijada por este archivo (sección 1, catálogo
@@ -68,7 +68,9 @@
 -- sobre esa tabla temporal ya materializada (datos planos, sin riesgo).
 --
 -- ── Edge cases enumerados (paso 1 del protocolo test-author) ────────────────
--- Firma pública: has_function; pg_get_function_result EXACTO (8 columnas,
+-- Firma pública: has_function; pg_get_function_result EXACTO (9 columnas desde
+--   170.8 — creative_id se agregó porque el cliente lo necesita para firmar la
+--   URL de reproducción con mint-ad-urls; sin él el anuncio no podía reproducir,
 --   incluye description/agency_name/agency_logo_url y nada más de agencies);
 --   pg_get_function_arguments EXACTO; security definer; search_path fijo.
 -- Permisos: anon no puede ejecutar (42501 explícito); authenticated sí puede.
@@ -303,7 +305,7 @@ select is((select ok from result_sig_53), true,
   'SIG1_la_funcion_resuelve_por_catalogo_con_la_firma_esperada');
 select is(
   (select result_sig from result_sig_53),
-  'TABLE(id uuid, title text, description text, cta_type ad_cta_type, cta_value text, cloudflare_uid text, agency_name text, agency_logo_url text)',
+  'TABLE(id uuid, creative_id uuid, title text, description text, cta_type ad_cta_type, cta_value text, cloudflare_uid text, agency_name text, agency_logo_url text)',
   'SIG2_firma_de_retorno_EXACTA_8_columnas_incluye_description_agency_name_agency_logo_url_y_nada_mas_de_agencies'
 );
 select is(

@@ -47,6 +47,7 @@ function make_property(id: string): FeedPropertyWithUrl {
 function make_ad(id: string): FeedAd {
   return {
     id,
+    creative_id: `creative-${id}`,
     title: 'Departamentos en preventa · Zapopan',
     description: 'Entrega 2027. Aparta con el 10%.',
     cta_type: 'external_url',

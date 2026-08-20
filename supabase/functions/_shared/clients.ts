@@ -1795,7 +1795,13 @@ export function make_ad_url_minter(
             null, // ad_creatives no tiene thumbnail_pct — siempre el default 50%
             row.duration_seconds,
           );
-          results.push({ creative_id: row.id, posterUrl });
+          // 170.8: el MISMO token firma el manifest HLS. No se vuelve a
+          // firmar — dos firmas gastarían dos JWT por creativo y podrían
+          // producir TTLs distintos, con el póster expirando en otro momento
+          // que el video. build_hls_url ya documenta el gotcha del token en
+          // el PATH (con ?token= Stream responde 401).
+          const videoUrl = build_hls_url(domain, token);
+          results.push({ creative_id: row.id, posterUrl, videoUrl });
         } catch {
           // fail-closed: JWK inválido u otro error de firmado → excluir solo esta fila
         }

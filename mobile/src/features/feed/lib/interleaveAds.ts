@@ -28,6 +28,13 @@ import type { FeedPropertyWithUrl } from '../types';
  */
 export interface FeedAd {
   id: string;
+  /**
+   * 170.8: id del creativo. El cliente lo necesita para pedirle a mint-ad-urls
+   * la URL FIRMADA de reproducción — esa EF autoriza y firma por creativo, no
+   * por anuncio. Sin él, el anuncio era una tarjeta estática en un feed de
+   * video.
+   */
+  creative_id: string;
   title: string;
   description: string;
   cta_type: string;
@@ -36,6 +43,16 @@ export interface FeedAd {
   agency_name: string;
   /** null si la agencia no tiene logo cargado. */
   agency_logo_url: string | null;
+  /**
+   * URLs firmadas de Stream, adjuntadas durante la composición del feed (no
+   * vienen de la RPC). null = el minteo falló para este anuncio.
+   *
+   * 🔴 Un anuncio sin `video_url` NO se sirve (ver compose_feed_items): una
+   * impresión que el anunciante paga y que no muestra su video es peor que no
+   * servir el anuncio.
+   */
+  video_url?: string | null;
+  poster_url?: string | null;
 }
 
 /** Ítem heterogéneo del feed: una propiedad de siempre, o un anuncio intercalado. */

@@ -77,7 +77,7 @@ jest.mock('@/features/location/LocationProvider', () => ({
 // borra por completo para reproducir el mock legado de los 14 archivos
 // preexistentes). El prefijo `mock_` es lo que permite a Jest referenciarlo
 // dentro del factory de jest.mock (hoisting).
-const mock_supabase: { rpc?: jest.Mock; auth?: unknown; from?: jest.Mock } = { rpc: jest.fn() };
+const mock_supabase: { rpc?: jest.Mock; auth?: unknown; from?: jest.Mock; functions?: { invoke: jest.Mock } } = { rpc: jest.fn() };
 jest.mock('@/lib/supabase/client', () => ({
   get supabase() {
     return mock_supabase;
@@ -147,6 +147,7 @@ function make_property(id: string, overrides: Partial<FeedPropertyWithUrl> = {})
 function make_ad(id: string, overrides: Partial<FeedAd> = {}): FeedAd {
   return {
     id,
+    creative_id: `creative-${id}`,
     title: 'Departamentos en preventa · Zapopan',
     description: 'Entrega 2027.',
     cta_type: 'external_url',
@@ -195,6 +196,8 @@ function ads_feed_config_calls(): unknown[] {
 
 /** Inserts capturados en events_raw (la señal de #196). */
 let mock_events_insert: jest.Mock;
+/** Llamadas capturadas a supabase.functions.invoke (mint-ad-urls, 170.8). */
+let mock_mint_invoke: jest.Mock;
 
 function ads_failure_signals(): { stage: string }[] {
   return mock_events_insert.mock.calls.map((call) => {
@@ -215,7 +218,30 @@ beforeEach(() => {
       .mockResolvedValue({ data: { session: { user: { id: 'user-196-uuid' } } }, error: null }),
   };
   mock_supabase.from = jest.fn().mockReturnValue({ insert: mock_events_insert });
+  // 170.8: por defecto mint-ad-urls firma TODO lo que se le pide, para que los
+  // tests preexistentes de composición no dependan del minteo.
+  mock_mint_invoke = jest.fn().mockImplementation((_name: string, opts: { body: { creative_ids: string[] } }) => {
+    const ids = opts?.body?.creative_ids ?? [];
+    return Promise.resolve({
+      data: {
+        urls: ids.map((creative_id) => ({
+          creative_id,
+          posterUrl: `https://videodelivery.net/tok-${creative_id}/thumbnails/thumbnail.jpg`,
+          videoUrl: `https://videodelivery.net/tok-${creative_id}/manifest/video.m3u8`,
+        })),
+      },
+      error: null,
+    });
+  });
+  mock_supabase.functions = { invoke: mock_mint_invoke };
 });
+
+/** Llamadas a mint-ad-urls. */
+function mint_calls(): { body: { creative_ids: string[] } }[] {
+  return mock_mint_invoke.mock.calls
+    .filter((c) => c[0] === 'mint-ad-urls')
+    .map((c) => c[1] as { body: { creative_ids: string[] } });
+}
 
 async function render_loaded_hook() {
   const rendered = await renderHook(() => useFeedProperties());
@@ -454,6 +480,122 @@ describe('useFeedProperties — fail-soft absoluto ante fallos de ads_for_zone',
   // argumentos correctos, no el orden temporal exacto; el orden estricto
   // "solo tras éxito" es un boundary sin contraparte observable por Jest sin
   // reintroducir el mismo antipatrón (ver bitácora de la subtarea).
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// RED 170.8 — el anuncio necesita su URL FIRMADA o no se sirve.
+//
+// ads_for_zone devuelve el creative_id (migración 20260820000004) pero NO una
+// URL reproducible: los creativos de Stream tienen requireSignedURLs, así que
+// hace falta pasar por mint-ad-urls (169.5, ampliada en 170.8 para devolver
+// también el manifest HLS además del póster).
+//
+// 🔴 DECISIÓN: un anuncio cuya URL no se pudo firmar NO SE SIRVE. Una
+// impresión que el anunciante PAGA y que no muestra su video es peor que no
+// servir el anuncio — y la impresión se registraría igual, porque el registro
+// no sabe si el video pintó.
+// ─────────────────────────────────────────────────────────────────────────
+describe('useFeedProperties — 170.8: firma de la URL de reproducción del anuncio', () => {
+  const PROP_A = make_property('feed-prop-mint-a');
+  const PROP_B = make_property('feed-prop-mint-b');
+
+  function wire(ads: FeedAd[]) {
+    mock_supabase.rpc!.mockImplementation((fn: string) => {
+      if (fn === 'ads_feed_config') {
+        return Promise.resolve({
+          data: [make_config({ ads_enabled: true, ad_frequency_n: 1, ad_max_per_session: 5 })],
+          error: null,
+        });
+      }
+      if (fn === 'ads_for_zone') return Promise.resolve({ data: ads, error: null });
+      throw new Error(`llamada inesperada a ${fn}`);
+    });
+  }
+
+  beforeEach(() => {
+    mock_fetch_feed_properties.mockResolvedValue({ data: [PROP_A, PROP_B], nextCursor: null });
+  });
+
+  it('(EC-MINT-1) se invoca mint-ad-urls con los creative_id de los anuncios servidos', async () => {
+    wire([make_ad('ad-mint-1'), make_ad('ad-mint-2')]);
+
+    await render_loaded_hook();
+
+    expect(mint_calls()).toHaveLength(1);
+    expect(mint_calls()[0].body.creative_ids.sort()).toEqual(
+      ['creative-ad-mint-1', 'creative-ad-mint-2'].sort(),
+    );
+  });
+
+  it('(EC-MINT-2) cada anuncio servido lleva su video_url y su poster_url firmados', async () => {
+    wire([make_ad('ad-mint-1')]);
+
+    const { result } = await render_loaded_hook();
+
+    const ad_item = as_feed_items(result.current.data).find((i) => i.kind === 'ad');
+    expect(ad_item).toBeDefined();
+    const ad = (ad_item as { kind: 'ad'; ad: FeedAd }).ad;
+    expect(ad.video_url).toBe('https://videodelivery.net/tok-creative-ad-mint-1/manifest/video.m3u8');
+    expect(ad.poster_url).toBe('https://videodelivery.net/tok-creative-ad-mint-1/thumbnails/thumbnail.jpg');
+  });
+
+  it('(EC-MINT-3) 🔴 un anuncio SIN URL firmada no se sirve — no se factura una impresión que no muestra nada', async () => {
+    // 4 propiedades con every_n=1 dejan sitio para MÁS de un anuncio: con solo
+    // 2 el test pasaría por falta de huecos, no porque el sin-firma se
+    // descartara. (Se verificó: con 2 propiedades pasaba contra el GREEN viejo.)
+    mock_fetch_feed_properties.mockResolvedValue({
+      data: [PROP_A, PROP_B, make_property('feed-prop-mint-c'), make_property('feed-prop-mint-d')],
+      nextCursor: null,
+    });
+    wire([make_ad('ad-firmado'), make_ad('ad-sin-firma')]);
+    // mint-ad-urls solo devuelve uno de los dos (el otro no está autorizado o
+    // su creativo no está 'ready').
+    mock_mint_invoke.mockResolvedValue({
+      data: {
+        urls: [
+          {
+            creative_id: 'creative-ad-firmado',
+            posterUrl: 'https://videodelivery.net/tok-x/thumbnails/thumbnail.jpg',
+            videoUrl: 'https://videodelivery.net/tok-x/manifest/video.m3u8',
+          },
+        ],
+      },
+      error: null,
+    });
+
+    const { result } = await render_loaded_hook();
+
+    const ads = as_feed_items(result.current.data).filter((i) => i.kind === 'ad');
+    expect(ads).toHaveLength(1);
+    expect((ads[0] as { kind: 'ad'; ad: FeedAd }).ad.id).toBe('ad-firmado');
+  });
+
+  it('(EC-MINT-4) si mint-ad-urls falla entero, FAIL-SOFT: feed sin anuncios, sin error visible', async () => {
+    wire([make_ad('ad-mint-1')]);
+    mock_mint_invoke.mockRejectedValue(new Error('offline'));
+
+    const { result } = await render_loaded_hook();
+
+    expect(result.current.data).toEqual(props_only([PROP_A, PROP_B]));
+    expect(result.current.error).toBeNull();
+  });
+
+  it('(EC-MINT-5) y ese fallo deja RASTRO para el operador (#196), con su propio tramo', async () => {
+    wire([make_ad('ad-mint-1')]);
+    mock_mint_invoke.mockRejectedValue(new Error('offline'));
+
+    await render_loaded_hook();
+
+    expect(ads_failure_signals()).toEqual([{ stage: 'mint' }]);
+  });
+
+  it('(EC-MINT-6) cero anuncios elegibles → mint-ad-urls NO se invoca', async () => {
+    wire([]);
+
+    await render_loaded_hook();
+
+    expect(mint_calls()).toHaveLength(0);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────

@@ -133,8 +133,21 @@ describe('linkify_description', () => {
   });
 
   it('(EC-11) 🔒 javascript: y data: NO se linkifican — se quedan como texto', () => {
+    // ⚠️ HONESTIDAD SOBRE ESTE ASSERT: pasa por la regex de CANDIDATOS (que
+    // solo reconoce http/https), no por la allowlist. Verificado por mutación:
+    // quitar la validación deja este test en verde. Sigue valiendo la pena
+    // —fija que el esquema peligroso no se abre— pero el assert que defiende
+    // la allowlist es el EC-11b de abajo.
     const segments = linkify_description('ojo javascript:alert(1) y data:text/html,x');
     expect(segments.filter((s) => s.kind === 'link')).toHaveLength(0);
+  });
+
+  it('(EC-11b) 🔒 un candidato http SIN HOST no se linkifica — este SÍ depende de la allowlist', () => {
+    // "https://" a secas pasa la regex de candidatos y solo lo rechaza
+    // validate_ad_cta. Es el assert que muere si alguien quita esa validación.
+    const segments = linkify_description('roto: https://. fin');
+    expect(segments.filter((s) => s.kind === 'link')).toHaveLength(0);
+    expect(segments.map((s) => s.value).join('')).toBe('roto: https://. fin');
   });
 
   it('(EC-12) la puntuación final no se traga en el link', () => {

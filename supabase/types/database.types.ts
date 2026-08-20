@@ -1921,6 +1921,7 @@ export type Database = {
           agency_logo_url: string
           agency_name: string
           cloudflare_uid: string
+          creative_id: string
           cta_type: Database["public"]["Enums"]["ad_cta_type"]
           cta_value: string
           description: string
