@@ -86,6 +86,8 @@ jest.mock('@/lib/supabase/client', () => ({
 
 import { emitPropertyDeleted } from '@/lib/propertyEvents';
 
+import type { FilterState } from '@/features/search/types';
+
 import { useFeedProperties } from '../hooks/useFeedProperties';
 import { fetchFeedProperties } from '../lib/feedProperties';
 import type { FeedAd, FeedItem } from '../lib/interleaveAds';
@@ -96,6 +98,21 @@ const mock_fetch_feed_properties = fetchFeedProperties as jest.MockedFunction<
 >;
 
 const DEFAULT_COORDS = { latitude: 20.6597, longitude: -103.3496 };
+
+/** FilterState vacío para los tests de #195 (solo importan `area` y la identidad). */
+const EMPTY_FILTERS_195 = {
+  operation_types: [],
+  property_types: [],
+  price_min: null,
+  price_max: null,
+  zone: null,
+  bedrooms_min: null,
+  pet_friendly: false,
+  allows_no_guarantor: false,
+  student_friendly: false,
+  radius_m: null,
+  area: null,
+} as FilterState;
 
 function make_property(id: string, overrides: Partial<FeedPropertyWithUrl> = {}): FeedPropertyWithUrl {
   return {
@@ -437,6 +454,94 @@ describe('useFeedProperties — fail-soft absoluto ante fallos de ads_for_zone',
   // argumentos correctos, no el orden temporal exacto; el orden estricto
   // "solo tras éxito" es un boundary sin contraparte observable por Jest sin
   // reintroducir el mismo antipatrón (ver bitácora de la subtarea).
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// RED #195 — la ZONA VISTA gana sobre el GPS, también del lado cliente.
+//
+// La regla principal de ads_for_zone (170.2) es que la zona que el usuario
+// está VIENDO gana sobre dónde está parado: "está viendo Zapopan aunque esté
+// sentado en CDMX, y el anuncio relevante es el de Zapopan". La RPC la
+// implementa y la defienden 5 asserts pgTAP. Pero el feed NO PODÍA ejercerla:
+// llamaba con las coordenadas del GPS y con zona null/null, siempre.
+//
+// Consecuencia comercial: quien compra la colonia Providencia paga por
+// alcanzar a quien EXPLORA Providencia, y solo alcanzaba a quien está
+// físicamente ahí. El usuario de CDMX que lleva media hora viendo
+// departamentos en Guadalajara veía anuncios de CDMX, y el inventario de
+// Guadalajara no se servía.
+//
+// `filters.area` ("buscar en esta zona", #56) es exactamente la señal que
+// faltaba: su centro es el punto que el usuario está mirando en el mapa.
+// ─────────────────────────────────────────────────────────────────────────
+describe('useFeedProperties — #195: los anuncios siguen la zona VISTA, no el GPS', () => {
+  const PROP = make_property('feed-prop-zone-195');
+  const GDL_CENTER = { lat: 20.7, lng: -103.4 };
+
+  function mock_config_enabled() {
+    return Promise.resolve({
+      data: [make_config({ ads_enabled: true, ad_frequency_n: 8, ad_max_per_session: 5 })],
+      error: null,
+    });
+  }
+
+  function wire_rpcs() {
+    mock_supabase.rpc!.mockImplementation((fn: string) => {
+      if (fn === 'ads_feed_config') return mock_config_enabled();
+      if (fn === 'ads_for_zone') return Promise.resolve({ data: [], error: null });
+      throw new Error(`llamada inesperada a ${fn}`);
+    });
+  }
+
+  beforeEach(() => {
+    mock_fetch_feed_properties.mockResolvedValue({ data: [PROP], nextCursor: null });
+    wire_rpcs();
+  });
+
+  it('(EC-ZONE-1) con `area` activa, ads_for_zone recibe el CENTRO del área, no las coords del GPS', async () => {
+    const filters = {
+      ...EMPTY_FILTERS_195,
+      area: { center: GDL_CENTER, radius_m: 5000 },
+    };
+
+    const rendered = await renderHook(() => useFeedProperties(filters));
+    await act(async () => {
+      await rendered.result.current.loadInitial();
+    });
+
+    const call = ads_for_zone_calls()[0] as [string, { p_lat: number; p_lng: number }];
+    expect(call[1].p_lat).toBe(GDL_CENTER.lat);
+    expect(call[1].p_lng).toBe(GDL_CENTER.lng);
+    // Y explícitamente NO las del GPS — sin este assert, un p_lat correcto por
+    // coincidencia pasaría.
+    expect(call[1].p_lat).not.toBe(DEFAULT_COORDS.latitude);
+    expect(call[1].p_lng).not.toBe(DEFAULT_COORDS.longitude);
+  });
+
+  it('(EC-ZONE-2) 🔴 CASO PAREADO: sin `area`, se sigue usando el GPS', async () => {
+    await render_loaded_hook();
+
+    const call = ads_for_zone_calls()[0] as [string, { p_lat: number; p_lng: number }];
+    expect(call[1].p_lat).toBe(DEFAULT_COORDS.latitude);
+    expect(call[1].p_lng).toBe(DEFAULT_COORDS.longitude);
+  });
+
+  it('(EC-ZONE-3) la zona DECLARADA sigue en null — se documenta, no se finge', async () => {
+    // Honestidad de alcance: la rama de precedencia por id de colonia/municipio
+    // de ads_for_zone sigue SIN llamador. Propagar ese id exige tocar
+    // FilterState, su persistencia y los consumidores del mapa (hoy el id vive
+    // solo en el useState local de MapScreen). Este assert deja constancia de
+    // que el estado es el conocido y no una regresión silenciosa.
+    const filters = { ...EMPTY_FILTERS_195, area: { center: GDL_CENTER, radius_m: 5000 } };
+    const rendered = await renderHook(() => useFeedProperties(filters));
+    await act(async () => {
+      await rendered.result.current.loadInitial();
+    });
+
+    const call = ads_for_zone_calls()[0] as [string, Record<string, unknown>];
+    expect(call[1].p_neighborhood_id).toBeNull();
+    expect(call[1].p_municipality_id).toBeNull();
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────

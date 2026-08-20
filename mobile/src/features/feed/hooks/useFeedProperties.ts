@@ -102,6 +102,10 @@ function signal_ads_failure(client: unknown, stage: AdsFailureStage): void {
  */
 async function compose_feed_items(
   client: unknown,
+  /**
+   * #195: el punto que se usa para RESOLVER LA ZONA de los anuncios. NO es
+   * necesariamente el GPS — ver `ad_zone_coords` en el hook.
+   */
   coords: { latitude: number; longitude: number },
   properties: FeedPropertyWithUrl[],
   already_shown_ref: { current: number },
@@ -133,6 +137,13 @@ async function compose_feed_items(
     const { data, error } = await call_rpc('ads_for_zone', {
       p_lat: coords.latitude,
       p_lng: coords.longitude,
+      // #195: la zona DECLARADA (por id de colonia/municipio) sigue en null y
+      // es una limitación conocida, no un olvido: ese id vive hoy solo en el
+      // useState local de MapScreen y propagarlo exige tocar FilterState, su
+      // persistencia y los consumidores del mapa. Lo que SÍ se ejerce ya es la
+      // precedencia por PUNTO: cuando hay "buscar en esta zona" activa, el
+      // punto que llega aquí es el centro de lo que el usuario está viendo, no
+      // su GPS. Ver EC-ZONE-1/2/3 en useFeedProperties.ads.test.tsx.
       p_neighborhood_id: null,
       p_municipality_id: null,
     });
@@ -171,6 +182,24 @@ export function useFeedProperties(filters?: FilterState): UseFeedPropertiesState
   // loadInitial/loadMore/refetch, nunca se resetea (170.4, decisión 5).
   const already_shown_ref = useRef(0);
 
+  // #195 — LA ZONA VISTA GANA SOBRE EL GPS, del lado cliente.
+  // `filters.area` es "buscar en esta zona" (#56): su centro sale del viewport
+  // del mapa, o sea que es literalmente el punto que la persona está mirando.
+  // Sin esto, quien explora Guadalajara desde CDMX veía anuncios de CDMX y el
+  // inventario de Guadalajara —que alguien pagó— no se servía nunca.
+  // 🔴 Solo afecta a los ANUNCIOS: las propiedades ya resuelven `area` por su
+  // propio camino (properties_within_radius), y mezclarlos aquí rompería el
+  // invariante A1 de #42.
+  // Se resuelve dentro de cada callback (no en el cuerpo del hook) para no
+  // perder el estrechamiento de `coords`, que ahí ya pasó el guard de null.
+  const resolve_ad_zone_coords = useCallback(
+    (gps: { latitude: number; longitude: number }): { latitude: number; longitude: number } =>
+      filters?.area
+        ? { latitude: filters.area.center.lat, longitude: filters.area.center.lng }
+        : gps,
+    [filters],
+  );
+
   // ponytail: deps solo se arma cuando ya hay coords reales; sin ellas se pasa
   // undefined y fetchFeedProperties usa su propio lazy-require del singleton
   // + fallback GDL (evita importar '@/lib/supabase/client' en top-level aquí,
@@ -192,7 +221,7 @@ export function useFeedProperties(filters?: FilterState): UseFeedPropertiesState
     try {
       const deps = build_deps();
       const result = await fetchFeedProperties(undefined, deps, filters);
-      const items = await compose_feed_items(deps?.supabase, coords, result.data, already_shown_ref, true);
+      const items = await compose_feed_items(deps?.supabase, resolve_ad_zone_coords(coords), result.data, already_shown_ref, true);
       set_data(items);
       set_next_cursor(result.nextCursor);
     } catch (e) {
@@ -200,7 +229,7 @@ export function useFeedProperties(filters?: FilterState): UseFeedPropertiesState
     } finally {
       set_is_loading(false);
     }
-  }, [coords, filters, build_deps]);
+  }, [coords, resolve_ad_zone_coords, filters, build_deps]);
 
   const load_more = useCallback(async () => {
     if (!nextCursor || isLoading || !coords) return;
@@ -209,7 +238,7 @@ export function useFeedProperties(filters?: FilterState): UseFeedPropertiesState
     try {
       const deps = build_deps();
       const result = await fetchFeedProperties(nextCursor, deps, filters);
-      const items = await compose_feed_items(deps?.supabase, coords, result.data, already_shown_ref, false);
+      const items = await compose_feed_items(deps?.supabase, resolve_ad_zone_coords(coords), result.data, already_shown_ref, false);
       set_data((prev) => [...prev, ...items]);
       set_next_cursor(result.nextCursor);
     } catch (e) {
@@ -217,7 +246,7 @@ export function useFeedProperties(filters?: FilterState): UseFeedPropertiesState
     } finally {
       set_is_loading(false);
     }
-  }, [nextCursor, isLoading, coords, filters, build_deps]);
+  }, [nextCursor, isLoading, coords, resolve_ad_zone_coords, filters, build_deps]);
 
   useEffect(
     () =>
