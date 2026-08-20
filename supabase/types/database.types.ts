@@ -7,10 +7,30 @@ export type Json =
   | Json[]
 
 export type Database = {
-  // Allows to automatically instantiate createClient with right options
-  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
-  __InternalSupabase: {
-    PostgrestVersion: "14.15"
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
   }
   public: {
     Tables: {
@@ -57,6 +77,254 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ad_creatives: {
+        Row: {
+          agency_id: string
+          cloudflare_uid: string | null
+          created_at: string
+          duration_seconds: number | null
+          id: string
+          status: Database["public"]["Enums"]["ad_creative_status"]
+          thumbnail_url: string | null
+          updated_at: string
+        }
+        Insert: {
+          agency_id: string
+          cloudflare_uid?: string | null
+          created_at?: string
+          duration_seconds?: number | null
+          id?: string
+          status?: Database["public"]["Enums"]["ad_creative_status"]
+          thumbnail_url?: string | null
+          updated_at?: string
+        }
+        Update: {
+          agency_id?: string
+          cloudflare_uid?: string | null
+          created_at?: string
+          duration_seconds?: number | null
+          id?: string
+          status?: Database["public"]["Enums"]["ad_creative_status"]
+          thumbnail_url?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ad_creatives_agency_id_fkey"
+            columns: ["agency_id"]
+            isOneToOne: false
+            referencedRelation: "agencies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ad_impressions: {
+        Row: {
+          ad_id: string
+          agency_id: string
+          completed: boolean
+          created_at: string
+          cta_tapped_at: string | null
+          device: string | null
+          id: string
+          municipality_id: string | null
+          neighborhood_id: number | null
+          session_id: string
+          shown_at: string
+          user_id: string
+          viewed: boolean
+          watched_ms: number
+        }
+        Insert: {
+          ad_id: string
+          agency_id: string
+          completed: boolean
+          created_at?: string
+          cta_tapped_at?: string | null
+          device?: string | null
+          id: string
+          municipality_id?: string | null
+          neighborhood_id?: number | null
+          session_id: string
+          shown_at: string
+          user_id: string
+          viewed: boolean
+          watched_ms: number
+        }
+        Update: {
+          ad_id?: string
+          agency_id?: string
+          completed?: boolean
+          created_at?: string
+          cta_tapped_at?: string | null
+          device?: string | null
+          id?: string
+          municipality_id?: string | null
+          neighborhood_id?: number | null
+          session_id?: string
+          shown_at?: string
+          user_id?: string
+          viewed?: boolean
+          watched_ms?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ad_impressions_ad_id_fkey"
+            columns: ["ad_id"]
+            isOneToOne: false
+            referencedRelation: "ads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ad_impressions_agency_id_fkey"
+            columns: ["agency_id"]
+            isOneToOne: false
+            referencedRelation: "agencies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ad_impressions_neighborhood_id_fkey"
+            columns: ["neighborhood_id"]
+            isOneToOne: false
+            referencedRelation: "mx_neighborhoods"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ad_impressions_monthly: {
+        Row: {
+          ad_id: string
+          agency_id: string
+          completions: number
+          cta_taps: number
+          impressions: number
+          municipality_id: string | null
+          neighborhood_id: number | null
+          views: number
+          year_month: string
+        }
+        Insert: {
+          ad_id: string
+          agency_id: string
+          completions?: number
+          cta_taps?: number
+          impressions?: number
+          municipality_id?: string | null
+          neighborhood_id?: number | null
+          views?: number
+          year_month: string
+        }
+        Update: {
+          ad_id?: string
+          agency_id?: string
+          completions?: number
+          cta_taps?: number
+          impressions?: number
+          municipality_id?: string | null
+          neighborhood_id?: number | null
+          views?: number
+          year_month?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ad_impressions_monthly_ad_id_fkey"
+            columns: ["ad_id"]
+            isOneToOne: false
+            referencedRelation: "ads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ad_impressions_monthly_agency_id_fkey"
+            columns: ["agency_id"]
+            isOneToOne: false
+            referencedRelation: "agencies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ad_impressions_monthly_neighborhood_id_fkey"
+            columns: ["neighborhood_id"]
+            isOneToOne: false
+            referencedRelation: "mx_neighborhoods"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ad_prices: {
+        Row: {
+          amount_mxn: number
+          created_at: string
+          currency: string
+          days: number
+          id: string
+          scope: Database["public"]["Enums"]["ad_zone_scope"]
+          valid_from: string
+        }
+        Insert: {
+          amount_mxn: number
+          created_at?: string
+          currency?: string
+          days: number
+          id?: string
+          scope: Database["public"]["Enums"]["ad_zone_scope"]
+          valid_from?: string
+        }
+        Update: {
+          amount_mxn?: number
+          created_at?: string
+          currency?: string
+          days?: number
+          id?: string
+          scope?: Database["public"]["Enums"]["ad_zone_scope"]
+          valid_from?: string
+        }
+        Relationships: []
+      }
+      ad_zones: {
+        Row: {
+          ad_id: string
+          created_at: string
+          id: string
+          municipality_id: string | null
+          neighborhood_id: number | null
+        }
+        Insert: {
+          ad_id: string
+          created_at?: string
+          id?: string
+          municipality_id?: string | null
+          neighborhood_id?: number | null
+        }
+        Update: {
+          ad_id?: string
+          created_at?: string
+          id?: string
+          municipality_id?: string | null
+          neighborhood_id?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ad_zones_ad_id_fkey"
+            columns: ["ad_id"]
+            isOneToOne: false
+            referencedRelation: "ads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ad_zones_municipality_id_fkey"
+            columns: ["municipality_id"]
+            isOneToOne: false
+            referencedRelation: "mx_municipalities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ad_zones_neighborhood_id_fkey"
+            columns: ["neighborhood_id"]
+            isOneToOne: false
+            referencedRelation: "mx_neighborhoods"
             referencedColumns: ["id"]
           },
         ]
@@ -108,9 +376,86 @@ export type Database = {
           },
         ]
       }
+      ads: {
+        Row: {
+          agency_id: string
+          created_at: string
+          creative_id: string
+          cta_type: Database["public"]["Enums"]["ad_cta_type"]
+          cta_value: string
+          description: string | null
+          ends_at: string
+          id: string
+          paused_at: string | null
+          paused_by_suspension: boolean
+          purchase_id: string | null
+          rejection_reason: string | null
+          starts_at: string
+          status: Database["public"]["Enums"]["ad_status"]
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          agency_id: string
+          created_at?: string
+          creative_id: string
+          cta_type: Database["public"]["Enums"]["ad_cta_type"]
+          cta_value: string
+          description?: string | null
+          ends_at: string
+          id?: string
+          paused_at?: string | null
+          paused_by_suspension?: boolean
+          purchase_id?: string | null
+          rejection_reason?: string | null
+          starts_at: string
+          status?: Database["public"]["Enums"]["ad_status"]
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          agency_id?: string
+          created_at?: string
+          creative_id?: string
+          cta_type?: Database["public"]["Enums"]["ad_cta_type"]
+          cta_value?: string
+          description?: string | null
+          ends_at?: string
+          id?: string
+          paused_at?: string | null
+          paused_by_suspension?: boolean
+          purchase_id?: string | null
+          rejection_reason?: string | null
+          starts_at?: string
+          status?: Database["public"]["Enums"]["ad_status"]
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ads_agency_id_fkey"
+            columns: ["agency_id"]
+            isOneToOne: false
+            referencedRelation: "agencies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ads_creative_id_fkey"
+            columns: ["creative_id"]
+            isOneToOne: false
+            referencedRelation: "ad_creatives"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       agencies: {
         Row: {
+          advertiser_category:
+            | Database["public"]["Enums"]["advertiser_category"]
+            | null
           approved_by_admin_id: string | null
+          can_advertise: boolean
+          can_publish_properties: boolean
           contact_email: string | null
           contact_name: string | null
           contact_phone: string | null
@@ -125,7 +470,12 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          advertiser_category?:
+            | Database["public"]["Enums"]["advertiser_category"]
+            | null
           approved_by_admin_id?: string | null
+          can_advertise?: boolean
+          can_publish_properties?: boolean
           contact_email?: string | null
           contact_name?: string | null
           contact_phone?: string | null
@@ -140,7 +490,12 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          advertiser_category?:
+            | Database["public"]["Enums"]["advertiser_category"]
+            | null
           approved_by_admin_id?: string | null
+          can_advertise?: boolean
+          can_publish_properties?: boolean
           contact_email?: string | null
           contact_name?: string | null
           contact_phone?: string | null
@@ -700,21 +1055,36 @@ export type Database = {
       }
       mx_municipalities: {
         Row: {
+          bbox_max_lat: number | null
+          bbox_max_lng: number | null
+          bbox_min_lat: number | null
+          bbox_min_lng: number | null
           created_at: string
           id: string
           name: string
+          name_normalized: string | null
           state_id: string
         }
         Insert: {
+          bbox_max_lat?: number | null
+          bbox_max_lng?: number | null
+          bbox_min_lat?: number | null
+          bbox_min_lng?: number | null
           created_at?: string
           id: string
           name: string
+          name_normalized?: string | null
           state_id: string
         }
         Update: {
+          bbox_max_lat?: number | null
+          bbox_max_lng?: number | null
+          bbox_min_lat?: number | null
+          bbox_min_lng?: number | null
           created_at?: string
           id?: string
           name?: string
+          name_normalized?: string | null
           state_id?: string
         }
         Relationships: [
@@ -723,6 +1093,47 @@ export type Database = {
             columns: ["state_id"]
             isOneToOne: false
             referencedRelation: "mx_states"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      mx_neighborhoods: {
+        Row: {
+          created_at: string
+          geom: unknown
+          id: number
+          municipality_id: string
+          name: string
+          name_normalized: string | null
+          postal_code: string | null
+          source_key: string
+        }
+        Insert: {
+          created_at?: string
+          geom: unknown
+          id?: never
+          municipality_id: string
+          name: string
+          name_normalized?: string | null
+          postal_code?: string | null
+          source_key: string
+        }
+        Update: {
+          created_at?: string
+          geom?: unknown
+          id?: never
+          municipality_id?: string
+          name?: string
+          name_normalized?: string | null
+          postal_code?: string | null
+          source_key?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mx_neighborhoods_municipality_id_fkey"
+            columns: ["municipality_id"]
+            isOneToOne: false
+            referencedRelation: "mx_municipalities"
             referencedColumns: ["id"]
           },
         ]
@@ -1469,6 +1880,9 @@ export type Database = {
     Functions: {
       admin_create_agency_atomic: {
         Args: {
+          p_advertiser_category?: Database["public"]["Enums"]["advertiser_category"]
+          p_can_advertise?: boolean
+          p_can_publish_properties?: boolean
           p_contact_email: string
           p_contact_name: string
           p_contact_phone: string
@@ -1485,6 +1899,32 @@ export type Database = {
           token_id: string
         }[]
       }
+      ads_feed_config: {
+        Args: never
+        Returns: {
+          ad_frequency_n: number
+          ad_max_per_session: number
+          ads_enabled: boolean
+        }[]
+      }
+      ads_for_zone: {
+        Args: {
+          p_lat: number
+          p_lng: number
+          p_municipality_id?: string
+          p_neighborhood_id?: number
+        }
+        Returns: {
+          agency_logo_url: string
+          agency_name: string
+          cloudflare_uid: string
+          cta_type: Database["public"]["Enums"]["ad_cta_type"]
+          cta_value: string
+          description: string
+          id: string
+          title: string
+        }[]
+      }
       get_lead_stats: {
         Args: { p_lead_ids: string[] }
         Returns: {
@@ -1493,6 +1933,37 @@ export type Database = {
           ultima_actividad: string
           veces_visto: number
           vio_completo: boolean
+        }[]
+      }
+      get_neighborhood_geojson: {
+        Args: { p_neighborhood_id: number }
+        Returns: {
+          geojson: string
+          id: number
+          max_lat: number
+          max_lng: number
+          min_lat: number
+          min_lng: number
+          name: string
+        }[]
+      }
+      grant_ad_slot_atomic: {
+        Args: {
+          p_agency_id: string
+          p_creative_id: string
+          p_cta_type: Database["public"]["Enums"]["ad_cta_type"]
+          p_cta_value: string
+          p_days?: number
+          p_title: string
+          p_zones: Json
+        }
+        Returns: string
+      }
+      import_neighborhoods_batch: {
+        Args: { p_rows: Json }
+        Returns: {
+          inserted: number
+          skipped: number
         }[]
       }
       moderate_property_atomic: {
@@ -1511,12 +1982,19 @@ export type Database = {
         }
         Returns: undefined
       }
+      org_can_advertise: { Args: { p_agency_id: string }; Returns: boolean }
       pending_legal_consents: {
         Args: never
         Returns: {
           doc_type: string
           terms_version_id: string
           version: string
+        }[]
+      }
+      properties_within_neighborhood: {
+        Args: { p_neighborhood_id: number }
+        Returns: {
+          id: string
         }[]
       }
       properties_within_radius: {
@@ -1532,8 +2010,11 @@ export type Database = {
           p_allows_no_guarantor?: boolean
           p_bathrooms?: number
           p_bedrooms?: number
+          p_built_square_meters?: number
           p_cloudflare_uid?: string
+          p_currency?: string
           p_description?: string
+          p_half_bathrooms?: number
           p_lat?: number
           p_lng?: number
           p_operation_type: string
@@ -1550,6 +2031,7 @@ export type Database = {
           property_id: string
         }[]
       }
+      purge_ad_impressions: { Args: never; Returns: undefined }
       redeem_invitation_atomic: {
         Args: { p_ip?: unknown; p_token_id: string; p_user_id: string }
         Returns: {
@@ -1573,6 +2055,34 @@ export type Database = {
         Args: { p_ip?: unknown; p_user_id: string }
         Returns: undefined
       }
+      resolve_ad_zone: {
+        Args: { p_lat: number; p_lng: number }
+        Returns: {
+          municipality_id: string
+          neighborhood_id: number
+        }[]
+      }
+      search_places: {
+        Args: { p_limit?: number; p_query: string }
+        Returns: {
+          context: string
+          id: string
+          kind: string
+          max_lat: number
+          max_lng: number
+          min_lat: number
+          min_lng: number
+          name: string
+        }[]
+      }
+      set_org_advertising_atomic: {
+        Args: {
+          p_agency_id: string
+          p_category?: Database["public"]["Enums"]["advertiser_category"]
+          p_enabled: boolean
+        }
+        Returns: undefined
+      }
       switch_agency_atomic: {
         Args: { p_target_agency_id: string; p_user_id: string }
         Returns: {
@@ -1590,6 +2100,24 @@ export type Database = {
       }
     }
     Enums: {
+      ad_creative_status: "uploading" | "processing" | "ready" | "failed"
+      ad_cta_type: "external_url" | "whatsapp" | "phone"
+      ad_status:
+        | "draft"
+        | "pending_review"
+        | "active"
+        | "paused"
+        | "expired"
+        | "rejected"
+      ad_zone_scope: "neighborhood" | "municipality" | "national"
+      advertiser_category:
+        | "credito_hipotecario"
+        | "seguros"
+        | "mudanzas"
+        | "limpieza"
+        | "notaria"
+        | "avaluos"
+        | "otro"
       agency_member_role: "owner" | "agent" | "admin" | "viewer"
       agency_member_status: "active" | "removed" | "suspended"
       agency_status:
@@ -1795,8 +2323,31 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {
+      ad_creative_status: ["uploading", "processing", "ready", "failed"],
+      ad_cta_type: ["external_url", "whatsapp", "phone"],
+      ad_status: [
+        "draft",
+        "pending_review",
+        "active",
+        "paused",
+        "expired",
+        "rejected",
+      ],
+      ad_zone_scope: ["neighborhood", "municipality", "national"],
+      advertiser_category: [
+        "credito_hipotecario",
+        "seguros",
+        "mudanzas",
+        "limpieza",
+        "notaria",
+        "avaluos",
+        "otro",
+      ],
       agency_member_role: ["owner", "agent", "admin", "viewer"],
       agency_member_status: ["active", "removed", "suspended"],
       agency_status: [
@@ -1888,3 +2439,4 @@ export const Constants = {
     },
   },
 } as const
+

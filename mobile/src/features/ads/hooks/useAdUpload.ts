@@ -46,6 +46,16 @@ import { File, UploadType } from 'expo-file-system';
 
 import { validate_ad_duration_ms } from '../lib/validation';
 import { extract_error_code } from '@/lib/supabase/edge-errors';
+import type { Database } from '@/types/database';
+
+/**
+ * 🔴 El genérico <Database> NO es decorativo: sin él, supabase-js deja de
+ * chequear el esquema POR COMPLETO — cualquier `.from('lo_que_sea')` compila
+ * y `data` llega como `any`. Así fue como el `select('status')` sobre
+ * `ad_creatives` de aquí abajo pasó tsc mientras los tipos generados llevaban
+ * 10 migraciones de retraso (#190).
+ */
+type AdsSupabaseClient = SupabaseClient<Database>;
 
 // ponytail: mismo techo que el hermano (useVideoUpload) — direct upload
 // simple de Cloudflare Stream, sin tus. Ver ADR de 68.4 si algún día hace
@@ -74,7 +84,7 @@ export type AdCreativeCheckStatus = 'uploading' | 'processing' | 'ready' | 'fail
 
 export interface UseAdUploadDeps {
   /** Cliente Supabase — inyectable para tests. Por defecto el singleton del módulo. */
-  supabase?: SupabaseClient;
+  supabase?: AdsSupabaseClient;
   /** Consulta el estado real del creativo por su cloudflare_uid — colaborador inyectable para tests. */
   check_ad_creative_status?: (cloudflare_uid: string) => Promise<AdCreativeCheckStatus>;
   /** Intentos máximos de poll antes de rendirse con un mensaje neutro. */
@@ -110,9 +120,9 @@ export interface UseAdUploadResult {
 
 // ponytail: import lazy — el cliente real solo se carga cuando no se inyecta
 // uno externo (los tests siempre inyectan su propio mock).
-function get_default_supabase(): SupabaseClient {
+function get_default_supabase(): AdsSupabaseClient {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  return (require('@/lib/supabase/client') as { supabase: SupabaseClient }).supabase;
+  return (require('@/lib/supabase/client') as { supabase: AdsSupabaseClient }).supabase;
 }
 
 /** Mapea el error_code de mint-ad-upload-url a un mensaje en español (D3). */
@@ -129,7 +139,7 @@ function sleep(ms: number): Promise<void> {
 
 /** Checker por defecto — consulta `ad_creatives.status` por cloudflare_uid. Sin fila → 'missing'. */
 async function default_check_ad_creative_status(
-  supabase_client: SupabaseClient,
+  supabase_client: AdsSupabaseClient,
   cloudflare_uid: string,
 ): Promise<AdCreativeCheckStatus> {
   const { data, error } = await supabase_client
@@ -140,7 +150,7 @@ async function default_check_ad_creative_status(
 
   if (error) throw error;
   if (!data) return 'missing';
-  return (data as { status: AdCreativeCheckStatus }).status;
+  return data.status;
 }
 
 /**
