@@ -262,6 +262,32 @@ select is(
   'ZONE2_p_zones_vacio_es_inventario_NACIONAL_cero_filas_sin_error'
 );
 
+create temp table result_null_zones_60 (ok boolean, ad_id uuid, err_message text);
+
+do $$
+declare v_ad_id uuid;
+begin
+  perform pg_temp.act_as('00000000-0000-0000-0000-000000600001');
+  -- p_zones NULL, no '[]': el coalesce del SUT tiene que tratarlos igual. Sin
+  -- este caso, un GREEN que hiciera jsonb_array_elements(p_zones) a secas
+  -- pasaría ZONE2 y reventaría en producción con el primer cliente que no
+  -- mandara el campo.
+  v_ad_id := public.create_ad_campaign_atomic(
+    '00000000-0000-0000-0000-000000600202'::uuid, 'Campana Zonas Null 60',
+    'phone'::ad_cta_type, '3312345678', null, null, 30);
+  reset role;
+  insert into result_null_zones_60 (ok, ad_id) values (true, v_ad_id);
+exception when others then
+  reset role;
+  insert into result_null_zones_60 (ok, err_message) values (false, sqlerrm);
+end $$;
+
+select is(
+  (select ok from result_null_zones_60), true,
+  'ZONE3_p_zones_NULL_se_trata_igual_que_vacio -- ' ||
+  coalesce((select err_message from result_null_zones_60), '')
+);
+
 -- ════════════════════════════════════════════════════════════════════════════
 -- 5) Denegaciones
 -- ════════════════════════════════════════════════════════════════════════════

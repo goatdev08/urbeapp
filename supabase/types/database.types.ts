@@ -383,6 +383,7 @@ export type Database = {
         Row: {
           agency_id: string
           created_at: string
+          created_by_user_id: string | null
           creative_id: string
           cta_type: Database["public"]["Enums"]["ad_cta_type"]
           cta_value: string
@@ -401,6 +402,7 @@ export type Database = {
         Insert: {
           agency_id: string
           created_at?: string
+          created_by_user_id?: string | null
           creative_id: string
           cta_type: Database["public"]["Enums"]["ad_cta_type"]
           cta_value: string
@@ -419,6 +421,7 @@ export type Database = {
         Update: {
           agency_id?: string
           created_at?: string
+          created_by_user_id?: string | null
           creative_id?: string
           cta_type?: Database["public"]["Enums"]["ad_cta_type"]
           cta_value?: string
@@ -440,6 +443,13 @@ export type Database = {
             columns: ["agency_id"]
             isOneToOne: false
             referencedRelation: "agencies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ads_created_by_user_id_fkey"
+            columns: ["created_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
             referencedColumns: ["id"]
           },
           {
@@ -1928,6 +1938,18 @@ export type Database = {
           id: string
           title: string
         }[]
+      }
+      create_ad_campaign_atomic: {
+        Args: {
+          p_creative_id: string
+          p_cta_type: Database["public"]["Enums"]["ad_cta_type"]
+          p_cta_value: string
+          p_days?: number
+          p_description?: string
+          p_title: string
+          p_zones?: Json
+        }
+        Returns: string
       }
       get_lead_stats: {
         Args: { p_lead_ids: string[] }
