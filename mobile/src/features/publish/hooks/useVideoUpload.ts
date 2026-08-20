@@ -2,25 +2,26 @@
  * useVideoUpload — lógica de upload de video al wizard de publicación.
  *
  * GREEN — subtarea 68.4 (Taskmaster). Contrato upload-first vía Cloudflare
- * Stream, POST simple ≤200MB, sin tus-js-client:
+ * Stream. Desde 192.2 el binario sube por TUS resumable (chunks de 16 MiB,
+ * lib/tusUpload.ts) cuando la EF responde protocol:'tus' — techo 500 MB
+ * (MAX_VIDEO_SIZE_BYTES); el POST simple queda como rama 'basic' (≤200 MB):
  *
  *   1. Valida local_uri no nulo → null implica status='error', SIN invocar
  *      mint-upload-url.
  *   2. status='uploading' (visible antes del primer await, sync act()).
  *   3. `new File(local_uri)` (expo-file-system v56, getters síncronos
  *      .exists/.size). !exists → status='error', SIN invocar mint-upload-url.
- *   4. Techo de tamaño del direct upload simple de Stream: MAX_STREAM_UPLOAD_BYTES
- *      (200 MB). Excede → status='error' con mensaje claro, SIN invocar
- *      mint-upload-url.
- *   5. `supabase.functions.invoke('mint-upload-url', ...)` → { data: { uploadUrl,
- *      uid }, error }. Mapea error_code (vía extract_error_code, mismo patrón
+ *   4. Techo de tamaño: MAX_STREAM_UPLOAD_BYTES (= MAX_VIDEO_SIZE_BYTES, 500 MB).
+ *      Excede → status='error' con mensaje claro, SIN invocar mint-upload-url.
+ *   5. `supabase.functions.invoke('mint-upload-url', { body: { replace, size_bytes } })`
+ *      → { data: { uploadUrl, uid, protocol }, error }. Mapea error_code (vía extract_error_code, mismo patrón
  *      que ContactAgentButton/edge-errors.ts): UNAUTHENTICATED → mensaje de
  *      sesión; UPLOAD_IN_PROGRESS → mensaje específico de "video en proceso";
  *      cualquier otro (STREAM_UPLOAD_FAILED/INTERNAL_ERROR/red) → mensaje
  *      neutro. En error: NO sube a Stream, NO escribe al form.
- *   6. `file.createUploadTask(uploadUrl, { onProgress, ... })` +
- *      `uploadAsync()` — streaming, sin cargar el archivo completo en RAM
- *      (mismo patrón que profileService/#69). onProgress → progress 0..0.99.
+ *   6. protocol 'tus' → `tus_uploader` (PATCH chunked resumable, progreso
+ *      acumulado 0..0.99); 'basic' → `file.createUploadTask(uploadUrl, ...)` +
+ *      `uploadAsync()` — ambos streaming, sin cargar el archivo completo en RAM.
  *   7. Éxito (2xx): status='processing' (NO 'success' — el video queda
  *      transcodificando en Stream; 'ready' llega por webhook, subtarea 68.5).
  *      progress=1. `update({ video_id: uid, cloudflare_uid: uid })`.
@@ -60,18 +61,26 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { File, UploadType } from 'expo-file-system';
 
 import { usePublishForm } from '../store/PublishFormContext';
+import { MAX_VIDEO_SIZE_BYTES } from '../validation';
+import {
+  make_expo_chunk_sink,
+  make_file_chunk_source,
+  tus_upload,
+  type TusUploadResult,
+} from '../lib/tusUpload';
 import { extract_error_code } from '@/lib/supabase/edge-errors';
 
-// ponytail: techo del direct upload simple de Cloudflare Stream (sin tus). Si
-// algún día se exige >200MB o resume, migrar a tus-js-client (decisión #68.4).
-export const MAX_STREAM_UPLOAD_BYTES = 200 * 1024 * 1024;
+// 192.2: el techo es el de PRODUCTO (500 MB, único en validation.ts), ya no el
+// del POST básico de Stream (200 MB): la EF crea el upload por TUS cuando le
+// mandamos `size_bytes` y el binario sube en chunks resumables (lib/tusUpload).
+export const MAX_STREAM_UPLOAD_BYTES = MAX_VIDEO_SIZE_BYTES;
 
 // Mensajes fijos — no exponen detalle técnico al owner (mismo criterio que
 // ContactAgentButton/map_ef_error).
 const SESSION_ERROR_MESSAGE = 'No hay sesión activa. Inicia sesión para publicar.';
 const NEUTRAL_ERROR_MESSAGE = 'Error al subir el video. Verifica tu conexión e intenta de nuevo.';
 const UPLOAD_IN_PROGRESS_MESSAGE = 'Ya tienes un video en proceso. Espera a que termine para subir otro.';
-const SIZE_ERROR_MESSAGE = `El video supera el máximo permitido (200 MB). Intenta con un video más ligero.`;
+const SIZE_ERROR_MESSAGE = `El video supera el máximo permitido (${Math.round(MAX_STREAM_UPLOAD_BYTES / (1024 * 1024))} MB). Intenta con un video más ligero.`;
 const PROCESSING_FAILED_MESSAGE = 'El video no se pudo procesar. Intenta subir el video de nuevo.';
 
 // Defaults del poll de verificación (#103.2) — acotado: ~10 intentos cada
@@ -126,6 +135,32 @@ export interface UseVideoUploadDeps {
    * y la barra de progreso de step5 necesita cada tick para animarse.
    */
   on_progress?: (progress: number) => void;
+  /**
+   * 192.2 — subida TUS (rama `protocol:'tus'` de mint-upload-url). Inyectable
+   * para tests; por defecto `tus_upload` real sobre expo-file-system.
+   */
+  tus_uploader?: (args: {
+    url: string;
+    file: File;
+    signal: AbortSignal;
+    on_progress: (fraction: number) => void;
+  }) => Promise<TusUploadResult>;
+}
+
+/** Default real: fuente por FileHandle + sink por createUploadTask (PATCH). */
+function default_tus_uploader(args: {
+  url: string;
+  file: File;
+  signal: AbortSignal;
+  on_progress: (fraction: number) => void;
+}): Promise<TusUploadResult> {
+  return tus_upload({
+    url: args.url,
+    source: make_file_chunk_source(args.file),
+    sink: make_expo_chunk_sink(),
+    signal: args.signal,
+    on_progress: args.on_progress,
+  });
 }
 
 export interface UseVideoUploadResult {
@@ -239,6 +274,7 @@ export function useVideoUpload(deps?: UseVideoUploadDeps): UseVideoUploadResult 
   const verify_interval_ms = deps?.verify_interval_ms ?? DEFAULT_VERIFY_INTERVAL_MS;
   const on_status_change = deps?.on_status_change;
   const on_progress = deps?.on_progress;
+  const tus_uploader = deps?.tus_uploader ?? default_tus_uploader;
 
   const status_ref = useRef<UploadStatus>('idle');
   const progress_ref = useRef<number>(0);
@@ -324,11 +360,16 @@ export function useVideoUpload(deps?: UseVideoUploadDeps): UseVideoUploadResult 
       // del JWT dentro de la EF, no se envía en el body.
       let upload_url: string;
       let stream_uid: string;
+      let protocol: 'tus' | 'basic';
       try {
+        // 192.2: `size_bytes` → la EF crea el upload por TUS (Upload-Length
+        // exacto) y responde protocol:'tus'. Una EF vieja lo ignora y responde
+        // sin protocol → rama básica (orden de deploy EF/OTA independiente).
         const { data, error: mint_error } = await supabase_client.functions.invoke<{
           uploadUrl: string;
           uid: string;
-        }>('mint-upload-url', { body: { replace: true } });
+          protocol?: 'tus' | 'basic';
+        }>('mint-upload-url', { body: { replace: true, size_bytes: file.size } });
         if (!is_current()) return; // cancelado/superado mientras minteaba
 
         if (mint_error || !data?.uploadUrl || !data?.uid) {
@@ -339,43 +380,58 @@ export function useVideoUpload(deps?: UseVideoUploadDeps): UseVideoUploadResult 
         }
         upload_url = data.uploadUrl;
         stream_uid = data.uid;
+        protocol = data.protocol === 'tus' ? 'tus' : 'basic';
       } catch {
         set_status('error');
         set_error(NEUTRAL_ERROR_MESSAGE);
         return;
       }
 
-      // Paso 2 — subida por streaming al Direct Creator Upload de Cloudflare
-      // Stream. ponytail: Stream espera POST multipart/form-data con el campo
-      // 'file' (NO un PUT binario, a diferencia del path legado de Supabase
-      // Storage / R2) — confirmado vía WebFetch a
-      // developers.cloudflare.com/stream/uploading-videos/direct-creator-uploads/
-      // ("basic POST uploads ... multipart/form-data ... field named file ...
-      // 200 en éxito, 4xx si excede 200MB"). E2E real contra Stream sigue
-      // pendiente (gateway remoto en 402 al momento de escribir esto).
-      const task = file.createUploadTask(upload_url, {
-        httpMethod: 'POST',
-        uploadType: UploadType.MULTIPART,
-        fieldName: 'file',
-        signal: controller.signal,
-        onProgress: ({ bytesSent, totalBytes }) => {
-          set_progress(totalBytes > 0 ? Math.min(bytesSent / totalBytes, 0.99) : 0);
-        },
-      });
-
-      // #103: uploadAsync() puede lanzar o devolver no-2xx aunque el binario
-      // SÍ haya llegado completo a Stream (falso negativo leyendo la
-      // respuesta HTTP). No marcar error todavía en ese caso — verificar.
+      // Paso 2 — subida del binario a Stream. Dos ramas según `protocol`:
+      //   'tus'   (192.2) → PATCH resumable en chunks de 16 MiB (lib/tusUpload):
+      //           único camino >200 MB; el progreso llega por chunk acumulado.
+      //   'basic' → POST multipart/form-data con el campo 'file' al Direct
+      //           Creator Upload (techo 200 MB de Stream), como desde 68.4.
+      // #103: en ambas, un fallo puede ser falso negativo (el binario SÍ llegó)
+      // → no marcar error todavía: verificar contra property_videos.
       let stream_upload_ok: boolean;
-      try {
-        const { status } = await task.uploadAsync();
-        stream_upload_ok = status >= 200 && status < 300;
-      } catch (err) {
-        if (!is_current()) return; // abortado por cancel()/supersede — silencio
-        console.warn('[useVideoUpload] uploadAsync failed, verificando estado real:', err);
-        stream_upload_ok = false;
+      if (protocol === 'tus') {
+        let tus_result: TusUploadResult;
+        try {
+          tus_result = await tus_uploader({
+            url: upload_url,
+            file,
+            signal: controller.signal,
+            on_progress: (fraction) => set_progress(Math.min(fraction, 0.99)),
+          });
+        } catch (err) {
+          if (!is_current()) return; // abortado por cancel()/supersede — silencio
+          console.warn('[useVideoUpload] tus_upload lanzó, verificando estado real:', err);
+          tus_result = { ok: false, reason: 'failed' };
+        }
+        if (!is_current()) return; // cancelado/superado mientras subía
+        if (!tus_result.ok && tus_result.reason === 'aborted') return; // silencio (cancel)
+        stream_upload_ok = tus_result.ok;
+      } else {
+        const task = file.createUploadTask(upload_url, {
+          httpMethod: 'POST',
+          uploadType: UploadType.MULTIPART,
+          fieldName: 'file',
+          signal: controller.signal,
+          onProgress: ({ bytesSent, totalBytes }) => {
+            set_progress(totalBytes > 0 ? Math.min(bytesSent / totalBytes, 0.99) : 0);
+          },
+        });
+        try {
+          const { status } = await task.uploadAsync();
+          stream_upload_ok = status >= 200 && status < 300;
+        } catch (err) {
+          if (!is_current()) return; // abortado por cancel()/supersede — silencio
+          console.warn('[useVideoUpload] uploadAsync failed, verificando estado real:', err);
+          stream_upload_ok = false;
+        }
+        if (!is_current()) return; // cancelado/superado mientras subía
       }
-      if (!is_current()) return; // cancelado/superado mientras subía
 
       if (stream_upload_ok) {
         // Éxito — 'processing': el video queda transcodificando en Stream;
@@ -404,7 +460,7 @@ export function useVideoUpload(deps?: UseVideoUploadDeps): UseVideoUploadResult 
       if (is_current()) abort_ref.current = null;
     },
 
-    [supabase_client, update, check_video_status, verify_attempts, verify_interval_ms, on_status_change, on_progress],
+    [supabase_client, update, check_video_status, verify_attempts, verify_interval_ms, on_status_change, on_progress, tus_uploader],
   );
 
   return useMemo(

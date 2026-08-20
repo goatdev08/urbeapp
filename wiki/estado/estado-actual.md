@@ -1,7 +1,14 @@
 ---
 tipo: estado
-actualizado: 2026-08-16
+actualizado: 2026-08-17
 ---
+
+## Hoy (2026-08-17) — Fix: límite de video subido a 500 MB vía TUS resumable (#192)
+
+- **✅ Código y deploy listos, en `review` hasta que un tester confirme el smoke E2E.** Origen: tester real bloqueado en el wizard con "El video supera el máximo permitido (200 MB)" — 200 MB era el techo del direct upload BÁSICO de Cloudflare Stream; `MAX_VIDEO_SIZE_BYTES` (500 MB) ya existía en `validation.ts` pero `useVideoUpload` no lo usaba.
+- **Contrato retro-compatible**: EF `mint-upload-url` crea el upload por **TUS** cuando el body trae `size_bytes` (protocol:'tus'); sin él, el POST básico de siempre (protocol:'basic'). Cliente nuevo: `lib/tusUpload.ts` (chunks de 16 MiB, HEAD-resync ante fallo, reintentos, abort) + rama tus en `useVideoUpload`. Se descartó `tus-js-client` (carga el binario en RAM del lado nativo — mismo problema que ya resolvió #52).
+- **✅ EF desplegada al remoto** (`supabase functions deploy --use-api`) y **✅ OTA enviado** a ambos canales (Android `preview` runtime `374ba3dd…`, iOS `production` runtime `ca62b26a…` — coinciden con los builds instalados, entrega real).
+- **⚠️ Sin smoke E2E con video real en esta sesión** — Abraham pidió explícitamente no probarlo ("lo va a hacer otro tester y yo te aviso si se pudo"); TDD estricto sí corrió completo (Deno 1189/1189, Jest 1220/1220, tsc/lint 0). Subtarea 192.3 y la tarea quedan en `review`, no `done`, hasta esa confirmación.
 
 
 # Estado actual

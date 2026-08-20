@@ -4620,7 +4620,7 @@
         "id": "68",
         "title": "Épica B — Migrar el video del feed a Cloudflare Stream",
         "description": "Migrar el video del feed a Cloudflare Stream (HLS adaptativo). Resuelve de raíz el cap global de 50 MB del plan Free de Supabase Y el OOM #57, y da thumbnails automáticos.",
-        "details": "## Contexto\nExploración 036 (épica B). Decisión de storage híbrido (ADR 0008).\n\n## Clave: el schema YA está listo\n`property_videos.cloudflare_uid` coexiste con `storage_path`; el CHECK `property_videos_ready_requires_storage` (migración 0012) acepta cualquiera de las dos refs → migrar = poblar `cloudflare_uid`, migración **aditiva** (expand·migrate·contract, apps viejas conviven).\n\n## Reusar patrón EF-minter\n`mint-video-url` / `make_video_url_minter`: mismo contrato hacia el feed, cambia el minter por dentro para devolver signed HLS de Stream (el vault ya anotaba este patrón como el de la futura migración).\n\n## Pipeline\nEF entrega URL de subida directa resumible (tus) a Stream → device sube directo (sin pasar por Supabase) → webhook de Stream marca `ready` + dispara la push 'video listo'. Archivar el original en R2 (dep épica C).\n\n## Footprint (CRÍTICA-TDD estricto)\nsupabase/functions/** (contrato de EF) · mobile hooks/useVideoUpload.ts (lógica) · posible migración. Requiere provisionar cuenta Cloudflare Stream.\n\nDERIVADAS: #103 (E2E remoto 90 — falso negativo del upload en useVideoUpload) · #104 (smoke remoto 90 — fetch_mp4 sin token firmado en archive-video)",
+        "details": "## Contexto\nExploración 036 (épica B). Decisión de storage híbrido (ADR 0008).\n\n## Clave: el schema YA está listo\n`property_videos.cloudflare_uid` coexiste con `storage_path`; el CHECK `property_videos_ready_requires_storage` (migración 0012) acepta cualquiera de las dos refs → migrar = poblar `cloudflare_uid`, migración **aditiva** (expand·migrate·contract, apps viejas conviven).\n\n## Reusar patrón EF-minter\n`mint-video-url` / `make_video_url_minter`: mismo contrato hacia el feed, cambia el minter por dentro para devolver signed HLS de Stream (el vault ya anotaba este patrón como el de la futura migración).\n\n## Pipeline\nEF entrega URL de subida directa resumible (tus) a Stream → device sube directo (sin pasar por Supabase) → webhook de Stream marca `ready` + dispara la push 'video listo'. Archivar el original en R2 (dep épica C).\n\n## Footprint (CRÍTICA-TDD estricto)\nsupabase/functions/** (contrato de EF) · mobile hooks/useVideoUpload.ts (lógica) · posible migración. Requiere provisionar cuenta Cloudflare Stream.\n\nDERIVADAS: #103 (E2E remoto 90 — falso negativo del upload en useVideoUpload) · #104 (smoke remoto 90 — fetch_mp4 sin token firmado en archive-video)\nDERIVADAS: #192 (usuario/tester — límite 500 MB vía TUS)",
         "testStrategy": "TDD estricto (RED→GREEN→guardian): Deno tests del contrato de la EF (subida + minter HLS + webhook ready, fail-closed), pgTAP si hay migración, tests del hook. Smoke E2E Maestro con video real en emulador (CLI).",
         "status": "done",
         "dependencies": [
@@ -9097,6 +9097,59 @@
         "priority": "high",
         "subtasks": [],
         "updatedAt": "2026-08-20T20:29:03.324Z"
+      },
+      {
+        "id": "192",
+        "title": "fix(68.4): subir el límite de video a 500 MB — TUS resumable en Cloudflare Stream (EF + hook)",
+        "description": "Origen: subtarea 68.4 · Detectado por: usuario (tester real, screenshot 2026-08-17: 'El video supera el máximo permitido (200 MB)'). El techo de 200 MB NO es un número arbitrario: es el máximo del direct upload BÁSICO (POST multipart) de Cloudflare Stream. validation.ts ya declara 500 MB (MAX_VIDEO_SIZE_BYTES) pero useVideoUpload clampa a 200 porque es lo que ese camino aguanta. Para 500 MB hay que subir por TUS (resumable, chunked; Stream admite hasta 30 GB) — la columna property_videos.tus_upload_url existe desde #68 para esto. Autorizado por Abraham.",
+        "details": "Contrato NUEVO retro-compatible (§0.5): el cliente manda `size_bytes` en el body de mint-upload-url → la EF crea el upload por TUS (POST /accounts/{id}/stream?direct_user=true con Tus-Resumable/Upload-Length/Upload-Creator/Upload-Metadata) y responde {uploadUrl:<Location>, uid:<stream-media-id>, protocol:'tus'}; sin size_bytes (builds instalados) → camino básico intacto (protocol:'basic'). size_bytes > 500 MB → 400 VIDEO_TOO_LARGE. Cliente: MAX_STREAM_UPLOAD_BYTES → MAX_VIDEO_SIZE_BYTES (500 MB, reuso de validation.ts); si protocol==='tus' sube en chunks de 16 MiB (múltiplo de 256 KiB, ≥5 MiB, ≤200 MiB como exige Stream) con PATCH Upload-Offset via lib/tusUpload.ts: FileHandle.readBytes → archivo temporal en Paths.cache → createUploadTask PATCH BINARY_CONTENT (streaming nativo + progreso real) → borrar temp; ante fallo de un chunk, HEAD → Upload-Offset y reanuda (techo de reintentos); si protocol!=='tus' conserva el POST básico (orden de deploy EF/OTA independiente). Orden de deploy: EF primero (retro-compatible) → OTA. DERIVADAS: —",
+        "testStrategy": "TDD estricto (EF + hook + lib son críticas). Deno: handler.test.ts (+size_bytes → create_tus_upload con Upload-Length; sin size_bytes → create_direct_upload como hoy; >500 MB → 400; size_bytes no entero → básico; protocol en la respuesta) + adapter test del creator TUS (headers y parseo de Location/stream-media-id con fetch fake). Jest: tusUpload.test.ts (chunking exacto por offsets, headers PATCH, progreso acumulado, HEAD-resync tras fallo, abort, límite de reintentos, temp borrado siempre) + useVideoUpload.test.tsx (size_bytes en el body, límite 500 MB, rama tus vs básica). Smoke E2E contra Stream real con video >200 MB en simulador; verificar processing→ready por webhook y PARAR (cuota).",
+        "status": "review",
+        "dependencies": [
+          "68",
+          "103"
+        ],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "EF mint-upload-url: creación TUS cuando llega size_bytes (retro-compatible)",
+            "description": "handler + types + adapter create_tus_upload en _shared/clients.ts; RED→GREEN Deno.",
+            "details": "<info added on 2026-08-18T03:15:19.275Z>\nExpanded EF mint-upload-url to support TUS protocol for large videos (>200 MB threshold). Modified handler to inspect size_bytes parameter: when present and >200 MB, calls new create_tus_upload adapter in _shared/clients.ts and returns protocol:'tus' with uploadURL; otherwise falls back to existing basic direct-upload flow with protocol:'basic'. Returns 400 VIDEO_TOO_LARGE for videos exceeding 500 MB limit. Contract is fully backward-compatible: existing clients (no size_bytes) continue using basic protocol without changes. Types updated in types.ts to reflect TUS response shape. Wrote comprehensive test coverage: handler.test.ts with 9 test cases (T-0 through T-8) covering happy path, backward compatibility, size thresholds, error handling, and retro-compatible behavior. Added 8 unit tests (A-1 through A-8) in _shared/stream_upload_creator.test.ts for the TUS upload creator adapter including fetch injection for testability. All tests moved from RED (12 assertion failures) to GREEN: 46/46 passing in mint-upload-url suite, full Deno test suite at 1189/1189 passing. Type checking clean with deno check on both mint-upload-url and mint-ad-upload-url functions. Implementation files: supabase/functions/mint-upload-url/handler.ts, supabase/functions/mint-upload-url/types.ts, supabase/functions/_shared/clients.ts, test files handler.test.ts and stream_upload_creator.test.ts.\n</info added on 2026-08-18T03:15:19.275Z>",
+            "status": "done",
+            "dependencies": [],
+            "testStrategy": "",
+            "updatedAt": "2026-08-18T03:15:26.708Z",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Cliente: lib/tusUpload.ts (chunked PATCH resumable) + useVideoUpload a 500 MB con rama tus",
+            "description": "RED→GREEN Jest; techo MAX_VIDEO_SIZE_BYTES; body size_bytes; protocol.",
+            "details": "<info added on 2026-08-18T03:22:28.164Z>\nImplementation complete on mobile. Created lib/tusUpload.ts with pure resumable upload logic and adapters for Expo FileSystem (reads chunks on demand, no full-file-in-RAM). Hook useVideoUpload updated to 500 MB, sends size_bytes in request body, branches on protocol:'tus' from EF response.\n\n**Files:**\n- mobile/src/features/publish/lib/tusUpload.ts (new, 350 LOC core + Expo adapters)\n- mobile/src/features/publish/hooks/useVideoUpload.ts (updated: MAX_VIDEO_SIZE_BYTES 500 MB, size_bytes field, tus branch)\n- mobile/src/features/publish/lib/__tests__/tusUpload.test.ts (new, 15 tests: chunking, progress, server offset HEAD-resync, consecutive retries, abort, finally-close guarantee)\n- mobile/src/features/publish/hooks/__tests__/useVideoUpload.test.tsx (added 6 TU-* unit + EC3a/b edge cases 500 MB + CX-1 context with size_bytes)\n\n**Test Results:**\n- RED: 23 failures (new assertions)\n- GREEN: 52/52 new tests passing\n- Full Jest suite: 1220/1220 passing\n- tsc --noEmit: 0 errors\n- pnpm lint: 0 errors\n\n**Design Decision:**\nRejected tus-js-client dependency after reading source — its React Native reader loads entire file into Blob in memory, defeating chunked streaming goal. Custom implementation reads 16 MiB chunks on demand via FileSystem.readAsStringAsync with base64. Chunk size 16 MiB chosen as multiple of 256 KiB within Cloudflare Stream accepted range [5, 200] MiB.\n\n**Backward Compatibility:**\nBranch 'basic' (direct PUT <200 MB) preserved in hook. Client can deploy OTA independently of EF — missing protocol field defaults to basic path. EF responds protocol:'tus' only when size_bytes triggers TUS creation server-side.\n</info added on 2026-08-18T03:22:28.164Z>",
+            "status": "done",
+            "dependencies": [
+              1
+            ],
+            "testStrategy": "",
+            "parentId": "undefined",
+            "updatedAt": "2026-08-18T03:22:34.855Z"
+          },
+          {
+            "id": 3,
+            "title": "Deploy EF → smoke E2E Stream real (>200 MB) → OTA → vault",
+            "description": "Orden EF-primero. Verificar processing→ready y parar. Ingest vault + log + estado.",
+            "details": "",
+            "status": "review",
+            "dependencies": [
+              2
+            ],
+            "testStrategy": "",
+            "parentId": "undefined",
+            "updatedAt": "2026-08-18T05:21:10.143Z"
+          }
+        ],
+        "updatedAt": "2026-08-18T05:21:11.967Z"
       },
       {
         "id": "193",

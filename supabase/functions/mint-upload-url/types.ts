@@ -7,15 +7,22 @@
 //   2. Invariante de concurrencia POR AGENTE (regla §13.2, fail-closed): si el agente ya
 //      tiene >=1 video en status IN ('uploading','processing') AND deleted_at IS NULL
 //      → 409 UPLOAD_IN_PROGRESS, sin llamar a Stream ni insertar.
-//   3. Crea el upload en Stream — POST
-//      https://api.cloudflare.com/client/v4/accounts/{STREAM_ACCOUNT_ID}/stream/direct_upload
-//      con { maxDurationSeconds: 120, requireSignedURLs: true, creator: uid }.
+//   3. Crea el upload en Stream. DOS caminos según el body (192.1, retro-compatible):
+//      · body.size_bytes entero válido (cliente nuevo) → TUS resumable: POST
+//        .../stream?direct_user=true con Upload-Length=size_bytes; la respuesta
+//        trae `Location` (URL de PATCH del cliente) y `stream-media-id` (uid).
+//        Es lo único que aguanta >200 MB (techo del POST básico); el cliente sube
+//        en chunks de 16 MiB. size_bytes > MAX_UPLOAD_SIZE_BYTES → 400 VIDEO_TOO_LARGE.
+//      · sin size_bytes (builds instalados) → POST /stream/direct_upload básico,
+//        EXACTAMENTE como siempre.
 //      Si Stream falla (no-2xx o success:false) → 502 STREAM_UPLOAD_FAILED, SIN insertar
 //      (cero filas huérfanas).
 //   4. Inserta property_videos(agent_id=uid, property_id=NULL, status='uploading', position=1,
 //      cloudflare_uid=<uid de Stream>, tus_upload_url=<uploadURL de Stream>).
 //      Si el insert falla → 500 INTERNAL_ERROR.
-//   5. 200 { uploadUrl, uid } — uid es el que Stream asignó al video (NO el uid del agente).
+//   5. 200 { uploadUrl, uid, protocol } — uid es el que Stream asignó al video (NO el
+//      uid del agente); protocol 'tus'|'basic' le dice al cliente cómo subir (los
+//      builds viejos lo ignoran: siempre reciben 'basic' porque no mandan size_bytes).
 
 export const STREAM_MAX_DURATION_SECONDS = 120;
 export const STREAM_REQUIRE_SIGNED_URLS = true;
@@ -30,8 +37,14 @@ export const STREAM_REQUIRE_SIGNED_URLS = true;
 // (solo para 'uploading'; 'processing' no tiene ventana porque el webhook lo
 // resuelve solo) vive en el adapter real (_shared/clients.ts).
 // ponytail: 15 min fijo, no configurable — una subida legítima en red muy mala
-// (>15 min para <200 MB) podría abrir un segundo slot antes de que la primera
-// termine; el tope de tamaño (200 MB) hace ese escenario improbable en la demo.
+// podría abrir un segundo slot antes de que la primera termine.
+// ⚠️ REVISADO AL MERGEAR #192 (2026-08-20): el argumento original decía que el
+// tope de 200 MB hacía ese escenario "improbable". Ya NO es cierto — #192 subió
+// el tope a 500 MB por TUS, y 500 MB por datos móviles pasa de 15 min sin
+// esfuerzo. Se DEJA en 15 min a propósito: el error en esta dirección es que se
+// abra un segundo slot a alguien cuya subida sigue viva (molesto, acotado, se
+// cura solo); el error en la otra es dejar una fila 'uploading' colgada
+// bloqueando a su dueño, que es exactamente el bug #103 que ya se pagó.
 export const STALE_UPLOAD_MS = 15 * 60 * 1000;
 
 // ── STALE_PROCESSING_MS — ventana de expiración de 'processing' (tarea #188) ──
@@ -55,10 +68,17 @@ export const STALE_UPLOAD_MS = 15 * 60 * 1000;
 // es defendible: quedarse CORTO permite que alguien inicie un segundo upload
 // mientras el primero aún transcodifica (molesto, acotado); quedarse LARGO
 // bloquea a una organización durante todo ese tiempo (grave). Ante la duda,
-// corto. Una hora cubre con holgura el peor caso realista (subida de hasta
-// 200 MB por datos móviles + transcodificación de un video de ≤30 s), medido
-// desde `created_at`, que es cuando arrancó la subida — no cuando empezó la
-// transcodificación.
+// corto. La hora se dimensionó sobre el peor caso realista de ENTONCES (subida
+// de hasta 200 MB por datos móviles + transcodificación de un video de ≤30 s),
+// medido desde `created_at`, que es cuando arrancó la subida — no cuando empezó
+// la transcodificación.
+// ⚠️ REVISADO AL MERGEAR #192 (2026-08-20): ese peor caso creció 2.5x — #192
+// subió el tope a 500 MB por TUS, y la ventana se mide desde `created_at`, así
+// que la subida se come buena parte de la hora antes de que la transcodificación
+// empiece siquiera. La hora YA NO cubre el peor caso con holgura. Se deja igual
+// porque la asimetría de arriba no cambió: quedarse corto es el error barato.
+// Ninguna de las dos ramas podía ver esto sola — #188 fijó la ventana con el
+// tope viejo mientras #192 movía el tope en paralelo.
 //
 // Cambiar este valor es UNA LÍNEA, y upload_window_parity.test.ts falla si se
 // cambia de un solo lado.
@@ -113,11 +133,27 @@ export interface StreamDirectUploadResult {
   uid: string;
 }
 
+export interface StreamTusUploadParams extends StreamDirectUploadParams {
+  /** Tamaño exacto del binario en bytes — header `Upload-Length` de TUS. */
+  uploadLength: number;
+}
+
 export interface StreamUploadCreator {
   create_direct_upload(
     params: StreamDirectUploadParams,
   ): Promise<StreamDirectUploadResult>;
+  create_tus_upload(
+    params: StreamTusUploadParams,
+  ): Promise<StreamDirectUploadResult>;
 }
+
+// ── MAX_UPLOAD_SIZE_BYTES — techo del binario por TUS (192.1) ─────────────────
+// Espejo EXACTO de `MAX_VIDEO_SIZE_BYTES` del cliente (mobile/src/features/
+// publish/validation.ts = 500 MiB). El cliente lo valida antes de tocar la red;
+// aquí es la 2ª capa (frontera de confianza): size_bytes mayor → 400
+// VIDEO_TOO_LARGE sin llamar a Stream. Stream admite hasta 30 GB por TUS — el
+// techo es de PRODUCTO (maxDurationSeconds=120 ya acota el volumen real).
+export const MAX_UPLOAD_SIZE_BYTES = 524288000;
 
 // ── VideoRegistrar — inserta la fila 'uploading' (upload-first, property_id NULL) ─
 // Lanza (throw) si el insert falla — el handler lo traduce a 500 INTERNAL_ERROR.
@@ -164,4 +200,6 @@ export interface MintUploadUrlDeps {
 export interface MintUploadUrlResponse {
   uploadUrl: string;
   uid: string;
+  /** Cómo debe subir el cliente: 'tus' (PATCH resumable) o 'basic' (POST multipart). */
+  protocol: "basic" | "tus";
 }

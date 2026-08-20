@@ -55,6 +55,7 @@ import type {
   RegisterUploadingVideoParams,
   StreamDirectUploadParams,
   StreamDirectUploadResult,
+  StreamTusUploadParams,
   StreamUploadCreator,
   VideoRegistrar,
 } from "../mint-upload-url/types.ts";
@@ -835,25 +836,75 @@ export function make_active_upload_checker(
 }
 
 /**
- * Adaptador real de StreamUploadCreator (subtarea 68.3): Direct Creator Upload
- * de Cloudflare Stream (POST simple, NO tus). Lanza si la respuesta no es 2xx
- * o success:false — el handler lo traduce a 502 STREAM_UPLOAD_FAILED.
+ * Adaptador real de StreamUploadCreator (subtarea 68.3 + 192.1): Direct Creator
+ * Upload de Cloudflare Stream en sus DOS variantes:
+ *   - `create_direct_upload` — POST básico (/stream/direct_upload, JSON) → el
+ *     cliente sube con UN POST multipart. Techo de Cloudflare: 200 MB.
+ *   - `create_tus_upload` (192.1) — POST /stream?direct_user=true con los headers
+ *     TUS (Tus-Resumable, Upload-Length, Upload-Creator, Upload-Metadata) → la
+ *     respuesta 201 trae `Location` (URL de PATCH resumable para el cliente) y
+ *     `stream-media-id` (uid). Único camino para >200 MB (hasta 30 GB).
+ *     Upload-Metadata = pares "clave base64(valor)" separados por coma; los
+ *     flags (requiresignedurls) van sin valor.
+ * Lanza si la respuesta no es 2xx / success:false / sin Location — el handler
+ * lo traduce a 502 STREAM_UPLOAD_FAILED. `fetch_impl` inyectable para tests.
  * Variables de entorno requeridas: STREAM_ACCOUNT_ID, STREAM_API_TOKEN.
  */
-export function make_stream_upload_creator(): StreamUploadCreator {
+export function make_stream_upload_creator(
+  fetch_impl: typeof fetch = fetch,
+): StreamUploadCreator {
+  function read_env(): { account_id: string; api_token: string } {
+    const account_id = Deno.env.get("STREAM_ACCOUNT_ID");
+    const api_token = Deno.env.get("STREAM_API_TOKEN");
+    if (!account_id || !api_token) {
+      throw new Error(
+        "Faltan variables de entorno STREAM_ACCOUNT_ID/STREAM_API_TOKEN",
+      );
+    }
+    return { account_id, api_token };
+  }
+
   return {
+    async create_tus_upload(
+      params: StreamTusUploadParams,
+    ): Promise<StreamDirectUploadResult> {
+      const { account_id, api_token } = read_env();
+      const metadata = [
+        `maxDurationSeconds ${btoa(String(params.maxDurationSeconds))}`,
+        ...(params.requireSignedURLs ? ["requiresignedurls"] : []),
+      ].join(",");
+
+      const res = await fetch_impl(
+        `https://api.cloudflare.com/client/v4/accounts/${account_id}/stream?direct_user=true`,
+        {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${api_token}`,
+            "Tus-Resumable": "1.0.0",
+            "Upload-Length": String(params.uploadLength),
+            "Upload-Creator": params.creator,
+            "Upload-Metadata": metadata,
+          },
+        },
+      );
+
+      const location = res.headers.get("Location");
+      const uid = res.headers.get("stream-media-id");
+      if (!res.ok || !location || !uid) {
+        const detail = await res.text().catch(() => "");
+        throw new Error(
+          `Cloudflare Stream tus create falló: ${res.status} location=${location ?? "-"} uid=${uid ?? "-"} ${detail}`,
+        );
+      }
+      return { uploadURL: location, uid };
+    },
+
     async create_direct_upload(
       params: StreamDirectUploadParams,
     ): Promise<StreamDirectUploadResult> {
-      const account_id = Deno.env.get("STREAM_ACCOUNT_ID");
-      const api_token = Deno.env.get("STREAM_API_TOKEN");
-      if (!account_id || !api_token) {
-        throw new Error(
-          "Faltan variables de entorno STREAM_ACCOUNT_ID/STREAM_API_TOKEN",
-        );
-      }
+      const { account_id, api_token } = read_env();
 
-      const res = await fetch(
+      const res = await fetch_impl(
         `https://api.cloudflare.com/client/v4/accounts/${account_id}/stream/direct_upload`,
         {
           method: "POST",
