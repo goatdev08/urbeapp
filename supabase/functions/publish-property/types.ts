@@ -174,3 +174,37 @@ export interface PublishPropertyDeps {
   videoStatusChecker: VideoStatusChecker;
   duplicatePropertyChecker: DuplicatePropertyChecker;
 }
+
+// ── Errores de negocio del RPC publish_property_atomic (#173) ─────────────────
+//
+// 🔴 ESTA LISTA ES EL CONTRATO, y vive aquí para poder testearse. Antes el
+// mapeo estaba INLINE en index.ts con un `.includes()` sobre un solo código
+// (AGENCY_MEMBERSHIP_SUSPENDED), donde ningún test podía alcanzarlo: por eso
+// AGENCY_CANNOT_PUBLISH_PROPERTIES —el guard de capacidad de 168.3— caía al
+// DB_ERROR genérico y salía como 500 pese a que la migración lo levanta
+// tipado (P0001) y el pgTAP de 46_org_advertising_test.sql lo verifica. La
+// invariante de seguridad SÍ se cumplía (la publicación se bloquea en la DB,
+// atómicamente); lo que se perdía era el error EXPLÍCITO que pedía 168.3.
+//
+// Al agregar un `raise exception '<CODIGO>' using errcode = 'P0001'` nuevo a
+// publish_property_atomic, AGRÉGALO AQUÍ TAMBIÉN o volverá a salir como 500.
+export const PUBLISH_PROPERTY_ERROR_CODES = [
+  "AGENCY_MEMBERSHIP_SUSPENDED",
+  "AGENCY_CANNOT_PUBLISH_PROPERTIES",
+] as const;
+
+// Códigos que son de AUTORIZACIÓN (403), no fallos de servidor (500).
+export const PUBLISH_PROPERTY_FORBIDDEN_CODES: readonly string[] = [
+  "AGENCY_MEMBERSHIP_SUSPENDED",
+  "AGENCY_CANNOT_PUBLISH_PROPERTIES",
+];
+
+/**
+ * Extrae el código de negocio del mensaje de un error P0001 del RPC.
+ * Sin coincidencia -> "DB_ERROR" (mismo fallback que extract_agency_error_code
+ * en _shared/clients.ts). Función pura: es el seam que hace testeable lo que
+ * antes vivía inline en index.ts.
+ */
+export function extract_publish_error_code(message: string): string {
+  return PUBLISH_PROPERTY_ERROR_CODES.find((c) => message.includes(c)) ?? "DB_ERROR";
+}

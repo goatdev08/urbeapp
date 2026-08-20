@@ -8670,13 +8670,13 @@
         "description": "Origen: subtarea 168.3 · Detectado por: guardian. supabase/functions/publish-property/index.ts:95 solo reconoce \"AGENCY_MEMBERSHIP_SUSPENDED\" en el mensaje P0001; el guard nuevo AGENCY_CANNOT_PUBLISH_PROPERTIES cae al fallback genérico DB_ERROR (probable 500) en vez de un 403/409. La invariante de seguridad SÍ se cumple — la publicación se bloquea en la DB, atómicamente — pero el criterio de producto de 168.3 pedía un error EXPLÍCITO, y por el seam del EF hoy es genérico.",
         "details": "footprint=supabase/functions/publish-property/index.ts (~:95) + su handler.test.ts. Criticidad: CRÍTICA (supabase/functions/**). Impacto-prod: aditivo (solo cambia el status/código de error de un camino que hoy es 500). El patrón a copiar es el mapeo existente de AGENCY_MEMBERSHIP_SUSPENDED en esa misma línea. Considerar si conviene una tabla de mapeo en vez de una cadena de ternarios, dado que ya van 2 códigos y 169–171 pueden sumar más.",
         "testStrategy": "Deno: el guard devuelve el status/código explícito, no DB_ERROR. No-regresión del mapeo de AGENCY_MEMBERSHIP_SUSPENDED.",
-        "status": "pending",
+        "status": "in-progress",
         "dependencies": [
           "168"
         ],
         "priority": "medium",
         "subtasks": [],
-        "updatedAt": "2026-08-16T00:00:00.000Z"
+        "updatedAt": "2026-08-20T21:46:37.552Z"
       },
       {
         "id": "174",
@@ -9154,7 +9154,7 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-08-20T21:46:23.915Z",
+      "lastModified": "2026-08-20T21:46:37.552Z",
       "taskCount": 192,
       "completedCount": 104,
       "tags": [
