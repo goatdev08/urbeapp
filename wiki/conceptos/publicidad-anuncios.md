@@ -11,6 +11,8 @@ codigo:
   - supabase/functions/mint-ad-upload-url/
   - supabase/functions/mint-ad-urls/
   - supabase/functions/stream-webhook/handler.ts
+  - supabase/migrations/20260820000001_ads_zone_bbox_determinism.sql
+  - supabase/migrations/20260820000002_ad_creatives_failure_reason.sql
   - mobile/src/features/ads/
   - mobile/app/(protected)/ads/
 actualizado: 2026-08-20
@@ -79,6 +81,7 @@ El producto usa la palabra *vista* para dos números que **miden cosas distintas
 - El cliente y el servidor comparten el literal `AD_DURATION_INVALID`: el mismo problema no puede producir dos mensajes distintos.
 - `validate_ad_cta` devuelve `normalized_value` — se validaba una cadena y se guardaba otra.
 - El CTA se valida por **allowlist** de esquema `http`/`https`, no por blocklist de `javascript:`/`data:`.
-- `mark_failed` **descarta** el `reason_code`: `ad_creatives` no tiene columna de razón, así que el anunciante no sabe por qué se rechazó su video.
+- ~~`mark_failed` **descarta** el `reason_code`~~ — **arreglado en #189**: `ad_creatives.failure_reason` existe (nullable, sin default, vocabulario abierto) y el adapter la escribe. Vale la pena recordar el patrón: la columna faltante no era un hueco cosmético, **forzaba al cliente a adivinar**. `useAdUpload` infería "por eliminación, esto es transcodificación" y esa inferencia solo se sostenía mientras el pre-flight fuera fail-closed ante duración ausente — o sea, el mensaje equivocado y el bloqueo del anunciante con picker Android viejo eran **el mismo defecto**, y no se podían arreglar por separado sin empeorar las cosas.
+- **La duración ausente es fail-OPEN en el cliente (#189)**, igual que en propiedades. La versión anterior fail-closed se justificaba como "paridad con el servidor" y era paridad **formal, no semántica**: el `null` del servidor significa "Cloudflare decodificó y no pudo determinar la duración"; el del cliente significa "este picker no lee metadata". El literal `AD_DURATION_INVALID` no cambió — cambió *cuándo* se emite.
 
 Ver también [[rls-seguridad]], [[feed-vertical-video]], [[privacidad-datos]].

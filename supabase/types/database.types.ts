@@ -87,6 +87,7 @@ export type Database = {
           cloudflare_uid: string | null
           created_at: string
           duration_seconds: number | null
+          failure_reason: string | null
           id: string
           status: Database["public"]["Enums"]["ad_creative_status"]
           thumbnail_url: string | null
@@ -97,6 +98,7 @@ export type Database = {
           cloudflare_uid?: string | null
           created_at?: string
           duration_seconds?: number | null
+          failure_reason?: string | null
           id?: string
           status?: Database["public"]["Enums"]["ad_creative_status"]
           thumbnail_url?: string | null
@@ -107,6 +109,7 @@ export type Database = {
           cloudflare_uid?: string | null
           created_at?: string
           duration_seconds?: number | null
+          failure_reason?: string | null
           id?: string
           status?: Database["public"]["Enums"]["ad_creative_status"]
           thumbnail_url?: string | null

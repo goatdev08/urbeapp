@@ -1663,9 +1663,14 @@ export function make_ad_creative_status_updater(
       return data?.length ?? 0;
     },
     async mark_failed(params: MarkAdCreativeFailedParams): Promise<number> {
+      // #189: el reason_code SE PERSISTE. Antes se recibía y se descartaba —
+      // ad_creatives no tenía dónde ponerlo—, y esa pérdida obligaba al
+      // cliente a inferir la causa "por eliminación" y a mostrar siempre
+      // "error de transcodificación". Paridad con make_video_status_updater,
+      // que persiste failure_reason desde siempre.
       const { data, error } = await client
         .from("ad_creatives")
-        .update({ status: "failed" })
+        .update({ status: "failed", failure_reason: params.reason_code })
         .eq("cloudflare_uid", params.cloudflare_uid)
         .select("id");
       if (error) {
