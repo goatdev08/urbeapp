@@ -13,7 +13,7 @@ codigo:
   - supabase/functions/stream-webhook/handler.ts
   - mobile/src/features/ads/
   - mobile/app/(protected)/ads/
-actualizado: 2026-08-17
+actualizado: 2026-08-20
 ---
 
 # Publicidad: anuncios de terceros
@@ -60,6 +60,20 @@ El cliente **no** puede llamar a `org_can_advertise` (el wrapper `public` está 
 - **Ninguna ruta para que el anunciante cree su campaña** — el wizard solo persiste el creativo. Derivada **#191**.
 - **La UI de moderación admin** llega con #81; en beta se modera por Studio/SQL, igual que #71.5.
 - **Servir los anuncios en el feed** es la tarea siguiente (170), no ésta.
+
+## Dos definiciones de «vista», divergentes A PROPÓSITO (#197)
+
+El producto usa la palabra *vista* para dos números que **miden cosas distintas y no se suman jamás**. La divergencia es una decisión (Abraham, 2026-08-20), no un descuido pendiente de unificar.
+
+| | Anuncio | Propiedad |
+| --- | --- | --- |
+| Qué cuenta | `viewed` = **≥ 3 s** de reproducción | `video_view` = el video se volvió activo, **sin umbral** |
+| Dónde se decide | EF `record-ad-impressions` (servidor; ignora lo que declare el cliente) | `VideoFeedItem.tsx` dispara `report_view()` al `isActive` |
+| Para qué sirve | **base facturable** frente a un anunciante | señal de interés de una persona frente a un agente |
+
+**Por qué no se unificaron.** Son métricas de dominios distintos con consecuencias distintas. Del lado del anunciante hay dinero y hay un estándar de industria (YouTube cuenta vista a los 3 s): bajar el umbral sería inflar la factura. Del lado del agente el número no se cobra — describe interés, y ahí el scroll-by ya queda filtrado aguas abajo por el **like como filtro de entrada** de [[crm-leads]] (sin like a la propiedad de origen, `get_lead_stats` no devuelve fila). Unificar en 3 s habría movido hacia abajo, sin beneficio, números que agentes REALES ya ven hoy en producción — y habría creado una discontinuidad en la serie histórica que hay que explicar para siempre.
+
+🔴 **Lo que esta decisión obliga a sostener:** que nadie sume ni compare los dos números, y que cualquier reporte que los cruce diga cuál es cuál. El día que #172 construya el panel del anunciante, ese panel dice **impresiones**, nunca "vistas" a secas.
 
 ## Reglas no obvias que costaron caro
 - El cliente y el servidor comparten el literal `AD_DURATION_INVALID`: el mismo problema no puede producir dos mensajes distintos.
