@@ -22,7 +22,9 @@ Carga el skill `urbea-context`. Ubica el SUT y las invariantes en `wiki/codebase
 **Primero los seams**: fija la interfaz pública bajo test ANTES de enumerar. En Urbea un seam es el **contrato público de la Edge Function** (request→respuesta, códigos de estado), el **comportamiento observable de la política RLS vía impersonación JWT** (qué ve/puede cada rol), o la **firma exportada** de la lib — nunca internals. Los tests solo viven en seams anotados; si el seam es dudoso, repórtalo como bloqueante en vez de inventarlo.
 Luego construye la lista (happy path · edge cases del PRD con §N · ramas de reglas no obvias · boundary/error) y registra TODO en la misma llamada:
 ```bash
-task-master update-subtask --id=<id>.<n> --prompt="SEAMS (interfaz bajo test):
+node .taskmaster/scripts/tm-log.mjs --id=<id>.<n> --file=<ruta>   # 🔴 NUNCA update-subtask: parafrasea con IA y re-tipa los task.id
+# contenido del archivo:
+SEAMS (interfaz bajo test):
 - …
 EDGE CASES (RED):
 ### Happy path

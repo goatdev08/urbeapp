@@ -15,7 +15,9 @@ Ubicación en el workflow: **`/tm-explore` (idea → tarea) → `/tm-plan <id>` 
 4. **Preguntas de diseño**: si el análisis o los conceptos marcan decisiones (UX, approach, alcance), usa `AskUserQuestion` (una sola llamada, máx 4). Aplica las respuestas.
 5. **Registra el plan** en cada subtarea:
    ```bash
-   task-master update-subtask --id=<id>.<n> --prompt="PLAN: approach · decisiones del usuario · agente=<dominio> · skills=<…> · criticidad=<crítica|no> · impacto-prod=<sin riesgo|destructiva: plan expand→contract|contrato: OTA primero> · footprint=<paths>"
+   # 🔴 tm-log, NUNCA update-subtask (parafrasea con IA y re-tipa los task.id)
+   printf '%s' "PLAN: approach · decisiones del usuario · agente=<dominio> · skills=<…> · criticidad=<crítica|no> · impacto-prod=<sin riesgo|destructiva: plan expand→contract|contrato: OTA primero> · footprint=<paths>" > /tmp/plan.md
+   node .taskmaster/scripts/tm-log.mjs --id=<id>.<n> --file=/tmp/plan.md
    ```
 6. **Cierre**: "✅ Plan listo. Ejecuta `/tm-tarea <id>` (o `/tm-tarea <id> auto`)."
 

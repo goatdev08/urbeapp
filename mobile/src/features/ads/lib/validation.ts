@@ -15,12 +15,18 @@
  *    milisegundos (mismo shape que asset.duration en
  *    publish/validation.ts::validate_video_duration_ms) — la implementación
  *    NUNCA debe redondear los segundos antes de comparar contra el rango.
- *    Fail-CLOSED en null/undefined/0 — a propósito, DISTINTO del fail-open
- *    de validate_video_duration_ms (property video): el servidor de anuncios
- *    (169.5) es fail-closed ante duración ausente ("sin duration_seconds no
- *    hay forma de verificar el mínimo de 6 s"), así que el cliente debe
- *    hablar el mismo idioma — dar luz verde aquí y que el servidor rechace
- *    después es exactamente el problema que este contrato existe para evitar.
+ *    🔴 Fail-OPEN en null/undefined/0 desde #189 — IGUAL que
+ *    validate_video_duration_ms (property video), no distinto. La versión
+ *    anterior fail-closed se justificó como "paridad con el servidor"; era
+ *    paridad formal, no semántica. El `null` del servidor significa
+ *    "Cloudflare decodificó el archivo y no pudo determinar la duración"
+ *    (archivo roto); el de aquí significa "este picker de Android no lee
+ *    metadata" (rasgo del dispositivo, no dice nada del archivo). Tratarlos
+ *    igual bloqueaba PERMANENTEMENTE a quien tuviera un picker viejo: en el
+ *    mismo teléfono podía publicar una propiedad pero jamás un anuncio.
+ *    El literal AD_DURATION_INVALID NO cambió — la coherencia
+ *    cliente-servidor de 169.6 sigue intacta; lo que cambió es CUÁNDO se
+ *    emite.
  *
  * 2) CTA — validate_ad_cta. 3 tipos (ad_cta_type: external_url | whatsapp |
  *    phone, migración 20260816000005). El RPC grant_ad_slot_atomic NO
@@ -80,10 +86,20 @@ export const AD_DURATION_INVALID = 'AD_DURATION_INVALID';
 export function validate_ad_duration_ms(
   duration_ms: number | null | undefined,
 ): AdValidationResult {
-  // Fail-closed: sin duración no hay forma de verificar el mínimo (espejo del
-  // servidor, ver comentario de contrato arriba).
-  if (duration_ms === null || duration_ms === undefined) {
-    return { valid: false, error_code: AD_DURATION_INVALID, normalized_value: null };
+  // 🔴 #189 — FAIL-OPEN ante duración DESCONOCIDA (null/undefined/0), espejo
+  // exacto de publish/validation.ts:157-161. Antes era fail-closed,
+  // justificado como "paridad con el servidor"; la paridad era formal, no
+  // semántica: los dos `null` significan cosas distintas. El del servidor
+  // (stream-webhook) es "Cloudflare decodificó el archivo y no pudo
+  // determinar la duración" — archivo roto de verdad. El de aquí es "este
+  // picker de Android no lee metadata" — un rasgo del dispositivo que no dice
+  // nada del archivo. Tratarlos igual dejaba a esa persona sin ruta: en el
+  // MISMO teléfono podía publicar una propiedad pero jamás un anuncio.
+  // El servidor sigue validando con la duración REAL que reporta Stream, y
+  // desde #189 persiste la razón, así que un rechazo tardío produce el
+  // mensaje correcto y no el de transcodificación.
+  if (!duration_ms) {
+    return { valid: true, error_code: null, normalized_value: null };
   }
 
   // 🔴 Compara sobre el valor CRUDO fraccionario (nunca Math.round antes de

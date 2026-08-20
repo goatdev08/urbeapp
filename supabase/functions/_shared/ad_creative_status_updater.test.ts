@@ -197,6 +197,40 @@ Deno.test("mark_failed_escribe_status_failed", async () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// RED #189 — el reason_code SE PERSISTE, no se tira.
+//
+// Este adapter RECIBÍA params.reason_code y escribía solo { status: 'failed' }.
+// Su hermano de property_videos (clients.ts, make_video_status_updater) sí
+// persiste failure_reason desde siempre. Esa asimetría es lo que obligó a
+// useAdUpload a ADIVINAR la causa "por eliminación" y mostrar siempre "error
+// de transcodificación" — un mensaje que miente en cuanto la causa es otra.
+//
+// Los dos tests usan vocabularios DISTINTOS a propósito: uno solo, con el
+// literal que ya aparece en el resto del archivo, pasaría igual con un
+// `failure_reason: "AD_DURATION_INVALID"` hardcodeado.
+// ─────────────────────────────────────────────────────────────────────────────
+
+Deno.test("mark_failed_persiste_el_reason_code_propio_en_failure_reason", async () => {
+  const { client, get_builder } = make_fake_client_tracked(AFFECTED_ONE);
+  const updater = make_ad_creative_status_updater(client as never);
+  await updater.mark_failed({ cloudflare_uid: CF_UID, reason_code: "AD_DURATION_INVALID" });
+  const payload = get_builder()!.update_payload!;
+  assertEquals(
+    payload.failure_reason,
+    "AD_DURATION_INVALID",
+    "el reason_code que recibe el adapter debe llegar a la columna, no descartarse",
+  );
+});
+
+Deno.test("mark_failed_persiste_tambien_un_reason_code_de_cloudflare_no_hardcodea_el_nuestro", async () => {
+  const { client, get_builder } = make_fake_client_tracked(AFFECTED_ONE);
+  const updater = make_ad_creative_status_updater(client as never);
+  await updater.mark_failed({ cloudflare_uid: CF_UID, reason_code: "ERR_NON_VIDEO_FILE" });
+  const payload = get_builder()!.update_payload!;
+  assertEquals(payload.failure_reason, "ERR_NON_VIDEO_FILE");
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // TESTS — redondeo (ad_creatives.duration_seconds es integer; el handler valida
 // el rango [6,30] contra el valor CRUDO fraccionario ANTES de llamar aquí —
 // stream-webhook/handler.ts:82-96 documenta ese orden. Este adapter NUNCA

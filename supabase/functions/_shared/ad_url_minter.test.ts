@@ -478,7 +478,7 @@ Deno.test("query_error_devuelve_array_vacio_sin_lanzar", async () => {
 // TESTS — forma de la respuesta
 // ─────────────────────────────────────────────────────────────────────────────
 
-Deno.test("resultado_solo_tiene_creative_id_y_posterurl", async () => {
+Deno.test("resultado_solo_tiene_creative_id_posterurl_y_videourl", async () => {
   const { private_jwk_base64 } = await generate_test_signing_key();
   const { client } = make_fake_client_tracked({
     ad_creatives_data: [make_row({ duration_seconds: 20 })],
@@ -489,7 +489,74 @@ Deno.test("resultado_solo_tiene_creative_id_y_posterurl", async () => {
   assertEquals(result.length, 1);
   assertEquals(
     Object.keys(result[0]).sort(),
-    ["creative_id", "posterUrl"],
-    "mint-ad-urls SOLO expone { creative_id, posterUrl } — nunca agency_id/status/cloudflare_uid",
+    ["creative_id", "posterUrl", "videoUrl"],
+    "mint-ad-urls SOLO expone { creative_id, posterUrl, videoUrl } — nunca agency_id/status/cloudflare_uid",
+  );
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 170.8 — URL DE REPRODUCCIÓN del creativo.
+//
+// mint-ad-urls solo firmaba el PÓSTER, así que un anuncio en el feed no podía
+// reproducir: era una tarjeta estática dentro de un feed de video, y el
+// anunciante paga por una impresión de VIDEO.
+//
+// No hace falta un mecanismo nuevo: `sign_stream_token` ya emite un JWT con
+// `sub = cloudflare_uid`, y ese MISMO token sirve el manifest HLS igual que
+// sirve el thumbnail. La ruta la arma `build_hls_url`, que ya existe y ya
+// documenta el gotcha de Cloudflare (el token va en el PATH, nunca como query
+// param — con `?token=` Stream responde 401).
+// ═══════════════════════════════════════════════════════════════════════════
+
+function extract_token_from_video_url(url: string): string {
+  const match = /^https:\/\/[a-z0-9.-]+\/([^/]+)\/manifest\/video\.m3u8$/i.exec(url);
+  if (!match) throw new Error(`videoUrl no matchea el patrón esperado: '${url}'`);
+  return match[1];
+}
+
+Deno.test("videoUrl_es_el_manifest_hls_firmado", async () => {
+  const { public_jwk, private_jwk_base64 } = await generate_test_signing_key();
+  const { client } = make_fake_client_tracked({
+    ad_creatives_data: [make_row({ duration_seconds: 20 })],
+    agency_members_data: { agency_id: AGENCY_ID },
+  });
+  const minter = make_ad_url_minter(client as never, make_hls_config(private_jwk_base64));
+  const result = await minter.mint_ad_urls([CREATIVE_ID_1], MEMBER_UID);
+
+  assertEquals(result.length, 1);
+  const token = extract_token_from_video_url(result[0].videoUrl);
+  const public_key = await importJWK(public_jwk, "RS256");
+  const { payload, protectedHeader } = await jwtVerify(token, public_key, { algorithms: ["RS256"] });
+  assertEquals(protectedHeader.kid, TEST_KEY_ID);
+  assertEquals(payload.sub, CF_UID_1, "el claim 'sub' debe ser el cloudflare_uid del creativo");
+});
+
+Deno.test("videoUrl_token_en_el_path_nunca_query_param", async () => {
+  const { private_jwk_base64 } = await generate_test_signing_key();
+  const { client } = make_fake_client_tracked({
+    ad_creatives_data: [make_row({ duration_seconds: 20 })],
+    agency_members_data: { agency_id: AGENCY_ID },
+  });
+  const minter = make_ad_url_minter(client as never, make_hls_config(private_jwk_base64));
+  const result = await minter.mint_ad_urls([CREATIVE_ID_1], MEMBER_UID);
+  assertEquals(result[0].videoUrl.includes("?token="), false, "NUNCA como query param (Stream da 401)");
+  assertEquals(result[0].videoUrl.includes("&token="), false, "NUNCA como query param");
+});
+
+Deno.test("videoUrl_y_posterUrl_comparten_EXACTAMENTE_el_mismo_token", async () => {
+  // Firmar dos veces sería gastar dos JWT por creativo y —peor— podría producir
+  // TTLs distintos, con el póster expirando en otro momento que el video.
+  const { private_jwk_base64 } = await generate_test_signing_key();
+  const { client } = make_fake_client_tracked({
+    ad_creatives_data: [make_row({ duration_seconds: 20 })],
+    agency_members_data: { agency_id: AGENCY_ID },
+  });
+  const minter = make_ad_url_minter(client as never, make_hls_config(private_jwk_base64));
+  const result = await minter.mint_ad_urls([CREATIVE_ID_1], MEMBER_UID);
+
+  assertEquals(
+    extract_token_from_video_url(result[0].videoUrl),
+    extract_token_from_poster_url(result[0].posterUrl),
+    "un solo sign_stream_token por creativo: mismo token para póster y manifest",
   );
 });

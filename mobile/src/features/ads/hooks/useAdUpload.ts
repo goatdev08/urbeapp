@@ -22,18 +22,22 @@
  *       no-2xx/excepción CONFLUYEN en el mismo poll, nunca declaran 'failed'
  *       sin antes consultar el estado real del creativo.
  *   D2. La duración (169.6, validate_ad_duration_ms) se valida ANTES de
- *       construir `File` o tocar la red.
+ *       construir `File` o tocar la red. Desde #189 es FAIL-OPEN ante
+ *       duración ausente: un picker que no la reporta ya no bloquea; sube y
+ *       el servidor decide con la duración real de Stream.
  *   D3. mint-ad-upload-url (169.4) tiene errores propios: FORBIDDEN (403) y
  *       AD_UPLOAD_IN_PROGRESS (409, scoped por agencia) — el 409 se traduce
  *       a un mensaje entendible y DISTINTO del genérico (es un estado
  *       esperado, no una falla).
- *   D4. `ad_creatives` no persiste la razón de un 'failed' del poll — como el
- *       pre-flight (D2) ya validó la duración, un 'failed' que llegue del
- *       poll es CASI SIEMPRE, por eliminación, un fallo de transcodificación
- *       (no una garantía absoluta: cliente y servidor miden la duración por
- *       separado — VFR/discrepancias de contenedor pueden mover el valor
- *       real a un lado u otro de un límite; matiz sin resolver por esta
- *       subtarea, ver el header del test).
+ *   D4. `ad_creatives.failure_reason` (#189) guarda POR QUÉ falló un creativo,
+ *       así que el poll LEE la razón en vez de inferirla. Antes la columna no
+ *       existía —el adapter recibía el reason_code y lo descartaba— y este
+ *       hook adivinaba "por eliminación, esto es transcodificación",
+ *       mostrando ese mensaje incluso cuando el rechazo había sido por
+ *       duración (caso real desde que D2 es fail-open: cliente y servidor
+ *       miden la duración por separado, y el picker puede no reportarla).
+ *       Hoy: failure_reason = AD_DURATION_INVALID ⇒ mensaje de duración;
+ *       cualquier otra cosa, incluido NULL ⇒ mensaje de transcodificación.
  *   D5. El hook cancela automáticamente al desmontar (cleanup de efecto) —
  *       el hermano no lo hace; aquí se pide explícito que no queden timers
  *       vivos ni setState sobre un componente desmontado (por eso el cleanup
@@ -44,8 +48,18 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { File, UploadType } from 'expo-file-system';
 
-import { validate_ad_duration_ms } from '../lib/validation';
+import { AD_DURATION_INVALID, validate_ad_duration_ms } from '../lib/validation';
 import { extract_error_code } from '@/lib/supabase/edge-errors';
+import type { Database } from '@/types/database';
+
+/**
+ * 🔴 El genérico <Database> NO es decorativo: sin él, supabase-js deja de
+ * chequear el esquema POR COMPLETO — cualquier `.from('lo_que_sea')` compila
+ * y `data` llega como `any`. Así fue como el `select('status')` sobre
+ * `ad_creatives` de aquí abajo pasó tsc mientras los tipos generados llevaban
+ * 10 migraciones de retraso (#190).
+ */
+type AdsSupabaseClient = SupabaseClient<Database>;
 
 // ponytail: mismo techo que el hermano (useVideoUpload) — direct upload
 // simple de Cloudflare Stream, sin tus. Ver ADR de 68.4 si algún día hace
@@ -69,12 +83,31 @@ const DEFAULT_POLL_INTERVAL_MS = 3000;
 /** Estado observable del hook. 'polling' cubre el tramo entre el 2xx del binario y el desenlace del creativo. */
 export type AdUploadStatus = 'idle' | 'uploading' | 'polling' | 'ready' | 'failed';
 
-/** Estado real del creativo en `ad_creatives.status`, según lo reporta el checker inyectado. */
-export type AdCreativeCheckStatus = 'uploading' | 'processing' | 'ready' | 'failed' | 'missing';
+/**
+ * DESENLACE de consultar el creativo, según lo reporta el checker.
+ *
+ * No es un espejo 1:1 de `ad_creatives.status`: 'missing' (sin fila para ese
+ * uid) nunca existió en la tabla, y #189 añade 'failed_duration' con el mismo
+ * criterio — es un 'failed' cuya `failure_reason` es AD_DURATION_INVALID.
+ * Colapsar la razón en el status aquí, en vez de devolver un objeto
+ * {status, failure_reason}, mantiene el contrato del colaborador inyectable
+ * en un solo valor.
+ *
+ * ponytail: un miembro más del union en vez de cambiar la firma del checker
+ * y sus ~30 usos. Techo conocido: si aparece una tercera razón que el usuario
+ * deba distinguir, esto pasa a ser un objeto.
+ */
+export type AdCreativeCheckStatus =
+  | 'uploading'
+  | 'processing'
+  | 'ready'
+  | 'failed'
+  | 'failed_duration'
+  | 'missing';
 
 export interface UseAdUploadDeps {
   /** Cliente Supabase — inyectable para tests. Por defecto el singleton del módulo. */
-  supabase?: SupabaseClient;
+  supabase?: AdsSupabaseClient;
   /** Consulta el estado real del creativo por su cloudflare_uid — colaborador inyectable para tests. */
   check_ad_creative_status?: (cloudflare_uid: string) => Promise<AdCreativeCheckStatus>;
   /** Intentos máximos de poll antes de rendirse con un mensaje neutro. */
@@ -110,9 +143,9 @@ export interface UseAdUploadResult {
 
 // ponytail: import lazy — el cliente real solo se carga cuando no se inyecta
 // uno externo (los tests siempre inyectan su propio mock).
-function get_default_supabase(): SupabaseClient {
+function get_default_supabase(): AdsSupabaseClient {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  return (require('@/lib/supabase/client') as { supabase: SupabaseClient }).supabase;
+  return (require('@/lib/supabase/client') as { supabase: AdsSupabaseClient }).supabase;
 }
 
 /** Mapea el error_code de mint-ad-upload-url a un mensaje en español (D3). */
@@ -127,20 +160,27 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Checker por defecto — consulta `ad_creatives.status` por cloudflare_uid. Sin fila → 'missing'. */
+/**
+ * Checker por defecto — consulta `ad_creatives` por cloudflare_uid. Sin fila →
+ * 'missing'. #189: pide TAMBIÉN `failure_reason` y traduce un 'failed' por
+ * duración a 'failed_duration', para que el hook no tenga que adivinar.
+ */
 async function default_check_ad_creative_status(
-  supabase_client: SupabaseClient,
+  supabase_client: AdsSupabaseClient,
   cloudflare_uid: string,
 ): Promise<AdCreativeCheckStatus> {
   const { data, error } = await supabase_client
     .from('ad_creatives')
-    .select('status')
+    .select('status, failure_reason')
     .eq('cloudflare_uid', cloudflare_uid)
     .maybeSingle();
 
   if (error) throw error;
   if (!data) return 'missing';
-  return (data as { status: AdCreativeCheckStatus }).status;
+  if (data.status === 'failed' && data.failure_reason === AD_DURATION_INVALID) {
+    return 'failed_duration';
+  }
+  return data.status;
 }
 
 /**
@@ -194,10 +234,18 @@ async function poll_until_resolved(params: {
         return;
       }
 
+      if (check_status === 'failed_duration') {
+        // #189: el servidor rechazó por DURACIÓN. Ya no se adivina — la razón
+        // viene de ad_creatives.failure_reason. Mismo mensaje que el
+        // pre-flight, porque es el mismo problema.
+        set_status('failed');
+        set_error(AD_DURATION_INVALID_MESSAGE);
+        return;
+      }
+
       if (check_status === 'failed') {
-        // D4: la duración ya se validó en el pre-flight (D2) — casi siempre,
-        // por eliminación, este 'failed' es un fallo de transcodificación
-        // (matiz sin resolver por esta subtarea, ver header del hook/test).
+        // Falló sin razón registrada, o con una que no es de duración
+        // (errorReasonCode de Cloudflare): el mensaje genérico es el correcto.
         set_status('failed');
         set_error(TRANSCODING_FAILED_MESSAGE);
         return;

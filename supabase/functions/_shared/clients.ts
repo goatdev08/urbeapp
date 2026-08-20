@@ -99,6 +99,14 @@ import type {
   RegisterUploadingAdCreativeParams,
 } from "../mint-ad-upload-url/types.ts";
 import type { AdUrlMinter, MintedAdUrl } from "../mint-ad-urls/types.ts";
+import type {
+  AdRecord,
+  AdsRepository,
+  ImpressionRow,
+  ImpressionsWriter,
+  ResolvedZone,
+  ZoneResolver,
+} from "../record-ad-impressions/types.ts";
 
 /** Cliente supabase-js con service_role (bypassa RLS y column-grants). */
 export function service_client(): SupabaseClient {
@@ -182,7 +190,16 @@ export function make_invitation_db(client: SupabaseClient): InvitationDb {
 // dedicada de aceptación de invitación todavía (168.5), se apunta a la raíz
 // de la app — dentro del patrón permitido `urbea://*` (supabase/config.toml
 // additional_redirect_urls). Cambiar aquí cuando 168.5 defina la pantalla.
-const OWNER_INVITE_REDIRECT_TO = "urbea://";
+// 🔴 #178 — APUNTA A reset-password, NO A LA RAÍZ.
+// Valía "urbea://" y ahí NADIE monta useSessionFromDeepLink, así que el owner
+// abría el correo, entraba a la app y los tokens del fragmento se PERDÍAN:
+// quedaba sin sesión y sin forma de fijar contraseña. El correo que construyó
+// #168 no llevaba a ninguna parte.
+// El destino no hubo que construirlo: mobile/app/reset-password.tsx ya monta
+// el hook (:62) y fija la contraseña con updateUser({password}); es a donde ya
+// apunta la recuperación normal (context.tsx:154) y tiene su propio test de
+// deep link. Dentro del patrón permitido `urbea://*` (config.toml:27).
+const OWNER_INVITE_REDIRECT_TO = "urbea://reset-password";
 
 /** Adaptador real de AuthAdminClient sobre supabase.auth.admin. */
 export function make_auth_admin(client: SupabaseClient): AuthAdminClient {
@@ -251,9 +268,15 @@ export function make_auth_admin(client: SupabaseClient): AuthAdminClient {
             : { message: "inviteUserByEmail devolvió sin data" },
         };
       }
+      // 🔴 #177 — el respaldo lleva el MISMO redirectTo que el correo. Sin él
+      // apuntaba al site_url y el link que el admin copia al portapapeles no
+      // abría la app. Y como es el ÚNICO respaldo cuando el correo no llega,
+      // que los dos destinos coincidan importa más que cada uno por separado:
+      // si divergen, el admin no puede reproducir lo que ve el invitado.
       const backup = await client.auth.admin.generateLink({
         type: "magiclink",
         email: params.email,
+        options: { redirectTo: params.redirectTo ?? OWNER_INVITE_REDIRECT_TO },
       });
       return {
         data: {
@@ -780,13 +803,22 @@ export function make_active_upload_checker(
   client: SupabaseClient,
 ): ActiveUploadChecker {
   return {
-    async count_active_uploads(agent_id: string, stale_before: string): Promise<number> {
+    async count_active_uploads(
+      agent_id: string,
+      stale_before: string,
+      stale_processing_before: string,
+    ): Promise<number> {
       const { count, error } = await client
         .from("property_videos")
         .select("id", { count: "exact", head: true })
         .eq("agent_id", agent_id)
         .is("deleted_at", null)
-        .or(`status.eq.processing,and(status.eq.uploading,created_at.gt.${stale_before})`);
+        // #188: AMBOS estados tienen ventana ahora, con umbrales distintos.
+        // 'processing' sin ventana bloqueaba al agente para siempre.
+        .or(
+          `and(status.eq.processing,created_at.gt.${stale_processing_before}),` +
+            `and(status.eq.uploading,created_at.gt.${stale_before})`,
+        );
 
       if (error) {
         // Fail-closed: un error de red/DB al chequear concurrencia no debe
@@ -1614,13 +1646,18 @@ export function make_active_ad_upload_checker(
     async count_active_ad_uploads(
       agency_id: string,
       stale_before: string,
+      stale_processing_before: string,
     ): Promise<number> {
       const { count, error } = await client
         .from("ad_creatives")
         .select("id", { count: "exact", head: true })
         .eq("agency_id", agency_id)
+        // #188: idéntico al de property_videos, palabra por palabra — la
+        // VENTANA se unifica (#183); el SCOPE (tabla y clave) sigue separado
+        // a propósito.
         .or(
-          `status.eq.processing,and(status.eq.uploading,created_at.gt.${stale_before})`,
+          `and(status.eq.processing,created_at.gt.${stale_processing_before}),` +
+            `and(status.eq.uploading,created_at.gt.${stale_before})`,
         );
 
       if (error) {
@@ -1706,9 +1743,14 @@ export function make_ad_creative_status_updater(
       return data?.length ?? 0;
     },
     async mark_failed(params: MarkAdCreativeFailedParams): Promise<number> {
+      // #189: el reason_code SE PERSISTE. Antes se recibía y se descartaba —
+      // ad_creatives no tenía dónde ponerlo—, y esa pérdida obligaba al
+      // cliente a inferir la causa "por eliminación" y a mostrar siempre
+      // "error de transcodificación". Paridad con make_video_status_updater,
+      // que persiste failure_reason desde siempre.
       const { data, error } = await client
         .from("ad_creatives")
-        .update({ status: "failed" })
+        .update({ status: "failed", failure_reason: params.reason_code })
         .eq("cloudflare_uid", params.cloudflare_uid)
         .select("id");
       if (error) {
@@ -1819,13 +1861,119 @@ export function make_ad_url_minter(
             null, // ad_creatives no tiene thumbnail_pct — siempre el default 50%
             row.duration_seconds,
           );
-          results.push({ creative_id: row.id, posterUrl });
+          // 170.8: el MISMO token firma el manifest HLS. No se vuelve a
+          // firmar — dos firmas gastarían dos JWT por creativo y podrían
+          // producir TTLs distintos, con el póster expirando en otro momento
+          // que el video. build_hls_url ya documenta el gotcha del token en
+          // el PATH (con ?token= Stream responde 401).
+          const videoUrl = build_hls_url(domain, token);
+          results.push({ creative_id: row.id, posterUrl, videoUrl });
         } catch {
           // fail-closed: JWK inválido u otro error de firmado → excluir solo esta fila
         }
       }
 
       return results;
+    },
+  };
+}
+
+// ── record-ad-impressions (subtarea 170.6) ──────────────────────────────────
+
+/** AdsRepository real: trae los ads TAL CUAL están en la tabla, sin filtrar
+ * por status ni vigencia — la decisión de elegibilidad vive en el handler. */
+export function make_ads_repository(client: SupabaseClient): AdsRepository {
+  return {
+    async fetch_ads(ad_ids: string[]): Promise<AdRecord[]> {
+      if (ad_ids.length === 0) return [];
+      const { data, error } = await client
+        .from("ads")
+        .select("id, agency_id, status, starts_at, ends_at")
+        .in("id", ad_ids);
+      if (error) throw error;
+      return (data ?? []) as AdRecord[];
+    },
+  };
+}
+
+/** ZoneResolver real: delega en la RPC public.resolve_ad_zone (misma regla
+ * de resolución por coordenadas que public.ads_for_zone — colonia por
+ * ST_Intersects, fallback a bbox de municipio, NULL/NULL sin match). */
+export function make_zone_resolver(client: SupabaseClient): ZoneResolver {
+  return {
+    async resolve_zone(lat: number, lng: number): Promise<ResolvedZone> {
+      const { data, error } = await client
+        .rpc("resolve_ad_zone", { p_lat: lat, p_lng: lng })
+        .single();
+      if (error) throw error;
+      const row = data as { municipality_id: string | null; neighborhood_id: number | null };
+      return { municipality_id: row.municipality_id, neighborhood_id: row.neighborhood_id };
+    },
+  };
+}
+
+/** ImpressionsWriter real. upsert_impressions hace upsert por `id` (PK) —
+ * idempotente junto con unique(user_id, ad_id, session_id) de #193.
+ * record_cta_tap es un UPDATE (no upsert): su firma solo conoce (id,
+ * cta_tapped_at), así que estructuralmente no puede tocar
+ * watched_ms/viewed/completed; si la fila aún no existe (CTA que adelanta al
+ * batch de impresiones) no hace nada — fire-and-forget, sin error.
+ *
+ * Fix guardián 170.6 (V1) — `onConflict:"id"` SOLO (sin `ignoreDuplicates`)
+ * es un UPDATE de TODAS las columnas: reenviar el mismo id (reintento de
+ * red) degradaba una fila ya facturada (watched_ms/viewed/completed volvían
+ * a 0/false). `ignoreDuplicates: true` (INSERT ... ON CONFLICT DO NOTHING)
+ * es la opción elegida — el reenvío no toca la fila en absoluto, lo cual es
+ * correcto porque cta_tapped_at (la única columna legítimamente mutable
+ * tras el insert) NUNCA pasa por este método: la escribe record_cta_tap,
+ * con su propia firma acotada. Alternativa descartada: un
+ * `on conflict do update` acotado a columnas monótonas (quedarse con el
+ * watched_ms MAYOR) — más código para el mismo resultado observable, ya que
+ * ninguna columna de upsert_impressions debe cambiar tras el insert inicial.
+ *
+ * Fix guardián 170.6 (V4b) — el batch es UN SOLO INSERT multi-fila: si
+ * Postgres rechaza el statement completo (22P02 por un uuid con formato
+ * inválido en una sola fila, u otra violación), se perdían también las
+ * filas válidas del mismo lote. Fallback fail-closed POR ITEM (misma
+ * lección de #73 / mismo criterio que mint-poster-urls/mint-ad-urls): si el
+ * upsert batch falla, se reintenta fila por fila para persistir las
+ * válidas, y se relanza el error al final para no ocultar el fallo (el
+ * caller decide qué hacer con la excepción). */
+export function make_impressions_writer(client: SupabaseClient): ImpressionsWriter {
+  return {
+    async upsert_impressions(rows: ImpressionRow[]): Promise<void> {
+      if (rows.length === 0) return;
+      const { error } = await client
+        .from("ad_impressions")
+        .upsert(rows, { onConflict: "id", ignoreDuplicates: true });
+      if (!error) return;
+
+      let last_error: unknown = error;
+      for (const row of rows) {
+        const { error: row_error } = await client
+          .from("ad_impressions")
+          .upsert([row], { onConflict: "id", ignoreDuplicates: true });
+        if (row_error) last_error = row_error;
+      }
+      throw last_error;
+    },
+    /**
+     * #198: devuelve CUÁNTAS filas tocó. Sigue siendo un UPDATE —no puede
+     * crear la fila, y esa restricción es deliberada (es lo que impide
+     * estructuralmente que toque watched_ms/viewed/completed, fix del
+     * bloqueante V1)— pero ahora un tap HUÉRFANO (llegó antes que su
+     * impresión) es DISTINGUIBLE de uno que escribió. Antes devolvía void y
+     * el tap se perdía sin error, sin contador y sin rastro; en un producto
+     * donde el CTA se factura por clic, ese es el evento más caro.
+     */
+    async record_cta_tap(id: string, cta_tapped_at: string): Promise<number> {
+      const { data, error } = await client
+        .from("ad_impressions")
+        .update({ cta_tapped_at })
+        .eq("id", id)
+        .select("id");
+      if (error) throw error;
+      return data?.length ?? 0;
     },
   };
 }

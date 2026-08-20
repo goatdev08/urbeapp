@@ -142,25 +142,52 @@ describe('validate_ad_duration_ms', () => {
     expect(result.error_code).toBe(AD_DURATION_INVALID);
   });
 
-  it('rechaza duración null — fail-closed (el servidor 169.5 también lo es ante duración ausente)', () => {
+  // ─────────────────────────────────────────────────────────────────────────
+  // RED #189 — DURACIÓN DESCONOCIDA PASA (fail-open), espejo de propiedades.
+  //
+  // Antes esto era fail-closed, justificado como "paridad con el servidor".
+  // La paridad era formal, no semántica: los dos `null` significan cosas
+  // distintas. El del servidor (stream-webhook/handler.ts) es "Cloudflare
+  // demuxeó el archivo y no pudo determinar la duración" — archivo roto de
+  // verdad. El del cliente es "este picker de Android no lee metadata" — un
+  // rasgo del dispositivo que no dice NADA del archivo.
+  //
+  // Consecuencia del fail-closed: en el MISMO teléfono, la persona podía
+  // publicar una propiedad (validation.ts:141-143 es fail-open y documenta
+  // "pickers Android viejos") pero jamás un anuncio, sin ruta de escape y con
+  // un mensaje que decía "duración inválida" cuando el problema era que no
+  // había duración.
+  //
+  // 🔴 El literal AD_DURATION_INVALID NO cambia: la coherencia cliente-servidor
+  // anclada en 169.6 es lo que impide que el mismo problema produzca dos
+  // mensajes distintos. Lo que cambia es CUÁNDO se emite.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  it('#189 acepta duración null — fail-OPEN: el picker no la reporta, el servidor revalida con la duración real de Stream', () => {
     const result = validate_ad_duration_ms(null);
 
-    expect(result.valid).toBe(false);
-    expect(result.error_code).toBe(AD_DURATION_INVALID);
+    expect(result.valid).toBe(true);
+    expect(result.error_code).toBeNull();
   });
 
-  it('rechaza duración undefined — fail-closed', () => {
+  it('#189 acepta duración undefined — fail-OPEN, mismo motivo', () => {
     const result = validate_ad_duration_ms(undefined);
 
-    expect(result.valid).toBe(false);
-    expect(result.error_code).toBe(AD_DURATION_INVALID);
+    expect(result.valid).toBe(true);
+    expect(result.error_code).toBeNull();
   });
 
-  it('rechaza 0 ms — fail-closed (no es "duración desconocida que pasa", es duración inválida)', () => {
+  it('#189 acepta 0 ms — fail-OPEN: 0 es el marcador de "desconocida" de los pickers viejos, igual que en propiedades', () => {
     const result = validate_ad_duration_ms(0);
 
-    expect(result.valid).toBe(false);
-    expect(result.error_code).toBe(AD_DURATION_INVALID);
+    expect(result.valid).toBe(true);
+    expect(result.error_code).toBeNull();
+  });
+
+  it('#189 CASO PAREADO: fail-open aplica SOLO a la duración ausente — una duración conocida fuera de rango sigue rechazándose', () => {
+    expect(validate_ad_duration_ms(5_900).valid).toBe(false);
+    expect(validate_ad_duration_ms(30_100).valid).toBe(false);
+    expect(validate_ad_duration_ms(1).valid).toBe(false);
   });
 
   it('rechaza una duración negativa', () => {

@@ -1,8 +1,10 @@
 /**
- * useFeedProperties — hook React que envuelve fetchFeedProperties.
+ * useFeedProperties — hook React que envuelve fetchFeedProperties y compone
+ * el feed heterogéneo (propiedades + anuncios intercalados, 170.4).
  *
- * Expone: data, isLoading, error, nextCursor, loadInitial, refetch, loadMore.
- * Paginación acumulativa: loadMore apende al array existente.
+ * Expone: data (FeedItem[]), isLoading, error, nextCursor, loadInitial,
+ * refetch, loadMore. Paginación acumulativa: loadMore apende al array
+ * existente.
  *
  * `filters` (opcional, #12.7): al cambiar de identidad (el FilterProvider crea
  * un objeto nuevo en cada set_filter/clear_filters), loadInitial cambia de
@@ -17,21 +19,45 @@
  * (cambia de null a objeto), loadInitial cambia de identidad y el efecto de
  * FeedScreen dispara el refetch automáticamente.
  *
+ * Composición de anuncios (170.4, dependencias 170.1/170.2/170.3):
+ *   - Tras cada fetch exitoso, se consulta el kill-switch `ads_feed_config()`
+ *     (sin argumentos). Si `ads_enabled` es false, o la RPC falla/está
+ *     malformada, o `deps.supabase` no expone `.rpc` (mock legado de los 14
+ *     tests preexistentes de feed/__tests__) ⇒ FAIL-SOFT ABSOLUTO: el feed
+ *     se compone solo de propiedades, sin lanzar ni marcar `error`.
+ *   - Con ads_enabled=true, se consulta `ads_for_zone` con las coords del
+ *     usuario y zona null/null (#195 — el feed hoy no tiene "zona vista"
+ *     propia; el RPC resuelve por GPS). Cualquier fallo de esta RPC (error
+ *     explícito, promesa rechazada, respuesta no-array) también degrada a
+ *     feed normal.
+ *   - `interleave_ads` (170.3, pura) decide el orden final; `already_shown_ref`
+ *     acumula anuncios mostrados A TRAVÉS de loadInitial/loadMore/refetch
+ *     durante la vida del hook (nunca se resetea) para sostener el cap de
+ *     sesión (`ad_max_per_session`) entre páginas.
+ *
  * ponytail: sin estado extra — loading único para initial y loadMore;
  * techo conocido: sin abort controller (el feed es efímero, sin race visible).
  */
 
-import { useState, useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { useLocation } from '@/features/location/LocationProvider';
 import type { FilterState } from '@/features/search/types';
 import { onPropertyDeleted } from '@/lib/propertyEvents';
 
+import { get_app_session_id } from '../lib/appSession';
+import {
+  ads_failure_store,
+  report_ads_failure,
+  type AdsFailureClient,
+  type AdsFailureStage,
+} from '../lib/adsFailureSignal';
 import { fetchFeedProperties, type FeedPropertiesDeps } from '../lib/feedProperties';
+import { interleave_ads, type FeedAd, type FeedItem } from '../lib/interleaveAds';
 import type { FeedPropertyWithUrl } from '../types';
 
 export interface UseFeedPropertiesState {
-  data: FeedPropertyWithUrl[];
+  data: FeedItem[];
   isLoading: boolean;
   error: string | null;
   nextCursor: string | null;
@@ -43,14 +69,194 @@ export interface UseFeedPropertiesState {
   loadMore: () => Promise<void>;
 }
 
+/** Config del kill-switch, forma de la fila de `ads_feed_config()`. */
+type AdsFeedConfigRow = {
+  ads_enabled: boolean;
+  ad_frequency_n: number;
+  ad_max_per_session: number;
+};
+
+const to_property_items = (properties: FeedPropertyWithUrl[]): FeedItem[] =>
+  properties.map((property) => ({ kind: 'property', property }));
+
+/** Fila de mint-ad-urls. */
+type MintedAdUrlRow = { creative_id: string; posterUrl: string; videoUrl: string };
+
+/**
+ * Pide a mint-ad-urls las URLs firmadas de estos anuncios y devuelve SOLO los
+ * que quedaron firmados. `null` = la EF falló entera (distinto de "firmó cero",
+ * que es una lista vacía y también deja el feed sin anuncios pero por una razón
+ * legítima: ningún creativo autorizado/disponible).
+ */
+async function mint_ad_urls(client: unknown, ads: FeedAd[]): Promise<FeedAd[] | null> {
+  const invoke = (client as { functions?: { invoke?: unknown } } | null | undefined)?.functions?.invoke;
+  if (typeof invoke !== 'function') return null;
+  const call = invoke as (name: string, opts: unknown) => Promise<{ data: unknown; error: unknown }>;
+
+  const { data, error } = await call('mint-ad-urls', {
+    body: { creative_ids: ads.map((ad) => ad.creative_id) },
+  });
+  if (error) return null;
+
+  const urls = (data as { urls?: unknown } | null | undefined)?.urls;
+  if (!Array.isArray(urls)) return null;
+
+  const by_creative = new Map(
+    (urls as MintedAdUrlRow[]).map((row) => [row.creative_id, row]),
+  );
+
+  const signed: FeedAd[] = [];
+  for (const ad of ads) {
+    const minted = by_creative.get(ad.creative_id);
+    // Sin firma no se sirve: ver el comentario de compose_feed_items.
+    if (minted) signed.push({ ...ad, video_url: minted.videoUrl, poster_url: minted.posterUrl });
+  }
+  return signed;
+}
+
+/**
+ * #196: deja rastro del fail-soft SIN cambiarlo. Fire-and-forget deliberado
+ * (`void`, nunca `await`): el feed no espera a la telemetría, y
+ * report_ads_failure jamás rechaza, así que este `void` no puede producir una
+ * promesa colgada. 🔴 Solo se llama ante un FALLO — `ads_enabled=false` es un
+ * apagado deliberado, no un fallo, y no emite nada (EC-SIG-6).
+ */
+function signal_ads_failure(client: unknown, stage: AdsFailureStage): void {
+  void report_ads_failure({
+    client: client as AdsFailureClient,
+    session_id: get_app_session_id(),
+    stage,
+    store: ads_failure_store,
+  });
+}
+
+/**
+ * Compone `properties` con anuncios intercalados, o degrada a solo-propiedades
+ * ante CUALQUIER falla (gate 170.1 / fail-soft absoluto). `already_shown_ref`
+ * se actualiza in-place con los anuncios usados en ESTA llamada.
+ */
+async function compose_feed_items(
+  client: unknown,
+  /**
+   * #195: el punto que se usa para RESOLVER LA ZONA de los anuncios. NO es
+   * necesariamente el GPS — ver `ad_zone_coords` en el hook.
+   */
+  coords: { latitude: number; longitude: number },
+  properties: FeedPropertyWithUrl[],
+  already_shown_ref: { current: number },
+  skip_first_position: boolean,
+): Promise<FeedItem[]> {
+  const rpc = (client as { rpc?: unknown } | null | undefined)?.rpc;
+  if (typeof rpc !== 'function') return to_property_items(properties);
+  const call_rpc = rpc as (fn: string, params?: unknown) => Promise<{ data: unknown; error: unknown }>;
+
+  let config: AdsFeedConfigRow;
+  try {
+    const { data, error } = await call_rpc('ads_feed_config');
+    if (error || !Array.isArray(data) || data.length === 0) {
+      signal_ads_failure(client, 'config');
+      return to_property_items(properties);
+    }
+    if (!data[0]?.ads_enabled) {
+      // Kill-switch apagado a propósito: NO es un fallo, no se señala.
+      return to_property_items(properties);
+    }
+    config = data[0] as AdsFeedConfigRow;
+  } catch {
+    signal_ads_failure(client, 'config');
+    return to_property_items(properties);
+  }
+
+  let ads: FeedAd[];
+  try {
+    const { data, error } = await call_rpc('ads_for_zone', {
+      p_lat: coords.latitude,
+      p_lng: coords.longitude,
+      // #195: la zona DECLARADA (por id de colonia/municipio) sigue en null y
+      // es una limitación conocida, no un olvido: ese id vive hoy solo en el
+      // useState local de MapScreen y propagarlo exige tocar FilterState, su
+      // persistencia y los consumidores del mapa. Lo que SÍ se ejerce ya es la
+      // precedencia por PUNTO: cuando hay "buscar en esta zona" activa, el
+      // punto que llega aquí es el centro de lo que el usuario está viendo, no
+      // su GPS. Ver EC-ZONE-1/2/3 en useFeedProperties.ads.test.tsx.
+      p_neighborhood_id: null,
+      p_municipality_id: null,
+    });
+    if (error || !Array.isArray(data)) {
+      signal_ads_failure(client, 'zone');
+      return to_property_items(properties);
+    }
+    ads = data as FeedAd[];
+  } catch {
+    signal_ads_failure(client, 'zone');
+    return to_property_items(properties);
+  }
+
+  // 170.8 — FIRMA DE LA URL DE REPRODUCCIÓN.
+  // ads_for_zone da el creative_id pero no una URL reproducible: los creativos
+  // de Stream tienen requireSignedURLs. mint-ad-urls (169.5, ampliada en 170.8)
+  // devuelve póster y manifest HLS firmados con el MISMO token.
+  //
+  // 🔴 Un anuncio cuya URL no se pudo firmar NO SE SIRVE. Una impresión que el
+  // anunciante PAGA y que no muestra su video es peor que no servir el anuncio
+  // — y se registraría igual, porque el registro de impresiones no sabe si el
+  // video llegó a pintar.
+  if (ads.length > 0) {
+    try {
+      const signed = await mint_ad_urls(client, ads);
+      if (signed === null) {
+        signal_ads_failure(client, 'mint');
+        return to_property_items(properties);
+      }
+      ads = signed;
+    } catch {
+      signal_ads_failure(client, 'mint');
+      return to_property_items(properties);
+    }
+  }
+
+  const items = interleave_ads(properties, ads, {
+    every_n: config.ad_frequency_n,
+    max_per_session: config.ad_max_per_session,
+    min_gap_between_repeats: config.ad_frequency_n * 2,
+    already_shown_count: already_shown_ref.current,
+    skip_first_position,
+  });
+
+  already_shown_ref.current += items.filter((item) => item.kind === 'ad').length;
+
+  return items;
+}
+
 export function useFeedProperties(filters?: FilterState): UseFeedPropertiesState {
   const { coords } = useLocation();
-  const [data, set_data] = useState<FeedPropertyWithUrl[]>([]);
+  const [data, set_data] = useState<FeedItem[]>([]);
   // ponytail: arranca en true — FeedScreen siempre llama loadInitial en mount;
   // esto evita un frame de "empty state" antes de que useEffect dispare.
   const [isLoading, set_is_loading] = useState(true);
   const [error, set_error] = useState<string | null>(null);
   const [nextCursor, set_next_cursor] = useState<string | null>(null);
+  // Anuncios mostrados en ESTA sesión (vida del hook): acumula entre
+  // loadInitial/loadMore/refetch, nunca se resetea (170.4, decisión 5).
+  const already_shown_ref = useRef(0);
+
+  // #195 — LA ZONA VISTA GANA SOBRE EL GPS, del lado cliente.
+  // `filters.area` es "buscar en esta zona" (#56): su centro sale del viewport
+  // del mapa, o sea que es literalmente el punto que la persona está mirando.
+  // Sin esto, quien explora Guadalajara desde CDMX veía anuncios de CDMX y el
+  // inventario de Guadalajara —que alguien pagó— no se servía nunca.
+  // 🔴 Solo afecta a los ANUNCIOS: las propiedades ya resuelven `area` por su
+  // propio camino (properties_within_radius), y mezclarlos aquí rompería el
+  // invariante A1 de #42.
+  // Se resuelve dentro de cada callback (no en el cuerpo del hook) para no
+  // perder el estrechamiento de `coords`, que ahí ya pasó el guard de null.
+  const resolve_ad_zone_coords = useCallback(
+    (gps: { latitude: number; longitude: number }): { latitude: number; longitude: number } =>
+      filters?.area
+        ? { latitude: filters.area.center.lat, longitude: filters.area.center.lng }
+        : gps,
+    [filters],
+  );
 
   // ponytail: deps solo se arma cuando ya hay coords reales; sin ellas se pasa
   // undefined y fetchFeedProperties usa su propio lazy-require del singleton
@@ -62,46 +268,49 @@ export function useFeedProperties(filters?: FilterState): UseFeedPropertiesState
     return { supabase, coords };
   }, [coords]);
 
-  // #59: no cargar hasta que haya coords reales. Sin este guard, el primer
-  // loadInitial (coords null en cold start) traía el orden centrado en GDL
-  // (fallback del lib) y luego saltaba al orden por proximidad al llegar la
-  // coord real → "flash". Con el guard, isLoading se queda en true (skeleton)
-  // hasta que la coord llega; entonces load_initial cambia de identidad
-  // (dep _can_load) y el useEffect de FeedScreen re-dispara la carga una vez.
-  const _can_load = coords !== null;
-
   const load_initial = useCallback(async () => {
-    if (!_can_load) return;
+    // #59: no cargar hasta que haya coords reales. Sin este guard, el primer
+    // loadInitial (coords null en cold start) traía el orden centrado en GDL
+    // (fallback del lib) y luego saltaba al orden por proximidad al llegar la
+    // coord real → "flash".
+    if (!coords) return;
     set_is_loading(true);
     set_error(null);
     try {
-      const result = await fetchFeedProperties(undefined, build_deps(), filters);
-      set_data(result.data);
+      const deps = build_deps();
+      const result = await fetchFeedProperties(undefined, deps, filters);
+      const items = await compose_feed_items(deps?.supabase, resolve_ad_zone_coords(coords), result.data, already_shown_ref, true);
+      set_data(items);
       set_next_cursor(result.nextCursor);
     } catch (e) {
       set_error(e instanceof Error ? e.message : 'Error al cargar el feed');
     } finally {
       set_is_loading(false);
     }
-  }, [_can_load, filters, build_deps]);
+  }, [coords, resolve_ad_zone_coords, filters, build_deps]);
 
   const load_more = useCallback(async () => {
-    if (!nextCursor || isLoading) return;
+    if (!nextCursor || isLoading || !coords) return;
     set_is_loading(true);
     set_error(null);
     try {
-      const result = await fetchFeedProperties(nextCursor, build_deps(), filters);
-      set_data((prev) => [...prev, ...result.data]);
+      const deps = build_deps();
+      const result = await fetchFeedProperties(nextCursor, deps, filters);
+      const items = await compose_feed_items(deps?.supabase, resolve_ad_zone_coords(coords), result.data, already_shown_ref, false);
+      set_data((prev) => [...prev, ...items]);
       set_next_cursor(result.nextCursor);
     } catch (e) {
       set_error(e instanceof Error ? e.message : 'Error al cargar más');
     } finally {
       set_is_loading(false);
     }
-  }, [nextCursor, isLoading, filters, build_deps]);
+  }, [nextCursor, isLoading, coords, resolve_ad_zone_coords, filters, build_deps]);
 
   useEffect(
-    () => onPropertyDeleted((id) => set_data((prev) => prev.filter((p) => p.id !== id))),
+    () =>
+      onPropertyDeleted((id) =>
+        set_data((prev) => prev.filter((item) => item.kind !== 'property' || item.property.id !== id)),
+      ),
     [],
   );
 
