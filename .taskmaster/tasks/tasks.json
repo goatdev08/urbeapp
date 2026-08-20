@@ -8696,15 +8696,15 @@
         "id": "175",
         "title": "fix(157): scopear los asserts de 43_search_places_test.sql a sus propios fixtures",
         "description": "Origen: tarea 157 · Detectado por: guardian de la subtarea 168.1. 43_search_places_test.sql:70-73 y :121 asiertan CONTEOS ABSOLUTOS sobre public.mx_neighborhoods en vez de scopear a sus fixtures. seed.sql no puebla esa tabla, pero el pipeline de import de #157 deja filas locales que solo borra un db reset — así que el test depende del estado global de la tabla y falla con cualquier dato residual.",
-        "details": "footprint=supabase/tests/43_search_places_test.sql (:70-73 y :121). Criticidad: no crítica (es un archivo de test, nunca bloqueado por el tdd-guard). Impacto-prod: ninguno. EVIDENCIA REPRODUCIDA por el guardian: insertando UNA sola colonia PROVIDENCIA NORTE, el test 5 pasa a \"have: 3 / want: 2\". Con un import DCAH completo (miles de filas) revientan además los asserts de ranking, contexto, bbox y el clamp de :121 (que espera exactamente 20) — ése es el patrón \"15/24\" que se observó. COSTO REAL YA PAGADO: hizo perder ~1h en un diagnóstico falso durante la fase RED de 168.1, donde se reportó como regresión algo que era solo estado local rancio. FIX: filtrar por un discriminante de los propios fixtures (p.ej. source_key like 'test-157-%') en vez de contar toda la tabla.",
+        "details": "footprint=supabase/tests/43_search_places_test.sql (:70-73 y :121). Criticidad: no crítica (es un archivo de test, nunca bloqueado por el tdd-guard). Impacto-prod: ninguno. EVIDENCIA REPRODUCIDA por el guardian: insertando UNA sola colonia PROVIDENCIA NORTE, el test 5 pasa a \"have: 3 / want: 2\". Con un import DCAH completo (miles de filas) revientan además los asserts de ranking, contexto, bbox y el clamp de :121 (que espera exactamente 20) — ése es el patrón \"15/24\" que se observó. COSTO REAL YA PAGADO: hizo perder ~1h en un diagnóstico falso durante la fase RED de 168.1, donde se reportó como regresión algo que era solo estado local rancio. FIX: filtrar por un discriminante de los propios fixtures (p.ej. source_key like 'test-157-%') en vez de contar toda la tabla.\n<info added on 2026-08-20T21:41:10.274Z>\nHECHO. 43_search_places_test.sql ya no depende del estado global de mx_neighborhoods.\n\nEL DIAGNÓSTICO DE LA TAREA ERA INCOMPLETO. Decía \":70-73 y :121 asiertan conteos\nabsolutos\" y proponía filtrar por source_key. Al reproducirlo con residuo real\naparecieron DOS cosas que ese fix no cubre:\n\n1. :110 no FALLABA, ABORTABA. El `where name = 'Providencia'` de los tests 13-14\n   es una subconsulta escalar; con varias Providencias devuelve >1 fila y Postgres\n   tumba la TRANSACCIÓN ENTERA. Salida real del RED:\n     psql:.../43_search_places_test.sql:110: ERROR:  more than one row returned by\n     a subquery used as an expression\n     # Failed test 5: have: 6 / want: 2\n     Failed 13/24 subtests · Bad plan. You planned 24 tests but ran 12.\n   O sea: 13 asserts caídos, y :121 (el que la tarea nombraba) ni siquiera llegó\n   a ejecutarse.\n\n2. FILTRAR POR source_key NO ALCANZA. search_places tiene p_limit default 10 y\n   ordena por (is_prefix, sim, kind, name). Con un import DCAH completo hay\n   decenas de 'Álvaro Obregón' reales; el fixture queda FUERA de la ventana de 10\n   y no llega al resultado. Un `where source_key like 'test-157-%'` sobre filas\n   que no salieron no rescata nada.\n\nFIX: nombres ACUÑADOS que el catálogo real no puede contener —\n'Providencia'->'Provitest', 'Providencia 2a Sección'->'Provitest 2a Sección',\n'Álvaro Obregón'->'Álvitest Obregonte', 'Villa Prueba N'->'Villatest Prueba N'—\nmás scoping por id de fixture en los asserts que cuentan (test 5) y en los que\nbuscaban por nombre (tests 13-14, los del abort). Las queries se movieron al stem\nacuñado ('provite', 'alvitest', 'Álvitest', 'obregonte', 'villatest prueba').\nEl encabezado del archivo explica por qué los nombres son raros, para que nadie\nlos \"arregle\" de vuelta a nombres realistas y reintroduzca el bug.\n\nVERIFICACIÓN (salida real). Residuo simulado insertado en el stack local con\nsource_key 'sim-residual-%' / 'sim-adversario-%' y borrado al terminar (la tabla\nquedó en 0 filas, como estaba):\n\n  A) CON residuo (5071 filas ajenas: 5000 con nombres que compiten por prefijo y\n     trgm + 59 homónimas, MÁS 12 filas ADVERSARIAS con el mismo nombre acuñado\n     que los fixtures, para probar que el scoping hace trabajo real):\n       Files=1, Tests=24 · Result: PASS\n  B) Con la tabla VACÍA (estado de seed.sql):\n       Files=1, Tests=24 · Result: PASS\n\nNO QUEDÓ VACUO — mutación sobre la RPC real (dump con pg_get_functiondef,\nmutante aplicado, original restaurado):\n  · quitar el clamp superior least(...,20)  -> ✕ test 17  have: 683 / want: 20\n  · context de colonia sin s.abbr           -> ✕ test 13  have: Guadalajara /\n                                                          want: Guadalajara, Jal.\n  · ranking invertido (sim asc, name desc)  -> ✕ tests 6, 9, 10\n                                                have: 'Provitest 2a Sección' /\n                                                want: 'Provitest'\nFunción restaurada y verificada en verde después de los tres mutantes.\n\nIMPACTO-PROD: ninguno. Solo supabase/tests/**; ni migraciones ni código de app.\n</info added on 2026-08-20T21:41:10.274Z>",
         "testStrategy": "El archivo pasa 24/24 con la tabla vacía Y con datos residuales de un import real. Ésa es la prueba de que quedó scopeado.",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           "157"
         ],
         "priority": "low",
         "subtasks": [],
-        "updatedAt": "2026-08-16T00:00:00.000Z"
+        "updatedAt": "2026-08-20T21:41:10.274Z"
       },
       {
         "id": "176",
@@ -9154,9 +9154,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-08-18T05:21:11.967Z",
+      "lastModified": "2026-08-20T21:40:41.727Z",
       "taskCount": 192,
-      "completedCount": 102,
+      "completedCount": 103,
       "tags": [
         "master"
       ]
