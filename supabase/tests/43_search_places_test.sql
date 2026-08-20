@@ -26,6 +26,23 @@
 --
 -- Fixtures: colonias sintéticas en Guadalajara (14039) con ST_MakeEnvelope
 -- alrededor del centro GDL; el catálogo 72.1 ya siembra municipios y estados.
+--
+-- 🔴 LOS NOMBRES ESTÁN ACUÑADOS A PROPÓSITO ('Provitest', 'Álvitest Obregonte',
+-- 'Villatest Prueba N') — NO los "arregles" a nombres realistas (#175).
+-- Antes decían 'Providencia', 'Álvaro Obregón' y 'Villa Prueba N', que son
+-- colonias que EXISTEN de verdad, y eso ataba el archivo al estado global de
+-- public.mx_neighborhoods: seed.sql no la puebla, pero el pipeline de import
+-- de #157 deja filas locales que solo borra un db reset. Con residuo real:
+--   · el conteo del test 5 daba 6 en vez de 2;
+--   · el `where name = 'Providencia'` de los tests 13-14 devolvía VARIAS filas
+--     y reventaba la transacción entera ("more than one row returned by a
+--     subquery"), tumbando 13 de 24 asserts de un golpe;
+--   · y con un import completo el fixture ni siquiera entraba en la ventana
+--     de p_limit=10, así que ni un `where source_key like 'test-157-%'`
+--     lo habría salvado: la fila no llegaba al resultado.
+-- Un nombre que el catálogo real no puede contener es lo único que hace al
+-- archivo independiente del estado de la tabla. Los asserts que cuentan o
+-- buscan por nombre además se scopean por id de fixture (cinturón y tirantes).
 
 begin;
 select plan(24);
@@ -38,16 +55,16 @@ update public.mx_municipalities
   where id = '14039';
 
 insert into public.mx_neighborhoods (source_key, municipality_id, name, postal_code, geom) values
-  ('test-157-providencia', '14039', 'Providencia', '44630',
+  ('test-157-providencia', '14039', 'Provitest', '44630',
    extensions.ST_Multi(extensions.ST_MakeEnvelope(-103.38, 20.69, -103.36, 20.71, 4326))::extensions.geography),
-  ('test-157-providencia-2a', '14039', 'Providencia 2a Sección', '44639',
+  ('test-157-providencia-2a', '14039', 'Provitest 2a Sección', '44639',
    extensions.ST_Multi(extensions.ST_MakeEnvelope(-103.36, 20.69, -103.34, 20.71, 4326))::extensions.geography),
-  ('test-157-alvaro-obregon', '14039', 'Álvaro Obregón', '44720',
+  ('test-157-alvaro-obregon', '14039', 'Álvitest Obregonte', '44720',
    extensions.ST_Multi(extensions.ST_MakeEnvelope(-103.32, 20.66, -103.30, 20.68, 4326))::extensions.geography);
 
 -- 25 colonias homónimas para probar el techo del clamp (p_limit > 20 -> 20).
 insert into public.mx_neighborhoods (source_key, municipality_id, name, geom)
-select 'test-157-villa-' || i, '14039', 'Villa Prueba ' || i,
+select 'test-157-villa-' || i, '14039', 'Villatest Prueba ' || i,
        extensions.ST_Multi(extensions.ST_MakeEnvelope(-103.40, 20.60, -103.39, 20.61, 4326))::extensions.geography
 from generate_series(1, 25) as i;
 
@@ -67,28 +84,34 @@ select is((select count(*)::int from public.search_places('p')), 0,
 select is((select count(*)::int from public.search_places('   ')), 0,
   'search_places: solo espacios -> 0 filas');
 
--- ── 5-6) Prefijo: "provi" encuentra las 2 Providencias, la exacta primero ──
+-- ── 5-6) Prefijo: "provite" encuentra las 2 Provitest, la exacta primero ───
+-- El conteo se scopea a los ids de los propios fixtures: aunque el stem
+-- acuñado ya vuelve imposible el choque, contar toda la tabla es exactamente
+-- el acoplamiento al estado global que #175 vino a quitar.
 select is(
-  (select count(*)::int from public.search_places('provi') where kind = 'neighborhood'),
+  (select count(*)::int from public.search_places('provite') p
+    where p.kind = 'neighborhood'
+      and p.id in (select n.id::text from public.mx_neighborhoods n
+                    where n.source_key like 'test-157-%')),
   2,
-  'search_places(provi): encuentra las 2 colonias Providencia*');
+  'search_places(provite): encuentra las 2 colonias Provitest*');
 select is(
-  (select name from public.search_places('provi') limit 1),
-  'Providencia',
-  'search_places(provi): la de mayor similitud (nombre exacto más corto) va primero');
+  (select name from public.search_places('provite') limit 1),
+  'Provitest',
+  'search_places(provite): la de mayor similitud (nombre exacto más corto) va primero');
 
 -- ── 7-8) Acentos: la query se normaliza igual que la columna ───────────────
 select ok(
-  exists(select 1 from public.search_places('alvaro') where name = 'Álvaro Obregón' and kind = 'neighborhood'),
-  'search_places(alvaro, sin acento): encuentra Álvaro Obregón');
+  exists(select 1 from public.search_places('alvitest') where name = 'Álvitest Obregonte' and kind = 'neighborhood'),
+  'search_places(alvitest, sin acento): encuentra Álvitest Obregonte');
 select ok(
-  exists(select 1 from public.search_places('Álvaro') where name = 'Álvaro Obregón' and kind = 'neighborhood'),
-  'search_places(Álvaro, con acento y mayúscula): también lo encuentra');
+  exists(select 1 from public.search_places('Álvitest') where name = 'Álvitest Obregonte' and kind = 'neighborhood'),
+  'search_places(Álvitest, con acento y mayúscula): también lo encuentra');
 
 -- ── 9) Fuzzy sin prefijo: "obregon" matchea por similitud trgm (%) ─────────
 select ok(
-  exists(select 1 from public.search_places('obregon') where name = 'Álvaro Obregón' and kind = 'neighborhood'),
-  'search_places(obregon): matchea Álvaro Obregón sin ser prefijo (operador %)');
+  exists(select 1 from public.search_places('obregonte') where name = 'Álvitest Obregonte' and kind = 'neighborhood'),
+  'search_places(obregonte): matchea Álvitest Obregonte sin ser prefijo (operador %)');
 
 -- ── 10-12) Municipios: aparecen, con context = estado y bbox precalculado ──
 select ok(
@@ -104,21 +127,28 @@ select is(
   'search_places: el bbox precalculado del municipio (D4) fluye a la sugerencia');
 
 -- ── 13-14) Colonias: context "Municipio, Abbr" y bbox on-the-fly del geom ──
+-- 🔴 Scopeados por id del fixture, no por nombre: con residuo real el
+-- `where name = 'Providencia'` devolvía varias filas y la subconsulta abortaba
+-- la transacción (no fallaba: ABORTABA), llevándose 12 asserts posteriores.
 select is(
-  (select context from public.search_places('providencia') where name = 'Providencia'),
+  (select p.context from public.search_places('provite') p
+    where p.id = (select n.id::text from public.mx_neighborhoods n
+                   where n.source_key = 'test-157-providencia')),
   'Guadalajara, Jal.',
   'search_places: context de la colonia = municipio + abreviatura del estado');
 select ok(
-  (select abs(min_lng - (-103.38)) < 1e-6 and abs(max_lat - 20.71) < 1e-6
-   from public.search_places('providencia') where name = 'Providencia'),
+  (select abs(p.min_lng - (-103.38)) < 1e-6 and abs(p.max_lat - 20.71) < 1e-6
+   from public.search_places('provite') p
+    where p.id = (select n.id::text from public.mx_neighborhoods n
+                   where n.source_key = 'test-157-providencia')),
   'search_places: bbox de la colonia sale del geom (ST_X/YMin/Max del envelope)');
 
 -- ── 15-17) Clamp del límite: [1, 20] ───────────────────────────────────────
-select is((select count(*)::int from public.search_places('villa prueba', 1)), 1,
+select is((select count(*)::int from public.search_places('villatest prueba', 1)), 1,
   'search_places: p_limit=1 devuelve exactamente 1 fila');
-select is((select count(*)::int from public.search_places('villa prueba', 0)), 1,
+select is((select count(*)::int from public.search_places('villatest prueba', 0)), 1,
   'search_places: p_limit=0 se clampa a 1');
-select is((select count(*)::int from public.search_places('villa prueba', 999)), 20,
+select is((select count(*)::int from public.search_places('villatest prueba', 999)), 20,
   'search_places: p_limit=999 se clampa a 20 (hay 25 candidatas)');
 
 -- ════════════════════════════════════════════════════════════════════════════
@@ -137,7 +167,7 @@ select ok(
      (select n.id from public.mx_neighborhoods n where n.source_key = 'test-157-providencia'))),
   'get_neighborhood_geojson: el GeoJSON es MultiPolygon');
 select ok(
-  (select name = 'Providencia' and abs(min_lat - 20.69) < 1e-6 and abs(max_lng - (-103.36)) < 1e-6
+  (select name = 'Provitest' and abs(min_lat - 20.69) < 1e-6 and abs(max_lng - (-103.36)) < 1e-6
    from public.get_neighborhood_geojson(
      (select n.id from public.mx_neighborhoods n where n.source_key = 'test-157-providencia'))),
   'get_neighborhood_geojson: nombre y bbox correctos');

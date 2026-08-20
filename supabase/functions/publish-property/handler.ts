@@ -21,6 +21,7 @@
 
 import { handle_cors_preflight } from "../_shared/cors.ts";
 import { error_response, json_response } from "../_shared/response.ts";
+import { PUBLISH_PROPERTY_FORBIDDEN_CODES } from "./types.ts";
 import type {
   OperationType,
   PropertyType,
@@ -290,13 +291,16 @@ export async function handler(
   });
 
   if (!publishResult.ok) {
-    // Fix 100: AGENCY_MEMBERSHIP_SUSPENDED es un error de AUTORIZACIÓN (el
-    // publisher/RPC bloqueó a un agente suspendido en su agencia), no un fallo
-    // de servidor — 403, no el 500 catch-all del resto de errores del publisher.
-    if (publishResult.error_code === "AGENCY_MEMBERSHIP_SUSPENDED") {
+    // Fix 100 + #173: los guards de capacidad del RPC son errores de
+    // AUTORIZACIÓN, no fallos de servidor — 403, no el 500 catch-all del resto
+    // de errores del publisher. La lista vive en types.ts para que agregar un
+    // guard nuevo no dependa de acordarse de tocar este if.
+    if (PUBLISH_PROPERTY_FORBIDDEN_CODES.includes(publishResult.error_code ?? "")) {
       return error_response(
         publishResult.error_code,
-        "Tu cuenta está suspendida en tu inmobiliaria — no puedes publicar mientras tanto",
+        publishResult.error_code === "AGENCY_CANNOT_PUBLISH_PROPERTIES"
+          ? "Tu organización no tiene habilitada la publicación de propiedades"
+          : "Tu cuenta está suspendida en tu inmobiliaria — no puedes publicar mientras tanto",
         403,
       );
     }

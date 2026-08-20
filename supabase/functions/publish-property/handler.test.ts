@@ -80,6 +80,11 @@
 
 import { assertEquals, assertExists } from "@std/assert";
 import { handler } from "./handler.ts";
+import {
+  extract_publish_error_code,
+  PUBLISH_PROPERTY_ERROR_CODES,
+  PUBLISH_PROPERTY_FORBIDDEN_CODES,
+} from "./types.ts";
 import type {
   CallerVerifier,
   CallerVerifyResult,
@@ -793,6 +798,80 @@ Deno.test("agencia_suspendida_error_code_correcto", async () => {
   const res = await handler(post_agente(PAYLOAD_VALIDO), deps_validos(publisher));
   const body = await res.json();
   assertEquals(body.error.code, "AGENCY_MEMBERSHIP_SUSPENDED");
+});
+
+// ── #173 — AGENCY_CANNOT_PUBLISH_PROPERTIES: 403 tipado, no 500 genérico ─────
+//
+// Origen: guardian de 168.3. La migración 20260816000002 levanta el guard de
+// capacidad como P0001 tipado y 46_org_advertising_test.sql lo verifica en la
+// DB, pero el seam del EF lo perdía por el camino: index.ts solo reconocía
+// AGENCY_MEMBERSHIP_SUSPENDED en el mensaje, así que el código nuevo caía al
+// DB_ERROR genérico y el handler lo devolvía como 500. La organización no
+// puede publicar propiedades: eso es AUTORIZACIÓN, exactamente el mismo
+// espíritu que la suspensión de membresía, y un 500 le dice al cliente
+// "vuelve a intentar" cuando reintentar jamás va a funcionar.
+
+Deno.test("173_organizacion_sin_capacidad_de_publicar_retorna_403_no_500", async () => {
+  const publisher = publisher_error("AGENCY_CANNOT_PUBLISH_PROPERTIES");
+  const res = await handler(post_agente(PAYLOAD_VALIDO), deps_validos(publisher));
+  assertEquals(
+    res.status,
+    403,
+    "AGENCY_CANNOT_PUBLISH_PROPERTIES es autorización, no un fallo de servidor",
+  );
+});
+
+Deno.test("173_organizacion_sin_capacidad_error_code_llega_tipado_al_cliente", async () => {
+  const publisher = publisher_error("AGENCY_CANNOT_PUBLISH_PROPERTIES");
+  const res = await handler(post_agente(PAYLOAD_VALIDO), deps_validos(publisher));
+  const body = await res.json();
+  assertEquals(body.error.code, "AGENCY_CANNOT_PUBLISH_PROPERTIES");
+});
+
+// ── #173 — el seam que NADIE cubría: mensaje P0001 -> error_code ─────────────
+//
+// Este es el punto exacto donde se perdía el código. Vivía inline en index.ts
+// (adaptador, cobertura cero — el hueco que documenta #174), así que los dos
+// tests de arriba habrían pasado con el bug intacto en producción: el handler
+// nunca habría recibido AGENCY_CANNOT_PUBLISH_PROPERTIES porque el adaptador
+// lo convertía en DB_ERROR antes. Por eso el mapeo se extrajo a una función
+// pura en types.ts y se prueba aquí.
+
+Deno.test("173_extractor_reconoce_AGENCY_CANNOT_PUBLISH_PROPERTIES", () => {
+  assertEquals(
+    extract_publish_error_code(
+      'P0001: AGENCY_CANNOT_PUBLISH_PROPERTIES',
+    ),
+    "AGENCY_CANNOT_PUBLISH_PROPERTIES",
+  );
+});
+
+Deno.test("173_extractor_sigue_reconociendo_AGENCY_MEMBERSHIP_SUSPENDED", () => {
+  // No-regresión: el código que YA funcionaba no se pierde al agregar el nuevo.
+  assertEquals(
+    extract_publish_error_code('P0001: AGENCY_MEMBERSHIP_SUSPENDED'),
+    "AGENCY_MEMBERSHIP_SUSPENDED",
+  );
+});
+
+Deno.test("173_extractor_cae_a_DB_ERROR_ante_un_mensaje_desconocido", () => {
+  assertEquals(
+    extract_publish_error_code("deadlock detected"),
+    "DB_ERROR",
+  );
+});
+
+Deno.test("173_los_dos_codigos_de_capacidad_son_403_ninguno_quedo_fuera", () => {
+  // Fija la lista entera, no un elemento: si mañana se agrega un guard nuevo a
+  // PUBLISH_PROPERTY_ERROR_CODES y se olvida clasificarlo, este assert lo caza
+  // en vez de dejarlo salir como 500 silencioso.
+  for (const code of PUBLISH_PROPERTY_ERROR_CODES) {
+    assertEquals(
+      PUBLISH_PROPERTY_FORBIDDEN_CODES.includes(code),
+      true,
+      `${code} no está clasificado como error de autorización (403)`,
+    );
+  }
 });
 
 Deno.test("otro_error_del_publisher_sigue_siendo_500", async () => {

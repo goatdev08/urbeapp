@@ -537,6 +537,23 @@ select isnt(
   null,
   'AUD2_la_fila_de_auditoria_registra_un_admin_id_no_nulo'
 );
+-- AUD3 (#176): el CONTENIDO de la auditoría. AUD1/AUD2 solo miraban que la fila
+-- existiera y que el admin_id no fuera nulo -- una auditoría que registrara el
+-- estado equivocado los pasaba a los dos. Aquí se fija el par completo: el
+-- old_values debe traer el estado ANTERIOR (can_advertise false, categoría
+-- nula) y el new_values el estado PEDIDO ('seguros'). Ocupa el lugar que dejó
+-- FI3 al eliminarse; el plan sigue en 80.
+select is(
+  (select (old_values->>'can_advertise') || '|' ||
+          coalesce(old_values->>'advertiser_category', 'NULL') || '|' ||
+          (new_values->>'can_advertise') || '|' ||
+          (new_values->>'advertiser_category')
+     from public.admin_actions
+    where entity_id = '00000000-0000-0000-0000-000000460412' and entity_type = 'agency'
+    order by created_at desc limit 1),
+  'false|NULL|true|seguros',
+  'AUD3_la_auditoria_registra_el_estado_ANTERIOR_y_el_NUEVO_no_solo_que_hubo_un_cambio'
+);
 
 -- ...y también APAGA -- no es de una sola vía. p_category en su default (null).
 -- Fixture INDEPENDIENTE (agencia B), sembrada DIRECTO con can_advertise=true
@@ -608,11 +625,30 @@ select is(
   false,
   'FI2_atomicidad_rollback_total_can_advertise_NO_quedo_encendido_pese_al_update_previo_a_la_falla'
 );
-select is(
-  (select count(*)::int from public.admin_actions where entity_id = '00000000-0000-0000-0000-000000460432'),
-  0,
-  'FI3_atomicidad_no_quedo_ninguna_fila_huerfana_en_admin_actions_para_esta_agencia'
-);
+-- 🔴 FI3 ELIMINADO (#176) — NO era un assert débil: era INMATABLE.
+-- Afirmaba "no quedó ninguna fila huérfana en admin_actions". Con el trigger
+-- veneno puesto en BEFORE INSERT sobre esa misma tabla, ninguna fila PUEDE
+-- aterrizar jamás -- el count(*)=0 lo garantizaba el fixture, no el SUT. Y el
+-- problema es más profundo que el fixture: set_org_advertising_atomic corre
+-- entera en UNA transacción, así que una fila huérfana es imposible por
+-- construcción. FI3 asertaba la transaccionalidad de POSTGRES, no la del SUT.
+-- Verificado por mutación antes de borrarlo (ninguno lo mató):
+--   · mutante A -- envolver el insert de auditoría en `exception when others
+--     then null` (la función deja de ser atómica): ✕ FI1, ✕ FI2, FI3 VIVO.
+--   · mutante B -- insertar la auditoría ANTES del update (el escenario
+--     clásico de huérfana que FI3 nombra): suite entera en PASS, FI3 VIVO.
+-- La atomicidad la sostienen FI1 (lanza) y FI2 (can_advertise no quedó
+-- encendido), y el mutante A mata a los dos. El assert que ocupa su lugar en
+-- el plan es AUD3, arriba, que sí tiene dientes.
+
+-- 🔴 El trigger veneno MUERE AQUÍ, al terminar 7.4 (#176). Antes sobrevivía
+-- hasta la sección 8 y blindaba a 7.5 entera: con él puesto, INV3 e INV4 no
+-- podían fallar aunque el SUT estuviera mal -- un mutante sin el guard de
+-- deleted_at encendía la agencia borrada, pero el insert de auditoría chocaba
+-- con el veneno y revertía el update, así que INV3 veía false e INV4 veía 0.
+-- El fixture pasaba los asserts, no el SUT. Dropearlo aquí es lo que les
+-- devuelve los dientes (mutación abajo, en la bitácora de la tarea).
+drop trigger if exists poison_admin_actions_before_insert on public.admin_actions;
 
 -- ── 7.5) Organización inexistente o con deleted_at -> error explícito ───────
 select pg_temp.act_as('00000000-0000-0000-0000-000000460401', 'service_role');
