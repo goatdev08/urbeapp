@@ -31,6 +31,21 @@
 
 import { assertEquals } from "@std/assert";
 import { make_auth_admin } from "./clients.ts";
+import type { InviteByEmailParams, InviteByEmailResponse } from "./auth_user.ts";
+
+/**
+ * `inviteUserByEmail` es OPCIONAL en AuthAdminClient (los consumidores viejos
+ * no lo implementan), así que se resuelve una vez y se falla ruidosamente si
+ * no está — en vez de sembrar `!` en cada llamada, que taparía justo el caso
+ * de que el adaptador dejara de exponerlo.
+ */
+function invite_of(client: unknown): (p: InviteByEmailParams) => Promise<InviteByEmailResponse> {
+  const admin = make_auth_admin(client as never);
+  if (typeof admin.inviteUserByEmail !== "function") {
+    throw new Error("make_auth_admin dejó de exponer inviteUserByEmail");
+  }
+  return admin.inviteUserByEmail.bind(admin);
+}
 
 interface InviteCall {
   email: string;
@@ -77,8 +92,8 @@ const EMAIL = "owner@ejemplo.mx";
 
 Deno.test("178_el_correo_de_invitacion_apunta_a_reset_password_no_a_la_raiz", async () => {
   const fake = make_fake_client();
-  const admin = make_auth_admin(fake.client as never);
-  await admin.inviteUserByEmail({ email: EMAIL });
+  const invite = invite_of(fake.client);
+  await invite({ email: EMAIL });
 
   assertEquals(
     fake.invite_calls[0].options.redirectTo,
@@ -89,8 +104,8 @@ Deno.test("178_el_correo_de_invitacion_apunta_a_reset_password_no_a_la_raiz", as
 
 Deno.test("178_un_redirectTo_explicito_del_caller_sigue_ganando", async () => {
   const fake = make_fake_client();
-  const admin = make_auth_admin(fake.client as never);
-  await admin.inviteUserByEmail({ email: EMAIL, redirectTo: "urbea://otro-destino" });
+  const invite = invite_of(fake.client);
+  await invite({ email: EMAIL, redirectTo: "urbea://otro-destino" });
 
   assertEquals(fake.invite_calls[0].options.redirectTo, "urbea://otro-destino");
 });
@@ -99,8 +114,8 @@ Deno.test("178_un_redirectTo_explicito_del_caller_sigue_ganando", async () => {
 
 Deno.test("177_el_link_de_respaldo_tambien_lleva_redirectTo", async () => {
   const fake = make_fake_client();
-  const admin = make_auth_admin(fake.client as never);
-  await admin.inviteUserByEmail({ email: EMAIL });
+  const invite = invite_of(fake.client);
+  await invite({ email: EMAIL });
 
   assertEquals(fake.generate_link_calls.length, 1, "debe generarse el link de respaldo");
   assertEquals(
@@ -114,8 +129,8 @@ Deno.test("177_los_DOS_links_apuntan_al_MISMO_destino", async () => {
   // Caso pareado y el más importante de los dos: si el correo lleva a un lado
   // y el respaldo a otro, el admin no puede reproducir lo que ve el invitado.
   const fake = make_fake_client();
-  const admin = make_auth_admin(fake.client as never);
-  await admin.inviteUserByEmail({ email: EMAIL });
+  const invite = invite_of(fake.client);
+  await invite({ email: EMAIL });
 
   assertEquals(
     fake.generate_link_calls[0].options?.redirectTo,
@@ -125,8 +140,8 @@ Deno.test("177_los_DOS_links_apuntan_al_MISMO_destino", async () => {
 
 Deno.test("177_el_redirectTo_del_caller_tambien_se_propaga_al_respaldo", async () => {
   const fake = make_fake_client();
-  const admin = make_auth_admin(fake.client as never);
-  await admin.inviteUserByEmail({ email: EMAIL, redirectTo: "urbea://otro-destino" });
+  const invite = invite_of(fake.client);
+  await invite({ email: EMAIL, redirectTo: "urbea://otro-destino" });
 
   assertEquals(fake.generate_link_calls[0].options?.redirectTo, "urbea://otro-destino");
 });
@@ -135,16 +150,16 @@ Deno.test("177_el_redirectTo_del_caller_tambien_se_propaga_al_respaldo", async (
 
 Deno.test("el_user_metadata_del_caller_viaja_intacto", async () => {
   const fake = make_fake_client();
-  const admin = make_auth_admin(fake.client as never);
-  await admin.inviteUserByEmail({ email: EMAIL, data: { first_name: "Ana", last_name: "Ruiz" } });
+  const invite = invite_of(fake.client);
+  await invite({ email: EMAIL, data: { first_name: "Ana", last_name: "Ruiz" } });
 
   assertEquals(fake.invite_calls[0].options.data, { first_name: "Ana", last_name: "Ruiz" });
 });
 
 Deno.test("si_inviteUserByEmail_falla_no_se_intenta_el_respaldo_y_se_devuelve_el_error", async () => {
   const fake = make_fake_client({ invite_error: { message: "already registered" } });
-  const admin = make_auth_admin(fake.client as never);
-  const result = await admin.inviteUserByEmail({ email: EMAIL });
+  const invite = invite_of(fake.client);
+  const result = await invite({ email: EMAIL });
 
   assertEquals(result.data, null);
   assertEquals(result.error?.message, "already registered");
@@ -153,8 +168,8 @@ Deno.test("si_inviteUserByEmail_falla_no_se_intenta_el_respaldo_y_se_devuelve_el
 
 Deno.test("el_happy_path_devuelve_el_action_link_del_respaldo_y_email_sent", async () => {
   const fake = make_fake_client();
-  const admin = make_auth_admin(fake.client as never);
-  const result = await admin.inviteUserByEmail({ email: EMAIL });
+  const invite = invite_of(fake.client);
+  const result = await invite({ email: EMAIL });
 
   assertEquals(result.data?.action_link, "https://link-de-respaldo.test/x");
   assertEquals(result.data?.email_sent, true);

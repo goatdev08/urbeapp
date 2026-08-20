@@ -189,7 +189,16 @@ export function make_invitation_db(client: SupabaseClient): InvitationDb {
 // dedicada de aceptación de invitación todavía (168.5), se apunta a la raíz
 // de la app — dentro del patrón permitido `urbea://*` (supabase/config.toml
 // additional_redirect_urls). Cambiar aquí cuando 168.5 defina la pantalla.
-const OWNER_INVITE_REDIRECT_TO = "urbea://";
+// 🔴 #178 — APUNTA A reset-password, NO A LA RAÍZ.
+// Valía "urbea://" y ahí NADIE monta useSessionFromDeepLink, así que el owner
+// abría el correo, entraba a la app y los tokens del fragmento se PERDÍAN:
+// quedaba sin sesión y sin forma de fijar contraseña. El correo que construyó
+// #168 no llevaba a ninguna parte.
+// El destino no hubo que construirlo: mobile/app/reset-password.tsx ya monta
+// el hook (:62) y fija la contraseña con updateUser({password}); es a donde ya
+// apunta la recuperación normal (context.tsx:154) y tiene su propio test de
+// deep link. Dentro del patrón permitido `urbea://*` (config.toml:27).
+const OWNER_INVITE_REDIRECT_TO = "urbea://reset-password";
 
 /** Adaptador real de AuthAdminClient sobre supabase.auth.admin. */
 export function make_auth_admin(client: SupabaseClient): AuthAdminClient {
@@ -258,9 +267,15 @@ export function make_auth_admin(client: SupabaseClient): AuthAdminClient {
             : { message: "inviteUserByEmail devolvió sin data" },
         };
       }
+      // 🔴 #177 — el respaldo lleva el MISMO redirectTo que el correo. Sin él
+      // apuntaba al site_url y el link que el admin copia al portapapeles no
+      // abría la app. Y como es el ÚNICO respaldo cuando el correo no llega,
+      // que los dos destinos coincidan importa más que cada uno por separado:
+      // si divergen, el admin no puede reproducir lo que ve el invitado.
       const backup = await client.auth.admin.generateLink({
         type: "magiclink",
         email: params.email,
+        options: { redirectTo: params.redirectTo ?? OWNER_INVITE_REDIRECT_TO },
       });
       return {
         data: {
