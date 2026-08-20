@@ -31,7 +31,10 @@
 
 import { useRef, useCallback, useMemo } from 'react';
 
+import { extract_error_code } from '@/lib/supabase/edge-errors';
+
 import { usePublishForm } from '../store/PublishFormContext';
+import { map_publish_create_ef_error, map_publish_edit_ef_error } from '../publish_error_messages';
 import { get_property_payload } from '../validation';
 import { clear_current_draft, get_current_draft_id } from './useDraftAutosave';
 
@@ -137,9 +140,13 @@ export function usePublish(deps?: UsePublishDeps): UsePublishResult {
         };
 
         if (invoke_error) {
+          // #200: el mensaje se resuelve ANTES de mover el status. Poner
+          // status='error' primero abría una ventana (el await de
+          // context.json()) con status='error' y error=null — un render en
+          // ese microtick pinta "error" sin decir cuál. Transición atómica.
+          const code = await extract_error_code(invoke_error);
+          error_ref.current = map_publish_edit_ef_error(code);
           status_ref.current = 'error';
-          error_ref.current =
-            invoke_error.message ?? 'Error al actualizar la propiedad';
           return;
         }
 
@@ -181,9 +188,12 @@ export function usePublish(deps?: UsePublishDeps): UsePublishResult {
       )) as { data: Record<string, unknown> | null; error: { message?: string } | null };
 
       if (error) {
+        // #200: mismo orden que en edit mode — mensaje primero, status
+        // después, para que nunca exista un render con status='error' y
+        // error=null durante el await de context.json().
+        const code = await extract_error_code(error);
+        error_ref.current = map_publish_create_ef_error(code);
         status_ref.current = 'error';
-        error_ref.current =
-          error.message ?? 'Error al publicar la propiedad';
         // NO reset — el usuario puede reintentar con los mismos datos.
         return;
       }

@@ -359,11 +359,21 @@ describe('usePublish — traduce el error_code tipado (200.1, RED)', () => {
       error: make_ef_http_error_non_json_body(),
     });
 
-    await expect(
-      act(async () => {
+    // 🔴 El idioma original era `await expect(act(async () => …)).resolves.not.toThrow()`.
+    // Dos problemas, ambos reales: (1) `.not.toThrow()` aplicado al valor RESUELTO
+    // (undefined) es una aserción vacía — nunca puede fallar, así que no probaba nada;
+    // (2) envolver el thenable de `act` en `expect().resolves` no espera el flush
+    // completo, y el assert corría con el hook a medio camino. Se captura la excepción
+    // explícitamente: prueba de verdad que `publish()` no propaga, y espera de verdad.
+    let thrown: unknown = null;
+    await act(async () => {
+      try {
         await result.current.sut.publish();
-      }),
-    ).resolves.not.toThrow();
+      } catch (e) {
+        thrown = e;
+      }
+    });
+    expect(thrown).toBeNull();
 
     expect(result.current.sut.status).toBe('error');
     expect(result.current.sut.error).not.toBeNull();
