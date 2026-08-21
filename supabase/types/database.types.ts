@@ -1891,6 +1891,16 @@ export type Database = {
       }
     }
     Functions: {
+      ad_metrics_for_agency: {
+        Args: { p_agency_id: string; p_from?: string; p_to?: string }
+        Returns: {
+          cta_taps: number
+          impressions: number
+          municipality_id: string
+          neighborhood_id: number
+          views: number
+        }[]
+      }
       admin_create_agency_atomic: {
         Args: {
           p_advertiser_category?: Database["public"]["Enums"]["advertiser_category"]
