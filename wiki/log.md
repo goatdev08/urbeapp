@@ -2,6 +2,20 @@
 
 Append-only. Prefijo: `## [YYYY-MM-DD] tipo | título`.
 
+## [2026-08-20] fix | #200 El error tipado que el backend sí mandaba y el cliente nunca leía
+
+- **El defecto:** `usePublish.ts` resolvía el error de dos Edge Functions con `error.message`, que en un `FunctionsHttpError` es SIEMPRE el literal `"Edge Function returned a non-2xx status code"`. El código de negocio viaja en el body y solo sale con `error.context.json()`. Resultado: **un agente suspendido de su inmobiliaria intentaba publicar y veía esa cadena en inglés** en vez de la razón. El flujo vivo, con testers reales.
+- **La mitad que faltaba desde hace meses.** La subtarea 100.6 se llamaba "adapter EF — extract_publish_error_code + handler mapeo 403" y cerró la mitad servidor: la EF mapea el código y lo devuelve. La mitad cliente nunca se hizo. `extract_error_code` ya existía y lo usaban 10 archivos —incluido `useAdUpload.ts` del propio dominio ads—; publish simplemente no lo importaba.
+- ⭐ **El patrón otra vez, y esta vez por escrito en el vault.** `lead_error_messages.ts` afirmaba en su comentario que `extract_error_code` "ya lo reusan auth/registration/upgrade/agency/**publish**", y `mapa-codebase.md` decía que con eso "se acabó el *non-2xx status code* en pantalla". Las dos frases eran falsas para publish. La prosa declaraba una defensa que el `grep` desmentía — el mismo modo de fallo que las ventanas de upload del merge de #192. Ambas quedaron corregidas, no borradas: dicen qué se creía y qué era cierto.
+- **Tres trampas que solo aparecieron por auditar los tests, no el código:**
+  1. Los tests EC-4/EC-16 estaban **verdes antes del ciclo y ese era el problema**: su mock devolvía un objeto plano cuyo `.message` era el código crudo, y asertaban que ese código llegara a la pantalla. Codificaban el bug como si fuera el contrato.
+  2. `await expect(act(async () => …)).resolves.not.toThrow()` es **dos defectos en un idioma**: `not.toThrow()` sobre un valor resuelto es una aserción que nunca puede fallar, y el wrapper no espera el flush. El guardián probó que era **insatisfacible para cualquier implementación correcta** — leer el body excede su presupuesto de ticks.
+  3. `EC-EM-14/15` recorrían los 15 códigos reales y **parecían** la red de seguridad del catálogo. Solo asertaban lo negativo: si alguien borraba una entrada del mapa, ese código caía al genérico y el loop seguía verde.
+- **Un diagnóstico invertido que nadie había notado:** `extract_error_code` colapsa "el servidor contestó con un body ilegible" (502 con HTML del gateway) y "nunca hubo respuesta" (red caída) en el mismo `undefined`. El usuario recibía "verifica tu conexión" y se ponía a revisar su WiFi por un problema del servidor. Ahora se distinguen.
+- **Derivadas nuevas:** #200 (esta), **#201** `hardening(170.5)` — `ad_impressions_monthly` no tiene quien la escriba, el rollup facturable nunca se implementó y el crudo se purga a los 90 días; **#202** 🔴 `producto(100.4)` — la suspensión bloquea publicar pero **no editar**: `is_owner` cortocircuita la autorización tanto en la EF `edit-property` como en la RLS `properties_update`. #202 espera decisión de Abraham, no se tocó.
+- **Decisiones de Abraham para #171** (tomadas antes de escribir su RED): el k-anonimato se mide sobre **usuarios distintos**, no impresiones (5 impresiones de una sola persona no protegen a nadie); y `ad_metrics_for_agency` agrega **solo** desde `ad_impressions` — un `union` con `monthly` aportaría cero hoy y doble-contaría mañana sobre datos facturables.
+- Verificación: **1360/1360** en la suite del móvil (108 suites), tsc 0, lint 0 errores. Guardián **PASS, 0 violaciones**. Nada desplegado: solo JS, viaja por OTA cuando toque.
+
 ## [2026-08-20] feat | #170 Anuncios en el feed, y el cierre de 15 tareas derivadas
 
 - **Tarea 170 completa** (9 subtareas): kill-switch, `ads_for_zone`, `interleaveAds`, composición del feed, `ad_impressions` + purga a 90 días, EF `record-ad-impressions`, `adImpressionQueue`, `AdFeedItem` real y el aviso de privacidad v2.0 **sembrado sin publicar**. Sigue sin desplegarse nada.
