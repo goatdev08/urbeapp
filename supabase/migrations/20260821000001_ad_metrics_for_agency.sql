@@ -127,11 +127,24 @@ begin
       count(*)::integer as impressions,
       count(*) filter (where s.viewed)::integer as views,
       count(*) filter (where s.cta_tapped_at is not null)::integer as cta_taps,
-      count(distinct s.user_id) as distinct_users
+      count(distinct s.user_id) as distinct_users,
+      -- Una "zona real" es la que resolvió al menos uno de los dos campos. El
+      -- grupo (NULL, NULL) NO es una zona: es la ausencia de zona, y por eso
+      -- nunca puede desglosarse por su cuenta por muchos usuarios que tenga.
+      (s.municipality_id is not null or s.neighborhood_id is not null) as is_real_zone
     from scoped s
     group by s.municipality_id, s.neighborhood_id
   )
-  -- Zonas con k-anonimato >= 5 usuarios distintos: se desglosan tal cual.
+  -- Zonas REALES con k-anonimato >= 5 usuarios distintos: se desglosan tal cual.
+  -- 🔴 `is_real_zone` NO es redundante (hallazgo del guardián, EDGE12b): sin
+  -- él, un grupo (NULL, NULL) con 5+ usuarios distintos salía por ESTA rama Y
+  -- otra vez por el bucket de abajo — dos filas con la MISMA llave. No perdía
+  -- datos, por eso los asserts de conservación de totales no lo veían, pero
+  -- contradecía el contrato ("nunca como su propia fila aparte") y le entregaba
+  -- al cliente una llave duplicada: el gotcha de FlatList "same key" ya pagado
+  -- en este repo. Y no es teórico: la zona no resuelve cuando el GPS está
+  -- apagado o el punto cae fuera de polígono, así que 5 dispositivos distintos
+  -- sin zona es lo normal, no lo raro.
   select
     z.municipality_id,
     z.neighborhood_id,
@@ -139,14 +152,17 @@ begin
     z.views,
     z.cta_taps
   from zone_stats z
-  where z.distinct_users >= 5
+  where z.is_real_zone
+    and z.distinct_users >= 5
 
   union all
 
-  -- Bucket "otras zonas": colapso de privacidad (< 5 usuarios distintos) +
-  -- zonas que ya nacieron sin resolver (NULL, NULL) — misma llave, sin caso
-  -- especial. Solo aparece si hay algo que agregar (evita una fila 0/0/0
-  -- cuando NO hay ninguna zona colapsada).
+  -- Bucket "otras zonas", UNA sola fila. Funde dos orígenes que para el
+  -- anunciante significan lo mismo ("no es una zona específica"): las zonas
+  -- reales colapsadas por privacidad (< 5 usuarios distintos) y las que ya
+  -- nacieron sin resolver, sin importar cuántos usuarios tengan. Solo aparece
+  -- si hay algo que agregar (evita una fila 0/0/0 cuando no hay nada que
+  -- colapsar).
   select
     null::text as municipality_id,
     null::bigint as neighborhood_id,
@@ -154,7 +170,8 @@ begin
     sum(z.views)::integer as views,
     sum(z.cta_taps)::integer as cta_taps
   from zone_stats z
-  where z.distinct_users < 5
+  where not z.is_real_zone
+     or z.distinct_users < 5
   having sum(z.impressions) is not null;
 end;
 $$;

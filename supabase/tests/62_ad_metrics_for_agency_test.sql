@@ -111,7 +111,7 @@
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(53);
+select plan(55);
 
 create or replace function pg_temp.act_as(p_uid uuid, p_role text default 'authenticated')
 returns void language plpgsql as $$
@@ -149,7 +149,10 @@ select
 -- (docker exec psql, sqlstate 42501 confirmado); NO toca ninguna aserción
 -- ni valor esperado, es scaffolding puro (mismo patrón que la línea 146 de
 -- 51_ad_impressions_test.sql).
-grant select on test_ts_62 to public;
+-- Obs. 3 del guardián 171.1: `to authenticated` basta (es el único rol que la
+-- lee bajo impersonación) y es el criterio del precedente en
+-- 51_ad_impressions_test.sql:146, que concede al rol específico, no a public.
+grant select on test_ts_62 to authenticated;
 
 -- ── Actores (auth.users; agency_role_of NO exige nada de public.users.role,
 --    solo agency_members -- sin necesidad de tocar public.users) ────────────
@@ -556,6 +559,12 @@ select is((select cta_taps    from result_owner_62_rows where municipality_id = 
 
 -- BOUNDARY (62009, NULL) -- sin rango, sus 5 usuarios cuentan completos -> desglosa.
 select is((select impressions from result_owner_62_rows where municipality_id = '62009'), 5, 'AGG4_BOUNDARY_sin_rango_desglosa_con_sus_5_usuarios_impresiones_5');
+-- Obs. 2 del guardián 171.1: AGG4 verificaba SOLO impressions de esta zona.
+-- views/cta_taps quedaban cubiertos de rebote por AGG8b/c (totales), así que
+-- un mutante localizado a BOUNDARY tenía hueco. Inventario del fixture
+-- (línea 238): impresiones=5 views=5 cta=0.
+select is((select views    from result_owner_62_rows where municipality_id = '62009'), 5, 'AGG4b_BOUNDARY_vistas_5');
+select is((select cta_taps from result_owner_62_rows where municipality_id = '62009'), 0, 'AGG4c_BOUNDARY_cta_taps_0');
 
 -- MUNI_4 (62002) -- 4 usuarios -> NO tiene fila propia (colapsó, EDGE8 lado "4").
 select is((select count(*)::int from result_owner_62_rows where municipality_id = '62002'), 0,
