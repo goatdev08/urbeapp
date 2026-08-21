@@ -43,6 +43,7 @@
 
 import React from 'react';
 import { renderHook, act } from '@testing-library/react-native';
+import { FunctionsHttpError } from '@supabase/supabase-js';
 
 // ---------------------------------------------------------------------------
 // Wrapper con PublishFormProvider
@@ -228,8 +229,16 @@ describe('usePublish', () => {
   // ── (EC-4) Error de la EF: status='error', mensaje, sin reset ─────────────
 
   it('(EC-4) error_ef_status_error_con_mensaje: respuesta con error → status=error, expone mensaje, sin reset', async () => {
+    // Tarea 200: el hook ahora lee el error_code tipado (extract_error_code)
+    // en vez del texto crudo de supabase-js — se ejercita con un
+    // FunctionsHttpError real, mismo patrón que usePublish.error_mapping.test.tsx.
     const { result } = await setup_with_valid_state({
-      invoke_result: { data: null, error: { message: 'FORBIDDEN' } },
+      invoke_result: {
+        data: null,
+        error: new FunctionsHttpError(
+          new Response(JSON.stringify({ error: { code: 'FORBIDDEN' } }), { status: 403 }),
+        ),
+      },
     });
 
     await act(async () => {
@@ -238,7 +247,7 @@ describe('usePublish', () => {
 
     expect(result.current.sut.status).toBe('error');
     expect(result.current.sut.error).not.toBeNull();
-    expect(result.current.sut.error).toMatch(/FORBIDDEN/i);
+    expect(result.current.sut.error).toMatch(/permiso/i);
     expect(result.current.sut.property_id).toBeNull();
     // Form no fue reseteado — operation_type conserva el valor
     expect(result.current.form.state.operation_type).toBe(VALID_FORM_FIELDS.operation_type);

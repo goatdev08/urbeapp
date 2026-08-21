@@ -69,6 +69,7 @@
 
 import React from 'react';
 import { renderHook, act } from '@testing-library/react-native';
+import { FunctionsHttpError } from '@supabase/supabase-js';
 
 // ---------------------------------------------------------------------------
 // Wrapper con PublishFormProvider
@@ -471,10 +472,15 @@ describe('usePublish — edit mode invoca EF edit-property (73.6)', () => {
   // ── EDIT mode: error ──────────────────────────────────────────────────────
 
   it('(EC-16) edit_mode_error_invoke_expone_error_y_editResultMode_null: la EF responde error → functions.invoke fue invocado, status="error", error contiene mensaje, property_id null, editResultMode null', async () => {
+    // Tarea 200: el hook ahora lee el error_code tipado (extract_error_code)
+    // en vez del texto crudo de supabase-js — se ejercita con un
+    // FunctionsHttpError real, mismo patrón que usePublish.error_mapping.test.tsx.
     const { result, mock_supabase } = await setup_edit_mode({
       edit_invoke_result: {
         data: null,
-        error: { message: 'No autorizado: el caller no es el dueño de la propiedad' },
+        error: new FunctionsHttpError(
+          new Response(JSON.stringify({ error: { code: 'UNAUTHORIZED_EDITOR' } }), { status: 403 }),
+        ),
       },
     });
 
@@ -490,7 +496,7 @@ describe('usePublish — edit mode invoca EF edit-property (73.6)', () => {
     const sut = result.current.sut as UsePublishResultWithEditMode;
     expect(sut.status).toBe('error');
     expect(sut.error).not.toBeNull();
-    expect(sut.error).toMatch(/no autorizado/i);
+    expect(sut.error).toMatch(/permiso/i);
     expect(sut.property_id).toBeNull();
     expect(sut.editResultMode).toBeNull();
   });

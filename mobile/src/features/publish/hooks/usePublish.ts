@@ -31,7 +31,12 @@
 
 import { useRef, useCallback, useMemo } from 'react';
 
+import { FunctionsHttpError } from '@supabase/supabase-js';
+
+import { extract_error_code } from '@/lib/supabase/edge-errors';
+
 import { usePublishForm } from '../store/PublishFormContext';
+import { map_publish_create_ef_error, map_publish_edit_ef_error } from '../publish_error_messages';
 import { get_property_payload } from '../validation';
 import { clear_current_draft, get_current_draft_id } from './useDraftAutosave';
 
@@ -133,13 +138,24 @@ export function usePublish(deps?: UsePublishDeps): UsePublishResult {
           { body: { ...edit_payload, property_id: property_id_edit } },
         )) as {
           data: { ok?: boolean; mode?: 'direct' | 'revision'; revision_id?: string } | null;
-          error: { message?: string } | null;
+          // #200: `unknown`, no `{message?: string}`. En runtime esto es un
+          // FunctionsHttpError/FunctionsFetchError, y el tipo viejo describía
+          // una forma que ya nadie lee — un tipo que miente estorba en vez de
+          // respaldar la invariante.
+          error: unknown;
         };
 
         if (invoke_error) {
+          // #200: el mensaje se resuelve ANTES de mover el status. Poner
+          // status='error' primero abría una ventana (el await de
+          // context.json()) con status='error' y error=null — un render en
+          // ese microtick pinta "error" sin decir cuál. Transición atómica.
+          const code = await extract_error_code(invoke_error);
+          error_ref.current = map_publish_edit_ef_error(
+            code,
+            invoke_error instanceof FunctionsHttpError,
+          );
           status_ref.current = 'error';
-          error_ref.current =
-            invoke_error.message ?? 'Error al actualizar la propiedad';
           return;
         }
 
@@ -178,12 +194,18 @@ export function usePublish(deps?: UsePublishDeps): UsePublishResult {
       const { data, error } = (await supabase_client.functions.invoke(
         'publish-property',
         { body },
-      )) as { data: Record<string, unknown> | null; error: { message?: string } | null };
+      )) as { data: Record<string, unknown> | null; error: unknown };
 
       if (error) {
+        // #200: mismo orden que en edit mode — mensaje primero, status
+        // después, para que nunca exista un render con status='error' y
+        // error=null durante el await de context.json().
+        const code = await extract_error_code(error);
+        error_ref.current = map_publish_create_ef_error(
+          code,
+          error instanceof FunctionsHttpError,
+        );
         status_ref.current = 'error';
-        error_ref.current =
-          error.message ?? 'Error al publicar la propiedad';
         // NO reset — el usuario puede reintentar con los mismos datos.
         return;
       }
