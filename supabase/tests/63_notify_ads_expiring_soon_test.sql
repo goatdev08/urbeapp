@@ -107,7 +107,7 @@
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(42);
+select plan(45);
 
 create or replace function pg_temp.act_as(p_uid uuid, p_role text default 'authenticated')
 returns void language plpgsql as $$
@@ -128,7 +128,8 @@ insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-000000630004', 'agent_a_notify63@urbea.mx'),
   ('00000000-0000-0000-0000-000000630005', 'viewer_a_notify63@urbea.mx'),
   ('00000000-0000-0000-0000-000000630006', 'suspended_a_notify63@urbea.mx'),
-  ('00000000-0000-0000-0000-000000630007', 'owner_b_notify63@urbea.mx');
+  ('00000000-0000-0000-0000-000000630007', 'owner_b_notify63@urbea.mx'),
+  ('00000000-0000-0000-0000-000000630008', 'owner_suspendido_a_notify63@urbea.mx');
 
 -- ORG_A: sujeto principal (membresía completa + todos los edge de ventana y
 --   de status). ORG_B: aislamiento multi-tenant (#4), un solo owner.
@@ -145,7 +146,14 @@ insert into public.agency_members (agency_id, user_id, member_role, status) valu
   ('00000000-0000-0000-0000-000000630101', '00000000-0000-0000-0000-000000630004', 'agent', 'active'),      -- AGENT_A (no gestiona -- no avisa)
   ('00000000-0000-0000-0000-000000630101', '00000000-0000-0000-0000-000000630005', 'viewer', 'active'),     -- VIEWER_A (no gestiona -- no avisa)
   ('00000000-0000-0000-0000-000000630101', '00000000-0000-0000-0000-000000630006', 'agent', 'suspended'),   -- SUSPENDED_A (suspendido -- no avisa)
-  ('00000000-0000-0000-0000-000000630102', '00000000-0000-0000-0000-000000630007', 'owner', 'active');      -- OWNER_B
+  ('00000000-0000-0000-0000-000000630102', '00000000-0000-0000-0000-000000630007', 'owner', 'active'),      -- OWNER_B
+  -- 🔴 OWNER_SUSPENDIDO_A -- hallazgo del guardián de 171.4 (violación 1). El único
+  -- miembro suspendido del fixture original era un `agent`, así que el filtro de ROL
+  -- (member_role in ('owner','admin')) ya lo excluía y el filtro de ESTADO
+  -- (am.status = 'active') NUNCA se ejercitaba: quitarlo del SUT dejaba los 42 asserts
+  -- en verde. Este miembro es owner Y suspendido, la única combinación que distingue
+  -- las dos defensas. MEMBERS1 sigue exigiendo EXACTAMENTE 3 destinatarios.
+  ('00000000-0000-0000-0000-000000630101', '00000000-0000-0000-0000-000000630008', 'owner', 'suspended');   -- OWNER_SUSPENDIDO_A
 
 insert into public.ad_creatives (id, agency_id, status) values
   ('00000000-0000-0000-0000-000000630201', '00000000-0000-0000-0000-000000630101', 'ready'),
@@ -188,7 +196,7 @@ insert into public.ads (id, agency_id, creative_id, title, cta_type, cta_value, 
 select is((select count(*)::int from public.ads where agency_id = '00000000-0000-0000-0000-000000630101'),
   9, 'FIXTURE_ANCHOR1_org_A_tiene_exactamente_9_ads_sembrados');
 select is((select count(*)::int from public.agency_members where agency_id = '00000000-0000-0000-0000-000000630101'),
-  6, 'FIXTURE_ANCHOR2_org_A_tiene_exactamente_6_miembros_sembrados');
+  7, 'FIXTURE_ANCHOR2_org_A_tiene_exactamente_7_miembros_sembrados');
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- 1) Firma pública — catálogo EXACTO, nunca reescrito a mano.
@@ -442,6 +450,72 @@ select is(
   (select count(*)::int from public.notifications
     where related_entity_id = '00000000-0000-0000-0000-000000630301' and type = 'ad_expiring_soon'),
   3, 'RUN3_ad_7d_sigue_en_3_no_se_duplico_en_la_3a_corrida'
+);
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 7) 🔴 RENOVACIÓN de un anuncio YA ANCLADO — violación 2 del guardián de 171.4.
+--    RUN3 extendía `ad_8d`, que estaba FUERA de la ventana y por tanto NUNCA
+--    había recibido aviso: sin fila previa no hay conflicto que resolver, así
+--    que el ancla dejaba pasar el insert CON o SIN el ends_at dentro de la
+--    llave. Lo que RUN3 probaba era "un anuncio entra a la ventana por primera
+--    vez", no "un anuncio ya anclado renueva su vigencia" — que es la razón
+--    literal por la que el ends_at está en el índice único.
+--    Aquí se extiende `ad_7d`, que YA tiene sus 3 avisos de la 1ª corrida.
+--    Sonda del guardián sobre este escenario: con el ends_at en el ancla el
+--    anunciante recibe el aviso nuevo; sin él, queda MUDO para siempre.
+-- ════════════════════════════════════════════════════════════════════════════
+
+update public.ads set ends_at = now() + interval '6 days'
+  where id = '00000000-0000-0000-0000-000000630301'; -- ad_7d: renovado, sigue en ventana
+
+create temp table result_run4_63 (ok boolean, val int);
+do $$
+declare v_ret int;
+begin
+  v_ret := public.notify_ads_expiring_soon();
+  insert into result_run4_63 values (true, v_ret);
+exception when others then
+  insert into result_run4_63 values (false, null);
+end $$;
+
+select is(coalesce((select val::text from result_run4_63), 'ERR'), '3',
+  'RUN4_retorno_3_renovar_un_anuncio_YA_AVISADO_genera_avisos_nuevos_para_sus_3_gestores'
+);
+select is(
+  (select count(*)::int from public.notifications
+    where related_entity_id = '00000000-0000-0000-0000-000000630301' and type = 'ad_expiring_soon'),
+  6, 'RUN4_ad_7d_renovado_acumula_6_avisos_3_de_la_vigencia_vieja_y_3_de_la_nueva_sin_el_ends_at_en_el_ancla_serian_3_y_el_anunciante_quedaria_mudo'
+);
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 8) 🔴 Un aviso BORRADO por la persona sigue anclando — decisión de producto
+--    del orquestador (171.4), a raíz de la obs. 4 del guardián: el índice único
+--    es parcial solo por `type`, así que una notificación con deleted_at NO NULO
+--    sigue ocupando la llave y bloquea un aviso nuevo con el MISMO ends_at.
+--    Eso es lo QUERIDO, no un accidente: "ya te avisé, tú lo borraste".
+--    Reinsertar un aviso que alguien descartó a propósito es spam, y el job
+--    corre a DIARIO — sin este comportamiento, borrar el aviso lo haría volver
+--    al día siguiente, todos los días, hasta que el anuncio expirara.
+--    Queda como assert para que sea contrato y no comportamiento accidental;
+--    #77 (UI de notificaciones) hereda esta decisión.
+-- ════════════════════════════════════════════════════════════════════════════
+
+update public.notifications set deleted_at = now()
+  where related_entity_id = '00000000-0000-0000-0000-000000630301'
+    and type = 'ad_expiring_soon';
+
+create temp table result_run5_63 (ok boolean, val int);
+do $$
+declare v_ret int;
+begin
+  v_ret := public.notify_ads_expiring_soon();
+  insert into result_run5_63 values (true, v_ret);
+exception when others then
+  insert into result_run5_63 values (false, null);
+end $$;
+
+select is(coalesce((select val::text from result_run5_63), 'ERR'), '0',
+  'RUN5_borrar_el_aviso_no_lo_hace_volver_al_dia_siguiente_el_ancla_ignora_deleted_at_a_proposito'
 );
 
 select * from finish();
