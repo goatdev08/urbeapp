@@ -104,8 +104,12 @@
  * - (EC-11) loading_true_mientras_la_query_de_ads_esta_pendiente
  * - (EC-12) loading_false_de_inmediato_en_el_camino_sin_sesion
  *
- * ### Race
- * - (EC-18) cambio_de_user_id_con_consulta_en_vuelo_descarta_la_respuesta_vieja
+ * ### Race (reforzada tras el FAIL del guardián de 171.3)
+ * - (EC-18) cambio_de_user_id_limpia_los_anuncios_del_usuario_anterior_mientras_resuelve
+ * - (EC-19) respuesta_tardia_de_ads_del_usuario_anterior_no_pisa_la_sesion_nueva
+ *
+ * ### Defensa contra data=null sin error
+ * - (EC-20) data_null_sin_error_deja_ads_en_arreglo_vacio_no_null
  */
 
 import { renderHook, act } from '@testing-library/react-native';
@@ -206,6 +210,43 @@ function make_chainable_query(result: AdsResult, calls: RecordedCall[]) {
   return proxy;
 }
 
+/**
+ * Variante DIFERIDA del builder: la consulta a `ads` queda pendiente hasta
+ * que se llame `resolve_ads(...)` a mano. Es lo que permite construir la
+ * carrera REAL de EC-19 (respuesta tardía del usuario anterior) — con
+ * `make_chainable_query` la promesa ya viene resuelta y nunca hay nada en
+ * vuelo que descartar. Hallazgo del guardián de 171.3: sin esto, el flag
+ * `ignore` del hook era removible con la suite entera en verde.
+ */
+function make_deferred_supabase_mock() {
+  const ads_calls: RecordedCall[] = [];
+  let resolve_ads!: (result: AdsResult) => void;
+  const pending = new Promise<AdsResult>((res) => {
+    resolve_ads = res;
+  });
+  const proxy: Record<string, unknown> = new Proxy(
+    {},
+    {
+      get(_target, prop: string) {
+        if (prop === 'then') return pending.then.bind(pending);
+        return (...args: unknown[]) => {
+          calls_push(ads_calls, prop, args);
+          return proxy;
+        };
+      },
+    },
+  );
+  const from = jest.fn((table: string) => {
+    if (table === 'ads') return proxy;
+    throw new Error(`tabla no mockeada en el test: ${table}`);
+  });
+  return { client: { from, _ads: { calls: ads_calls } }, resolve_ads };
+}
+
+function calls_push(calls: RecordedCall[], method: string, args: unknown[]): void {
+  calls.push({ method, args });
+}
+
 function find_call(calls: RecordedCall[], method: string): RecordedCall | undefined {
   return calls.find((c) => c.method === method);
 }
@@ -271,6 +312,28 @@ describe('useMyAds', () => {
     expect(result.current.agency_id).toBe(TEST_AGENCY_ID);
     expect(result.current.loading).toBe(false);
     expect(result.current.error).toBeNull();
+
+    // La PROYECCIÓN pedida, no solo la forma de lo devuelto (obs. del
+    // guardián de 171.3: el mock devuelve lo que se le inyecte, así que sin
+    // esto un `select('*')` pasaba la suite). Importa porque `ads` tiene
+    // columnas que esta pantalla no necesita (purchase_id, created_by_user_id,
+    // creative_id, cta_value…): pedir de más es tráfico y superficie extra
+    // sobre datos comerciales.
+    const select_call = find_call(mock_supabase_holder.client._ads.calls, 'select');
+    const projection = String(select_call?.args[0] ?? '');
+    expect(projection).not.toBe('*');
+    for (const column of [
+      'id',
+      'title',
+      'status',
+      'starts_at',
+      'ends_at',
+      'paused_at',
+      'paused_by_suspension',
+      'rejection_reason',
+    ]) {
+      expect(projection).toContain(column);
+    }
   });
 
   it('(EC-2) admin_tambien_puede_listar_sus_anuncios: member_role=admin (no solo owner) → misma lista, mismo agency_id', async () => {
@@ -399,21 +462,25 @@ describe('useMyAds', () => {
       error: { code: '42P01', message: 'relation "public.ads" does not exist' },
     });
 
+    // 🔴 Corrección del RED (orquestador, 171.3): la primera versión hacía
+    // `hook_result = result.current` DENTRO de un act() externo que envolvía
+    // al propio renderHook. `result.current` es un objeto nuevo en cada
+    // render, así que copiarlo ahí dentro congela un render anterior al
+    // flush — el caso reprobaba contra código correcto (falso rojo). Se
+    // guarda el `result` (el contenedor vivo) y se lee su `.current` DESPUÉS,
+    // idéntico a useAdMetrics.test.tsx EC-15.
     let thrown: unknown = null;
-    let hook_result: ReturnType<typeof useMyAds> | undefined;
-    await act(async () => {
-      try {
-        const { result } = await renderHook(() => useMyAds());
-        hook_result = result.current;
-      } catch (e) {
-        thrown = e;
-      }
-    });
+    let render_result: Awaited<ReturnType<typeof renderHook<ReturnType<typeof useMyAds>, never>>> | undefined;
+    try {
+      render_result = await renderHook(() => useMyAds());
+    } catch (e) {
+      thrown = e;
+    }
 
     expect(thrown).toBeNull();
-    expect(hook_result?.ads).toEqual([]);
-    expect(hook_result?.error).not.toBeNull();
-    expect(hook_result?.loading).toBe(false);
+    expect(render_result?.result.current.ads).toEqual([]);
+    expect(render_result?.result.current.error).not.toBeNull();
+    expect(render_result?.result.current.loading).toBe(false);
   });
 
   it('(EC-15) error_no_deja_texto_crudo_de_postgrest_en_error: el mensaje expuesto NUNCA contiene el texto crudo de Postgres/PostgREST (p.ej. "relation" o "does not exist")', async () => {
@@ -467,11 +534,20 @@ describe('useMyAds', () => {
 
   it('(EC-11) loading_true_mientras_la_query_de_ads_esta_pendiente: la membresía resuelve pero supabase.from("ads") nunca resuelve → loading sigue true', async () => {
     const ads_calls: RecordedCall[] = [];
+    // 🔴 Corrección del RED (orquestador, 171.3): la primera versión devolvía
+    // `undefined` para 'then' creyendo que así "nunca resuelve". Es al revés:
+    // un objeto SIN `then` invocable no es un thenable, así que `await` lo
+    // envuelve con PromiseResolve y resuelve EN EL ACTO. Con ese mock este
+    // caso no podía observar loading=true contra NINGUNA implementación — era
+    // un falso rojo. Lo pendiente de verdad es un thenable cuyo `then` nunca
+    // llama a sus callbacks: `new Promise<never>(() => {})`, el mismo patrón
+    // que useCanAdvertise.test.tsx EC-15/16 y useAdMetrics.test.tsx EC-18.
+    const never_settles = new Promise<never>(() => {});
     const pending_proxy = new Proxy(
       {},
       {
         get(_t, prop: string) {
-          if (prop === 'then') return undefined; // nunca resuelve — jamás actúa como thenable
+          if (prop === 'then') return never_settles.then.bind(never_settles);
           return (...args: unknown[]) => {
             ads_calls.push({ method: prop, args });
             return pending_proxy;
@@ -502,7 +578,7 @@ describe('useMyAds', () => {
 
   // ── Race ────────────────────────────────────────────────────────────
 
-  it('(EC-18) cambio_de_user_id_con_consulta_en_vuelo_descarta_la_respuesta_vieja: tras resolver ads para el usuario A, un cambio a un usuario B con la membresía todavía pendiente NO debe dejar que la respuesta tardía de A pise el estado del cambio en curso — loading vuelve a true, ads no conserva estatus fantasma del usuario anterior', async () => {
+  it('(EC-18) cambio_de_user_id_limpia_los_anuncios_del_usuario_anterior_mientras_resuelve: con los anuncios de A ya cargados, cambiar a un usuario B cuya membresía sigue pendiente NO puede dejar visibles los anuncios ni el agency_id de A — se limpian al arrancar la nueva resolución, no al terminarla', async () => {
     mock_supabase_holder.client = make_supabase_mock({ data: [SAMPLE_AD], error: null });
 
     const { result, rerender } = await renderHook(() => useMyAds());
@@ -523,5 +599,53 @@ describe('useMyAds', () => {
     });
 
     expect(result.current.loading).toBe(true);
+    // 🔴 Estas dos faltaban (violación del guardián de 171.3): sin ellas, un
+    // reset PARCIAL — que solo prendiera `loading` sin limpiar `ads`/
+    // `agency_id` — pasaba la suite dejando los anuncios de A visibles
+    // durante toda la sesión de B.
+    expect(result.current.ads).toEqual([]);
+    expect(result.current.agency_id).toBeNull();
+  });
+
+  it('(EC-19) respuesta_tardia_de_ads_del_usuario_anterior_no_pisa_la_sesion_nueva: la consulta de ads de A sigue EN VUELO cuando la sesión cambia a B; cuando por fin responde, el flag `ignore` del cleanup debe descartarla — sin él, el anuncio de A aparece en la sesión de B (fuga cross-cuenta demostrada por el guardián de 171.3)', async () => {
+    const { client, resolve_ads } = make_deferred_supabase_mock();
+    mock_supabase_holder.client = client as never;
+
+    const { result, rerender } = await renderHook(() => useMyAds());
+
+    // La consulta de ads del usuario A está pendiente DE VERDAD: es lo que
+    // EC-18 nunca construyó (ahí ya había resuelto antes del cambio).
+    expect(result.current.loading).toBe(true);
+    expect(result.current.ads).toEqual([]);
+
+    // Cambio de sesión a B — su membresía nunca resuelve.
+    mock_fetch_own_membership.mockReturnValue(new Promise<never>(() => {}));
+    set_auth_user('usuario-uuid-B-171-3-carrera');
+
+    await act(async () => {
+      rerender(undefined);
+    });
+
+    // Y AHORA responde la consulta de A, tarde.
+    await act(async () => {
+      resolve_ads({ data: [SAMPLE_AD], error: null });
+    });
+
+    expect(result.current.ads).toEqual([]);
+    expect(result.current.agency_id).toBeNull();
+    expect(result.current.loading).toBe(true);
+  });
+
+  // ── Defensa contra data=null sin error ───────────────────────────────
+
+  it('(EC-20) data_null_sin_error_deja_ads_en_arreglo_vacio_no_null: PostgREST devuelve [] en éxito, pero si alguna vez llegara data=null sin error, `ads` NO puede quedar en null — la pantalla de 171.3 hace .map/.length sobre él y reventaría (obs. del guardián: el fallback `data ?? []` no tenía test)', async () => {
+    mock_supabase_holder.client = make_supabase_mock({ data: null, error: null });
+
+    const { result } = await renderHook(() => useMyAds());
+
+    expect(result.current.ads).toEqual([]);
+    expect(result.current.error).toBeNull();
+    expect(result.current.agency_id).toBe(TEST_AGENCY_ID);
+    expect(result.current.loading).toBe(false);
   });
 });
