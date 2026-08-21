@@ -8612,13 +8612,13 @@
             "id": 2,
             "title": "useAdMetrics.ts",
             "description": "🔴 CRÍTICA (**/hooks/**). Consume la RPC agregada y muestra el bucket \"otras zonas\" tal cual, sin intentar reconstruir lo que el k-anonimato ocultó.",
-            "details": "PLAN · agente=mobile · criticidad=CRÍTICA (**/hooks/**) · footprint=mobile/src/features/ads/hooks/useAdMetrics.ts + su test\n\nReusa el patrón de fetching ya vivo en leads/ y my-listings — no inventar una capa de datos nueva (CLAUDE.md §0). Consultar wiki/codebase/mapa-codebase.md antes.\n\nEl bucket \"otras zonas\" que devuelve la RPC se muestra TAL CUAL: el cliente no intenta reconstruir, estimar ni repartir lo que el k-anonimato ocultó. Hacerlo desharía la garantía de privacidad desde el lado del cliente.\n\nGotchas RNTL ya pagados: renderHook con await + act; unmount dentro de act bajo fake timers.",
-            "status": "pending",
+            "details": "PLAN · agente=mobile · criticidad=CRÍTICA (**/hooks/**) · footprint=mobile/src/features/ads/hooks/useAdMetrics.ts + su test\n\nReusa el patrón de fetching ya vivo en leads/ y my-listings — no inventar una capa de datos nueva (CLAUDE.md §0). Consultar wiki/codebase/mapa-codebase.md antes.\n\nEl bucket \"otras zonas\" que devuelve la RPC se muestra TAL CUAL: el cliente no intenta reconstruir, estimar ni repartir lo que el k-anonimato ocultó. Hacerlo desharía la garantía de privacidad desde el lado del cliente.\n\nGotchas RNTL ya pagados: renderHook con await + act; unmount dentro de act bajo fake timers.\n<info added on 2026-08-21T15:57:43.891Z>\nFASE RED — 171.2 useAdMetrics.ts (agente test-author)\n\nArchivos creados:\n- mobile/src/features/ads/__tests__/useAdMetrics.test.tsx (18 tests)\n- mobile/src/features/ads/hooks/useAdMetrics.ts (stub: solo tipos + `throw new Error('not_implemented')`, sin lógica)\n\nSEAMS (interfaz bajo test):\n- useAdMetrics(agencyId: string | null): { zones: AdZoneMetrics[]; other_zones: AdZoneTotals | null; totals: AdZoneTotals | null; loading: boolean; error: string | null }\n- UNA sola supabase.rpc('ad_metrics_for_agency', { p_agency_id: agencyId }) por cambio de agencyId (sin p_from/p_to — YAGNI, 171.3/R23 no tiene selector de fechas)\n\nEDGE CASES (RED):\n\n### Happy path\n- (EC-1) llama_rpc_una_sola_vez_con_p_agency_id_sin_p_from_ni_p_to\n- (EC-2) zonas_reales_llegan_intactas_a_zones_bucket_queda_fuera\n- (EC-3) totals_cuadra_con_la_suma_de_zonas_mas_el_bucket\n\n### El gotcha de nullability mentida por el tipo generado (database.types.ts tipa\nmunicipality_id/neighborhood_id como no-nullable pero en runtime el bucket llega null/null)\n- (EC-4) bucket_null_null_nunca_entra_a_zones_pese_al_tipo_generado_no_nullable (bucket a la mitad del array, no al final — descarta heurístico de posición)\n- (EC-5) sin_fila_bucket_en_la_respuesta_other_zones_es_null\n\n### Anti-reconstrucción (garantía de privacidad del lado cliente — el hook no reparte/estima/prorratea el bucket)\n- (EC-6) no_reparte_el_bucket_entre_las_zonas_visibles\n- (EC-7) solo_bucket_sin_zonas_reales_zones_queda_vacio_no_se_sintetiza_una_zona\n\n### totals: null vs ceros (garantía central para quien pagó el slot — NUNCA ceros ante loading/error)\n- (EC-8) totals_null_mientras_carga\n- (EC-9) totals_null_ante_error_nunca_ceros\n- (EC-10) estado_vacio_legitimo_sin_datos_todavia_totals_en_cero_y_error_null\n- (EC-11) cero_filas_por_falta_de_autorizacion_indistinguible_del_estado_vacio (anti-IDOR — el hook NO debe distinguirlo del estado vacío)\n\n### Boundary — agencyId\n- (EC-12) agencyId_null_no_dispara_rpc_resuelve_de_inmediato\n- (EC-13) agencyId_vacio_no_dispara_rpc\n\n### Error\n- (EC-14) error_de_rpc_mensaje_neutro_en_espanol_no_el_texto_crudo\n- (EC-15) funcion_no_existe_42883_falla_cerrado_sin_lanzar (ventana de deploy sin schema, mismo criterio que useCanAdvertise)\n\n### Race / dependencia del efecto\n- (EC-16) agencyId_cambia_con_llamada_en_vuelo_descarta_la_respuesta_vieja\n- (EC-17) rerender_con_el_mismo_agencyId_no_redispara_la_rpc\n\n### Boundary — loading\n- (EC-18) loading_true_sincrono_mientras_la_rpc_no_vacia_esta_pendiente\n\nVERIFICACIÓN RED (salida real, `pnpm jest src/features/ads/__tests__/useAdMetrics.test.tsx`):\nFAIL src/features/ads/__tests__/useAdMetrics.test.tsx\nTests:       18 failed, 18 total\nSnapshots:   0 total\nTime:        0.633 s\n\nTodos los 18 fallan por ASERCIÓN/EXCEPCIÓN (17 por el `throw new Error('not_implemented')`\ndel stub del SUT, EC-15 por `expect(threw).toBe(false)` — el stub SÍ lanza, que es\njusto lo que EC-15 exige que NO pase una vez implementado). Ninguno falla por\n`module not found`. `pnpm tsc --noEmit` no reporta errores en los archivos nuevos.\n</info added on 2026-08-21T15:57:43.891Z>",
+            "status": "in-progress",
             "dependencies": [
               1
             ],
             "testStrategy": "Jest + RNTL: carga, estado vacío, error, bucket \"otras zonas\" pasado tal cual, rango de fechas. pnpm tsc --noEmit y pnpm lint verdes.",
-            "updatedAt": "2026-08-15T00:00:00.000Z",
+            "updatedAt": "2026-08-21T15:57:43.891Z",
             "parentId": "171"
           },
           {
@@ -8646,7 +8646,7 @@
             "parentId": "171"
           }
         ],
-        "updatedAt": "2026-08-21T03:26:41.315Z"
+        "updatedAt": "2026-08-21T15:57:43.891Z"
       },
       {
         "id": "172",
@@ -9325,7 +9325,7 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-08-21T03:26:41.315Z",
+      "lastModified": "2026-08-21T15:52:38.004Z",
       "taskCount": 202,
       "completedCount": 123,
       "tags": [
