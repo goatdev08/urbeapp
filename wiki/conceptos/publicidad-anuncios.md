@@ -13,9 +13,11 @@ codigo:
   - supabase/functions/stream-webhook/handler.ts
   - supabase/migrations/20260820000001_ads_zone_bbox_determinism.sql
   - supabase/migrations/20260820000002_ad_creatives_failure_reason.sql
+  - supabase/migrations/20260821000001_ad_metrics_for_agency.sql
+  - supabase/migrations/20260822000001_notify_ads_expiring_soon.sql
   - mobile/src/features/ads/
   - mobile/app/(protected)/ads/
-actualizado: 2026-08-20
+actualizado: 2026-08-21
 ---
 
 # Publicidad: anuncios de terceros
@@ -106,3 +108,59 @@ El producto usa la palabra *vista* para dos números que **miden cosas distintas
 - **La duración ausente es fail-OPEN en el cliente (#189)**, igual que en propiedades. La versión anterior fail-closed se justificaba como "paridad con el servidor" y era paridad **formal, no semántica**: el `null` del servidor significa "Cloudflare decodificó y no pudo determinar la duración"; el del cliente significa "este picker no lee metadata". El literal `AD_DURATION_INVALID` no cambió — cambió *cuándo* se emite.
 
 Ver también [[rls-seguridad]], [[feed-vertical-video]], [[privacidad-datos]].
+
+## El panel del anunciante (#171) — solo agregados, y el umbral que lo hace honesto
+
+`ad_metrics_for_agency(p_agency_id, p_from?, p_to?)` es la única ruta por la que un
+anunciante toca sus impresiones. `ad_impressions` tiene RLS activa y **cero policies**,
+así que la RPC es `security definer` y la autorización vive EXPLÍCITA en su cuerpo:
+`private.agency_role_of(...)` **y** `private.org_can_advertise(...)` — las dos, no una.
+Sin autorización devuelve **0 filas, nunca una excepción**: un error distinguible
+confirmaría que el recurso existe.
+
+🔒 **El k-anonimato se mide en PERSONAS, no en eventos.** El umbral es
+`count(distinct user_id) >= 5`, jamás `count(*)`. La diferencia no es de precisión sino
+de sentido: con un umbral por impresiones, **una sola persona** que ve el anuncio 6 veces
+desbloquea el desglose de su propia colonia con n=1 — que es exactamente la
+re-identificación que el k-anonimato existe para impedir. Decisión de Abraham
+(2026-08-20): gana usuarios distintos aunque al principio, con poca audiencia, se vean
+más zonas colapsadas. Es el error correcto en privacidad. Ver [[privacidad-datos]].
+
+Lo que no llega al umbral —y lo que **nunca resolvió zona**, que es lo normal cuando el
+GPS está apagado o el punto cae fuera de polígono— se funde en **UNA sola** fila
+`(NULL, NULL)`: el bucket «otras zonas». Colapsar nunca pierde impresiones: la suma de
+las zonas desglosadas más el bucket es el total facturable. Un anunciante que ve menos de
+lo que pagó es un problema comercial, no un detalle de implementación.
+
+**La garantía es de ida y vuelta: el cliente tampoco puede deshacerla.** `useAdMetrics`
+separa el bucket **estructuralmente** (`other_zones`, nunca dentro de `zones`) para que
+la pantalla no pueda tratarlo como una zona más ni por accidente, y no reparte, estima ni
+prorratea lo que el umbral ocultó. Reconstruirlo desde el cliente anularía el k-anonimato
+que la RPC construyó server-side.
+
+**`totals = null` no es cero.** `null` significa «cargando» o «no pudimos cargar»;
+`{0,0,0}` significa «todavía no hay datos». Para alguien que pagó un slot son mensajes
+opuestos, y confundirlos es mentirle sobre lo que compró.
+
+## El aviso de expiración (#171.4) — el primer escritor de `notifications`
+
+La tabla `public.notifications` existía desde `20260604000007` y **nunca se había escrito
+ni leído**. `notify_ads_expiring_soon()` la estrena: avisa a los owner/admin **activos**
+de la organización (no a `created_by_user_id`, que es nullable y esa persona pudo haberse
+ido) de sus anuncios `active` con `ends_at` a ≤7 días.
+
+🔴 **La idempotencia es el punto fino**, porque el job corre a diario y un anuncio a 7
+días de expirar cumple la condición varios días seguidos. El ancla es un índice único
+**parcial** sobre `(user_id, related_entity_id, type, ((data->>'ends_at')))`, y el
+`ends_at` va dentro de la llave a propósito: sin él, un anuncio cuya vigencia se
+**extiende** quedaría mudo para siempre. Se escribe con `to_char(... at time zone 'UTC',
+...)` y nunca con `to_jsonb(timestamptz)`, que depende del DateStyle/timezone de la
+sesión y volvería el ancla inestable entre corridas.
+
+Un aviso **borrado** por la persona sigue anclando — también a propósito: anclar solo los
+vivos haría que borrarlo lo trajera de vuelta mañana, y pasado, hasta que el anuncio
+expirara. «Ya te avisé, tú lo borraste». #77 (UI de notificaciones) hereda esta decisión.
+
+Solo se avisa de anuncios `active`. Que la vigencia pagada se pause o se pierda al
+suspender el negocio **sigue siendo una pregunta abierta** de la exploración 039, y un job
+diario no es el lugar donde se decide una regla de negocio en silencio.

@@ -29,6 +29,7 @@ import {
   Briefcase,
   Buildings,
   DotsThreeVertical,
+  Megaphone,
   SignOut,
   Storefront,
   UserPlus,
@@ -41,6 +42,7 @@ import { BackButton } from '@/components/BackButton';
 import { useAuth } from '@/features/auth/context';
 import { useAgencyRole } from '@/features/leads/hooks/useAgencyRole';
 import { fetch_own_membership } from '@/features/agency/api';
+import { useCanAdvertise } from '@/features/ads/hooks/useCanAdvertise';
 import { useAgentProfile } from './hooks/useAgentProfile';
 import { useAgentStats } from './hooks/useAgentStats';
 import { ProfileHeader } from './components/ProfileHeader';
@@ -88,6 +90,11 @@ export function ProfileScreen({
   const { loading: stats_loading, stats } = useAgentStats(agent_id);
   // Owner de agencia → opción "Invitar agentes" en el menú (tarea #34)
   const { isOwner } = useAgencyRole();
+  // Capacidad de anunciante → opción "Mis anuncios" (subtarea 171.3). El gate
+  // REAL de la ruta ya vive en app/(protected)/ads/_layout.tsx (un deep link
+  // la alcanzaría igual sin ese Redirect); esto es solo el punto de entrada
+  // visible, mismo patrón que isOwner/can_manage_members de abajo.
+  const { can_advertise } = useCanAdvertise();
   const [menu_visible, set_menu_visible] = useState(false);
 
   // Owner O admin de agencia → opción "Miembros" (gestión de agentes, #71.6).
@@ -146,6 +153,10 @@ export function ProfileScreen({
     router.push('/agency/members');
   }
 
+  function handle_my_ads() {
+    router.push('/ads');
+  }
+
   function handle_upgrade_to_agent() {
     router.push('/upgrade');
   }
@@ -189,6 +200,9 @@ export function ProfileScreen({
   // sin cambio de rol hasta 71.5).
   const menu_items: ProfileMenuItem[] = [
     { key: 'listings', label: 'Mis publicaciones', icon: Storefront, onPress: handle_my_listings },
+    ...(can_advertise
+      ? [{ key: 'ads', label: 'Mis anuncios', icon: Megaphone, onPress: handle_my_ads }]
+      : []),
     ...(isOwner
       ? [{ key: 'invite', label: 'Invitar agentes', icon: UserPlus, onPress: handle_invite_agents }]
       : []),
