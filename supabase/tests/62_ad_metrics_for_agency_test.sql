@@ -137,6 +137,19 @@ select
   '2026-08-10 00:05:00+00'::timestamptz as mid_ts,
   '2026-08-09 23:59:59+00'::timestamptz as before_ts,
   '2026-08-10 00:10:01+00'::timestamptz as after_ts;
+-- GOTCHA idéntico al ya documentado en 51_ad_impressions_test.sql:141-146: la
+-- sección 6 lee (select from_ts/to_ts from test_ts_62) DENTRO de bloques `do
+-- $$ ... $$` ejecutados bajo `pg_temp.act_as(..., 'authenticated')` (SET
+-- LOCAL ROLE). Un DO anónimo corre SECURITY INVOKER siempre -- sin este
+-- GRANT, 'authenticated' (no superuser, rolbypassrls=false, sin membresía
+-- de 'postgres') recibe 42501 "permission denied for table test_ts_62" al
+-- EVALUAR LOS ARGUMENTOS del RPC, antes de que la función se invoque
+-- siquiera -- falla igual sin importar qué tan correcto sea el SUT. Fix
+-- agregado en GREEN (171.1, supabase agent) tras reproducirlo manualmente
+-- (docker exec psql, sqlstate 42501 confirmado); NO toca ninguna aserción
+-- ni valor esperado, es scaffolding puro (mismo patrón que la línea 146 de
+-- 51_ad_impressions_test.sql).
+grant select on test_ts_62 to public;
 
 -- ── Actores (auth.users; agency_role_of NO exige nada de public.users.role,
 --    solo agency_members -- sin necesidad de tocar public.users) ────────────
