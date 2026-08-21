@@ -104,6 +104,9 @@
  *
  * ### Boundary — loading
  * - (EC-18) loading_true_sincrono_mientras_la_rpc_no_vacia_esta_pendiente
+ *
+ * ### Transición error → éxito (hueco que destapó el guardián, obs. 3)
+ * - (EC-19) error_previo_se_limpia_al_cambiar_a_un_agencyId_que_responde_bien
  */
 
 import { renderHook, act } from '@testing-library/react-native';
@@ -492,8 +495,39 @@ describe('useAdMetrics', () => {
     const { result } = await renderHook(() => useAdMetrics(AGENCY_ID));
 
     expect(result.current.loading).toBe(true);
-    if (result.current.loading) {
-      expect(result.current.totals).toBeNull();
-    }
+    // Incondicional a proposito: el `if (result.current.loading)` que estaba
+    // aqui era un guard muerto (hallazgo del guardian, obs. 2) — hoy la linea
+    // de arriba ya garantiza que se entra, pero si alguna vez se relajara,
+    // la asercion de adentro desapareceria EN SILENCIO en vez de fallar. La
+    // conjuncion que este caso existe para clavar es "loading => totals null".
+    expect(result.current.totals).toBeNull();
+  });
+
+  // ── Transicion error → exito ─────────────────────────────────────────────
+
+  it('(EC-19) error_previo_se_limpia_al_cambiar_a_un_agencyId_que_responde_bien: el mutante que borra set_error(null) del camino feliz SOBREVIVIA a los 18 casos originales (hallazgo del guardian, obs. 3) — sin el, 171.3 pintaria el banner de error Y las metricas pobladas al mismo tiempo', async () => {
+    // 1ª agencia: la RPC falla.
+    const rpc = jest
+      .fn()
+      .mockResolvedValueOnce({ data: null, error: { code: '42501', message: 'permission denied' } })
+      .mockResolvedValueOnce({ data: [ZONE_A, BUCKET], error: null });
+    mock_supabase_holder.client = { rpc };
+
+    const { result, rerender } = await renderHook(({ id }: { id: string }) => useAdMetrics(id), {
+      initialProps: { id: AGENCY_ID },
+    });
+
+    expect(result.current.error).toBe(NEUTRAL_ERROR_MESSAGE);
+    expect(result.current.totals).toBeNull();
+
+    // 2ª agencia: la RPC responde bien — el error de la anterior NO puede quedarse.
+    await act(async () => {
+      rerender({ id: AGENCY_ID_B });
+    });
+
+    expect(result.current.error).toBeNull();
+    expect(result.current.zones).toEqual([ZONE_A]);
+    expect(result.current.other_zones).toEqual({ impressions: 15, views: 6, cta_taps: 1 });
+    expect(result.current.totals).toEqual({ impressions: 135, views: 86, cta_taps: 11 });
   });
 });
