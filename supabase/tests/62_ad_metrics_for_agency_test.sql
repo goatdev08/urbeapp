@@ -111,7 +111,7 @@
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(49);
+select plan(53);
 
 create or replace function pg_temp.act_as(p_uid uuid, p_role text default 'authenticated')
 returns void language plpgsql as $$
@@ -159,7 +159,8 @@ insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-000000620003', 'suspended_a_admetrics62@urbea.mx'),
   ('00000000-0000-0000-0000-000000620004', 'owner_b_admetrics62@urbea.mx'),
   ('00000000-0000-0000-0000-000000620005', 'owner_c_admetrics62@urbea.mx'),
-  ('00000000-0000-0000-0000-000000620006', 'stranger_admetrics62@urbea.mx');
+  ('00000000-0000-0000-0000-000000620006', 'stranger_admetrics62@urbea.mx'),
+  ('00000000-0000-0000-0000-000000620007', 'owner_d_admetrics62@urbea.mx');
 
 -- ── Organizaciones ───────────────────────────────────────────────────────────
 -- AGENCY_A: sujeto principal del RED, can_advertise=true, activa.
@@ -168,14 +169,19 @@ insert into auth.users (id, email) values
 insert into public.agencies (id, name, slug, status, can_advertise, advertiser_category, created_by_user_id) values
   ('00000000-0000-0000-0000-000000620101', 'Agencia Metrics A 62', 'agencia-metrics-a-62', 'active', true, 'otro', '00000000-0000-0000-0000-000000620001'),
   ('00000000-0000-0000-0000-000000620102', 'Agencia Metrics B 62', 'agencia-metrics-b-62', 'active', true, 'otro', '00000000-0000-0000-0000-000000620004'),
-  ('00000000-0000-0000-0000-000000620103', 'Agencia Metrics C 62', 'agencia-metrics-c-62', 'active', false, null, '00000000-0000-0000-0000-000000620005');
+  ('00000000-0000-0000-0000-000000620103', 'Agencia Metrics C 62', 'agencia-metrics-c-62', 'active', false, null, '00000000-0000-0000-0000-000000620005'),
+  -- AGENCY_D (EDGE12b, hallazgo del guardián 171.1): zona NO RESUELTA con
+  -- k>=5. El fixture de AGENCY_A deja UNRESOLVED en 3 usuarios, o sea
+  -- SIEMPRE del lado 'colapsa'; la rama complementaria nunca se ejercitaba.
+  ('00000000-0000-0000-0000-000000620104', 'Agencia Metrics D 62', 'agencia-metrics-d-62', 'active', true, 'otro', '00000000-0000-0000-0000-000000620007');
 
 insert into public.agency_members (agency_id, user_id, member_role, status) values
   ('00000000-0000-0000-0000-000000620101', '00000000-0000-0000-0000-000000620001', 'owner', 'active'),   -- OWNER_A
   ('00000000-0000-0000-0000-000000620101', '00000000-0000-0000-0000-000000620002', 'viewer', 'active'),  -- VIEWER_A (AUTZ2)
   ('00000000-0000-0000-0000-000000620101', '00000000-0000-0000-0000-000000620003', 'agent', 'suspended'),-- SUSPENDED_A (AUTZ3)
   ('00000000-0000-0000-0000-000000620102', '00000000-0000-0000-0000-000000620004', 'owner', 'active'),   -- OWNER_B (agencia SIN relación con A -- AUTZ1)
-  ('00000000-0000-0000-0000-000000620103', '00000000-0000-0000-0000-000000620005', 'owner', 'active');   -- OWNER_C (agencia SIN can_advertise -- AUTZ4)
+  ('00000000-0000-0000-0000-000000620103', '00000000-0000-0000-0000-000000620005', 'owner', 'active'),   -- OWNER_C (agencia SIN can_advertise -- AUTZ4)
+  ('00000000-0000-0000-0000-000000620104', '00000000-0000-0000-0000-000000620007', 'owner', 'active');  -- OWNER_D (EDGE12b)
 -- STRANGER (620006) NO tiene NINGUNA fila en agency_members (AUTZ5).
 
 -- ── Geo mínima: SOLO lo que exige la FK de neighborhood_id. municipality_id
@@ -194,7 +200,8 @@ select (select id from public.mx_neighborhoods where source_key = 'test-admetric
 -- ── Creativo + ad por organización (ad_impressions.ad_id NOT NULL -> ads) ──
 insert into public.ad_creatives (id, agency_id, status) values
   ('00000000-0000-0000-0000-000000620201', '00000000-0000-0000-0000-000000620101', 'ready'),
-  ('00000000-0000-0000-0000-000000620202', '00000000-0000-0000-0000-000000620103', 'ready');
+  ('00000000-0000-0000-0000-000000620202', '00000000-0000-0000-0000-000000620103', 'ready'),
+  ('00000000-0000-0000-0000-000000620203', '00000000-0000-0000-0000-000000620104', 'ready');
 
 insert into public.ads (id, agency_id, creative_id, title, cta_type, cta_value, status, starts_at, ends_at) values
   ('00000000-0000-0000-0000-000000620301', '00000000-0000-0000-0000-000000620101',
@@ -202,6 +209,9 @@ insert into public.ads (id, agency_id, creative_id, title, cta_type, cta_value, 
    'active', (select t0 from test_ts_62), (select t0 + interval '30 days' from test_ts_62)),
   ('00000000-0000-0000-0000-000000620302', '00000000-0000-0000-0000-000000620103',
    '00000000-0000-0000-0000-000000620202', 'Ad Metrics C 62', 'phone', '+5213300006202',
+   'active', (select t0 from test_ts_62), (select t0 + interval '30 days' from test_ts_62)),
+  ('00000000-0000-0000-0000-000000620303', '00000000-0000-0000-0000-000000620104',
+   '00000000-0000-0000-0000-000000620203', 'Ad Metrics D 62', 'phone', '+5213300006203',
    'active', (select t0 from test_ts_62), (select t0 + interval '30 days' from test_ts_62));
 
 -- ── Impresiones. Los "usuarios" (user_id) NO tienen FK en ad_impressions
@@ -280,6 +290,31 @@ insert into public.ad_impressions (id, ad_id, agency_id, user_id, session_id, mu
   (gen_random_uuid(), '00000000-0000-0000-0000-000000620302', '00000000-0000-0000-0000-000000620103', '00000000-0000-0000-0000-000000620973', gen_random_uuid(), '62099', null, (select t0 from test_ts_62), 4000, true, false, null),
   (gen_random_uuid(), '00000000-0000-0000-0000-000000620302', '00000000-0000-0000-0000-000000620103', '00000000-0000-0000-0000-000000620974', gen_random_uuid(), '62099', null, (select t0 from test_ts_62), 4000, true, false, null),
   (gen_random_uuid(), '00000000-0000-0000-0000-000000620302', '00000000-0000-0000-0000-000000620103', '00000000-0000-0000-0000-000000620975', gen_random_uuid(), '62099', null, (select t0 from test_ts_62), 4000, true, false, null);
+
+-- ── EDGE12b (hallazgo del guardián 171.1) — zona NO RESUELTA con k>=5 ──────
+-- ad_impressions.municipality_id/neighborhood_id nacen NULL cuando la zona
+-- no resuelve (GPS apagado, punto fuera de polígono). Con MENOS de 5
+-- usuarios caen en el bucket por la rama de colapso; con 5 O MÁS salían
+-- ADEMÁS por la rama de desglose, produciendo DOS filas con la MISMA llave
+-- (NULL, NULL). No se pierden datos, pero contradice la enumeración de
+-- EDGE12 ('nunca como su propia fila aparte') y le entrega al cliente una
+-- llave duplicada — el gotcha de FlatList 'same key' ya pagado en este repo.
+-- AGENCY_D: 5 usuarios sin zona + 2 usuarios en 62D01 (colapsa) + 5 en
+-- 62D02 (desglosa). Contrato esperado: 2 filas -> 62D02 con 5, y UNA sola
+-- (NULL,NULL) con 5+2=7.
+insert into public.ad_impressions (id, ad_id, agency_id, user_id, session_id, municipality_id, neighborhood_id, shown_at, watched_ms, viewed, completed, cta_tapped_at) values
+  (gen_random_uuid(), '00000000-0000-0000-0000-000000620303', '00000000-0000-0000-0000-000000620104', '00000000-0000-0000-0000-000000620981', gen_random_uuid(), null, null, (select t0 from test_ts_62), 4000, false, false, null),
+  (gen_random_uuid(), '00000000-0000-0000-0000-000000620303', '00000000-0000-0000-0000-000000620104', '00000000-0000-0000-0000-000000620982', gen_random_uuid(), null, null, (select t0 from test_ts_62), 4000, false, false, null),
+  (gen_random_uuid(), '00000000-0000-0000-0000-000000620303', '00000000-0000-0000-0000-000000620104', '00000000-0000-0000-0000-000000620983', gen_random_uuid(), null, null, (select t0 from test_ts_62), 4000, false, false, null),
+  (gen_random_uuid(), '00000000-0000-0000-0000-000000620303', '00000000-0000-0000-0000-000000620104', '00000000-0000-0000-0000-000000620984', gen_random_uuid(), null, null, (select t0 from test_ts_62), 4000, false, false, null),
+  (gen_random_uuid(), '00000000-0000-0000-0000-000000620303', '00000000-0000-0000-0000-000000620104', '00000000-0000-0000-0000-000000620985', gen_random_uuid(), null, null, (select t0 from test_ts_62), 4000, false, false, null),
+  (gen_random_uuid(), '00000000-0000-0000-0000-000000620303', '00000000-0000-0000-0000-000000620104', '00000000-0000-0000-0000-000000620986', gen_random_uuid(), '62D01', null, (select t0 from test_ts_62), 4000, false, false, null),
+  (gen_random_uuid(), '00000000-0000-0000-0000-000000620303', '00000000-0000-0000-0000-000000620104', '00000000-0000-0000-0000-000000620987', gen_random_uuid(), '62D01', null, (select t0 from test_ts_62), 4000, false, false, null),
+  (gen_random_uuid(), '00000000-0000-0000-0000-000000620303', '00000000-0000-0000-0000-000000620104', '00000000-0000-0000-0000-000000620988', gen_random_uuid(), '62D02', null, (select t0 from test_ts_62), 4000, false, false, null),
+  (gen_random_uuid(), '00000000-0000-0000-0000-000000620303', '00000000-0000-0000-0000-000000620104', '00000000-0000-0000-0000-000000620989', gen_random_uuid(), '62D02', null, (select t0 from test_ts_62), 4000, false, false, null),
+  (gen_random_uuid(), '00000000-0000-0000-0000-000000620303', '00000000-0000-0000-0000-000000620104', '00000000-0000-0000-0000-000000620990', gen_random_uuid(), '62D02', null, (select t0 from test_ts_62), 4000, false, false, null),
+  (gen_random_uuid(), '00000000-0000-0000-0000-000000620303', '00000000-0000-0000-0000-000000620104', '00000000-0000-0000-0000-000000620991', gen_random_uuid(), '62D02', null, (select t0 from test_ts_62), 4000, false, false, null),
+  (gen_random_uuid(), '00000000-0000-0000-0000-000000620303', '00000000-0000-0000-0000-000000620104', '00000000-0000-0000-0000-000000620992', gen_random_uuid(), '62D02', null, (select t0 from test_ts_62), 4000, false, false, null);
 
 -- ── FIXTURE_ANCHOR: protege el archivo de derivar mal sus propios totales si
 --    alguien edita las impresiones de arriba sin actualizar los comentarios
@@ -628,6 +663,43 @@ reset role;
 select is((select ok from result_rng_upper_62), true, 'RNG8_ventana_cero_en_p_to_no_lanza_excepcion');
 select is((select sum(impressions)::int from result_rng_upper_62_rows), 1,
   'RNG9_ventana_cero_exacta_en_p_to_incluye_EXACTAMENTE_b3_frontera_superior_inclusiva');
+
+-- ── EDGE12b: la zona sin resolver con k>=5 NO puede producir su propia fila ──
+create temp table result_edge12b_62 as select false as ok, ''::text as err;
+create temp table result_edge12b_62_rows (municipality_id text, neighborhood_id bigint, impressions int, views int, cta_taps int);
+grant all on result_edge12b_62 to public;
+grant all on result_edge12b_62_rows to public;
+
+do $$
+begin
+  perform pg_temp.act_as('00000000-0000-0000-0000-000000620007', 'authenticated');
+  insert into result_edge12b_62_rows
+    select * from public.ad_metrics_for_agency('00000000-0000-0000-0000-000000620104');
+  update result_edge12b_62 set ok = true;
+exception when others then
+  update result_edge12b_62 set ok = false, err = sqlstate;
+end $$;
+reset role;
+
+select is((select ok from result_edge12b_62), true, 'EDGE12b0_la_llamada_de_agency_d_no_lanza_excepcion');
+
+select is(
+  (select count(*)::int from result_edge12b_62_rows
+    where municipality_id is null and neighborhood_id is null),
+  1,
+  'EDGE12b1_zona_sin_resolver_con_5_usuarios_NO_genera_una_SEGUNDA_fila_null_null_llave_duplicada');
+
+-- sum() y no un escalar directo: mientras el defecto viva, hay DOS filas
+-- (NULL,NULL) y una subquery escalar ABORTARÍA el archivo entero antes de
+-- llegar a los asserts siguientes. Con el fix hay una sola fila y sum()==ella.
+select is(
+  (select sum(impressions)::int from result_edge12b_62_rows
+    where municipality_id is null and neighborhood_id is null),
+  7,
+  'EDGE12b2_la_unica_fila_null_null_funde_las_5_sin_zona_mas_las_2_colapsadas_sin_perder_nada');
+
+select is((select count(*)::int from result_edge12b_62_rows), 2,
+  'EDGE12b3_en_total_2_filas_62D02_desglosada_mas_UNA_otras_zonas');
 
 select * from finish();
 rollback;
