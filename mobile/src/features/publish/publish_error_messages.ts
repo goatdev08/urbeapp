@@ -40,15 +40,32 @@ export const PUBLISH_CREATE_EF_ERROR_MESSAGES: Record<string, string> = {
   DB_ERROR: 'Error interno. Intenta de nuevo.',
 };
 
+/** Sin código legible: ¿el servidor llegó a contestar o nunca hubo respuesta? */
+export const MENSAJE_SIN_CONEXION = 'No se pudo conectar. Verifica tu conexión e intenta de nuevo.';
+export const MENSAJE_SERVIDOR = 'El servidor respondió con un error. Intenta de nuevo en un momento.';
+
 /**
- * code === undefined es lo que devuelve extract_error_code cuando el error
- * NO es un FunctionsHttpError con body {error:{code}} parseable — red/timeout
- * o un body no-JSON (context.json() rechazó). Un código presente pero fuera
- * del mapa cae al fallback neutro genérico; nunca se filtra el código crudo.
+ * code === undefined es lo que devuelve extract_error_code cuando el error NO
+ * es un FunctionsHttpError con body {error:{code}} parseable. Eso agrupa DOS
+ * situaciones opuestas, y por eso hace falta `had_http_response`:
+ *
+ *   · had_http_response=false → nunca hubo respuesta (FunctionsFetchError,
+ *     red caída, timeout). El usuario debe revisar su conexión.
+ *   · had_http_response=true  → el servidor SÍ contestó, pero con un body que
+ *     no es el JSON del contrato (típico: 502 con HTML del gateway). Decirle
+ *     "verifica tu conexión" lo manda a revisar su WiFi por un problema que
+ *     no es suyo y no puede arreglar — diagnóstico opuesto al real.
+ *     🔴 Hallazgo del guardián de la tarea #200 (obs. 2).
+ *
+ * Un código presente pero fuera del mapa cae al genérico; el código crudo
+ * nunca se filtra a la pantalla.
  */
-export function map_publish_create_ef_error(code: string | undefined): string {
+export function map_publish_create_ef_error(
+  code: string | undefined,
+  had_http_response = false,
+): string {
   if (code === undefined) {
-    return 'No se pudo conectar. Verifica tu conexión e intenta de nuevo.';
+    return had_http_response ? MENSAJE_SERVIDOR : MENSAJE_SIN_CONEXION;
   }
   return PUBLISH_CREATE_EF_ERROR_MESSAGES[code] ?? 'Ocurrió un error al publicar. Intenta de nuevo.';
 }
@@ -64,9 +81,13 @@ export const PUBLISH_EDIT_EF_ERROR_MESSAGES: Record<string, string> = {
   DB_ERROR: 'Error interno. Intenta de nuevo.',
 };
 
-export function map_publish_edit_ef_error(code: string | undefined): string {
+/** Mismo contrato que map_publish_create_ef_error — ver su docblock. */
+export function map_publish_edit_ef_error(
+  code: string | undefined,
+  had_http_response = false,
+): string {
   if (code === undefined) {
-    return 'No se pudo conectar. Verifica tu conexión e intenta de nuevo.';
+    return had_http_response ? MENSAJE_SERVIDOR : MENSAJE_SIN_CONEXION;
   }
   return PUBLISH_EDIT_EF_ERROR_MESSAGES[code] ?? 'Ocurrió un error al actualizar la propiedad. Intenta de nuevo.';
 }

@@ -90,6 +90,15 @@ const TEST_EDIT_PROPERTY_ID = 'prop-uuid-edit-error-mapping-200';
 // — fuente independiente del SUT.
 const RAW_INFRA_MESSAGE = 'Edge Function returned a non-2xx status code';
 
+// Fallbacks del catálogo, escritos a mano A PROPÓSITO (no importados de
+// publish_error_messages.ts): un test que importa la tabla que verifica se
+// compara contra su propia copia y deja de detectar que el catálogo colapsó.
+// Si alguien cambia la redacción de un fallback, este archivo debe cambiar con
+// él — esa fricción es la señal, no el estorbo.
+const GENERICO_CREATE = 'Ocurrió un error al publicar. Intenta de nuevo.';
+const GENERICO_EDIT = 'Ocurrió un error al actualizar la propiedad. Intenta de nuevo.';
+const MENSAJE_CONEXION = 'No se pudo conectar. Verifica tu conexión e intenta de nuevo.';
+
 const VALID_FORM_CREATE = {
   operation_type: 'rent' as const,
   property_type: 'departamento' as const,
@@ -437,6 +446,15 @@ describe('usePublish — traduce el error_code tipado (200.1, RED)', () => {
       'DB_ERROR',
     ];
 
+    // 🔴 Refuerzo (guardián 200, obs. 1): asertar SOLO lo negativo dejaba pasar
+    // el colapso del catálogo — si alguien borrara una entrada del mapa, su
+    // código caería al genérico y este loop seguiría verde. Se asierta además
+    // que cada código produce un mensaje PROPIO (ni el genérico, ni el de
+    // conexión) y que los mensajes son distintos entre sí. Dos códigos que
+    // compartan mensaje es una decisión legítima, pero tiene que ser
+    // consciente: si se toma, este test es el que obliga a declararla.
+    const mensajes: string[] = [];
+
     for (const code of codigos_reales) {
       const { result } = await setup_create({ data: null, error: make_ef_http_error(code) });
 
@@ -448,7 +466,13 @@ describe('usePublish — traduce el error_code tipado (200.1, RED)', () => {
       expect(result.current.sut.error).not.toBe(RAW_INFRA_MESSAGE);
       expect(result.current.sut.error).not.toMatch(/non-2xx/i);
       expect(result.current.sut.error).not.toMatch(/Edge Function returned/i);
+      expect(result.current.sut.error).not.toBe(GENERICO_CREATE);
+      expect(result.current.sut.error).not.toBe(MENSAJE_CONEXION);
+
+      mensajes.push(result.current.sut.error as string);
     }
+
+    expect(new Set(mensajes).size).toBe(codigos_reales.length);
   });
 
   it('(EC-EM-15) ninguna_rama_de_edit_expone_non_2xx_ni_edge_function: para TODO el catálogo real de edit-property, el mensaje nunca es el literal de supabase-js', async () => {
@@ -459,6 +483,9 @@ describe('usePublish — traduce el error_code tipado (200.1, RED)', () => {
       'UNAUTHORIZED_EDITOR',
       'DB_ERROR',
     ];
+
+    // Mismo refuerzo que EC-EM-14 (guardián 200, obs. 1).
+    const mensajes: string[] = [];
 
     for (const code of codigos_reales) {
       const { result } = await setup_edit({ data: null, error: make_ef_http_error(code) });
@@ -471,6 +498,63 @@ describe('usePublish — traduce el error_code tipado (200.1, RED)', () => {
       expect(result.current.sut.error).not.toBe(RAW_INFRA_MESSAGE);
       expect(result.current.sut.error).not.toMatch(/non-2xx/i);
       expect(result.current.sut.error).not.toMatch(/Edge Function returned/i);
+      expect(result.current.sut.error).not.toBe(GENERICO_EDIT);
+      expect(result.current.sut.error).not.toBe(MENSAJE_CONEXION);
+
+      mensajes.push(result.current.sut.error as string);
     }
+
+    expect(new Set(mensajes).size).toBe(codigos_reales.length);
+  });
+
+  // ── Refuerzo 200 (guardián, obs. 2): 502 con body HTML ≠ "revisa tu WiFi" ──
+  //
+  // extract_error_code colapsa DOS situaciones distintas en el mismo
+  // `undefined`: "el servidor respondió pero no pude leer el código" (502 con
+  // body HTML del gateway) y "no hubo respuesta" (red caída). Mandarlas al
+  // mismo mensaje hace que un agente cuya EF devolvió 502 se ponga a revisar
+  // su conexión. Son diagnósticos opuestos y el usuario actúa distinto en
+  // cada uno.
+
+  it('(EC-EM-16) create_502_body_html_no_culpa_a_la_conexion: hubo respuesta HTTP → mensaje de servidor, NO el de conexión', async () => {
+    const { result } = await setup_create({
+      data: null,
+      error: make_ef_http_error_non_json_body(),
+    });
+
+    await act(async () => {
+      await result.current.sut.publish();
+    });
+
+    expect(result.current.sut.status).toBe('error');
+    expect(result.current.sut.error).not.toBe(MENSAJE_CONEXION);
+    expect(result.current.sut.error).not.toMatch(/conex|conecta/i);
+    expect(result.current.sut.error).not.toBe(RAW_INFRA_MESSAGE);
+  });
+
+  it('(EC-EM-17) edit_502_body_html_no_culpa_a_la_conexion: mismo contrato en edit mode', async () => {
+    const { result } = await setup_edit({
+      data: null,
+      error: make_ef_http_error_non_json_body(),
+    });
+
+    await act(async () => {
+      await result.current.sut.publish();
+    });
+
+    expect(result.current.sut.status).toBe('error');
+    expect(result.current.sut.error).not.toBe(MENSAJE_CONEXION);
+    expect(result.current.sut.error).not.toMatch(/conex|conecta/i);
+    expect(result.current.sut.error).not.toBe(RAW_INFRA_MESSAGE);
+  });
+
+  it('(EC-EM-18) error_de_red_sigue_culpando_a_la_conexion: sin respuesta HTTP → el mensaje de conexión NO se pierde', async () => {
+    const { result } = await setup_create({ data: null, error: make_network_error() });
+
+    await act(async () => {
+      await result.current.sut.publish();
+    });
+
+    expect(result.current.sut.error).toBe(MENSAJE_CONEXION);
   });
 });
