@@ -5,6 +5,25 @@ import { jest, afterEach } from '@jest/globals';
 
 jest.mock('@react-native-async-storage/async-storage', () => mockAsyncStorage);
 
+// Mock oficial de react-native-safe-area-context (#206). Sin él, cualquier
+// componente que llame `useSafeAreaInsets()` explota bajo Jest con "No safe
+// area value available" — el hook exige un `SafeAreaProvider` que el árbol de
+// test no monta (en la app lo monta Expo Router). Hasta #206 esto se resolvía
+// caso por caso: unos tests declaraban su propio jest.mock local y otros
+// (VideoFeedItem) mockeaban a null el componente entero para esquivarlo.
+//
+// El mock del propio paquete respeta un `SafeAreaProvider` real si un test lo
+// monta con `initialMetrics`, y devuelve insets en 0 cuando no hay ninguno —
+// así un test que quiera afirmar sobre el despeje puede hacerlo. Los
+// jest.mock locales de los archivos de test siguen ganando sobre este.
+//
+// ⚠️ Recordatorio: insets 0 NO valida el layout. RNTL no mide ([[rntl_no_ve_layout]]);
+// que el CTA quede por encima de la tab bar se verifica por captura, no aquí.
+jest.mock(
+  'react-native-safe-area-context',
+  () => require('react-native-safe-area-context/jest/mock').default,
+);
+
 // Mock react-native-reanimated — Reanimated 4 importa react-native-worklets al nivel
 // de módulo (NativeWorklets.native.ts) → intenta inicializar el native module → falla
 // en Jest (sin runtime nativo). react-native-reanimated/mock tampoco sirve porque

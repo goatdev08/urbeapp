@@ -49,6 +49,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { Image } from 'expo-image';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import * as Clipboard from 'expo-clipboard';
 import { Megaphone, Phone, WhatsappLogo, ArrowSquareOut, type Icon } from 'phosphor-react-native';
@@ -57,6 +58,7 @@ import { colors, radii, spacing, type_scale } from '@/theme/theme';
 import { useLocation } from '@/features/location/LocationProvider';
 import { build_cta_target, linkify_description } from '@/features/ads/lib/adCtaLink';
 
+import { INFO_BOTTOM } from './PropertyOverlay';
 import { ad_impression_queue } from '../lib/adImpressionQueue';
 import { get_app_session_id } from '../lib/appSession';
 import type { FeedAd } from '../lib/interleaveAds';
@@ -83,6 +85,11 @@ const COMPLETION_RATIO = 0.95;
 
 export function AdFeedItem({ ad, isActive }: AdFeedItemProps) {
   const { height } = useWindowDimensions();
+  // #206: el badge legal y el bloque del CTA se posicionan contra la
+  // safe-area, no contra números fijos. En Android la tab bar es una pill
+  // FLOTANTE que el sistema no reporta en `insets.bottom` — de ahí el
+  // INFO_BOTTOM de PropertyOverlay, que ya resolvió esto en #65.11.
+  const insets = useSafeAreaInsets();
   const { coords } = useLocation();
 
   const [fallback_message, set_fallback_message] = useState<string | null>(null);
@@ -227,12 +234,15 @@ export function AdFeedItem({ ad, isActive }: AdFeedItemProps) {
       )}
 
       {/* 🔴 Badge legal — fuera del bloque de contenido, sin condicionar a nada. */}
-      <View style={styles.badge} testID="ad-sponsored-badge">
+      <View
+        style={[styles.badge, { top: insets.top + spacing.s_8 }]}
+        testID="ad-sponsored-badge"
+      >
         <Megaphone size={14} weight="fill" color={colors.ink} />
         <Text style={styles.badge_text}>Patrocinado</Text>
       </View>
 
-      <View style={styles.content}>
+      <View style={[styles.content, { bottom: insets.bottom + INFO_BOTTOM }]}>
         <View style={styles.identity}>
           {ad.agency_logo_url ? (
             <Image source={{ uri: ad.agency_logo_url }} style={styles.logo} contentFit="cover" />
@@ -304,7 +314,7 @@ const styles = StyleSheet.create({
   },
   badge: {
     position: 'absolute',
-    top: spacing.s_40 + spacing.s_8,  // safe-area del notch + aire
+    // `top` se inyecta en el render: insets.top + aire (#206).
     left: spacing.s_16,
     flexDirection: 'row',
     alignItems: 'center',
@@ -324,7 +334,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: spacing.s_16,
     right: spacing.s_16,
-    bottom: spacing.s_32,
+    // `bottom` se inyecta en el render: insets.bottom + INFO_BOTTOM (#206).
     gap: spacing.s_8,
   },
   identity: { flexDirection: 'row', alignItems: 'center', gap: spacing.s_8 },
