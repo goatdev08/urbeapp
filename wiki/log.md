@@ -816,3 +816,43 @@ doble **sensible al binding**; esa es la lección, no el `bind`.
 
 Derivada: #206 (el CTA queda tapado por la tab bar en Android — `AdFeedItem`
 no usa safe-area, repitiendo el bug que #65.11 ya arregló en `PropertyOverlay`).
+
+## [2026-08-22] fix | #206 el CTA del anuncio ya no queda bajo la tab bar — y las impresiones no se envían
+`AdFeedItem` posicionaba sus dos bloques absolutos con números fijos:
+`content` en `bottom: 32` y el badge legal en `top: 48` (comentado como
+"safe-area del notch" pero constante). En Android la tab bar es una pill
+**flotante** que el sistema no reporta en `insets.bottom`, así que el botón CTA
+y la descripción quedaban debajo de ella: visibles a medias e intocables. Es el
+mismo bug que `PropertyOverlay` ya había corregido en #65.11.
+
+El arreglo reusa esa solución en vez de inventar otra: `INFO_BOTTOM` pasa a
+`export` y `AdFeedItem` lo consume con `useSafeAreaInsets()`. Vive en
+`PropertyOverlay` a propósito — el feed alterna anuncio y propiedad, y dos
+offsets distintos se verían como un salto al deslizar; `floating_content_clearance`
+(66 en Android) está calibrado para las pantallas de (tabs), no para el feed (80).
+
+Efecto colateral que valió la pena: meter el hook reventó los 17 tests de
+`AdFeedItem.test.tsx` con *"No safe area value available"*. Como ese archivo no
+se podía tocar, el mock oficial de `react-native-safe-area-context` subió a
+`jest.setup.js` — global, respeta un `SafeAreaProvider` real si un test lo monta,
+y jubila los mocks ad-hoc que cada archivo venía declarando (o el esquive de
+`VideoFeedItem.test`, que mockeaba `PropertyOverlay` a null entero). Suite
+completa 1409/1409 sin regresiones.
+
+Verificado **por captura en los dos sistemas** contra `preview-ads` (RNTL no ve
+layout, [[rntl_no_ve_layout]]): Android con la cuenta anunciante y iOS con
+`buscador1@` vía Maestro — `simctl` no inyecta taps y computer-use está
+prohibido. Ambas apps detenidas en cuanto se confirmó el frame (cuota de Stream).
+
+**Tercer bug de la misma épica, encontrado al verificar → #207.** Se comprobó si
+la exposición quedaba registrada y `ad_impressions` seguía en 34 filas.
+`adImpressionQueue` solo llama `flush()` cuando la cola llega a
+`AD_IMPRESSION_BATCH_SIZE` = 10, y **nadie más llama `flush()` en todo `src/`**.
+Con `ad_max_per_session = 5` la cola no puede llegar a 10 jamás: las impresiones
+nunca salen del dispositivo. El propio módulo dice *"en la práctica el flush que
+manda es el de salir de la pantalla"* — ese flush no existe. Sin él, el panel del
+anunciante (#171) y el rollup facturable (#201) no tienen de dónde leer.
+
+Tres bugs (#205, #206, #207) en una épica que cerró con suites verdes y guardián
+en PASS. El patrón se repite: **la unidad correcta, el cableado ausente.** Ningún
+test afirmaba que alguien LLAMARA lo que se estaba probando.
