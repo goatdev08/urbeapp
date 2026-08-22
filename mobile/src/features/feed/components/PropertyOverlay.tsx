@@ -310,7 +310,15 @@ function ActionButton({
  * y RAIL_BOTTOM conserva el mismo delta (+20) que ya existía en Android para
  * que el rail siga arrancando un poco más arriba que el bloque de info.
  */
-const INFO_BOTTOM = Platform.OS === 'ios' ? glass.floating_content_bottom_offset_ios : 80;
+/**
+ * Exportado desde #206: `AdFeedItem` monta su bloque inferior a la MISMA
+ * altura que el de una propiedad — el feed alterna anuncio y propiedad, así
+ * que dos offsets distintos se verían como un salto al deslizar. Vive aquí
+ * (y no en `theme.ts`) porque el porqué es el comentario de arriba, y
+ * `floating_content_clearance` está calibrado para las pantallas de (tabs),
+ * no para el feed (ver el comentario de ese token).
+ */
+export const INFO_BOTTOM = Platform.OS === 'ios' ? glass.floating_content_bottom_offset_ios : 80;
 const RAIL_BOTTOM = Platform.OS === 'ios' ? glass.floating_content_bottom_offset_ios + 20 : 100;
 
 /** Color de texto de specs — blanco cálido semitransparente. Hardcodeado porque
