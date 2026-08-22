@@ -9384,19 +9384,19 @@
         "description": "Origen: subtarea 170.7 · Detectado por: verificación de #206 (al comprobar si la exposición al\nanuncio quedaba registrada, ad_impressions seguía en 34 filas con la última del 2026-08-21,\npese a haber visto un anuncio completo en la rama preview-ads el 2026-08-22).\n\nadImpressionQueue.ts encola la exposición correctamente, pero solo dispara flush() cuando\nqueue.length >= AD_IMPRESSION_BATCH_SIZE (10). NADIE más llama flush() en todo src/: el único\nconsumidor de ad_impression_queue es AdFeedItem, que solo encola. Con\napp_config.ad_max_per_session = 5 el feed nunca inserta más de 5 anuncios por sesión, así que\nla cola NO PUEDE llegar a 10 jamás — las impresiones nunca salen del dispositivo.",
         "details": "EVIDENCIA.\n  · adImpressionQueue.ts: `if (queue.length >= AD_IMPRESSION_BATCH_SIZE) void flush();` es el\n    único disparador. AD_IMPRESSION_BATCH_SIZE = 10.\n  · grep de `ad_impression_queue` en src/ (sin tests): 3 hits, los 3 en AdFeedItem.tsx\n    (import, enqueue_impression, report_cta_tap). Ningún `.flush()`.\n  · app_config en preview-ads: ad_max_per_session = 5, ad_frequency_n = 3, ads_enabled = true.\n  · select count(*) from ad_impressions -> 34, max(shown_at) = 2026-08-21 14:26:05+00.\n\nLA INTENCIÓN ESTABA ESCRITA Y NUNCA SE IMPLEMENTÓ. El comentario del propio módulo dice:\n\"10 exposiciones es más de lo que alguien ve en una sesión corta de feed, así que en la\npráctica el flush que manda es el de salir de la pantalla\". Ese flush de salida NO EXISTE.\nEl batch por tamaño se pensó como red de seguridad, no como único camino — y quedó de único.\n\nCONSECUENCIA. Toda la capa de medición y facturación de la épica comercial no tiene fuente de\ndatos: ad_impressions no crece, luego el panel del anunciante (#171, métricas por zona con\nk-anonimato) muestra ceros, el rollup facturable (#201) no tendría qué agregar, y report_cta_tap\ntampoco llega nunca (los taps viajan en el mismo batch).\n\nPOR QUÉ LOS TESTS NO LO VIERON. adImpressionQueue.test.ts prueba la cola como unidad: llama\nflush() a mano o encola 10 elementos para forzarlo. Nunca afirma que ALGUIEN llame a flush en\nla app real. Es el mismo patrón de #205: la unidad correcta, el cableado ausente.\n\nARREGLO PROPUESTO (a validar en /tm-plan). Un flush al salir del feed y al mandar la app a\nbackground. Ojo con dos cosas: (a) el cleanup del efecto que encola corre en el mismo unmount,\nasí que el orden importa — la última exposición debe estar ENCOLADA antes del flush;\n(b) un force-stop nunca ejecuta cleanup, así que AppState \"background\" es el gancho que de\nverdad cubre el caso real (la persona minimiza la app), no solo el unmount de la pantalla.\nponytail: AppState + un flush en el cleanup de FeedScreen; NO hace falta persistencia\n(AsyncStorage) todavía — eso ya está anotado como techo conocido en el módulo.\n\nVERIFICACIÓN QUE CIERRA ESTA TAREA: ver un anuncio en el emulador, salir del feed (o mandar la\napp a background), y comprobar que select count(*) from ad_impressions CRECIÓ. Sin esa\ncomprobación contra la base no se cierra — es exactamente lo que faltó en 170.7.",
         "testStrategy": "Criticidad: CRÍTICA por path (mobile/**/lib/** y mobile/**/hooks/**) -> TDD estricto.\nRED: un test que afirme que salir del feed / mandar la app a background dispara flush con la\nexposición pendiente, y que una exposición encolada nunca se pierde en silencio. Debe fallar\nHOY por aserción (el flush de salida no existe), no por import.\nGREEN + guardián. Cierre: verificación REAL contra la base (count de ad_impressions antes y\ndespués), no solo jest — la lección de #205 y de esta misma tarea es que la suite verde no\nprueba que el cableado exista.",
-        "status": "pending",
+        "status": "in-progress",
         "dependencies": [
           "170"
         ],
         "priority": "high",
         "subtasks": [],
-        "updatedAt": "2026-08-22T19:50:24.432Z"
+        "updatedAt": "2026-08-22T22:10:10.287Z"
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-08-22T19:49:35.743Z",
-      "taskCount": 206,
+      "lastModified": "2026-08-22T22:10:10.287Z",
+      "taskCount": 207,
       "completedCount": 126,
       "tags": [
         "master"
