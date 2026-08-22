@@ -799,3 +799,20 @@ Opción A aprobada: PR #69 mergeado (conflicto tasks.json reconciliado), bump 1.
 **Decisiones de producto que quedaron clavadas como contrato:** `totals = null` mientras carga y ante error, **jamás ceros** (a quien pagó el slot, "0 impresiones" y "no pudimos cargar" son mensajes opuestos — el smoke lo clava por contraste: un caso exige CERO apariciones de "0", el otro exactamente 3); el bucket "otras zonas" se pinta tal cual, sin repartir ni estimar, porque reconstruirlo desde el cliente desharía la garantía que la RPC construyó; solo se avisa de anuncios `active`, porque "¿la vigencia pagada se pausa o se pierde al suspender el negocio?" sigue abierta en la exploración 039 y **un job no decide una regla de negocio en silencio**; y un aviso borrado sigue anclando el índice ("ya te avisé, tú lo borraste"), porque el job corre a diario y anclar solo los vivos lo traería de vuelta mañana.
 
 **Verificado en local, nada en remoto:** pgTAP `62`/`63` con la suite completa en **1754 asserts sobre 63 archivos**, `cd mobile && pnpm jest` en **1405 tests / 111 suites**, `pnpm tsc --noEmit` y `pnpm lint` verdes. Migraciones aditivas con rollback probado empíricamente (incluido `cron.unschedule`, sin tocar el job de 170.5). El smoke en emulador de la pantalla queda montado en el gate epic-wide de **170.8**, no en el merge. Ver [[publicidad-anuncios]], [[privacidad-datos]], [[mapa-codebase]].
+
+## [2026-08-22] fix | #205 los anuncios nunca se renderizaron — métodos de supabase-js desprendidos
+La épica comercial estaba completa y muerta a la vez. `compose_feed_items`
+extraía `client.rpc` y `client.functions.invoke` a variables sueltas y los
+llamaba desprendidos; sin `this`, `rpc()` lanza (`this.rest` undefined) y
+`functions.invoke()` devuelve un error mudo. El feed salía siempre solo con
+propiedades: `AdFeedItem`, el badge "Patrocinado" y el CTA existían y estaban
+cableados, pero jamás recibían un ítem `kind==='ad'`.
+
+Lo delató la propia app: dos filas `ads_fetch_failed` con `stage='config'` en
+`events_raw` de la rama preview. 36 tests en verde no lo vieron porque el doble
+del cliente era un objeto plano (`{ rpc: jest.fn() }`) y un `jest.fn()` no lee
+`this` — mutante sobreviviente en el sentido estricto. El test nuevo usa un
+doble **sensible al binding**; esa es la lección, no el `bind`.
+
+Derivada: #206 (el CTA queda tapado por la tab bar en Android — `AdFeedItem`
+no usa safe-area, repitiendo el bug que #65.11 ya arregló en `PropertyOverlay`).
