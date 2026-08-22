@@ -43,8 +43,14 @@ import { act, render } from '@testing-library/react-native';
 // de '@/lib/supabase/client' al construirse. Se intercepta ahí para que el test
 // use la cola REAL (no un doble) y pueda inspeccionar el cuerpo del POST.
 const mock_invoke = jest.fn().mockResolvedValue({ data: {}, error: null });
+// ⚠️ `invoke` se referencia PEREZOSAMENTE. La fábrica del mock corre al
+// importar `adImpressionQueue` (el singleton resuelve su cliente en el import),
+// y los `import` se izan por encima de este `const`: pasarle `mock_invoke`
+// directo lo dejaría en TDZ, el ReferenceError caería en el try/catch de
+// `get_default_supabase` y la cola se quedaría SIN cliente — con los tests
+// fallando por la razón equivocada.
 jest.mock('@/lib/supabase/client', () => ({
-  supabase: { functions: { invoke: mock_invoke } },
+  supabase: { functions: { invoke: (...args: unknown[]) => mock_invoke(...args) } },
 }));
 
 // useFocusEffect controlable: su CLEANUP es el blur del tab (irse a otra
@@ -81,14 +87,30 @@ const next_pair = () => {
   current_ad = `11111111-1111-1111-1111-${String(pair_seq).padStart(12, '0')}`;
 };
 
-function emit_app_state(next: 'active' | 'background' | 'inactive') {
-  act(() => {
-    const calls = (AppState.addEventListener as jest.Mock).mock.calls as [
+// ⚠️ `await act(async …)` en TODO: con React concurrente un act SÍNCRONO no
+// aplica el estado ([[rntl14_renderhook_async]]), y los efectos del montaje
+// tampoco han corrido justo después de `render` — sin el primer await el
+// listener de AppState todavía no está registrado y esto no despertaría a nadie.
+async function emit_app_state(next: 'active' | 'background' | 'inactive') {
+  await act(async () => {
+    const calls = (AppState.addEventListener as unknown as jest.Mock).mock.calls as [
       string,
       (s: string) => void,
     ][];
     for (const [event, handler] of calls) if (event === 'change') handler(next);
   });
+}
+
+/**
+ * Monta el feed y deja correr los efectos del montaje.
+ * ⚠️ `await render(...)`: en RNTL 14 render devuelve una promesa y no
+ * esperarla deja un `act()` ABIERTO — a partir de ahí todo act se solapa
+ * («overlapping act() calls») y ningún `setState` externo re-renderiza.
+ */
+async function mount_feed() {
+  const view = await render(feed());
+  await act(async () => {});
+  return view;
 }
 
 /** Padre mínimo: el único consumidor real de este hook es FeedScreen. */
@@ -128,46 +150,40 @@ describe('#207 — alguien tiene que vaciar la cola de impresiones', () => {
   });
   afterEach(() => jest.restoreAllMocks());
 
-  it('EC-1: montar el feed NO manda nada (no se fabrican POSTs vacíos)', () => {
-    render(<Screen />);
+  it('EC-1: montar el feed NO manda nada (no se fabrican POSTs vacíos)', async () => {
+    await render(<Screen />);
     expect(mock_invoke).not.toHaveBeenCalled();
   });
 
   it('EC-2: mandar la app a background dispara el flush', async () => {
-    render(feed());
-    emit_app_state('background');
-    await act(async () => {});
+    await mount_feed();
+    await emit_app_state('background');
     expect(mock_invoke).toHaveBeenCalledWith('record-ad-impressions', expect.anything());
   });
 
   it('EC-3: volver y minimizar otra vez vuelve a vaciar (no es one-shot)', async () => {
-    render(feed());
-    emit_app_state('background');
-    await act(async () => {});
+    await mount_feed();
+    await emit_app_state('background');
     expect(mock_invoke).toHaveBeenCalledTimes(1);
 
     // Otro anuncio: el mismo par no se re-encola nunca (REQUISITO 1), así que
     // repetir el ciclo con el mismo id probaría el dedupe, no el flush.
-    emit_app_state('active');
-    await act(async () => {});
+    await emit_app_state('active');
     next_pair();
-    emit_app_state('background');
-    await act(async () => {});
+    await emit_app_state('background');
 
     expect(mock_invoke).toHaveBeenCalledTimes(2);
   });
 
   it('EC-5: salir a otra pestaña (blur) también vacía — no solo el background', async () => {
-    render(feed());
-    act(() => mock_set_focused?.(false));
-    await act(async () => {});
+    await mount_feed();
+    await act(async () => mock_set_focused?.(false));
     expect(mock_invoke).toHaveBeenCalledWith('record-ad-impressions', expect.anything());
   });
 
   it('EC-4 🔴: la exposición que el hijo cierra EN ESA MISMA transición viaja en el POST', async () => {
-    render(feed());
-    emit_app_state('background');
-    await act(async () => {});
+    await mount_feed();
+    await emit_app_state('background');
 
     const body = body_of(mock_invoke.mock.calls[0]);
     expect(body?.impressions).toEqual([

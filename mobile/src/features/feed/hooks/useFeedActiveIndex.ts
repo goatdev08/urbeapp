@@ -6,6 +6,10 @@
  *   2. AppState: cuando la app va a background/inactive, ningún ítem está activo.
  *   3. Foco de tab: cuando se navega fuera del feed, ningún ítem está activo.
  *
+ * #207 le agregó un efecto de salida: cuando (2) y (3) dicen que el feed dejó
+ * de verse, se vacía la cola de impresiones de anuncios. El porqué vive aquí y
+ * no en un hook aparte está explicado abajo, junto al efecto.
+ *
  * Devuelve `viewabilityConfigCallbackPairs` (ref estable para FlashList v2,
  * que lanza si la referencia cambia tras el montaje) y un helper `isItemActive`.
  *
@@ -19,6 +23,7 @@ import { AppState, type AppStateStatus } from 'react-native';
 import { useFocusEffect } from 'expo-router'; // SDK 56: useFocusEffect en expo-router, NO en @react-navigation/native
 import type { FlashListProps, ViewToken } from '@shopify/flash-list';
 
+import { ad_impression_queue } from '../lib/adImpressionQueue';
 import type { FeedItem } from '../lib/interleaveAds';
 
 // ViewabilityConfigCallbackPairs no se re-exporta en el index público de flash-list v2,
@@ -103,10 +108,40 @@ export function useFeedActiveIndex(): UseFeedActiveIndexResult {
     [],
   );
 
+  // ── Salida del feed: vaciar la cola de impresiones (#207) ─────────────────
+  //
+  // 🔴 POR QUÉ VIVE AQUÍ. Hasta #207 la cola de `adImpressionQueue` solo se
+  // vaciaba al llegar a 10 exposiciones, y `ad_max_per_session` es 5: nunca se
+  // vaciaba. Las impresiones se encolaban y morían con el proceso —
+  // `ad_impressions` llevaba semanas congelada. El módulo daba por hecho «el
+  // flush que manda es el de salir de la pantalla», y ese flush no existía.
+  // El arreglo NO es un hook nuevo: sería un segundo cable que FeedScreen
+  // tendría que acordarse de conectar, y un cable olvidado es exactamente el
+  // bug. Este hook ya calcula la señal —y ya lo llama el único consumidor.
+  //
+  // 🔴 POR QUÉ ES UN EFECTO Y NO UN LISTENER DE AppState PROPIO. `AdFeedItem`
+  // cierra y ENCOLA su exposición en un efecto que reacciona a `isActive`. Un
+  // listener propio correría en el mismo tick que el de arriba, o sea ANTES de
+  // que React re-renderice al hijo: vaciaría una cola vacía y perdería la
+  // última exposición, la que la persona acababa de ver. Como efecto pasivo
+  // del padre, en cambio, corre DESPUÉS de los de los hijos del mismo commit.
+  //
+  // ponytail: sin flush en el desmontaje. Salir del feed pasa siempre por el
+  // blur del tab (que ya dispara esto), y en un desmontaje los cleanups corren
+  // de padre a hijo — el flush llegaría antes de que el hijo encole, justo el
+  // orden que este efecto evita. Un force-stop no ejecuta cleanups de ninguna
+  // forma. Techo conocido: sin persistencia, un force-stop pierde el batch
+  // (decisión ya tomada en 170.7 — subcontar sí, duplicar facturable no).
+  const is_feed_visible = is_app_active && is_focused;
+  useEffect(() => {
+    if (is_feed_visible) return;
+    void ad_impression_queue.flush();
+  }, [is_feed_visible]);
+
   // ── Helper compuesto ───────────────────────────────────────────────────────
   const isItemActive = useCallback(
-    (index: number): boolean => index === active_index && is_app_active && is_focused,
-    [active_index, is_app_active, is_focused],
+    (index: number): boolean => index === active_index && is_feed_visible,
+    [active_index, is_feed_visible],
   );
 
   return {
