@@ -8324,7 +8324,7 @@
         "id": "169",
         "title": "feat(039-B): anuncios — creativo de video 6–30 s, campaña por zona (catálogo #157) y moderación admin",
         "description": "Origen: exploración 039 (.taskmaster/docs/exploraciones/039-cuenta-comercial-anunciantes.md), aprobada por Abraham el 2026-08-14. Tarea B. Tablas ad_creatives (tabla PROPIA, NO property_videos), ads (estados sin 'approved'), ad_zones (municipio/colonia de #157; cero filas = inventario nacional), ad_prices (PRD §17.2: precios en tabla, jamás en código). Pipeline de subida calcado del de propiedades (Cloudflare Stream) con duración 6–30 s. Aprobación por admin SIEMPRE antes de servir — la moderación de propiedades está suspendida por #153, pero eso es operativo temporal y no se hereda a publicidad (tercero pagando, CTA hacia fuera de la app, volumen de decenas). NINGÚN pago en la beta: el slot lo otorga el admin a mano; ads.purchase_id nullable y NULL toda la beta, listo para que #84 (Stripe) solo lo llene.",
-        "details": "DATOS: ad_creatives (agency_id, cloudflare_uid, thumbnail_url, duration_seconds 6–30 CHECK, status uploading→processing→ready/failed); ads (agency_id, creative_id, title, cta_kind url|whatsapp|phone, cta_value, status draft→pending_review→active→paused|expired|rejected, rejection_reason NOT NULL si rejected, starts_at/ends_at vigencia, purchase_id nullable); ad_zones (ad_id, municipality_id XOR neighborhood_id — CHECK exactamente uno); ad_prices (scope colonia|municipio|nacional, days, amount_mxn, currency, valid_from — sembrar los 3 alcances). Máquina de estados por TRIGGER (draft→active directo falla; terminal no se reabre) + TODA transición de moderación escribe admin_actions en la misma transacción (si la auditoría falla, la transición falla — mismo criterio que moderate-property). El owner NO puede poner su anuncio en active por ninguna ruta (PostgREST/RPC/EF) — impersonación. RPC grant_ad_slot_atomic (service_role: crea ad + ad_zones + vigencia + auditoría en una transacción). Moderación en beta = Studio/SQL + trigger + admin_actions (calca 71.5); la UI llega con #81.\nEFs: mint-ad-upload-url (nueva, scope agency_id — NO comparte el 409 de concurrencia de mint-upload-url que está scoped por agent_id sobre property_videos), stream-webhook extendido de forma ADITIVA (rama de anuncios solo cuando el UPDATE sobre property_videos afecta 0 filas; la suite Deno existente pasa SIN modificarse), mint-ad-urls (nueva, calco de mint-poster-urls: nunca URL sin firmar, autz fail-closed por item). Rechazo AD_DURATION_INVALID en cliente al elegir archivo Y en servidor al pasar a ready.\nCLIENTE: mobile/src/features/ads/lib/validation.ts (duración, CTA, zonas — CRÍTICA), hooks/useAdUpload.ts (CRÍTICA), app/(protected)/ads/new/*.tsx wizard (ligera) gated por can_advertise: sin la capacidad la RUTA no existe (no basta ocultar el botón). Selector de zonas reusa search_places de #157.\nFOOTPRINT: migraciones + rollbacks + pgTAP (CRÍTICA), 3 EFs (CRÍTICA), lib/hooks móviles (CRÍTICA), wizard (ligera). Ver criterios de aceptación completos en el doc 039 §'Tarea B'.\n\n<info added on 2026-08-16T00:00:00.000Z>\nNOTAS PARA EL DEPLOY REMOTO de la migración 20260816000005 (hallazgos del guardián de 169.1, 2026-08-16 — NO bloquean, pero van en el PR y en el checklist de release):\n\n1) La migración es aditiva pura, pero sus FKs salientes toman un ShareRowExclusiveLock BREVE sobre agencies, mx_municipalities y mx_neighborhoods al crearse. Es el único momento en que toca tablas pobladas. A la escala actual son milisegundos; anotarlo por rigor, no por riesgo.\n\n2) ad_zones usa `on delete restrict` hacia los catálogos: una vez existan filas, borrar un municipio o una colonia quedará BLOQUEADO. Es la semántica correcta (no queremos zonas huérfanas), pero el pipeline de import de #157 debe saberlo — si alguna vez re-importa borrando y recreando filas de mx_neighborhoods, chocará contra esta FK.\n\n3) ESTRATEGIA DE RELEASE VIGENTE (decisión de Abraham, 2026-08-16): 168–172 se mergean progresivamente a main pero NO se despliega NADA —ni migraciones al remoto, ni EFs, ni OTA— hasta que la épica completa esté probada. Merge ≠ deploy: no hay CI/CD en este repo (no existe .github/), así que nada sale solo. La épica además nace apagada por datos: can_advertise es default false.\n</info added on 2026-08-16T00:00:00.000Z>\n\n<info added on 2026-08-16T20:00:00.000Z>\nDERIVADAS: #181 (guardian 169.3 — count(*) absoluto en 12_stream_schema_test.sql, mismo antipatrón que #175) · #182 (guardian 169.3 — new_values de la auditoría sin asertar, mutante M20) · #183 (169.4 — ventana del reaper duplicada entre mint-upload-url y mint-ad-upload-url) · #188 (169.5 — ad_creatives sin ventana de expiración para processing) · #189 (169.6 — fail-closed sin duración bloquea pickers Android viejos) · #190 (169.8 — database.types.ts 10 migraciones atrás) · #191 (169.9 — RPC self-service para crear la campaña, decisión de Abraham)\n</info added on 2026-08-16T20:00:00.000Z>\n\n<info added on 2026-08-16T23:00:00.000Z>\nDERIVADA: #183 (guardian 169.4 — la ventana del reaper duplicada entre las dos EFs quedó fijada de un solo lado)\n</info added on 2026-08-16T23:00:00.000Z>\n\n<info added on 2026-08-17T02:00:00.000Z>\nDERIVADA: #188 (guardian 169.5 — 'processing' sin ventana de expiración; el reintento de Cloudflare es finito)\n</info added on 2026-08-17T02:00:00.000Z>\n\n<info added on 2026-08-17T04:00:00.000Z>\nDERIVADA: #189 (guardian 169.6 — fail-closed sin duración vs la hermana fail-open de propiedades; posible bloqueo en pickers Android viejos)\n</info added on 2026-08-17T04:00:00.000Z>\n\n<info added on 2026-08-17T10:00:00.000Z>\nDERIVADA: #190 (guardian 169.8 — database.types.ts con 10 migraciones de retraso; 169.7 y 169.8 lo esquivaron por rutas distintas)\n</info added on 2026-08-17T10:00:00.000Z>\n\n<info added on 2026-08-17T13:00:00.000Z>\nDERIVADA: #191 🔴 (169.9 — no hay ruta para que un anunciante cree su campaña; el wizard solo puede persistir el creativo)\n</info added on 2026-08-17T13:00:00.000Z>",
+        "details": "DATOS: ad_creatives (agency_id, cloudflare_uid, thumbnail_url, duration_seconds 6–30 CHECK, status uploading→processing→ready/failed); ads (agency_id, creative_id, title, cta_kind url|whatsapp|phone, cta_value, status draft→pending_review→active→paused|expired|rejected, rejection_reason NOT NULL si rejected, starts_at/ends_at vigencia, purchase_id nullable); ad_zones (ad_id, municipality_id XOR neighborhood_id — CHECK exactamente uno); ad_prices (scope colonia|municipio|nacional, days, amount_mxn, currency, valid_from — sembrar los 3 alcances). Máquina de estados por TRIGGER (draft→active directo falla; terminal no se reabre) + TODA transición de moderación escribe admin_actions en la misma transacción (si la auditoría falla, la transición falla — mismo criterio que moderate-property). El owner NO puede poner su anuncio en active por ninguna ruta (PostgREST/RPC/EF) — impersonación. RPC grant_ad_slot_atomic (service_role: crea ad + ad_zones + vigencia + auditoría en una transacción). Moderación en beta = Studio/SQL + trigger + admin_actions (calca 71.5); la UI llega con #81.\nEFs: mint-ad-upload-url (nueva, scope agency_id — NO comparte el 409 de concurrencia de mint-upload-url que está scoped por agent_id sobre property_videos), stream-webhook extendido de forma ADITIVA (rama de anuncios solo cuando el UPDATE sobre property_videos afecta 0 filas; la suite Deno existente pasa SIN modificarse), mint-ad-urls (nueva, calco de mint-poster-urls: nunca URL sin firmar, autz fail-closed por item). Rechazo AD_DURATION_INVALID en cliente al elegir archivo Y en servidor al pasar a ready.\nCLIENTE: mobile/src/features/ads/lib/validation.ts (duración, CTA, zonas — CRÍTICA), hooks/useAdUpload.ts (CRÍTICA), app/(protected)/ads/new/*.tsx wizard (ligera) gated por can_advertise: sin la capacidad la RUTA no existe (no basta ocultar el botón). Selector de zonas reusa search_places de #157.\nFOOTPRINT: migraciones + rollbacks + pgTAP (CRÍTICA), 3 EFs (CRÍTICA), lib/hooks móviles (CRÍTICA), wizard (ligera). Ver criterios de aceptación completos en el doc 039 §'Tarea B'.\n\n<info added on 2026-08-16T00:00:00.000Z>\nNOTAS PARA EL DEPLOY REMOTO de la migración 20260816000005 (hallazgos del guardián de 169.1, 2026-08-16 — NO bloquean, pero van en el PR y en el checklist de release):\n\n1) La migración es aditiva pura, pero sus FKs salientes toman un ShareRowExclusiveLock BREVE sobre agencies, mx_municipalities y mx_neighborhoods al crearse. Es el único momento en que toca tablas pobladas. A la escala actual son milisegundos; anotarlo por rigor, no por riesgo.\n\n2) ad_zones usa `on delete restrict` hacia los catálogos: una vez existan filas, borrar un municipio o una colonia quedará BLOQUEADO. Es la semántica correcta (no queremos zonas huérfanas), pero el pipeline de import de #157 debe saberlo — si alguna vez re-importa borrando y recreando filas de mx_neighborhoods, chocará contra esta FK.\n\n3) ESTRATEGIA DE RELEASE VIGENTE (decisión de Abraham, 2026-08-16): 168–172 se mergean progresivamente a main pero NO se despliega NADA —ni migraciones al remoto, ni EFs, ni OTA— hasta que la épica completa esté probada. Merge ≠ deploy: no hay CI/CD en este repo (no existe .github/), así que nada sale solo. La épica además nace apagada por datos: can_advertise es default false.\n</info added on 2026-08-16T00:00:00.000Z>\n\n<info added on 2026-08-16T20:00:00.000Z>\nDERIVADAS: #208 🔴 (169.2 — no existe pantalla de admin para aprobar anuncios; el circuito comercial no cierra) · #181 (guardian 169.3 — count(*) absoluto en 12_stream_schema_test.sql, mismo antipatrón que #175) · #182 (guardian 169.3 — new_values de la auditoría sin asertar, mutante M20) · #183 (169.4 — ventana del reaper duplicada entre mint-upload-url y mint-ad-upload-url) · #188 (169.5 — ad_creatives sin ventana de expiración para processing) · #189 (169.6 — fail-closed sin duración bloquea pickers Android viejos) · #190 (169.8 — database.types.ts 10 migraciones atrás) · #191 (169.9 — RPC self-service para crear la campaña, decisión de Abraham)\n</info added on 2026-08-16T20:00:00.000Z>\n\n<info added on 2026-08-16T23:00:00.000Z>\nDERIVADA: #183 (guardian 169.4 — la ventana del reaper duplicada entre las dos EFs quedó fijada de un solo lado)\n</info added on 2026-08-16T23:00:00.000Z>\n\n<info added on 2026-08-17T02:00:00.000Z>\nDERIVADA: #188 (guardian 169.5 — 'processing' sin ventana de expiración; el reintento de Cloudflare es finito)\n</info added on 2026-08-17T02:00:00.000Z>\n\n<info added on 2026-08-17T04:00:00.000Z>\nDERIVADA: #189 (guardian 169.6 — fail-closed sin duración vs la hermana fail-open de propiedades; posible bloqueo en pickers Android viejos)\n</info added on 2026-08-17T04:00:00.000Z>\n\n<info added on 2026-08-17T10:00:00.000Z>\nDERIVADA: #190 (guardian 169.8 — database.types.ts con 10 migraciones de retraso; 169.7 y 169.8 lo esquivaron por rutas distintas)\n</info added on 2026-08-17T10:00:00.000Z>\n\n<info added on 2026-08-17T13:00:00.000Z>\nDERIVADA: #191 🔴 (169.9 — no hay ruta para que un anunciante cree su campaña; el wizard solo puede persistir el creativo)\n</info added on 2026-08-17T13:00:00.000Z>",
         "testStrategy": "pgTAP: CHECKs (duración, ad_zones XOR, rejection_reason), trigger de estados, admin_actions obligatorio, grant_ad_slot_atomic fault-injection, impersonación owner no activa su anuncio, ad_prices sembrada y grep sin montos en código. Deno: creativo recorre uploading→processing→ready contra webhook REAL de Stream en local; no-regresión total de stream-webhook; separación del 409 por dominio; mint-ad-urls fail-closed. Jest: validation + useAdUpload. Cuota: verificar y PARAR (minutos de Stream se facturan). pnpm tsc/lint.",
         "status": "done",
         "dependencies": [
@@ -8456,7 +8456,7 @@
             "parentId": "undefined"
           }
         ],
-        "updatedAt": "2026-08-17T02:14:24.592Z"
+        "updatedAt": "2026-08-22T12:00:00.000Z"
       },
       {
         "id": "170",
@@ -9391,12 +9391,86 @@
         "priority": "high",
         "subtasks": [],
         "updatedAt": "2026-08-23T01:00:23.799Z"
+      },
+      {
+        "id": "208",
+        "title": "producto(169.2): pantalla de admin para aprobar anuncios — hoy solo se activan por SQL",
+        "description": "Origen: subtarea 169.2 · Detectado por: revisión de cierre de épica (2026-08-22). El título de #169 prometía «moderación admin» y sus 9 subtareas cerraron en verde, pero lo que se construyó fue el MOTOR de la moderación (máquina de estados por trigger, auditoría obligatoria en admin_actions, guard ORGANIZATION_SUSPENDED) — no el botón. El wizard deja el anuncio en pending_review y step5.tsx promete que «activarlo es del admin», pero esa pantalla no existe: hoy un anuncio solo pasa a active con un UPDATE a mano en SQL. Sin esto el circuito comercial NO CIERRA por más que la épica esté desplegada. Decisión de Abraham (2026-08-22): va en la app móvil bajo /admin, no esperando al panel web #81 (que depende de #71/#73/#79, ninguna empezada). El panel web puede reemplazarla después sin desperdicio porque la lógica vive en la EF, no en la pantalla.",
+        "details": "🔴 Producción viva: la épica YA está desplegada al remoto con ads_enabled=false (2026-08-22). Esta tarea es lo que falta para poder encenderla.\n\nQué NO hay que reconstruir (reusar > reescribir):\n- La máquina de estados ya valida las transiciones y AUDITA sola: handle_ad_status_change() (20260816000006 + 20260818000001) es la ÚNICA autoridad. La EF solo hace el UPDATE; el trigger valida, aplica D2 (pausar el reloj) y escribe admin_actions. NO duplicar esa lógica en TypeScript ni insertar auditoría por separado (quedaría doble).\n- private.resolve_admin_actor() resuelve el admin_id desde el JWT — ya lo usan agencies y ads.\n- _shared/clients.ts ya exporta make_admin_verifier y service_client (patrón de moderate-property/index.ts: index delgado a propósito).\n- ads_rejection_reason_matches_status: rejection_reason es obligatorio SI Y SOLO SI status=rejected (CHECK bidireccional) — rechazar sin razón debe fallar con un código tipado, no con un 23514 crudo.\n- mint-ad-urls ya firma la URL de reproducción del creativo (necesaria para VER el video antes de aprobarlo).\n\nFootprint: supabase/functions/moderate-ad/** (nueva) · mobile/src/features/ads/hooks/** · mobile/app/admin/ads/** · mobile/app/admin/index.tsx (entrada).\n\nCriticidad TDD por path: EF = CRÍTICA (supabase/functions/**), hooks = CRÍTICA (mobile/**/hooks/**), pantallas = verificación ligera.",
+        "testStrategy": "Deno para la EF (DI con fakes, como moderate-property/handler.test.ts): admin verificado, no-admin 403, sin JWT 401, aprobar pending_review→active, rechazar exige razón, transición inválida devuelve código tipado, organización suspendida bloquea. RNTL para los hooks. Verificación ligera (tsc/lint/smoke por CLI) para las pantallas. Smoke final: crear un anuncio de prueba en el REMOTO con ads_enabled=false, aprobarlo desde la pantalla y confirmar la fila en admin_actions.",
+        "status": "in-progress",
+        "dependencies": [
+          "169",
+          "171"
+        ],
+        "priority": "high",
+        "updatedAt": "2026-08-23T04:38:21.790Z",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "EF moderate-ad: aprobar/rechazar con auth de admin y códigos tipados",
+            "description": "Nueva Edge Function que hace el UPDATE sobre public.ads dejando que el trigger valide y audite. Reusa make_admin_verifier + service_client. Códigos: UNAUTHENTICATED (401), FORBIDDEN (403), AD_NOT_FOUND (404), REJECTION_REASON_REQUIRED (400), INVALID_AD_STATUS_TRANSITION (409), ORGANIZATION_SUSPENDED (409). NUNCA devolver el mensaje crudo de Postgres al cliente.",
+            "details": "CRÍTICA → TDD estricto (supabase/functions/**). index.ts DELGADO (patrón moderate-property). El trigger ya escribe admin_actions — la EF no debe insertar auditoría por su cuenta o quedaría duplicada.",
+            "testStrategy": "Deno con DI y fakes; enumerar los 6 códigos como edge cases en RED.",
+            "status": "in-progress",
+            "dependencies": [],
+            "priority": "high",
+            "updatedAt": "2026-08-23T04:38:21.790Z",
+            "subtasks": [],
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Hooks usePendingAds + useModerateAd (lista y acción)",
+            "description": "usePendingAds lee los anuncios en pending_review (el admin los ve todos por la policy ads_select, que incluye private.is_admin()). useModerateAd invoca la EF y TRADUCE el código tipado a un mensaje en español — el error de #200 no se repite.",
+            "details": "CRÍTICA → TDD estricto (mobile/**/hooks/**). 🔴 Reusar extract_error_code (ya lo usan 10 archivos) — no leer error.message, que en FunctionsHttpError es SIEMPRE el literal en inglés (#200). 🔴 NO desprender client.rpc/functions.invoke del cliente supabase-js (#205): pierden su this y fallan mudos.",
+            "testStrategy": "RNTL: lista vacía, lista con anuncios, aprobar con rollback ante error, y cada código tipado produce su mensaje.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "priority": "high",
+            "updatedAt": "2026-08-22T12:00:00.000Z",
+            "subtasks": [],
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Pantalla /admin/ads: cola de pendientes, ver el video y aprobar/rechazar",
+            "description": "mobile/app/admin/ads/index.tsx con la cola de pending_review y el detalle para VER el creativo antes de decidir (URL firmada vía mint-ad-urls). Rechazar exige escribir la razón. Entrada desde mobile/app/admin/index.tsx.",
+            "details": "NO crítica → verificación ligera. Techo de alcance: lo que exista en urbea-identidad-visual.html; nada de UI inventada. ⚠️ Ver el video quema minutos de Cloudflare Stream: verificar que reproduce y PARAR.",
+            "testStrategy": "pnpm tsc --noEmit + pnpm lint + smoke por CLI en el emulador (adb/simctl, NUNCA computer-use).",
+            "status": "pending",
+            "dependencies": [
+              2
+            ],
+            "priority": "medium",
+            "updatedAt": "2026-08-22T12:00:00.000Z",
+            "subtasks": [],
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Desplegar la EF, smoke contra el remoto e ingest al vault",
+            "description": "Desplegar moderate-ad al remoto (--import-map --use-api), aprobar un anuncio de prueba de punta a punta, confirmar la fila en admin_actions, y actualizar mapa-codebase + concepto + log.",
+            "details": "🔴 Gate §0.5 antes del PR. El smoke NO enciende ads_enabled — aprobar un anuncio con el kill-switch apagado es seguro: no se sirve a nadie.",
+            "testStrategy": "Salida real del deploy + el select sobre admin_actions pegado en la bitácora, nunca narrado de memoria.",
+            "status": "pending",
+            "dependencies": [
+              3
+            ],
+            "priority": "medium",
+            "updatedAt": "2026-08-22T12:00:00.000Z",
+            "subtasks": [],
+            "parentId": "undefined"
+          }
+        ]
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-08-23T01:00:23.799Z",
-      "taskCount": 207,
+      "lastModified": "2026-08-23T04:38:21.790Z",
+      "taskCount": 208,
       "completedCount": 127,
       "tags": [
         "master"
