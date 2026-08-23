@@ -10,6 +10,12 @@ codigo:
   - supabase/migrations/20260816000008_org_can_advertise_public_wrapper.sql
   - supabase/functions/mint-ad-upload-url/
   - supabase/functions/mint-ad-urls/
+  - supabase/functions/moderate-ad/
+  - supabase/migrations/20260822000002_moderate_ad_atomic.sql
+  - supabase/migrations/20260822000003_ads_reject_from_pending_review.sql
+  - mobile/app/admin/ads/index.tsx
+  - mobile/src/features/ads/hooks/usePendingAds.ts
+  - mobile/src/features/ads/hooks/useModerateAd.ts
   - supabase/functions/stream-webhook/handler.ts
   - supabase/migrations/20260820000001_ads_zone_bbox_determinism.sql
   - supabase/migrations/20260820000002_ad_creatives_failure_reason.sql
@@ -31,11 +37,12 @@ actualizado: 2026-08-21
 
 Tabla **propia**, no `property_videos`: eso es lo que permite que el 409 de concurrencia de anuncios y el de propiedades convivan **sin un solo condicional de dominio** (ver abajo).
 
-## La máquina de estados (#169.2)
-`draft → pending_review → active → paused|expired|rejected`; `paused → active`. `rejected` y `expired` son **terminales**.
+## La máquina de estados (#169.2, corregida en #208.1)
+`draft → pending_review → {active | rejected}`; `active → paused|expired|rejected`; `paused → active`. `rejected` y `expired` son **terminales**.
 
 - **`draft → active` directo falla.** Ése es el criterio de "jamás se sirve sin moderación".
 - **No existe estado `approved`**: un intermedio entre `pending_review` y `active` es exactamente el deadlock que [[moderacion]] tuvo que cortar en propiedades (#153).
+- 🔴 **`pending_review → rejected` NO existía hasta #208.1.** El grafo original solo llegaba a `rejected` desde `active`, así que un admin podía **aprobar** un anuncio en revisión pero **no rechazarlo**: para rechazarlo tendría que activarlo primero, publicando durante un instante exactamente el contenido que quería rechazar. No era una regla deliberada — la suite `48_ads_state_machine_test.sql` enumera las transiciones inválidas que sí se decidieron y ésta no está entre ellas, mientras que `rejection_reason`, el CHECK bidireccional y el propio enum la daban por hecha. Lo encontró el RED de #208.1, no una revisión de código.
 - 🔒 **Servir = `status='active'` AND `now()` BETWEEN `starts_at` AND `ends_at`.** El estado no basta; todo consumidor evalúa las dos condiciones.
 - **La auditoría no es best-effort**: toda transición escribe en `admin_actions` en la MISMA transacción. Si la auditoría falla, la transición se revierte.
 
@@ -82,7 +89,7 @@ El feed es heterogéneo: `interleave_ads` (pura, 8 invariantes) decide dónde ca
 ## Lo que NO existe todavía
 - **Ningún pago.** El slot lo otorga el admin a mano con `grant_ad_slot_atomic` (`service_role`); `ads.purchase_id` queda NULL toda la beta, listo para que Stripe solo lo llene ([[monetizacion-pago-por-video]]).
 - ~~Ninguna ruta para que el anunciante cree su campaña~~ — **cerrado en #191**: `create_ad_campaign_atomic`, security definer y granted a `authenticated`. 🔒 La agencia sale del JWT, nunca de un parámetro. Nace en `pending_review`; activarla sigue siendo exclusivo del admin.
-- **La UI de moderación admin** llega con #81; en beta se modera por Studio/SQL, igual que #71.5.
+- ~~La UI de moderación admin llega con #81~~ — **cerrado en #208**: `/admin/ads` es la cola de `pending_review`, con el creativo firmado bajo demanda y rechazo con motivo obligatorio. Se adelantó de #81 porque sin ella el circuito comercial no cerraba. 🔴 Lo que SIGUE sin interfaz es **encender `can_advertise`** en una organización: eso es [[#209]], y sin ello nadie puede volverse anunciante y la cola nunca recibe nada.
 - ~~Servir los anuncios en el feed~~ — **hecho en #170** (ver arriba).
 - ⚠️ **La vigencia se fija al CREAR, no al aprobar** (`starts_at`/`ends_at` son NOT NULL): si la campaña queda días en `pending_review`, esos días se consumen. En beta no hay pago y la aprobación es rápida; el día que haya dinero, esto se revisa.
 

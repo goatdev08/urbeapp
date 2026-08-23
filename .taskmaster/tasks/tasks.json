@@ -9399,13 +9399,13 @@
         "description": "Origen: subtarea 169.2 · Detectado por: revisión de cierre de épica (2026-08-22). El título de #169 prometía «moderación admin» y sus 9 subtareas cerraron en verde, pero lo que se construyó fue el MOTOR de la moderación (máquina de estados por trigger, auditoría obligatoria en admin_actions, guard ORGANIZATION_SUSPENDED) — no el botón. El wizard deja el anuncio en pending_review y step5.tsx promete que «activarlo es del admin», pero esa pantalla no existe: hoy un anuncio solo pasa a active con un UPDATE a mano en SQL. Sin esto el circuito comercial NO CIERRA por más que la épica esté desplegada. Decisión de Abraham (2026-08-22): va en la app móvil bajo /admin, no esperando al panel web #81 (que depende de #71/#73/#79, ninguna empezada). El panel web puede reemplazarla después sin desperdicio porque la lógica vive en la EF, no en la pantalla.",
         "details": "🔴 Producción viva: la épica YA está desplegada al remoto con ads_enabled=false (2026-08-22). Esta tarea es lo que falta para poder encenderla.\n\nQué NO hay que reconstruir (reusar > reescribir):\n- La máquina de estados ya valida las transiciones y AUDITA sola: handle_ad_status_change() (20260816000006 + 20260818000001) es la ÚNICA autoridad. La EF solo hace el UPDATE; el trigger valida, aplica D2 (pausar el reloj) y escribe admin_actions. NO duplicar esa lógica en TypeScript ni insertar auditoría por separado (quedaría doble).\n- private.resolve_admin_actor() resuelve el admin_id desde el JWT — ya lo usan agencies y ads.\n- _shared/clients.ts ya exporta make_admin_verifier y service_client (patrón de moderate-property/index.ts: index delgado a propósito).\n- ads_rejection_reason_matches_status: rejection_reason es obligatorio SI Y SOLO SI status=rejected (CHECK bidireccional) — rechazar sin razón debe fallar con un código tipado, no con un 23514 crudo.\n- mint-ad-urls ya firma la URL de reproducción del creativo (necesaria para VER el video antes de aprobarlo).\n\nFootprint: supabase/functions/moderate-ad/** (nueva) · mobile/src/features/ads/hooks/** · mobile/app/admin/ads/** · mobile/app/admin/index.tsx (entrada).\n\nCriticidad TDD por path: EF = CRÍTICA (supabase/functions/**), hooks = CRÍTICA (mobile/**/hooks/**), pantallas = verificación ligera.",
         "testStrategy": "Deno para la EF (DI con fakes, como moderate-property/handler.test.ts): admin verificado, no-admin 403, sin JWT 401, aprobar pending_review→active, rechazar exige razón, transición inválida devuelve código tipado, organización suspendida bloquea. RNTL para los hooks. Verificación ligera (tsc/lint/smoke por CLI) para las pantallas. Smoke final: crear un anuncio de prueba en el REMOTO con ads_enabled=false, aprobarlo desde la pantalla y confirmar la fila en admin_actions.",
-        "status": "in-progress",
+        "status": "done",
         "dependencies": [
           "169",
           "171"
         ],
         "priority": "high",
-        "updatedAt": "2026-08-23T06:59:48.208Z",
+        "updatedAt": "2026-08-23T07:03:42.722Z",
         "subtasks": [
           {
             "id": 1,
@@ -9455,14 +9455,14 @@
             "id": 4,
             "title": "Desplegar la EF, smoke contra el remoto e ingest al vault",
             "description": "Desplegar moderate-ad al remoto (--import-map --use-api), aprobar un anuncio de prueba de punta a punta, confirmar la fila en admin_actions, y actualizar mapa-codebase + concepto + log.",
-            "details": "🔴 Gate §0.5 antes del PR. El smoke NO enciende ads_enabled — aprobar un anuncio con el kill-switch apagado es seguro: no se sirve a nadie.",
+            "details": "🔴 Gate §0.5 antes del PR. El smoke NO enciende ads_enabled — aprobar un anuncio con el kill-switch apagado es seguro: no se sirve a nadie.\n<info added on 2026-08-23T07:03:41.041Z>\nHECHO — 208.4 (deploy + smoke + ingest)\n\nENSAYO PRIMERO EN LA RAMA `preview-ads` (ydhnhyagszopwhyoeela)\nProyecto efimero, datos propios, cero contacto con usuarios reales. Se\ndesplegaron ahi las 2 migraciones y las 2 EFs ANTES de tocar produccion.\n\nSmoke de backend contra la rama (salida real):\n  rechazar un ad en pending_review   -> {\"status\":\"rejected\"} HTTP=200\n  re-moderar el mismo                -> INVALID_AD_STATUS_TRANSITION HTTP=409\n  rechazar sin motivo                -> REJECTION_REASON_REQUIRED   HTTP=400\n  ad inexistente                     -> AD_NOT_FOUND                HTTP=404\n  sin autenticacion                  -> UNAUTHENTICATED             HTTP=401\n\nAuditoria tras el rechazo (select real):\n  status=rejected · rejection_reason guardado\n  action_type=change_ad_status · entity_type=ad\n  old_values={\"status\":\"pending_review\"} · new_values={\"status\":\"rejected\"}\n  admin_que_actuo=admin.ads@urbea.demo\n  filas_de_auditoria=1   <- UNA sola, sin doble conteo\n\n208.5 contra la rama:\n  ADMIN pide el creativo de un ad NO activo -> urls=1, token_en_path=True\n  OWNER de otra agencia, no admin           -> urls=0   (fail-closed intacto)\n\nDESPLIEGUE A PRODUCCION (mvpvqmyhrrkwbnpctpuq)\n\nGate §0.5 antes de tocar nada:\n  - Ambas migraciones son `create or replace function`: aditivas, idempotentes,\n    sin tocar una sola fila. Rollbacks en rollbacks/.\n  - 20260822000003 es PERMISIVA (habilita una transicion que antes lanzaba\n    P0001). No bloquea ninguna que antes pasara.\n  - mint-ad-urls gana una rama de admin: permisiva y perezosa; el camino\n    caliente del feed no cambia ni paga query extra.\n  - moderate-ad es NUEVA: ningun build instalado la llama todavia.\n  - ORDEN: backend PRIMERO, y es lo correcto — la regla de OTA-primero aplica a\n    CAMBIAR o QUITAR un contrato publicado, no a AGREGAR uno nuevo.\n  - Cero seeds al remoto.\n\nAplicado:\n  apply_migration moderate_ad_atomic              -> {\"success\":true}\n  apply_migration ads_reject_from_pending_review  -> {\"success\":true}\n  functions deploy moderate-ad                    -> \"Deployed Functions.\"\n  functions deploy mint-ad-urls                   -> \"Deployed Functions.\"\n\nVERIFICACION POST-DESPLIEGUE (select real contra produccion)\n  ads_enabled=false            <- la publicidad sigue APAGADA\n  ads=0 · propiedades=24 · usuarios=6   <- nada cambio para nadie\n  versiones_rpc=1 · versiones_trigger=1 <- sin sobrecargas ambiguas\n  admite_rechazar_en_revision=true      <- el grafo nuevo quedo instalado\n  quien_puede_ejecutar=[postgres, service_role]  <- NO anon/authenticated\n\nSonda de la EF viva en produccion (no toca datos, hay 0 anuncios):\n  sin autenticacion  -> UNAUTHENTICATED    HTTP=401\n  GET                -> METHOD_NOT_ALLOWED HTTP=405\n  payload basura     -> INVALID_INPUT      HTTP=400\n\nINGEST AL VAULT\n  - wiki/conceptos/publicidad-anuncios.md: la maquina de estados ahora\n    documenta pending_review -> {active|rejected} y POR QUE faltaba; la linea\n    \"la UI de moderacion llega con #81\" queda tachada y cerrada por #208, con\n    el puntero a #209 (sin interfaz para encender can_advertise, nadie puede\n    volverse anunciante y esta cola nunca recibe nada); `codigo:` gana las 7\n    rutas nuevas.\n  - wiki/codebase/mapa-codebase.md: fila nueva \"Moderacion de anuncios (#208,\n    DESPLEGADO)\" con los tres hallazgos y los invariantes del filtro y el orden.\n  - wiki/log.md: entrada [2026-08-23] tarea | #208.\n\nPENDIENTE DELIBERADO\n  El OTA del cliente NO se hizo: la rama todavia no esta en main. El orden es\n  merge -> OTA, y hasta entonces la EF desplegada no tiene quien la llame, que\n  es exactamente la garantia de \"nada cambia para nadie\".\n</info added on 2026-08-23T07:03:41.041Z>",
             "testStrategy": "Salida real del deploy + el select sobre admin_actions pegado en la bitácora, nunca narrado de memoria.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               3
             ],
             "priority": "medium",
-            "updatedAt": "2026-08-22T12:00:00.000Z",
+            "updatedAt": "2026-08-23T07:03:42.722Z",
             "subtasks": [],
             "parentId": "undefined"
           },
@@ -9559,9 +9559,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-08-23T06:59:48.208Z",
+      "lastModified": "2026-08-23T07:03:42.722Z",
       "taskCount": 209,
-      "completedCount": 127,
+      "completedCount": 128,
       "tags": [
         "master"
       ]
