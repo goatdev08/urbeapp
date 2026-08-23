@@ -119,6 +119,12 @@ import type {
   OrgAdvertisingWriteParams,
   OrgAdvertisingWriter,
 } from "../set-org-advertising/types.ts";
+import type {
+  AgencyStatusErrorCode,
+  AgencyStatusResult,
+  AgencyStatusWriteParams,
+  AgencyStatusWriter,
+} from "../suspend-agency/types.ts";
 
 /** Cliente supabase-js con service_role (bypassa RLS y column-grants). */
 export function service_client(): SupabaseClient {
@@ -2138,6 +2144,75 @@ export function make_org_advertising_writer(client: SupabaseClient): OrgAdvertis
         };
       }
       return { ok: true as const };
+    },
+  };
+}
+
+// ── suspend-agency (subtarea #211.1) ─────────────────────────────────────────
+
+/**
+ * Códigos de negocio que la ruta de suspensión/reactivación de organizaciones
+ * levanta con SQLSTATE P0001. Vienen del TRIGGER handle_agency_status_change()
+ * (uno) y de la propia RPC (uno):
+ *   · INVALID_STATUS_TRANSITION    — el trigger rechazó la transición (p.ej.
+ *                                    pending_approval→suspended, AGST17).
+ *   · STATUS_CHANGE_REQUIRES_ADMIN — resolve_admin_actor no reconoció al actor.
+ *   · INVALID_NEXT_STATUS          — guard de la RPC (no debería llegar: el
+ *                                    handler ya restringe a suspend|reactivate).
+ *
+ * ⚠️ El orden IMPORTA. `find` devuelve la primera coincidencia y el mensaje de
+ * Postgres puede contener más de una de estas cadenas en su CONTEXT. El código
+ * que el usuario puede accionar va primero.
+ */
+const AGENCY_STATUS_ERROR_CODES = [
+  "INVALID_STATUS_TRANSITION",
+  "STATUS_CHANGE_REQUIRES_ADMIN",
+  "INVALID_NEXT_STATUS",
+] as const;
+
+function extract_agency_status_error_code(message: string): AgencyStatusErrorCode {
+  const hit = AGENCY_STATUS_ERROR_CODES.find((c) => message.includes(c));
+  // STATUS_CHANGE_REQUIRES_ADMIN e INVALID_NEXT_STATUS son fallos NUESTROS, no
+  // del admin: significan que la EF llamó mal. Se colapsan a DB_ERROR (500) en
+  // vez de inventarles un 4xx que culparía al usuario de un bug del servidor.
+  if (hit === "INVALID_STATUS_TRANSITION") return hit;
+  return "DB_ERROR";
+}
+
+/**
+ * Adaptador real de AgencyStatusWriter sobre la RPC set_agency_status_atomic
+ * (20260823000003). La RPC instala el admin en el GUC urbea.admin_actor_id
+ * dentro de su transacción — sin eso el trigger lanzaría
+ * STATUS_CHANGE_REQUIRES_ADMIN en el 100% de las llamadas, porque un cliente
+ * service_role no tiene auth.uid().
+ *
+ * 🔴 `client.rpc` se llama COMO MÉTODO del cliente, nunca desprendido: un
+ * `const { rpc } = client` pierde el `this` y lanza en runtime (#205).
+ *
+ * Distingue "no existe" de "el trigger dijo que no": la RPC devuelve las filas
+ * afectadas, y 0 filas NO es una excepción. El caso idempotente (re-suspender
+ * lo ya suspendido) devuelve 1 fila igual que un cambio real — no hay nada que
+ * distinguir aquí, la RPC ya lo resuelve (AGST19).
+ */
+export function make_agency_status_writer(client: SupabaseClient): AgencyStatusWriter {
+  return {
+    async set_status(params: AgencyStatusWriteParams): Promise<AgencyStatusResult> {
+      const { data, error } = await client.rpc("set_agency_status_atomic", {
+        p_agency_id: params.agency_id,
+        p_next_status: params.next_status,
+        p_admin_id: params.admin_id,
+      });
+
+      if (error) {
+        return {
+          ok: false as const,
+          error_code: extract_agency_status_error_code(error.message ?? ""),
+        };
+      }
+      if ((data ?? 0) === 0) {
+        return { ok: false as const, error_code: "AGENCY_NOT_FOUND" as const };
+      }
+      return { ok: true as const, status: params.next_status };
     },
   };
 }
