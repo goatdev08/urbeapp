@@ -92,6 +92,12 @@ import type {
   RevisionFinder,
 } from "../moderate-property/types.ts";
 import type {
+  AdModerationErrorCode,
+  AdModerationResult,
+  AdModerationWriteParams,
+  AdModerationWriter,
+} from "../moderate-ad/types.ts";
+import type {
   ActiveAdUploadChecker,
   AdCreativeRegistrar,
   AdvertiserAuthorizeResult,
@@ -1974,6 +1980,77 @@ export function make_impressions_writer(client: SupabaseClient): ImpressionsWrit
         .select("id");
       if (error) throw error;
       return data?.length ?? 0;
+    },
+  };
+}
+
+// ── moderate-ad (subtarea #208.1) ────────────────────────────────────────────
+
+/**
+ * Códigos de negocio que la ruta de moderación de anuncios levanta con
+ * SQLSTATE P0001. Dos vienen del TRIGGER handle_ad_status_change() y uno de la
+ * propia RPC:
+ *   · INVALID_AD_STATUS_TRANSITION — el anuncio ya no está en revisión.
+ *   · ORGANIZATION_SUSPENDED       — no se activa bajo una org suspendida.
+ *   · STATUS_CHANGE_REQUIRES_ADMIN — resolve_admin_actor no reconoció al actor.
+ *   · INVALID_NEXT_STATUS          — guard de la RPC (no debería llegar: el
+ *                                    handler ya restringe a approve|reject).
+ *
+ * ⚠️ El orden IMPORTA. `find` devuelve la primera coincidencia y el mensaje de
+ * Postgres puede contener más de una de estas cadenas en su CONTEXT. Los dos
+ * códigos que el usuario puede accionar van primero.
+ */
+const AD_MODERATION_ERROR_CODES = [
+  "ORGANIZATION_SUSPENDED",
+  "INVALID_AD_STATUS_TRANSITION",
+  "STATUS_CHANGE_REQUIRES_ADMIN",
+  "INVALID_NEXT_STATUS",
+] as const;
+
+function extract_ad_moderation_error_code(message: string): AdModerationErrorCode {
+  const hit = AD_MODERATION_ERROR_CODES.find((c) => message.includes(c));
+  // STATUS_CHANGE_REQUIRES_ADMIN e INVALID_NEXT_STATUS son fallos NUESTROS, no
+  // del admin: significan que la EF llamó mal. Se colapsan a DB_ERROR (500) en
+  // vez de inventarles un 4xx que culparía al usuario de un bug del servidor.
+  if (hit === "INVALID_AD_STATUS_TRANSITION" || hit === "ORGANIZATION_SUSPENDED") {
+    return hit;
+  }
+  return "DB_ERROR";
+}
+
+/**
+ * Adaptador real de AdModerationWriter sobre la RPC moderate_ad_atomic
+ * (20260822000002). La RPC instala el admin en el GUC urbea.admin_actor_id
+ * dentro de su transacción — sin eso el trigger lanzaría
+ * STATUS_CHANGE_REQUIRES_ADMIN en el 100% de las llamadas, porque un cliente
+ * service_role no tiene auth.uid().
+ *
+ * 🔴 `client.rpc` se llama COMO MÉTODO del cliente, nunca desprendido: un
+ * `const { rpc } = client` pierde el `this` y lanza en runtime (#205).
+ *
+ * Distingue "no existe" de "el trigger dijo que no": la RPC devuelve las filas
+ * afectadas, y 0 filas NO es una excepción.
+ */
+export function make_ad_moderation_writer(client: SupabaseClient): AdModerationWriter {
+  return {
+    async moderate(params: AdModerationWriteParams): Promise<AdModerationResult> {
+      const { data, error } = await client.rpc("moderate_ad_atomic", {
+        p_ad_id: params.ad_id,
+        p_next_status: params.next_status,
+        p_rejection_reason: params.rejection_reason,
+        p_admin_id: params.admin_id,
+      });
+
+      if (error) {
+        return {
+          ok: false as const,
+          error_code: extract_ad_moderation_error_code(error.message ?? ""),
+        };
+      }
+      if ((data ?? 0) === 0) {
+        return { ok: false as const, error_code: "AD_NOT_FOUND" as const };
+      }
+      return { ok: true as const, status: params.next_status };
     },
   };
 }
