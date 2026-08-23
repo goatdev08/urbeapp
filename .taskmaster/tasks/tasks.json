@@ -7590,14 +7590,15 @@
         "id": "141",
         "title": "hardening(workflow): tdd-guard.sh quedó demasiado laxo tras el fix aplicado en la tarea 73",
         "description": "Origen: subtarea 73 · Detectado por: code review PR #56 (ángulo de altitud). El fix que apliqué durante la 73 amplió el guard de 'el commit RED es HEAD' a 'existe un commit RED de esta subtarea en cualquier parte de origin/main..HEAD'. Eso resolvió los 4 falsos positivos de la tarea, pero deja el guard casi permisivo: una vez que aterriza el RED de una subtarea, TODO el resto de la rama pasa sin revisar, incluidas subtareas sin RED propio si el sentinel quedó viejo, y churn de implementación mucho después del GREEN. El mecanismo que hacía cumplir RED→GREEN se relajó para desbloquear esta PR y la próxima tarea hereda un guard que en la práctica asiente.",
-        "details": "Buscar un punto medio: p.ej. exigir que el commit RED de la subtarea ACTIVA exista y que el sentinel se borre al cerrar la subtarea (hoy puede quedar viejo), o validar contra la subtarea del sentinel en vez de contra cualquiera de la rama. Ojo: el classifier de auto mode bloquea que la IA edite este hook, así que requiere aprobación explícita fuera de auto mode.",
+        "details": "Buscar un punto medio: p.ej. exigir que el commit RED de la subtarea ACTIVA exista y que el sentinel se borre al cerrar la subtarea (hoy puede quedar viejo), o validar contra la subtarea del sentinel en vez de contra cualquiera de la rama. Ojo: el classifier de auto mode bloquea que la IA edite este hook, así que requiere aprobación explícita fuera de auto mode.\n<info added on 2026-08-23T05:44:20.044Z>\nHALLAZGO NUEVO (2026-08-22, durante 208.1) — el guard tiene ADEMAS un falso\nPOSITIVO, no solo la laxitud que esta tarea ya documenta.\n\nSINTOMA\nBloqueo el GREEN de 208.1 diciendo \"no puedes editar ... antes de escribir sus\ntests\" cuando los tests YA existian y YA fallaban por asercion (25/25 en RED).\n\nCAUSA RAIZ\ntdd-guard.sh:73 busca cambios de test asi:\n\n  TEST_CHANGES=$(git status --porcelain 2>/dev/null | \\\n    grep -E '\\.(test|spec)\\.(ts|tsx|js|jsx)$|supabase/tests/.*\\.sql$')\n\n`git status --porcelain` usa -unormal por defecto, que COLAPSA un directorio\nnuevo entero a una sola linea. Con supabase/functions/moderate-ad/ recien\ncreada, la salida literal fue:\n\n  ?? supabase/functions/moderate-ad/\n\nUna linea. Los tres archivos de dentro (handler.test.ts, handler.ts, types.ts)\nno aparecen. El grep exige que la linea TERMINE en .test.ts -> no hay match ->\nel guard concluye \"no hay tests\" y bloquea.\n\nCUANDO MUERDE\nSolo cuando el RED vive en una carpeta COMPLETAMENTE nueva — tipicamente una\nEdge Function nueva. Si el test va en una carpeta que git ya rastrea, git lista\nel archivo individualmente y el guard funciona bien. Por eso llevaba meses sin\ndar problemas: casi todas las subtareas tocan carpetas existentes.\n\nFIX (una palabra)\n  git status --porcelain -uall 2>/dev/null | grep -E ...\n\n`-uall` = --untracked-files=all: lista cada archivo no rastreado en vez de\ncolapsar la carpeta.\n\nWORKAROUND USADO EN 208.1\n`git add` del test antes de tocar la logica: lo convierte en\n`A  supabase/functions/moderate-ad/handler.test.ts` y ahi si matchea. Funciona,\npero es un paso que hay que recordar — o sea, exactamente el tipo de cableado\nolvidable que el guard existe para prevenir.\n\nNO APLICADO A PROPOSITO: Abraham pidio (2026-08-22) solo dejarlo documentado\npor ahora. Editar el hook toca la configuracion del entorno, no el codigo de la\napp, y va en su propio momento junto con la laxitud que esta tarea ya describe.\n</info added on 2026-08-23T05:44:20.044Z>",
         "testStrategy": "Casos: RED presente + subtarea activa distinta → debe bloquear. Sentinel viejo sin RED → debe bloquear. RED de la subtarea activa + commit intermedio encima → debe permitir (el caso que motivó el fix).",
         "status": "pending",
         "dependencies": [
           "73"
         ],
         "priority": "medium",
-        "subtasks": []
+        "subtasks": [],
+        "updatedAt": "2026-08-23T05:44:20.044Z"
       },
       {
         "id": "142",
@@ -8212,7 +8213,7 @@
         "id": "168",
         "title": "feat(039-A): organización con capacidad de publicidad (can_advertise) + invitación por correo",
         "description": "Origen: exploración 039 (.taskmaster/docs/exploraciones/039-cuenta-comercial-anunciantes.md), aprobada por Abraham el 2026-08-14. Tarea A de 4 encadenadas (168→169→170→171, +172 deferred). Generaliza `agencies` a 'organización con capacidades' en vez de crear una entidad 'business' aparte: una inmobiliaria ACTIVA publicidad sobre su misma cuenta (la enciende el admin de Urbea en beta; solo la organización puede tener la capacidad, nunca un agente individual) y una cuenta solo-publicidad es una organización con únicamente can_advertise. Reusa TODA la membresía/invitaciones/RLS de #71 sin duplicar. Pieza nueva: la invitación del owner llega POR CORREO ELECTRÓNICO.",
-        "details": "MODELO: ALTER TABLE agencies ADD COLUMN can_publish_properties boolean default true, can_advertise boolean default false, advertiser_category (enum nuevo: credito_hipotecario | seguro | mudanza | limpieza | notaria | avaluo | otro, nullable) + CHECK 'al menos una capacidad'. Booleanos y NO un enum `kind`: el default aditivo es literal (cero backfill, toda fila preexistente queda (true,false,null) = comportamiento exacto de hoy) y no paga el gotcha ALTER TYPE ADD VALUE. Helper private.org_can_advertise(id) (false para inexistente/deleted/inactiva/sin capacidad). RPC set_org_advertising_atomic (solo service_role, escribe admin_actions en la misma transacción, fault-injection = rollback total). admin_create_agency_atomic gana 2 params con DEFAULT al final (contrato publicado intacto). Ningún authenticated (ni el owner) puede poner can_advertise=true por PostgREST — verificar por impersonación JWT; si el grant de 0008 lo permite, revocar esas columnas. El invariante 'máx 1 organización activa por persona' sigue sostenido SOLO por agency_members_one_active_per_user. Efecto colateral bueno: el 409 de concurrencia de mint-upload-url está scoped por agent_id sobre property_videos, así que ad_creatives (tarea 169, tabla propia) nunca colisiona.\nINVITACIÓN POR CORREO (hallazgo): hoy NINGÚN flujo manda correo — create-invitation devuelve un código que la UI muestra una vez y admin-create-agency usa auth.admin.generateLink({type:'invite'}) (_shared/clients.ts:180) que GENERA el link pero NO lo envía. La infra existe a medias (#72.3/72.5, probada E2E con Mailpit local) pero el SMTP remoto de Resend NO está configurado (falta API key + dominio ~$10–15/año; docs/TODO-pendientes.md §1 desde 2026-07-31). Camino: inviteUserByEmail (footprint mínimo) sobre una EF de Resend propia; construir y verificar E2E en LOCAL contra Mailpit (localhost:54324); el flip remoto es checklist de despliegue de Abraham y NO bloquea la tarea. Si el envío falla, la operación no deja basura (compensación deleteUser + atomicidad). El action_link deja de ser el único canal en la UI admin (respaldo).\nFOOTPRINT: supabase/migrations/2026…_org_advertising_capability.sql + _set_org_advertising_rpc.sql (+rollbacks, CRÍTICA), supabase/tests/NN_org_advertising_test.sql (pgTAP), supabase/functions/_shared/auth_user.ts + clients.ts (invite→correo, CRÍTICA), supabase/functions/admin-create-agency/ (CRÍTICA), docs/TODO-pendientes.md (checklist Resend). Deps 74/75 son ORDEN DE PRIORIDAD (después de cerrar la Ola 1), no técnicas — técnicamente podría arrancar hoy. Producción viva §0.5: todo aditivo, select('*') sobre agencies desde clientes v1.0.x sigue funcionando.\nDERIVADAS: #173 (guardian 168.3) · #174 (guardian 168.4) · #176 (guardian 168.2) · #177 (guardian 168.4) · #178 (guardian 168.4 / cierre 168.5) 🔴 bloqueante del flip de Resend",
+        "details": "MODELO: ALTER TABLE agencies ADD COLUMN can_publish_properties boolean default true, can_advertise boolean default false, advertiser_category (enum nuevo: credito_hipotecario | seguro | mudanza | limpieza | notaria | avaluo | otro, nullable) + CHECK 'al menos una capacidad'. Booleanos y NO un enum `kind`: el default aditivo es literal (cero backfill, toda fila preexistente queda (true,false,null) = comportamiento exacto de hoy) y no paga el gotcha ALTER TYPE ADD VALUE. Helper private.org_can_advertise(id) (false para inexistente/deleted/inactiva/sin capacidad). RPC set_org_advertising_atomic (solo service_role, escribe admin_actions en la misma transacción, fault-injection = rollback total). admin_create_agency_atomic gana 2 params con DEFAULT al final (contrato publicado intacto). Ningún authenticated (ni el owner) puede poner can_advertise=true por PostgREST — verificar por impersonación JWT; si el grant de 0008 lo permite, revocar esas columnas. El invariante 'máx 1 organización activa por persona' sigue sostenido SOLO por agency_members_one_active_per_user. Efecto colateral bueno: el 409 de concurrencia de mint-upload-url está scoped por agent_id sobre property_videos, así que ad_creatives (tarea 169, tabla propia) nunca colisiona.\nINVITACIÓN POR CORREO (hallazgo): hoy NINGÚN flujo manda correo — create-invitation devuelve un código que la UI muestra una vez y admin-create-agency usa auth.admin.generateLink({type:'invite'}) (_shared/clients.ts:180) que GENERA el link pero NO lo envía. La infra existe a medias (#72.3/72.5, probada E2E con Mailpit local) pero el SMTP remoto de Resend NO está configurado (falta API key + dominio ~$10–15/año; docs/TODO-pendientes.md §1 desde 2026-07-31). Camino: inviteUserByEmail (footprint mínimo) sobre una EF de Resend propia; construir y verificar E2E en LOCAL contra Mailpit (localhost:54324); el flip remoto es checklist de despliegue de Abraham y NO bloquea la tarea. Si el envío falla, la operación no deja basura (compensación deleteUser + atomicidad). El action_link deja de ser el único canal en la UI admin (respaldo).\nFOOTPRINT: supabase/migrations/2026…_org_advertising_capability.sql + _set_org_advertising_rpc.sql (+rollbacks, CRÍTICA), supabase/tests/NN_org_advertising_test.sql (pgTAP), supabase/functions/_shared/auth_user.ts + clients.ts (invite→correo, CRÍTICA), supabase/functions/admin-create-agency/ (CRÍTICA), docs/TODO-pendientes.md (checklist Resend). Deps 74/75 son ORDEN DE PRIORIDAD (después de cerrar la Ola 1), no técnicas — técnicamente podría arrancar hoy. Producción viva §0.5: todo aditivo, select('*') sobre agencies desde clientes v1.0.x sigue funcionando.\nDERIVADAS: #209 🔴 (168.2 — adelantar de #81 la UI para encender can_advertise; diferimiento documentado en 039 L135, no descuido) · #173 (guardian 168.3) · #174 (guardian 168.4) · #176 (guardian 168.2) · #177 (guardian 168.4) · #178 (guardian 168.4 / cierre 168.5) 🔴 bloqueante del flip de Resend",
         "testStrategy": "pgTAP: defaults (true,false,null) en filas preexistentes + no-regresión de publicar con organización vieja; CHECK rechaza (false,false); impersonación JWT: owner no puede setear can_advertise; RPC solo service_role + admin_actions + fault-injection rollback; org_can_advertise 4 asserts; firma vieja de admin_create_agency_atomic = mismo resultado; organización solo-publicidad no puede publicar propiedades. Deno: invite manda correo (Mailpit E2E local), fallo de envío = sin basura. pnpm tsc/lint verdes.",
         "status": "done",
         "dependencies": [
@@ -8318,7 +8319,7 @@
             "parentId": "168"
           }
         ],
-        "updatedAt": "2026-08-16T15:53:37.820Z"
+        "updatedAt": "2026-08-22T13:00:00.000Z"
       },
       {
         "id": "169",
@@ -9404,18 +9405,18 @@
           "171"
         ],
         "priority": "high",
-        "updatedAt": "2026-08-23T04:38:21.790Z",
+        "updatedAt": "2026-08-23T06:23:05.843Z",
         "subtasks": [
           {
             "id": 1,
             "title": "EF moderate-ad: aprobar/rechazar con auth de admin y códigos tipados",
             "description": "Nueva Edge Function que hace el UPDATE sobre public.ads dejando que el trigger valide y audite. Reusa make_admin_verifier + service_client. Códigos: UNAUTHENTICATED (401), FORBIDDEN (403), AD_NOT_FOUND (404), REJECTION_REASON_REQUIRED (400), INVALID_AD_STATUS_TRANSITION (409), ORGANIZATION_SUSPENDED (409). NUNCA devolver el mensaje crudo de Postgres al cliente.",
-            "details": "CRÍTICA → TDD estricto (supabase/functions/**). index.ts DELGADO (patrón moderate-property). El trigger ya escribe admin_actions — la EF no debe insertar auditoría por su cuenta o quedaría duplicada.",
+            "details": "CRÍTICA → TDD estricto (supabase/functions/**). index.ts DELGADO (patrón moderate-property). El trigger ya escribe admin_actions — la EF no debe insertar auditoría por su cuenta o quedaría duplicada.\n<info added on 2026-08-23T04:49:19.863Z>\nHECHO — 208.1: EF moderate-ad (TDD estricto, RED → GREEN)\n\nARCHIVOS\n- supabase/functions/moderate-ad/types.ts        (contrato DI)\n- supabase/functions/moderate-ad/handler.ts      (handler puro)\n- supabase/functions/moderate-ad/handler.test.ts (25 casos)\n- supabase/functions/moderate-ad/index.ts        (entry delgado)\n- supabase/functions/_shared/clients.ts          (+ make_ad_moderation_writer)\n- supabase/migrations/20260822000002_moderate_ad_atomic.sql (+ rollback)\n- supabase/migrations/20260822000003_ads_reject_from_pending_review.sql (+ rollback)\n- supabase/tests/64_moderate_ad_atomic_test.sql  (14 asserts pgTAP)\n\nDOS HALLAZGOS QUE LA TAREA NO ANTICIPABA\n\n1) 🔴 EL GRAFO NO PERMITIA RECHAZAR UN ANUNCIO EN REVISION.\n   handle_ad_status_change() tenia `pending_review -> active` pero NO\n   `pending_review -> rejected`. La unica ruta a `rejected` salia de `active`.\n   Consecuencia: para rechazar, un admin tendria que ACTIVAR el anuncio\n   primero — publicando durante un instante exactamente lo que quiere\n   rechazar. Lo destapo MOD9 del pgTAP, no una lectura del codigo.\n   No se estaba revirtiendo una decision: 48_ads_state_machine_test.sql\n   enumera las transiciones invalidas que si se decidieron (draft->active\n   directo, draft->paused, pending_review->paused, rejected->pending_review)\n   y esta NO esta entre ellas. Y todo el diseno la da por hecha:\n   ads.rejection_reason existe, el CHECK bidireccional la contempla y el enum\n   trae `rejected`. Era un hueco.\n   Fix en 20260822000003: PERMISIVA, no restrictiva — habilita una transicion\n   que antes lanzaba P0001, no bloquea ninguna que antes pasara, no toca datos.\n   Ningun cliente instalado puede romperse porque ninguno podia llegar ahi.\n\n2) 🔴 UN UPDATE DESDE LA EF HABRIA FALLADO EL 100% DE LAS VECES.\n   El trigger exige un admin identificado via private.resolve_admin_actor(),\n   que resuelve por auth.uid() de un JWT admin o por el GUC de sesion\n   urbea.admin_actor_id. Una Edge Function con service_role NO tiene\n   auth.uid(), y un set_config por PostgREST no sobrevive fuera de su\n   transaccion. Sin RPC compañera, toda moderacion desde la app habria\n   devuelto STATUS_CHANGE_REQUIRES_ADMIN. Misma solucion que ya usa\n   moderate_property_atomic (20260809000007): el admin viaja como parametro y\n   la RPC lo instala en el GUC dentro de su propia transaccion.\n\nDECISIONES DE DISENO\n- La RPC NO valida el grafo, NO escribe admin_actions y NO consulta la\n  suspension: el trigger es la unica autoridad. MOD7 lo fija afirmando que hay\n  EXACTAMENTE UNA fila de auditoria — si la RPC insertara la suya, la\n  auditoria contaria doble sobre un acto facturable.\n- La RPC devuelve las filas afectadas para que el handler distinga \"no existe\"\n  (0 filas, sin excepcion -> 404) de \"el trigger dijo que no\" (P0001 -> 409).\n- INVALID_AD_STATUS_TRANSITION y ORGANIZATION_SUSPENDED son 409, no 400: el\n  request estaba bien formado; es el estado del recurso lo que no permite la\n  operacion.\n- STATUS_CHANGE_REQUIRES_ADMIN e INVALID_NEXT_STATUS colapsan a 500 DB_ERROR:\n  son bugs NUESTROS (la EF llamo mal), no del admin. Inventarles un 4xx\n  culparia al usuario de un fallo del servidor.\n- EC-5: approve que ademas manda rejection_reason -> la razon NO viaja. El\n  CHECK ads_rejection_reason_matches_status exige (status='rejected') ===\n  (rejection_reason is not null); dejarla pasar seria un 23514 crudo.\n- EC-21: `action:'suspend'` se rechaza EXPLICITAMENTE. Existe de verdad en\n  moderate-property y un copy-paste podria colarla.\n\nUN TEST QUE CASI NACE INUTIL\nEC-15 (el cuerpo nunca filtra el texto crudo de Postgres) paso TRIVIALMENTE\ncontra el stub 501: 24 fallaban y ese pasaba. Un test que no puede distinguir\nno protege. Se le agregaron `assertEquals(res.status, 409)` y\n`assertStringIncludes(raw, \"INVALID_AD_STATUS_TRANSITION\")` — con eso el RED\nquedo en 25/25 fallando por asercion.\n\nHUECO DEL GUARD TDD (no bloqueante, anotado)\n`.claude/hooks/tdd-guard.sh` busca cambios de test con `git status --porcelain`\ny un regex que exige terminar en `*.test.ts`. Pero git COLAPSA un directorio\nnuevo entero a una sola linea: `?? supabase/functions/moderate-ad/`. Un RED en\ncarpeta nueva es INVISIBLE para el guard, que bloquea el GREEN aunque los\ntests ya existan. Workaround usado: `git add` del test antes de tocar la\nlogica. Fix real: `git status --porcelain -uall`.\n\nVERIFICACION (salida real de los comandos)\n- RED:  FAILED | 0 passed | 25 failed   (todas por asercion, ninguna por import)\n- GREEN: ok | 25 passed | 0 failed\n- pgTAP 64_moderate_ad_atomic_test.sql: 14/14 ok\n- Sin regresiones en las suites de anuncios existentes:\n    48_ads_state_machine_test -> ok:92  not_ok:0\n    52_ads_description_test   -> ok:41  not_ok:0\n    47_ads_schema_test        -> ok:147 not_ok:0\n- Suite Deno completa: ok | 1313 passed | 0 failed (9s)\n- deno check de handler.ts y types.ts: limpio. El error `@types/node` de\n  index.ts es ruido PREEXISTENTE del entorno: moderate-property/index.ts, que\n  lleva meses desplegada, lo produce identico.\n\nPENDIENTE DE ESTA SUBTAREA\nLas dos migraciones nuevas (20260822000002 y 000003) estan aplicadas SOLO en\nlocal. El deploy al remoto va en 208.4, junto con la EF.\n</info added on 2026-08-23T04:49:19.863Z>",
             "testStrategy": "Deno con DI y fakes; enumerar los 6 códigos como edge cases en RED.",
-            "status": "in-progress",
+            "status": "done",
             "dependencies": [],
             "priority": "high",
-            "updatedAt": "2026-08-23T04:38:21.790Z",
+            "updatedAt": "2026-08-23T04:49:22.544Z",
             "subtasks": [],
             "parentId": "undefined"
           },
@@ -9425,12 +9426,12 @@
             "description": "usePendingAds lee los anuncios en pending_review (el admin los ve todos por la policy ads_select, que incluye private.is_admin()). useModerateAd invoca la EF y TRADUCE el código tipado a un mensaje en español — el error de #200 no se repite.",
             "details": "CRÍTICA → TDD estricto (mobile/**/hooks/**). 🔴 Reusar extract_error_code (ya lo usan 10 archivos) — no leer error.message, que en FunctionsHttpError es SIEMPRE el literal en inglés (#200). 🔴 NO desprender client.rpc/functions.invoke del cliente supabase-js (#205): pierden su this y fallan mudos.",
             "testStrategy": "RNTL: lista vacía, lista con anuncios, aprobar con rollback ante error, y cada código tipado produce su mensaje.",
-            "status": "pending",
+            "status": "in-progress",
             "dependencies": [
               1
             ],
             "priority": "high",
-            "updatedAt": "2026-08-22T12:00:00.000Z",
+            "updatedAt": "2026-08-23T06:23:05.843Z",
             "subtasks": [],
             "parentId": "undefined"
           },
@@ -9442,10 +9443,11 @@
             "testStrategy": "pnpm tsc --noEmit + pnpm lint + smoke por CLI en el emulador (adb/simctl, NUNCA computer-use).",
             "status": "pending",
             "dependencies": [
-              2
+              2,
+              5
             ],
             "priority": "medium",
-            "updatedAt": "2026-08-22T12:00:00.000Z",
+            "updatedAt": "2026-08-23T12:30:00.000Z",
             "subtasks": [],
             "parentId": "undefined"
           },
@@ -9463,14 +9465,102 @@
             "updatedAt": "2026-08-22T12:00:00.000Z",
             "subtasks": [],
             "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "mint-ad-urls debe autorizar al admin — hoy no puede ver el video que va a moderar",
+            "description": "🔴 HALLAZGO (2026-08-23, preparando el RED de 208.2). El minter autoriza cada creativo con `authorized = is_owner_member || has_active_vigente_ad` (_shared/clients.ts:1850) y NO tiene ninguna rama de admin — `grep -rn 'is_admin|admin' supabase/functions/mint-ad-urls/handler.ts` devuelve CERO coincidencias. Un admin moderando un anuncio en `pending_review` no es miembro de esa organización y el anuncio todavía NO está `active`, así que falla las dos condiciones. Como el fail-closed es POR ITEM y silencioso (omite el creativo del array sin distinguir 'no autorizado' de 'no existe'), el admin recibiría `{ urls: [] }`: ni video ni portada. La pantalla de 208.3 sería una cola de moderación donde NO SE PUEDE VER lo que se modera — aprobar a ciegas es peor que no tener la pantalla.",
+            "details": "CRÍTICA → TDD estricto (supabase/functions/**).\n\nEl arreglo es el análogo exacto de lo que la policy `ads_select` YA hace (20260816000005:205-210: `agency_role_of(agency_id) is not null OR private.is_admin() OR (activo y vigente)`). El minter implementó las cláusulas 1 y 3 y se saltó la 2. No es una decisión de diseño que se esté revirtiendo — es la misma omisión de cobertura que 208.1 encontró en el grafo de estados.\n\n🔴 NO ampliar de más: el admin gana la ruta para VER creativos, no para nada más. La firma sigue saliendo de sign_stream_token con el token en el PATH (#68), y el resto del fail-closed por item se queda intacto.\n\n🔴 Producción viva: es PERMISIVA (habilita a un rol que hoy recibe []), aditiva, y no cambia el resultado de ningún caller existente. Ningún build instalado puede romperse.\n\nFootprint: supabase/functions/_shared/clients.ts (make_ad_url_minter) + su suite. Verificar si el authorizer necesita además consultar `users.role` o si basta reusar el helper de admin ya existente.",
+            "testStrategy": "Deno con DI: admin pide un creativo de un ad en pending_review → recibe URL firmada; no-admin sin membresía y sin ad activo → sigue omitido; el token sigue en el PATH. Más el caso de regresión: el miembro dueño y el ad activo-y-vigente siguen autorizados igual que hoy.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "priority": "high",
+            "updatedAt": "2026-08-23T12:30:00.000Z",
+            "subtasks": [],
+            "parentId": "undefined"
+          }
+        ]
+      },
+      {
+        "id": "209",
+        "title": "producto(168.2): adelantar de #81 la interfaz para encender la capacidad comercial de una organización",
+        "description": "Origen: subtarea 168.2 · Detectado por: revisión de cierre de épica (2026-08-22, pregunta de Abraham). 🔴 CORRECCIÓN DEL 2026-08-23 — esto NO es un descuido, es un diferimiento DOCUMENTADO Y DELIBERADO que conviene adelantar. La exploración 039 (aprobada 2026-08-14) especifica el flujo completo en tres lugares: el happy path del anunciante (L89), la matriz de actores (L133 «El owner la solicita; en beta la enciende el admin de Urbea; en fase 2 la enciende el pago») y, explícito, el CÓMO (L135 «Admin de plataforma: da de alta organizaciones, enciende can_advertise… En beta por Studio/SQL, igual que #71.5 y #153, con UI en #81»). Lo que existe hoy es EXACTAMENTE lo planeado. #168 cerró sus 7 subtareas, invitación por correo incluida (inviteUserByEmail en _shared/clients.ts:259, E2E contra Mailpit).\n\nPOR QUÉ ADELANTARLO IGUAL: (1) #81 (panel admin web) depende de #71/#73/#79, ninguna empezada — el diferimiento se decidió cuando la épica comercial apenas arrancaba; hoy el circuito está completo salvo por esto, así que cuesta más que en agosto. (2) Sin capacidad encendida no hay a quién aprobarle un anuncio: #208 (moderación) queda sin insumo. (3) El smoke de 208.4 ya necesita encender una organización de prueba y solo puede por SQL.\n\nDOS HUECOS DISTINTOS: (a) la EF `admin-create-agency` YA acepta can_advertise y advertiser_category (handler.ts:104-112, 233-234) pero mobile/app/admin/agencies/create.tsx nunca los manda — cableado puro, cero backend; (b) para una organización que YA existe el único camino es set_org_advertising_atomic desde Studio/CLI con service_role, con CERO llamadores en el repo fuera de sus tests.\n\n🟡 PIEZA GENUINAMENTE SIN DEFINIR: «el owner la solicita» aparece dos veces en 039 (L133, L1001) y NUNCA dice por qué canal (¿botón en su perfil? ¿te escribe por fuera?). Hoy la respuesta de facto es «te lo pide por fuera», que para beta funciona. Esta tarea NO lo resuelve — lo deja anotado como decisión de producto pendiente.\n\n🟡 En docs/ no hay nada del flujo: vive solo en la exploración 039 y en wiki/conceptos/inmobiliarias-y-agentes.md:45.",
+        "details": "🔴 Producción viva: la épica está desplegada al remoto con ads_enabled=false (2026-08-22). Ninguna de las dos inmobiliarias reales tiene can_advertise=true.\n\nQué NO hay que reconstruir (reusar > reescribir):\n- `set_org_advertising_atomic(p_agency_id, p_enabled, p_category)` (20260815000002 + 20260816000003) ya enciende Y apaga, audita en admin_actions en la MISMA transacción, y rechaza encender sin categoría con P0001 ADVERTISER_CATEGORY_REQUIRED. Es service_role: hace falta una EF que la invoque, no exponerla a authenticated.\n- La EF `admin-create-agency` ya reenvía can_advertise/advertiser_category SOLO si vienen definidos, para no pisar los DEFAULT de la RPC con null explícito. El hueco (a) se cierra agregando los campos al formulario, sin tocar backend.\n- El CHECK `agencies_categoria_requerida_para_anunciar` hace imposible el estado (can_advertise=true, categoría NULL) por los 4 caminos de escritura. La UI debe hacer la categoría obligatoria cuando se enciende — no para garantizar el invariante (ya está garantizado) sino para que el error no llegue como un 23514.\n\n🔴 SIN PAGO, A PROPÓSITO. `app_config.ads_free = true` y `ad_prices` tiene los 3 alcances sembrados (neighborhood 1500, municipality 4000, national 12000 MXN a 30 días) pero NADIE cobra. El cobro es #172 (CPM/CPC), diferida y dependiente de Stripe (#84). Esta tarea NO introduce cobro: el admin enciende la capacidad a mano cuando el negocio ya se cerró por fuera.\n\nFootprint: mobile/app/admin/agencies/create.tsx · mobile/app/admin/agencies/[id].tsx · supabase/functions/set-org-advertising/** (nueva EF) · mobile/src/features/admin/hooks/**\n\nCriticidad TDD por path: EF = CRÍTICA, hooks = CRÍTICA, pantallas = verificación ligera.",
+        "testStrategy": "Deno con DI para la EF (admin verificado, no-admin 403, encender sin categoría → código tipado, organización inexistente → 404). RNTL para el hook. Verificación ligera para las pantallas. Smoke: encender la capacidad de una organización de prueba desde la app y confirmar la fila en admin_actions con old_values/new_values correctos.",
+        "status": "pending",
+        "dependencies": [
+          "168"
+        ],
+        "priority": "high",
+        "updatedAt": "2026-08-23T12:00:00.000Z",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "EF set-org-advertising sobre la RPC ya existente",
+            "description": "Edge Function que invoca set_org_advertising_atomic con auth de admin. Traduce ADVERTISER_CATEGORY_REQUIRED y AGENCY_NOT_FOUND a códigos tipados; nunca reenvía el texto crudo de Postgres.",
+            "details": "CRÍTICA → TDD estricto. Reusa make_admin_verifier + service_client. index.ts delgado (patrón moderate-property / moderate-ad de #208.1).",
+            "testStrategy": "Deno con DI y fakes.",
+            "status": "pending",
+            "dependencies": [],
+            "priority": "high",
+            "updatedAt": "2026-08-22T13:00:00.000Z",
+            "subtasks": [],
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Campos de capacidad en el alta de organización",
+            "description": "Agregar can_publish_properties / can_advertise / advertiser_category al formulario de mobile/app/admin/agencies/create.tsx. El backend YA los acepta — es cableado puro, cero cambios de EF.",
+            "details": "NO crítica → verificación ligera. La categoría se vuelve obligatoria en el formulario cuando can_advertise está encendido.",
+            "testStrategy": "pnpm tsc --noEmit + pnpm lint + smoke por CLI.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "priority": "high",
+            "updatedAt": "2026-08-22T13:00:00.000Z",
+            "subtasks": [],
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Encender/apagar la capacidad desde el detalle de la organización",
+            "description": "mobile/app/admin/agencies/[id].tsx gana el control para volver comercial a una organización existente (y para quitarle la capacidad), invocando la EF de 209.1.",
+            "details": "NO crítica → verificación ligera. Apagar la capacidad NO pausa sus anuncios activos — eso lo hace la cascada de suspensión de la ORGANIZACIÓN, que es otra cosa. Dejarlo explícito en el copy para que el admin no crea que apagó los anuncios.",
+            "testStrategy": "pnpm tsc --noEmit + pnpm lint + smoke.",
+            "status": "pending",
+            "dependencies": [
+              2
+            ],
+            "priority": "medium",
+            "updatedAt": "2026-08-22T13:00:00.000Z",
+            "subtasks": [],
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Deploy, smoke contra el remoto e ingest al vault",
+            "description": "Desplegar la EF, encender la capacidad de una organización de prueba de punta a punta, confirmar admin_actions, actualizar mapa-codebase + conceptos/inmobiliarias-y-agentes + log.",
+            "details": "🔴 Gate §0.5 antes del PR.",
+            "testStrategy": "Salida real del deploy + select sobre admin_actions pegado en la bitácora.",
+            "status": "pending",
+            "dependencies": [
+              3
+            ],
+            "priority": "medium",
+            "updatedAt": "2026-08-22T13:00:00.000Z",
+            "subtasks": [],
+            "parentId": "undefined"
           }
         ]
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-08-23T04:38:21.790Z",
-      "taskCount": 208,
+      "lastModified": "2026-08-23T06:23:05.843Z",
+      "taskCount": 209,
       "completedCount": 127,
       "tags": [
         "master"
