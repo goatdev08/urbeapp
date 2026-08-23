@@ -1,15 +1,19 @@
 /**
- * Tests fase RED — useModerateAd (acción de moderación del admin, tarea 208)
+ * Tests fase RED — useModerateAd (acción de moderación del admin, tarea 208 +
+ * takedown de un anuncio ACTIVO, tarea 210)
  * Archivos SUT: mobile/src/features/ads/hooks/useModerateAd.ts
  *               mobile/src/features/ads/ad_moderation_error_messages.ts
- * Subtarea Taskmaster: 208.2
+ * Subtareas Taskmaster: 208.2 (EC-1..EC-20, intactos) · 210.3 (EC-21..EC-27, NUEVOS)
  *
  * SEAM BAJO TEST (firma pública, fijada por el orquestador — calca
- * useUpdateLeadStatus (75.6), el hook de mutación por EF más maduro del repo):
+ * useUpdateLeadStatus (75.6), el hook de mutación por EF más maduro del repo).
+ * 210.3 AMPLÍA el seam con `pause`/`resume`, misma mecánica que approve/reject:
  *
  *   useModerateAd(deps?: { supabase?: unknown; onSuccess?: () => void }): {
  *     approve(ad_id: string): Promise<ModerateResult>;
  *     reject(ad_id: string, rejection_reason: string): Promise<ModerateResult>;
+ *     pause(ad_id: string): Promise<ModerateResult>;
+ *     resume(ad_id: string): Promise<ModerateResult>;
  *     is_moderating: boolean;
  *     error: string | null;
  *   }
@@ -17,13 +21,21 @@
  *   ModerateResult = { ok: boolean; error: string | null }
  *
  * CÓDIGOS DE ERROR DE LA EF — leídos de supabase/functions/moderate-ad/
- * {handler,types}.ts, NO asumidos:
+ * {handler,types}.ts, NO asumidos (10 desde 210.2, `AD_PAUSED_BY_SUSPENSION` es
+ * el único nuevo):
  *   INVALID_INPUT (400) | REJECTION_REASON_REQUIRED (400) |
  *   METHOD_NOT_ALLOWED (405) | UNAUTHENTICATED (401) | FORBIDDEN (403) |
  *   AD_NOT_FOUND (404) | INVALID_AD_STATUS_TRANSITION (409) |
- *   ORGANIZATION_SUSPENDED (409) | DB_ERROR (500)
+ *   ORGANIZATION_SUSPENDED (409) | AD_PAUSED_BY_SUSPENSION (409) | DB_ERROR (500)
  *
- * Respuesta de éxito: 200 { status: 'active' | 'rejected' }.
+ * Respuesta de éxito: 200 { status: 'active' | 'rejected' | 'paused' }.
+ *
+ * 🔴 210.3 — pause/resume NO llevan `rejection_reason` (mismo CHECK bidireccional
+ * que approve, EC-4/EC-23/EC-24): pausar un anuncio activo no es rechazarlo, es
+ * reversible. `resume` y `approve` comparten next_status ('active') a nivel de
+ * grafo pero son ACCIONES de cliente distintas (origen distinto: reanudar un
+ * `paused` vs. aprobar un `pending_review`) — por eso `action` viaja literal
+ * ('pause'/'resume'), nunca remapeado a 'approve'.
  *
  * 🔴 REGLA DE #200 — EL MENSAJE NUNCA SALE DE error.message. `FunctionsHttpError.
  * message` es SIEMPRE el literal en inglés 'Edge Function returned a non-2xx
@@ -92,6 +104,25 @@
  *
  * ### 🔴 Integridad del cliente supabase-js
  * - (EC-20) no_desprende_functions_invoke_del_cliente
+ *
+ * ### 🔴 210.3 — takedown: pause/resume sobre un anuncio ACTIVO
+ *
+ * #### Happy path e invocación
+ * - (EC-21) pause_invoca_la_ef_con_action_pause_y_devuelve_ok
+ * - (EC-22) resume_invoca_la_ef_con_action_resume_y_devuelve_ok
+ *
+ * #### Payload — el CHECK bidireccional también gobierna pause/resume
+ * - (EC-23) pause_no_manda_rejection_reason_en_el_body
+ * - (EC-24) resume_no_manda_rejection_reason_en_el_body
+ *
+ * #### Traducción nueva: AD_PAUSED_BY_SUSPENSION (409)
+ * - (EC-25) ad_paused_by_suspension_produce_un_mensaje_propio_distinguible_de_organization_suspended_y_db_error
+ *
+ * #### Estado — pause conserva el mismo contrato síncrono que approve/reject
+ * - (EC-26) is_moderating_true_sincronamente_al_disparar_pause_y_false_tras_exito
+ *
+ * #### Regresión explícita — ampliar el seam no afloja approve/reject
+ * - (EC-27) approve_y_reject_siguen_intactos_tras_agregar_pause_y_resume
  */
 
 import { FunctionsHttpError } from '@supabase/supabase-js';
@@ -117,7 +148,13 @@ const REASON = 'El video muestra un inmueble que no corresponde al anunciante.';
  */
 const RAW_SUPABASE_JS_MESSAGE = 'Edge Function returned a non-2xx status code';
 
-/** Los 9 códigos que la EF moderate-ad puede emitir (handler.ts verificado). */
+/**
+ * Los 10 códigos que la EF moderate-ad puede emitir (handler.ts verificado,
+ * AD_PAUSED_BY_SUSPENSION agregado en 210.2). Al vivir en un arreglo único,
+ * EC-9/EC-10 (el loop de traducción/anti-fuga) cubren el código nuevo sin
+ * duplicar el caso — la traducción específica y distinguible de
+ * AD_PAUSED_BY_SUSPENSION la fija EC-25 aparte.
+ */
 const ALL_CODES = [
   'INVALID_INPUT',
   'REJECTION_REASON_REQUIRED',
@@ -127,6 +164,7 @@ const ALL_CODES = [
   'AD_NOT_FOUND',
   'INVALID_AD_STATUS_TRANSITION',
   'ORGANIZATION_SUSPENDED',
+  'AD_PAUSED_BY_SUSPENSION',
   'DB_ERROR',
 ] as const;
 
@@ -565,5 +603,163 @@ describe('useModerateAd — 🔴 no desprender métodos de supabase-js (#205)', 
     // falla mudo (nota supabase_js_metodo_desprendido). El mock lo detecta.
     expect(mock.was_detached()).toBe(false);
     expect(mock.calls).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 🔴 210.3 — takedown: pause/resume sobre un anuncio ACTIVO
+// ---------------------------------------------------------------------------
+
+describe('useModerateAd — 210.3 pause/resume (takedown de un anuncio activo)', () => {
+  it('EC-21 pause invoca la EF con action=pause y devuelve ok', async () => {
+    const mock = make_client(() => Promise.resolve({ data: { status: 'paused' }, error: null }));
+    const { result } = await renderHook(() => useModerateAd({ supabase: mock.client }));
+
+    let res!: ModerateResult;
+    await act(async () => {
+      res = await result.current.pause(TEST_AD_ID);
+    });
+
+    expect(res.ok).toBe(true);
+    expect(res.error).toBeNull();
+    expect(mock.calls).toHaveLength(1);
+    expect(mock.calls[0]?.name).toBe('moderate-ad');
+    expect(mock.calls[0]?.options.body).toMatchObject({ ad_id: TEST_AD_ID, action: 'pause' });
+  });
+
+  it('EC-22 resume invoca la EF con action=resume y devuelve ok', async () => {
+    const mock = make_client(() => Promise.resolve({ data: { status: 'active' }, error: null }));
+    const { result } = await renderHook(() => useModerateAd({ supabase: mock.client }));
+
+    let res!: ModerateResult;
+    await act(async () => {
+      res = await result.current.resume(TEST_AD_ID);
+    });
+
+    expect(res.ok).toBe(true);
+    expect(res.error).toBeNull();
+    expect(mock.calls).toHaveLength(1);
+    expect(mock.calls[0]?.name).toBe('moderate-ad');
+    expect(mock.calls[0]?.options.body).toMatchObject({ ad_id: TEST_AD_ID, action: 'resume' });
+  });
+
+  it('EC-23 pause NO manda rejection_reason en el body', async () => {
+    const mock = make_client(() => Promise.resolve({ data: { status: 'paused' }, error: null }));
+    const { result } = await renderHook(() => useModerateAd({ supabase: mock.client }));
+
+    await act(async () => {
+      await result.current.pause(TEST_AD_ID);
+    });
+
+    expect(mock.calls).toHaveLength(1);
+    const body = mock.calls[0]?.options.body ?? {};
+    expect(Object.prototype.hasOwnProperty.call(body, 'rejection_reason')).toBe(false);
+  });
+
+  it('EC-24 resume NO manda rejection_reason en el body', async () => {
+    const mock = make_client(() => Promise.resolve({ data: { status: 'active' }, error: null }));
+    const { result } = await renderHook(() => useModerateAd({ supabase: mock.client }));
+
+    await act(async () => {
+      await result.current.resume(TEST_AD_ID);
+    });
+
+    expect(mock.calls).toHaveLength(1);
+    const body = mock.calls[0]?.options.body ?? {};
+    expect(Object.prototype.hasOwnProperty.call(body, 'rejection_reason')).toBe(false);
+  });
+
+  it('EC-25 AD_PAUSED_BY_SUSPENSION produce un mensaje propio, distinguible de ORGANIZATION_SUSPENDED y DB_ERROR', async () => {
+    const mock = make_client(failing_invoke('AD_PAUSED_BY_SUSPENSION', 409));
+    const { result } = await renderHook(() => useModerateAd({ supabase: mock.client }));
+
+    let res!: ModerateResult;
+    await act(async () => {
+      res = await result.current.resume(TEST_AD_ID);
+    });
+
+    expect(res.ok).toBe(false);
+    expect(typeof res.error).toBe('string');
+    expect((res.error ?? '').length).toBeGreaterThan(0);
+
+    // No es el fallback genérico de "código no mapeado" (eso sería NO traducir,
+    // solo caer al cajón de siempre) ni comparte texto con un código vecino.
+    const organization_suspended_mock = make_client(failing_invoke('ORGANIZATION_SUSPENDED', 409));
+    const { result: org_result } = await renderHook(() =>
+      useModerateAd({ supabase: organization_suspended_mock.client }),
+    );
+    let org_res!: ModerateResult;
+    await act(async () => {
+      org_res = await org_result.current.approve(TEST_AD_ID);
+    });
+
+    const db_error_mock = make_client(failing_invoke('DB_ERROR', 500));
+    const { result: db_result } = await renderHook(() => useModerateAd({ supabase: db_error_mock.client }));
+    let db_res!: ModerateResult;
+    await act(async () => {
+      db_res = await db_result.current.approve(TEST_AD_ID);
+    });
+
+    expect(res.error).not.toBe('Ocurrió un error. Intenta de nuevo.');
+    expect(res.error).not.toBe(org_res.error);
+    expect(res.error).not.toBe(db_res.error);
+  });
+
+  it('EC-26 is_moderating es true SÍNCRONAMENTE al disparar pause y false tras éxito', async () => {
+    let release!: (r: InvokeResult) => void;
+    const pending = new Promise<InvokeResult>((res) => {
+      release = res;
+    });
+    const mock = make_client(() => pending);
+    const { result } = await renderHook(() => useModerateAd({ supabase: mock.client }));
+
+    expect(result.current.is_moderating).toBe(false);
+
+    let action!: Promise<ModerateResult>;
+    act(() => {
+      action = result.current.pause(TEST_AD_ID);
+    });
+
+    expect(result.current.is_moderating).toBe(true);
+
+    await act(async () => {
+      release({ data: { status: 'paused' }, error: null });
+      await action;
+    });
+
+    expect(result.current.is_moderating).toBe(false);
+  });
+
+  it('EC-27 approve y reject siguen intactos tras agregar pause/resume', async () => {
+    const approve_mock = make_client(ok_invoke);
+    const { result: approve_result } = await renderHook(() =>
+      useModerateAd({ supabase: approve_mock.client }),
+    );
+    let approve_res!: ModerateResult;
+    await act(async () => {
+      approve_res = await approve_result.current.approve(TEST_AD_ID);
+    });
+    expect(approve_res.ok).toBe(true);
+    expect(approve_mock.calls[0]?.options.body).toMatchObject({
+      ad_id: TEST_AD_ID,
+      action: 'approve',
+    });
+
+    const reject_mock = make_client(() =>
+      Promise.resolve({ data: { status: 'rejected' }, error: null }),
+    );
+    const { result: reject_result } = await renderHook(() =>
+      useModerateAd({ supabase: reject_mock.client }),
+    );
+    let reject_res!: ModerateResult;
+    await act(async () => {
+      reject_res = await reject_result.current.reject(TEST_AD_ID, REASON);
+    });
+    expect(reject_res.ok).toBe(true);
+    expect(reject_mock.calls[0]?.options.body).toMatchObject({
+      ad_id: TEST_AD_ID,
+      action: 'reject',
+      rejection_reason: REASON,
+    });
   });
 });

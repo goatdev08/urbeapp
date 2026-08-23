@@ -135,7 +135,7 @@ function make_writer(result: AdModerationResult): FakeWriter {
   } as FakeWriter;
 }
 
-const writer_ok = (status: "active" | "rejected" = "active") =>
+const writer_ok = (status: "active" | "rejected" | "paused" = "active") =>
   make_writer({ ok: true, status });
 
 // ── Helpers de petición ──────────────────────────────────────────────────────
@@ -390,3 +390,201 @@ for (const method of ["GET", "PUT", "DELETE"]) {
     assertEquals(res.status, 405);
   });
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ════════════════ TAKEDOWN — acciones nuevas (subtarea #210.2) ═════════════
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// La DB (210.1, GREEN ya en local) acepta: `paused` desde `active` (pausa
+// admin) y `active` desde `paused` (resume) — salvo que el ad tenga
+// `paused_by_suspension=true`, caso en el que el trigger `handle_ad_status_
+// change()` (20260823000002) lanza P0001 `AD_PAUSED_BY_SUSPENSION`: esa
+// reactivación es EXCLUSIVA de la cascada de organización (#211), no de un
+// click de admin sobre un anuncio individual. `reject` se REUSA tal cual
+// para bajar un anuncio activo (sin action code nuevo — el handler ya es
+// agnóstico del estado de origen, EC-2 lo prueba).
+//
+// 🔴 SEAM: el MISMO contrato HTTP de arriba (handler puro + fakes). Nada
+// nuevo se mockea; `AdModerationWriter`/`AdminVerifier` son las mismas
+// interfaces, solo con más valores posibles en `next_status`/`error_code`.
+//
+// ════════════════════════════════════════════════════════════════════════════
+// EDGE CASES (RED) — 210.2
+//
+// ### Happy path
+// - EC-26 action 'pause' → 200, writer recibe next_status='paused' y
+//         rejection_reason=null (pausar NO exige motivo)
+// - EC-27 la respuesta 200 de pause reporta status='paused'
+// - EC-28 action 'resume' → 200, writer recibe next_status='active' y
+//         rejection_reason=null (resume NO exige motivo)
+// - EC-29 la respuesta 200 de resume reporta status='active'
+//
+// ### El CHECK bidireccional, respetado desde arriba (mismo espíritu EC-5)
+// - EC-30 pause con rejection_reason en el body → NO viaja al writer (null)
+// - EC-31 resume con rejection_reason en el body → NO viaja al writer (null)
+//
+// ### Traducción NUEVA: AD_PAUSED_BY_SUSPENSION (🔴 obs.1 del guardian 210.1
+//     — hoy colapsaría a DB_ERROR/500; se fija aquí como 409 con mensaje
+//     propio). Se ejercita sobre 'approve' porque el SEAM bajo test es la
+//     tabla de traducción código→HTTP del handler, no el grafo de estados
+//     (mismo patrón que EC-11..EC-14, que tampoco atan el error a una acción
+//     concreta — el handler es agnóstico de CUÁL acción disparó el error).
+// - EC-32 writer → AD_PAUSED_BY_SUSPENSION: 409 (no 500), code AD_PAUSED_BY_SUSPENSION
+// - EC-33 el mensaje de AD_PAUSED_BY_SUSPENSION es propio en español — NUNCA
+//         el texto crudo P0001 del trigger (mismo espíritu EC-15)
+//
+// ### pause/resume sobre transición inválida → el 409 existente, sin código nuevo
+// - EC-34 pause + writer INVALID_AD_STATUS_TRANSITION → 409 (p.ej. pausar un
+//         pending_review)
+// - EC-35 resume + writer INVALID_AD_STATUS_TRANSITION → 409
+//
+// ### Boundary — acción desconocida sigue 400, approve/reject intactos
+// - EC-36 action 'cancel' (ninguna acción nueva la introdujo) → 400
+//         INVALID_INPUT, writer NUNCA se llama — refuerza EC-21 tras ampliar
+//         el union: el widening de ModerateAdAction NO afloja la validación.
+//
+// ### Contrato explícito: reject reusa la MISMA acción para bajar un activo
+// - EC-37 reject con motivo → next_status='rejected' y la razón viaja,
+//         EXPLÍCITAMENTE fijado como el camino de "bajar un anuncio activo"
+//         (#210) — mecánicamente idéntico a EC-2, pero EC-2 nació para
+//         pending_review→rejected (#208.1) y este caso fija el USO NUEVO sin
+//         action code propio, para que un futuro refactor no le invente uno.
+// ════════════════════════════════════════════════════════════════════════════
+
+const pause_body = { ad_id: AD_ID, action: "pause" as const };
+const resume_body = { ad_id: AD_ID, action: "resume" as const };
+
+Deno.test("EC-26: pause → 200 y el writer recibe next_status='paused' sin razón", async () => {
+  const w = writer_ok("paused");
+  const res = await handler(post(pause_body), deps(verifier_ok(), w));
+
+  assertEquals(res.status, 200);
+  assertEquals(w.calls.length, 1);
+  assertEquals(w.calls[0].ad_id, AD_ID);
+  assertEquals(w.calls[0].next_status, "paused");
+  assertEquals(w.calls[0].rejection_reason, null);
+});
+
+Deno.test("EC-27: la respuesta 200 de pause reporta status resultante 'paused'", async () => {
+  const res = await handler(post(pause_body), deps(verifier_ok(), writer_ok("paused")));
+
+  assertEquals(res.status, 200);
+  assertEquals((await body_of(res)).status, "paused");
+});
+
+Deno.test("EC-28: resume → 200 y el writer recibe next_status='active' sin razón", async () => {
+  const w = writer_ok("active");
+  const res = await handler(post(resume_body), deps(verifier_ok(), w));
+
+  assertEquals(res.status, 200);
+  assertEquals(w.calls.length, 1);
+  assertEquals(w.calls[0].ad_id, AD_ID);
+  assertEquals(w.calls[0].next_status, "active");
+  assertEquals(w.calls[0].rejection_reason, null);
+});
+
+Deno.test("EC-29: la respuesta 200 de resume reporta status resultante 'active'", async () => {
+  const res = await handler(post(resume_body), deps(verifier_ok(), writer_ok("active")));
+
+  assertEquals(res.status, 200);
+  assertEquals((await body_of(res)).status, "active");
+});
+
+Deno.test("EC-30: pause con rejection_reason de más → la razón NO viaja (null)", async () => {
+  const w = writer_ok("paused");
+  const res = await handler(
+    post({ ...pause_body, rejection_reason: REASON }),
+    deps(verifier_ok(), w),
+  );
+
+  assertEquals(res.status, 200);
+  assertEquals(w.calls[0].rejection_reason, null);
+});
+
+Deno.test("EC-31: resume con rejection_reason de más → la razón NO viaja (null)", async () => {
+  const w = writer_ok("active");
+  const res = await handler(
+    post({ ...resume_body, rejection_reason: REASON }),
+    deps(verifier_ok(), w),
+  );
+
+  assertEquals(res.status, 200);
+  assertEquals(w.calls[0].rejection_reason, null);
+});
+
+Deno.test("EC-32: writer → AD_PAUSED_BY_SUSPENSION: 409 (no 500) con code propio", async () => {
+  const w = make_writer({ ok: false, error_code: "AD_PAUSED_BY_SUSPENSION" });
+  const res = await handler(post(approve_body), deps(verifier_ok(), w));
+
+  assertEquals(res.status, 409);
+  assertEquals((await body_of(res)).error?.code, "AD_PAUSED_BY_SUSPENSION");
+});
+
+Deno.test("EC-33 🔴: AD_PAUSED_BY_SUSPENSION responde en español, nunca el texto crudo del trigger", async () => {
+  const w = make_writer({ ok: false, error_code: "AD_PAUSED_BY_SUSPENSION" });
+  const res = await handler(post(approve_body), deps(verifier_ok(), w));
+  const raw = await res.text();
+  const body = JSON.parse(raw) as { error?: { code: string; message: string } };
+
+  // Sin esta primera aserción el caso pasaría trivialmente contra un stub que
+  // no contesta nada — un test que no puede distinguir no protege.
+  assertEquals(res.status, 409);
+  assertEquals(body.error?.code, "AD_PAUSED_BY_SUSPENSION");
+
+  // Mensaje propio, accionable, en español — NO el genérico de DB_ERROR ni el
+  // texto crudo de Postgres (que traería el nombre de la función PL/pgSQL).
+  // "Diferente del genérico" (en vez de fijar el literal exacto) porque el
+  // wording final es decisión de producto/UX en el GREEN — lo que este RED
+  // fija como contrato es que AD_PAUSED_BY_SUSPENSION NO puede compartir
+  // mensaje con DB_ERROR (hoy SÍ lo comparte: es exactamente el gap que
+  // señaló el guardian de 210.1).
+  assertExists(body.error?.message);
+  assertEquals(body.error!.message.length > 0, true);
+  const generic_db_error_message = "No pudimos completar la moderación. Intenta de nuevo.";
+  assertEquals(
+    body.error!.message === generic_db_error_message,
+    false,
+    "el mensaje NO debe ser el genérico de DB_ERROR: AD_PAUSED_BY_SUSPENSION necesita explicar que la reactivación es de la cascada de organización (#211), no de este botón",
+  );
+  assertEquals(raw.includes("PL/pgSQL"), false);
+  assertEquals(raw.includes("handle_ad_status_change"), false);
+});
+
+Deno.test("EC-34: pause + INVALID_AD_STATUS_TRANSITION (p.ej. sobre pending_review) → 409", async () => {
+  const w = make_writer({ ok: false, error_code: "INVALID_AD_STATUS_TRANSITION" });
+  const res = await handler(post(pause_body), deps(verifier_ok(), w));
+
+  assertEquals(res.status, 409);
+  assertEquals((await body_of(res)).error?.code, "INVALID_AD_STATUS_TRANSITION");
+});
+
+Deno.test("EC-35: resume + INVALID_AD_STATUS_TRANSITION → 409", async () => {
+  const w = make_writer({ ok: false, error_code: "INVALID_AD_STATUS_TRANSITION" });
+  const res = await handler(post(resume_body), deps(verifier_ok(), w));
+
+  assertEquals(res.status, 409);
+  assertEquals((await body_of(res)).error?.code, "INVALID_AD_STATUS_TRANSITION");
+});
+
+Deno.test("EC-36: action 'cancel' (no existe ni con pause/resume) → 400, writer nunca se llama", async () => {
+  const w = writer_ok();
+  const res = await handler(
+    post({ ad_id: AD_ID, action: "cancel" }),
+    deps(verifier_ok(), w),
+  );
+
+  assertEquals(res.status, 400);
+  assertEquals((await body_of(res)).error?.code, "INVALID_INPUT");
+  assertEquals(w.calls.length, 0);
+});
+
+Deno.test("EC-37: reject con motivo — contrato explícito de 'bajar un anuncio activo' (#210), sin action code propio", async () => {
+  const w = writer_ok("rejected");
+  const res = await handler(post(reject_body), deps(verifier_ok(), w));
+
+  assertEquals(res.status, 200);
+  assertEquals(w.calls.length, 1);
+  assertEquals(w.calls[0].next_status, "rejected");
+  assertEquals(w.calls[0].rejection_reason, REASON);
+  assertEquals((await body_of(res)).status, "rejected");
+});

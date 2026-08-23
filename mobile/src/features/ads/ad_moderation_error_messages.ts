@@ -12,7 +12,8 @@
  * casos, incluido el único que puede accionar. El código real viaja en el
  * CUERPO de la respuesta.
  *
- * Los 9 códigos salen de supabase/functions/moderate-ad/{handler,types}.ts.
+ * Los 10 códigos salen de supabase/functions/moderate-ad/{handler,types}.ts
+ * (`AD_PAUSED_BY_SUSPENSION` se sumó en 210.2, el takedown de anuncios activos).
  */
 
 export const AD_MODERATION_ERROR_MESSAGES: Record<string, string> = {
@@ -29,6 +30,11 @@ export const AD_MODERATION_ERROR_MESSAGES: Record<string, string> = {
     'Este anuncio ya no está en revisión; es probable que alguien más lo haya moderado. Actualiza la lista.',
   ORGANIZATION_SUSPENDED:
     'No se puede aprobar: la organización que lo publica está suspendida.',
+  // 210.3: distinto de ORGANIZATION_SUSPENDED (esa bloquea aprobar; esta
+  // bloquea reanudar) — el anuncio ya está pausado y el único camino es
+  // reactivar la organización, no reintentar el resume.
+  AD_PAUSED_BY_SUSPENSION:
+    'No se puede reanudar: este anuncio quedó pausado porque la organización está suspendida. Reactiva la organización para poder reanudarlo.',
   DB_ERROR: 'Error interno. Intenta de nuevo.',
 };
 

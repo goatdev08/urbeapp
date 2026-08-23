@@ -159,13 +159,21 @@ select results_eq(
 
 -- ── 4. Lo que el trigger rechaza, la RPC propaga ────────────────────────────
 -- pending_review → paused no está en el grafo. La RPC no debe "arreglarlo".
+-- 🔴 210.1: el guard de la RPC se amplió a admitir 'paused' (antes SOLO
+-- {active,rejected} -- este mismo caso se resolvía en la RPC, sin llegar
+-- nunca al trigger). Ahora 'paused' SÍ pasa el guard de la RPC y llega al
+-- trigger, que lo rechaza por transición inválida -- exactamente lo que este
+-- test ya documentaba como su intención ("la RPC no debe arreglarlo", "el
+-- trigger rechaza, la RPC propaga"). Mismo caso, mismo bloqueo (P0001), solo
+-- cambia CUÁL de los dos guards lo lanza -- ver TKD24 en
+-- 66_ad_takedown_test.sql, que fija esta misma mecánica para draft→paused.
 select throws_ok(
   $$ select public.moderate_ad_atomic(
        'a0000000-0000-0000-0000-00000000000c'::uuid, 'paused', null,
        'd0000000-0000-0000-0000-00000000000a'::uuid) $$,
   'P0001',
-  'INVALID_NEXT_STATUS',
-  'MOD11: un next_status fuera de {active, rejected} se rechaza ANTES de tocar la fila'
+  'INVALID_AD_STATUS_TRANSITION',
+  'MOD11: pending_review->paused sigue rechazado -- ahora vía el TRIGGER (210.1 amplió el guard de la RPC a paused, no el grafo)'
 );
 
 -- ── 5. Un admin que no es admin ─────────────────────────────────────────────

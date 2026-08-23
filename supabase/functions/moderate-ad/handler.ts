@@ -20,9 +20,10 @@
 // correcto.
 //
 // ponytail: sin capa de "servicio" intermedia entre el parseo y el writer. Son
-// dos pasos y un `switch`; una clase o un orquestador aparte no compraría nada.
-// Techo conocido: si algún día hay más de dos acciones (pausar, extender), el
-// `switch` de traducción crece y ahí sí conviene una tabla.
+// dos pasos y unas tablas (`NEXT_STATUS`/`HTTP_STATUS`/`MESSAGES`); una clase
+// o un orquestador aparte no compraría nada. #210.2 sumó pause/resume (4
+// acciones) ensanchando esas mismas tablas — el techo previsto ("si crecen
+// las acciones, conviene una tabla") ya se cruzó y la tabla ya estaba ahí.
 
 import { handle_cors_preflight } from "../_shared/cors.ts";
 import { error_response, json_response } from "../_shared/response.ts";
@@ -36,11 +37,22 @@ import type {
 // `suspend` se enumera para NO aceptarla: existe de verdad en
 // moderate-property y un copy-paste podría colarla. Un anuncio se pausa por la
 // cascada de suspensión de su organización, no por una acción de moderación.
-const VALID_ACTIONS = new Set<ModerateAdAction>(["approve", "reject"]);
+//
+// #210.2: `pause`/`resume` son el takedown/reactivación manual de un anuncio
+// YA `active` — igual de válidas como `action` que `approve`/`reject`. El
+// trigger `handle_ad_status_change()` es quien de verdad valida si la
+// transición procede (p.ej. rechaza pausar algo que no está `active`); este
+// Set solo decide qué `action` es sintácticamente aceptable.
+const VALID_ACTIONS = new Set<ModerateAdAction>(["approve", "reject", "pause", "resume"]);
 
-const NEXT_STATUS: Record<ModerateAdAction, "active" | "rejected"> = {
+// `pause`/`resume` mandan al mismo next_status que documenta #210.1 (paused/
+// active). `resume` y `approve` comparten next_status ('active') a propósito
+// — son código de acción distinto porque el origen difiere (ver types.ts).
+const NEXT_STATUS: Record<ModerateAdAction, "active" | "rejected" | "paused"> = {
   approve: "active",
   reject: "rejected",
+  pause: "paused",
+  resume: "active",
 };
 
 /**
@@ -48,10 +60,15 @@ const NEXT_STATUS: Record<ModerateAdAction, "active" | "rejected"> = {
  * `ORGANIZATION_SUSPENDED` son **409, no 400**: el request estaba bien formado;
  * lo que no permite la operación es el estado actual del recurso.
  */
+// #210.2: `AD_PAUSED_BY_SUSPENSION` es 409, no 500 — el request está bien
+// formado (resume sobre un anuncio válido); lo que lo bloquea es que ese
+// anuncio quedó pausado por la cascada de suspensión de su organización
+// (#211), y reactivarlo exige reactivar la organización, no un click aquí.
 const HTTP_STATUS: Record<AdModerationErrorCode, number> = {
   AD_NOT_FOUND: 404,
   INVALID_AD_STATUS_TRANSITION: 409,
   ORGANIZATION_SUSPENDED: 409,
+  AD_PAUSED_BY_SUSPENSION: 409,
   DB_ERROR: 500,
 };
 
@@ -66,6 +83,9 @@ const MESSAGES: Record<AdModerationErrorCode, string> = {
     "El anuncio ya no está en revisión — alguien más pudo haberlo moderado.",
   ORGANIZATION_SUSPENDED:
     "La organización anunciante está suspendida: reactívala antes de aprobar su anuncio.",
+  AD_PAUSED_BY_SUSPENSION:
+    "Este anuncio está pausado porque su organización está suspendida. " +
+    "Para reactivarlo, primero reactiva la organización — desde ahí se pausó, y desde ahí se reactiva.",
   DB_ERROR: "No pudimos completar la moderación. Intenta de nuevo.",
 };
 
@@ -103,7 +123,9 @@ function parse_input(raw: unknown): ParseResult {
     return { ok: true, data: { ad_id, action, rejection_reason: reason } };
   }
 
-  return { ok: true, data: { ad_id, action: "approve" } };
+  // approve/pause/resume no llevan razón: el CHECK de la base exige que
+  // rejection_reason sea NULL salvo cuando status='rejected' (EC-5, EC-30, EC-31).
+  return { ok: true, data: { ad_id, action: action as ModerateAdAction } };
 }
 
 // ── Handler ──────────────────────────────────────────────────────────────────
@@ -125,7 +147,7 @@ export async function handler(req: Request, deps: ModerateAdDeps): Promise<Respo
   if (!parsed.ok) {
     const message = parsed.code === "REJECTION_REASON_REQUIRED"
       ? "Para rechazar un anuncio hay que decir por qué."
-      : "Payload inválido: se requieren ad_id y action ('approve' | 'reject').";
+      : "Payload inválido: se requieren ad_id y action ('approve' | 'reject' | 'pause' | 'resume').";
     return error_response(parsed.code, message, 400);
   }
 

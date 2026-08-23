@@ -1,7 +1,8 @@
 /**
- * useModerateAd — aprobar/rechazar un anuncio en revisión (tarea #208,
- * subtarea 208.2). Contrato completo y los 20 edge cases están en el docblock
- * de mobile/src/features/ads/__tests__/useModerateAd.test.tsx.
+ * useModerateAd — aprobar/rechazar (tarea #208) + pausar/reanudar un anuncio
+ * ACTIVO (tarea #210, subtarea 210.3 — takedown de emergencia). Contrato
+ * completo y los edge cases están en el docblock de
+ * mobile/src/features/ads/__tests__/useModerateAd.test.tsx.
  *
  * Calca useUpdateLeadStatus (75.6): is_working_ref + force_update síncrono ANTES
  * del primer await, DI del cliente, run_action, getters en el objeto retornado.
@@ -17,8 +18,13 @@
  *
  * 🔴 EL PAYLOAD LO GOBIERNA EL CHECK BIDIRECCIONAL DE LA BASE.
  * `ads_rejection_reason_matches_status` exige `(status='rejected') ===
- * (rejection_reason is not null)`: aprobar NO manda `rejection_reason` (ni
- * siquiera como null explícito) y rechazar SIEMPRE lo manda.
+ * (rejection_reason is not null)`: aprobar/pausar/reanudar NO mandan
+ * `rejection_reason` (ni siquiera como null explícito) y rechazar SIEMPRE lo
+ * manda — la regla es la misma para las 4 acciones (EF `moderate-ad`, 210.2).
+ *
+ * 🔴 `pause`/`resume` (210.3) son el botón de emergencia sobre un anuncio YA
+ * `active`: mandan `{ad_id, action:'pause'|'resume'}`, sin motivo. Misma
+ * mecánica que approve/reject vía `run_action`/`invoke_moderate`.
  */
 
 import { useCallback, useMemo, useReducer, useRef } from 'react';
@@ -42,6 +48,10 @@ export interface UseModerateAdDeps {
 export interface UseModerateAdReturn {
   approve(ad_id: string): Promise<ModerateResult>;
   reject(ad_id: string, rejection_reason: string): Promise<ModerateResult>;
+  /** 210.3 — pausa un anuncio ACTIVO (reversible, sin motivo). */
+  pause(ad_id: string): Promise<ModerateResult>;
+  /** 210.3 — reanuda un anuncio PAUSADO por el admin (sin motivo). */
+  resume(ad_id: string): Promise<ModerateResult>;
   is_moderating: boolean;
   error: string | null;
 }
@@ -141,12 +151,28 @@ export function useModerateAd(deps?: UseModerateAdDeps): UseModerateAdReturn {
     [deps?.supabase, deps?.onSuccess],
   );
 
+  const pause = useCallback(
+    (ad_id: string): Promise<ModerateResult> =>
+      run_action(() => invoke_moderate({ ad_id, action: 'pause' })).then(finish),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [deps?.supabase, deps?.onSuccess],
+  );
+
+  const resume = useCallback(
+    (ad_id: string): Promise<ModerateResult> =>
+      run_action(() => invoke_moderate({ ad_id, action: 'resume' })).then(finish),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [deps?.supabase, deps?.onSuccess],
+  );
+
   // Getters: is_moderating y error son siempre el valor actual de la ref,
   // incluso sin re-render previo (lectura síncrona del mismo tick).
   return useMemo(() => {
     const r: UseModerateAdReturn = {
       approve,
       reject,
+      pause,
+      resume,
       get is_moderating() {
         return is_working_ref.current;
       },
@@ -155,6 +181,6 @@ export function useModerateAd(deps?: UseModerateAdDeps): UseModerateAdReturn {
       },
     };
     return r;
-     
-  }, [approve, reject]);
+
+  }, [approve, reject, pause, resume]);
 }
