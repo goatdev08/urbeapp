@@ -153,6 +153,11 @@ export default function AdminAgencyListScreen(): React.ReactElement {
     router.push('/admin/agencies/create');
   }, [router]);
 
+  // 208.3: entrada a la cola de moderación de anuncios.
+  const handle_ads_press = useCallback(() => {
+    router.push('/admin/ads');
+  }, [router]);
+
   // ------ Estados de la pantalla ------
 
   if (is_loading) {
@@ -201,6 +206,17 @@ export default function AdminAgencyListScreen(): React.ReactElement {
         <Text style={styles.title}>Inmobiliarias</Text>
       </View>
 
+      <Pressable
+        style={({ pressed }) => [styles.ads_entry, pressed && styles.card_pressed]}
+        onPress={handle_ads_press}
+        accessibilityRole="button"
+        accessibilityLabel="Ir a la cola de anuncios por revisar"
+        testID="admin-ads-entry"
+      >
+        <Text style={styles.ads_entry_text}>Anuncios por revisar</Text>
+        <Text style={styles.ads_entry_chevron}>›</Text>
+      </Pressable>
+
       <FlatList
         data={agencies}
         keyExtractor={(item) => item.id}
@@ -244,6 +260,21 @@ const COLOR_TEXT_SECONDARY = '#6B7280';
 const COLOR_SALVIA = '#1A5E44';
 
 const styles = StyleSheet.create({
+  ads_entry: {
+    marginHorizontal: 20,
+    marginBottom: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E7E2D8',
+    backgroundColor: '#FFFFFF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  ads_entry_text: { fontSize: 16, fontWeight: '600', color: '#17140F' },
+  ads_entry_chevron: { fontSize: 22, color: '#9A7150' },
   container: {
     flex: 1,
     backgroundColor: COLOR_BG,

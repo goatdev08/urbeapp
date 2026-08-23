@@ -1,7 +1,26 @@
 ---
 tipo: estado
-actualizado: 2026-08-17
+actualizado: 2026-08-22
 ---
+
+## Hoy (2026-08-22) — La épica comercial está DESPLEGADA y APAGADA
+
+**Producción (`mvpvqmyhrrkwbnpctpuq`) ya tiene las 24 migraciones y las 3 Edge Functions de anuncios. `ads_enabled = false`.** Ese es el punto: la base quedó lista y **nadie nota nada**. Verificado tras aplicar — `ads_feed_config()` → `false`, 0 anuncios, 0 creativos, 24 propiedades intactas, `publish_property_atomic` con una sola versión de 20 args (sin overload ambiguo), aviso de privacidad v2.0 sembrado con `is_current = false`.
+
+Antes: `main` traía mergeados #205, #206 y #207 (los tres bugs que impedían que un anuncio se viera, que su botón fuera alcanzable y que su medición saliera del teléfono). Los tres compartían firma: **la unidad correcta, el cableado ausente**.
+
+### 🔴 El hueco más grande de la épica, y no está en Taskmaster
+**No existe pantalla para que el admin apruebe un anuncio.** El wizard deja el anuncio en `pending_review` y `step5.tsx` promete que "activarlo es del admin" — pero esa pantalla no se construyó: hoy solo se activa por SQL a mano. El motor de moderación sí existe (máquina de estados, auditoría, trigger); falta el botón. **Sin eso el circuito comercial no cierra**, por más desplegado que esté todo lo demás.
+
+### Lo que falta, en orden
+1. **La pantalla de aprobación** (decisión pendiente: móvil vs. panel admin web #81).
+2. **#201** — `ad_impressions_monthly` no tiene quien la escriba y el crudo se purga a los 90 días. Hoy no duele porque no hay tráfico; **el día 91 el histórico facturable se pierde para siempre**. Debe existir antes de que haya tráfico real.
+3. **#174** — `_shared/clients.ts` con cobertura cero. Ese hueco ya dejó pasar un bug real (168.4: `email_sent:false` inalcanzable pese a 3 tests que lo especificaban).
+4. **Encender `ads_enabled`** — al final, cuando el circuito completo funcione sin SQL manual.
+
+### Dos acoplamientos que hay que tener presentes
+- 🔴 **`stream-webhook` NO se desplegó** y es quien marca un creativo de anuncio como `ready`. El alta de un anuncio **no puede completarse** hasta desplegarla — y su versión local arrastra el TUS resumable de **#192**, que sigue en `review` esperando el smoke del tester. Son una sola decisión, no dos.
+- **El flip del aviso de privacidad v2.0** fuerza re-consentimiento a todos los usuarios vivos (verificado contra `pending_legal_consents()`). Sigue siendo decisión de Abraham, y sigue pendiente de revisión legal (LFPDPPP).
 
 ## Hoy (2026-08-17) — Fix: límite de video subido a 500 MB vía TUS resumable (#192)
 

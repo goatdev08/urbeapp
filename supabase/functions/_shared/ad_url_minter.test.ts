@@ -162,6 +162,9 @@ function make_fake_client_tracked(opts: {
   ad_creatives_error?: { message: string } | null;
   agency_members_data?: { agency_id: string } | null;
   agency_members_error?: { message: string } | null;
+  // 208.5: la tabla `users` resuelve si el caller es admin de plataforma.
+  users_data?: { role: string } | null;
+  users_error?: { message: string } | null;
 }): {
   get_builder(table: string): FakeQueryBuilder | null;
   from_calls: string[];
@@ -172,13 +175,18 @@ function make_fake_client_tracked(opts: {
   const client = {
     from(table: string): FakeQueryBuilder {
       from_calls.push(table);
-      const builder = table === "agency_members"
-        ? new FakeQueryBuilder(
+      let builder: FakeQueryBuilder;
+      if (table === "agency_members") {
+        builder = new FakeQueryBuilder(
           table,
           opts.agency_members_data ?? null,
           opts.agency_members_error ?? null,
-        )
-        : new FakeQueryBuilder(table, opts.ad_creatives_data, opts.ad_creatives_error ?? null);
+        );
+      } else if (table === "users") {
+        builder = new FakeQueryBuilder(table, opts.users_data ?? null, opts.users_error ?? null);
+      } else {
+        builder = new FakeQueryBuilder(table, opts.ad_creatives_data, opts.ad_creatives_error ?? null);
+      }
       builders[table] = builder;
       return builder;
     },
@@ -559,4 +567,191 @@ Deno.test("videoUrl_y_posterUrl_comparten_EXACTAMENTE_el_mismo_token", async () 
     extract_token_from_poster_url(result[0].posterUrl),
     "un solo sign_stream_token por creativo: mismo token para póster y manifest",
   );
+});
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 208.5 — EL ADMIN DEBE PODER VER EL CREATIVO QUE VA A MODERAR
+//
+// 🔴 EL HUECO. La autorización por item era
+// `authorized = is_owner_member || has_active_vigente_ad`, sin ninguna rama de
+// admin (`grep -rn 'is_admin|admin' mint-ad-urls/handler.ts` → CERO). Un admin
+// moderando un anuncio en `pending_review` no es miembro de esa organización y
+// el anuncio todavía NO está `active`: falla las dos condiciones. Como el
+// fail-closed es POR ITEM y silencioso, recibía `{ urls: [] }` — ni video ni
+// portada. La cola de moderación de 208.3 sería una pantalla donde no se puede
+// ver lo que se modera, y aprobar a ciegas es peor que no tener la pantalla.
+//
+// Es el análogo exacto de lo que la policy `ads_select` YA hace
+// (20260816000005:205-210): `agency_role_of(...) OR private.is_admin() OR
+// (activo y vigente)`. El minter implementó las cláusulas 1 y 3 y se saltó la
+// 2. No se revierte una decisión de diseño: se cierra una omisión, igual que
+// 208.1 con el grafo de estados.
+//
+// 🔴 EL ADMIN GANA LECTURA, NADA MÁS. Sigue firmando con sign_stream_token y
+// el token sigue en el PATH (#68). El resto del fail-closed por item queda
+// intacto.
+//
+// 🔴 LA CONSULTA A `users` ES PEREZOSA. mint-ad-urls es camino caliente: el
+// feed lo llama por cada lote de anuncios. Si todas las filas ya están
+// autorizadas (el caso normal del feed), `users` NO debe consultarse — de lo
+// contrario esta corrección le cobra una query extra a cada scroll de cada
+// usuario para servir a un puñado de admins.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const ADMIN_UID = "00000000-0000-0000-0005-000000000042";
+
+Deno.test("208.5 admin_no_miembro_ve_el_creativo_de_un_ad_en_pending_review", async () => {
+  const { private_jwk_base64 } = await generate_test_signing_key();
+  const { client } = make_fake_client_tracked({
+    ad_creatives_data: [make_row({ ads: [PENDING_REVIEW] })],
+    agency_members_data: null, // el admin no es miembro de ninguna organización
+    users_data: { role: "admin" },
+  });
+  const minter = make_ad_url_minter(client as never, make_hls_config(private_jwk_base64));
+  const result = await minter.mint_ad_urls([CREATIVE_ID_1], ADMIN_UID);
+
+  assertEquals(
+    result.length,
+    1,
+    "CRÍTICO: sin esto la cola de moderación de 208.3 no puede mostrar el video que se modera",
+  );
+  assertExists(result[0].posterUrl);
+  assertExists(result[0].videoUrl);
+});
+
+Deno.test("208.5 admin_ve_tambien_un_creativo_sin_ningun_ad_asociado", async () => {
+  // Un creativo recién subido y aún sin campaña: el admin igual debe poder
+  // revisarlo. `ads: []` no autoriza por vigencia y tampoco hay membresía.
+  const { private_jwk_base64 } = await generate_test_signing_key();
+  const { client } = make_fake_client_tracked({
+    ad_creatives_data: [make_row({ ads: [] })],
+    agency_members_data: null,
+    users_data: { role: "admin" },
+  });
+  const minter = make_ad_url_minter(client as never, make_hls_config(private_jwk_base64));
+  const result = await minter.mint_ad_urls([CREATIVE_ID_1], ADMIN_UID);
+  assertEquals(result.length, 1);
+});
+
+Deno.test("208.5 no_admin_sin_membresia_ni_ad_activo_sigue_omitido", async () => {
+  // REGRESIÓN: la puerta se abre para `role='admin'`, no para cualquiera que
+  // exista en `users`. Un usuario normal debe seguir sin ver nada.
+  const { private_jwk_base64 } = await generate_test_signing_key();
+  const { client } = make_fake_client_tracked({
+    ad_creatives_data: [make_row({ ads: [PENDING_REVIEW] })],
+    agency_members_data: { agency_id: OTHER_AGENCY_ID },
+    users_data: { role: "user" },
+  });
+  const minter = make_ad_url_minter(client as never, make_hls_config(private_jwk_base64));
+  const result = await minter.mint_ad_urls([CREATIVE_ID_1], OUTSIDER_UID);
+  assertEquals(result.length, 0, "role='user' NO es admin — el fail-closed se mantiene");
+});
+
+Deno.test("208.5 agente_con_role_agent_no_gana_acceso", async () => {
+  const { private_jwk_base64 } = await generate_test_signing_key();
+  const { client } = make_fake_client_tracked({
+    ad_creatives_data: [make_row({ ads: [PENDING_REVIEW] })],
+    agency_members_data: { agency_id: OTHER_AGENCY_ID },
+    users_data: { role: "agent" },
+  });
+  const minter = make_ad_url_minter(client as never, make_hls_config(private_jwk_base64));
+  const result = await minter.mint_ad_urls([CREATIVE_ID_1], OUTSIDER_UID);
+  assertEquals(result.length, 0);
+});
+
+Deno.test("208.5 la_consulta_a_users_usa_el_id_del_caller", async () => {
+  const { private_jwk_base64 } = await generate_test_signing_key();
+  const tracked = make_fake_client_tracked({
+    ad_creatives_data: [make_row({ ads: [PENDING_REVIEW] })],
+    agency_members_data: null,
+    users_data: { role: "admin" },
+  });
+  const minter = make_ad_url_minter(tracked.client as never, make_hls_config(private_jwk_base64));
+  await minter.mint_ad_urls([CREATIVE_ID_1], ADMIN_UID);
+
+  const builder = tracked.get_builder("users");
+  assertExists(builder, "el adapter debe consultar la tabla users para resolver el rol");
+  const eq_id = builder.filters.find((f) => f.method === "eq" && f.column === "id");
+  assertExists(eq_id, "el rol se resuelve por el id del CALLER, nunca por algo del body");
+  assertEquals(eq_id.value, ADMIN_UID);
+});
+
+Deno.test("208.5 error_en_la_query_de_users_falla_cerrado_y_omite", async () => {
+  // Si no se puede confirmar que es admin, NO es admin. Nunca al revés.
+  const { private_jwk_base64 } = await generate_test_signing_key();
+  const { client } = make_fake_client_tracked({
+    ad_creatives_data: [make_row({ ads: [PENDING_REVIEW] })],
+    agency_members_data: null,
+    users_data: null,
+    users_error: { message: "conexión perdida" },
+  });
+  const minter = make_ad_url_minter(client as never, make_hls_config(private_jwk_base64));
+  const result = await minter.mint_ad_urls([CREATIVE_ID_1], ADMIN_UID);
+  assertEquals(result.length, 0, "sin confirmación de admin ⇒ omitido, jamás autorizado por defecto");
+});
+
+Deno.test("208.5 camino_caliente_del_feed_no_consulta_users", async () => {
+  // 🔴 mint-ad-urls lo llama el feed en cada lote. Si todas las filas ya están
+  // autorizadas por vigencia, la corrección de 208.5 NO debe cobrarle una query
+  // extra a cada scroll de cada usuario. La resolución del rol es perezosa.
+  const { private_jwk_base64 } = await generate_test_signing_key();
+  const tracked = make_fake_client_tracked({
+    ad_creatives_data: [make_row({ ads: [VIGENTE] })],
+    agency_members_data: { agency_id: OTHER_AGENCY_ID },
+    users_data: { role: "user" },
+  });
+  const minter = make_ad_url_minter(tracked.client as never, make_hls_config(private_jwk_base64));
+  const result = await minter.mint_ad_urls([CREATIVE_ID_1], OUTSIDER_UID);
+
+  assertEquals(result.length, 1, "el ad vigente sigue siendo público");
+  assertEquals(
+    tracked.from_calls.includes("users"),
+    false,
+    "camino caliente: nada que denegar ⇒ el rol no se resuelve",
+  );
+});
+
+Deno.test("208.5 el_rol_se_resuelve_UNA_sola_vez_por_lote", async () => {
+  // Tres creativos no autorizados en el mismo lote no deben producir tres
+  // consultas a `users`.
+  const { private_jwk_base64 } = await generate_test_signing_key();
+  const tracked = make_fake_client_tracked({
+    ad_creatives_data: [
+      make_row({ id: CREATIVE_ID_1, cloudflare_uid: CF_UID_1, ads: [PENDING_REVIEW] }),
+      make_row({ id: CREATIVE_ID_2, cloudflare_uid: CF_UID_2, ads: [PENDING_REVIEW] }),
+      make_row({ id: CREATIVE_ID_3, cloudflare_uid: CF_UID_3, ads: [PENDING_REVIEW] }),
+    ],
+    agency_members_data: null,
+    users_data: { role: "admin" },
+  });
+  const minter = make_ad_url_minter(tracked.client as never, make_hls_config(private_jwk_base64));
+  const result = await minter.mint_ad_urls(
+    [CREATIVE_ID_1, CREATIVE_ID_2, CREATIVE_ID_3],
+    ADMIN_UID,
+  );
+
+  assertEquals(result.length, 3);
+  assertEquals(
+    tracked.from_calls.filter((t) => t === "users").length,
+    1,
+    "memoizado: una consulta de rol por lote, no una por creativo",
+  );
+});
+
+Deno.test("208.5 el_admin_gana_lectura_pero_el_token_sigue_en_el_PATH", async () => {
+  // El acceso nuevo no relaja el mecanismo de firma (#68).
+  const { private_jwk_base64 } = await generate_test_signing_key();
+  const { client } = make_fake_client_tracked({
+    ad_creatives_data: [make_row({ ads: [PENDING_REVIEW] })],
+    agency_members_data: null,
+    users_data: { role: "admin" },
+  });
+  const minter = make_ad_url_minter(client as never, make_hls_config(private_jwk_base64));
+  const result = await minter.mint_ad_urls([CREATIVE_ID_1], ADMIN_UID);
+
+  assertEquals(result[0].posterUrl.includes("?token="), false);
+  assertEquals(result[0].videoUrl.includes("?token="), false);
+  assertEquals(result[0].videoUrl.includes("&token="), false);
+  assertExists(extract_token_from_video_url(result[0].videoUrl));
 });
