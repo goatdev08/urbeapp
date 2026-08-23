@@ -939,3 +939,6 @@ El upgrade a cuenta comercial ya no vive en Studio/SQL: EF `set-org-advertising`
 
 ## [2026-08-23] tarea | #210 takedown de anuncios activos — DESPLEGADO
 El botón de emergencia previo a encender `ads_enabled`: la EF `moderate-ad` gana pause/resume (reject se reusa para bajar activos) y /admin/ads el segmento "Activos". Hallazgo del analista convertido en guard: un resume genérico habría revivido anuncios pausados por suspensión de organización — ahora `AD_PAUSED_BY_SUSPENSION` lo bloquea salvo para la cascada legítima (GUC transacción-local, inforjable en 3 capas). D2 verificado en vivo (pausa de 2.8s = recorrido exacto de `ends_at`). Guardian PASS ×3 (27 pgTAP + 37 Deno + 48 RNTL, mutation testing en cada capa).
+
+## [2026-08-23] tarea | #211 suspensión de organizaciones — DESPLEGADO
+La cascada de #169.2 (probada hace una semana, cero llamadores) por fin es alcanzable: RPC `set_agency_status_atomic` (4ª del patrón GUC) + EF `suspend-agency` + estado en el detalle admin. Smoke en vivo del ciclo completo: suspender pausó SOLO los ads activos, el pausado a mano no resucitó al reactivar (discriminador), y el resume aislado chocó con el guard de #210 (409) — las dos tareas se reconocen mutuamente. Hallazgo del RED: re-suspender es no-op idempotente (trigger WHEN distinct), no un 409. Presentación del status unificada entre lista y detalle. Guardian PASS ×2.
