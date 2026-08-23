@@ -1826,6 +1826,31 @@ export function make_ad_url_minter(
         .maybeSingle();
       const caller_agency_id = (member_row as { agency_id: string } | null)?.agency_id ?? null;
 
+      // 208.5: tercera vía de autorización — el admin de plataforma. Es el
+      // análogo de `private.is_admin()` en la policy ads_select
+      // (20260816000005:205-210); el minter tenía las otras dos cláusulas y se
+      // saltó esta, así que un admin moderando un ad en `pending_review` —ni
+      // miembro, ni ad activo— recibía `{ urls: [] }` y no podía ver lo que
+      // estaba a punto de aprobar.
+      //
+      // PEREZOSA Y MEMOIZADA: mint-ad-urls es camino caliente (el feed lo llama
+      // por cada lote). Si nada se va a denegar, `users` no se consulta y el
+      // scroll de cada usuario no paga una query extra para servir a un puñado
+      // de admins. Falla cerrado: si no se puede confirmar el rol, NO es admin.
+      let caller_is_admin: boolean | null = null;
+      const resolve_caller_is_admin = async (): Promise<boolean> => {
+        if (caller_is_admin === null) {
+          const { data: user_row, error: user_error } = await client
+            .from("users")
+            .select("role")
+            .eq("id", caller_id)
+            .maybeSingle();
+          caller_is_admin = !user_error &&
+            (user_row as { role: string } | null)?.role === "admin";
+        }
+        return caller_is_admin;
+      };
+
       const { data, error } = await client
         .from("ad_creatives")
         .select("id, agency_id, cloudflare_uid, duration_seconds, status, ads(status, starts_at, ends_at)")
@@ -1847,7 +1872,8 @@ export function make_ad_url_minter(
           return starts_at <= now && now <= ends_at;
         });
 
-        const authorized = is_owner_member || has_active_vigente_ad;
+        const authorized = is_owner_member || has_active_vigente_ad ||
+          await resolve_caller_is_admin();
         if (!authorized) {
           continue;
         }
