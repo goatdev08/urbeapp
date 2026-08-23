@@ -36,11 +36,24 @@ import type {
 // `suspend` se enumera para NO aceptarla: existe de verdad en
 // moderate-property y un copy-paste podría colarla. Un anuncio se pausa por la
 // cascada de suspensión de su organización, no por una acción de moderación.
+//
+// 🔴 STUB DE COMPILACIÓN (RED #210.2): `pause`/`resume` YA existen en el tipo
+// `ModerateAdAction` (types.ts) pero A PROPÓSITO NO están en este Set — el
+// contrato HTTP de esas acciones (EC-26..EC-37) es lo que el RED fija; la
+// implementación (aceptarlas de verdad) es GREEN, no este archivo.
 const VALID_ACTIONS = new Set<ModerateAdAction>(["approve", "reject"]);
 
-const NEXT_STATUS: Record<ModerateAdAction, "active" | "rejected"> = {
+// 🔴 STUB DE COMPILACIÓN (RED #210.2): el tipo ahora exige mapear las 4
+// acciones porque `ModerateAdAction` se amplió en types.ts. `pause`/`resume`
+// llevan aquí su mapeo REAL (paused/active, documentado en 210.1) pero eso NO
+// activa nada por sí solo: `VALID_ACTIONS` arriba sigue sin admitirlas, así
+// que `parse_input` las sigue rechazando con 400 INVALID_INPUT. GREEN real =
+// mover pause/resume a VALID_ACTIONS.
+const NEXT_STATUS: Record<ModerateAdAction, "active" | "rejected" | "paused"> = {
   approve: "active",
   reject: "rejected",
+  pause: "paused",
+  resume: "active",
 };
 
 /**
@@ -48,10 +61,17 @@ const NEXT_STATUS: Record<ModerateAdAction, "active" | "rejected"> = {
  * `ORGANIZATION_SUSPENDED` son **409, no 400**: el request estaba bien formado;
  * lo que no permite la operación es el estado actual del recurso.
  */
+// 🔴 STUB DE COMPILACIÓN (RED #210.2): `AD_PAUSED_BY_SUSPENSION` se amplió en
+// types.ts y el Record lo exige. Se deja colapsado a 500/mensaje genérico —
+// EXACTAMENTE lo que hoy pasaría de facto (obs.1 del guardian de 210.1) — a
+// propósito, para que EC-32/EC-33 fallen por aserción (esperan 409 + mensaje
+// propio) en vez de por un error de compilación. Mapearlo a 409 con su
+// mensaje real es GREEN, no este archivo.
 const HTTP_STATUS: Record<AdModerationErrorCode, number> = {
   AD_NOT_FOUND: 404,
   INVALID_AD_STATUS_TRANSITION: 409,
   ORGANIZATION_SUSPENDED: 409,
+  AD_PAUSED_BY_SUSPENSION: 500,
   DB_ERROR: 500,
 };
 
@@ -66,6 +86,10 @@ const MESSAGES: Record<AdModerationErrorCode, string> = {
     "El anuncio ya no está en revisión — alguien más pudo haberlo moderado.",
   ORGANIZATION_SUSPENDED:
     "La organización anunciante está suspendida: reactívala antes de aprobar su anuncio.",
+  // 🔴 STUB DE COMPILACIÓN (RED #210.2): reusa el mensaje genérico de
+  // DB_ERROR a propósito (ver HTTP_STATUS arriba). El mensaje propio en
+  // español que EC-33 exige es GREEN.
+  AD_PAUSED_BY_SUSPENSION: "No pudimos completar la moderación. Intenta de nuevo.",
   DB_ERROR: "No pudimos completar la moderación. Intenta de nuevo.",
 };
 
