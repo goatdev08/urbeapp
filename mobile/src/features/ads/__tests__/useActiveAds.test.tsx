@@ -14,15 +14,27 @@
  *   }
  *
  *   ActiveAd = { id, title, description, agency_id, starts_at, ends_at,
+ *                paused_at: string | null, paused_by_suspension: boolean,
  *                agencies: { name: string } | null }
+ *   (paused_at/paused_by_suspension: EXTENSIÓN 210.3, ver docblock de COLUMNAS)
  *
  * FLUJO — UNA sola consulta:
  *   supabase.from('ads')
  *     .select(<columnas + agencies(name)>)
- *     .eq('status', 'active')
+ *     .in('status', ['active', 'paused'])
  *     .order('ends_at', { ascending: true })
  *
- * 🔴 INVARIANTE CENTRAL — EL `.eq('status','active')` NO ES OPCIONAL NI
+ * 🔴 EXTENSIÓN 210.3 (post-GREEN, decisión del orquestador): el contrato
+ * ORIGINAL de este RED filtraba SOLO `status='active'`, y dejaba `resume`
+ * (useModerateAd, EC-22) casi muerto — un anuncio pausado en una sesión
+ * anterior desaparecía de la vista y no había forma de reanudarlo desde aquí.
+ * El filtro pasa de `.eq('status','active')` a
+ * `.in('status', ['active','paused'])`: la vista de takedown ahora incluye
+ * TAMBIÉN los pausados, para poder reanudarlos. El orden sigue siendo
+ * `ends_at` ascendente para ambos (un pausado también tiene fecha de fin —
+ * D2 "pausar el reloj" no la mueve, solo congela `paused_at`).
+ *
+ * 🔴 INVARIANTE CENTRAL — EL `.in('status', [...])` NO ES OPCIONAL NI
  * REDUNDANTE CON RLS (mismo gotcha que usePendingAds, 208.2). La policy
  * `ads_select` (20260816000005_ads_schema.sql:205-210) es:
  *
@@ -31,12 +43,13 @@
  *     or (status = 'active' and now() between starts_at and ends_at)
  *
  * El caller de este hook es SIEMPRE un admin: la segunda cláusula evalúa
- * `true` para TODA fila de la tabla. Sin el `.eq` explícito, la "vista de
- * activos" traería el inventario COMPLETO de la plataforma —pendientes,
- * pausados, expirados, rechazados y borradores de todas las organizaciones—
- * y el botón de takedown (pausar/bajar) se ofrecería sobre anuncios que no
- * están activos, chocando con el grafo de estados de la EF `moderate-ad`.
- * Precedente #155 (Guardados) y la nota `flatlist_numcolumns_row_keys`.
+ * `true` para TODA fila de la tabla. Sin el `.in` explícito, la "vista de
+ * takedown" traería el inventario COMPLETO de la plataforma —pendientes,
+ * expirados, rechazados y borradores de todas las organizaciones—, y el
+ * botón de takedown (pausar/bajar/reanudar) se ofrecería sobre anuncios que
+ * ni siquiera están vigentes, chocando con el grafo de estados de la EF
+ * `moderate-ad`. Precedente #155 (Guardados) y la nota
+ * `flatlist_numcolumns_row_keys`.
  *
  * 🔴 ORDEN — `ends_at` ASCENDENTE, NO `created_at` como usePendingAds. La cola
  * de moderación es FIFO por antigüedad; la vista de activos es una lista de
@@ -49,15 +62,25 @@
  * (mismo archivo hermano, mantenerse consistente):
  *   - SÍ `description`: el admin necesita identificar el anuncio antes de un
  *     acto destructivo (bajarlo) sin tener que abrir el creativo.
- *   - NO `status`: igual que PendingAd, es redundante bajo el `.eq` fijo — un
- *     row de esta lista SIEMPRE es 'active'.
- *   - NO `paused_by_suspension`: esa columna solo es significativa en filas
- *     `status='paused'` (la cascada de suspensión de organización, #211,
- *     PAUSA el anuncio y lo saca de 'active') — en una fila 'active' esa
- *     columna es estructuralmente `false`, no aporta información aquí.
+ *   - SÍ `paused_by_suspension` (EXTENSIÓN 210.3, post-GREEN): ahora la lista
+ *     SÍ incluye filas `status='paused'` — la vista necesita distinguir un
+ *     pausado por el ADMIN (reanudable con un click) de uno pausado por la
+ *     CASCADA de suspensión de organización (#211: `resume` sobre ese caso
+ *     responde 409 `AD_PAUSED_BY_SUSPENSION`, ver useModerateAd EC-25) para
+ *     deshabilitar el botón de reanudar y no ofrecer una acción que la EF va
+ *     a rechazar.
+ *   - SÍ `paused_at` (EXTENSIÓN 210.3): además de alimentar el badge
+ *     "Pausado", es el discriminador barato de fila-pausada-vs-activa SIN
+ *     duplicar `status` como columna — el trigger `handle_ad_status_change`
+ *     SIEMPRE limpia `paused_at:=null` en `paused→active` (20260816000006) y
+ *     SIEMPRE lo estampa en `active→paused`, así que
+ *     `paused_at !== null ⟺ status === 'paused'` es una garantía de la base,
+ *     no una convención del cliente.
+ *   - NO `status`: sigue sin ser necesario (ver `paused_at` arriba) — traerlo
+ *     sería una tercera fuente de la misma verdad.
  *   - NO `creative_id`/`cta_type`/`cta_value`: esta vista no reproduce el
  *     creativo (eso es la cola de moderación, 208.3); es la lista de
- *     emergencia para pausar/bajar, no de revisión.
+ *     emergencia para pausar/bajar/reanudar, no de revisión.
  *
  * FALLAR CERRADO (mismo criterio que usePendingAds/useMyAds/useAdMetrics):
  * cualquier error de la query ⇒ mensaje NEUTRO en español, NUNCA el texto
@@ -77,21 +100,24 @@
  * `expect(act(...)).resolves.not.toThrow()` (vacuo): "no lanza" se captura con
  * try/catch sobre una variable DENTRO del act.
  *
- * 🔴 EL SUT AÚN NO EXISTE: `useActiveAds.ts` es un stub que lanza
- * `not_implemented`. TODOS los tests de este archivo fallan hoy por esa
- * excepción (RED válido — no es "module not found", es "el hook explota al
- * renderizar" porque su implementación real es GREEN).
+ * 🔴 EXTENSIÓN 210.3 sobre un GREEN YA vivo: `useActiveAds.ts` HOY implementa
+ * el contrato ORIGINAL (`.eq('status','active')`, sin `paused_at`/
+ * `paused_by_suspension` en el select). Los tests AJUSTADOS/NUEVOS de esta
+ * extensión (EC-2..EC-5, EC-18..EC-21) fallan hoy por ASERCIÓN contra esa
+ * implementación real (el `.in` esperado nunca se llama; las columnas nuevas
+ * no están en el string de `.select`) — no por "module not found".
  *
- * EDGE CASES CUBIERTOS:
+ * EDGE CASES CUBIERTOS (EC-19..EC-21 son la EXTENSIÓN 210.3; EC-2/EC-3/EC-4/
+ * EC-5/EC-18 se AJUSTARON de `.eq` a `.in` — mismo número, contrato ampliado):
  *
  * ### Happy path
  * - (EC-1) lista_con_activos_expone_las_columnas_completas_de_activead
- * - (EC-2) lista_vacia_deja_ads_en_arreglo_vacio_y_error_null
+ * - (EC-2) lista_vacia_deja_ads_en_arreglo_vacio_y_error_null [AJUSTADO: .in]
  *
  * ### 🔴 Invariante central — filtro explícito de status, RLS no es el filtro
- * - (EC-3) query_filtra_eq_status_active
- * - (EC-4) query_no_debe_omitir_el_eq_de_status_confiando_en_is_admin
- * - (EC-5) query_no_filtra_por_agency_id_la_vista_es_cross_org
+ * - (EC-3) query_filtra_in_status_active_y_paused [AJUSTADO: antes .eq('status','active')]
+ * - (EC-4) query_no_debe_omitir_el_in_de_status_confiando_en_is_admin [AJUSTADO]
+ * - (EC-5) query_no_filtra_por_agency_id_la_vista_es_cross_org [AJUSTADO: usa find_in]
  *
  * ### 🔴 Orden — lo que expira antes, primero (distinto de usePendingAds)
  * - (EC-6) query_ordena_por_ends_at_ASCENDENTE_no_por_created_at_ni_descendente
@@ -111,10 +137,15 @@
  * - (EC-14) loading_true_mientras_la_query_esta_pendiente
  * - (EC-15) loading_false_tras_resolver
  *
- * ### refetch (la pantalla lo llama tras pausar/bajar un anuncio)
+ * ### refetch (la pantalla lo llama tras pausar/bajar/reanudar un anuncio)
  * - (EC-16) refetch_vuelve_a_consultar_y_actualiza_la_lista
  * - (EC-17) refetch_limpia_un_error_previo_si_la_segunda_consulta_va_bien
- * - (EC-18) refetch_conserva_el_filtro_de_status_no_solo_la_primera_carga
+ * - (EC-18) refetch_conserva_el_filtro_de_status_no_solo_la_primera_carga [AJUSTADO: usa find_in]
+ *
+ * ### 🔴 EXTENSIÓN 210.3 — la vista incluye pausados (para poder reanudarlos)
+ * - (EC-19) query_pide_status_in_active_y_paused_en_una_sola_llamada_sin_dejar_un_eq_residual
+ * - (EC-20) select_incluye_paused_by_suspension_y_paused_at
+ * - (EC-21) filas_paused_llegan_con_paused_by_suspension_tipado_true_y_false_no_string_ni_undefined
  */
 
 import { renderHook, act } from '@testing-library/react-native';
@@ -148,6 +179,8 @@ const SAMPLE_ACTIVE: ActiveAd = {
   agency_id: 'agencia-uuid-aseguradora',
   starts_at: '2026-08-01T00:00:00Z',
   ends_at: '2026-09-15T00:00:00Z',
+  paused_at: null,
+  paused_by_suspension: false,
   agencies: { name: 'Seguros del Valle' },
 };
 
@@ -158,7 +191,35 @@ const SAMPLE_ACTIVE_2: ActiveAd = {
   agency_id: 'agencia-uuid-mudanzas',
   starts_at: '2026-08-05T00:00:00Z',
   ends_at: '2026-08-30T00:00:00Z',
+  paused_at: null,
+  paused_by_suspension: false,
   agencies: { name: 'Mudanzas Express' },
+};
+
+/** Pausado por el ADMIN (click de takedown): reanudable, EC-21. */
+const SAMPLE_PAUSED_BY_ADMIN: ActiveAd = {
+  id: 'ad-uuid-pausado-admin',
+  title: 'Renta vacacional Puerto Vallarta',
+  description: 'Suspendido temporalmente por el admin.',
+  agency_id: 'agencia-uuid-vacacional',
+  starts_at: '2026-07-20T00:00:00Z',
+  ends_at: '2026-09-01T00:00:00Z',
+  paused_at: '2026-08-20T12:00:00Z',
+  paused_by_suspension: false,
+  agencies: { name: 'Vacacional del Pacífico' },
+};
+
+/** Pausado por la CASCADA de suspensión de organización (#211): resume debe deshabilitarse, EC-21. */
+const SAMPLE_PAUSED_BY_SUSPENSION: ActiveAd = {
+  id: 'ad-uuid-pausado-suspension',
+  title: 'Créditos hipotecarios GDL',
+  description: null,
+  agency_id: 'agencia-uuid-suspendida',
+  starts_at: '2026-07-01T00:00:00Z',
+  ends_at: '2026-10-01T00:00:00Z',
+  paused_at: '2026-08-21T09:00:00Z',
+  paused_by_suspension: true,
+  agencies: { name: 'Créditos del Bajío' },
 };
 
 type AdsResult = { data: ActiveAd[] | null; error: { code?: string; message: string } | null };
@@ -242,6 +303,14 @@ function find_eq(calls: RecordedCall[], column: string): RecordedCall | undefine
   return calls.find((c) => c.method === 'eq' && c.args[0] === column);
 }
 
+/**
+ * Busca la llamada `.in(col, values)` registrada, si existe (EXTENSIÓN 210.3:
+ * el filtro de status pasó de `.eq` a `.in` para incluir 'paused').
+ */
+function find_in(calls: RecordedCall[], column: string): RecordedCall | undefined {
+  return calls.find((c) => c.method === 'in' && c.args[0] === column);
+}
+
 /** Devuelve el string de columnas del `.select(...)`. */
 function select_arg(calls: RecordedCall[]): string {
   const call = calls.find((c) => c.method === 'select');
@@ -282,7 +351,7 @@ describe('useActiveAds — happy path', () => {
     // Sin estas dos aserciones el caso pasaría TRIVIALMENTE contra un stub que
     // devuelve [] sin consultar nada — la lección de EC-15 del RED de 208.1.
     expect(mock.from).toHaveBeenCalledWith('ads');
-    expect(find_eq(mock.calls, 'status')?.args).toEqual(['status', 'active']);
+    expect(find_in(mock.calls, 'status')?.args).toEqual(['status', ['active', 'paused']]);
     expect(result.current.ads).toEqual([]);
     expect(result.current.error).toBeNull();
     expect(result.current.loading).toBe(false);
@@ -294,19 +363,19 @@ describe('useActiveAds — happy path', () => {
 // ---------------------------------------------------------------------------
 
 describe('useActiveAds — 🔴 filtro explícito de status (RLS no filtra: el caller es admin)', () => {
-  it('EC-3 la query filtra .eq("status", "active")', async () => {
+  it('EC-3 la query filtra .in("status", ["active", "paused"])', async () => {
     const mock = make_supabase_mock({ data: [SAMPLE_ACTIVE], error: null });
     mock_supabase_holder.client = mock.client;
 
     await renderHook(() => useActiveAds());
     await act(async () => {});
 
-    const eq_status = find_eq(mock.calls, 'status');
-    expect(eq_status).toBeDefined();
-    expect(eq_status?.args).toEqual(['status', 'active']);
+    const in_status = find_in(mock.calls, 'status');
+    expect(in_status).toBeDefined();
+    expect(in_status?.args).toEqual(['status', ['active', 'paused']]);
   });
 
-  it('EC-4 la query NO puede omitir el .eq de status confiando en is_admin()', async () => {
+  it('EC-4 la query NO puede omitir el .in de status confiando en is_admin()', async () => {
     // El mock devuelve SOLO anuncios activos aunque no se filtre — si el hook
     // se apoyara en eso, `result.current.ads` se vería correcto y el bug pasaría
     // a producción, donde is_admin() devuelve la tabla ENTERA. Por eso la
@@ -318,9 +387,17 @@ describe('useActiveAds — 🔴 filtro explícito de status (RLS no filtra: el c
     await act(async () => {});
 
     expect(result.current.ads).toHaveLength(1);
-    const eq_calls = mock.calls.filter((c) => c.method === 'eq');
-    expect(eq_calls.length).toBeGreaterThan(0);
-    expect(eq_calls.some((c) => c.args[0] === 'status' && c.args[1] === 'active')).toBe(true);
+    const in_calls = mock.calls.filter((c) => c.method === 'in');
+    expect(in_calls.length).toBeGreaterThan(0);
+    expect(
+      in_calls.some(
+        (c) =>
+          c.args[0] === 'status' &&
+          Array.isArray(c.args[1]) &&
+          (c.args[1] as string[]).includes('active') &&
+          (c.args[1] as string[]).includes('paused'),
+      ),
+    ).toBe(true);
   });
 
   it('EC-5 la vista es cross-org: NO filtra por agency_id', async () => {
@@ -336,7 +413,7 @@ describe('useActiveAds — 🔴 filtro explícito de status (RLS no filtra: el c
     // "No filtra por agency_id" solo significa algo si SÍ hubo consulta: un
     // stub que no llama a nada tampoco filtra por agency_id.
     expect(mock.from).toHaveBeenCalledWith('ads');
-    expect(find_eq(mock.calls, 'status')).toBeDefined();
+    expect(find_in(mock.calls, 'status')).toBeDefined();
     expect(find_eq(mock.calls, 'agency_id')).toBeUndefined();
   });
 });
@@ -568,19 +645,95 @@ describe('useActiveAds — refetch', () => {
     const { result } = await renderHook(() => useActiveAds());
     await act(async () => {});
 
-    const eq_after_first = mock.calls.filter(
-      (c) => c.method === 'eq' && c.args[0] === 'status' && c.args[1] === 'active',
+    const in_after_first = mock.calls.filter(
+      (c) =>
+        c.method === 'in' &&
+        c.args[0] === 'status' &&
+        Array.isArray(c.args[1]) &&
+        (c.args[1] as string[]).includes('active') &&
+        (c.args[1] as string[]).includes('paused'),
     ).length;
 
     await act(async () => {
       await result.current.refetch();
     });
 
-    const eq_after_refetch = mock.calls.filter(
-      (c) => c.method === 'eq' && c.args[0] === 'status' && c.args[1] === 'active',
+    const in_after_refetch = mock.calls.filter(
+      (c) =>
+        c.method === 'in' &&
+        c.args[0] === 'status' &&
+        Array.isArray(c.args[1]) &&
+        (c.args[1] as string[]).includes('active') &&
+        (c.args[1] as string[]).includes('paused'),
     ).length;
 
-    expect(eq_after_first).toBe(1);
-    expect(eq_after_refetch).toBe(2);
+    expect(in_after_first).toBe(1);
+    expect(in_after_refetch).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 🔴 EXTENSIÓN 210.3 — la vista incluye pausados (para poder reanudarlos)
+// ---------------------------------------------------------------------------
+
+describe('useActiveAds — 🔴 EXTENSIÓN 210.3: pausados incluidos (resume los necesita)', () => {
+  it('EC-19 pide status IN [active, paused] en UNA sola llamada, sin dejar un .eq residual', async () => {
+    const mock = make_supabase_mock({ data: [SAMPLE_ACTIVE], error: null });
+    mock_supabase_holder.client = mock.client;
+
+    await renderHook(() => useActiveAds());
+    await act(async () => {});
+
+    const in_calls = mock.calls.filter((c) => c.method === 'in' && c.args[0] === 'status');
+    expect(in_calls).toHaveLength(1);
+    expect(in_calls[0]?.args[1]).toEqual(['active', 'paused']);
+
+    // Un refactor a medias podría dejar el .eq('status','active') VIEJO
+    // conviviendo con el .in nuevo (encadenados, ambos aplican AND) — eso
+    // volvería a excluir 'paused' aunque el .in exista. Sin .eq residual.
+    expect(find_eq(mock.calls, 'status')).toBeUndefined();
+  });
+
+  it('EC-20 el select incluye paused_by_suspension y paused_at', async () => {
+    const mock = make_supabase_mock({ data: [SAMPLE_ACTIVE], error: null });
+    mock_supabase_holder.client = mock.client;
+
+    await renderHook(() => useActiveAds());
+    await act(async () => {});
+
+    expect(select_arg(mock.calls)).toContain('paused_by_suspension');
+    expect(select_arg(mock.calls)).toContain('paused_at');
+  });
+
+  it('EC-21 filas paused llegan con paused_by_suspension tipado true/false, no string ni undefined', async () => {
+    const mock = make_supabase_mock({
+      data: [SAMPLE_ACTIVE, SAMPLE_PAUSED_BY_ADMIN, SAMPLE_PAUSED_BY_SUSPENSION],
+      error: null,
+    });
+    mock_supabase_holder.client = mock.client;
+
+    const { result } = await renderHook(() => useActiveAds());
+    await act(async () => {});
+
+    expect(result.current.ads).toHaveLength(3);
+
+    const paused_by_admin = result.current.ads.find((a) => a.id === SAMPLE_PAUSED_BY_ADMIN.id);
+    const paused_by_suspension = result.current.ads.find(
+      (a) => a.id === SAMPLE_PAUSED_BY_SUSPENSION.id,
+    );
+
+    // Un stub que no propague el campo (o lo deje undefined) NO puede
+    // distinguir "reanudable" de "bloqueado por la cascada de suspensión" —
+    // exactamente lo que la vista necesita para deshabilitar el botón.
+    expect(paused_by_admin?.paused_by_suspension).toBe(false);
+    expect(paused_by_suspension?.paused_by_suspension).toBe(true);
+    expect(paused_by_admin?.paused_at).toBe(SAMPLE_PAUSED_BY_ADMIN.paused_at);
+    expect(paused_by_suspension?.paused_at).toBe(SAMPLE_PAUSED_BY_SUSPENSION.paused_at);
+
+    // El anuncio activo (no pausado) conserva paused_at=null — el discriminador
+    // barato de "¿está pausado?" sin duplicar `status` como columna.
+    const active = result.current.ads.find((a) => a.id === SAMPLE_ACTIVE.id);
+    expect(active?.paused_at).toBeNull();
+    expect(active?.paused_by_suspension).toBe(false);
   });
 });

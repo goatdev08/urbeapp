@@ -23,10 +23,8 @@
  * manda — la regla es la misma para las 4 acciones (EF `moderate-ad`, 210.2).
  *
  * 🔴 `pause`/`resume` (210.3) son el botón de emergencia sobre un anuncio YA
- * `active`: mandan `{ad_id, action:'pause'|'resume'}`, sin motivo. `pause` y
- * `resume` son STUBS de compilación en esta fase RED — lanzan
- * `not_implemented`; la implementación real (misma mecánica que approve/
- * reject vía `run_action`/`invoke_moderate`) es GREEN.
+ * `active`: mandan `{ad_id, action:'pause'|'resume'}`, sin motivo. Misma
+ * mecánica que approve/reject vía `run_action`/`invoke_moderate`.
  */
 
 import { useCallback, useMemo, useReducer, useRef } from 'react';
@@ -153,19 +151,19 @@ export function useModerateAd(deps?: UseModerateAdDeps): UseModerateAdReturn {
     [deps?.supabase, deps?.onSuccess],
   );
 
-  // 🔴 STUB DE COMPILACIÓN (RED #210.3): implementación real en GREEN — misma
-  // mecánica que approve/reject (run_action + invoke_moderate con
-  // action:'pause'|'resume', sin rejection_reason).
-  const pause = useCallback((): Promise<ModerateResult> => {
-    throw new Error('not_implemented');
+  const pause = useCallback(
+    (ad_id: string): Promise<ModerateResult> =>
+      run_action(() => invoke_moderate({ ad_id, action: 'pause' })).then(finish),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deps?.supabase, deps?.onSuccess]);
+    [deps?.supabase, deps?.onSuccess],
+  );
 
-  // 🔴 STUB DE COMPILACIÓN (RED #210.3): implementación real en GREEN.
-  const resume = useCallback((): Promise<ModerateResult> => {
-    throw new Error('not_implemented');
+  const resume = useCallback(
+    (ad_id: string): Promise<ModerateResult> =>
+      run_action(() => invoke_moderate({ ad_id, action: 'resume' })).then(finish),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deps?.supabase, deps?.onSuccess]);
+    [deps?.supabase, deps?.onSuccess],
+  );
 
   // Getters: is_moderating y error son siempre el valor actual de la ref,
   // incluso sin re-render previo (lectura síncrona del mismo tick).
