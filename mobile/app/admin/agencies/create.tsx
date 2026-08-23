@@ -19,6 +19,7 @@ import {
   SafeAreaView,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   View,
 } from 'react-native';
@@ -27,6 +28,10 @@ import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase/client';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { FormField } from '@/features/auth/components/form-field';
+import {
+  AdvertiserCategorySelect,
+  type AdvertiserCategory,
+} from '@/features/admin/components/advertiser-category-select';
 
 // ---------------------------------------------------------------------------
 // Tipos
@@ -41,6 +46,12 @@ interface FormState {
   owner_email: string;
   owner_first_name: string;
   owner_last_name: string;
+  // 209.2: capacidades de la organización (168.1/168.3/168.7). Defaults
+  // idénticos a los DEFAULT de create_atomic (20260816000004:64-66) — el
+  // form no inventa comportamiento nuevo, solo lo hace explícito y editable.
+  can_publish_properties: boolean;
+  can_advertise: boolean;
+  advertiser_category: AdvertiserCategory | null;
 }
 
 interface FormErrors {
@@ -50,6 +61,9 @@ interface FormErrors {
   owner_email?: string;
   owner_first_name?: string;
   owner_last_name?: string;
+  advertiser_category?: string;
+  /** can_publish_properties=false Y can_advertise=false (CHECK agencies_al_menos_una_capacidad). */
+  capabilities?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -110,6 +124,19 @@ function validate_form(fields: FormState): FormErrors {
     errors.owner_last_name = 'El apellido del propietario es obligatorio.';
   }
 
+  // 209.2: espejo cliente del CHECK agencies_categoria_requerida_para_anunciar
+  // (20260816000003) — evita el roundtrip que terminaría en 23514/422.
+  if (fields.can_advertise && fields.advertiser_category === null) {
+    errors.advertiser_category = 'Selecciona una categoría de anunciante.';
+  }
+
+  // Espejo cliente del CHECK agencies_al_menos_una_capacidad (20260815000001)
+  // — apagar ambas capacidades es un estado que la DB rechaza.
+  if (!fields.can_publish_properties && !fields.can_advertise) {
+    errors.capabilities =
+      'La organización debe tener al menos una capacidad activa: publicar propiedades o anunciarse.';
+  }
+
   return errors;
 }
 
@@ -156,6 +183,9 @@ export default function CreateAgencyScreen(): React.ReactElement {
     owner_email: '',
     owner_first_name: '',
     owner_last_name: '',
+    can_publish_properties: true,
+    can_advertise: false,
+    advertiser_category: null,
   });
 
   const [errors, set_errors] = useState<FormErrors>({});
@@ -205,6 +235,39 @@ export default function CreateAgencyScreen(): React.ReactElement {
     };
   }
 
+  // ── Capacidades (209.2) ──────────────────────────────────────────────────
+
+  const clear_capability_errors = useCallback(() => {
+    set_errors((prev) => {
+      if (prev.advertiser_category === undefined && prev.capabilities === undefined) {
+        return prev;
+      }
+      const { advertiser_category: _a, capabilities: _c, ...rest } = prev;
+      return rest;
+    });
+  }, []);
+
+  const handle_can_publish_toggle = useCallback((value: boolean) => {
+    set_fields((prev) => ({ ...prev, can_publish_properties: value }));
+    clear_capability_errors();
+  }, [clear_capability_errors]);
+
+  const handle_can_advertise_toggle = useCallback((value: boolean) => {
+    set_fields((prev) => ({
+      ...prev,
+      can_advertise: value,
+      // Apagar can_advertise limpia la categoría elegida — si el admin la
+      // vuelve a prender, no arrastramos una selección "stale".
+      advertiser_category: value ? prev.advertiser_category : null,
+    }));
+    clear_capability_errors();
+  }, [clear_capability_errors]);
+
+  const handle_category_select = useCallback((category: AdvertiserCategory) => {
+    set_fields((prev) => ({ ...prev, advertiser_category: category }));
+    clear_capability_errors();
+  }, [clear_capability_errors]);
+
   // ── Submit ───────────────────────────────────────────────────────────────
 
   const handle_submit = useCallback(async () => {
@@ -218,12 +281,14 @@ export default function CreateAgencyScreen(): React.ReactElement {
     set_is_loading(true);
     set_submit_error(null);
 
-    const body: Record<string, string> = {
+    const body: Record<string, string | boolean> = {
       name: fields.name.trim(),
       slug: fields.slug.trim(),
       owner_email: fields.owner_email.trim(),
       owner_first_name: fields.owner_first_name.trim(),
       owner_last_name: fields.owner_last_name.trim(),
+      can_publish_properties: fields.can_publish_properties,
+      can_advertise: fields.can_advertise,
     };
 
     if (fields.contact_name.trim().length > 0) {
@@ -234,6 +299,11 @@ export default function CreateAgencyScreen(): React.ReactElement {
     }
     if (fields.contact_phone.trim().length > 0) {
       body['contact_phone'] = fields.contact_phone.trim();
+    }
+    // Solo se manda si can_advertise está encendido — undefined, no null, si
+    // está apagado (el handler (168.7) lee undefined y deja el DEFAULT de la RPC).
+    if (fields.can_advertise && fields.advertiser_category !== null) {
+      body['advertiser_category'] = fields.advertiser_category;
     }
 
     const { data, error } = await supabase.functions.invoke(
@@ -349,6 +419,52 @@ export default function CreateAgencyScreen(): React.ReactElement {
           <Text style={styles.field_hint}>
             Solo minúsculas, números y guiones. Se auto-deriva del nombre.
           </Text>
+
+          {/* ── Sección: Capacidades (209.2) ──────────────────────────── */}
+          <Text style={styles.section_title}>Capacidades</Text>
+
+          <View style={styles.toggle_row}>
+            <View style={styles.toggle_label_col}>
+              <Text style={styles.toggle_label}>Puede publicar propiedades</Text>
+            </View>
+            <Switch
+              value={fields.can_publish_properties}
+              onValueChange={handle_can_publish_toggle}
+              trackColor={{ false: COLOR_BORDER, true: COLOR_SALVIA }}
+              thumbColor="#FFFFFF"
+              accessibilityLabel="Puede publicar propiedades"
+            />
+          </View>
+
+          <View style={styles.toggle_row}>
+            <View style={styles.toggle_label_col}>
+              <Text style={styles.toggle_label}>Puede anunciarse</Text>
+              <Text style={styles.field_hint_inline}>
+                Habilita anuncios de la organización en el feed.
+              </Text>
+            </View>
+            <Switch
+              value={fields.can_advertise}
+              onValueChange={handle_can_advertise_toggle}
+              trackColor={{ false: COLOR_BORDER, true: COLOR_SALVIA }}
+              thumbColor="#FFFFFF"
+              accessibilityLabel="Puede anunciarse"
+            />
+          </View>
+
+          {fields.can_advertise && (
+            <AdvertiserCategorySelect
+              value={fields.advertiser_category}
+              onChange={handle_category_select}
+              error={errors.advertiser_category}
+            />
+          )}
+
+          {errors.capabilities !== undefined && (
+            <Text style={styles.capabilities_error_text} accessibilityRole="alert">
+              {errors.capabilities}
+            </Text>
+          )}
 
           {/* ── Sección: Contacto (opcional) ──────────────────────────── */}
           <Text style={styles.section_title}>Contacto (opcional)</Text>
@@ -523,6 +639,34 @@ const styles = StyleSheet.create({
     color: COLOR_TEXT_SECONDARY,
     marginTop: -14,
     marginBottom: 20,
+  },
+
+  // ── Capacidades (209.2) ────────────────────────────────────────────────────
+  toggle_row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  toggle_label_col: {
+    flex: 1,
+    marginRight: 12,
+  },
+  toggle_label: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: COLOR_TEXT_PRIMARY,
+  },
+  field_hint_inline: {
+    fontSize: 12,
+    color: COLOR_TEXT_SECONDARY,
+    marginTop: 2,
+  },
+  capabilities_error_text: {
+    fontSize: 12,
+    color: '#DC2626',
+    marginTop: -8,
+    marginBottom: 16,
   },
 
   // ── Error de submit ─────────────────────────────────────────────────────────

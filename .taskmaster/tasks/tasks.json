@@ -8325,7 +8325,7 @@
         "id": "169",
         "title": "feat(039-B): anuncios — creativo de video 6–30 s, campaña por zona (catálogo #157) y moderación admin",
         "description": "Origen: exploración 039 (.taskmaster/docs/exploraciones/039-cuenta-comercial-anunciantes.md), aprobada por Abraham el 2026-08-14. Tarea B. Tablas ad_creatives (tabla PROPIA, NO property_videos), ads (estados sin 'approved'), ad_zones (municipio/colonia de #157; cero filas = inventario nacional), ad_prices (PRD §17.2: precios en tabla, jamás en código). Pipeline de subida calcado del de propiedades (Cloudflare Stream) con duración 6–30 s. Aprobación por admin SIEMPRE antes de servir — la moderación de propiedades está suspendida por #153, pero eso es operativo temporal y no se hereda a publicidad (tercero pagando, CTA hacia fuera de la app, volumen de decenas). NINGÚN pago en la beta: el slot lo otorga el admin a mano; ads.purchase_id nullable y NULL toda la beta, listo para que #84 (Stripe) solo lo llene.",
-        "details": "DATOS: ad_creatives (agency_id, cloudflare_uid, thumbnail_url, duration_seconds 6–30 CHECK, status uploading→processing→ready/failed); ads (agency_id, creative_id, title, cta_kind url|whatsapp|phone, cta_value, status draft→pending_review→active→paused|expired|rejected, rejection_reason NOT NULL si rejected, starts_at/ends_at vigencia, purchase_id nullable); ad_zones (ad_id, municipality_id XOR neighborhood_id — CHECK exactamente uno); ad_prices (scope colonia|municipio|nacional, days, amount_mxn, currency, valid_from — sembrar los 3 alcances). Máquina de estados por TRIGGER (draft→active directo falla; terminal no se reabre) + TODA transición de moderación escribe admin_actions en la misma transacción (si la auditoría falla, la transición falla — mismo criterio que moderate-property). El owner NO puede poner su anuncio en active por ninguna ruta (PostgREST/RPC/EF) — impersonación. RPC grant_ad_slot_atomic (service_role: crea ad + ad_zones + vigencia + auditoría en una transacción). Moderación en beta = Studio/SQL + trigger + admin_actions (calca 71.5); la UI llega con #81.\nEFs: mint-ad-upload-url (nueva, scope agency_id — NO comparte el 409 de concurrencia de mint-upload-url que está scoped por agent_id sobre property_videos), stream-webhook extendido de forma ADITIVA (rama de anuncios solo cuando el UPDATE sobre property_videos afecta 0 filas; la suite Deno existente pasa SIN modificarse), mint-ad-urls (nueva, calco de mint-poster-urls: nunca URL sin firmar, autz fail-closed por item). Rechazo AD_DURATION_INVALID en cliente al elegir archivo Y en servidor al pasar a ready.\nCLIENTE: mobile/src/features/ads/lib/validation.ts (duración, CTA, zonas — CRÍTICA), hooks/useAdUpload.ts (CRÍTICA), app/(protected)/ads/new/*.tsx wizard (ligera) gated por can_advertise: sin la capacidad la RUTA no existe (no basta ocultar el botón). Selector de zonas reusa search_places de #157.\nFOOTPRINT: migraciones + rollbacks + pgTAP (CRÍTICA), 3 EFs (CRÍTICA), lib/hooks móviles (CRÍTICA), wizard (ligera). Ver criterios de aceptación completos en el doc 039 §'Tarea B'.\n\n<info added on 2026-08-16T00:00:00.000Z>\nNOTAS PARA EL DEPLOY REMOTO de la migración 20260816000005 (hallazgos del guardián de 169.1, 2026-08-16 — NO bloquean, pero van en el PR y en el checklist de release):\n\n1) La migración es aditiva pura, pero sus FKs salientes toman un ShareRowExclusiveLock BREVE sobre agencies, mx_municipalities y mx_neighborhoods al crearse. Es el único momento en que toca tablas pobladas. A la escala actual son milisegundos; anotarlo por rigor, no por riesgo.\n\n2) ad_zones usa `on delete restrict` hacia los catálogos: una vez existan filas, borrar un municipio o una colonia quedará BLOQUEADO. Es la semántica correcta (no queremos zonas huérfanas), pero el pipeline de import de #157 debe saberlo — si alguna vez re-importa borrando y recreando filas de mx_neighborhoods, chocará contra esta FK.\n\n3) ESTRATEGIA DE RELEASE VIGENTE (decisión de Abraham, 2026-08-16): 168–172 se mergean progresivamente a main pero NO se despliega NADA —ni migraciones al remoto, ni EFs, ni OTA— hasta que la épica completa esté probada. Merge ≠ deploy: no hay CI/CD en este repo (no existe .github/), así que nada sale solo. La épica además nace apagada por datos: can_advertise es default false.\n</info added on 2026-08-16T00:00:00.000Z>\n\n<info added on 2026-08-16T20:00:00.000Z>\nDERIVADAS: #208 🔴 (169.2 — no existe pantalla de admin para aprobar anuncios; el circuito comercial no cierra) · #181 (guardian 169.3 — count(*) absoluto en 12_stream_schema_test.sql, mismo antipatrón que #175) · #182 (guardian 169.3 — new_values de la auditoría sin asertar, mutante M20) · #183 (169.4 — ventana del reaper duplicada entre mint-upload-url y mint-ad-upload-url) · #188 (169.5 — ad_creatives sin ventana de expiración para processing) · #189 (169.6 — fail-closed sin duración bloquea pickers Android viejos) · #190 (169.8 — database.types.ts 10 migraciones atrás) · #191 (169.9 — RPC self-service para crear la campaña, decisión de Abraham)\n</info added on 2026-08-16T20:00:00.000Z>\n\n<info added on 2026-08-16T23:00:00.000Z>\nDERIVADA: #183 (guardian 169.4 — la ventana del reaper duplicada entre las dos EFs quedó fijada de un solo lado)\n</info added on 2026-08-16T23:00:00.000Z>\n\n<info added on 2026-08-17T02:00:00.000Z>\nDERIVADA: #188 (guardian 169.5 — 'processing' sin ventana de expiración; el reintento de Cloudflare es finito)\n</info added on 2026-08-17T02:00:00.000Z>\n\n<info added on 2026-08-17T04:00:00.000Z>\nDERIVADA: #189 (guardian 169.6 — fail-closed sin duración vs la hermana fail-open de propiedades; posible bloqueo en pickers Android viejos)\n</info added on 2026-08-17T04:00:00.000Z>\n\n<info added on 2026-08-17T10:00:00.000Z>\nDERIVADA: #190 (guardian 169.8 — database.types.ts con 10 migraciones de retraso; 169.7 y 169.8 lo esquivaron por rutas distintas)\n</info added on 2026-08-17T10:00:00.000Z>\n\n<info added on 2026-08-17T13:00:00.000Z>\nDERIVADA: #191 🔴 (169.9 — no hay ruta para que un anunciante cree su campaña; el wizard solo puede persistir el creativo)\n</info added on 2026-08-17T13:00:00.000Z>",
+        "details": "DATOS: ad_creatives (agency_id, cloudflare_uid, thumbnail_url, duration_seconds 6–30 CHECK, status uploading→processing→ready/failed); ads (agency_id, creative_id, title, cta_kind url|whatsapp|phone, cta_value, status draft→pending_review→active→paused|expired|rejected, rejection_reason NOT NULL si rejected, starts_at/ends_at vigencia, purchase_id nullable); ad_zones (ad_id, municipality_id XOR neighborhood_id — CHECK exactamente uno); ad_prices (scope colonia|municipio|nacional, days, amount_mxn, currency, valid_from — sembrar los 3 alcances). Máquina de estados por TRIGGER (draft→active directo falla; terminal no se reabre) + TODA transición de moderación escribe admin_actions en la misma transacción (si la auditoría falla, la transición falla — mismo criterio que moderate-property). El owner NO puede poner su anuncio en active por ninguna ruta (PostgREST/RPC/EF) — impersonación. RPC grant_ad_slot_atomic (service_role: crea ad + ad_zones + vigencia + auditoría en una transacción). Moderación en beta = Studio/SQL + trigger + admin_actions (calca 71.5); la UI llega con #81.\nEFs: mint-ad-upload-url (nueva, scope agency_id — NO comparte el 409 de concurrencia de mint-upload-url que está scoped por agent_id sobre property_videos), stream-webhook extendido de forma ADITIVA (rama de anuncios solo cuando el UPDATE sobre property_videos afecta 0 filas; la suite Deno existente pasa SIN modificarse), mint-ad-urls (nueva, calco de mint-poster-urls: nunca URL sin firmar, autz fail-closed por item). Rechazo AD_DURATION_INVALID en cliente al elegir archivo Y en servidor al pasar a ready.\nCLIENTE: mobile/src/features/ads/lib/validation.ts (duración, CTA, zonas — CRÍTICA), hooks/useAdUpload.ts (CRÍTICA), app/(protected)/ads/new/*.tsx wizard (ligera) gated por can_advertise: sin la capacidad la RUTA no existe (no basta ocultar el botón). Selector de zonas reusa search_places de #157.\nFOOTPRINT: migraciones + rollbacks + pgTAP (CRÍTICA), 3 EFs (CRÍTICA), lib/hooks móviles (CRÍTICA), wizard (ligera). Ver criterios de aceptación completos en el doc 039 §'Tarea B'.\n\n<info added on 2026-08-16T00:00:00.000Z>\nNOTAS PARA EL DEPLOY REMOTO de la migración 20260816000005 (hallazgos del guardián de 169.1, 2026-08-16 — NO bloquean, pero van en el PR y en el checklist de release):\n\n1) La migración es aditiva pura, pero sus FKs salientes toman un ShareRowExclusiveLock BREVE sobre agencies, mx_municipalities y mx_neighborhoods al crearse. Es el único momento en que toca tablas pobladas. A la escala actual son milisegundos; anotarlo por rigor, no por riesgo.\n\n2) ad_zones usa `on delete restrict` hacia los catálogos: una vez existan filas, borrar un municipio o una colonia quedará BLOQUEADO. Es la semántica correcta (no queremos zonas huérfanas), pero el pipeline de import de #157 debe saberlo — si alguna vez re-importa borrando y recreando filas de mx_neighborhoods, chocará contra esta FK.\n\n3) ESTRATEGIA DE RELEASE VIGENTE (decisión de Abraham, 2026-08-16): 168–172 se mergean progresivamente a main pero NO se despliega NADA —ni migraciones al remoto, ni EFs, ni OTA— hasta que la épica completa esté probada. Merge ≠ deploy: no hay CI/CD en este repo (no existe .github/), así que nada sale solo. La épica además nace apagada por datos: can_advertise es default false.\n</info added on 2026-08-16T00:00:00.000Z>\n\n<info added on 2026-08-16T20:00:00.000Z>\nDERIVADAS: #211 (169.2 — suspensión de org sin cablear, exploración 040) · #208 🔴 (169.2 — no existe pantalla de admin para aprobar anuncios; el circuito comercial no cierra) · #181 (guardian 169.3 — count(*) absoluto en 12_stream_schema_test.sql, mismo antipatrón que #175) · #182 (guardian 169.3 — new_values de la auditoría sin asertar, mutante M20) · #183 (169.4 — ventana del reaper duplicada entre mint-upload-url y mint-ad-upload-url) · #188 (169.5 — ad_creatives sin ventana de expiración para processing) · #189 (169.6 — fail-closed sin duración bloquea pickers Android viejos) · #190 (169.8 — database.types.ts 10 migraciones atrás) · #191 (169.9 — RPC self-service para crear la campaña, decisión de Abraham)\n</info added on 2026-08-16T20:00:00.000Z>\n\n<info added on 2026-08-16T23:00:00.000Z>\nDERIVADA: #183 (guardian 169.4 — la ventana del reaper duplicada entre las dos EFs quedó fijada de un solo lado)\n</info added on 2026-08-16T23:00:00.000Z>\n\n<info added on 2026-08-17T02:00:00.000Z>\nDERIVADA: #188 (guardian 169.5 — 'processing' sin ventana de expiración; el reintento de Cloudflare es finito)\n</info added on 2026-08-17T02:00:00.000Z>\n\n<info added on 2026-08-17T04:00:00.000Z>\nDERIVADA: #189 (guardian 169.6 — fail-closed sin duración vs la hermana fail-open de propiedades; posible bloqueo en pickers Android viejos)\n</info added on 2026-08-17T04:00:00.000Z>\n\n<info added on 2026-08-17T10:00:00.000Z>\nDERIVADA: #190 (guardian 169.8 — database.types.ts con 10 migraciones de retraso; 169.7 y 169.8 lo esquivaron por rutas distintas)\n</info added on 2026-08-17T10:00:00.000Z>\n\n<info added on 2026-08-17T13:00:00.000Z>\nDERIVADA: #191 🔴 (169.9 — no hay ruta para que un anunciante cree su campaña; el wizard solo puede persistir el creativo)\n</info added on 2026-08-17T13:00:00.000Z>",
         "testStrategy": "pgTAP: CHECKs (duración, ad_zones XOR, rejection_reason), trigger de estados, admin_actions obligatorio, grant_ad_slot_atomic fault-injection, impersonación owner no activa su anuncio, ad_prices sembrada y grep sin montos en código. Deno: creativo recorre uploading→processing→ready contra webhook REAL de Stream en local; no-regresión total de stream-webhook; separación del 409 por dominio; mint-ad-urls fail-closed. Jest: validation + useAdUpload. Cuota: verificar y PARAR (minutos de Stream se facturan). pnpm tsc/lint.",
         "status": "done",
         "dependencies": [
@@ -8457,7 +8457,7 @@
             "parentId": "undefined"
           }
         ],
-        "updatedAt": "2026-08-22T12:00:00.000Z"
+        "updatedAt": "2026-08-23T08:00:00.000Z"
       },
       {
         "id": "170",
@@ -8590,7 +8590,7 @@
         "id": "171",
         "title": "feat(039-D): panel del anunciante — mis anuncios, estado/vigencia y métricas por zona (solo agregados, k≥5)",
         "description": "Origen: exploración 039 (.taskmaster/docs/exploraciones/039-cuenta-comercial-anunciantes.md), aprobada por Abraham el 2026-08-14. Tarea D. Pantalla mínima para la organización con can_advertise: lista de sus anuncios con estado y vigencia + 3 contadores (impresiones, vistas ≥3 s, taps al CTA) con desglose por zona. Sin gráficas (esas llegan con #80). Entrada desde el perfil, condicional a la capacidad. El anunciante ve SOLO agregados: k-anonimato mínimo 5 por zona y user_id jamás en la respuesta.",
-        "details": "RPC ad_metrics_for_agency(p_agency_id, p_from?, p_to?) security definer: autz por agency_role_of + private.org_can_advertise (fail-closed), agrega desde ad_impressions/ad_impressions_monthly, filas por zona con menos de 5 usuarios distintos se colapsan en 'otras zonas' (k-anonimato 5), nunca devuelve user_id ni session_id. Cliente: mobile/src/features/ads/hooks/useAdMetrics.ts (CRÍTICA), app/(protected)/ads/index.tsx + componentes (ligera; reusa patrones de my-listings/CRM), entrada en el perfil condicional a can_advertise (sin capacidad la ruta no existe). Aviso 'tu anuncio expira en 7 días' → fila en notifications (push llega con #77). Ver criterios completos en el doc 039 §'Tarea D'.",
+        "details": "RPC ad_metrics_for_agency(p_agency_id, p_from?, p_to?) security definer: autz por agency_role_of + private.org_can_advertise (fail-closed), agrega desde ad_impressions/ad_impressions_monthly, filas por zona con menos de 5 usuarios distintos se colapsan en 'otras zonas' (k-anonimato 5), nunca devuelve user_id ni session_id. Cliente: mobile/src/features/ads/hooks/useAdMetrics.ts (CRÍTICA), app/(protected)/ads/index.tsx + componentes (ligera; reusa patrones de my-listings/CRM), entrada en el perfil condicional a can_advertise (sin capacidad la ruta no existe). Aviso 'tu anuncio expira en 7 días' → fila en notifications (push llega con #77). Ver criterios completos en el doc 039 §'Tarea D'.\n\nDERIVADAS: #212 (171 — dashboard por anuncio estilo Meta, exploración 040)",
         "testStrategy": "pgTAP: autz por impersonación (owner de otra organización → vacío/denegado; agente sin capacidad → denegado), k-anonimato (zona con 4 usuarios se colapsa), respuesta sin user_id, agregados cuadran con fixtures. Jest: useAdMetrics. Smoke: pantalla con y sin anuncios; entrada ausente sin capacidad. pnpm tsc/lint.",
         "status": "done",
         "dependencies": [
@@ -8647,7 +8647,7 @@
             "parentId": "171"
           }
         ],
-        "updatedAt": "2026-08-21T17:19:40.938Z"
+        "updatedAt": "2026-08-23T08:00:00.000Z"
       },
       {
         "id": "172",
@@ -9397,7 +9397,7 @@
         "id": "208",
         "title": "producto(169.2): pantalla de admin para aprobar anuncios — hoy solo se activan por SQL",
         "description": "Origen: subtarea 169.2 · Detectado por: revisión de cierre de épica (2026-08-22). El título de #169 prometía «moderación admin» y sus 9 subtareas cerraron en verde, pero lo que se construyó fue el MOTOR de la moderación (máquina de estados por trigger, auditoría obligatoria en admin_actions, guard ORGANIZATION_SUSPENDED) — no el botón. El wizard deja el anuncio en pending_review y step5.tsx promete que «activarlo es del admin», pero esa pantalla no existe: hoy un anuncio solo pasa a active con un UPDATE a mano en SQL. Sin esto el circuito comercial NO CIERRA por más que la épica esté desplegada. Decisión de Abraham (2026-08-22): va en la app móvil bajo /admin, no esperando al panel web #81 (que depende de #71/#73/#79, ninguna empezada). El panel web puede reemplazarla después sin desperdicio porque la lógica vive en la EF, no en la pantalla.",
-        "details": "🔴 Producción viva: la épica YA está desplegada al remoto con ads_enabled=false (2026-08-22). Esta tarea es lo que falta para poder encenderla.\n\nQué NO hay que reconstruir (reusar > reescribir):\n- La máquina de estados ya valida las transiciones y AUDITA sola: handle_ad_status_change() (20260816000006 + 20260818000001) es la ÚNICA autoridad. La EF solo hace el UPDATE; el trigger valida, aplica D2 (pausar el reloj) y escribe admin_actions. NO duplicar esa lógica en TypeScript ni insertar auditoría por separado (quedaría doble).\n- private.resolve_admin_actor() resuelve el admin_id desde el JWT — ya lo usan agencies y ads.\n- _shared/clients.ts ya exporta make_admin_verifier y service_client (patrón de moderate-property/index.ts: index delgado a propósito).\n- ads_rejection_reason_matches_status: rejection_reason es obligatorio SI Y SOLO SI status=rejected (CHECK bidireccional) — rechazar sin razón debe fallar con un código tipado, no con un 23514 crudo.\n- mint-ad-urls ya firma la URL de reproducción del creativo (necesaria para VER el video antes de aprobarlo).\n\nFootprint: supabase/functions/moderate-ad/** (nueva) · mobile/src/features/ads/hooks/** · mobile/app/admin/ads/** · mobile/app/admin/index.tsx (entrada).\n\nCriticidad TDD por path: EF = CRÍTICA (supabase/functions/**), hooks = CRÍTICA (mobile/**/hooks/**), pantallas = verificación ligera.",
+        "details": "🔴 Producción viva: la épica YA está desplegada al remoto con ads_enabled=false (2026-08-22). Esta tarea es lo que falta para poder encenderla.\n\nQué NO hay que reconstruir (reusar > reescribir):\n- La máquina de estados ya valida las transiciones y AUDITA sola: handle_ad_status_change() (20260816000006 + 20260818000001) es la ÚNICA autoridad. La EF solo hace el UPDATE; el trigger valida, aplica D2 (pausar el reloj) y escribe admin_actions. NO duplicar esa lógica en TypeScript ni insertar auditoría por separado (quedaría doble).\n- private.resolve_admin_actor() resuelve el admin_id desde el JWT — ya lo usan agencies y ads.\n- _shared/clients.ts ya exporta make_admin_verifier y service_client (patrón de moderate-property/index.ts: index delgado a propósito).\n- ads_rejection_reason_matches_status: rejection_reason es obligatorio SI Y SOLO SI status=rejected (CHECK bidireccional) — rechazar sin razón debe fallar con un código tipado, no con un 23514 crudo.\n- mint-ad-urls ya firma la URL de reproducción del creativo (necesaria para VER el video antes de aprobarlo).\n\nFootprint: supabase/functions/moderate-ad/** (nueva) · mobile/src/features/ads/hooks/** · mobile/app/admin/ads/** · mobile/app/admin/index.tsx (entrada).\n\nCriticidad TDD por path: EF = CRÍTICA (supabase/functions/**), hooks = CRÍTICA (mobile/**/hooks/**), pantallas = verificación ligera.\n\nDERIVADAS: #210 (208.1 — takedown de anuncio activo, exploración 040)",
         "testStrategy": "Deno para la EF (DI con fakes, como moderate-property/handler.test.ts): admin verificado, no-admin 403, sin JWT 401, aprobar pending_review→active, rechazar exige razón, transición inválida devuelve código tipado, organización suspendida bloquea. RNTL para los hooks. Verificación ligera (tsc/lint/smoke por CLI) para las pantallas. Smoke final: crear un anuncio de prueba en el REMOTO con ads_enabled=false, aprobarlo desde la pantalla y confirmar la fila en admin_actions.",
         "status": "done",
         "dependencies": [
@@ -9405,7 +9405,7 @@
           "171"
         ],
         "priority": "high",
-        "updatedAt": "2026-08-23T07:03:42.722Z",
+        "updatedAt": "2026-08-23T08:00:00.000Z",
         "subtasks": [
           {
             "id": 1,
@@ -9489,23 +9489,23 @@
         "description": "Origen: subtarea 168.2 · Detectado por: revisión de cierre de épica (2026-08-22, pregunta de Abraham). 🔴 CORRECCIÓN DEL 2026-08-23 — esto NO es un descuido, es un diferimiento DOCUMENTADO Y DELIBERADO que conviene adelantar. La exploración 039 (aprobada 2026-08-14) especifica el flujo completo en tres lugares: el happy path del anunciante (L89), la matriz de actores (L133 «El owner la solicita; en beta la enciende el admin de Urbea; en fase 2 la enciende el pago») y, explícito, el CÓMO (L135 «Admin de plataforma: da de alta organizaciones, enciende can_advertise… En beta por Studio/SQL, igual que #71.5 y #153, con UI en #81»). Lo que existe hoy es EXACTAMENTE lo planeado. #168 cerró sus 7 subtareas, invitación por correo incluida (inviteUserByEmail en _shared/clients.ts:259, E2E contra Mailpit).\n\nPOR QUÉ ADELANTARLO IGUAL: (1) #81 (panel admin web) depende de #71/#73/#79, ninguna empezada — el diferimiento se decidió cuando la épica comercial apenas arrancaba; hoy el circuito está completo salvo por esto, así que cuesta más que en agosto. (2) Sin capacidad encendida no hay a quién aprobarle un anuncio: #208 (moderación) queda sin insumo. (3) El smoke de 208.4 ya necesita encender una organización de prueba y solo puede por SQL.\n\nDOS HUECOS DISTINTOS: (a) la EF `admin-create-agency` YA acepta can_advertise y advertiser_category (handler.ts:104-112, 233-234) pero mobile/app/admin/agencies/create.tsx nunca los manda — cableado puro, cero backend; (b) para una organización que YA existe el único camino es set_org_advertising_atomic desde Studio/CLI con service_role, con CERO llamadores en el repo fuera de sus tests.\n\n🟡 PIEZA GENUINAMENTE SIN DEFINIR: «el owner la solicita» aparece dos veces en 039 (L133, L1001) y NUNCA dice por qué canal (¿botón en su perfil? ¿te escribe por fuera?). Hoy la respuesta de facto es «te lo pide por fuera», que para beta funciona. Esta tarea NO lo resuelve — lo deja anotado como decisión de producto pendiente.\n\n🟡 En docs/ no hay nada del flujo: vive solo en la exploración 039 y en wiki/conceptos/inmobiliarias-y-agentes.md:45.",
         "details": "🔴 Producción viva: la épica está desplegada al remoto con ads_enabled=false (2026-08-22). Ninguna de las dos inmobiliarias reales tiene can_advertise=true.\n\nQué NO hay que reconstruir (reusar > reescribir):\n- `set_org_advertising_atomic(p_agency_id, p_enabled, p_category)` (20260815000002 + 20260816000003) ya enciende Y apaga, audita en admin_actions en la MISMA transacción, y rechaza encender sin categoría con P0001 ADVERTISER_CATEGORY_REQUIRED. Es service_role: hace falta una EF que la invoque, no exponerla a authenticated.\n- La EF `admin-create-agency` ya reenvía can_advertise/advertiser_category SOLO si vienen definidos, para no pisar los DEFAULT de la RPC con null explícito. El hueco (a) se cierra agregando los campos al formulario, sin tocar backend.\n- El CHECK `agencies_categoria_requerida_para_anunciar` hace imposible el estado (can_advertise=true, categoría NULL) por los 4 caminos de escritura. La UI debe hacer la categoría obligatoria cuando se enciende — no para garantizar el invariante (ya está garantizado) sino para que el error no llegue como un 23514.\n\n🔴 SIN PAGO, A PROPÓSITO. `app_config.ads_free = true` y `ad_prices` tiene los 3 alcances sembrados (neighborhood 1500, municipality 4000, national 12000 MXN a 30 días) pero NADIE cobra. El cobro es #172 (CPM/CPC), diferida y dependiente de Stripe (#84). Esta tarea NO introduce cobro: el admin enciende la capacidad a mano cuando el negocio ya se cerró por fuera.\n\nFootprint: mobile/app/admin/agencies/create.tsx · mobile/app/admin/agencies/[id].tsx · supabase/functions/set-org-advertising/** (nueva EF) · mobile/src/features/admin/hooks/**\n\nCriticidad TDD por path: EF = CRÍTICA, hooks = CRÍTICA, pantallas = verificación ligera.",
         "testStrategy": "Deno con DI para la EF (admin verificado, no-admin 403, encender sin categoría → código tipado, organización inexistente → 404). RNTL para el hook. Verificación ligera para las pantallas. Smoke: encender la capacidad de una organización de prueba desde la app y confirmar la fila en admin_actions con old_values/new_values correctos.",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           "168"
         ],
         "priority": "high",
-        "updatedAt": "2026-08-23T12:00:00.000Z",
+        "updatedAt": "2026-08-23T20:48:05.933Z",
         "subtasks": [
           {
             "id": 1,
             "title": "EF set-org-advertising sobre la RPC ya existente",
             "description": "Edge Function que invoca set_org_advertising_atomic con auth de admin. Traduce ADVERTISER_CATEGORY_REQUIRED y AGENCY_NOT_FOUND a códigos tipados; nunca reenvía el texto crudo de Postgres.",
-            "details": "CRÍTICA → TDD estricto. Reusa make_admin_verifier + service_client. index.ts delgado (patrón moderate-property / moderate-ad de #208.1).",
+            "details": "CRÍTICA → TDD estricto. Reusa make_admin_verifier + service_client. index.ts delgado (patrón moderate-property / moderate-ad de #208.1).\n<info added on 2026-08-23T20:09:37.634Z>\nFASE RED — subtarea #209.1 (EF set-org-advertising)\n\nSEAMS (interfaz bajo test):\n- Contrato HTTP del handler puro `handler(req, deps)` de\n  `supabase/functions/set-org-advertising/handler.ts` (request → status + body),\n  con DOS dependencias inyectables: `AdminVerifier` (ya existente, _shared/admin_auth.ts)\n  y `OrgAdvertisingWriter` (nueva, wrapper sobre `set_org_advertising_atomic`).\n  Mismo patrón DI que moderate-ad/handler.ts (#208.1). NO se testea la RPC\n  (eso es pgTAP, ya cubierto por 46_org_advertising_test.sql) ni supabase-js\n  real (eso vive en _shared/clients.ts, fuera de esta subtarea).\n\nComando: cd supabase/functions && deno test --allow-net --allow-env set-org-advertising/handler.test.ts\nResultado RED confirmado: 0 passed | 24 failed (13ms) — todos fallan porque el\nstub handler.ts lanza `not_implemented`, no por import roto. `deno check` sobre\nlos 3 archivos: limpio (0 errores de tipos).\n\nEDGE CASES (RED):\n### Happy path\n- EC-1  enabled=true + category válida → 200, writer recibe agency_id/enabled/category tal cual\n- EC-2  enabled=false SIN category → 200, writer recibe category=null\n- EC-3  el writer recibe el admin_id que devolvió el verificador\n- EC-4  la respuesta 200 es { ok: true } (cuerpo mínimo, convención moderate-ad)\n\n### Payload — tipos y presencia\n- EC-5  body no-JSON → 400 INVALID_INPUT\n- EC-6  payload vacío {} → 400 INVALID_INPUT\n- EC-7  agency_id ausente → 400 INVALID_INPUT\n- EC-8  agency_id no-string → 400 INVALID_INPUT\n- EC-9  enabled ausente → 400 INVALID_INPUT\n- EC-10 enabled no-boolean (string \"true\") → 400 INVALID_INPUT\n\n### Payload — category (frontera de confianza contra el enum de la base)\n- EC-11 category fuera del enum advertiser_category → 400 INVALID_INPUT, writer\n        NUNCA se llama (evita un 22P02 crudo de Postgres si llegara a la RPC)\n- EC-12 category no-string (number) → 400 INVALID_INPUT\n- EC-13 enabled=true SIN category → NO es 400 en TS (payload válido en FORMA);\n        el writer SÍ se llama con category=null — la obligatoriedad la decide\n        la RPC vía ADVERTISER_CATEGORY_REQUIRED (EC-18), no se duplica aquí\n\n### Auth\n- EC-14 sin Authorization → 401 UNAUTHENTICATED, writer NUNCA se llama\n- EC-15 verificador FORBIDDEN (no-admin) → 403, writer NUNCA se llama\n- EC-16 el verificador recibe el header Authorization EXACTO de la petición\n\n### Traducción de lo que contesta la RPC\n- EC-17 AGENCY_NOT_FOUND → 404\n- EC-18 ADVERTISER_CATEGORY_REQUIRED → 422 (request bien formado; falta un\n        dato de negocio, no un tipo — mismo criterio 409-vs-400 que moderate-ad)\n- EC-19 DB_ERROR (fallo inesperado) → 500\n\n### Boundary / error — fuga de implementación\n- EC-20 🔴 el cuerpo NUNCA filtra el texto crudo de Postgres (nombre de función\n        PL/pgSQL, línea, esquema) — solo el código tipado y un mensaje propio\n\n### CORS / métodos\n- EC-21 OPTIONS → 200 con Access-Control-Allow-Origin\n- EC-22 GET → 405\n- EC-23 PUT → 405\n- EC-24 DELETE → 405\n</info added on 2026-08-23T20:09:37.634Z>\n<info added on 2026-08-23T20:16:45.479Z>\n## GREEN — subtarea #209.1 (EF set-org-advertising sobre la RPC ya existente)\n\n### Hecho\n\n**Edge Function `set-org-advertising`** (patrón DI, gemelo de `moderate-ad` #208.1):\n- `supabase/functions/set-org-advertising/handler.ts` — implementación real. Orden:\n  CORS → método → parseo JSON → validación de FORMA del payload (agency_id string,\n  enabled boolean, category opcional pero si viene debe pertenecer al enum\n  `advertiser_category`) → `adminVerifier.verify_caller` → `orgAdvertisingWriter.set`\n  → traducción de `OrgAdvertisingErrorCode` a HTTP (`AGENCY_NOT_FOUND`→404,\n  `ADVERTISER_CATEGORY_REQUIRED`→422, `DB_ERROR`→500) → `{ ok: true }` en 200.\n  Deliberadamente NO valida \"si enabled=true entonces category es obligatoria\" —\n  esa regla vive en la RPC (CHECK + `raise ADVERTISER_CATEGORY_REQUIRED`).\n- `supabase/functions/set-org-advertising/index.ts` (nuevo) — entry point delgado,\n  construye `service_client()` + `make_admin_verifier` + `make_org_advertising_writer`\n  e inyecta al handler. Cero lógica propia (mismo criterio que moderate-ad/index.ts).\n- `supabase/functions/_shared/clients.ts` — nueva factory `make_org_advertising_writer`\n  (adaptador real sobre la RPC) + `extract_org_advertising_error_code` (matchea\n  AGENCY_NOT_FOUND / ADVERTISER_CATEGORY_REQUIRED en el mensaje de Postgres, cualquier\n  otra cosa colapsa a DB_ERROR). Import de tipos de `set-org-advertising/types.ts`\n  agregado junto a los demás imports de dominio.\n\n**Migración `set_org_advertising_atomic_admin`** (el problema real señalado por RED):\n- `supabase/migrations/20260823000001_set_org_advertising_atomic_admin.sql` — decisión:\n  OVERLOAD de 4 argumentos sobre `set_org_advertising_atomic` (mismo nombre, firma\n  `(uuid, boolean, advertiser_category, uuid)`), NO una función con nombre nuevo.\n  Por qué: es la MISMA operación de negocio (\"encender/apagar modo comercial\"), solo\n  con un parámetro extra para el actor — igual que Postgres ya resuelve\n  `set_org_advertising_atomic(id, true)` (3 args, con `p_category default null`)\n  vs esta de 4. El overload: (1) instala `p_admin_id` en el GUC\n  `urbea.admin_actor_id` con `set_config(..., true)` — local a la transacción — y\n  (2) delega el 100% de la validación/UPDATE/auditoría en la RPC de 3 argumentos ya\n  existente vía `perform public.set_org_advertising_atomic(p_agency_id, p_enabled,\n  p_category)`. CERO lógica de negocio duplicada — a diferencia de `moderate_ad_atomic`\n  (#208.1), que sí fue una función nueva desde cero porque no había una RPC de 3\n  argumentos previa que envolver; aquí sí la había, así que tocaba delegar, no repetir.\n  `security definer`, `set search_path = public, pg_temp`, revoke de\n  public/anon/authenticated, grant solo a service_role.\n  Aditiva, idempotente (`create or replace`), NO toca la RPC de 3 argumentos ni sus\n  grants (los preserva intactos para Studio/CLI).\n- `supabase/migrations/rollbacks/20260823000001_set_org_advertising_atomic_admin.sql`\n  — `drop function` del overload de 4 argumentos únicamente; documenta que revertir\n  con la EF ya desplegada la deja devolviendo 500 (PGRST202), sin pérdida de datos\n  ni de auditoría (la escribe la RPC de 3 args, intacta).\n\n**Tests pgTAP** — `supabase/tests/65_set_org_advertising_atomic_admin_test.sql` (9\nasserts, estilo de `64_moderate_ad_atomic_test.sql`):\n1. El overload existe con la firma `(uuid, boolean, advertiser_category, uuid)`.\n2. Es SECURITY DEFINER.\n3-4. `authenticated`/`anon` NO pueden ejecutarlo.\n5-6. Encender con categoría válida no lanza y deja `can_advertise=true` + la categoría.\n7. La auditoría en `admin_actions` registra el `admin_id` que pasó el overload\n   (resuelto vía el GUC, no un JWT).\n8. Encender SIN categoría propaga `ADVERTISER_CATEGORY_REQUIRED` (P0001) — la RPC de\n   3 args sigue siendo la única autoridad, el overload no la traduce ni la duplica.\n9. Agencia inexistente propaga `AGENCY_NOT_FOUND` (P0001).\nNo se repite la cobertura de metadata de columnas/enum ni la matriz completa de\ntransiciones — ya vive en `46_org_advertising_test.sql` sección 7 sobre la RPC de 3\nargumentos, y este overload delega en ella sin reimplementarla.\n\n### Invariantes cubiertas\n- 🔒 La RPC de 3 argumentos sigue siendo la ÚNICA autoridad sobre si encender\n  `can_advertise` es válido — el overload y el handler TypeScript no duplican esa\n  regla en ningún punto.\n- 🔒 `admin_actions` sigue auditando en la MISMA transacción que el UPDATE (lo\n  garantiza la RPC de 3 args; el overload no interpone una segunda transacción).\n- 🔒 El overload es inalcanzable para `authenticated`/`anon` (instala un admin_actor\n  arbitrario en el GUC — escalada de privilegios si no fuera solo `service_role`).\n- 🔴 El handler nunca reenvía el texto crudo de Postgres (EC-20): la traducción pasa\n  siempre por `OrgAdvertisingErrorCode` + un mensaje propio.\n\n### Resultado de tests (salida real)\n\n**Deno (contrato HTTP del handler, 24 casos RED → GREEN):**\n```\n$ cd supabase/functions && deno test --allow-net --allow-env set-org-advertising/handler.test.ts\nrunning 24 tests from ./set-org-advertising/handler.test.ts\nEC-1 ... ok (19ms)\nEC-2 ... ok (0ms)\nEC-3 ... ok (0ms)\nEC-4 ... ok (0ms)\nEC-5 ... ok (0ms)\nEC-6 ... ok (0ms)\nEC-7 ... ok (0ms)\nEC-8 ... ok (0ms)\nEC-9 ... ok (0ms)\nEC-10 ... ok (0ms)\nEC-11 ... ok (0ms)\nEC-12 ... ok (0ms)\nEC-13 ... ok (0ms)\nEC-14 ... ok (0ms)\nEC-15 ... ok (0ms)\nEC-16 ... ok (0ms)\nEC-17 ... ok (0ms)\nEC-18 ... ok (0ms)\nEC-19 ... ok (0ms)\nEC-20 🔴 ... ok (0ms)\nEC-21 ... ok (0ms)\nEC-22/23/24: GET → 405 ... ok (0ms)\nEC-22/23/24: PUT → 405 ... ok (0ms)\nEC-22/23/24: DELETE → 405 ... ok (0ms)\n\nok | 24 passed | 0 failed (25ms)\n```\n(re-corrido tras terminar todos los archivos: 24 passed | 0 failed (24ms), sin flakiness)\n\n**`deno check` de los archivos nuevos/tocados:**\n```\n$ cd supabase/functions && deno check set-org-advertising/handler.ts set-org-advertising/index.ts set-org-advertising/types.ts _shared/clients.ts\nCheck set-org-advertising/handler.ts\nCheck set-org-advertising/index.ts\nCheck set-org-advertising/types.ts\nCheck _shared/clients.ts\n```\n(0 errores)\n\n**Migración aplicada al stack LOCAL** (`supabase migration up --local`, arrancado\nDocker Desktop primero porque estaba detenido):\n```\nApplying migration 20260822000002_moderate_ad_atomic.sql...\nApplying migration 20260822000003_ads_reject_from_pending_review.sql...\nApplying migration 20260823000001_set_org_advertising_atomic_admin.sql...\nLocal database is up to date.\n```\n(las dos primeras eran pendientes de #208.1/#207, aplicadas de paso — no las tocó\nesta subtarea, solo estaban atrasadas en el stack local compartido)\n\n**pgTAP — la wrapper nueva + sus vecinas directas:**\n```\n$ supabase test db supabase/tests/46_org_advertising_test.sql supabase/tests/64_moderate_ad_atomic_test.sql supabase/tests/65_set_org_advertising_atomic_admin_test.sql\n/Users/fru/Dev/urbea/supabase/tests/46_org_advertising_test.sql ................... ok\n/Users/fru/Dev/urbea/supabase/tests/64_moderate_ad_atomic_test.sql ................ ok\n/Users/fru/Dev/urbea/supabase/tests/65_set_org_advertising_atomic_admin_test.sql .. ok\nAll tests successful.\nFiles=3, Tests=103,  0 wallclock secs\nResult: PASS\n```\n\n**pgTAP — suite completa (`supabase test db`, sin args) — para descartar regresión:**\n```\nFiles=65, Tests=1777, ...\nResult: FAIL\n```\n4 archivos con fallas: `43_search_places_test.sql` (1/24), `50_ads_feed_config_test.sql`\n(4/20), `51_ad_impressions_test.sql` (2/90), `53_ads_for_zone_test.sql` (11/106).\nNinguno toca `agencies`, `advertiser_category`, `admin_actions` ni\n`set_org_advertising_atomic` — son drift de estado del stack local COMPARTIDO\n(seeds de `ads_feed_config`/`ads_enabled` con valores distintos a los esperados,\nconteos de `ads_for_zone` con filas de sesiones previas, `search_places` con un\nmunicipio ausente). No relacionado con esta subtarea; no se tocó nada en esos\ndominios. Documentado como observación, no como bloqueante de 209.1 — los 3\narchivos relevantes a la subtarea (46, 64, 65) están 100% verdes.\n\n### Gotchas para la bitácora\n- Docker Desktop estaba detenido al arrancar la subtarea (`supabase status` tronó\n  con \"Cannot connect to the Docker daemon\"); `open -a Docker` + esperar ~10s bastó.\n- `supabase migration list --local` compara archivos locales vs. migraciones\n  aplicadas al proyecto REMOTO (columna \"Remote\"), NO indica si el stack LOCAL ya\n  las corrió — para eso hace falta `supabase migration up --local` (que es idempotente\n  y no aplica nada si ya está al día) o consultar directo la tabla de historial.\n- No hay `psql` en el PATH de este entorno; `supabase migration up` / `supabase test db`\n  son el camino sin necesidad de un cliente Postgres aparte.\n- El overload de 4 argumentos se resuelve sin ambigüedad porque `client.rpc(...)`\n  pasa los 4 parámetros con nombre exacto (`p_agency_id`, `p_enabled`, `p_category`,\n  `p_admin_id>`) — PostgREST/Postgres lo distingue de la firma de 3 argumentos por\n  cantidad+nombres, sin necesidad de un nombre de función distinto.\n\n### Conformidad spec\nOK. La subtarea pedía exactamente: EF `set-org-advertising` que invoca\n`set_org_advertising_atomic` con auth de admin, traduciendo\n`ADVERTISER_CATEGORY_REQUIRED`/`AGENCY_NOT_FOUND` a códigos tipados sin reenviar el\ntexto crudo de Postgres. Se implementó el handler puro con DI (24/24 tests RED→GREEN\nsin tocar ni un assert), el index.ts delgado, la factory en `_shared/clients.ts`, y\nel problema real que bloqueaba todo (`resolve_admin_actor()` sin `auth.uid()` bajo\n`service_role`) se resolvió con el mismo patrón ya establecido por #208.1\n(GUC + delegación), aquí como OVERLOAD para no duplicar la lógica de negocio de la\nRPC de 3 argumentos ya existente y ya probada. Sin scope creep: no se tocó\n`admin-create-agency` (hueco (a) de la tarea #209, fuera de esta subtarea), no se\ndesplegó nada al remoto (eso es 209.4), no se tocaron los grants ni el cuerpo de la\nRPC de 3 argumentos.\n</info added on 2026-08-23T20:16:45.479Z>\n<info added on 2026-08-23T20:20:51.316Z>\nGUARDIAN: PASS (0 violaciones). Verificado por el árbitro: test file byte-idéntico al RED (diff vacío), 24/24 Deno passed, deno check 5 archivos 0 errores, pgTAP 46+64+65 = 103/103 PASS. Suite completa: drift preexistente en 43/50/51/53 (confirmado ajeno: grep vacío de set_org_advertising/can_advertise en esos archivos; 50 falla igual aislado).\n\nObservaciones del guardian (sin cambiar veredicto):\n1. extract_org_advertising_error_code traduce por message.includes() y no tiene prueba — si cambia la redacción del raise, colapsa a 500. → El smoke de 209.4 DEBE ejercitar los dos errores de negocio reales (encender sin categoría → 422, agency inexistente → 404), no solo el happy path.\n2. ADVERTISER_CATEGORIES en types.ts duplica el enum de la DB sin nada que los ate (hoy coinciden, verificado). Un alter type futuro daría 400 a categorías legítimas con suite verde. → Candidato a tarea derivada: assert pgTAP contra enum_range(null::advertiser_category).\n3. pgTAP 65 no cubre p_admin_id no-admin (comportamiento real seguro: P0001 → 500; la EF solo pasa ids ya verificados).\n4. Orden validación-antes-de-auth (consistente con moderate-ad): decisión registrada, impacto nulo.\n\nCommits: test(red) 6498358 · feat(green) (este). Sentinel .current-red removido.\n</info added on 2026-08-23T20:20:51.316Z>",
             "testStrategy": "Deno con DI y fakes.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "priority": "high",
-            "updatedAt": "2026-08-22T13:00:00.000Z",
+            "updatedAt": "2026-08-23T20:20:52.987Z",
             "subtasks": [],
             "parentId": "undefined"
           },
@@ -9513,14 +9513,14 @@
             "id": 2,
             "title": "Campos de capacidad en el alta de organización",
             "description": "Agregar can_publish_properties / can_advertise / advertiser_category al formulario de mobile/app/admin/agencies/create.tsx. El backend YA los acepta — es cableado puro, cero cambios de EF.",
-            "details": "NO crítica → verificación ligera. La categoría se vuelve obligatoria en el formulario cuando can_advertise está encendido.",
+            "details": "NO crítica → verificación ligera. La categoría se vuelve obligatoria en el formulario cuando can_advertise está encendido.\n<info added on 2026-08-23T20:25:37.090Z>\n## Hecho — 209.2 Campos de capacidad en el alta de organización\n\n**Archivos tocados:**\n- `mobile/app/admin/agencies/create.tsx` — agregados `can_publish_properties`, `can_advertise`, `advertiser_category` a `FormState`/`FormErrors`, defaults, handlers de toggle (`handle_can_publish_toggle`, `handle_can_advertise_toggle`, `handle_category_select`), validación local, sección \"Capacidades\" en el JSX (entre slug y Contacto), y payload al invoke de `admin-create-agency`.\n- `mobile/src/features/admin/components/advertiser-category-select.tsx` (nuevo) — selector de categoría (grid de `SelectionCard`), extraído como componente reusable en `features/admin/components/` per nota del analista (209.3 lo reutilizará). Enum `ADVERTISER_CATEGORIES` duplicado localmente (comentario apunta a `supabase/functions/set-org-advertising/types.ts` como fuente) porque `supabase/functions/` es un proyecto Deno separado, no importable desde `mobile/`.\n\n**Decisiones:**\n1. **Selector extraído (no inline)** — el analista sugería inline-si-simple o extraer-si-natural; se extrajo porque 209.3 (detalle de organización) lo va a reusar y el componente es autocontenible (7 opciones + label + error), cero costo extra de mantenimiento.\n2. **Reuso de `SelectionCard`** (`mobile/src/features/publish/components/SelectionCard.tsx`) para las cards de categoría — es un componente radio-card genérico (Pressable + estado seleccionado), ya usado en el wizard de publicación para tipo de operación/propiedad. Import cross-feature justificado por CLAUDE.md (\"Reusar > reescribir\"); cero componente nuevo de UI base, solo el wrapper de dominio (labels ES + lista de 7 valores).\n3. **Defaults**: `can_publish_properties: true`, `can_advertise: false` — verificados contra `supabase/migrations/20260815000001_org_advertising_capability.sql:30-31` y `20260816000004_admin_create_agency_advertiser_category.sql:64-66` (mismo DEFAULT que la RPC `create_atomic`). El form siempre manda ambos booleans explícitos (no undefined) porque el estado del form siempre tiene un valor — no hay ambigüedad de \"payload viejo sin el campo\" desde este cliente.\n4. **`advertiser_category` solo se manda si `can_advertise===true`** — si está apagado, la key queda AUSENTE del body (undefined, no null), tal como pide la subtarea, para que el EF (líneas ~110-113 de `handler.ts`) deje el DEFAULT `null` de la RPC.\n5. **Validación adicional NO pedida explícitamente pero agregada**: además de \"encender can_advertise sin categoría bloquea submit\", se agregó un segundo error de formulario (`errors.capabilities`) para el estado \"ambas capacidades apagadas\" — espejo del CHECK `agencies_al_menos_una_capacidad` (`20260815000001:46-49`, `can_publish_properties or can_advertise`). Sin este guard, un admin que apague \"Puede publicar propiedades\" sin haber encendido \"Puede anunciarse\" dispararía un 23514 que el EF/`_shared/agency.ts` NO traduce (cae en el default `?? 500` → \"Error interno al crear la agencia\", mensaje genérico). Es una extensión pequeña y barata (una condición + un `<Text>`) directamente sobre los dos switches que esta subtarea introduce — no toca nada fuera del footprint. Se reporta explícitamente como desviación menor de scope para que el orquestador la revise.\n6. Se limpia `advertiser_category` a `null` al apagar `can_advertise` (evita mandar una categoría \"stale\" si el admin la vuelve a prender más tarde).\n\n**Verificación (salida real):**\n\n```\n$ cd mobile && pnpm tsc --noEmit\n(sin output — 0 errores)\n\n$ pnpm lint\n✖ 103 problems (0 errors, 103 warnings)\n0 errors and 63 warnings potentially fixable with the `--fix` option.\nEXIT:0\n```\nLos 103 warnings preexistentes NO tocan `create.tsx` ni `advertiser-category-select.tsx` (verificado con `pnpm lint | grep -i \"agencies/create\\|advertiser-category-select\"` → sin resultados).\n\n**Smoke visual:** NO corrido — `adb devices` → `command not found: adb` (sin Android SDK/emulador en este entorno). Conforme a la instrucción de la subtarea, no se levantó un emulador solo para este smoke; queda cubierto por 209.4 (que sí monta/navega la pantalla completa).\n\n**Conformidad spec:** OK, con una desviación menor documentada en decisión #5 (validación \"al menos una capacidad activa\" no pedida explícitamente, agregada por ser barata y directamente relacionada a los dos switches nuevos — previene un 500 genérico en producción viva). Ningún otro comportamiento fuera de lo pedido: no se tocó la EF, no se agregaron dependencias, no se creó UI ausente del resto del formulario.\n</info added on 2026-08-23T20:25:37.090Z>",
             "testStrategy": "pnpm tsc --noEmit + pnpm lint + smoke por CLI.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               1
             ],
             "priority": "high",
-            "updatedAt": "2026-08-22T13:00:00.000Z",
+            "updatedAt": "2026-08-23T20:26:02.097Z",
             "subtasks": [],
             "parentId": "undefined"
           },
@@ -9528,14 +9528,14 @@
             "id": 3,
             "title": "Encender/apagar la capacidad desde el detalle de la organización",
             "description": "mobile/app/admin/agencies/[id].tsx gana el control para volver comercial a una organización existente (y para quitarle la capacidad), invocando la EF de 209.1.",
-            "details": "NO crítica → verificación ligera. Apagar la capacidad NO pausa sus anuncios activos — eso lo hace la cascada de suspensión de la ORGANIZACIÓN, que es otra cosa. Dejarlo explícito en el copy para que el admin no crea que apagó los anuncios.",
+            "details": "NO crítica → verificación ligera. Apagar la capacidad NO pausa sus anuncios activos — eso lo hace la cascada de suspensión de la ORGANIZACIÓN, que es otra cosa. Dejarlo explícito en el copy para que el admin no crea que apagó los anuncios.\n<info added on 2026-08-23T20:30:31.769Z>\nFASE RED — 209.3 useSetOrgAdvertising\n\nSEAMS (interfaz bajo test):\n- Firma pública del hook mobile/src/features/admin/hooks/useSetOrgAdvertising.ts:\n  useSetOrgAdvertising(deps?: { supabase?: unknown; onSuccess?: () => void }): {\n    setAdvertising(params: { agency_id: string; enabled: boolean; category?: AdvertiserCategory }): Promise<{ ok: boolean; error: string | null }>;\n    is_saving: boolean;\n    error: string | null;\n  }\n- Contrato de la EF set-org-advertising (supabase/functions/set-org-advertising/{handler,types}.ts): request {agency_id, enabled, category?}, éxito 200 {ok:true}, códigos INVALID_INPUT(400)/METHOD_NOT_ALLOWED(405)/UNAUTHENTICATED(401)/FORBIDDEN(403)/AGENCY_NOT_FOUND(404)/ADVERTISER_CATEGORY_REQUIRED(422)/DB_ERROR(500).\n- Mock del cliente supabase (client.functions.invoke) SIN desprender el método (regla #205, EC-19).\n\nEDGE CASES (RED):\n### Happy path e invocación\n- EC-1 encender_con_categoria_invoca_la_ef_y_devuelve_ok\n- EC-2 encender_manda_category_en_el_body\n- EC-3 apagar_sin_categoria_invoca_la_ef_y_devuelve_ok\n- EC-4 apagar_no_manda_category_en_el_body\n- EC-5 apagar_no_manda_category_aunque_el_llamador_la_pase\n- EC-6 invoca_el_nombre_exacto_de_la_ef_set_org_advertising\n- EC-7 el_body_incluye_agency_id_y_enabled_exactos\n\n### Ramas de reglas no obvias (traducción de códigos, regla #200)\n- EC-8 cada_codigo_tipado_produce_su_mensaje_en_espanol\n- EC-9 ningun_codigo_deja_ver_el_literal_en_ingles_de_supabase_js\n- EC-10 codigo_desconocido_cae_a_mensaje_neutro_no_al_codigo_crudo\n- EC-11 agency_not_found_y_advertiser_category_required_producen_mensajes_distintos\n\n### Boundary / error (red)\n- EC-12 invoke_rechazado_devuelve_mensaje_neutro_sin_lanzar\n- EC-13 fallo_de_red_no_expone_el_texto_del_error_original\n\n### onSuccess\n- EC-14 on_success_se_llama_solo_en_exito\n\n### Estado (loading)\n- EC-15 is_saving_true_sincronamente_al_disparar\n- EC-16 is_saving_false_tras_exito\n- EC-17 is_saving_false_tras_error\n- EC-18 error_expuesto_tras_fallo_y_limpiado_en_el_siguiente_exito\n\n### Integridad del cliente supabase-js (#205)\n- EC-19 no_desprende_functions_invoke_del_cliente\n\nVERIFICACIÓN (salida real del comando):\n$ pnpm test -- src/features/admin/__tests__/useSetOrgAdvertising.test.tsx\nTest Suites: 1 failed, 1 total\nTests:       18 failed, 1 passed, 19 total\n(EC-5 pasa trivialmente con el STUB porque nunca invoca la EF — mismo patrón\nque EC-4 de useModerateAd; deja de pasar tautológicamente en cuanto el GREEN\ninvoque de verdad, y sigue protegiendo la regresión \"apagar no manda category\"\nen adelante.)\nTodas las demás fallan por aserción (toBe/toHaveLength/toBeGreaterThan/\nnot.toBeNull/not.toContain), ninguna por import/módulo no encontrado.\n\nArchivos:\n- mobile/src/features/admin/__tests__/useSetOrgAdvertising.test.tsx (nuevo, 19 tests)\n- mobile/src/features/admin/hooks/useSetOrgAdvertising.ts (STUB, lanza/devuelve dummy — el GREEN lo reemplaza)\n- mobile/src/features/admin/org_advertising_error_messages.ts (nuevo, mapa código→mensaje ES, mismo patrón que ad_moderation_error_messages.ts)\n</info added on 2026-08-23T20:30:31.769Z>\n<info added on 2026-08-23T20:36:32.695Z>\nGREEN 209.3 — useSetOrgAdvertising real + control en detalle de organización.\n\n## Archivos tocados\n- `mobile/src/features/admin/hooks/useSetOrgAdvertising.ts` — implementación real\n  (reemplaza el STUB del RED). Calca `useModerateAd.ts` (208.2): is_working_ref +\n  force_update síncrono antes del primer await, DI del cliente vía\n  `deps?.supabase` con fallback lazy `require('@/lib/supabase/client')`,\n  `client.functions.invoke('set-org-advertising', {body})` SIN desprender el\n  método (this=client.functions), `extract_error_code` + `map_org_advertising_error`\n  para traducir. El body solo incluye `category` cuando `enabled === true` — nunca\n  cuando se apaga, aunque el llamador la pase (EC-4/EC-5).\n- `mobile/src/features/admin/components/advertiser-category-select.tsx` — se\n  exporta `ADVERTISER_CATEGORY_LABELS` (antes privado) para reusar el mapa\n  categoría→label en el detalle de organización sin duplicarlo.\n- `mobile/app/admin/agencies/[id].tsx` — nueva sección \"Capacidad comercial\":\n  - El select de `agencies` ahora trae `can_advertise, advertiser_category`\n    además de `name`.\n  - Nuevo subcomponente `AdvertisingSection` (usa `useSetOrgAdvertising()` sin\n    deps — cliente real de producción):\n    - Estado apagado: `AdvertiserCategorySelect` (componente ya creado en\n      209.2, reusado tal cual) + botón \"Encender\" (`PrimaryButton`). Si no hay\n      categoría elegida, error local antes de llamar al hook (mismo patrón que\n      el guard de `rejection_reason` en `useModerateAd`).\n    - Estado encendido: badge con la categoría actual (label vía\n      `ADVERTISER_CATEGORY_LABELS`) + botón \"Apagar\" (`PrimaryButton\n      variant=\"ghost\"`) que dispara `Alert.alert` de confirmación con el copy\n      exacto pedido: apagar NO pausa los anuncios activos — eso lo hace\n      suspender la organización (#211, no existe todavía) — para que el admin\n      no crea que apagó los anuncios.\n    - Tras éxito (`res.ok`): `on_updated(can_advertise, advertiser_category)`\n      actualiza el estado local del padre (sin refetch completo — ya sabemos\n      el valor que acaba de confirmar la EF) → el badge/estado se refresca\n      inmediato. Es la señal visual de éxito (la pantalla no usa toasts en\n      ningún otro lado; sigue su convención).\n    - Error del hook (`error`) se muestra inline en español (ya viene\n      traducido del hook).\n\n## Decisiones de UI\n- Reusé `PrimaryButton` (variant primary/ghost) en vez de un botón custom —\n  es el componente ya usado por `create.tsx` para el CTA del mismo formulario\n  de capacidades (209.2), mismo look&feel.\n- Confirmación de apagar con `Alert.alert` nativo — mismo patrón que \"Dar de\n  baja\" en `agency/members.tsx` (destructive + cancel), no se agregó ninguna\n  librería de modal nueva.\n- No se tocó `create.tsx` ni `advertiser-category-select.tsx` más allá de\n  exportar el mapa de labels (una línea).\n\n## Verificación (salida real)\n\n### Suite del hook — 19/19\n```\n$ pnpm test -- src/features/admin/__tests__/useSetOrgAdvertising.test.tsx\nPASS src/features/admin/__tests__/useSetOrgAdvertising.test.tsx\n  ... (19 tests, todos ✓)\nTest Suites: 1 passed, 1 total\nTests:       19 passed, 19 total\nSnapshots:   0 total\nTime:        0.453 s\n```\n\n### tsc\n```\n$ pnpm tsc --noEmit\n(sin salida — 0 errores)\n```\n\n### lint\n```\n$ pnpm lint\n✖ 103 problems (0 errors, 103 warnings)\n  0 errors and 63 warnings potentially fixable with the `--fix` option.\n```\n(exit 0; verificado con `grep` que ninguno de los 103 warnings cae en\n`admin/agencies/[id].tsx`, `admin/hooks/useSetOrgAdvertising.ts` ni\n`admin/components/advertiser-category-select.tsx` — 0 warnings nuevos)\n\n### Suite completa de mobile\n```\n$ pnpm test\nTest Suites: 116 passed, 116 total\nTests:       1471 passed, 1471 total\nSnapshots:   0 total\nTime:        4.654 s\n```\n\n## Conformidad spec\nOK — cubre las dos partes pedidas (hook GREEN sin tocar tests/mapa de\nmensajes, y la sección de detalle de organización con los dos controles y el\ncopy de apagar exacto). No se agregó UI fuera de lo pedido (sin toggle de\n`can_publish_properties`, que no es parte de esta subtarea).\n\n## Bloqueantes\nNinguno.\n</info added on 2026-08-23T20:36:32.695Z>\n<info added on 2026-08-23T20:40:35.156Z>\nGUARDIAN: PASS (0 violaciones). Verificado por el árbitro: diff vacío sobre test y mapa de mensajes; 19/19 del hook, suite completa 116 suites / 1471 tests verde; tsc 0 errores; lint exit 0 (0 warnings en archivos tocados). EC-5 verificado por MUTACIÓN (3 mutantes, cada uno matado por su test: EC-5, EC-19, EC-13). Copy de apagar confirmado explícito (\"NO pausa los anuncios que ya están activos… suspender la organización es una acción distinta\" → #211).\n\nObservaciones (sin cambiar veredicto):\n1. Guard de UX pending_category===null vive en la pantalla sin test — no es invariante (el 422 del server ya está cubierto por EC-11); si crece, subirlo al hook.\n2. Cast `as AdvertiserCategory | null` en [id].tsx apaga el aviso de tsc si el enum de la DB gana valores — mismo riesgo ya anotado en 209.1 (obs. 2 del guardian: assert pgTAP contra enum_range como tarea derivada candidata).\n3. Actualización optimista local tras éxito (sin refetch) — supuesto anotado: válido mientras la EF no normalice la categoría.\n\nCommits: test(red) ac85b11 · feat(green) (este). Sentinel removido.\n</info added on 2026-08-23T20:40:35.156Z>",
             "testStrategy": "pnpm tsc --noEmit + pnpm lint + smoke.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               2
             ],
             "priority": "medium",
-            "updatedAt": "2026-08-22T13:00:00.000Z",
+            "updatedAt": "2026-08-23T20:40:37.593Z",
             "subtasks": [],
             "parentId": "undefined"
           },
@@ -9543,14 +9543,338 @@
             "id": 4,
             "title": "Deploy, smoke contra el remoto e ingest al vault",
             "description": "Desplegar la EF, encender la capacidad de una organización de prueba de punta a punta, confirmar admin_actions, actualizar mapa-codebase + conceptos/inmobiliarias-y-agentes + log.",
-            "details": "🔴 Gate §0.5 antes del PR.",
+            "details": "🔴 Gate §0.5 antes del PR.\n<info added on 2026-08-23T20:46:57.804Z>\nHECHO — 209.4 (deploy + smoke + ingest). Mismo protocolo que 208.4: ensayo en la rama preview-ads ANTES de producción, sonda pasiva en producción.\n\nENSAYO EN LA RAMA preview-ads (ydhnhyagszopwhyoeela, sigue viva)\n  apply_migration set_org_advertising_atomic_admin -> {\"success\":true}\n  supabase functions deploy set-org-advertising --project-ref ydhnhyagszopwhyoeela --import-map supabase/functions/deno.json --use-api -> \"Deployed Functions.\"\n\nSmoke REAL contra la rama (admin.ads@urbea.demo por password grant; agencia de prueba 20000000-…-0001 \"Inmobiliaria GDL Premium\", datos propios de la rama):\n  sin auth                       -> UNAUTHORIZED_NO_AUTH_HEADER  HTTP=401\n  GET                            -> METHOD_NOT_ALLOWED           HTTP=405\n  payload basura                 -> INVALID_INPUT                HTTP=400\n  encender SIN categoria         -> ADVERTISER_CATEGORY_REQUIRED HTTP=422  <- OBLIGADO por la obs. 1 del guardian de 209.1: la traducción por message.includes() funciona contra el raise REAL de Postgres remoto\n  agencia inexistente            -> AGENCY_NOT_FOUND             HTTP=404\n  encender CON categoria seguros -> {\"ok\":true}                  HTTP=200\n  apagar                         -> {\"ok\":true}                  HTTP=200\n\nAuditoría (select real a admin_actions de la rama, 3 filas = 3 llamadas exitosas, UNA por llamada):\n  enable_org_advertising  old={can_advertise:false,cat:null} new={can_advertise:true,cat:\"seguros\"} admin=admin.ads@urbea.demo\n  disable_org_advertising old={can_advertise:true,cat:\"seguros\"} new={can_advertise:false,cat:null}\n  (+1 disable no-op previo del primer batch). La agencia quedó como estaba (can_advertise=false).\n\nFirmas en la rama: set_org_advertising_atomic(uuid,boolean,advertiser_category) y (…,uuid) — 1 cada una. Ejecutores del overload: {postgres, service_role} — NO anon/authenticated.\n\nHALLAZGO del smoke (no bug): probé categoría \"agencia_inmobiliaria\" y la EF la rechazó con 400 INVALID_INPUT — correcto: el enum advertiser_category es para anunciantes de SERVICIOS (credito_hipotecario, seguros, mudanzas, limpieza, notaria, avaluos, otro); las inmobiliarias publican, no \"se anuncian\".\n\nDESPLIEGUE A PRODUCCIÓN (mvpvqmyhrrkwbnpctpuq)\nGate §0.5: migración = create or replace de un OVERLOAD nuevo (aditiva, idempotente, rollback en rollbacks/); EF NUEVA sin llamadores instalados (agregar contrato ≠ cambiar contrato -> backend primero es correcto); cero seeds; ads_enabled no se toca; NINGUNA organización real se enciende en producción.\n  apply_migration -> {\"success\":true}\n  functions deploy set-org-advertising (prod) -> \"Deployed Functions.\"\n\nSonda pasiva en producción (CERO escrituras):\n  sin auth       -> UNAUTHORIZED_NO_AUTH_HEADER HTTP=401\n  GET            -> METHOD_NOT_ALLOWED          HTTP=405\n  payload basura -> INVALID_INPUT               HTTP=400\n  anon como JWT  -> UNAUTHENTICATED             HTTP=401 (corte de auth vivo)\n\nVerificación post-deploy (select real): ads_enabled=false · versiones_rpc=2 (3 y 4 args, sin ambigüedad) · ejecutores_overload={postgres,service_role} · orgs_comerciales=0 · agencies=2 · ads=0 · propiedades=24 · usuarios=6 <- idéntico a 208.4, nada cambió para nadie.\n\nPENDIENTE DELIBERADO: OTA del cliente tras merge a main (igual que 208.4 — la EF desplegada no tiene quien la llame hasta que la UI viaje por OTA, que es exactamente la garantía).\n</info added on 2026-08-23T20:46:57.804Z>",
             "testStrategy": "Salida real del deploy + select sobre admin_actions pegado en la bitácora.",
+            "status": "done",
+            "dependencies": [
+              3
+            ],
+            "priority": "medium",
+            "updatedAt": "2026-08-23T20:48:05.933Z",
+            "subtasks": [],
+            "parentId": "undefined"
+          }
+        ]
+      },
+      {
+        "id": "210",
+        "title": "producto(208.1): takedown — bajar o pausar un anuncio ACTIVO desde el admin",
+        "description": "Origen: subtarea 208.1 · Detectado por: planeación /grilling 2026-08-23 (exploración 040). La máquina de estados de ads YA permite active→{paused, rejected} (20260816000006 + 20260822000003), pero la EF moderate-ad solo expone approve|reject desde pending_review: un anuncio aprobado que resulte problemático hoy solo se baja por SQL. Sin este botón de emergencia no se debe encender ads_enabled. Nota D2: active→paused congela el reloj (paused_at) y paused→active recorre ends_at — la pausa admin NO regala ni roba días de vigencia.",
+        "details": "Exploración: .taskmaster/docs/exploraciones/040-comercial-completo-stats-y-promocion.md (decisiones fijas de Abraham, 2026-08-23). Reusar, no reescribir: la transición y su auditoría viven en el trigger handle_ad_status_change; moderate_ad_atomic (20260822000002) es el patrón para actuar como admin bajo service_role (GUC urbea.admin_actor_id). Extender la RPC y la EF con las acciones nuevas (pause y reject-desde-active exige rejection_reason por el CHECK ads_rejection_reason_matches_status; evaluar resume paused→active para deshacer una pausa admin). UI: /admin/ads gana la vista de anuncios activos (el ads_select policy ya deja al admin verlos; filtrar status en el cliente como usePendingAds). Footprint: supabase/functions/moderate-ad/** · supabase/migrations/** · mobile/src/features/ads/hooks/** · mobile/app/admin/ads/**.\n\nCriticidad TDD por path: EF y migración CRÍTICAS, hooks CRÍTICOS, pantalla ligera.",
+        "testStrategy": "Deno con DI para las acciones nuevas de la EF (active→paused, active→rejected con motivo, no-admin 403, transición inválida → código tipado). pgTAP para la RPC extendida (auditoría admin_actions, D2 reloj congelado). RNTL para el hook. Smoke: pausar y bajar un anuncio activo en preview branch.",
+        "status": "pending",
+        "dependencies": [
+          "208"
+        ],
+        "priority": "high",
+        "updatedAt": "2026-08-23T08:00:00.000Z",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "RPC moderate_ad_atomic extendida a acciones sobre anuncios activos",
+            "description": "pause / reject (con motivo) / resume desde el contexto admin service_role, auditando vía el trigger existente.",
+            "details": "CRÍTICA → TDD estricto (pgTAP). No duplicar auditoría: el trigger ya escribe admin_actions.",
+            "testStrategy": "pgTAP.",
+            "status": "pending",
+            "dependencies": [],
+            "priority": "high",
+            "updatedAt": "2026-08-23T08:00:00.000Z",
+            "subtasks": [],
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "EF moderate-ad += pause | reject-activo | resume",
+            "description": "Extiende types/handler con las acciones nuevas; códigos tipados, nunca texto crudo de Postgres.",
+            "details": "CRÍTICA → TDD estricto (Deno DI). Patrón 208.1.",
+            "testStrategy": "Deno con fakes.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "priority": "high",
+            "updatedAt": "2026-08-23T08:00:00.000Z",
+            "subtasks": [],
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Hook + vista de activos en /admin/ads",
+            "description": "useModerateAd gana las acciones; la pantalla lista activos (pestaña o sección) con pausar/bajar. Confirmación destructiva antes de bajar.",
+            "details": "Hook CRÍTICO (path hooks/**); pantalla ligera.",
+            "testStrategy": "RNTL hook + tsc/lint/smoke pantalla.",
+            "status": "pending",
+            "dependencies": [
+              2
+            ],
+            "priority": "medium",
+            "updatedAt": "2026-08-23T08:00:00.000Z",
+            "subtasks": [],
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Deploy, smoke contra el remoto e ingest al vault",
+            "description": "Preview branch primero; gate §0.5 antes del PR.",
+            "details": "Salida real de los comandos en la bitácora.",
+            "testStrategy": "Smoke pegado de la salida real.",
             "status": "pending",
             "dependencies": [
               3
             ],
             "priority": "medium",
-            "updatedAt": "2026-08-22T13:00:00.000Z",
+            "updatedAt": "2026-08-23T08:00:00.000Z",
+            "subtasks": [],
+            "parentId": "undefined"
+          }
+        ]
+      },
+      {
+        "id": "211",
+        "title": "producto(169.2): suspender y reactivar una organización desde el admin",
+        "description": "Origen: subtarea 169.2 · Detectado por: planeación /grilling 2026-08-23 (exploración 040). La máquina agencies active↔suspended con cascada completa (suspender pausa sus anuncios con paused_by_suspension=true; reactivar revive SOLO esos) existe y está testeada desde #169.2 — pero no tiene ni EF ni botón: cero llamadores. Es puro cableado de emergencia que debe existir antes de encender ads_enabled.",
+        "details": "Exploración: .taskmaster/docs/exploraciones/040-comercial-completo-stats-y-promocion.md (decisiones fijas de Abraham, 2026-08-23). La transición exige admin identificado (private.resolve_admin_actor); calcar el patrón EF+RPC de moderate-ad/moderate_ad_atomic si hace falta el GUC bajo service_role. UI: botón suspender/reactivar en mobile/app/admin/agencies/[id].tsx con copy explícito de la cascada (qué pasa con sus anuncios y propiedades). Footprint: supabase/functions/** (EF nueva o extender una admin existente) · mobile/src/features/admin/** · mobile/app/admin/agencies/[id].tsx.\n\nCriticidad: EF/RPC CRÍTICA; pantalla ligera.",
+        "testStrategy": "Deno DI (admin ok, no-admin 403, org inexistente 404, suspender ya-suspendida → código tipado). Verificar la cascada con un select antes/después en smoke de preview branch. RNTL si nace hook.",
+        "status": "pending",
+        "dependencies": [
+          "169"
+        ],
+        "priority": "high",
+        "updatedAt": "2026-08-23T08:00:00.000Z",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "EF suspend-agency (suspender/reactivar) sobre la máquina existente",
+            "description": "Acción suspend|reactivate; auditoría vía el trigger ya probado; códigos tipados.",
+            "details": "CRÍTICA → TDD estricto.",
+            "testStrategy": "Deno con fakes.",
+            "status": "pending",
+            "dependencies": [],
+            "priority": "high",
+            "updatedAt": "2026-08-23T08:00:00.000Z",
+            "subtasks": [],
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Botón y confirmación en el detalle de la organización",
+            "description": "agencies/[id].tsx: acción con confirmación destructiva y copy de cascada.",
+            "details": "Ligera (pantalla).",
+            "testStrategy": "tsc/lint/smoke.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "priority": "medium",
+            "updatedAt": "2026-08-23T08:00:00.000Z",
+            "subtasks": [],
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Deploy, smoke contra el remoto e ingest al vault",
+            "description": "Preview branch primero; gate §0.5.",
+            "details": "Salida real en bitácora.",
+            "testStrategy": "Smoke real.",
+            "status": "pending",
+            "dependencies": [
+              2
+            ],
+            "priority": "medium",
+            "updatedAt": "2026-08-23T08:00:00.000Z",
+            "subtasks": [],
+            "parentId": "undefined"
+          }
+        ]
+      },
+      {
+        "id": "212",
+        "title": "producto(171): dashboard de anuncios estilo Meta — cards por anuncio, serie diaria y zonas",
+        "description": "Origen: tarea 171 · Detectado por: planeación /grilling 2026-08-23 (exploración 040, screenshots de Meta Ads como referencia). El panel de #171 solo agrega por AGENCIA y por ZONA; no existe desglose por anuncio ni por día. v1: lista de cards por anuncio (thumbnail, estado, impresiones/vistas/taps — calca el card de 3 métricas de Meta) → detalle con selector Hoy/30 días/Máximo, gráfico de línea diario y barras por zona. 🔒 Regla de privacidad fijada por Abraham: zona ⇒ k≥5 (+ bucket otras zonas); sin zona ⇒ sin umbral. Gráficos con react-native-svg (YA instalada): cero dependencia nueva.",
+        "details": "Exploración: .taskmaster/docs/exploraciones/040-comercial-completo-stats-y-promocion.md (decisiones fijas de Abraham, 2026-08-23). RPCs nuevas calcando el patrón anti-IDOR fail-closed de ad_metrics_for_agency (security definer, autorización explícita, 0 filas nunca excepción, sin PII): (a) totales por anuncio de la org (cards), (b) serie diaria por anuncio SIN zona y sin k, (c) zonas por anuncio con k≥5. 'Máximo' mezcla crudo (≤90d, diario) + ad_impressions_monthly (mensual, vía #201) SIN doble contar — por eso depende de #201. Entrada al panel: visible si can_advertise O la org tiene ≥1 anuncio. Diseño ANTES de implementar (pantalla compleja → preview HTML aprobable, identidad Urbea + layout del prototipo; referencia Meta = estructura, NUNCA sus colores/fuentes). Footprint: supabase/migrations/** · mobile/src/features/ads/hooks/** · mobile/src/components/charts/** · mobile/app/(protected)/ads/**.\n\nCriticidad: RPCs CRÍTICAS; hooks CRÍTICOS; componentes de gráfico y pantallas ligera.",
+        "testStrategy": "pgTAP para las 3 RPCs (k-anonimato por zona, serie sin umbral, conservación de totales, anti-IDOR, rango de fechas inclusivo, mezcla rollup+crudo sin doble conteo). RNTL para hooks. Preview HTML aprobado por Abraham antes de portar. Smoke visual por CLI en simulador.",
+        "status": "pending",
+        "dependencies": [
+          "171",
+          "201"
+        ],
+        "priority": "high",
+        "updatedAt": "2026-08-23T08:00:00.000Z",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "RPCs de lectura por anuncio (totales, serie diaria, zonas k≥5)",
+            "description": "Las 3 RPCs con el patrón ad_metrics_for_agency; p_from/p_to inclusivos; Máximo = rollup mensual + crudo diario sin doble contar.",
+            "details": "CRÍTICA → TDD estricto (pgTAP).",
+            "testStrategy": "pgTAP plan completo.",
+            "status": "pending",
+            "dependencies": [],
+            "priority": "high",
+            "updatedAt": "2026-08-23T08:00:00.000Z",
+            "subtasks": [],
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Diseño aprobable del dashboard (preview HTML)",
+            "description": "Cards 3 métricas + detalle (selector periodo, línea diaria, barras por zona). Identidad Urbea + layout del prototipo; Meta solo como referencia estructural.",
+            "details": "Diseño — requiere aprobación de Abraham (puede correr /design).",
+            "testStrategy": "Preview servido por http (Chrome MCP no abre file://).",
+            "status": "pending",
+            "dependencies": [],
+            "priority": "high",
+            "updatedAt": "2026-08-23T08:00:00.000Z",
+            "subtasks": [],
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Hooks de datos por anuncio",
+            "description": "useAdStats (totales+serie+zonas por ad_id, selector de periodo). Patrón useAdMetrics: totals=null en carga/error, nunca ceros; mensajes neutros.",
+            "details": "CRÍTICA → TDD estricto (RNTL).",
+            "testStrategy": "RNTL.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "priority": "high",
+            "updatedAt": "2026-08-23T08:00:00.000Z",
+            "subtasks": [],
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Componentes de gráficos SVG (línea, barras)",
+            "description": "Sobre react-native-svg, sin dependencia nueva; theming desde theme.ts.",
+            "details": "Ligera (components/**).",
+            "testStrategy": "tsc/lint + smoke visual.",
+            "status": "pending",
+            "dependencies": [
+              2
+            ],
+            "priority": "medium",
+            "updatedAt": "2026-08-23T08:00:00.000Z",
+            "subtasks": [],
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Pantallas: lista de cards + detalle del anuncio",
+            "description": "(protected)/ads: lista por anuncio + detalle con gráficos; entrada visible si can_advertise o ≥1 anuncio.",
+            "details": "Ligera. Techo de alcance = preview aprobado en 212.2.",
+            "testStrategy": "tsc/lint + smoke CLI.",
+            "status": "pending",
+            "dependencies": [
+              3,
+              4
+            ],
+            "priority": "medium",
+            "updatedAt": "2026-08-23T08:00:00.000Z",
+            "subtasks": [],
+            "parentId": "undefined"
+          },
+          {
+            "id": 6,
+            "title": "Deploy, smoke contra el remoto e ingest al vault",
+            "description": "Preview branch primero; gate §0.5.",
+            "details": "Salida real en bitácora.",
+            "testStrategy": "Smoke real.",
+            "status": "pending",
+            "dependencies": [
+              5
+            ],
+            "priority": "medium",
+            "updatedAt": "2026-08-23T08:00:00.000Z",
+            "subtasks": [],
+            "parentId": "undefined"
+          }
+        ]
+      },
+      {
+        "id": "213",
+        "title": "feat(040): promocionar una propiedad — boost gratis de un paso con moderación",
+        "description": "Nace de la exploración 040 (decisión de Abraham 2026-08-23): adelantar de la fase de cobro el producto 'promocionar publicación'. Cualquier miembro publicador de una org promociona una propiedad YA publicada: el anuncio ES el video de la propiedad, fuera de ranking con badge 'Anuncio'; al tocar sigue el flujo normal de leads (el tap de contacto cuenta como cta_tap). Sin configuración: municipio heredado + 30 días fijos → pending_review (gate = moderación, no can_advertise ni pago). can_advertise queda como gate solo de anuncios display. El self-serve pagado y el selector de alcance llegan en fase 2 (#172/#84).",
+        "details": "Exploración: .taskmaster/docs/exploraciones/040-comercial-completo-stats-y-promocion.md (decisiones fijas de Abraham, 2026-08-23). Migración expand aditiva: ads.property_id nullable + creative_id pasa a nullable + CHECK exactamente-uno(creative_id, property_id); validar propiedad publicada y de la misma org. RPC promote_property_atomic (granted a authenticated, patrón create_ad_campaign_atomic): hereda municipio de la propiedad, 30 días, status pending_review. Feed: ads_for_zone/mint-ad-urls resuelven el video desde property_videos cuando property_id; tap → detalle de la propiedad. /admin/ads muestra promos en la misma cola (con qué propiedad enlazan). UI: botón 'Promocionar' en mis propiedades/detalle + confirmación de un paso. §0.5: no rompe select('*') de builds instalados (columna nueva); ads_enabled=false sigue mandando.\n\nCriticidad: migración/RPC/feed CRÍTICAS; UI de boost ligera.",
+        "testStrategy": "pgTAP (CHECK exactamente-uno, org ajena rechazada, propiedad no publicada rechazada, herencia de municipio, 30 días). Deno para los cambios de mint-ad-urls/feed. RNTL si nace hook. Smoke E2E en preview branch: promocionar → moderar → ver en feed → tap → detalle propiedad → métricas registran.",
+        "status": "pending",
+        "dependencies": [
+          "170",
+          "208",
+          "212"
+        ],
+        "priority": "medium",
+        "updatedAt": "2026-08-23T08:00:00.000Z",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Migración: ads.property_id + creative_id nullable + CHECK exactamente-uno",
+            "description": "Expand aditiva con rollback; validaciones de publicada/misma org donde correspondan (RPC, no solo CHECK).",
+            "details": "CRÍTICA → TDD estricto (pgTAP).",
+            "testStrategy": "pgTAP.",
+            "status": "pending",
+            "dependencies": [],
+            "priority": "high",
+            "updatedAt": "2026-08-23T08:00:00.000Z",
+            "subtasks": [],
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "RPC promote_property_atomic",
+            "description": "Un paso: crea el ad pending_review con municipio heredado y 30 días; códigos tipados P0001.",
+            "details": "CRÍTICA → TDD estricto.",
+            "testStrategy": "pgTAP.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "priority": "high",
+            "updatedAt": "2026-08-23T08:00:00.000Z",
+            "subtasks": [],
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Feed y minter resuelven la promo",
+            "description": "ads_for_zone/mint-ad-urls sirven el video de property_videos; tap abre el detalle de la propiedad; cta_tap = tap de contacto.",
+            "details": "CRÍTICA (EF/SQL).",
+            "testStrategy": "Deno + pgTAP según el corte.",
+            "status": "pending",
+            "dependencies": [
+              2
+            ],
+            "priority": "high",
+            "updatedAt": "2026-08-23T08:00:00.000Z",
+            "subtasks": [],
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "UI: botón Promocionar + confirmación + badge",
+            "description": "Botón en mis propiedades/detalle; confirmación de un paso; badge 'Anuncio' reusa el del feed; /admin/ads distingue promos.",
+            "details": "Ligera.",
+            "testStrategy": "tsc/lint + smoke CLI.",
+            "status": "pending",
+            "dependencies": [
+              3
+            ],
+            "priority": "medium",
+            "updatedAt": "2026-08-23T08:00:00.000Z",
+            "subtasks": [],
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Deploy, smoke E2E contra el remoto e ingest al vault",
+            "description": "Preview branch primero; gate §0.5.",
+            "details": "Salida real en bitácora.",
+            "testStrategy": "Smoke real.",
+            "status": "pending",
+            "dependencies": [
+              4
+            ],
+            "priority": "medium",
+            "updatedAt": "2026-08-23T08:00:00.000Z",
             "subtasks": [],
             "parentId": "undefined"
           }
@@ -9559,9 +9883,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-08-23T07:03:42.722Z",
-      "taskCount": 209,
-      "completedCount": 128,
+      "lastModified": "2026-08-23T20:48:05.933Z",
+      "taskCount": 213,
+      "completedCount": 129,
       "tags": [
         "master"
       ]

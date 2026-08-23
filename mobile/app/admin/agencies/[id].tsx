@@ -10,12 +10,16 @@
  *    invite_action_link llegan por params (recién creada desde el form).
  *    Al volver desde la lista NO estarán: el token se guarda hasheado.
  * 3. Lista de miembros (agency_members JOIN users) con badge de rol y estado.
+ * 4. Capacidad comercial (209.3) — encender/apagar can_advertise vía
+ *    useSetOrgAdvertising (209.1). Apagar NO pausa los anuncios activos de la
+ *    organización (eso lo hace suspender la organización, #211).
  *
  * Estética: utilitaria/clara — consistente con admin/index.tsx y create.tsx.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Pressable,
   SafeAreaView,
@@ -28,6 +32,13 @@ import * as Clipboard from 'expo-clipboard';
 
 import { supabase } from '@/lib/supabase/client';
 import type { Database } from '@/types/database';
+import { PrimaryButton } from '@/components/PrimaryButton';
+import {
+  ADVERTISER_CATEGORY_LABELS,
+  AdvertiserCategorySelect,
+  type AdvertiserCategory,
+} from '@/features/admin/components/advertiser-category-select';
+import { useSetOrgAdvertising } from '@/features/admin/hooks/useSetOrgAdvertising';
 
 // ---------------------------------------------------------------------------
 // Tipos
@@ -186,6 +197,9 @@ export default function AgencyDetailScreen(): React.ReactElement {
     (invite_action_link !== undefined && invite_action_link.length > 0);
 
   const [agency_name, set_agency_name] = useState<string>('');
+  const [can_advertise, set_can_advertise] = useState<boolean>(false);
+  const [advertiser_category, set_advertiser_category] =
+    useState<AdvertiserCategory | null>(null);
   const [members, set_members] = useState<MemberRow[]>([]);
   const [is_loading, set_is_loading] = useState(true);
   const [error, set_error] = useState<string | null>(null);
@@ -214,7 +228,11 @@ export default function AgencyDetailScreen(): React.ReactElement {
     set_error(null);
 
     const [agency_result, members_result] = await Promise.all([
-      supabase.from('agencies').select('name').eq('id', id).single(),
+      supabase
+        .from('agencies')
+        .select('name, can_advertise, advertiser_category')
+        .eq('id', id)
+        .single(),
       supabase
         .from('agency_members')
         .select('id, member_role, status, joined_at, users(first_name, last_name, email)')
@@ -229,6 +247,10 @@ export default function AgencyDetailScreen(): React.ReactElement {
     }
 
     set_agency_name(agency_result.data.name);
+    set_can_advertise(agency_result.data.can_advertise);
+    set_advertiser_category(
+      (agency_result.data.advertiser_category as AdvertiserCategory | null) ?? null,
+    );
 
     if (members_result.error !== null) {
       set_error('No se pudieron cargar los miembros. Inténtalo de nuevo.');
@@ -300,6 +322,13 @@ export default function AgencyDetailScreen(): React.ReactElement {
               email_sent={email_sent}
               copied_field={copied_field}
               members_count={members.length}
+              agency_id={id}
+              can_advertise={can_advertise}
+              advertiser_category={advertiser_category}
+              on_advertising_updated={(next_can_advertise, next_category) => {
+                set_can_advertise(next_can_advertise);
+                set_advertiser_category(next_category);
+              }}
               on_copy_token={() => {
                 if (plain_token !== undefined) {
                   void copy_to_clipboard(plain_token, 'token');
@@ -339,6 +368,13 @@ interface ListHeaderProps {
   email_sent: string | undefined;
   copied_field: 'token' | 'link' | null;
   members_count: number;
+  agency_id: string;
+  can_advertise: boolean;
+  advertiser_category: AdvertiserCategory | null;
+  on_advertising_updated: (
+    can_advertise: boolean,
+    advertiser_category: AdvertiserCategory | null,
+  ) => void;
   on_copy_token: () => void;
   on_copy_link: () => void;
 }
@@ -351,6 +387,10 @@ function ListHeader({
   email_sent,
   copied_field,
   members_count,
+  agency_id,
+  can_advertise,
+  advertiser_category,
+  on_advertising_updated,
   on_copy_token,
   on_copy_link,
 }: ListHeaderProps): React.ReactElement {
@@ -424,10 +464,143 @@ function ListHeader({
         </View>
       )}
 
+      {/* Capacidad comercial (209.3) */}
+      <AdvertisingSection
+        agency_id={agency_id}
+        can_advertise={can_advertise}
+        advertiser_category={advertiser_category}
+        on_updated={on_advertising_updated}
+      />
+
       {/* Encabezado de la sección de miembros */}
       <Text style={styles.section_title}>
         Miembros{members_count > 0 ? ` (${members_count})` : ''}
       </Text>
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Subcomponente: capacidad comercial (209.3)
+//
+// Apagar la capacidad NO pausa los anuncios activos de la organización — eso
+// lo hace la suspensión de la organización (#211, todavía no existe). El
+// copy de confirmación de "Apagar" lo deja explícito para que el admin no
+// crea que apagó los anuncios.
+// ---------------------------------------------------------------------------
+
+interface AdvertisingSectionProps {
+  agency_id: string;
+  can_advertise: boolean;
+  advertiser_category: AdvertiserCategory | null;
+  on_updated: (
+    can_advertise: boolean,
+    advertiser_category: AdvertiserCategory | null,
+  ) => void;
+}
+
+function AdvertisingSection({
+  agency_id,
+  can_advertise,
+  advertiser_category,
+  on_updated,
+}: AdvertisingSectionProps): React.ReactElement {
+  const [pending_category, set_pending_category] =
+    useState<AdvertiserCategory | null>(null);
+  const [category_error, set_category_error] = useState<string | undefined>(
+    undefined,
+  );
+  const { setAdvertising, is_saving, error } = useSetOrgAdvertising();
+
+  const handle_turn_on = useCallback(async () => {
+    if (pending_category === null) {
+      set_category_error('Selecciona una categoría de anunciante.');
+      return;
+    }
+    set_category_error(undefined);
+    const res = await setAdvertising({
+      agency_id,
+      enabled: true,
+      category: pending_category,
+    });
+    if (res.ok) {
+      on_updated(true, pending_category);
+    }
+  }, [agency_id, pending_category, setAdvertising, on_updated]);
+
+  const confirm_turn_off = useCallback(() => {
+    Alert.alert(
+      'Apagar capacidad comercial',
+      'Apagar esto NO pausa los anuncios que ya están activos — solo impide configurar anuncios nuevos. Para pausar los anuncios en curso hay que suspender la organización, que es una acción distinta.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Apagar',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              const res = await setAdvertising({ agency_id, enabled: false });
+              if (res.ok) {
+                on_updated(false, null);
+              }
+            })();
+          },
+        },
+      ],
+    );
+  }, [agency_id, setAdvertising, on_updated]);
+
+  return (
+    <View style={styles.advertising_section}>
+      <Text style={styles.section_title}>Capacidad comercial</Text>
+
+      <View style={styles.advertising_status_row}>
+        <Text style={styles.advertising_status_label}>
+          {can_advertise ? 'Encendida' : 'Apagada'}
+        </Text>
+        {can_advertise && advertiser_category !== null && (
+          <View style={styles.advertising_category_badge}>
+            <Text style={styles.advertising_category_text}>
+              {ADVERTISER_CATEGORY_LABELS[advertiser_category]}
+            </Text>
+          </View>
+        )}
+      </View>
+
+      {can_advertise ? (
+        <PrimaryButton
+          label="Apagar"
+          variant="ghost"
+          surface="light"
+          loading={is_saving}
+          onPress={confirm_turn_off}
+          accessibilityLabel="Apagar capacidad comercial"
+        />
+      ) : (
+        <>
+          <AdvertiserCategorySelect
+            value={pending_category}
+            onChange={(category) => {
+              set_pending_category(category);
+              set_category_error(undefined);
+            }}
+            error={category_error}
+          />
+          <PrimaryButton
+            label="Encender"
+            surface="light"
+            loading={is_saving}
+            onPress={() => void handle_turn_on()}
+            accessibilityLabel="Encender capacidad comercial"
+          />
+        </>
+      )}
+
+      {error !== null && (
+        <Text style={styles.advertising_error_text} accessibilityRole="alert">
+          {error}
+        </Text>
+      )}
     </View>
   );
 }
@@ -591,6 +764,38 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
     textTransform: 'uppercase',
     marginBottom: 14,
+  },
+
+  // ── Capacidad comercial (209.3) ───────────────────────────────────────────
+  advertising_section: {
+    marginBottom: 24,
+  },
+  advertising_status_row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  advertising_status_label: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: COLOR_TEXT_PRIMARY,
+    marginRight: 10,
+  },
+  advertising_category_badge: {
+    backgroundColor: COLOR_SALVIA + '22',
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+  },
+  advertising_category_text: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLOR_SALVIA,
+  },
+  advertising_error_text: {
+    fontSize: 13,
+    color: '#D94A4A',
+    marginTop: 10,
   },
 
   // ── Tarjeta de miembro ────────────────────────────────────────────────────

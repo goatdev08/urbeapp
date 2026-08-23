@@ -113,6 +113,12 @@ import type {
   ResolvedZone,
   ZoneResolver,
 } from "../record-ad-impressions/types.ts";
+import type {
+  OrgAdvertisingErrorCode,
+  OrgAdvertisingResult,
+  OrgAdvertisingWriteParams,
+  OrgAdvertisingWriter,
+} from "../set-org-advertising/types.ts";
 
 /** Cliente supabase-js con service_role (bypassa RLS y column-grants). */
 export function service_client(): SupabaseClient {
@@ -2077,6 +2083,51 @@ export function make_ad_moderation_writer(client: SupabaseClient): AdModerationW
         return { ok: false as const, error_code: "AD_NOT_FOUND" as const };
       }
       return { ok: true as const, status: params.next_status };
+    },
+  };
+}
+
+// Códigos de negocio que el overload de 4 argumentos de
+// set_org_advertising_atomic levanta con SQLSTATE P0001 (20260823000001,
+// que delega en 20260815000002/20260816000003).
+const ORG_ADVERTISING_ERROR_CODES = [
+  "AGENCY_NOT_FOUND",
+  "ADVERTISER_CATEGORY_REQUIRED",
+] as const;
+
+function extract_org_advertising_error_code(message: string): OrgAdvertisingErrorCode {
+  const hit = ORG_ADVERTISING_ERROR_CODES.find((c) => message.includes(c));
+  return hit ?? "DB_ERROR";
+}
+
+/**
+ * Adaptador real de OrgAdvertisingWriter sobre el overload de 4 argumentos de
+ * set_org_advertising_atomic (20260823000001). El overload instala el admin
+ * en el GUC urbea.admin_actor_id dentro de su transacción -- sin eso
+ * private.resolve_admin_actor() no tendría de dónde resolver el admin y la
+ * RPC de 3 argumentos que delega dejaría admin_id NULL, violando la FK de
+ * admin_actions.
+ *
+ * 🔴 `client.rpc` se llama COMO MÉTODO del cliente, nunca desprendido: un
+ * `const { rpc } = client` pierde el `this` y lanza en runtime (#205).
+ */
+export function make_org_advertising_writer(client: SupabaseClient): OrgAdvertisingWriter {
+  return {
+    async set(params: OrgAdvertisingWriteParams): Promise<OrgAdvertisingResult> {
+      const { error } = await client.rpc("set_org_advertising_atomic", {
+        p_agency_id: params.agency_id,
+        p_enabled: params.enabled,
+        p_category: params.category,
+        p_admin_id: params.admin_id,
+      });
+
+      if (error) {
+        return {
+          ok: false as const,
+          error_code: extract_org_advertising_error_code(error.message ?? ""),
+        };
+      }
+      return { ok: true as const };
     },
   };
 }
