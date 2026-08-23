@@ -77,7 +77,7 @@
 // - EC-25 DELETE → 405
 // ════════════════════════════════════════════════════════════════════════════
 
-import { assertEquals, assertExists } from "@std/assert";
+import { assertEquals, assertExists, assertStringIncludes } from "@std/assert";
 import { handler } from "./handler.ts";
 import type {
   AdModerationResult,
@@ -314,6 +314,11 @@ Deno.test("EC-15 🔴: el cuerpo NUNCA filtra el texto crudo de Postgres", async
   const w = make_writer({ ok: false, error_code: "INVALID_AD_STATUS_TRANSITION" });
   const res = await handler(post(approve_body), deps(verifier_ok(), w));
   const raw = await res.text();
+
+  // Sin estas dos primeras aserciones el caso pasaría TRIVIALMENTE contra un
+  // stub que no contesta nada — un test que no puede distinguir no protege.
+  assertEquals(res.status, 409);
+  assertStringIncludes(raw, "INVALID_AD_STATUS_TRANSITION");
 
   assertEquals(raw.includes("PL/pgSQL"), false);
   assertEquals(raw.includes("handle_ad_status_change"), false);
