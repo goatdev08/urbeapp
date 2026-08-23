@@ -89,9 +89,16 @@ type MintedAdUrlRow = { creative_id: string; posterUrl: string; videoUrl: string
  * legítima: ningún creativo autorizado/disponible).
  */
 async function mint_ad_urls(client: unknown, ads: FeedAd[]): Promise<FeedAd[] | null> {
-  const invoke = (client as { functions?: { invoke?: unknown } } | null | undefined)?.functions?.invoke;
-  if (typeof invoke !== 'function') return null;
-  const call = invoke as (name: string, opts: unknown) => Promise<{ data: unknown; error: unknown }>;
+  // 🔴 #205: se comprueba el tipo sobre el método, pero se LLAMA LIGADO a
+  // `functions`. Desprenderlo (`const call = ...functions.invoke`) pierde
+  // `this` y el invoke real devuelve `{data:null, error:{}}` — un error MUDO
+  // que el `if (error) return null` de abajo confunde con "la EF falló", y el
+  // feed se queda sin anuncios para siempre. La guarda de tipo (fail-soft de
+  // 170.4 decisión 6) se conserva: comprobar y ligar no se estorban.
+  const fns = (client as { functions?: { invoke?: unknown } } | null | undefined)?.functions;
+  if (typeof fns?.invoke !== 'function') return null;
+  const bound_invoke = fns.invoke as (...args: unknown[]) => Promise<{ data: unknown; error: unknown }>;
+  const call = (...args: unknown[]) => bound_invoke.apply(fns, args);
 
   const { data, error } = await call('mint-ad-urls', {
     body: { creative_ids: ads.map((ad) => ad.creative_id) },
@@ -146,9 +153,21 @@ async function compose_feed_items(
   already_shown_ref: { current: number },
   skip_first_position: boolean,
 ): Promise<FeedItem[]> {
-  const rpc = (client as { rpc?: unknown } | null | undefined)?.rpc;
-  if (typeof rpc !== 'function') return to_property_items(properties);
-  const call_rpc = rpc as (fn: string, params?: unknown) => Promise<{ data: unknown; error: unknown }>;
+  // 🔴 #205: mismo motivo que en mint_ad_urls, pero aquí el fallo es más
+  // ruidoso y por eso fue el que dejó rastro: el `rpc` real hace
+  // `return this.rest.rpc(...)`, así que desprendido LANZA TypeError, el catch
+  // de abajo lo traga y marca `stage: 'config'`. Fue el síntoma que delató el
+  // bug (dos filas ads_fetch_failed en events_raw). Se comprueba el tipo y se
+  // llama ligado al cliente.
+  //
+  // Se reenvían los argumentos con `...args` en vez de `(fn, params)`: así se
+  // preserva la ARIDAD. `call_rpc('ads_feed_config')` debe llegar con UN
+  // argumento, no con `(fn, undefined)` — EC-WIRE-1 de 170.4 afirma la forma
+  // exacta de la llamada (`toHaveBeenCalledWith('ads_feed_config')`).
+  const c = client as { rpc?: unknown } | null | undefined;
+  if (typeof c?.rpc !== 'function') return to_property_items(properties);
+  const bound_rpc = c.rpc as (...args: unknown[]) => Promise<{ data: unknown; error: unknown }>;
+  const call_rpc = (...args: unknown[]) => bound_rpc.apply(c, args);
 
   let config: AdsFeedConfigRow;
   try {
