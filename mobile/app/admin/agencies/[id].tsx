@@ -13,6 +13,12 @@
  * 4. Capacidad comercial (209.3) — encender/apagar can_advertise vía
  *    useSetOrgAdvertising (209.1). Apagar NO pausa los anuncios activos de la
  *    organización (eso lo hace suspender la organización, #211).
+ * 5. Estado de la organización (211.2) — suspender/reactivar vía
+ *    useSuspendAgency (211.1/211.2). "Suspender" SOLO se ofrece si
+ *    status='active'; "Reactivar" SOLO si status='suspended'. Para
+ *    pending_approval/rejected NO se ofrece ninguna de las dos: reactivar
+ *    sobre pending_approval ejecutaría una APROBACIÓN completa vía el
+ *    trigger (regla del guardian de 211.1), no algo alcanzable desde aquí.
  *
  * Estética: utilitaria/clara — consistente con admin/index.tsx y create.tsx.
  */
@@ -39,6 +45,8 @@ import {
   type AdvertiserCategory,
 } from '@/features/admin/components/advertiser-category-select';
 import { useSetOrgAdvertising } from '@/features/admin/hooks/useSetOrgAdvertising';
+import { useSuspendAgency } from '@/features/admin/hooks/useSuspendAgency';
+import { agency_status_color, format_agency_status } from '@/features/admin/agency_status_labels';
 
 // ---------------------------------------------------------------------------
 // Tipos
@@ -46,6 +54,7 @@ import { useSetOrgAdvertising } from '@/features/admin/hooks/useSetOrgAdvertisin
 
 type MemberRole = Database['public']['Enums']['agency_member_role'];
 type MemberStatus = Database['public']['Enums']['agency_member_status'];
+type AgencyStatus = Database['public']['Enums']['agency_status'];
 
 interface MemberUser {
   first_name: string | null;
@@ -197,6 +206,7 @@ export default function AgencyDetailScreen(): React.ReactElement {
     (invite_action_link !== undefined && invite_action_link.length > 0);
 
   const [agency_name, set_agency_name] = useState<string>('');
+  const [agency_status, set_agency_status] = useState<AgencyStatus | null>(null);
   const [can_advertise, set_can_advertise] = useState<boolean>(false);
   const [advertiser_category, set_advertiser_category] =
     useState<AdvertiserCategory | null>(null);
@@ -230,7 +240,7 @@ export default function AgencyDetailScreen(): React.ReactElement {
     const [agency_result, members_result] = await Promise.all([
       supabase
         .from('agencies')
-        .select('name, can_advertise, advertiser_category')
+        .select('name, status, can_advertise, advertiser_category')
         .eq('id', id)
         .single(),
       supabase
@@ -247,6 +257,7 @@ export default function AgencyDetailScreen(): React.ReactElement {
     }
 
     set_agency_name(agency_result.data.name);
+    set_agency_status(agency_result.data.status);
     set_can_advertise(agency_result.data.can_advertise);
     set_advertiser_category(
       (agency_result.data.advertiser_category as AdvertiserCategory | null) ?? null,
@@ -323,6 +334,10 @@ export default function AgencyDetailScreen(): React.ReactElement {
               copied_field={copied_field}
               members_count={members.length}
               agency_id={id}
+              agency_status={agency_status}
+              on_status_updated={(next_status) => {
+                set_agency_status(next_status);
+              }}
               can_advertise={can_advertise}
               advertiser_category={advertiser_category}
               on_advertising_updated={(next_can_advertise, next_category) => {
@@ -369,6 +384,8 @@ interface ListHeaderProps {
   copied_field: 'token' | 'link' | null;
   members_count: number;
   agency_id: string;
+  agency_status: AgencyStatus | null;
+  on_status_updated: (next_status: AgencyStatus) => void;
   can_advertise: boolean;
   advertiser_category: AdvertiserCategory | null;
   on_advertising_updated: (
@@ -388,6 +405,8 @@ function ListHeader({
   copied_field,
   members_count,
   agency_id,
+  agency_status,
+  on_status_updated,
   can_advertise,
   advertiser_category,
   on_advertising_updated,
@@ -464,6 +483,15 @@ function ListHeader({
         </View>
       )}
 
+      {/* Estado de la organización (211.2) */}
+      {agency_status !== null && (
+        <AgencyStatusSection
+          agency_id={agency_id}
+          status={agency_status}
+          on_updated={on_status_updated}
+        />
+      )}
+
       {/* Capacidad comercial (209.3) */}
       <AdvertisingSection
         agency_id={agency_id}
@@ -481,12 +509,124 @@ function ListHeader({
 }
 
 // ---------------------------------------------------------------------------
+// Subcomponente: estado de la organización (211.2)
+//
+// "Suspender" SOLO se ofrece si status='active'; "Reactivar" SOLO si
+// status='suspended'. Para pending_approval/rejected no se ofrece ninguna de
+// las dos acciones — reactivar sobre pending_approval ejecutaría una
+// APROBACIÓN completa vía el trigger handle_agency_status_change, que no es
+// lo que esta pantalla debe disparar (regla del guardian de 211.1).
+// ---------------------------------------------------------------------------
+
+interface AgencyStatusSectionProps {
+  agency_id: string;
+  status: AgencyStatus;
+  on_updated: (next_status: AgencyStatus) => void;
+}
+
+function AgencyStatusSection({
+  agency_id,
+  status,
+  on_updated,
+}: AgencyStatusSectionProps): React.ReactElement {
+  const { suspend, reactivate, is_working, error } = useSuspendAgency();
+
+  const confirm_suspend = useCallback(() => {
+    Alert.alert(
+      'Suspender organización',
+      'Suspender pausa los anuncios activos de la organización y se reactivan solos al reactivarla; las propiedades publicadas NO se ven afectadas — siguen visibles.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Suspender',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              const res = await suspend(agency_id);
+              if (res.ok && res.status !== null) {
+                on_updated(res.status);
+              }
+            })();
+          },
+        },
+      ],
+    );
+  }, [agency_id, suspend, on_updated]);
+
+  const confirm_reactivate = useCallback(() => {
+    Alert.alert(
+      'Reactivar organización',
+      'Sus anuncios pausados por la suspensión vuelven a activarse.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Reactivar',
+          onPress: () => {
+            void (async () => {
+              const res = await reactivate(agency_id);
+              if (res.ok && res.status !== null) {
+                on_updated(res.status);
+              }
+            })();
+          },
+        },
+      ],
+    );
+  }, [agency_id, reactivate, on_updated]);
+
+  const badge_color = agency_status_color(status);
+
+  return (
+    <View style={styles.advertising_section}>
+      <Text style={styles.section_title}>Estado de la organización</Text>
+
+      <View style={styles.advertising_status_row}>
+        <View
+          style={[styles.advertising_category_badge, { backgroundColor: badge_color + '22' }]}
+        >
+          <Text style={[styles.advertising_category_text, { color: badge_color }]}>
+            {format_agency_status(status)}
+          </Text>
+        </View>
+      </View>
+
+      {status === 'active' && (
+        <PrimaryButton
+          label="Suspender"
+          variant="ghost"
+          surface="light"
+          loading={is_working}
+          onPress={confirm_suspend}
+          accessibilityLabel="Suspender organización"
+        />
+      )}
+
+      {status === 'suspended' && (
+        <PrimaryButton
+          label="Reactivar"
+          surface="light"
+          loading={is_working}
+          onPress={confirm_reactivate}
+          accessibilityLabel="Reactivar organización"
+        />
+      )}
+
+      {error !== null && (
+        <Text style={styles.advertising_error_text} accessibilityRole="alert">
+          {error}
+        </Text>
+      )}
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Subcomponente: capacidad comercial (209.3)
 //
 // Apagar la capacidad NO pausa los anuncios activos de la organización — eso
-// lo hace la suspensión de la organización (#211, todavía no existe). El
-// copy de confirmación de "Apagar" lo deja explícito para que el admin no
-// crea que apagó los anuncios.
+// lo hace la suspensión de la organización (211.2, arriba). El copy de
+// confirmación de "Apagar" lo deja explícito para que el admin no crea que
+// apagó los anuncios.
 // ---------------------------------------------------------------------------
 
 interface AdvertisingSectionProps {

@@ -26,6 +26,7 @@ import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase/client';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import type { Database } from '@/types/database';
+import { agency_status_color, format_agency_status } from '@/features/admin/agency_status_labels';
 
 // ---------------------------------------------------------------------------
 // Tipos
@@ -40,35 +41,6 @@ type AgencyRow = Pick<
 // Helpers de presentación
 // ---------------------------------------------------------------------------
 
-/** Traduce el valor del enum agency_status a una etiqueta legible en ES. */
-function format_status(status: AgencyRow['status']): string {
-  const labels: Record<AgencyRow['status'], string> = {
-    pending_approval: 'Pendiente',
-    approved: 'Aprobada',
-    active: 'Activa',
-    suspended: 'Suspendida',
-    rejected: 'Rechazada',
-  };
-  return labels[status] ?? status;
-}
-
-/** Color del badge de estado. */
-function status_color(status: AgencyRow['status']): string {
-  switch (status) {
-    case 'active':
-      return '#1A5E44';   // salvia
-    case 'approved':
-      return '#4A90D9';   // azul
-    case 'pending_approval':
-      return '#E5A020';   // ámbar
-    case 'suspended':
-    case 'rejected':
-      return '#D94A4A';   // rojo
-    default:
-      return '#9CA3AF';   // gris
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Subcomponente: tarjeta de inmobiliaria
 // ---------------------------------------------------------------------------
@@ -79,7 +51,7 @@ interface AgencyCardProps {
 }
 
 function AgencyCard({ item, on_press }: AgencyCardProps): React.ReactElement {
-  const badge_color = status_color(item.status);
+  const badge_color = agency_status_color(item.status);
 
   return (
     <Pressable
@@ -97,7 +69,7 @@ function AgencyCard({ item, on_press }: AgencyCardProps): React.ReactElement {
         </Text>
         <View style={[styles.badge, { backgroundColor: badge_color + '22' }]}>
           <Text style={[styles.badge_text, { color: badge_color }]}>
-            {format_status(item.status)}
+            {format_agency_status(item.status)}
           </Text>
         </View>
       </View>
