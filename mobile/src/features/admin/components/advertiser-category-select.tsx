@@ -34,7 +34,7 @@ export const ADVERTISER_CATEGORIES = [
 
 export type AdvertiserCategory = (typeof ADVERTISER_CATEGORIES)[number];
 
-const ADVERTISER_CATEGORY_LABELS: Record<AdvertiserCategory, string> = {
+export const ADVERTISER_CATEGORY_LABELS: Record<AdvertiserCategory, string> = {
   credito_hipotecario: 'Crédito hipotecario',
   seguros: 'Seguros',
   mudanzas: 'Mudanzas',
