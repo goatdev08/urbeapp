@@ -219,9 +219,15 @@ end $$;
 -- test_months_68: TODAS las fechas de fixture de este archivo cuelgan de UNA
 -- sola evaluación de now() (estable dentro de la transacción) -- month_a es
 -- el mes EN CURSO (0-30 días de antigüedad, sobra margen bajo los 90 días);
--- month_b un mes atrás (~28-61 días); month_old dos meses atrás (~59-92 días
--- en el peor caso, pero SIEMPRE bajo 90 -- ver cálculo en la bitácora); estos
--- tres son los meses ELEGIBLES que ya recalculaba el primer RED (secciones
+-- month_b un mes atrás (~28-61 días); month_old COMPARTE mes con month_b pero
+-- con OTRO ad_id (guardian ciclo 2: "dos meses atrás" alcanzaba 90.5-92.5
+-- días de antigüedad los días 29-31 de varios meses y la suite se rompía sola
+-- 20 días al año; y un TERCER mes calendario elegible NO siempre existe — a
+-- fin de mes solo caben dos inicios de mes dentro de los 90 días. Como la
+-- llave del rollup incluye ad_id, dos ads en el mismo mes producen filas
+-- monthly distintas: OLD conserva su semántica de "mes no-actual con su
+-- propia fila" con edad garantizada <=61 días). Estos
+-- son los meses ELEGIBLES que ya recalculaba el primer RED (secciones
 -- 5-7). month_partial (5 meses atrás, mínimo ~140 días de antigüedad) y
 -- month_absent (14 meses atrás) son los meses NO elegibles nuevos de la
 -- sección 8 -- con margen amplio y deliberado frente a los 90 días, para que
@@ -231,13 +237,13 @@ create temp table test_months_68 as
 select
   date_trunc('month', now())::date                          as month_a,
   (date_trunc('month', now()) - interval '1 month')::date    as month_b,
-  (date_trunc('month', now()) - interval '2 months')::date   as month_old,
+  (date_trunc('month', now()) - interval '1 month')::date    as month_old,
   (date_trunc('month', now()) - interval '5 months')::date   as month_partial,
   (date_trunc('month', now()) - interval '14 months')::date  as month_absent,
   now() - interval '90 days'                                as retention_cutoff,
   date_trunc('month', now()) + interval '14 days 10 hours'  as month_a_ts,
   date_trunc('month', now()) - interval '1 month' + interval '14 days 10 hours' as month_b_ts,
-  date_trunc('month', now()) - interval '2 months' + interval '14 days 10 hours' as month_old_ts,
+  date_trunc('month', now()) - interval '1 month' + interval '20 days 6 hours' as month_old_ts,
   date_trunc('month', now()) - interval '5 months' + interval '10 days'         as month_partial_ts;
 grant select on test_months_68 to public, service_role;
 
