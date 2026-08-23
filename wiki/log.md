@@ -936,3 +936,6 @@ La entrada anterior cerró diciendo que "no existe pantalla para que el admin ap
 
 ## [2026-08-23] tarea | #209 capacidad comercial desde el admin — DESPLEGADO
 El upgrade a cuenta comercial ya no vive en Studio/SQL: EF `set-org-advertising` (overload 4 args de `set_org_advertising_atomic`, GUC del actor, delegación total) + alta con capacidades en `create.tsx` + toggle en `[id].tsx` (`useSetOrgAdvertising`). Ensayo en preview-ads con smoke real (422/404/200 + auditoría verificada), producción con sonda pasiva: nada cambió para nadie (`ads_enabled=false`, 0 orgs comerciales). Guardian PASS ×2 (24 Deno + 19 RNTL + pgTAP 65). Nace de la exploración 040; siguen #210/#211 (takedown y suspensión).
+
+## [2026-08-23] tarea | #210 takedown de anuncios activos — DESPLEGADO
+El botón de emergencia previo a encender `ads_enabled`: la EF `moderate-ad` gana pause/resume (reject se reusa para bajar activos) y /admin/ads el segmento "Activos". Hallazgo del analista convertido en guard: un resume genérico habría revivido anuncios pausados por suspensión de organización — ahora `AD_PAUSED_BY_SUSPENSION` lo bloquea salvo para la cascada legítima (GUC transacción-local, inforjable en 3 capas). D2 verificado en vivo (pausa de 2.8s = recorrido exacto de `ends_at`). Guardian PASS ×3 (27 pgTAP + 37 Deno + 48 RNTL, mutation testing en cada capa).
