@@ -2020,20 +2020,26 @@ export function make_impressions_writer(client: SupabaseClient): ImpressionsWrit
 
 /**
  * Códigos de negocio que la ruta de moderación de anuncios levanta con
- * SQLSTATE P0001. Dos vienen del TRIGGER handle_ad_status_change() y uno de la
- * propia RPC:
+ * SQLSTATE P0001. Vienen del TRIGGER handle_ad_status_change() (tres) y uno de
+ * la propia RPC:
  *   · INVALID_AD_STATUS_TRANSITION — el anuncio ya no está en revisión.
  *   · ORGANIZATION_SUSPENDED       — no se activa bajo una org suspendida.
+ *   · AD_PAUSED_BY_SUSPENSION      — #210.2: `resume` sobre un anuncio con
+ *                                    paused_by_suspension=true; esa
+ *                                    reactivación es exclusiva de la cascada
+ *                                    de organización (#211), no de este botón.
  *   · STATUS_CHANGE_REQUIRES_ADMIN — resolve_admin_actor no reconoció al actor.
  *   · INVALID_NEXT_STATUS          — guard de la RPC (no debería llegar: el
- *                                    handler ya restringe a approve|reject).
+ *                                    handler ya restringe a approve|reject|
+ *                                    pause|resume).
  *
  * ⚠️ El orden IMPORTA. `find` devuelve la primera coincidencia y el mensaje de
- * Postgres puede contener más de una de estas cadenas en su CONTEXT. Los dos
+ * Postgres puede contener más de una de estas cadenas en su CONTEXT. Los
  * códigos que el usuario puede accionar van primero.
  */
 const AD_MODERATION_ERROR_CODES = [
   "ORGANIZATION_SUSPENDED",
+  "AD_PAUSED_BY_SUSPENSION",
   "INVALID_AD_STATUS_TRANSITION",
   "STATUS_CHANGE_REQUIRES_ADMIN",
   "INVALID_NEXT_STATUS",
@@ -2044,7 +2050,11 @@ function extract_ad_moderation_error_code(message: string): AdModerationErrorCod
   // STATUS_CHANGE_REQUIRES_ADMIN e INVALID_NEXT_STATUS son fallos NUESTROS, no
   // del admin: significan que la EF llamó mal. Se colapsan a DB_ERROR (500) en
   // vez de inventarles un 4xx que culparía al usuario de un bug del servidor.
-  if (hit === "INVALID_AD_STATUS_TRANSITION" || hit === "ORGANIZATION_SUSPENDED") {
+  if (
+    hit === "INVALID_AD_STATUS_TRANSITION" ||
+    hit === "ORGANIZATION_SUSPENDED" ||
+    hit === "AD_PAUSED_BY_SUSPENSION"
+  ) {
     return hit;
   }
   return "DB_ERROR";
