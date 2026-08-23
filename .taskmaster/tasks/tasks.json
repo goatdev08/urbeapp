@@ -8325,7 +8325,7 @@
         "id": "169",
         "title": "feat(039-B): anuncios — creativo de video 6–30 s, campaña por zona (catálogo #157) y moderación admin",
         "description": "Origen: exploración 039 (.taskmaster/docs/exploraciones/039-cuenta-comercial-anunciantes.md), aprobada por Abraham el 2026-08-14. Tarea B. Tablas ad_creatives (tabla PROPIA, NO property_videos), ads (estados sin 'approved'), ad_zones (municipio/colonia de #157; cero filas = inventario nacional), ad_prices (PRD §17.2: precios en tabla, jamás en código). Pipeline de subida calcado del de propiedades (Cloudflare Stream) con duración 6–30 s. Aprobación por admin SIEMPRE antes de servir — la moderación de propiedades está suspendida por #153, pero eso es operativo temporal y no se hereda a publicidad (tercero pagando, CTA hacia fuera de la app, volumen de decenas). NINGÚN pago en la beta: el slot lo otorga el admin a mano; ads.purchase_id nullable y NULL toda la beta, listo para que #84 (Stripe) solo lo llene.",
-        "details": "DATOS: ad_creatives (agency_id, cloudflare_uid, thumbnail_url, duration_seconds 6–30 CHECK, status uploading→processing→ready/failed); ads (agency_id, creative_id, title, cta_kind url|whatsapp|phone, cta_value, status draft→pending_review→active→paused|expired|rejected, rejection_reason NOT NULL si rejected, starts_at/ends_at vigencia, purchase_id nullable); ad_zones (ad_id, municipality_id XOR neighborhood_id — CHECK exactamente uno); ad_prices (scope colonia|municipio|nacional, days, amount_mxn, currency, valid_from — sembrar los 3 alcances). Máquina de estados por TRIGGER (draft→active directo falla; terminal no se reabre) + TODA transición de moderación escribe admin_actions en la misma transacción (si la auditoría falla, la transición falla — mismo criterio que moderate-property). El owner NO puede poner su anuncio en active por ninguna ruta (PostgREST/RPC/EF) — impersonación. RPC grant_ad_slot_atomic (service_role: crea ad + ad_zones + vigencia + auditoría en una transacción). Moderación en beta = Studio/SQL + trigger + admin_actions (calca 71.5); la UI llega con #81.\nEFs: mint-ad-upload-url (nueva, scope agency_id — NO comparte el 409 de concurrencia de mint-upload-url que está scoped por agent_id sobre property_videos), stream-webhook extendido de forma ADITIVA (rama de anuncios solo cuando el UPDATE sobre property_videos afecta 0 filas; la suite Deno existente pasa SIN modificarse), mint-ad-urls (nueva, calco de mint-poster-urls: nunca URL sin firmar, autz fail-closed por item). Rechazo AD_DURATION_INVALID en cliente al elegir archivo Y en servidor al pasar a ready.\nCLIENTE: mobile/src/features/ads/lib/validation.ts (duración, CTA, zonas — CRÍTICA), hooks/useAdUpload.ts (CRÍTICA), app/(protected)/ads/new/*.tsx wizard (ligera) gated por can_advertise: sin la capacidad la RUTA no existe (no basta ocultar el botón). Selector de zonas reusa search_places de #157.\nFOOTPRINT: migraciones + rollbacks + pgTAP (CRÍTICA), 3 EFs (CRÍTICA), lib/hooks móviles (CRÍTICA), wizard (ligera). Ver criterios de aceptación completos en el doc 039 §'Tarea B'.\n\n<info added on 2026-08-16T00:00:00.000Z>\nNOTAS PARA EL DEPLOY REMOTO de la migración 20260816000005 (hallazgos del guardián de 169.1, 2026-08-16 — NO bloquean, pero van en el PR y en el checklist de release):\n\n1) La migración es aditiva pura, pero sus FKs salientes toman un ShareRowExclusiveLock BREVE sobre agencies, mx_municipalities y mx_neighborhoods al crearse. Es el único momento en que toca tablas pobladas. A la escala actual son milisegundos; anotarlo por rigor, no por riesgo.\n\n2) ad_zones usa `on delete restrict` hacia los catálogos: una vez existan filas, borrar un municipio o una colonia quedará BLOQUEADO. Es la semántica correcta (no queremos zonas huérfanas), pero el pipeline de import de #157 debe saberlo — si alguna vez re-importa borrando y recreando filas de mx_neighborhoods, chocará contra esta FK.\n\n3) ESTRATEGIA DE RELEASE VIGENTE (decisión de Abraham, 2026-08-16): 168–172 se mergean progresivamente a main pero NO se despliega NADA —ni migraciones al remoto, ni EFs, ni OTA— hasta que la épica completa esté probada. Merge ≠ deploy: no hay CI/CD en este repo (no existe .github/), así que nada sale solo. La épica además nace apagada por datos: can_advertise es default false.\n</info added on 2026-08-16T00:00:00.000Z>\n\n<info added on 2026-08-16T20:00:00.000Z>\nDERIVADAS: #208 🔴 (169.2 — no existe pantalla de admin para aprobar anuncios; el circuito comercial no cierra) · #181 (guardian 169.3 — count(*) absoluto en 12_stream_schema_test.sql, mismo antipatrón que #175) · #182 (guardian 169.3 — new_values de la auditoría sin asertar, mutante M20) · #183 (169.4 — ventana del reaper duplicada entre mint-upload-url y mint-ad-upload-url) · #188 (169.5 — ad_creatives sin ventana de expiración para processing) · #189 (169.6 — fail-closed sin duración bloquea pickers Android viejos) · #190 (169.8 — database.types.ts 10 migraciones atrás) · #191 (169.9 — RPC self-service para crear la campaña, decisión de Abraham)\n</info added on 2026-08-16T20:00:00.000Z>\n\n<info added on 2026-08-16T23:00:00.000Z>\nDERIVADA: #183 (guardian 169.4 — la ventana del reaper duplicada entre las dos EFs quedó fijada de un solo lado)\n</info added on 2026-08-16T23:00:00.000Z>\n\n<info added on 2026-08-17T02:00:00.000Z>\nDERIVADA: #188 (guardian 169.5 — 'processing' sin ventana de expiración; el reintento de Cloudflare es finito)\n</info added on 2026-08-17T02:00:00.000Z>\n\n<info added on 2026-08-17T04:00:00.000Z>\nDERIVADA: #189 (guardian 169.6 — fail-closed sin duración vs la hermana fail-open de propiedades; posible bloqueo en pickers Android viejos)\n</info added on 2026-08-17T04:00:00.000Z>\n\n<info added on 2026-08-17T10:00:00.000Z>\nDERIVADA: #190 (guardian 169.8 — database.types.ts con 10 migraciones de retraso; 169.7 y 169.8 lo esquivaron por rutas distintas)\n</info added on 2026-08-17T10:00:00.000Z>\n\n<info added on 2026-08-17T13:00:00.000Z>\nDERIVADA: #191 🔴 (169.9 — no hay ruta para que un anunciante cree su campaña; el wizard solo puede persistir el creativo)\n</info added on 2026-08-17T13:00:00.000Z>",
+        "details": "DATOS: ad_creatives (agency_id, cloudflare_uid, thumbnail_url, duration_seconds 6–30 CHECK, status uploading→processing→ready/failed); ads (agency_id, creative_id, title, cta_kind url|whatsapp|phone, cta_value, status draft→pending_review→active→paused|expired|rejected, rejection_reason NOT NULL si rejected, starts_at/ends_at vigencia, purchase_id nullable); ad_zones (ad_id, municipality_id XOR neighborhood_id — CHECK exactamente uno); ad_prices (scope colonia|municipio|nacional, days, amount_mxn, currency, valid_from — sembrar los 3 alcances). Máquina de estados por TRIGGER (draft→active directo falla; terminal no se reabre) + TODA transición de moderación escribe admin_actions en la misma transacción (si la auditoría falla, la transición falla — mismo criterio que moderate-property). El owner NO puede poner su anuncio en active por ninguna ruta (PostgREST/RPC/EF) — impersonación. RPC grant_ad_slot_atomic (service_role: crea ad + ad_zones + vigencia + auditoría en una transacción). Moderación en beta = Studio/SQL + trigger + admin_actions (calca 71.5); la UI llega con #81.\nEFs: mint-ad-upload-url (nueva, scope agency_id — NO comparte el 409 de concurrencia de mint-upload-url que está scoped por agent_id sobre property_videos), stream-webhook extendido de forma ADITIVA (rama de anuncios solo cuando el UPDATE sobre property_videos afecta 0 filas; la suite Deno existente pasa SIN modificarse), mint-ad-urls (nueva, calco de mint-poster-urls: nunca URL sin firmar, autz fail-closed por item). Rechazo AD_DURATION_INVALID en cliente al elegir archivo Y en servidor al pasar a ready.\nCLIENTE: mobile/src/features/ads/lib/validation.ts (duración, CTA, zonas — CRÍTICA), hooks/useAdUpload.ts (CRÍTICA), app/(protected)/ads/new/*.tsx wizard (ligera) gated por can_advertise: sin la capacidad la RUTA no existe (no basta ocultar el botón). Selector de zonas reusa search_places de #157.\nFOOTPRINT: migraciones + rollbacks + pgTAP (CRÍTICA), 3 EFs (CRÍTICA), lib/hooks móviles (CRÍTICA), wizard (ligera). Ver criterios de aceptación completos en el doc 039 §'Tarea B'.\n\n<info added on 2026-08-16T00:00:00.000Z>\nNOTAS PARA EL DEPLOY REMOTO de la migración 20260816000005 (hallazgos del guardián de 169.1, 2026-08-16 — NO bloquean, pero van en el PR y en el checklist de release):\n\n1) La migración es aditiva pura, pero sus FKs salientes toman un ShareRowExclusiveLock BREVE sobre agencies, mx_municipalities y mx_neighborhoods al crearse. Es el único momento en que toca tablas pobladas. A la escala actual son milisegundos; anotarlo por rigor, no por riesgo.\n\n2) ad_zones usa `on delete restrict` hacia los catálogos: una vez existan filas, borrar un municipio o una colonia quedará BLOQUEADO. Es la semántica correcta (no queremos zonas huérfanas), pero el pipeline de import de #157 debe saberlo — si alguna vez re-importa borrando y recreando filas de mx_neighborhoods, chocará contra esta FK.\n\n3) ESTRATEGIA DE RELEASE VIGENTE (decisión de Abraham, 2026-08-16): 168–172 se mergean progresivamente a main pero NO se despliega NADA —ni migraciones al remoto, ni EFs, ni OTA— hasta que la épica completa esté probada. Merge ≠ deploy: no hay CI/CD en este repo (no existe .github/), así que nada sale solo. La épica además nace apagada por datos: can_advertise es default false.\n</info added on 2026-08-16T00:00:00.000Z>\n\n<info added on 2026-08-16T20:00:00.000Z>\nDERIVADAS: #211 (169.2 — suspensión de org sin cablear, exploración 040) · #208 🔴 (169.2 — no existe pantalla de admin para aprobar anuncios; el circuito comercial no cierra) · #181 (guardian 169.3 — count(*) absoluto en 12_stream_schema_test.sql, mismo antipatrón que #175) · #182 (guardian 169.3 — new_values de la auditoría sin asertar, mutante M20) · #183 (169.4 — ventana del reaper duplicada entre mint-upload-url y mint-ad-upload-url) · #188 (169.5 — ad_creatives sin ventana de expiración para processing) · #189 (169.6 — fail-closed sin duración bloquea pickers Android viejos) · #190 (169.8 — database.types.ts 10 migraciones atrás) · #191 (169.9 — RPC self-service para crear la campaña, decisión de Abraham)\n</info added on 2026-08-16T20:00:00.000Z>\n\n<info added on 2026-08-16T23:00:00.000Z>\nDERIVADA: #183 (guardian 169.4 — la ventana del reaper duplicada entre las dos EFs quedó fijada de un solo lado)\n</info added on 2026-08-16T23:00:00.000Z>\n\n<info added on 2026-08-17T02:00:00.000Z>\nDERIVADA: #188 (guardian 169.5 — 'processing' sin ventana de expiración; el reintento de Cloudflare es finito)\n</info added on 2026-08-17T02:00:00.000Z>\n\n<info added on 2026-08-17T04:00:00.000Z>\nDERIVADA: #189 (guardian 169.6 — fail-closed sin duración vs la hermana fail-open de propiedades; posible bloqueo en pickers Android viejos)\n</info added on 2026-08-17T04:00:00.000Z>\n\n<info added on 2026-08-17T10:00:00.000Z>\nDERIVADA: #190 (guardian 169.8 — database.types.ts con 10 migraciones de retraso; 169.7 y 169.8 lo esquivaron por rutas distintas)\n</info added on 2026-08-17T10:00:00.000Z>\n\n<info added on 2026-08-17T13:00:00.000Z>\nDERIVADA: #191 🔴 (169.9 — no hay ruta para que un anunciante cree su campaña; el wizard solo puede persistir el creativo)\n</info added on 2026-08-17T13:00:00.000Z>",
         "testStrategy": "pgTAP: CHECKs (duración, ad_zones XOR, rejection_reason), trigger de estados, admin_actions obligatorio, grant_ad_slot_atomic fault-injection, impersonación owner no activa su anuncio, ad_prices sembrada y grep sin montos en código. Deno: creativo recorre uploading→processing→ready contra webhook REAL de Stream en local; no-regresión total de stream-webhook; separación del 409 por dominio; mint-ad-urls fail-closed. Jest: validation + useAdUpload. Cuota: verificar y PARAR (minutos de Stream se facturan). pnpm tsc/lint.",
         "status": "done",
         "dependencies": [
@@ -8457,7 +8457,7 @@
             "parentId": "undefined"
           }
         ],
-        "updatedAt": "2026-08-22T12:00:00.000Z"
+        "updatedAt": "2026-08-23T08:00:00.000Z"
       },
       {
         "id": "170",
@@ -8590,7 +8590,7 @@
         "id": "171",
         "title": "feat(039-D): panel del anunciante — mis anuncios, estado/vigencia y métricas por zona (solo agregados, k≥5)",
         "description": "Origen: exploración 039 (.taskmaster/docs/exploraciones/039-cuenta-comercial-anunciantes.md), aprobada por Abraham el 2026-08-14. Tarea D. Pantalla mínima para la organización con can_advertise: lista de sus anuncios con estado y vigencia + 3 contadores (impresiones, vistas ≥3 s, taps al CTA) con desglose por zona. Sin gráficas (esas llegan con #80). Entrada desde el perfil, condicional a la capacidad. El anunciante ve SOLO agregados: k-anonimato mínimo 5 por zona y user_id jamás en la respuesta.",
-        "details": "RPC ad_metrics_for_agency(p_agency_id, p_from?, p_to?) security definer: autz por agency_role_of + private.org_can_advertise (fail-closed), agrega desde ad_impressions/ad_impressions_monthly, filas por zona con menos de 5 usuarios distintos se colapsan en 'otras zonas' (k-anonimato 5), nunca devuelve user_id ni session_id. Cliente: mobile/src/features/ads/hooks/useAdMetrics.ts (CRÍTICA), app/(protected)/ads/index.tsx + componentes (ligera; reusa patrones de my-listings/CRM), entrada en el perfil condicional a can_advertise (sin capacidad la ruta no existe). Aviso 'tu anuncio expira en 7 días' → fila en notifications (push llega con #77). Ver criterios completos en el doc 039 §'Tarea D'.",
+        "details": "RPC ad_metrics_for_agency(p_agency_id, p_from?, p_to?) security definer: autz por agency_role_of + private.org_can_advertise (fail-closed), agrega desde ad_impressions/ad_impressions_monthly, filas por zona con menos de 5 usuarios distintos se colapsan en 'otras zonas' (k-anonimato 5), nunca devuelve user_id ni session_id. Cliente: mobile/src/features/ads/hooks/useAdMetrics.ts (CRÍTICA), app/(protected)/ads/index.tsx + componentes (ligera; reusa patrones de my-listings/CRM), entrada en el perfil condicional a can_advertise (sin capacidad la ruta no existe). Aviso 'tu anuncio expira en 7 días' → fila en notifications (push llega con #77). Ver criterios completos en el doc 039 §'Tarea D'.\n\nDERIVADAS: #212 (171 — dashboard por anuncio estilo Meta, exploración 040)",
         "testStrategy": "pgTAP: autz por impersonación (owner de otra organización → vacío/denegado; agente sin capacidad → denegado), k-anonimato (zona con 4 usuarios se colapsa), respuesta sin user_id, agregados cuadran con fixtures. Jest: useAdMetrics. Smoke: pantalla con y sin anuncios; entrada ausente sin capacidad. pnpm tsc/lint.",
         "status": "done",
         "dependencies": [
@@ -8647,7 +8647,7 @@
             "parentId": "171"
           }
         ],
-        "updatedAt": "2026-08-21T17:19:40.938Z"
+        "updatedAt": "2026-08-23T08:00:00.000Z"
       },
       {
         "id": "172",
@@ -9397,7 +9397,7 @@
         "id": "208",
         "title": "producto(169.2): pantalla de admin para aprobar anuncios — hoy solo se activan por SQL",
         "description": "Origen: subtarea 169.2 · Detectado por: revisión de cierre de épica (2026-08-22). El título de #169 prometía «moderación admin» y sus 9 subtareas cerraron en verde, pero lo que se construyó fue el MOTOR de la moderación (máquina de estados por trigger, auditoría obligatoria en admin_actions, guard ORGANIZATION_SUSPENDED) — no el botón. El wizard deja el anuncio en pending_review y step5.tsx promete que «activarlo es del admin», pero esa pantalla no existe: hoy un anuncio solo pasa a active con un UPDATE a mano en SQL. Sin esto el circuito comercial NO CIERRA por más que la épica esté desplegada. Decisión de Abraham (2026-08-22): va en la app móvil bajo /admin, no esperando al panel web #81 (que depende de #71/#73/#79, ninguna empezada). El panel web puede reemplazarla después sin desperdicio porque la lógica vive en la EF, no en la pantalla.",
-        "details": "🔴 Producción viva: la épica YA está desplegada al remoto con ads_enabled=false (2026-08-22). Esta tarea es lo que falta para poder encenderla.\n\nQué NO hay que reconstruir (reusar > reescribir):\n- La máquina de estados ya valida las transiciones y AUDITA sola: handle_ad_status_change() (20260816000006 + 20260818000001) es la ÚNICA autoridad. La EF solo hace el UPDATE; el trigger valida, aplica D2 (pausar el reloj) y escribe admin_actions. NO duplicar esa lógica en TypeScript ni insertar auditoría por separado (quedaría doble).\n- private.resolve_admin_actor() resuelve el admin_id desde el JWT — ya lo usan agencies y ads.\n- _shared/clients.ts ya exporta make_admin_verifier y service_client (patrón de moderate-property/index.ts: index delgado a propósito).\n- ads_rejection_reason_matches_status: rejection_reason es obligatorio SI Y SOLO SI status=rejected (CHECK bidireccional) — rechazar sin razón debe fallar con un código tipado, no con un 23514 crudo.\n- mint-ad-urls ya firma la URL de reproducción del creativo (necesaria para VER el video antes de aprobarlo).\n\nFootprint: supabase/functions/moderate-ad/** (nueva) · mobile/src/features/ads/hooks/** · mobile/app/admin/ads/** · mobile/app/admin/index.tsx (entrada).\n\nCriticidad TDD por path: EF = CRÍTICA (supabase/functions/**), hooks = CRÍTICA (mobile/**/hooks/**), pantallas = verificación ligera.",
+        "details": "🔴 Producción viva: la épica YA está desplegada al remoto con ads_enabled=false (2026-08-22). Esta tarea es lo que falta para poder encenderla.\n\nQué NO hay que reconstruir (reusar > reescribir):\n- La máquina de estados ya valida las transiciones y AUDITA sola: handle_ad_status_change() (20260816000006 + 20260818000001) es la ÚNICA autoridad. La EF solo hace el UPDATE; el trigger valida, aplica D2 (pausar el reloj) y escribe admin_actions. NO duplicar esa lógica en TypeScript ni insertar auditoría por separado (quedaría doble).\n- private.resolve_admin_actor() resuelve el admin_id desde el JWT — ya lo usan agencies y ads.\n- _shared/clients.ts ya exporta make_admin_verifier y service_client (patrón de moderate-property/index.ts: index delgado a propósito).\n- ads_rejection_reason_matches_status: rejection_reason es obligatorio SI Y SOLO SI status=rejected (CHECK bidireccional) — rechazar sin razón debe fallar con un código tipado, no con un 23514 crudo.\n- mint-ad-urls ya firma la URL de reproducción del creativo (necesaria para VER el video antes de aprobarlo).\n\nFootprint: supabase/functions/moderate-ad/** (nueva) · mobile/src/features/ads/hooks/** · mobile/app/admin/ads/** · mobile/app/admin/index.tsx (entrada).\n\nCriticidad TDD por path: EF = CRÍTICA (supabase/functions/**), hooks = CRÍTICA (mobile/**/hooks/**), pantallas = verificación ligera.\n\nDERIVADAS: #210 (208.1 — takedown de anuncio activo, exploración 040)",
         "testStrategy": "Deno para la EF (DI con fakes, como moderate-property/handler.test.ts): admin verificado, no-admin 403, sin JWT 401, aprobar pending_review→active, rechazar exige razón, transición inválida devuelve código tipado, organización suspendida bloquea. RNTL para los hooks. Verificación ligera (tsc/lint/smoke por CLI) para las pantallas. Smoke final: crear un anuncio de prueba en el REMOTO con ads_enabled=false, aprobarlo desde la pantalla y confirmar la fila en admin_actions.",
         "status": "done",
         "dependencies": [
@@ -9405,7 +9405,7 @@
           "171"
         ],
         "priority": "high",
-        "updatedAt": "2026-08-23T07:03:42.722Z",
+        "updatedAt": "2026-08-23T08:00:00.000Z",
         "subtasks": [
           {
             "id": 1,
@@ -9553,6 +9553,312 @@
             "updatedAt": "2026-08-22T13:00:00.000Z",
             "subtasks": [],
             "parentId": "undefined"
+          }
+        ]
+      },
+      {
+        "id": "210",
+        "title": "producto(208.1): takedown — bajar o pausar un anuncio ACTIVO desde el admin",
+        "description": "Origen: subtarea 208.1 · Detectado por: planeación /grilling 2026-08-23 (exploración 040). La máquina de estados de ads YA permite active→{paused, rejected} (20260816000006 + 20260822000003), pero la EF moderate-ad solo expone approve|reject desde pending_review: un anuncio aprobado que resulte problemático hoy solo se baja por SQL. Sin este botón de emergencia no se debe encender ads_enabled. Nota D2: active→paused congela el reloj (paused_at) y paused→active recorre ends_at — la pausa admin NO regala ni roba días de vigencia.",
+        "details": "Exploración: .taskmaster/docs/exploraciones/040-comercial-completo-stats-y-promocion.md (decisiones fijas de Abraham, 2026-08-23). Reusar, no reescribir: la transición y su auditoría viven en el trigger handle_ad_status_change; moderate_ad_atomic (20260822000002) es el patrón para actuar como admin bajo service_role (GUC urbea.admin_actor_id). Extender la RPC y la EF con las acciones nuevas (pause y reject-desde-active exige rejection_reason por el CHECK ads_rejection_reason_matches_status; evaluar resume paused→active para deshacer una pausa admin). UI: /admin/ads gana la vista de anuncios activos (el ads_select policy ya deja al admin verlos; filtrar status en el cliente como usePendingAds). Footprint: supabase/functions/moderate-ad/** · supabase/migrations/** · mobile/src/features/ads/hooks/** · mobile/app/admin/ads/**.\n\nCriticidad TDD por path: EF y migración CRÍTICAS, hooks CRÍTICOS, pantalla ligera.",
+        "testStrategy": "Deno con DI para las acciones nuevas de la EF (active→paused, active→rejected con motivo, no-admin 403, transición inválida → código tipado). pgTAP para la RPC extendida (auditoría admin_actions, D2 reloj congelado). RNTL para el hook. Smoke: pausar y bajar un anuncio activo en preview branch.",
+        "status": "pending",
+        "dependencies": [
+          "208"
+        ],
+        "priority": "high",
+        "updatedAt": "2026-08-23T08:00:00.000Z",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "RPC moderate_ad_atomic extendida a acciones sobre anuncios activos",
+            "description": "pause / reject (con motivo) / resume desde el contexto admin service_role, auditando vía el trigger existente.",
+            "details": "CRÍTICA → TDD estricto (pgTAP). No duplicar auditoría: el trigger ya escribe admin_actions.",
+            "testStrategy": "pgTAP.",
+            "status": "pending",
+            "dependencies": [],
+            "priority": "high",
+            "updatedAt": "2026-08-23T08:00:00.000Z",
+            "subtasks": []
+          },
+          {
+            "id": 2,
+            "title": "EF moderate-ad += pause | reject-activo | resume",
+            "description": "Extiende types/handler con las acciones nuevas; códigos tipados, nunca texto crudo de Postgres.",
+            "details": "CRÍTICA → TDD estricto (Deno DI). Patrón 208.1.",
+            "testStrategy": "Deno con fakes.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "priority": "high",
+            "updatedAt": "2026-08-23T08:00:00.000Z",
+            "subtasks": []
+          },
+          {
+            "id": 3,
+            "title": "Hook + vista de activos en /admin/ads",
+            "description": "useModerateAd gana las acciones; la pantalla lista activos (pestaña o sección) con pausar/bajar. Confirmación destructiva antes de bajar.",
+            "details": "Hook CRÍTICO (path hooks/**); pantalla ligera.",
+            "testStrategy": "RNTL hook + tsc/lint/smoke pantalla.",
+            "status": "pending",
+            "dependencies": [
+              2
+            ],
+            "priority": "medium",
+            "updatedAt": "2026-08-23T08:00:00.000Z",
+            "subtasks": []
+          },
+          {
+            "id": 4,
+            "title": "Deploy, smoke contra el remoto e ingest al vault",
+            "description": "Preview branch primero; gate §0.5 antes del PR.",
+            "details": "Salida real de los comandos en la bitácora.",
+            "testStrategy": "Smoke pegado de la salida real.",
+            "status": "pending",
+            "dependencies": [
+              3
+            ],
+            "priority": "medium",
+            "updatedAt": "2026-08-23T08:00:00.000Z",
+            "subtasks": []
+          }
+        ]
+      },
+      {
+        "id": "211",
+        "title": "producto(169.2): suspender y reactivar una organización desde el admin",
+        "description": "Origen: subtarea 169.2 · Detectado por: planeación /grilling 2026-08-23 (exploración 040). La máquina agencies active↔suspended con cascada completa (suspender pausa sus anuncios con paused_by_suspension=true; reactivar revive SOLO esos) existe y está testeada desde #169.2 — pero no tiene ni EF ni botón: cero llamadores. Es puro cableado de emergencia que debe existir antes de encender ads_enabled.",
+        "details": "Exploración: .taskmaster/docs/exploraciones/040-comercial-completo-stats-y-promocion.md (decisiones fijas de Abraham, 2026-08-23). La transición exige admin identificado (private.resolve_admin_actor); calcar el patrón EF+RPC de moderate-ad/moderate_ad_atomic si hace falta el GUC bajo service_role. UI: botón suspender/reactivar en mobile/app/admin/agencies/[id].tsx con copy explícito de la cascada (qué pasa con sus anuncios y propiedades). Footprint: supabase/functions/** (EF nueva o extender una admin existente) · mobile/src/features/admin/** · mobile/app/admin/agencies/[id].tsx.\n\nCriticidad: EF/RPC CRÍTICA; pantalla ligera.",
+        "testStrategy": "Deno DI (admin ok, no-admin 403, org inexistente 404, suspender ya-suspendida → código tipado). Verificar la cascada con un select antes/después en smoke de preview branch. RNTL si nace hook.",
+        "status": "pending",
+        "dependencies": [
+          "169"
+        ],
+        "priority": "high",
+        "updatedAt": "2026-08-23T08:00:00.000Z",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "EF suspend-agency (suspender/reactivar) sobre la máquina existente",
+            "description": "Acción suspend|reactivate; auditoría vía el trigger ya probado; códigos tipados.",
+            "details": "CRÍTICA → TDD estricto.",
+            "testStrategy": "Deno con fakes.",
+            "status": "pending",
+            "dependencies": [],
+            "priority": "high",
+            "updatedAt": "2026-08-23T08:00:00.000Z",
+            "subtasks": []
+          },
+          {
+            "id": 2,
+            "title": "Botón y confirmación en el detalle de la organización",
+            "description": "agencies/[id].tsx: acción con confirmación destructiva y copy de cascada.",
+            "details": "Ligera (pantalla).",
+            "testStrategy": "tsc/lint/smoke.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "priority": "medium",
+            "updatedAt": "2026-08-23T08:00:00.000Z",
+            "subtasks": []
+          },
+          {
+            "id": 3,
+            "title": "Deploy, smoke contra el remoto e ingest al vault",
+            "description": "Preview branch primero; gate §0.5.",
+            "details": "Salida real en bitácora.",
+            "testStrategy": "Smoke real.",
+            "status": "pending",
+            "dependencies": [
+              2
+            ],
+            "priority": "medium",
+            "updatedAt": "2026-08-23T08:00:00.000Z",
+            "subtasks": []
+          }
+        ]
+      },
+      {
+        "id": "212",
+        "title": "producto(171): dashboard de anuncios estilo Meta — cards por anuncio, serie diaria y zonas",
+        "description": "Origen: tarea 171 · Detectado por: planeación /grilling 2026-08-23 (exploración 040, screenshots de Meta Ads como referencia). El panel de #171 solo agrega por AGENCIA y por ZONA; no existe desglose por anuncio ni por día. v1: lista de cards por anuncio (thumbnail, estado, impresiones/vistas/taps — calca el card de 3 métricas de Meta) → detalle con selector Hoy/30 días/Máximo, gráfico de línea diario y barras por zona. 🔒 Regla de privacidad fijada por Abraham: zona ⇒ k≥5 (+ bucket otras zonas); sin zona ⇒ sin umbral. Gráficos con react-native-svg (YA instalada): cero dependencia nueva.",
+        "details": "Exploración: .taskmaster/docs/exploraciones/040-comercial-completo-stats-y-promocion.md (decisiones fijas de Abraham, 2026-08-23). RPCs nuevas calcando el patrón anti-IDOR fail-closed de ad_metrics_for_agency (security definer, autorización explícita, 0 filas nunca excepción, sin PII): (a) totales por anuncio de la org (cards), (b) serie diaria por anuncio SIN zona y sin k, (c) zonas por anuncio con k≥5. 'Máximo' mezcla crudo (≤90d, diario) + ad_impressions_monthly (mensual, vía #201) SIN doble contar — por eso depende de #201. Entrada al panel: visible si can_advertise O la org tiene ≥1 anuncio. Diseño ANTES de implementar (pantalla compleja → preview HTML aprobable, identidad Urbea + layout del prototipo; referencia Meta = estructura, NUNCA sus colores/fuentes). Footprint: supabase/migrations/** · mobile/src/features/ads/hooks/** · mobile/src/components/charts/** · mobile/app/(protected)/ads/**.\n\nCriticidad: RPCs CRÍTICAS; hooks CRÍTICOS; componentes de gráfico y pantallas ligera.",
+        "testStrategy": "pgTAP para las 3 RPCs (k-anonimato por zona, serie sin umbral, conservación de totales, anti-IDOR, rango de fechas inclusivo, mezcla rollup+crudo sin doble conteo). RNTL para hooks. Preview HTML aprobado por Abraham antes de portar. Smoke visual por CLI en simulador.",
+        "status": "pending",
+        "dependencies": [
+          "171",
+          "201"
+        ],
+        "priority": "high",
+        "updatedAt": "2026-08-23T08:00:00.000Z",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "RPCs de lectura por anuncio (totales, serie diaria, zonas k≥5)",
+            "description": "Las 3 RPCs con el patrón ad_metrics_for_agency; p_from/p_to inclusivos; Máximo = rollup mensual + crudo diario sin doble contar.",
+            "details": "CRÍTICA → TDD estricto (pgTAP).",
+            "testStrategy": "pgTAP plan completo.",
+            "status": "pending",
+            "dependencies": [],
+            "priority": "high",
+            "updatedAt": "2026-08-23T08:00:00.000Z",
+            "subtasks": []
+          },
+          {
+            "id": 2,
+            "title": "Diseño aprobable del dashboard (preview HTML)",
+            "description": "Cards 3 métricas + detalle (selector periodo, línea diaria, barras por zona). Identidad Urbea + layout del prototipo; Meta solo como referencia estructural.",
+            "details": "Diseño — requiere aprobación de Abraham (puede correr /design).",
+            "testStrategy": "Preview servido por http (Chrome MCP no abre file://).",
+            "status": "pending",
+            "dependencies": [],
+            "priority": "high",
+            "updatedAt": "2026-08-23T08:00:00.000Z",
+            "subtasks": []
+          },
+          {
+            "id": 3,
+            "title": "Hooks de datos por anuncio",
+            "description": "useAdStats (totales+serie+zonas por ad_id, selector de periodo). Patrón useAdMetrics: totals=null en carga/error, nunca ceros; mensajes neutros.",
+            "details": "CRÍTICA → TDD estricto (RNTL).",
+            "testStrategy": "RNTL.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "priority": "high",
+            "updatedAt": "2026-08-23T08:00:00.000Z",
+            "subtasks": []
+          },
+          {
+            "id": 4,
+            "title": "Componentes de gráficos SVG (línea, barras)",
+            "description": "Sobre react-native-svg, sin dependencia nueva; theming desde theme.ts.",
+            "details": "Ligera (components/**).",
+            "testStrategy": "tsc/lint + smoke visual.",
+            "status": "pending",
+            "dependencies": [
+              2
+            ],
+            "priority": "medium",
+            "updatedAt": "2026-08-23T08:00:00.000Z",
+            "subtasks": []
+          },
+          {
+            "id": 5,
+            "title": "Pantallas: lista de cards + detalle del anuncio",
+            "description": "(protected)/ads: lista por anuncio + detalle con gráficos; entrada visible si can_advertise o ≥1 anuncio.",
+            "details": "Ligera. Techo de alcance = preview aprobado en 212.2.",
+            "testStrategy": "tsc/lint + smoke CLI.",
+            "status": "pending",
+            "dependencies": [
+              3,
+              4
+            ],
+            "priority": "medium",
+            "updatedAt": "2026-08-23T08:00:00.000Z",
+            "subtasks": []
+          },
+          {
+            "id": 6,
+            "title": "Deploy, smoke contra el remoto e ingest al vault",
+            "description": "Preview branch primero; gate §0.5.",
+            "details": "Salida real en bitácora.",
+            "testStrategy": "Smoke real.",
+            "status": "pending",
+            "dependencies": [
+              5
+            ],
+            "priority": "medium",
+            "updatedAt": "2026-08-23T08:00:00.000Z",
+            "subtasks": []
+          }
+        ]
+      },
+      {
+        "id": "213",
+        "title": "feat(040): promocionar una propiedad — boost gratis de un paso con moderación",
+        "description": "Nace de la exploración 040 (decisión de Abraham 2026-08-23): adelantar de la fase de cobro el producto 'promocionar publicación'. Cualquier miembro publicador de una org promociona una propiedad YA publicada: el anuncio ES el video de la propiedad, fuera de ranking con badge 'Anuncio'; al tocar sigue el flujo normal de leads (el tap de contacto cuenta como cta_tap). Sin configuración: municipio heredado + 30 días fijos → pending_review (gate = moderación, no can_advertise ni pago). can_advertise queda como gate solo de anuncios display. El self-serve pagado y el selector de alcance llegan en fase 2 (#172/#84).",
+        "details": "Exploración: .taskmaster/docs/exploraciones/040-comercial-completo-stats-y-promocion.md (decisiones fijas de Abraham, 2026-08-23). Migración expand aditiva: ads.property_id nullable + creative_id pasa a nullable + CHECK exactamente-uno(creative_id, property_id); validar propiedad publicada y de la misma org. RPC promote_property_atomic (granted a authenticated, patrón create_ad_campaign_atomic): hereda municipio de la propiedad, 30 días, status pending_review. Feed: ads_for_zone/mint-ad-urls resuelven el video desde property_videos cuando property_id; tap → detalle de la propiedad. /admin/ads muestra promos en la misma cola (con qué propiedad enlazan). UI: botón 'Promocionar' en mis propiedades/detalle + confirmación de un paso. §0.5: no rompe select('*') de builds instalados (columna nueva); ads_enabled=false sigue mandando.\n\nCriticidad: migración/RPC/feed CRÍTICAS; UI de boost ligera.",
+        "testStrategy": "pgTAP (CHECK exactamente-uno, org ajena rechazada, propiedad no publicada rechazada, herencia de municipio, 30 días). Deno para los cambios de mint-ad-urls/feed. RNTL si nace hook. Smoke E2E en preview branch: promocionar → moderar → ver en feed → tap → detalle propiedad → métricas registran.",
+        "status": "pending",
+        "dependencies": [
+          "170",
+          "208",
+          "212"
+        ],
+        "priority": "medium",
+        "updatedAt": "2026-08-23T08:00:00.000Z",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Migración: ads.property_id + creative_id nullable + CHECK exactamente-uno",
+            "description": "Expand aditiva con rollback; validaciones de publicada/misma org donde correspondan (RPC, no solo CHECK).",
+            "details": "CRÍTICA → TDD estricto (pgTAP).",
+            "testStrategy": "pgTAP.",
+            "status": "pending",
+            "dependencies": [],
+            "priority": "high",
+            "updatedAt": "2026-08-23T08:00:00.000Z",
+            "subtasks": []
+          },
+          {
+            "id": 2,
+            "title": "RPC promote_property_atomic",
+            "description": "Un paso: crea el ad pending_review con municipio heredado y 30 días; códigos tipados P0001.",
+            "details": "CRÍTICA → TDD estricto.",
+            "testStrategy": "pgTAP.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "priority": "high",
+            "updatedAt": "2026-08-23T08:00:00.000Z",
+            "subtasks": []
+          },
+          {
+            "id": 3,
+            "title": "Feed y minter resuelven la promo",
+            "description": "ads_for_zone/mint-ad-urls sirven el video de property_videos; tap abre el detalle de la propiedad; cta_tap = tap de contacto.",
+            "details": "CRÍTICA (EF/SQL).",
+            "testStrategy": "Deno + pgTAP según el corte.",
+            "status": "pending",
+            "dependencies": [
+              2
+            ],
+            "priority": "high",
+            "updatedAt": "2026-08-23T08:00:00.000Z",
+            "subtasks": []
+          },
+          {
+            "id": 4,
+            "title": "UI: botón Promocionar + confirmación + badge",
+            "description": "Botón en mis propiedades/detalle; confirmación de un paso; badge 'Anuncio' reusa el del feed; /admin/ads distingue promos.",
+            "details": "Ligera.",
+            "testStrategy": "tsc/lint + smoke CLI.",
+            "status": "pending",
+            "dependencies": [
+              3
+            ],
+            "priority": "medium",
+            "updatedAt": "2026-08-23T08:00:00.000Z",
+            "subtasks": []
+          },
+          {
+            "id": 5,
+            "title": "Deploy, smoke E2E contra el remoto e ingest al vault",
+            "description": "Preview branch primero; gate §0.5.",
+            "details": "Salida real en bitácora.",
+            "testStrategy": "Smoke real.",
+            "status": "pending",
+            "dependencies": [
+              4
+            ],
+            "priority": "medium",
+            "updatedAt": "2026-08-23T08:00:00.000Z",
+            "subtasks": []
           }
         ]
       }
