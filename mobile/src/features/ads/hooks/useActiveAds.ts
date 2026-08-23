@@ -1,20 +1,29 @@
 /**
  * useActiveAds — lista de anuncios ACTIVOS para el takedown de emergencia del
- * admin (tarea #210, subtarea 210.3). Contrato completo y los 18 edge cases
+ * admin (tarea #210, subtarea 210.3). Contrato completo y los 21 edge cases
  * están en el docblock de
  * mobile/src/features/ads/__tests__/useActiveAds.test.tsx — léelo antes de
  * tocar este archivo.
  *
  * UNA consulta:
  *   supabase.from('ads').select(<columnas + agencies(name)>)
- *     .eq('status', 'active').order('ends_at', {ascending: true})
+ *     .in('status', ['active', 'paused']).order('ends_at', {ascending: true})
  *
  * Mismo patrón que usePendingAds (208.2): efecto + reload_token para refetch,
  * fallar cerrado (mensaje neutro, ads=[], sin lanzar). Difiere en filtro
- * (status='active'), orden (ends_at ASC — lo que expira antes, primero: lista
- * de emergencia, no cola FIFO) y columnas (ver docblock del test).
+ * (status IN active/paused), orden (ends_at ASC — lo que expira antes,
+ * primero: lista de emergencia, no cola FIFO) y columnas (ver docblock del
+ * test).
  *
- * 🔴 EL `.eq('status', 'active')` NO ES REDUNDANTE CON RLS — mismo gotcha que
+ * 🔴 EXTENSIÓN 210.3 (post-GREEN, decisión del orquestador): el filtro pasó de
+ * `.eq('status','active')` a `.in('status', ['active','paused'])` — la vista
+ * de takedown ahora incluye TAMBIÉN los pausados, para poder reanudarlos
+ * desde aquí (antes, un anuncio pausado en una sesión anterior desaparecía de
+ * la vista sin forma de reanudarlo). Sin `.eq` residual: encadenar ambos
+ * (`.eq('status','active').in(...)`) aplicaría un AND que volvería a excluir
+ * 'paused' aunque el `.in` esté presente.
+ *
+ * 🔴 EL `.in('status', [...])` NO ES REDUNDANTE CON RLS — mismo gotcha que
  * usePendingAds. La policy `ads_select` incluye `or private.is_admin()`, y el
  * caller de este hook es SIEMPRE un admin: esa cláusula evalúa `true` para
  * toda fila de la tabla. Sin el filtro explícito, la "vista de activos"
@@ -61,7 +70,12 @@ const NEUTRAL_ERROR_MESSAGE = 'No se pudo cargar la lista de anuncios activos. I
 
 // Sin `*`: select('*') rompe en cuanto la tabla gana una columna que el build
 // instalado no espera (§0.5, compatibilidad hacia atrás).
-const ACTIVE_AD_COLUMNS = 'id, title, description, agency_id, starts_at, ends_at, agencies(name)';
+const ACTIVE_AD_COLUMNS =
+  'id, title, description, agency_id, starts_at, ends_at, ' +
+  'paused_at, paused_by_suspension, agencies(name)';
+
+/** EXTENSIÓN 210.3: incluye 'paused' además de 'active' — ver docblock. */
+const ACTIVE_OR_PAUSED_STATUSES = ['active', 'paused'] as const;
 
 export function useActiveAds(): UseActiveAdsResult {
   const [ads, set_ads] = useState<ActiveAd[]>([]);
@@ -81,7 +95,7 @@ export function useActiveAds(): UseActiveAdsResult {
       const { data, error: query_error } = await supabase
         .from('ads')
         .select(ACTIVE_AD_COLUMNS)
-        .eq('status', 'active')
+        .in('status', ACTIVE_OR_PAUSED_STATUSES)
         .order('ends_at', { ascending: true });
 
       // Una respuesta tardía de una recarga anterior no pisa a la vigente.

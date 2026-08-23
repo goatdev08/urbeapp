@@ -48,9 +48,9 @@ export interface UseModerateAdDeps {
 export interface UseModerateAdReturn {
   approve(ad_id: string): Promise<ModerateResult>;
   reject(ad_id: string, rejection_reason: string): Promise<ModerateResult>;
-  /** 210.3 — pausa un anuncio ACTIVO (reversible, sin motivo). STUB en RED. */
+  /** 210.3 — pausa un anuncio ACTIVO (reversible, sin motivo). */
   pause(ad_id: string): Promise<ModerateResult>;
-  /** 210.3 — reanuda un anuncio PAUSADO por el admin (sin motivo). STUB en RED. */
+  /** 210.3 — reanuda un anuncio PAUSADO por el admin (sin motivo). */
   resume(ad_id: string): Promise<ModerateResult>;
   is_moderating: boolean;
   error: string | null;

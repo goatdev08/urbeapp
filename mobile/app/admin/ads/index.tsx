@@ -12,23 +12,28 @@
  * Acción: useModerateAd.approve/reject.
  *
  * ## Segmento "Activos" (210.3, takedown de emergencia)
- * Datos: useActiveAds — filtra `status='active'` en el cliente, MISMO gotcha
- * de RLS que usePendingAds (la policy incluye `private.is_admin()`).
- * Acciones: useModerateAd.pause (confirmación nativa, reversible) y
- * useModerateAd.reject vía el mismo modal de motivo que usa "Revisión"
- * (`RejectionReasonModal`, extraído para no duplicar el patrón).
+ * Datos: useActiveAds — filtra `status IN ('active','paused')` en el cliente,
+ * MISMO gotcha de RLS que usePendingAds (la policy incluye
+ * `private.is_admin()`). Acciones: useModerateAd.pause/resume (confirmación
+ * nativa para pausar, reversible) y useModerateAd.reject vía
+ * `RejectionReasonModal` — hoy su ÚNICO consumidor es esta sección de
+ * Activos ("Revisión" rechaza inline dentro de ModerationSheet).
  *
- * 🔴 DECISIÓN — reanudar un anuncio pausado desde aquí. `useActiveAds` (RED
- * fijado en 210.3) SOLO consulta `status='active'`; no tiene parámetro de
- * status ni trae 'paused'. Añadir una segunda query de pausados hubiera sido
- * un seam nuevo no cubierto por el RED de esta subtarea. Opción elegida (la
- * más simple que respeta el contrato sin tocar el hook ni sus tests): tras
- * pausar con éxito, el anuncio se guarda en estado LOCAL efímero
- * (`recently_paused`, se pierde al desmontar la pantalla) con un botón
- * "Reanudar" inmediato — cubre el caso real (deshacer un pause accidental)
- * sin inventar una pantalla de "Pausados". Un admin que vuelva más tarde a
- * reanudar algo pausado en una sesión anterior necesita un panel de
- * "Pausados" — trabajo nuevo, fuera de 210.3.
+ * 🔴 SEGUNDA PASADA (210.3, orquestador extendió el RED tras el primer GREEN):
+ * la decisión original de esta vista era "solo `status='active'`" con un
+ * estado local efímero (`recently_paused`) para deshacer un pause reciente —
+ * un anuncio pausado en una sesión ANTERIOR desaparecía sin forma de
+ * reanudarlo. `useActiveAds` ahora consulta `status IN ('active','paused')`
+ * (21 tests, EC-19..EC-21 nuevos) y trae `paused_at`/`paused_by_suspension`;
+ * el mecanismo local quedó REDUNDANTE y se eliminó — `refetch` (ya
+ * encadenado al `onSuccess` de `useModerateAd`) trae el anuncio recién
+ * pausado de vuelta con su estado real, sin estado paralelo en el cliente.
+ * Un anuncio `paused` NO ofrece "Bajar": la matriz de transiciones de la base
+ * (20260816000006, `active->{paused,expired,rejected}, paused->active`) NO
+ * tiene `paused->rejected` — ofrecerlo terminaría en 409
+ * `INVALID_AD_STATUS_TRANSITION`. Solo "Reanudar", deshabilitado si
+ * `paused_by_suspension` (la cascada de #211 lo pausó; el único camino de
+ * vuelta es reactivar la organización, useModerateAd EC-25).
  *
  * 🔴 CUOTA DE CLOUDFLARE STREAM. El creativo NUNCA se reproduce en ninguna de
  * las dos listas: en "Revisión" se firma bajo demanda al abrir el detalle
@@ -59,6 +64,7 @@ import { supabase } from '@/lib/supabase/client';
 import { usePendingAds, type PendingAd } from '@/features/ads/hooks/usePendingAds';
 import { useActiveAds, type ActiveAd } from '@/features/ads/hooks/useActiveAds';
 import { useModerateAd, type ModerateResult } from '@/features/ads/hooks/useModerateAd';
+import { map_ad_moderation_error } from '@/features/ads/ad_moderation_error_messages';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -468,51 +474,35 @@ function PendingQueueSection(): React.ReactElement {
 // Segmento "Activos" — takedown de emergencia (210.3)
 // ---------------------------------------------------------------------------
 
-function RecentlyPausedRow({
-  item,
-  on_resume,
-  disabled,
-}: {
-  item: ActiveAd;
-  on_resume: (ad: ActiveAd) => void;
-  disabled: boolean;
-}): React.ReactElement {
-  return (
-    <View style={styles.recently_paused_row} testID={`recently-paused-${item.id}`}>
-      <Text style={styles.recently_paused_title} numberOfLines={1}>
-        {item.title}
-      </Text>
-      <Pressable
-        style={[styles.secondary_button, disabled && styles.button_disabled]}
-        disabled={disabled}
-        onPress={() => on_resume(item)}
-        accessibilityRole="button"
-        accessibilityLabel={`Reanudar ${item.title}`}
-        testID={`resume-ad-${item.id}`}
-      >
-        <Text style={styles.secondary_text}>Reanudar</Text>
-      </Pressable>
-    </View>
-  );
-}
-
 function ActiveAdCard({
   item,
   disabled,
   on_pause,
+  on_resume,
   on_take_down,
 }: {
   item: ActiveAd;
   disabled: boolean;
   on_pause: (ad: ActiveAd) => void;
+  on_resume: (ad: ActiveAd) => void;
   on_take_down: (ad: ActiveAd) => void;
 }): React.ReactElement {
+  // `paused_at !== null ⟺ status === 'paused'` es una garantía del trigger de
+  // la base (20260816000006), no una convención del cliente — ver docblock
+  // de useActiveAds.
+  const is_paused = item.paused_at !== null;
+
   return (
     <View style={styles.card} testID={`active-ad-${item.id}`}>
       <View style={styles.card_header}>
         <Text style={styles.card_title} numberOfLines={1}>
           {item.title}
         </Text>
+        {is_paused && (
+          <View style={styles.paused_badge} testID={`paused-badge-${item.id}`}>
+            <Text style={styles.paused_badge_text}>Pausado</Text>
+          </View>
+        )}
       </View>
       <Text style={styles.card_agency} numberOfLines={1}>
         {item.agencies?.name ?? 'Organización desconocida'}
@@ -526,41 +516,71 @@ function ActiveAdCard({
         {format_date(item.starts_at)} — {format_date(item.ends_at)}
       </Text>
 
-      <View style={styles.actions}>
-        <Pressable
-          style={[styles.secondary_button, styles.actions_flex, disabled && styles.button_disabled]}
-          disabled={disabled}
-          onPress={() => on_pause(item)}
-          accessibilityRole="button"
-          accessibilityLabel={`Pausar ${item.title}`}
-          testID={`pause-ad-${item.id}`}
-        >
-          <Text style={styles.secondary_text}>Pausar</Text>
-        </Pressable>
-        <Pressable
-          style={[styles.reject_button, disabled && styles.button_disabled]}
-          disabled={disabled}
-          onPress={() => on_take_down(item)}
-          accessibilityRole="button"
-          accessibilityLabel={`Bajar ${item.title}`}
-          testID={`takedown-ad-${item.id}`}
-        >
-          <Text style={styles.reject_text}>Bajar</Text>
-        </Pressable>
-      </View>
+      {is_paused ? (
+        // paused->rejected NO existe en la matriz de transiciones de la base
+        // (20260816000006): un pausado solo puede reanudarse, nunca "bajarse"
+        // directo — ofrecerlo terminaría en 409 INVALID_AD_STATUS_TRANSITION.
+        <View style={styles.actions}>
+          <Pressable
+            style={[
+              styles.approve_button,
+              (disabled || item.paused_by_suspension) && styles.button_disabled,
+            ]}
+            disabled={disabled || item.paused_by_suspension}
+            onPress={() => on_resume(item)}
+            accessibilityRole="button"
+            accessibilityLabel={`Reanudar ${item.title}`}
+            testID={`resume-ad-${item.id}`}
+          >
+            <Text style={styles.approve_text}>Reanudar</Text>
+          </Pressable>
+        </View>
+      ) : (
+        <View style={styles.actions}>
+          <Pressable
+            style={[styles.secondary_button, styles.actions_flex, disabled && styles.button_disabled]}
+            disabled={disabled}
+            onPress={() => on_pause(item)}
+            accessibilityRole="button"
+            accessibilityLabel={`Pausar ${item.title}`}
+            testID={`pause-ad-${item.id}`}
+          >
+            <Text style={styles.secondary_text}>Pausar</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.reject_button, disabled && styles.button_disabled]}
+            disabled={disabled}
+            onPress={() => on_take_down(item)}
+            accessibilityRole="button"
+            accessibilityLabel={`Bajar ${item.title}`}
+            testID={`takedown-ad-${item.id}`}
+          >
+            <Text style={styles.reject_text}>Bajar</Text>
+          </Pressable>
+        </View>
+      )}
+
+      {is_paused && item.paused_by_suspension && (
+        // El botón ya queda deshabilitado arriba; este texto explica POR QUÉ
+        // (mismo mensaje que traduciría el 409 AD_PAUSED_BY_SUSPENSION si el
+        // botón no estuviera deshabilitado — una sola fuente de verdad).
+        <Text style={styles.paused_hint_text} testID={`paused-by-suspension-hint-${item.id}`}>
+          {map_ad_moderation_error('AD_PAUSED_BY_SUSPENSION')}
+        </Text>
+      )}
     </View>
   );
 }
 
 function ActiveAdsSection(): React.ReactElement {
   const { ads, loading, error, refetch } = useActiveAds();
+  // onSuccess ya encadena refetch para pause/resume/reject: tras cualquier
+  // acción exitosa la lista se vuelve a consultar y el anuncio aparece con su
+  // estado REAL (paused_at/status) — ya no hace falta estado local paralelo.
   const { pause, reject, resume, is_moderating, error: moderate_error } = useModerateAd({
     onSuccess: refetch,
   });
   const [take_down_target, set_take_down_target] = useState<ActiveAd | null>(null);
-  // Ver docblock del archivo — decisión sobre pausados: estado local efímero,
-  // no una segunda consulta (useActiveAds solo trae 'active').
-  const [recently_paused, set_recently_paused] = useState<ActiveAd[]>([]);
 
   const handle_pause = useCallback(
     (ad: ActiveAd) => {
@@ -569,33 +589,14 @@ function ActiveAdsSection(): React.ReactElement {
         `Se pausará "${ad.title}". Mientras esté pausado no se muestra y su reloj de vigencia se congela — puedes reanudarlo cuando quieras.`,
         [
           { text: 'Cancelar', style: 'cancel' },
-          {
-            text: 'Pausar',
-            style: 'destructive',
-            onPress: () => {
-              void pause(ad.id).then((res) => {
-                if (res.ok) {
-                  set_recently_paused((prev) => [ad, ...prev.filter((a) => a.id !== ad.id)]);
-                }
-              });
-            },
-          },
+          { text: 'Pausar', style: 'destructive', onPress: () => void pause(ad.id) },
         ],
       );
     },
     [pause],
   );
 
-  const handle_resume = useCallback(
-    (ad: ActiveAd) => {
-      void resume(ad.id).then((res) => {
-        if (res.ok) {
-          set_recently_paused((prev) => prev.filter((a) => a.id !== ad.id));
-        }
-      });
-    },
-    [resume],
-  );
+  const handle_resume = useCallback((ad: ActiveAd) => void resume(ad.id), [resume]);
 
   const handle_take_down_reject = useCallback(
     (reason: string): Promise<ModerateResult> => {
@@ -610,9 +611,15 @@ function ActiveAdsSection(): React.ReactElement {
       <View style={styles.header}>
         <Text style={styles.title}>Anuncios activos</Text>
         {!loading && ads.length > 0 && (
-          <Text style={styles.subtitle}>{ads.length === 1 ? '1 activo' : `${ads.length} activos`}</Text>
+          <Text style={styles.subtitle}>{ads.length === 1 ? '1 anuncio' : `${ads.length} anuncios`}</Text>
         )}
       </View>
+
+      {moderate_error !== null && (
+        <Text style={styles.error_text} testID="active-moderate-error">
+          {moderate_error}
+        </Text>
+      )}
 
       {loading ? (
         <View style={styles.center}>
@@ -641,35 +648,16 @@ function ActiveAdsSection(): React.ReactElement {
               item={item}
               disabled={is_moderating}
               on_pause={handle_pause}
+              on_resume={handle_resume}
               on_take_down={set_take_down_target}
             />
           )}
           contentContainerStyle={
             ads.length === 0 ? styles.list_empty_container : styles.list_content
           }
-          ListHeaderComponent={
-            recently_paused.length > 0 ? (
-              <View style={styles.recently_paused_section} testID="recently-paused-section">
-                <Text style={styles.section_label}>Pausados hace un momento</Text>
-                {recently_paused.map((ad) => (
-                  <RecentlyPausedRow
-                    key={ad.id}
-                    item={ad}
-                    on_resume={handle_resume}
-                    disabled={is_moderating}
-                  />
-                ))}
-                {moderate_error !== null && (
-                  <Text style={styles.error_text} testID="active-moderate-error">
-                    {moderate_error}
-                  </Text>
-                )}
-              </View>
-            ) : null
-          }
           ListEmptyComponent={
             <View style={styles.empty_state} testID="active-empty-state">
-              <Text style={styles.empty_text}>No hay anuncios activos en este momento.</Text>
+              <Text style={styles.empty_text}>No hay anuncios activos ni pausados en este momento.</Text>
             </View>
           }
           testID="active-ads-list"
@@ -784,26 +772,15 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   waiting_text: { fontSize: 12, fontWeight: '600', color: '#E5A020' },
-
-  recently_paused_section: {
-    marginBottom: 16,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E7E2D8',
+  paused_badge: {
+    backgroundColor: '#6B728022',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    marginLeft: 8,
   },
-  recently_paused_row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E7E2D8',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    marginBottom: 8,
-  },
-  recently_paused_title: { flex: 1, fontSize: 14, color: '#17140F', marginRight: 12 },
+  paused_badge_text: { fontSize: 12, fontWeight: '600', color: '#6B7280' },
+  paused_hint_text: { fontSize: 12, color: '#6B7280', marginTop: 8 },
 
   sheet_header: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 4, alignItems: 'flex-end' },
   close_text: { fontSize: 16, color: '#5A8A5E', fontWeight: '600' },
