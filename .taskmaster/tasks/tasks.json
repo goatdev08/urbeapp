@@ -9405,7 +9405,7 @@
           "171"
         ],
         "priority": "high",
-        "updatedAt": "2026-08-23T06:39:06.059Z",
+        "updatedAt": "2026-08-23T06:59:48.208Z",
         "subtasks": [
           {
             "id": 1,
@@ -9439,15 +9439,15 @@
             "id": 3,
             "title": "Pantalla /admin/ads: cola de pendientes, ver el video y aprobar/rechazar",
             "description": "mobile/app/admin/ads/index.tsx con la cola de pending_review y el detalle para VER el creativo antes de decidir (URL firmada vía mint-ad-urls). Rechazar exige escribir la razón. Entrada desde mobile/app/admin/index.tsx.",
-            "details": "NO crítica → verificación ligera. Techo de alcance: lo que exista en urbea-identidad-visual.html; nada de UI inventada. ⚠️ Ver el video quema minutos de Cloudflare Stream: verificar que reproduce y PARAR.",
+            "details": "NO crítica → verificación ligera. Techo de alcance: lo que exista en urbea-identidad-visual.html; nada de UI inventada. ⚠️ Ver el video quema minutos de Cloudflare Stream: verificar que reproduce y PARAR.\n<info added on 2026-08-23T06:59:46.126Z>\nHECHO — 208.3 (NO critica -> verificacion ligera + smoke por CLI)\n\nARCHIVOS\n- mobile/app/admin/ads/index.tsx        (nuevo — cola + hoja de moderacion)\n- mobile/app/admin/index.tsx            (modificado — entrada testID admin-ads-entry)\n- mobile/.maestro/ios/admin-ads-208.yaml (nuevo — flujo de smoke, ver NOTA)\n\nCommit: 009eda0\n\nDECISIONES\n1. UNA sola pantalla con el detalle en Modal, no dos rutas. Moderar es un acto\n   corto: ver el creativo, decidir, volver a la cola. Una ruta aparte obligaria\n   a resolver el ad por id en una segunda consulta que la cola ya trajo.\n2. Estetica calcada de mobile/app/admin/index.tsx (clara/utilitaria, NO el feed\n   oscuro). La identidad visual no trae mockup de esta pantalla; el techo de\n   alcance es el lenguaje que el panel de admin YA usa, no UI inventada.\n3. CUOTA DE STREAM: el video no se firma al abrir la lista ni se reproduce solo.\n   El creativo se pide a mint-ad-urls SOLO cuando el admin abre un anuncio, y el\n   reproductor arranca en pausa (loop=false, nativeControls). Cada reproduccion\n   son minutos facturados.\n4. \"Rechazar\" queda deshabilitado sin motivo escrito, para que el admin lo vea\n   antes de intentarlo. El CHECK bidireccional de la base y el guard de\n   useModerateAd siguen siendo las barreras reales.\n5. La tarjeta muestra los dias que el anuncio lleva esperando: la cola es FIFO y\n   la vigencia pagada se consume mientras espera.\n\nVERIFICACION LIGERA (salida real)\n  pnpm tsc --noEmit  -> sin salida (limpio)\n  pnpm lint          -> 103 problems (0 errors, 103 warnings)\n  pnpm jest          -> Test Suites: 115 passed, 115 total\n                        Tests: 1452 passed, 1452 total\n\nSMOKE POR CLI — simulador iOS contra la rama `preview-ads`\nmobile/.env.local apunta a ydhnhyagszopwhyoeela (proyecto efimero, datos\npropios, cero contacto con usuarios reales). Se desplegaron ahi primero las 2\nmigraciones de 208.1 y las EFs moderate-ad + mint-ad-urls.\n\nResultado (captura scratchpad/smoke-07.png):\n  Cabecera \"Anuncios por revisar\" · \"1 pendiente\"\n  Tarjeta: \"Seguro de arrendamiento — smoke 208.3\"\n           \"Hipotecaria Demo\"\n           \"23 ago 2026 — 22 sep 2026\"\n\n🔴 LO QUE ESTO PRUEBA DE VERDAD: la tabla `ads` de esa rama tiene 6 anuncios y\nla pantalla mostro UNO. Con una sesion de admin real —justo el caso donde la\nclausula `private.is_admin()` de la policy ads_select evalua true para TODA\nfila— el `.eq('status','pending_review')` del cliente es lo unico que impide\nque la \"cola de pendientes\" sea el inventario completo de la plataforma. El\ninvariante central de 208.2 quedo verificado en condiciones de produccion, no\nsolo contra un mock.\nTambien quedaron verificados en vivo: el embed agencies(name), el formato de\nfechas en es-MX y el contador de pendientes.\n\nNOTA — LO QUE **NO** SE PUDO TOCAR EN EL SIMULADOR\nEl flujo Maestro (mobile/.maestro/ios/admin-ads-208.yaml) quedo escrito y\ncommiteado pero NO se ejecuto: maestro requiere Java y esta maquina no lo tiene\n(\"Unable to locate a Java Runtime\"). Instalarlo cambia el entorno de Abraham y\nno se hizo sin pedirselo. `xcrun simctl` puede lanzar, abrir deep links y\ncapturar, pero NO enviar taps ni texto.\nConsecuencia honesta: la HOJA de moderacion (abrir el anuncio, cargar el video,\nescribir el motivo, pulsar aprobar/rechazar) no se ejercito con dedos en el\nsimulador. Queda cubierta por otras dos capas:\n  - los 20 casos RNTL de useModerateAd (payload, guard de motivo vacio,\n    traduccion de los 9 codigos, is_moderating, onSuccess, #205);\n  - el smoke de backend por curl de 208.4, que ejercita la MISMA EF que la hoja\n    invoca, con sus 4 caminos negativos.\nPara cerrarlo del todo hace falta `brew install openjdk` y correr el flujo.\n\nDATOS SEMBRADOS EN LA RAMA (no en produccion)\n  - ad 40000000-...-0000f1 \"Seguro de arrendamiento — smoke 208.3\" en\n    pending_review (draft -> pending_review, transicion de sistema sin admin).\n  - buscador1@urbea.demo se promovio a admin TEMPORALMENTE porque era la sesion\n    viva del simulador y no habia forma de teclear el login sin Maestro.\n    REVERTIDO: select devuelve role='user'. Verificado.\n  - el ad 40000000-...-0000a2 se pauso y se restauro a 'active' para probar\n    208.5. Verificado.\n</info added on 2026-08-23T06:59:46.126Z>",
             "testStrategy": "pnpm tsc --noEmit + pnpm lint + smoke por CLI en el emulador (adb/simctl, NUNCA computer-use).",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               2,
               5
             ],
             "priority": "medium",
-            "updatedAt": "2026-08-23T12:30:00.000Z",
+            "updatedAt": "2026-08-23T06:59:48.208Z",
             "subtasks": [],
             "parentId": "undefined"
           },
@@ -9559,7 +9559,7 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-08-23T06:39:06.059Z",
+      "lastModified": "2026-08-23T06:59:48.208Z",
       "taskCount": 209,
       "completedCount": 127,
       "tags": [

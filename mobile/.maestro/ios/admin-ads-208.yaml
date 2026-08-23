@@ -1,0 +1,87 @@
+# admin-ads-208.yaml — smoke iOS de la cola de moderación de anuncios (#208.3).
+#
+# Contra la rama `preview-ads` (mobile/.env.local ya apunta ahí): backend real,
+# datos propios, cero contacto con los usuarios de producción.
+#
+# Prerrequisito: Metro corriendo (`pnpm expo start --ios`) y el dev build ya
+# instalado en el simulador. NO usa clearState: en iOS el dev client perdería
+# la URL de Metro y quedaría en su launcher.
+#
+# 🔴 NO reproduce el video a propósito: verlo son minutos facturados de
+# Cloudflare Stream. El flujo llega a "Ver el video" y para ahí.
+appId: com.urbea.app
+name: "208.3 — cola de moderación de anuncios (admin)"
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "Perfil"
+    timeout: 60000
+
+# ── 1) Salir de la sesión actual (no admin) ────────────────────────────────
+- tapOn: "Perfil"
+- extendedWaitUntil:
+    visible: "Cerrar sesión"
+    timeout: 20000
+- tapOn: "Cerrar sesión"
+- extendedWaitUntil:
+    visible: "¿Estás seguro de que quieres cerrar sesión?"
+    timeout: 10000
+- tapOn:
+    text: "Cerrar sesión"
+    index: 1
+- extendedWaitUntil:
+    visible: "Inicia sesión para continuar"
+    timeout: 30000
+
+# ── 2) Entrar como admin ───────────────────────────────────────────────────
+- tapOn:
+    id: "login-email"
+- inputText: "admin.ads@urbea.demo"
+- tapOn:
+    id: "login-password"
+- inputText: "urbea2026"
+- tapOn: "Inicia sesión para continuar"
+- tapOn: "Iniciar sesión"
+- extendedWaitUntil:
+    visible: "Perfil"
+    timeout: 45000
+
+# ── 3) Cola de moderación ──────────────────────────────────────────────────
+- openLink: "urbea://admin"
+- extendedWaitUntil:
+    visible: "Inmobiliarias"
+    timeout: 30000
+- assertVisible:
+    id: "admin-ads-entry"
+- tapOn:
+    id: "admin-ads-entry"
+- extendedWaitUntil:
+    visible: "Anuncios por revisar"
+    timeout: 30000
+- assertVisible: "Seguro de arrendamiento — smoke 208.3"
+- takeScreenshot: /private/tmp/claude-501/-Users-fru-Dev-urbea/65e3f0c9-3e42-4e10-bb3b-8f044f15a7e0/scratchpad/maestro-cola
+
+# ── 4) Detalle: el admin ve de quién es y puede pedir el creativo ──────────
+- tapOn: "Seguro de arrendamiento — smoke 208.3"
+- extendedWaitUntil:
+    visible: "Motivo del rechazo"
+    timeout: 20000
+- assertVisible: "Hipotecaria Demo"
+- assertVisible:
+    id: "load-video"
+- assertVisible:
+    id: "approve-ad"
+- takeScreenshot: /private/tmp/claude-501/-Users-fru-Dev-urbea/65e3f0c9-3e42-4e10-bb3b-8f044f15a7e0/scratchpad/maestro-detalle
+
+# ── 5) Rechazar exige motivo: se escribe y se rechaza de verdad ────────────
+- tapOn:
+    id: "rejection-reason"
+- inputText: "Smoke 208.3 desde la app: el creativo no corresponde al anunciante."
+- hideKeyboard
+- tapOn:
+    id: "reject-ad"
+- extendedWaitUntil:
+    visible: "No hay anuncios esperando revisión."
+    timeout: 30000
+- takeScreenshot: /private/tmp/claude-501/-Users-fru-Dev-urbea/65e3f0c9-3e42-4e10-bb3b-8f044f15a7e0/scratchpad/maestro-vacia
+- stopApp
