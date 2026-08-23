@@ -34,3 +34,18 @@ additional_redirect_urls = ["urbea://*"]
 # desde el cliente. El REMOTO se configura aparte con Resend como SMTP
 # custom — ver docs/TODO-pendientes.md (prereq externo, sigue bloqueante).
 enable_confirmations = true
+
+# ── Edge Functions: paridad con cómo se despliegan en el REMOTO ───────────────
+# Sin estas secciones el stack local le exige JWT a TODAS las funciones, aunque
+# en producción estas dos se despliegan con --no-verify-jwt. La divergencia no
+# se nota hasta que algo falla en local con un 401 que en remoto no ocurre
+# (así se descubrió: el webhook de Stream simulado contra local, 2026-08-21).
+[functions.stream-webhook]
+# Webhook público de Cloudflare Stream: lo llama Cloudflare server-to-server,
+# sin JWT de Supabase. La firma HMAC del header Webhook-Signature es la única
+# barrera de autenticación (ver functions/stream-webhook/handler.ts).
+verify_jwt = false
+
+[functions.register]
+# Alta libre: quien llama todavía no tiene sesión, por definición.
+verify_jwt = false

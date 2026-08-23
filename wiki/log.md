@@ -856,3 +856,49 @@ anunciante (#171) y el rollup facturable (#201) no tienen de dónde leer.
 Tres bugs (#205, #206, #207) en una épica que cerró con suites verdes y guardián
 en PASS. El patrón se repite: **la unidad correcta, el cableado ausente.** Ningún
 test afirmaba que alguien LLAMARA lo que se estaba probando.
+
+## [2026-08-23] fix | #207 las impresiones de anuncios por fin salen del dispositivo
+`adImpressionQueue` encolaba bien y no mandaba nunca. Su único disparador era
+`queue.length >= AD_IMPRESSION_BATCH_SIZE` (10) y `ad_max_per_session` es 5: la
+cola **no podía** llegar al umbral. El comentario del propio módulo decía «en la
+práctica el flush que manda es el de salir de la pantalla» — y ese flush no
+existía. `ad_impressions` llevaba desde el 21 de agosto congelada en 34 filas
+con toda la épica comercial en verde.
+
+Dos decisiones de diseño, y las dos van contra el arreglo obvio:
+
+**No es un hook nuevo.** `useFeedActiveIndex` ya calculaba la señal exacta
+(`is_app_active && is_focused`) para pausar el video, y `FeedScreen` ya lo
+llama. Un hook aparte sería un **segundo cable que alguien tendría que acordarse
+de conectar** — y un cable olvidado es literalmente el bug que se está
+arreglando. El flush pasa a ser consecuencia de una señal que ya viaja por el
+único call site que existe.
+
+**No es un listener propio de `AppState`.** Ese era el arreglo que proponía la
+tarea, y habría fallado en silencio: `AdFeedItem` cierra y encola su exposición
+en un efecto que reacciona a `isActive`, así que un listener propio correría en
+el MISMO tick que el que ya existe — antes de que React re-renderice al hijo.
+Vaciaría una cola vacía y perdería justo la exposición que la persona acababa de
+ver. Como efecto pasivo del padre corre **después** de los efectos de los hijos
+del mismo commit. EC-4 fija ese orden con un hijo que calca la forma de
+`AdFeedItem`. Tampoco hay flush en el desmontaje: ahí los cleanups corren de
+padre a hijo, el orden equivocado, y un force-stop no ejecuta cleanups de todos
+modos.
+
+Verificado **contra la base**, que era la condición de cierre: `ad_impressions`
+35 → 36 al salir del feed en el simulador (`watched_ms` 17844, `viewed` y
+`completed` true, id uuid v5 = lo escribió la EF). El camino ejercitado fue el
+**blur del tab**, que es lo que la gente hace de verdad.
+
+El arnés costó más que el arreglo, y deja lecciones: `render()` de RNTL 14
+devuelve promesa y sin `await` deja un `act()` abierto que hace que ningún
+`setState` externo re-renderice ([[rntl14_renderhook_async]]); un mock que
+referencia su `jest.fn()` directo muere en TDZ si el módulo bajo prueba resuelve
+dependencias en el import; Maestro toma el emulador de Android aunque apuntes a
+iOS y necesita `JAVA_HOME`; y el precio de una tarjeta del feed no es un nodo de
+accesibilidad, así que esperarlo como señal de listo falla siempre
+([[maestro_e2e_runner]]).
+
+Cierra la terna de bugs de cableado de la épica comercial (#205, #206, #207).
+Los tres compartían la misma firma: **la unidad correcta, el cableado ausente**,
+y ninguno de los tres lo vio una suite verde de más de 1400 tests.
