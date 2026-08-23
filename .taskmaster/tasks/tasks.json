@@ -9489,23 +9489,23 @@
         "description": "Origen: subtarea 168.2 · Detectado por: revisión de cierre de épica (2026-08-22, pregunta de Abraham). 🔴 CORRECCIÓN DEL 2026-08-23 — esto NO es un descuido, es un diferimiento DOCUMENTADO Y DELIBERADO que conviene adelantar. La exploración 039 (aprobada 2026-08-14) especifica el flujo completo en tres lugares: el happy path del anunciante (L89), la matriz de actores (L133 «El owner la solicita; en beta la enciende el admin de Urbea; en fase 2 la enciende el pago») y, explícito, el CÓMO (L135 «Admin de plataforma: da de alta organizaciones, enciende can_advertise… En beta por Studio/SQL, igual que #71.5 y #153, con UI en #81»). Lo que existe hoy es EXACTAMENTE lo planeado. #168 cerró sus 7 subtareas, invitación por correo incluida (inviteUserByEmail en _shared/clients.ts:259, E2E contra Mailpit).\n\nPOR QUÉ ADELANTARLO IGUAL: (1) #81 (panel admin web) depende de #71/#73/#79, ninguna empezada — el diferimiento se decidió cuando la épica comercial apenas arrancaba; hoy el circuito está completo salvo por esto, así que cuesta más que en agosto. (2) Sin capacidad encendida no hay a quién aprobarle un anuncio: #208 (moderación) queda sin insumo. (3) El smoke de 208.4 ya necesita encender una organización de prueba y solo puede por SQL.\n\nDOS HUECOS DISTINTOS: (a) la EF `admin-create-agency` YA acepta can_advertise y advertiser_category (handler.ts:104-112, 233-234) pero mobile/app/admin/agencies/create.tsx nunca los manda — cableado puro, cero backend; (b) para una organización que YA existe el único camino es set_org_advertising_atomic desde Studio/CLI con service_role, con CERO llamadores en el repo fuera de sus tests.\n\n🟡 PIEZA GENUINAMENTE SIN DEFINIR: «el owner la solicita» aparece dos veces en 039 (L133, L1001) y NUNCA dice por qué canal (¿botón en su perfil? ¿te escribe por fuera?). Hoy la respuesta de facto es «te lo pide por fuera», que para beta funciona. Esta tarea NO lo resuelve — lo deja anotado como decisión de producto pendiente.\n\n🟡 En docs/ no hay nada del flujo: vive solo en la exploración 039 y en wiki/conceptos/inmobiliarias-y-agentes.md:45.",
         "details": "🔴 Producción viva: la épica está desplegada al remoto con ads_enabled=false (2026-08-22). Ninguna de las dos inmobiliarias reales tiene can_advertise=true.\n\nQué NO hay que reconstruir (reusar > reescribir):\n- `set_org_advertising_atomic(p_agency_id, p_enabled, p_category)` (20260815000002 + 20260816000003) ya enciende Y apaga, audita en admin_actions en la MISMA transacción, y rechaza encender sin categoría con P0001 ADVERTISER_CATEGORY_REQUIRED. Es service_role: hace falta una EF que la invoque, no exponerla a authenticated.\n- La EF `admin-create-agency` ya reenvía can_advertise/advertiser_category SOLO si vienen definidos, para no pisar los DEFAULT de la RPC con null explícito. El hueco (a) se cierra agregando los campos al formulario, sin tocar backend.\n- El CHECK `agencies_categoria_requerida_para_anunciar` hace imposible el estado (can_advertise=true, categoría NULL) por los 4 caminos de escritura. La UI debe hacer la categoría obligatoria cuando se enciende — no para garantizar el invariante (ya está garantizado) sino para que el error no llegue como un 23514.\n\n🔴 SIN PAGO, A PROPÓSITO. `app_config.ads_free = true` y `ad_prices` tiene los 3 alcances sembrados (neighborhood 1500, municipality 4000, national 12000 MXN a 30 días) pero NADIE cobra. El cobro es #172 (CPM/CPC), diferida y dependiente de Stripe (#84). Esta tarea NO introduce cobro: el admin enciende la capacidad a mano cuando el negocio ya se cerró por fuera.\n\nFootprint: mobile/app/admin/agencies/create.tsx · mobile/app/admin/agencies/[id].tsx · supabase/functions/set-org-advertising/** (nueva EF) · mobile/src/features/admin/hooks/**\n\nCriticidad TDD por path: EF = CRÍTICA, hooks = CRÍTICA, pantallas = verificación ligera.",
         "testStrategy": "Deno con DI para la EF (admin verificado, no-admin 403, encender sin categoría → código tipado, organización inexistente → 404). RNTL para el hook. Verificación ligera para las pantallas. Smoke: encender la capacidad de una organización de prueba desde la app y confirmar la fila en admin_actions con old_values/new_values correctos.",
-        "status": "pending",
+        "status": "in-progress",
         "dependencies": [
           "168"
         ],
         "priority": "high",
-        "updatedAt": "2026-08-23T12:00:00.000Z",
+        "updatedAt": "2026-08-23T20:09:37.634Z",
         "subtasks": [
           {
             "id": 1,
             "title": "EF set-org-advertising sobre la RPC ya existente",
             "description": "Edge Function que invoca set_org_advertising_atomic con auth de admin. Traduce ADVERTISER_CATEGORY_REQUIRED y AGENCY_NOT_FOUND a códigos tipados; nunca reenvía el texto crudo de Postgres.",
-            "details": "CRÍTICA → TDD estricto. Reusa make_admin_verifier + service_client. index.ts delgado (patrón moderate-property / moderate-ad de #208.1).",
+            "details": "CRÍTICA → TDD estricto. Reusa make_admin_verifier + service_client. index.ts delgado (patrón moderate-property / moderate-ad de #208.1).\n<info added on 2026-08-23T20:09:37.634Z>\nFASE RED — subtarea #209.1 (EF set-org-advertising)\n\nSEAMS (interfaz bajo test):\n- Contrato HTTP del handler puro `handler(req, deps)` de\n  `supabase/functions/set-org-advertising/handler.ts` (request → status + body),\n  con DOS dependencias inyectables: `AdminVerifier` (ya existente, _shared/admin_auth.ts)\n  y `OrgAdvertisingWriter` (nueva, wrapper sobre `set_org_advertising_atomic`).\n  Mismo patrón DI que moderate-ad/handler.ts (#208.1). NO se testea la RPC\n  (eso es pgTAP, ya cubierto por 46_org_advertising_test.sql) ni supabase-js\n  real (eso vive en _shared/clients.ts, fuera de esta subtarea).\n\nComando: cd supabase/functions && deno test --allow-net --allow-env set-org-advertising/handler.test.ts\nResultado RED confirmado: 0 passed | 24 failed (13ms) — todos fallan porque el\nstub handler.ts lanza `not_implemented`, no por import roto. `deno check` sobre\nlos 3 archivos: limpio (0 errores de tipos).\n\nEDGE CASES (RED):\n### Happy path\n- EC-1  enabled=true + category válida → 200, writer recibe agency_id/enabled/category tal cual\n- EC-2  enabled=false SIN category → 200, writer recibe category=null\n- EC-3  el writer recibe el admin_id que devolvió el verificador\n- EC-4  la respuesta 200 es { ok: true } (cuerpo mínimo, convención moderate-ad)\n\n### Payload — tipos y presencia\n- EC-5  body no-JSON → 400 INVALID_INPUT\n- EC-6  payload vacío {} → 400 INVALID_INPUT\n- EC-7  agency_id ausente → 400 INVALID_INPUT\n- EC-8  agency_id no-string → 400 INVALID_INPUT\n- EC-9  enabled ausente → 400 INVALID_INPUT\n- EC-10 enabled no-boolean (string \"true\") → 400 INVALID_INPUT\n\n### Payload — category (frontera de confianza contra el enum de la base)\n- EC-11 category fuera del enum advertiser_category → 400 INVALID_INPUT, writer\n        NUNCA se llama (evita un 22P02 crudo de Postgres si llegara a la RPC)\n- EC-12 category no-string (number) → 400 INVALID_INPUT\n- EC-13 enabled=true SIN category → NO es 400 en TS (payload válido en FORMA);\n        el writer SÍ se llama con category=null — la obligatoriedad la decide\n        la RPC vía ADVERTISER_CATEGORY_REQUIRED (EC-18), no se duplica aquí\n\n### Auth\n- EC-14 sin Authorization → 401 UNAUTHENTICATED, writer NUNCA se llama\n- EC-15 verificador FORBIDDEN (no-admin) → 403, writer NUNCA se llama\n- EC-16 el verificador recibe el header Authorization EXACTO de la petición\n\n### Traducción de lo que contesta la RPC\n- EC-17 AGENCY_NOT_FOUND → 404\n- EC-18 ADVERTISER_CATEGORY_REQUIRED → 422 (request bien formado; falta un\n        dato de negocio, no un tipo — mismo criterio 409-vs-400 que moderate-ad)\n- EC-19 DB_ERROR (fallo inesperado) → 500\n\n### Boundary / error — fuga de implementación\n- EC-20 🔴 el cuerpo NUNCA filtra el texto crudo de Postgres (nombre de función\n        PL/pgSQL, línea, esquema) — solo el código tipado y un mensaje propio\n\n### CORS / métodos\n- EC-21 OPTIONS → 200 con Access-Control-Allow-Origin\n- EC-22 GET → 405\n- EC-23 PUT → 405\n- EC-24 DELETE → 405\n</info added on 2026-08-23T20:09:37.634Z>",
             "testStrategy": "Deno con DI y fakes.",
-            "status": "pending",
+            "status": "in-progress",
             "dependencies": [],
             "priority": "high",
-            "updatedAt": "2026-08-22T13:00:00.000Z",
+            "updatedAt": "2026-08-23T20:09:37.634Z",
             "subtasks": [],
             "parentId": "undefined"
           },
@@ -9579,7 +9579,8 @@
             "dependencies": [],
             "priority": "high",
             "updatedAt": "2026-08-23T08:00:00.000Z",
-            "subtasks": []
+            "subtasks": [],
+            "parentId": "undefined"
           },
           {
             "id": 2,
@@ -9593,7 +9594,8 @@
             ],
             "priority": "high",
             "updatedAt": "2026-08-23T08:00:00.000Z",
-            "subtasks": []
+            "subtasks": [],
+            "parentId": "undefined"
           },
           {
             "id": 3,
@@ -9607,7 +9609,8 @@
             ],
             "priority": "medium",
             "updatedAt": "2026-08-23T08:00:00.000Z",
-            "subtasks": []
+            "subtasks": [],
+            "parentId": "undefined"
           },
           {
             "id": 4,
@@ -9621,7 +9624,8 @@
             ],
             "priority": "medium",
             "updatedAt": "2026-08-23T08:00:00.000Z",
-            "subtasks": []
+            "subtasks": [],
+            "parentId": "undefined"
           }
         ]
       },
@@ -9648,7 +9652,8 @@
             "dependencies": [],
             "priority": "high",
             "updatedAt": "2026-08-23T08:00:00.000Z",
-            "subtasks": []
+            "subtasks": [],
+            "parentId": "undefined"
           },
           {
             "id": 2,
@@ -9662,7 +9667,8 @@
             ],
             "priority": "medium",
             "updatedAt": "2026-08-23T08:00:00.000Z",
-            "subtasks": []
+            "subtasks": [],
+            "parentId": "undefined"
           },
           {
             "id": 3,
@@ -9676,7 +9682,8 @@
             ],
             "priority": "medium",
             "updatedAt": "2026-08-23T08:00:00.000Z",
-            "subtasks": []
+            "subtasks": [],
+            "parentId": "undefined"
           }
         ]
       },
@@ -9704,7 +9711,8 @@
             "dependencies": [],
             "priority": "high",
             "updatedAt": "2026-08-23T08:00:00.000Z",
-            "subtasks": []
+            "subtasks": [],
+            "parentId": "undefined"
           },
           {
             "id": 2,
@@ -9716,7 +9724,8 @@
             "dependencies": [],
             "priority": "high",
             "updatedAt": "2026-08-23T08:00:00.000Z",
-            "subtasks": []
+            "subtasks": [],
+            "parentId": "undefined"
           },
           {
             "id": 3,
@@ -9730,7 +9739,8 @@
             ],
             "priority": "high",
             "updatedAt": "2026-08-23T08:00:00.000Z",
-            "subtasks": []
+            "subtasks": [],
+            "parentId": "undefined"
           },
           {
             "id": 4,
@@ -9744,7 +9754,8 @@
             ],
             "priority": "medium",
             "updatedAt": "2026-08-23T08:00:00.000Z",
-            "subtasks": []
+            "subtasks": [],
+            "parentId": "undefined"
           },
           {
             "id": 5,
@@ -9759,7 +9770,8 @@
             ],
             "priority": "medium",
             "updatedAt": "2026-08-23T08:00:00.000Z",
-            "subtasks": []
+            "subtasks": [],
+            "parentId": "undefined"
           },
           {
             "id": 6,
@@ -9773,7 +9785,8 @@
             ],
             "priority": "medium",
             "updatedAt": "2026-08-23T08:00:00.000Z",
-            "subtasks": []
+            "subtasks": [],
+            "parentId": "undefined"
           }
         ]
       },
@@ -9802,7 +9815,8 @@
             "dependencies": [],
             "priority": "high",
             "updatedAt": "2026-08-23T08:00:00.000Z",
-            "subtasks": []
+            "subtasks": [],
+            "parentId": "undefined"
           },
           {
             "id": 2,
@@ -9816,7 +9830,8 @@
             ],
             "priority": "high",
             "updatedAt": "2026-08-23T08:00:00.000Z",
-            "subtasks": []
+            "subtasks": [],
+            "parentId": "undefined"
           },
           {
             "id": 3,
@@ -9830,7 +9845,8 @@
             ],
             "priority": "high",
             "updatedAt": "2026-08-23T08:00:00.000Z",
-            "subtasks": []
+            "subtasks": [],
+            "parentId": "undefined"
           },
           {
             "id": 4,
@@ -9844,7 +9860,8 @@
             ],
             "priority": "medium",
             "updatedAt": "2026-08-23T08:00:00.000Z",
-            "subtasks": []
+            "subtasks": [],
+            "parentId": "undefined"
           },
           {
             "id": 5,
@@ -9858,15 +9875,16 @@
             ],
             "priority": "medium",
             "updatedAt": "2026-08-23T08:00:00.000Z",
-            "subtasks": []
+            "subtasks": [],
+            "parentId": "undefined"
           }
         ]
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-08-23T07:03:42.722Z",
-      "taskCount": 209,
+      "lastModified": "2026-08-23T20:04:43.304Z",
+      "taskCount": 213,
       "completedCount": 128,
       "tags": [
         "master"
