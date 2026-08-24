@@ -59,9 +59,15 @@
  *   6. Mensajes de error SIEMPRE del mapa neutro, jamás `error.message`
  *      crudo (#200) (EC-13).
  *   7. Cambio de `ad_id` o `period` → refetch automático; una respuesta
- *      tardía de la llamada vieja NUNCA pisa a la nueva (EC-17, EC-18).
+ *      tardía de la llamada vieja NUNCA pisa a la nueva (EC-17, EC-18), sea
+ *      que RESUELVA tarde (EC-18) o RECHACE tarde (EC-28).
  *   8. Sin `ad_id` no se dispara ninguna RPC (EC-15, EC-16).
- *   9. Sin setState tras unmount (EC-20).
+ *   9. Un éxito que llega DESPUÉS de que otra RPC ya marcó error no debe
+ *      repoblar su campo (EC-26) — todo-o-nada es simétrico al ORDEN de
+ *      llegada, no solo al resultado final.
+ *  10. `is_loading` no se apaga hasta que las 3 RPCs se asienten, aunque
+ *      solo falte una (EC-27) — un spinner apagado con 2/3 en vuelo muestra
+ *      datos incompletos como si fueran completos.
  *
  * PATRÓN DE MOCK: `deps.client` inyectado por parámetro (DI explícita, NO
  * jest.mock del módulo — el seam es el parámetro `deps`, calca
@@ -112,7 +118,20 @@
  * - (EC-20) rerender_con_mismo_ad_id_y_period_no_redispara_las_rpcs
  *
  * ### Unmount
- * - (EC-21) unmount_durante_fetch_no_hace_setstate_tras_desmontar
+ * - 🔴 EC-21 se ELIMINÓ (2026-08-24, hallazgo del guardian): el mutation
+ *   testing demostró que "unmount + luego resolver + assert
+ *   console.error no llamado" es VACUO en este entorno -- React 18 dejó de
+ *   emitir el warning "Can't perform a React state update on an unmounted
+ *   component", así que la aserción pasaba IGUAL con el guard `if (ignore)
+ *   return` puesto o quitado (el guardian lo probó quitándolo a mano). No
+ *   hay una señal observable en RNTL/react-test-renderer que distinga
+ *   "ignore respetado tras unmount" de "ignore violado tras unmount" -- la
+ *   garantía sigue siendo correcta por revisión de código (mismo patrón
+ *   `ignore` que useAdMetrics/usePendingAds/useLeadStats), pero no es
+ *   mecánicamente mordible aquí. EC-18 y EC-28 SÍ ejercitan (y sí muerden)
+ *   las mismas ramas `if (ignore) return` de los handlers de éxito/error --
+ *   solo que disparadas por un cambio de `ad_id` en vuelo, no por un
+ *   `unmount()`, que es la única forma de que la aserción tenga mordida real.
  *
  * ### Refetch
  * - (EC-22) refetch_vuelve_a_llamar_las_tres_rpcs_con_el_mismo_ad_id_y_period
@@ -123,6 +142,21 @@
  *
  * ### Boundary — loading
  * - (EC-25) is_loading_true_mientras_las_tres_rpcs_estan_pendientes_totals_nunca_no_null
+ *
+ * ### Mutation hardening (guardian, 2026-08-24 — mata M2/M15/M17 sobrevivientes)
+ * - (EC-26) mata_m2_exito_tardio_tras_error_no_repuebla_el_campo: falla
+ *   PRIMERO (totals), éxitos con datos reales llegan DESPUÉS (daily/zones) --
+ *   a diferencia de EC-12/EC-13 (donde el error llega AL FINAL y el reset
+ *   post-hoc tapa el guard), aquí el orden invertido SÍ exige el guard
+ *   `if (!errored)` en los 3 handlers de éxito.
+ * - (EC-27) mata_m15_is_loading_no_se_apaga_con_1_de_3_asentadas: totals
+ *   resuelve, daily/zones quedan pendientes para siempre -- is_loading debe
+ *   seguir true (EC-19 ya fija que totals se puebla antes; esta aserción es
+ *   sobre is_loading, no cubierta ahí).
+ * - (EC-28) mata_m17_rechazo_tardio_de_ad_id_viejo_no_pisa_nada: como EC-18
+ *   pero la respuesta tardía RECHAZA (promise reject) en vez de resolver --
+ *   ejercita el guard `if (ignore) return` de `handle_error`, que EC-18 no
+ *   toca (ahí la vieja siempre resuelve con éxito).
  */
 
 import { renderHook, act } from '@testing-library/react-native';
@@ -554,39 +588,25 @@ describe('useAdStats', () => {
   });
 
   // ── Unmount ──────────────────────────────────────────────────────────────
-
-  it('(EC-21) unmount_durante_fetch_no_hace_setstate_tras_desmontar: desmontar mientras las RPCs están en vuelo y luego resolverlas NO debe producir un warning de setState en un componente desmontado', async () => {
-    const console_error = jest.spyOn(console, 'error').mockImplementation(() => {});
-
-    let resolve_totals: ((v: RpcResult<TotalsRow>) => void) | undefined;
-    const pending_totals = new Promise<RpcResult<TotalsRow>>((resolve) => {
-      resolve_totals = resolve;
-    });
-
-    const client: { rpc: jest.Mock } = {
-      rpc: jest.fn((name: RpcName) =>
-        name === 'ad_stats_totals' ? pending_totals : new Promise(() => {}),
-      ),
-    };
-
-    const { unmount } = await render_stats(AD_ID, 'max', client);
-
-    await act(async () => {
-      unmount();
-    });
-
-    await act(async () => {
-      resolve_totals?.({ data: [TOTALS_ROW], error: null });
-    });
-
-    const update_on_unmounted = console_error.mock.calls.some((args) =>
-      String(args[0]).includes('a component that has not mounted') ||
-      String(args[0]).includes('unmounted component'),
-    );
-    expect(update_on_unmounted).toBe(false);
-
-    console_error.mockRestore();
-  });
+  //
+  // 🔴 EC-21 se ELIMINÓ (2026-08-24, hallazgo del guardian, mutation
+  // testing): la versión anterior desmontaba, resolvía las RPCs pendientes
+  // después, y aserteaba que console.error NO se llamó con el texto del
+  // warning de "setState en componente desmontado". El guardian demostró
+  // que esa aserción es VACUA en este entorno: quitando a mano el guard
+  // `if (ignore) return` del efecto, la suite seguía en VERDE, porque React
+  // 18 ya no emite ese warning (lo retiró desde 18.0 -- el update en un
+  // fiber desmontado es tolerado en silencio por el test renderer). No hay
+  // ninguna señal observable vía RNTL/react-test-renderer que distinga
+  // "ignore respetado tras un unmount real" de "ignore violado tras un
+  // unmount real" -- la garantía del closure `ignore` sigue siendo correcta
+  // por diseño (mismo patrón que useAdMetrics/usePendingAds/useLeadStats) y
+  // por revisión de código, pero no es mecánicamente mordible en un test de
+  // caja negra sobre unmount. Las MISMAS ramas `if (ignore) return` de los
+  // handlers de éxito y de error SÍ quedan mordidas -- por EC-18 (éxito
+  // tardío tras cambio de ad_id) y EC-28 (rechazo tardío tras cambio de
+  // ad_id), que disparan exactamente ese guard por una vía que SÍ es
+  // observable (el estado final no debe cambiar).
 
   // ── Refetch ──────────────────────────────────────────────────────────────
 
@@ -668,5 +688,111 @@ describe('useAdStats', () => {
 
     expect(result.current.is_loading).toBe(true);
     expect(result.current.totals).toBeNull();
+  });
+
+  // ── Mutation hardening (guardian, 2026-08-24) ───────────────────────────
+
+  it('(EC-26) mata_m2_exito_tardio_tras_error_no_repuebla_el_campo: ad_stats_totals falla YA (resuelve en el mismo tick del render); daily y zones llegan DESPUÉS con filas reales -- el guard `if (!errored)` de los 3 handlers de éxito debe impedir que ese éxito tardío repueble el campo junto al banner de error', async () => {
+    let resolve_daily: ((v: RpcResult<DailyRow>) => void) | undefined;
+    let resolve_zones: ((v: RpcResult<ZoneRow>) => void) | undefined;
+    const pending_daily = new Promise<RpcResult<DailyRow>>((resolve) => {
+      resolve_daily = resolve;
+    });
+    const pending_zones = new Promise<RpcResult<ZoneRow>>((resolve) => {
+      resolve_zones = resolve;
+    });
+
+    const client: { rpc: jest.Mock } = {
+      rpc: jest.fn((name: RpcName) => {
+        if (name === 'ad_stats_totals') {
+          // Ya resuelta -- se asienta en el mismo microtask-flush del render,
+          // ANTES de que daily/zones (deferred) tengan oportunidad de correr.
+          return Promise.resolve({
+            data: null,
+            error: { code: '42501', message: 'permission denied' },
+          });
+        }
+        if (name === 'ad_stats_daily') return pending_daily;
+        return pending_zones;
+      }),
+    };
+
+    const { result } = await render_stats(AD_ID, 'max', client);
+
+    // El error de totals ya debió asentarse -- resolvió antes que daily/zones.
+    expect(result.current.error_message).toBe(NEUTRAL_ERROR_MESSAGE);
+    expect(result.current.totals).toBeNull();
+
+    // daily/zones "ganan la carrera" DESPUÉS, con filas reales -- sin el
+    // guard `if (!errored)` esto repoblaría los campos junto al error.
+    await act(async () => {
+      resolve_daily?.({ data: [DAY_1, DAY_2], error: null });
+      resolve_zones?.({ data: [ZONE_REAL], error: null });
+    });
+
+    expect(result.current.daily).toEqual([]);
+    expect(result.current.zones).toEqual([]);
+    expect(result.current.error_message).toBe(NEUTRAL_ERROR_MESSAGE);
+    expect(result.current.totals).toBeNull();
+  });
+
+  it('(EC-27) mata_m15_is_loading_no_se_apaga_con_1_de_3_rpcs_asentadas: totals resuelve con datos reales; daily y zones quedan pendientes para siempre -- is_loading debe seguir TRUE (un spinner apagado con la gráfica/mapa aún en vuelo le mostraría al anunciante datos incompletos como si fueran el resultado final)', async () => {
+    const client: { rpc: jest.Mock } = {
+      rpc: jest.fn((name: RpcName) => {
+        if (name === 'ad_stats_totals') {
+          return Promise.resolve({ data: [TOTALS_ROW], error: null });
+        }
+        return new Promise(() => {}); // daily/zones nunca resuelven en este test
+      }),
+    };
+
+    const { result } = await render_stats(AD_ID, 'max', client);
+
+    expect(result.current.totals).toEqual(TOTALS_ROW);
+    expect(result.current.is_loading).toBe(true);
+  });
+
+  it('(EC-28) mata_m17_rechazo_tardio_de_ad_id_viejo_no_pisa_nada: como EC-18 pero la respuesta tardía de AD_ID (el ad_id VIEJO) RECHAZA en vez de resolver -- el guard `if (ignore) return` de `handle_error` debe descartarla sin tocar el error_message ni los datos frescos de AD_ID_B', async () => {
+    let reject_stale_totals: ((e: unknown) => void) | undefined;
+    const stale_totals = new Promise<RpcResult<TotalsRow>>((_resolve, reject) => {
+      reject_stale_totals = reject;
+    });
+
+    const OTHER_TOTALS: TotalsRow = { impressions: 41, views: 15, cta_taps: 4 };
+
+    const client: { rpc: jest.Mock } = {
+      rpc: jest.fn((name: RpcName, params: { p_ad_id: string }) => {
+        if (params.p_ad_id === AD_ID) {
+          if (name === 'ad_stats_totals') return stale_totals;
+          return new Promise(() => {}); // daily/zones de AD_ID nunca resuelven en este test
+        }
+        // AD_ID_B resuelve rápido en las 3
+        if (name === 'ad_stats_totals') {
+          return Promise.resolve({ data: [OTHER_TOTALS], error: null });
+        }
+        return Promise.resolve({ data: [], error: null });
+      }),
+    };
+
+    const { result, rerender } = await renderHook(
+      ({ id }: { id: string }) => useAdStats(id, 'max', { client }),
+      { initialProps: { id: AD_ID } },
+    );
+
+    await act(async () => {
+      rerender({ id: AD_ID_B });
+    });
+
+    expect(result.current.totals).toEqual(OTHER_TOTALS);
+    expect(result.current.error_message).toBeNull();
+
+    // La petición vieja (de AD_ID) RECHAZA tarde -- debe descartarse por
+    // completo, sin pisar el error_message ni los datos ya asentados.
+    await act(async () => {
+      reject_stale_totals?.(new Error('network down (stale)'));
+    });
+
+    expect(result.current.error_message).toBeNull();
+    expect(result.current.totals).toEqual(OTHER_TOTALS);
   });
 });
