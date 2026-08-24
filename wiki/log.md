@@ -942,3 +942,6 @@ El botón de emergencia previo a encender `ads_enabled`: la EF `moderate-ad` gan
 
 ## [2026-08-23] tarea | #211 suspensión de organizaciones — DESPLEGADO
 La cascada de #169.2 (probada hace una semana, cero llamadores) por fin es alcanzable: RPC `set_agency_status_atomic` (4ª del patrón GUC) + EF `suspend-agency` + estado en el detalle admin. Smoke en vivo del ciclo completo: suspender pausó SOLO los ads activos, el pausado a mano no resucitó al reactivar (discriminador), y el resume aislado chocó con el guard de #210 (409) — las dos tareas se reconocen mutuamente. Hallazgo del RED: re-suspender es no-op idempotente (trigger WHEN distinct), no un 409. Presentación del status unificada entre lista y detalle. Guardian PASS ×2.
+
+## [2026-08-23] tarea | #201 rollup mensual + métricas de dos fuentes — DESPLEGADO
+La base facturable ya no se evapora a los 90 días: rollup diario (pg_cron 8 UTC, antes de la purga) con k-anonimato AL AGREGAR (el histórico permanente jamás contiene una zona sub-umbral) y `ad_metrics_for_agency` leyendo crudo+congelado sin doble contar. El guardian cazó en el ciclo 1 una degradación real del histórico (la purga rolling dejaba meses "a medias" y cada corrida los reescribía con el remanente) → compuerta de elegibilidad; en el ciclo 2 cazó un fixture que se rompía solo 20 días al año. Derivadas #214/#215/#216.
