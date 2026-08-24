@@ -625,6 +625,9 @@ select is(
 create temp table result_daily_norange (ok boolean, err_sqlstate text);
 create temp table result_daily_norange_rows (rn bigserial, day date, impressions integer, views integer, cta_taps integer);
 grant all on result_daily_norange, result_daily_norange_rows to public;
+-- GRANT ALL ON TABLE no cubre la secuencia implícita del bigserial (gotcha
+-- encontrado en el GREEN: 42501 al insertar bajo el rol impersonado).
+grant usage, select on sequence result_daily_norange_rows_rn_seq to public;
 select pg_temp.act_as('00000000-0000-0000-0000-000000700001', 'authenticated');
 do $$
 begin
