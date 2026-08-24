@@ -5759,14 +5759,15 @@
             "id": 4,
             "title": "Centro de notificaciones in-app (§22.1)",
             "description": "Pantalla del centro: lista cronológica, no-leída, marcar todo leído, navegación al contenido, retención 30d.",
-            "details": "mobile/notifications: lista desc por fecha, punto de no-leída hasta tocar, \"Marcar todo como leído\", al tocar navega al contenido relevante. pg_cron purga >30d (§22.1). Sin agrupación (post-MVP). NO crítica (UI) salvo el job de retención.",
+            "details": "mobile/notifications: lista desc por fecha, punto de no-leída hasta tocar, \"Marcar todo como leído\", al tocar navega al contenido relevante. pg_cron purga >30d (§22.1). Sin agrupación (post-MVP). NO crítica (UI) salvo el job de retención.\n\nABSORBIDA (2026-08-24): el alcance de esta tarea se ejecuta dentro de #219 (M2) (módulo panel-admin, exploración 041).",
             "testStrategy": "pnpm tsc/lint; smoke: no-leída→leída; navega; cron purga >30d.",
-            "status": "pending",
+            "status": "cancelled",
             "dependencies": [
               3
             ],
             "priority": "medium",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-08-24T23:04:57.275Z"
           },
           {
             "id": 5,
@@ -5809,7 +5810,7 @@
             "parentId": "undefined"
           }
         ],
-        "updatedAt": "2026-07-13T00:00:00.000Z"
+        "updatedAt": "2026-08-24T23:04:57.275Z"
       },
       {
         "id": "78",
@@ -5924,25 +5925,27 @@
             "id": 1,
             "title": "Reportes de propiedad + auto-suspensión (§24.1)",
             "description": "Reportar desde el popup con motivos; 1 por usuario/propiedad; 1-2 → cola prioritaria, 3+/24h → suspended.",
-            "details": "Usa property_reports (existe) + enums de motivo/estado (existen). Reglas §24.1: un usuario no reporta la misma propiedad 2 veces; 1-2 reportes → cola prioritaria del admin sin ocultar; ≥3 reportes independientes en <24h → suspended automático hasta revisión. Gancho notificación al publicador (reportada/suspendida). CRÍTICA (invariante de conteo/ventana).",
+            "details": "Usa property_reports (existe) + enums de motivo/estado (existen). Reglas §24.1: un usuario no reporta la misma propiedad 2 veces; 1-2 reportes → cola prioritaria del admin sin ocultar; ≥3 reportes independientes en <24h → suspended automático hasta revisión. Gancho notificación al publicador (reportada/suspendida). CRÍTICA (invariante de conteo/ventana).\n\nABSORBIDA (2026-08-24): el alcance de esta tarea se ejecuta dentro de #220 (M3) (módulo panel-admin, exploración 041).",
             "testStrategy": "pgTAP: doble reporte del mismo usuario rechazado; 3/24h → suspended; 2 → prioritaria sin ocultar.",
-            "status": "pending",
+            "status": "cancelled",
             "dependencies": [],
             "priority": "high",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-08-24T23:04:53.485Z"
           },
           {
             "id": 2,
             "title": "Reportes de perfil y de comentarios (§24.2/§18)",
             "description": "Reportar perfiles de publicador (premium/agente) y comentarios; a cola de moderación.",
-            "details": "Reporte de perfil desde la pantalla de perfil (§24.2); reporte de comentario (§18.2) → cola. Bloqueo entre usuarios = NO MVP (§24.2, el contacto real es por WhatsApp). EF + mobile.",
+            "details": "Reporte de perfil desde la pantalla de perfil (§24.2); reporte de comentario (§18.2) → cola. Bloqueo entre usuarios = NO MVP (§24.2, el contacto real es por WhatsApp). EF + mobile.\n\nABSORBIDA (2026-08-24): el alcance de esta tarea se ejecuta dentro de #220 (M3) (módulo panel-admin, exploración 041).",
             "testStrategy": "Deno/smoke: reportar perfil y comentario encolan; sin bloqueo entre usuarios.",
-            "status": "pending",
+            "status": "cancelled",
             "dependencies": [
               1
             ],
             "priority": "medium",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-08-24T23:04:55.385Z"
           },
           {
             "id": 3,
@@ -5972,7 +5975,7 @@
             "parentId": "undefined"
           }
         ],
-        "updatedAt": "2026-07-13T00:00:00.000Z"
+        "updatedAt": "2026-08-24T23:04:55.385Z"
       },
       {
         "id": "80",
@@ -7355,14 +7358,15 @@
         "id": "124",
         "title": "hardening(73.9): whitelist de campos editables duplicado entre edit-property y moderate-property",
         "description": "Origen: subtarea 73.9 · Detectado por: guardian. apply_revision_snapshot (moderate-property) proyecta property_revisions.changed_fields al mismo whitelist de 12 columnas que edit-property/index.ts define — copiado deliberadamente (no factorizado), con comentario cruzado en ambos archivos. Si edit-property gana un campo editable nuevo y nadie replica el cambio en moderate-property, el campo nuevo simplemente no se aplicaría al aprobar una revisión — sin que ningún test lo detecte.",
-        "details": "Factorizar el whitelist a un helper compartido en supabase/functions/_shared/ (ej. EDITABLE_PROPERTY_FIELDS + project_property_fields()) que ambas EFs importen, eliminando la duplicación. Alternativa más barata: un test de guardia que compare programaticamente las dos listas (fallar si divergen) sin fusionar el código todavía.",
+        "details": "Factorizar el whitelist a un helper compartido en supabase/functions/_shared/ (ej. EDITABLE_PROPERTY_FIELDS + project_property_fields()) que ambas EFs importen, eliminando la duplicación. Alternativa más barata: un test de guardia que compare programaticamente las dos listas (fallar si divergen) sin fusionar el código todavía.\n\nABSORBIDA (2026-08-24): el alcance de esta tarea se ejecuta dentro de #218 (M1) (módulo panel-admin, exploración 041).",
         "testStrategy": "Deno: test que importa ambas listas (o la única factorizada) y confirma que edit-property y moderate-property aplican exactamente el mismo conjunto de columnas.",
-        "status": "pending",
+        "status": "cancelled",
         "dependencies": [
           "73"
         ],
         "priority": "low",
-        "subtasks": []
+        "subtasks": [],
+        "updatedAt": "2026-08-24T23:04:49.753Z"
       },
       {
         "id": "125",
@@ -7521,15 +7525,15 @@
         "id": "136",
         "title": "fix(73.7): 'Mis publicaciones' no tiene pestaña para pending_review/needs_changes/rejected",
         "description": "Origen: subtarea 73.7 · Detectado por: code review PR #56 (3 ángulos). (1) Las pestañas y los conteos de my-listings.tsx se extendieron para rented/sold pero no para pending_review, needs_changes ni rejected — que tras 73.4 son el resultado NORMAL de publicar. El agente publica, su propiedad no cae en Activas, ni Pausadas, ni Cerradas: solo aparece en 'Todas' y la pestaña 'Activas' queda vacía justo después de la acción principal de la app. No hay ninguna pestaña que muestre lo que está esperando al admin, que es exactamente el público para el que 73.7 agregó los badges 'En revisión' / 'Cambios solicitados' / 'Rechazada'. (2) El alert de éxito de step5 en modo creación sigue diciendo 'Tu propiedad ya está disponible en el feed', cuando ahora nace en pending_review y el feed filtra status='active' — contradice el copy de moderación que la misma tarea agregó. (3) PropertyActionMenu solo ofrece acciones para active|paused, así que esas filas no tienen ninguna acción usable. (4) PropertyListItem no tiene entrada para 'suspended' en STATUS_BADGE ni en CONTEXTUAL_SUBROW, pese a que esta misma tarea introduce ese estado vía la acción suspend de moderate-property. La fila cae al fallback humanize_status y muestra un badge en INGLÉS ('Suspended') dentro de una UI es-MX, con una subfila que dice 'Cerrada' porque closed_reason es null — o sea que reporta una suspensión administrativa como si el agente hubiera cerrado la publicación él mismo.",
-        "details": "Agregar una pestaña/bucket 'En revisión' que agrupe pending_review + needs_changes + rejected con su conteo, corregir el copy del alert para reflejar la moderación, y dar acciones al menú para esos estados (al menos editar y eliminar). Ojo: hay tres copias independientes de la semántica de estados en móvil (is_closed_bucket, STATUS_BADGE, STATUS_THUMB_ICON) — ver #139.\n\n--- auditoría de backlog 2026-08-14 (.taskmaster/docs/auditoria-backlog-2026-08-14.md) ---\nRE-SCOPE: (1) baja a LOW porque con la moderación suspendida (#153) ya no nacen filas en pending_review/needs_changes/rejected — solo pueden existir históricas, que hoy quedan invisibles en app/(protected)/profile/my-listings.tsx. (2) Se le QUITA la parte '(2) el alert de éxito miente': era duplicado de #152, que queda como dueña única (hoy diferida). Alcance vivo = solo las pestañas y conteos faltantes. Grupo 'reactivar moderación'.",
+        "details": "Agregar una pestaña/bucket 'En revisión' que agrupe pending_review + needs_changes + rejected con su conteo, corregir el copy del alert para reflejar la moderación, y dar acciones al menú para esos estados (al menos editar y eliminar). Ojo: hay tres copias independientes de la semántica de estados en móvil (is_closed_bucket, STATUS_BADGE, STATUS_THUMB_ICON) — ver #139.\n\n--- auditoría de backlog 2026-08-14 (.taskmaster/docs/auditoria-backlog-2026-08-14.md) ---\nRE-SCOPE: (1) baja a LOW porque con la moderación suspendida (#153) ya no nacen filas en pending_review/needs_changes/rejected — solo pueden existir históricas, que hoy quedan invisibles en app/(protected)/profile/my-listings.tsx. (2) Se le QUITA la parte '(2) el alert de éxito miente': era duplicado de #152, que queda como dueña única (hoy diferida). Alcance vivo = solo las pestañas y conteos faltantes. Grupo 'reactivar moderación'.\n\nABSORBIDA (2026-08-24): el alcance de esta tarea se ejecuta dentro de #218 (M1) (módulo panel-admin, exploración 041).",
         "testStrategy": "Jest: conteos por pestaña con propiedades en los 17 estados; la suma de las pestañas debe cuadrar con 'Todas'. Snapshot del copy del alert. Jest: render de PropertyListItem en los 17 estados; ninguno debe caer al fallback en inglés.",
-        "status": "pending",
+        "status": "cancelled",
         "dependencies": [
           "73"
         ],
         "priority": "low",
         "subtasks": [],
-        "updatedAt": "2026-08-14T12:00:00.000Z"
+        "updatedAt": "2026-08-24T23:04:47.865Z"
       },
       {
         "id": "137",
@@ -7904,15 +7908,15 @@
         "id": "152",
         "title": "producto(73): el alert de publicación exitosa promete feed inmediato pero la propiedad entra a pending_review",
         "description": "Origen: tarea 73 (§14.2, toda publicación va a pending_review) · Detectado por: usuario/Virgilio durante el smoke de #151. step5.tsx muestra '¡Publicada! Tu propiedad ya está disponible en el feed.' pero la fila nace en pending_review (moderación manual) — el agente va al feed, no ve su propiedad y parece un bug. Ajustar el copy a la realidad (en revisión, te avisamos al aprobarla) y considerar el mismo ajuste en el estado del wizard.",
-        "details": "Archivo: mobile/app/(protected)/publish/step5.tsx (Alert de handle_publish, rama create mode). Verificación ligera (componente): tsc + lint + jest de step5 si existe. Coordinar con el dueño del wizard (Ola 1) — no tocar su rama en vuelo.\n\n--- auditoría de backlog 2026-08-14 (.taskmaster/docs/auditoria-backlog-2026-08-14.md) ---\nDIFERIDA: la premisa dejó de ser cierta. #153 (done) suspendió la moderación — publicar sale DIRECTO a 'active', así que el alert '¡Publicada! Tu propiedad ya está disponible en el feed' hoy dice la verdad. Reactivar SOLO si vuelve la moderación (revertir #153); forma parte del grupo 'reactivar moderación' junto con #131, #133 y #136.",
+        "details": "Archivo: mobile/app/(protected)/publish/step5.tsx (Alert de handle_publish, rama create mode). Verificación ligera (componente): tsc + lint + jest de step5 si existe. Coordinar con el dueño del wizard (Ola 1) — no tocar su rama en vuelo.\n\n--- auditoría de backlog 2026-08-14 (.taskmaster/docs/auditoria-backlog-2026-08-14.md) ---\nDIFERIDA: la premisa dejó de ser cierta. #153 (done) suspendió la moderación — publicar sale DIRECTO a 'active', así que el alert '¡Publicada! Tu propiedad ya está disponible en el feed' hoy dice la verdad. Reactivar SOLO si vuelve la moderación (revertir #153); forma parte del grupo 'reactivar moderación' junto con #131, #133 y #136.\n\nOBSOLETA (2026-08-24): por decisión 1 de la exploración 041, publicar en beta ES directo a active — el alert ya no miente. Sin trabajo pendiente.",
         "testStrategy": "pnpm tsc --noEmit + pnpm lint + revisión visual del alert en emulador.",
-        "status": "deferred",
+        "status": "cancelled",
         "dependencies": [
           "73"
         ],
         "priority": "medium",
         "subtasks": [],
-        "updatedAt": "2026-08-14T12:00:00.000Z"
+        "updatedAt": "2026-08-24T23:04:51.614Z"
       },
       {
         "id": "153",
@@ -9743,7 +9747,7 @@
           "201"
         ],
         "priority": "high",
-        "updatedAt": "2026-08-24T01:09:57.855Z",
+        "updatedAt": "2026-08-24T22:58:17.393Z",
         "subtasks": [
           {
             "id": 1,
@@ -9762,12 +9766,12 @@
             "id": 2,
             "title": "Diseño aprobable del dashboard (preview HTML)",
             "description": "Cards 3 métricas + detalle (selector periodo, línea diaria, barras por zona). Identidad Urbea + layout del prototipo; Meta solo como referencia estructural.",
-            "details": "Diseño — requiere aprobación de Abraham (puede correr /design).\n<info added on 2026-08-24T01:09:57.855Z>\nhecho: preview HTML aprobable del dashboard de anuncios estilo Meta (212.2). Pendiente de\naprobación de Abraham antes de portar a RN (212.4/212.5) — este agente NO propaga a componentes.\n\n## Archivo\n- `mobile/design-previews/212-dashboard-anuncios.html` (autocontenido, sin dependencias externas\n  salvo Google Fonts para Space Grotesk/Hanken Grotesk). Carpeta `mobile/design-previews/` no\n  existía — se creó para esta subtarea (no encontré convención previa de previews dentro de\n  `mobile/`; el precedente `urbea-preview-anuncio-feed.html` vive suelto en la raíz del repo).\n- Sin Figma (seat limitado, método código-primero por indicación de la tarea). Sin links de Figma.\n\n## Contenido del preview\n- **Frame A — \"Mis anuncios\" (lista)**: 3 cards estilo Meta (miniatura + headline + badge de\n  estado + vigencia + fila de 3 métricas). Cubre 3 de los 4 estados: Activo (verde primario),\n  Pausado (arcilla suave), En revisión (con métricas en \"—\", no \"0\", porque el anuncio aún no\n  circula). Rechazado queda documentado en las notas (mismo patrón `danger`/blanco, sin card\n  dedicada para no exceder el \"2-3 cards\" pedido).\n- **Frame B — Detalle del anuncio** (el mismo anuncio \"Activo\" del Frame A): selector segmentado\n  Hoy/30 días/Máximo, 3 tiles grandes de métrica (impresiones/vistas completas/toques al\n  contacto) que DOBLAN como selector del gráfico de línea, gráfico de línea diaria dibujado a\n  mano en SVG (sin librerías — mismo criterio que usará el componente RN con react-native-svg en\n  212.4), barras horizontales por zona con la fila \"Otras zonas\" (bucket k-anonimato)\n  visualmente distinta (relleno rayado + cursiva + caption), y nota de vigencia.\n- Interactivo con JS vanilla (sin frameworks): tocar un tile grande cambia la métrica graficada;\n  tocar el selector de rango cambia los números y el estado del gráfico — \"Hoy\" oculta la línea\n  (1 punto no es tendencia) y \"Máximo\" muestra un bloque de agregados mensuales + nota explicando\n  la asimetría D-RANGO-MONTHLY (documentada en la bitácora de 212.1: un mes ya congelado no\n  aporta días a la serie, solo su cifra agregada).\n- Dos muestras de estado (fuera de los frames, como tiles pequeños): \"Aún no hay datos\" (empty\n  state) y skeleton de carga (bloques grises con pulso de opacidad).\n- Notas de diseño al pie de la página (13 bullets) documentando cada decisión de token/patrón y\n  su justificación.\n\n## Decisiones de diseño clave\n- **Color primario `#1A5E44`** tomado de `mobile/src/theme/theme.ts` (verde Urbea del logo), NO\n  la salvia `#5A8A5E` de `urbea-identidad-visual.html` — esa referencia quedó desactualizada tras\n  el flash 2026-07-06 (ya documentado en el propio `theme.ts` y en el precedente\n  `urbea-preview-anuncio-feed.html`).\n- **Badges de estado calcan 1:1** `AD_STATUS_BADGE` de `app/(protected)/ads/index.tsx` (Activo,\n  Pausado, En revisión, Rechazado) — cero tokens nuevos inventados.\n- **Métricas grandes del detalle** reusan la escala numérica de énfasis existente del sistema\n  (equivalente a `type_scale.price`/`h1`); los números de card reusan el mismo tratamiento que\n  `TotalsRow` del panel actual de #171 (24px).\n- **Barras horizontales (no verticales) para zonas**: nombres de colonia largos/variables — deja\n  leer la etiqueta completa. Fila \"Otras zonas\" reusa el copy exacto ya usado en producción\n  (`OTHER_ZONES_CAPTION` de `ads/index.tsx`).\n- **Cards de lista = totales desde el inicio del anuncio** (\"Máximo\" implícito, sin selector); el\n  detalle sí respeta Hoy/30 días/Máximo — evita prometer que ambos números siempre coincidan.\n- **Línea dibujada con segmentos rectos** (sin bezier) — más simple de portar 1:1 a\n  `Path`/`Polyline` de `react-native-svg` en 212.4.\n- **Zonas con dataset fijo** en este preview (no reaccionan al selector de rango) — simplificación\n  explícita documentada en el pie; el cableado real a `p_from`/`p_to` de `ad_stats_zones` se\n  resuelve en 212.4/212.5.\n\n## Mapeo a RPCs (212.1, ya `done`)\n- `ad_stats_totals(p_ad_id, p_from?, p_to?)` → números de card (Frame A) + los 3 tiles grandes\n  del detalle (Frame B).\n- `ad_stats_daily(p_ad_id, p_from?, p_to?)` → línea de rendimiento por día (Frame B). Sin\n  dimensión geográfica → sin umbral k (regla fija de Abraham).\n- `ad_stats_zones(p_ad_id, p_from?, p_to?)` → barras horizontales por zona, incluye el bucket\n  \"Otras zonas\" (k≥5).\n\n## Verificación\n- Balance de tags verificado con Python (`div open: 148` == `div close: 148`), archivo empieza\n  con `<!doctype html>`.\n- Servido por `python3 -m http.server 8934` en `mobile/design-previews/` → `curl -o /dev/null -w\n  \"%{http_code}\"` contra `http://127.0.0.1:8934/212-dashboard-anuncios.html` → `200`. Servidor\n  detenido después (`pkill -f \"http.server 8934\"`).\n- NO se pudo capturar screenshot: el Chrome MCP (mencionado en el gotcha de memoria\n  `chrome_mcp_file_url_gotcha`) no apareció disponible en esta sesión (`ToolSearch` con\n  \"chrome browser screenshot navigate\" y \"chrome devtools mcp\" no devolvió ningún tool de\n  Chrome/Playwright, solo Figma/WebFetch). Se entregó el archivo directamente al usuario\n  (`SendUserFile`) para que lo abra en su propio navegador — cumple la instrucción de la\n  subtarea: \"si no tienes forma de capturar, entrégalo y ya\".\n- No se corrió `pnpm tsc`/`pnpm lint` — este preview es HTML puro fuera del árbol TypeScript de\n  `mobile/src`/`mobile/app`, no aplica.\n\n## Bloqueante\nNinguno de branding: CLAUDE.md §8 confirma \"Gate LEVANTADO (cliente, 2026-06-26)\" y este preview\nse mantiene estrictamente dentro del lenguaje visual ya aprobado (`theme.ts`) — no se definió\nidentidad nueva. Sí queda **pendiente la aprobación explícita de Abraham sobre ESTE preview**\nantes de que 212.4 (componentes SVG) y 212.5 (pantallas) lo porten a RN — no se propagó a\nninguna pantalla real ni componente de producción en esta subtarea.\n</info added on 2026-08-24T01:09:57.855Z>",
+            "details": "Diseño — requiere aprobación de Abraham (puede correr /design).\n<info added on 2026-08-24T01:09:57.855Z>\nhecho: preview HTML aprobable del dashboard de anuncios estilo Meta (212.2). Pendiente de\naprobación de Abraham antes de portar a RN (212.4/212.5) — este agente NO propaga a componentes.\n\n## Archivo\n- `mobile/design-previews/212-dashboard-anuncios.html` (autocontenido, sin dependencias externas\n  salvo Google Fonts para Space Grotesk/Hanken Grotesk). Carpeta `mobile/design-previews/` no\n  existía — se creó para esta subtarea (no encontré convención previa de previews dentro de\n  `mobile/`; el precedente `urbea-preview-anuncio-feed.html` vive suelto en la raíz del repo).\n- Sin Figma (seat limitado, método código-primero por indicación de la tarea). Sin links de Figma.\n\n## Contenido del preview\n- **Frame A — \"Mis anuncios\" (lista)**: 3 cards estilo Meta (miniatura + headline + badge de\n  estado + vigencia + fila de 3 métricas). Cubre 3 de los 4 estados: Activo (verde primario),\n  Pausado (arcilla suave), En revisión (con métricas en \"—\", no \"0\", porque el anuncio aún no\n  circula). Rechazado queda documentado en las notas (mismo patrón `danger`/blanco, sin card\n  dedicada para no exceder el \"2-3 cards\" pedido).\n- **Frame B — Detalle del anuncio** (el mismo anuncio \"Activo\" del Frame A): selector segmentado\n  Hoy/30 días/Máximo, 3 tiles grandes de métrica (impresiones/vistas completas/toques al\n  contacto) que DOBLAN como selector del gráfico de línea, gráfico de línea diaria dibujado a\n  mano en SVG (sin librerías — mismo criterio que usará el componente RN con react-native-svg en\n  212.4), barras horizontales por zona con la fila \"Otras zonas\" (bucket k-anonimato)\n  visualmente distinta (relleno rayado + cursiva + caption), y nota de vigencia.\n- Interactivo con JS vanilla (sin frameworks): tocar un tile grande cambia la métrica graficada;\n  tocar el selector de rango cambia los números y el estado del gráfico — \"Hoy\" oculta la línea\n  (1 punto no es tendencia) y \"Máximo\" muestra un bloque de agregados mensuales + nota explicando\n  la asimetría D-RANGO-MONTHLY (documentada en la bitácora de 212.1: un mes ya congelado no\n  aporta días a la serie, solo su cifra agregada).\n- Dos muestras de estado (fuera de los frames, como tiles pequeños): \"Aún no hay datos\" (empty\n  state) y skeleton de carga (bloques grises con pulso de opacidad).\n- Notas de diseño al pie de la página (13 bullets) documentando cada decisión de token/patrón y\n  su justificación.\n\n## Decisiones de diseño clave\n- **Color primario `#1A5E44`** tomado de `mobile/src/theme/theme.ts` (verde Urbea del logo), NO\n  la salvia `#5A8A5E` de `urbea-identidad-visual.html` — esa referencia quedó desactualizada tras\n  el flash 2026-07-06 (ya documentado en el propio `theme.ts` y en el precedente\n  `urbea-preview-anuncio-feed.html`).\n- **Badges de estado calcan 1:1** `AD_STATUS_BADGE` de `app/(protected)/ads/index.tsx` (Activo,\n  Pausado, En revisión, Rechazado) — cero tokens nuevos inventados.\n- **Métricas grandes del detalle** reusan la escala numérica de énfasis existente del sistema\n  (equivalente a `type_scale.price`/`h1`); los números de card reusan el mismo tratamiento que\n  `TotalsRow` del panel actual de #171 (24px).\n- **Barras horizontales (no verticales) para zonas**: nombres de colonia largos/variables — deja\n  leer la etiqueta completa. Fila \"Otras zonas\" reusa el copy exacto ya usado en producción\n  (`OTHER_ZONES_CAPTION` de `ads/index.tsx`).\n- **Cards de lista = totales desde el inicio del anuncio** (\"Máximo\" implícito, sin selector); el\n  detalle sí respeta Hoy/30 días/Máximo — evita prometer que ambos números siempre coincidan.\n- **Línea dibujada con segmentos rectos** (sin bezier) — más simple de portar 1:1 a\n  `Path`/`Polyline` de `react-native-svg` en 212.4.\n- **Zonas con dataset fijo** en este preview (no reaccionan al selector de rango) — simplificación\n  explícita documentada en el pie; el cableado real a `p_from`/`p_to` de `ad_stats_zones` se\n  resuelve en 212.4/212.5.\n\n## Mapeo a RPCs (212.1, ya `done`)\n- `ad_stats_totals(p_ad_id, p_from?, p_to?)` → números de card (Frame A) + los 3 tiles grandes\n  del detalle (Frame B).\n- `ad_stats_daily(p_ad_id, p_from?, p_to?)` → línea de rendimiento por día (Frame B). Sin\n  dimensión geográfica → sin umbral k (regla fija de Abraham).\n- `ad_stats_zones(p_ad_id, p_from?, p_to?)` → barras horizontales por zona, incluye el bucket\n  \"Otras zonas\" (k≥5).\n\n## Verificación\n- Balance de tags verificado con Python (`div open: 148` == `div close: 148`), archivo empieza\n  con `<!doctype html>`.\n- Servido por `python3 -m http.server 8934` en `mobile/design-previews/` → `curl -o /dev/null -w\n  \"%{http_code}\"` contra `http://127.0.0.1:8934/212-dashboard-anuncios.html` → `200`. Servidor\n  detenido después (`pkill -f \"http.server 8934\"`).\n- NO se pudo capturar screenshot: el Chrome MCP (mencionado en el gotcha de memoria\n  `chrome_mcp_file_url_gotcha`) no apareció disponible en esta sesión (`ToolSearch` con\n  \"chrome browser screenshot navigate\" y \"chrome devtools mcp\" no devolvió ningún tool de\n  Chrome/Playwright, solo Figma/WebFetch). Se entregó el archivo directamente al usuario\n  (`SendUserFile`) para que lo abra en su propio navegador — cumple la instrucción de la\n  subtarea: \"si no tienes forma de capturar, entrégalo y ya\".\n- No se corrió `pnpm tsc`/`pnpm lint` — este preview es HTML puro fuera del árbol TypeScript de\n  `mobile/src`/`mobile/app`, no aplica.\n\n## Bloqueante\nNinguno de branding: CLAUDE.md §8 confirma \"Gate LEVANTADO (cliente, 2026-06-26)\" y este preview\nse mantiene estrictamente dentro del lenguaje visual ya aprobado (`theme.ts`) — no se definió\nidentidad nueva. Sí queda **pendiente la aprobación explícita de Abraham sobre ESTE preview**\nantes de que 212.4 (componentes SVG) y 212.5 (pantallas) lo porten a RN — no se propagó a\nninguna pantalla real ni componente de producción en esta subtarea.\n</info added on 2026-08-24T01:09:57.855Z>\n<info added on 2026-08-24T21:40:28.477Z>\nAPROBADO por Abraham (2026-08-24). El preview HTML de mobile/design-previews/212-dashboard-anuncios.html queda como TECHO DE ALCANCE de las subtareas 212.3–212.5: lo que no esta en el preview no se implementa (trabajo nuevo = add-task).\n\nAprobacion sin cambios solicitados. Se porta a React Native tal cual:\n- Lista \"Mis anuncios\": card con thumbnail, badge de estado, vigencia y fila de 3 metricas (Impresiones / Vistas completas / Toques al contacto). Sin dato = \"—\", NUNCA \"0\".\n- Detalle: selector segmentado Hoy / 30 dias / Maximo, 3 tiles grandes que ademas seleccionan la serie de la grafica, linea diaria en SVG, barras horizontales por zona con \"Otras zonas\" diferenciada.\n- Estado vacio y skeleton incluidos en el preview.\n- Tokens: primary #1A5E44 de theme.ts, Space Grotesk (display) + Hanken Grotesk (UI).\n\nSiguiente: 212.3 (hook useAdStats, CRITICA -> TDD estricto).\n</info added on 2026-08-24T21:40:28.477Z>",
             "testStrategy": "Preview servido por http (Chrome MCP no abre file://).",
-            "status": "in-progress",
+            "status": "done",
             "dependencies": [],
             "priority": "high",
-            "updatedAt": "2026-08-24T01:09:57.855Z",
+            "updatedAt": "2026-08-24T21:40:34.469Z",
             "subtasks": [],
             "parentId": "undefined"
           },
@@ -9777,12 +9781,12 @@
             "description": "useAdStats (totales+serie+zonas por ad_id, selector de periodo). Patrón useAdMetrics: totals=null en carga/error, nunca ceros; mensajes neutros.",
             "details": "CRÍTICA → TDD estricto (RNTL).",
             "testStrategy": "RNTL.",
-            "status": "pending",
+            "status": "in-progress",
             "dependencies": [
               1
             ],
             "priority": "high",
-            "updatedAt": "2026-08-23T08:00:00.000Z",
+            "updatedAt": "2026-08-24T22:58:17.393Z",
             "subtasks": [],
             "parentId": "undefined"
           },
@@ -9965,12 +9969,96 @@
         "priority": "low",
         "updatedAt": "2026-08-24T00:30:00.000Z",
         "subtasks": []
+      },
+      {
+        "id": "217",
+        "title": "feat(041-M0): panel admin — entrada en ⋮, badges de colas y verdad documental",
+        "description": "Entrada «Panel de administrador» en el menú ⋮ del perfil (solo role=admin); home del panel con contadores vivos por cola; correcciones documentales: vault desactualizado por #153, retiro de PRD-beta/demo, addendum §22.x (notificaciones admin) al PRD, concepto panel-admin.",
+        "details": "Origen: exploración 041 (aprobada por Abraham 2026-08-24) · bloque M0. Footprint: mobile/src/features/profile/ProfileScreen.tsx (ítem de menú ⋮, visible solo admin), mobile/app/admin/index.tsx (badges vivos: ads pending_review, property_revisions pending, property_reports new, agent_applications pending, agencies pending_approval — counts directos, sin tabla intermedia), wiki/conceptos/moderacion.md + wiki/conceptos/propiedades-y-video.md (corregir: la revisión previa está suspendida por #153 y en beta se queda así por decisión 1 de 041), docs/PRD.md (addendum §22.x = catálogo v1 del doc 041), docs/PRD-beta.md y docs/PRD-MVP-demo.md (banner de retiro como referencia), wiki/conceptos/panel-admin.md (nueva). Cierra #152 (obsoleta: publicar ES directo en beta, el alert ya no miente). NOTA: la referencia «#141 UI de moderación» en estado-actual.md está podrida — esa tarea nunca existió en Taskmaster; la UI nace en #218.",
+        "testStrategy": "Por path: ProfileScreen y admin/index = NO críticas → pnpm tsc --noEmit + pnpm lint + smoke en emulador (ítem invisible para no-admin; badges cuadran contra counts por SQL en la rama preview). Docs sin verificación técnica.",
+        "status": "pending",
+        "dependencies": [
+          "212"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2026-08-24T23:04:32.029Z"
+      },
+      {
+        "id": "218",
+        "title": "feat(041-M1): cola de revisiones de ediciones en el panel admin",
+        "description": "Pantalla /admin/revisions: property_revisions pendientes con diff campo por campo (valor publicado → valor propuesto); approve / needs_changes / reject con motivo vía EF moderate-property. Pestañas de estado en «Mis publicaciones» para el publicador. Desatasca el bug vivo: hoy editar precio/dirección crea una revisión que nadie puede aprobar.",
+        "details": "Origen: exploración 041 · bloque M1 · decisión 2 del grilling (la re-revisión §15.5 se mantiene: es antifraude, no depende de pagos). Modelo doble versión §15.6: la propiedad viva NUNCA se toca hasta aprobar; approve aplica changed_fields por whitelist y el status sigue active. Backend YA desplegado (property_revisions 20260809000003 + EF moderate-property) — esto es UI + hooks. ADOPTA: #136 (pestañas pending_review/needs_changes/rejected en Mis publicaciones) y #124 (hardening: unificar el whitelist de campos duplicado entre edit-property y moderate-property, de paso). Footprint: mobile/app/admin/revisions/*, mobile/src/features/admin/hooks/*, pantalla my-listings del perfil.",
+        "testStrategy": "Hooks = CRÍTICA (TDD RNTL: DI del cliente, null en carga/error, coalescing, mensajes por mapa de códigos). Pantallas = ligeras. Smoke E2E en preview: editar precio → aparece en cola con diff → aprobar → precio nuevo visible en el detalle público; needs_changes/reject llegan al publicador con motivo.",
+        "status": "pending",
+        "dependencies": [
+          "217"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2026-08-24T23:04:32.029Z"
+      },
+      {
+        "id": "219",
+        "title": "feat(041-M2): centro de notificaciones in-app + escritores admin",
+        "description": "Pantalla campana para TODOS los roles que lee public.notifications (lista, no-leídas, marcar leída/todas, deep links) — primer lector de la tabla. Más los 7 escritores del catálogo v1 (doc 041) hacia users.role=admin y las escrituras espejo al usuario afectado (§28.4, solo in-app en beta).",
+        "details": "Origen: exploración 041 · bloque M2 · decisión 3 (badges + centro in-app; push = fase 2). ADOPTA 77.4 (centro in-app); el resto de #77 (device_tokens, EF push-dispatch, toggles, resumen semanal) queda como fase 2 — el centro debe quedar listo para conectarle push sin rehacer nada. Patrón de escritor: calcar notify_ads_expiring_soon (20260822000001): índice único parcial de idempotencia, to_char en UTC (nunca to_jsonb(timestamptz)), un aviso borrado sigue anclando. RLS ya limita el update del usuario a read_at/deleted_at. Catálogo v1: admin_ad_pending, admin_revision_pending, admin_report_new, admin_report_autosuspend, admin_agent_application, admin_agency_pending, admin_advertising_request + espejos de resultado al usuario. Escritura en la MISMA transacción del evento. Footprint: supabase/migrations/*, mobile/src/features/notifications/*, campana en el header.",
+        "testStrategy": "Escritores = CRÍTICA (pgTAP: idempotencia del índice, destinatarios = todos los users.role=admin, espejo al afectado, misma transacción — fallo de escritura no rompe el evento o sí, decidir y fijar en RED). Hook lector = CRÍTICA (RNTL). Smoke en preview: moderar algo → campana del otro admin sube.",
+        "status": "pending",
+        "dependencies": [
+          "218"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2026-08-24T23:04:32.029Z"
+      },
+      {
+        "id": "220",
+        "title": "feat(041-M3): reportes de usuarios (§24) — botón, cola y auto-suspensión",
+        "description": "Botón «Reportar» en la app (popup de detalle + perfil de publicador; 7 motivos del PRD; 1 por usuario), cola /admin/reports (restaurar / pedir cambios / mantener suspendida / eliminar), trigger de auto-suspensión: 3 reportes independientes en 24h → suspended automático. Notificaciones de ambos lados vía #219.",
+        "details": "Origen: exploración 041 · bloque M3 · PRD §24.1 + §30. ADOPTA 79.1 y 79.2 (79.3 evidencia-antifraude queda fuera; bloqueo entre usuarios fuera de MVP §35). La tabla property_reports YA existe (20260604000007: 7 reasons, unique (property,user), índice de cola) con cero escritores/lectores — falta: EF de creación (frontera de confianza: valida motivo, texto obligatorio en other, dedupe), UI de usuario, cola admin, trigger 3/24h. ⚠️ Gate §0.5: el trigger toca properties.status — idempotente (no re-suspende una suspendida), rollback probado, cero efecto en filas existentes al migrar. suspend ya oculta inmediato sin tocar property_revisions (§15.6). Reportes de perfil: el PRD solo tiene 1 línea → alcance mínimo (mismo mecanismo, entidad user) y anotar la enmienda en el PRD.",
+        "testStrategy": "EF + trigger = CRÍTICA (pgTAP: exactamente 3 reporteros DISTINTOS dentro de 24h dispara, 2 no, duplicado del mismo usuario no cuenta ni crea fila, re-suspensión no-op, ventana deslizante real; Deno para la EF). UI ligera. Smoke E2E en preview con 3 cuentas buscador.",
+        "status": "pending",
+        "dependencies": [
+          "219"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2026-08-24T23:04:32.029Z"
+      },
+      {
+        "id": "221",
+        "title": "feat(041-M4): cola de solicitudes — agente, inmobiliaria y cuenta comercial",
+        "description": "Cola /admin/requests unificada: agent_applications (aprobar/rechazar con motivo — hoy solo por Studio), registros de inmobiliaria pending_approval, y el canal NUEVO «Quiero anunciar»: el owner solicita cuenta comercial proponiendo categoría → el admin aprueba y eso enciende can_advertise vía la EF set-org-advertising existente.",
+        "details": "Origen: exploración 041 · bloque M4 · cierra el hueco de 039:133 (el canal de solicitud se prometió y nunca se construyó; #209 solo hizo el lado del admin). agent_applications: la aprobación por trigger ya existe (71.5, pending→approved|rejected con rejection_reason obligatorio) — falta la UI y quizá EF/RPC patrón GUC admin para el caso service_role. Aprobación de agencia: mismo trigger de 71.5. Solicitud comercial: decidir en tm-plan si tabla nueva (advertising_requests) o columna/reuso — criterio ponytail. TODO audita en admin_actions en la misma transacción. Notifica ambos lados vía #219. Footprint: supabase/migrations/*, supabase/functions/*, mobile/app/admin/requests/*, botón «Quiero anunciar» en la vista de agencia del owner.",
+        "testStrategy": "Backend nuevo = CRÍTICA (pgTAP + Deno: estados de la solicitud, no duplicar solicitud abierta, aprobar = can_advertise en la misma transacción, rechazo con motivo). Colas UI ligeras. Smoke en preview: solicitar desde owner.gdl → badge sube → aprobar → can_advertise=true + notificación al owner.",
+        "status": "pending",
+        "dependencies": [
+          "220"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2026-08-24T23:04:32.029Z"
+      },
+      {
+        "id": "222",
+        "title": "feat(041-M5): testing profundo guiado, Maestro E2E, optimización y release",
+        "description": "Checklist del recorrido comercial+admin COMPLETO sobre la rama preview, recorrido junto con Abraham en el emulador (flujos felices + caminos de error, datos preparados); flujos Maestro E2E de regresión; pasada de optimización; OTA a testers; ingest final al vault.",
+        "details": "Origen: exploración 041 · bloque M5 · decisión 6 del grilling. Checklist: alta org → capacidad comercial → anuncio → moderación → feed (verificar y PARAR: Stream factura) → stats (#212) → suspensión/reactivación con cascada → takedown → revisión de edición → reportes con auto-suspensión → solicitudes → notificaciones de ambos lados. Cada hallazgo = tarea fix derivada con las 4 marcas. Maestro: memoria maestro_e2e_runner (gotchas), contra stack local, terminar en stopApp. Optimización: /ponytail-audit sobre features/admin + EXPLAIN de los counts de badges (índices de cola). OTA desde main tras mergear M0–M4 (momento lo decide Abraham). Vault: mapa-codebase fila del panel (desactualizada), conceptos tocados, log.",
+        "testStrategy": "Esta tarea ES la verificación: checklist con resultados REALES pegados (nunca narrados de memoria), suites completas verdes, flujos Maestro pasando en local, OTA verificado con entrega real del runtime (no NO-OP).",
+        "status": "pending",
+        "dependencies": [
+          "221"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2026-08-24T23:04:32.029Z"
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-08-24T01:01:23.404Z",
-      "taskCount": 216,
+      "lastModified": "2026-08-24T23:04:57.275Z",
+      "taskCount": 222,
       "completedCount": 132,
       "tags": [
         "master"
