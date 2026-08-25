@@ -30,6 +30,7 @@ import {
   Buildings,
   DotsThreeVertical,
   Megaphone,
+  Shield,
   SignOut,
   Storefront,
   UserPlus,
@@ -172,6 +173,14 @@ export function ProfileScreen({
     router.push('/agency/register');
   }
 
+  // 217.1: entrada al panel de administrador — solo visible para role='admin'.
+  // El guard real de la ruta ya vive en app/admin/_layout.tsx (un deep link
+  // la alcanzaría igual sin ese guard); esto es solo el punto de entrada
+  // visible, mismo patrón que show_ads_entry/isOwner/can_manage_members.
+  function handle_open_admin_panel() {
+    router.push('/admin');
+  }
+
   async function handle_sign_out() {
     Alert.alert(
       'Cerrar sesión',
@@ -221,6 +230,9 @@ export function ProfileScreen({
           { key: 'upgrade', label: 'Convertirme en agente', icon: Briefcase, onPress: handle_upgrade_to_agent },
           { key: 'register_agency', label: 'Registrar mi inmobiliaria', icon: Buildings, onPress: handle_register_agency },
         ]
+      : []),
+    ...(user?.role === 'admin'
+      ? [{ key: 'admin_panel', label: 'Panel de administrador', icon: Shield, onPress: handle_open_admin_panel }]
       : []),
     {
       key: 'signout',

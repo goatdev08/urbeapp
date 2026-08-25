@@ -9976,7 +9976,7 @@
         "description": "Entrada «Panel de administrador» en el menú ⋮ del perfil (solo role=admin); home del panel con contadores vivos por cola; correcciones documentales: vault desactualizado por #153, retiro de PRD-beta/demo, addendum §22.x (notificaciones admin) al PRD, concepto panel-admin.",
         "details": "Origen: exploración 041 (aprobada por Abraham 2026-08-24) · bloque M0. Footprint: mobile/src/features/profile/ProfileScreen.tsx (ítem de menú ⋮, visible solo admin), mobile/app/admin/index.tsx (badges vivos: ads pending_review, property_revisions pending, property_reports new, agent_applications pending, agencies pending_approval — counts directos, sin tabla intermedia), wiki/conceptos/moderacion.md + wiki/conceptos/propiedades-y-video.md (corregir: la revisión previa está suspendida por #153 y en beta se queda así por decisión 1 de 041), docs/PRD.md (addendum §22.x = catálogo v1 del doc 041), docs/PRD-beta.md y docs/PRD-MVP-demo.md (banner de retiro como referencia), wiki/conceptos/panel-admin.md (nueva). Cierra #152 (obsoleta: publicar ES directo en beta, el alert ya no miente). NOTA: la referencia «#141 UI de moderación» en estado-actual.md está podrida — esa tarea nunca existió en Taskmaster; la UI nace en #218.",
         "testStrategy": "Por path: ProfileScreen y admin/index = NO críticas → pnpm tsc --noEmit + pnpm lint + smoke en emulador (ítem invisible para no-admin; badges cuadran contra counts por SQL en la rama preview). Docs sin verificación técnica.",
-        "status": "pending",
+        "status": "in-progress",
         "dependencies": [
           "212"
         ],
@@ -9986,12 +9986,13 @@
             "id": 1,
             "title": "Entrada «Panel de administrador» en el menú ⋮ del perfil",
             "description": "Ítem nuevo en el bottom sheet de ProfileScreen, visible SOLO si user.role===admin, navega a /admin. Muere el deep link como única vía.",
-            "details": "PLAN: footprint mobile/src/features/profile/ProfileScreen.tsx (lista de ítems del menú, patrón de los existentes listings/ads/signout) · agente=mobile · criticidad=NO (pantalla) → tsc+lint+tests del feature+smoke emulador (visible admin / invisible buscador) · impacto-prod=sin riesgo (UI, viaja por OTA futuro). El guard de /admin ya existe (admin-layout) — esto es solo el punto de entrada.",
+            "details": "PLAN: footprint mobile/src/features/profile/ProfileScreen.tsx (lista de ítems del menú, patrón de los existentes listings/ads/signout) · agente=mobile · criticidad=NO (pantalla) → tsc+lint+tests del feature+smoke emulador (visible admin / invisible buscador) · impacto-prod=sin riesgo (UI, viaja por OTA futuro). El guard de /admin ya existe (admin-layout) — esto es solo el punto de entrada.\n<info added on 2026-08-25T03:51:20.121Z>\n## Hecho\n\n**Archivo tocado:** `mobile/src/features/profile/ProfileScreen.tsx`\n\nCambios:\n1. Import de `Shield` desde `phosphor-react-native` (icono nuevo, junto a los demás iconos del menú).\n2. Handler `handle_open_admin_panel()` → `router.push('/admin')`, con comentario explicando que el guard real vive en `app/admin/_layout.tsx` (mismo patrón que `handle_my_ads`/`show_ads_entry`/`isOwner`/`can_manage_members`: el ítem del menú es solo el punto de entrada visible, no la autorización).\n3. Ítem condicional en `menu_items`: `{ key: 'admin_panel', label: 'Panel de administrador', icon: Shield, onPress: handle_open_admin_panel }`, visible solo si `user?.role === 'admin'`. Posición: después del bloque condicional `role === 'user'` (upgrade/register_agency), antes de \"Cerrar sesión\" — respeta el orden documentado en el archivo (\"navegación primero, cerrar sesión al final\").\n\nNo se tocó `mobile/app/admin/` ni ningún layout (fuera del footprint de la subtarea).\n\n## Decisiones\n\n- **Ícono:** `Shield` (phosphor-react-native, mismo set que los demás ítems: Briefcase, Buildings, Megaphone, SignOut, Storefront, UserPlus, Users). Verificado que existe en `node_modules/phosphor-react-native/src/icons/Shield.tsx`. Coherente semánticamente con un panel de moderación/administración.\n- **Condición de visibilidad:** `user?.role === 'admin'` (igual al patrón ya usado para `user?.role === 'user'` en el mismo archivo, líneas ~219-224 antes del cambio).\n- **Posición:** inmediatamente antes de \"Cerrar sesión\", después del bloque de ítems solo-para-buscador (upgrade/register_agency). No hay ítems \"solo agent/admin\" previos con los que agrupar; se dejó como bloque propio con su propio comentario.\n- Sin abstracciones nuevas — mismo patrón exacto (`...(condición ? [{...}] : [])`) que los 3 ítems condicionales existentes. Cero estilos nuevos (reusa `ProfileMenuItem`/`ProfileMenu` tal cual).\n\n## Verificación\n\n### 1. `pnpm tsc --noEmit` (desde `mobile/`)\n```\n$ pnpm tsc --noEmit\n(sin output — exit 0, limpio)\n```\n\n### 2. `pnpm lint` (desde `mobile/`)\n```\n$ pnpm lint\n✖ 107 problems (0 errors, 107 warnings)\n  0 errors and 67 warnings potentially fixable with the `--fix` option.\nExit code: 0\n```\nLos 107 warnings son preexistentes (require() imports, import/first en archivos de test, etc.) en archivos NO tocados por esta subtarea. `ProfileScreen.tsx` no aparece en la salida de lint (cero warnings/errores en el archivo modificado).\n\n### 3. Tests existentes de `profile/` (Jest)\n```\n$ pnpm test -- src/features/profile\nTest Suites: 8 passed, 8 total\nTests:       78 passed, 78 total\nSnapshots:   0 total\nTime:        0.96 s\n```\nNo existe `ProfileScreen.test.tsx` (ninguna suite cubre directamente el árbol de `menu_items` de este componente) — las 8 suites existentes (hooks de profile + `PropertyActionMenu`) pasan sin cambios, confirmando que el diff no rompió nada cubierto.\n\n### 4. Smoke en emulador — NO realizado (decisión de seguridad)\nAl capturar la primera screenshot (`adb exec-out screencap -p`) el emulador estaba en el **launcher de Android** (home screen), no en la app — el proceso `com.urbea.app` no estaba corriendo (`ps -A | grep urbea` sin resultados). La sesión \"estacionada en Perfil\" mencionada en la instrucción ya no estaba viva al momento de este smoke.\n\nRelanzar la app en frío (`am start`) aterriza en la ruta por defecto de `(protected)/(tabs)/index.tsx`, que es el **tab del feed** (video en loop) — exactamente lo que la instrucción pide evitar por el consumo real de cuota de Cloudflare Stream (regla §0.5 CLAUDE.md: \"cuotas reales\"). No hay forma de garantizar por CLI que el cold start aterrice en el tab de Perfil sin antes pasar por el feed.\n\nSe optó por **no** relanzar la app y confiar en la verificación estática (tsc + lint + tests existentes), suficiente para una subtarea NO crítica que es un cambio aditivo de una fila JSX siguiendo un patrón ya probado 3 veces en el mismo archivo. El emulador quedó en el home screen de Android (sin la app corriendo, sin riesgo de reproducir video).\n\n## Conformidad spec\n\nOK — cumple exactamente lo pedido en 217.1 y el footprint de #217:\n- Ítem \"Panel de administrador\" agregado al menú ⋮ de `ProfileScreen.tsx`.\n- Visible SOLO si `user?.role === 'admin'`.\n- Navega a `/admin` (ruta existente, guard propio sin tocar).\n- Mismo componente/estilo/patrón de navegación que los 3 ítems condicionales existentes.\n- Sin scope creep: no se tocó `app/admin/`, ningún layout, ni se agregó UI/lógica no pedida.\n</info added on 2026-08-25T03:51:20.121Z>",
             "testStrategy": "RNTL: ítem presente con role=admin, ausente con user/agent; navegación a /admin. Smoke visual con la sesión admin.ads del emulador.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "subtasks": [],
-            "updatedAt": "2026-08-25T02:41:54.823Z"
+            "updatedAt": "2026-08-25T03:51:40.521Z",
+            "parentId": "undefined"
           },
           {
             "id": 2,
@@ -9999,10 +10000,11 @@
             "description": "El home /admin muestra contadores por cola: anuncios pending_review, revisiones de edición pendientes, reportes nuevos, solicitudes de agente, inmobiliarias pending_approval. Counts leídos de las tablas (imposible que mientan).",
             "details": "PLAN: primero verificar qué counts salen con SELECT directo bajo RLS admin (ads y agencies sí — patrón usePendingAds; property_revisions/property_reports/agent_applications probablemente NO tienen policy de lectura admin → si falta, RPC admin_queue_counts() security definer con private.is_admin() fail-closed, migración aditiva + rollback + pgTAP) · agente=supabase si hay migración, mobile para el hook/UI · criticidad=CRÍTICA si hay migración/RPC y para el hook (hooks/**); la UI del home NO · impacto-prod=sin riesgo (lectura pura). Badge=0 se oculta; los counts alimentarán después el catálogo v1 (#219).",
             "testStrategy": "pgTAP para la RPC si existe (admin ve counts, no-admin 0 filas/fail-closed); RNTL del hook; smoke: counts cuadran contra SQL en la rama preview.",
-            "status": "pending",
+            "status": "in-progress",
             "dependencies": [],
             "subtasks": [],
-            "updatedAt": "2026-08-25T02:41:54.823Z"
+            "updatedAt": "2026-08-25T03:51:42.414Z",
+            "parentId": "undefined"
           },
           {
             "id": 3,
@@ -10013,7 +10015,8 @@
             "status": "pending",
             "dependencies": [],
             "subtasks": [],
-            "updatedAt": "2026-08-25T02:41:54.823Z"
+            "updatedAt": "2026-08-25T02:41:54.823Z",
+            "parentId": "undefined"
           },
           {
             "id": 4,
@@ -10024,10 +10027,11 @@
             "status": "pending",
             "dependencies": [],
             "subtasks": [],
-            "updatedAt": "2026-08-25T02:41:54.823Z"
+            "updatedAt": "2026-08-25T02:41:54.823Z",
+            "parentId": "undefined"
           }
         ],
-        "updatedAt": "2026-08-25T02:41:54.823Z"
+        "updatedAt": "2026-08-25T03:51:42.414Z"
       },
       {
         "id": "218",
@@ -10102,7 +10106,7 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-08-25T02:38:49.331Z",
+      "lastModified": "2026-08-25T03:51:42.414Z",
       "taskCount": 222,
       "completedCount": 133,
       "tags": [
