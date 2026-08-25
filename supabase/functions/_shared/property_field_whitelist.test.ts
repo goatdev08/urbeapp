@@ -26,14 +26,21 @@
 // edit-property y las pgTAP de la RPC) verifican cada lado por separado,
 // nunca el uno CONTRA el otro.
 //
-// Resolución de las DOS migraciones que definen moderate_property_atomic
-// (20260809000007 y 20260815000005): la segunda es un
+// Resolución de las DOS (o más) migraciones que definen moderate_property_atomic
+// (20260809000007 y 20260815000005 hoy): cualquiera de ellas es un
 // `create or replace function` con la MISMA firma → en Postgres eso
 // REEMPLAZA el cuerpo completo, no lo extiende (no hay "unión" de ambas
-// definiciones). El parser de este archivo ordena los .sql candidatos por
-// nombre (el prefijo YYYYMMDDHHMMSS ordena cronológicamente) y usa
-// EXCLUSIVAMENTE la última — igual que el catálogo real de Postgres tras
-// aplicar ambas migraciones en orden.
+// definiciones). El parser DESCUBRE candidatos por CONTENIDO — cualquier
+// .sql de supabase/migrations/ que contenga
+// `create or replace function [public.]moderate_property_atomic(` — NO por
+// el nombre del archivo (hardening post-guardian, 218.4: un mutante
+// demostró que una migración futura con nombre distinto, p.ej.
+// `add_parking_field.sql`, redefiniendo la función quedaba invisible si el
+// discovery solo miraba `/moderate_property_atomic.*\.sql$/` en el nombre).
+// De los candidatos encontrados por contenido, se toma la ÚLTIMA por el
+// prefijo YYYYMMDDHHMMSS del NOMBRE (que sí ordena cronológicamente, es la
+// convención real de las migraciones de Supabase) — igual que el catálogo
+// real de Postgres tras aplicar todas las migraciones en orden.
 //
 // ─── EDGE CASES (RED) ──────────────────────────────────────────────────────
 //
@@ -75,29 +82,40 @@ import type {
 
 const MIGRATIONS_DIR = new URL("../../migrations/", import.meta.url);
 
+// Descubrimiento por CONTENIDO (hardening post-guardian, 218.4): matchea
+// `create or replace function`, `public.` opcional, `moderate_property_atomic`
+// y el paréntesis de apertura — tolerante a espacios/saltos de línea entre
+// tokens (case-insensitive: Postgres no distingue mayúsculas en identifiers
+// sin comillas).
+const DEFINES_MODERATE_PROPERTY_ATOMIC =
+  /create\s+or\s+replace\s+function\s+(?:public\.)?moderate_property_atomic\s*\(/i;
+
 async function extract_rpc_changed_fields_columns(): Promise<Set<string>> {
-  const candidatos: string[] = [];
+  const candidatos: { name: string; sql: string }[] = [];
   for await (const entry of Deno.readDir(MIGRATIONS_DIR)) {
-    if (entry.isFile && /moderate_property_atomic.*\.sql$/.test(entry.name)) {
-      candidatos.push(entry.name);
+    if (!entry.isFile || !entry.name.endsWith(".sql")) continue;
+    const sql = await Deno.readTextFile(new URL(entry.name, MIGRATIONS_DIR));
+    if (DEFINES_MODERATE_PROPERTY_ATOMIC.test(sql)) {
+      candidatos.push({ name: entry.name, sql });
     }
   }
   if (candidatos.length === 0) {
     throw new Error(
-      "no se encontró ninguna migración de moderate_property_atomic en supabase/migrations/ " +
-        "— este test depende de leer el SQL real, no puede seguir sin él",
+      "ninguna migración en supabase/migrations/ define moderate_property_atomic " +
+        "(create or replace function) — este test depende de leer el SQL real, no puede seguir sin él",
     );
   }
-  // El prefijo YYYYMMDDHHMMSS ordena cronológicamente; la última es la
-  // definición VIGENTE (create or replace reemplaza, no extiende).
-  candidatos.sort();
+  // El prefijo YYYYMMDDHHMMSS del NOMBRE ordena cronológicamente; la última
+  // es la definición VIGENTE (create or replace reemplaza, no extiende). El
+  // discovery ya no depende del nombre — el orden sí, porque es la
+  // convención real (timestamp) de las migraciones de Supabase.
+  candidatos.sort((a, b) => a.name.localeCompare(b.name));
   const ultima = candidatos[candidatos.length - 1];
-  const sql = await Deno.readTextFile(new URL(ultima, MIGRATIONS_DIR));
 
   const columnas = new Set<string>();
   const re = /p_changed_fields\s*\?\s*'([a-z_]+)'/g;
   let m: RegExpExecArray | null;
-  while ((m = re.exec(sql)) !== null) {
+  while ((m = re.exec(ultima.sql)) !== null) {
     columnas.add(m[1]);
   }
   return columnas;
