@@ -72,12 +72,125 @@ export interface UseAdminRevisionsResult {
   refetch: () => void;
 }
 
+const NEUTRAL_ERROR_MESSAGE =
+  'No se pudieron cargar las revisiones pendientes. Intenta de nuevo.';
+
+/**
+ * Columnas propias de property_revisions + embed al whitelist de
+ * edit-property (types.ts:29-52) más `id` para anclar el embed. Ni un campo
+ * de más (like_count, view_count, agency_id, owner_user_id) ni uno de menos.
+ */
+const SELECT_COLUMNS = `
+  id,
+  property_id,
+  status,
+  changed_fields,
+  rejection_reason,
+  created_at,
+  property:properties(
+    id,
+    operation_type,
+    property_type,
+    price,
+    price_visible,
+    bedrooms,
+    bathrooms,
+    square_meters,
+    built_square_meters,
+    half_bathrooms,
+    currency,
+    address,
+    description,
+    pet_friendly,
+    allows_no_guarantor,
+    student_friendly
+  )
+`;
+
+interface RawRevisionRow {
+  id: string;
+  property_id: string;
+  status: 'pending' | 'needs_changes';
+  changed_fields: Record<string, unknown>;
+  rejection_reason: string | null;
+  created_at: string;
+  property: AdminRevisionPropertySnapshot;
+}
+
+function map_row(row: RawRevisionRow): AdminRevisionItem {
+  return {
+    revision_id: row.id,
+    property_id: row.property_id,
+    status: row.status,
+    changed_fields: row.changed_fields,
+    rejection_reason: row.rejection_reason,
+    created_at: row.created_at,
+    property: row.property,
+  };
+}
+
 export function useAdminRevisions(): UseAdminRevisionsResult {
-  // Referenciados para que TS no marque el import de React/supabase como
-  // no usado en este stub — el GREEN los usa de verdad.
-  void useState;
-  void useEffect;
-  void useCallback;
-  void supabase;
-  throw new Error('not_implemented');
+  const [revisions, set_revisions] = useState<AdminRevisionItem[] | null>(null);
+  const [is_loading, set_is_loading] = useState(true);
+  const [error_message, set_error_message] = useState<string | null>(null);
+  const [refetch_tick, set_refetch_tick] = useState(0);
+
+  useEffect(() => {
+    let ignore = false;
+
+    // Envuelto en una función nombrada (invocada síncronamente abajo) en vez
+    // de setState directo en el cuerpo del efecto — evita el lint
+    // react-hooks/set-state-in-effect sin cambiar el timing (patrón
+    // useAdminQueueCounts).
+    function run_fetch(): void {
+      supabase
+        .from('property_revisions')
+        .select(SELECT_COLUMNS)
+        .in('status', ['pending', 'needs_changes'])
+        .order('created_at', { ascending: true })
+        .then(
+          (res) => {
+            if (ignore) return;
+            set_is_loading(false);
+            // Todo-o-nada: error de PostgREST o `data: null` sin error nunca
+            // se traducen en una lista vacía fabricada.
+            if (res.error || res.data === null) {
+              set_revisions(null);
+              set_error_message(NEUTRAL_ERROR_MESSAGE);
+              return;
+            }
+            set_revisions((res.data as unknown as RawRevisionRow[]).map(map_row));
+            set_error_message(null);
+          },
+          () => {
+            if (ignore) return;
+            set_is_loading(false);
+            set_revisions(null);
+            set_error_message(NEUTRAL_ERROR_MESSAGE);
+          },
+        );
+    }
+
+    // Síncrono, ANTES de disparar la query, para que is_loading=true sea
+    // observable en el mismo tick y ningún dato viejo se vea mientras carga
+    // (mismo patrón que useAdminQueueCounts/start).
+    function start(): void {
+      set_revisions(null);
+      set_error_message(null);
+      set_is_loading(true);
+      run_fetch();
+    }
+
+    start();
+
+    return () => {
+      ignore = true;
+    };
+  }, [refetch_tick]);
+
+  const refetch = useCallback(() => {
+    set_refetch_tick((n) => n + 1);
+  }, []);
+
+  return { revisions, is_loading, error_message, refetch };
 }

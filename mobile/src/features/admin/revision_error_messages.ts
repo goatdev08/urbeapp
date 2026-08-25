@@ -34,6 +34,16 @@ export const REVISION_ERROR_CODES = [
 
 export type RevisionErrorCode = (typeof REVISION_ERROR_CODES)[number];
 
+const REVISION_ERROR_MESSAGES: Record<string, string> = {
+  INVALID_INPUT: 'Datos incorrectos. Intenta de nuevo.',
+  UNAUTHENTICATED: 'Debes iniciar sesión de nuevo para continuar.',
+  FORBIDDEN: 'Solo un administrador puede moderar propiedades.',
+  PROPERTY_NOT_FOUND: 'La propiedad no existe o fue eliminada.',
+  INVALID_TRANSITION: 'Esta propiedad no puede moderarse en su estado actual.',
+  NOTHING_TO_MODERATE: 'No hay ninguna revisión ni publicación pendiente que moderar.',
+  DB_ERROR: 'No pudimos guardar la moderación. Intenta de nuevo.',
+};
+
 /**
  * `code === undefined` es lo que devuelve extract_error_code cuando el error NO
  * es un FunctionsHttpError con body {error:{code}} parseable — típicamente red o
@@ -42,5 +52,8 @@ export type RevisionErrorCode = (typeof REVISION_ERROR_CODES)[number];
  * código crudo.
  */
 export function map_revision_error(code: string | undefined): string {
-  throw new Error('not_implemented');
+  if (code === undefined) {
+    return 'No se pudo conectar. Verifica tu conexión e intenta de nuevo.';
+  }
+  return REVISION_ERROR_MESSAGES[code] ?? 'Ocurrió un error. Intenta de nuevo.';
 }

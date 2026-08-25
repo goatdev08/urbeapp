@@ -57,17 +57,127 @@ export interface UseModeratePropertyReturn {
   error_message: string | null;
 }
 
+/**
+ * Resultado interno con el mensaje de error — nunca se expone tal cual;
+ * `moderate` lo reduce a `ModeratePropertyResult` (sin `error`) antes de
+ * devolverlo al llamador. El texto vive únicamente en `error_message`.
+ */
+type InternalResult =
+  | { ok: true; status: string }
+  | { ok: false; status: null; error_msg: string };
+
 export function useModerateProperty(
   deps?: UseModeratePropertyDeps,
 ): UseModeratePropertyReturn {
-  // Referenciados para que TS no marque los imports como no usados en este
-  // stub — el GREEN los usa de verdad.
-  void useCallback;
-  void useMemo;
-  void useReducer;
-  void useRef;
-  void extract_error_code;
-  void map_revision_error;
-  void deps;
-  throw new Error('not_implemented');
+  const is_working_ref = useRef(false);
+  const error_ref = useRef<string | null>(null);
+  const [, force_update] = useReducer((n: number) => n + 1, 0);
+
+  // Lazy para que jest.mock intercepte.
+  const get_client = (): any => {
+    if (deps?.supabase) return deps.supabase;
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return (require('@/lib/supabase/client') as { supabase: unknown }).supabase;
+  };
+
+  /** Invoca la EF y mapea el resultado. No gestiona is_submitting. */
+  const invoke_moderate = (body: Record<string, unknown>): Promise<InternalResult> => {
+    const client = get_client();
+    return (
+      client.functions.invoke('moderate-property', { body }) as Promise<{
+        data: unknown;
+        error: unknown | null;
+      }>
+    ).then(async ({ data, error }) => {
+      if (error) {
+        const code = await extract_error_code(error);
+        return { ok: false as const, status: null, error_msg: map_revision_error(code) };
+      }
+      const status = (data as { status?: string } | null)?.status ?? '';
+      return { ok: true as const, status };
+    });
+  };
+
+  /**
+   * Wrapper SÍNCRONO que fija is_submitting=true antes del primer await. No
+   * es async — devuelve la Promise de action() sin añadir una suspensión
+   * extra, para que la lectura del mismo tick vea `true`.
+   */
+  const run_action = (
+    action: () => Promise<InternalResult>,
+  ): Promise<ModeratePropertyResult> => {
+    is_working_ref.current = true;
+    error_ref.current = null;
+    force_update();
+
+    return action().then(
+      (result) => {
+        is_working_ref.current = false;
+        if (result.ok) {
+          error_ref.current = null;
+          force_update();
+          return { ok: true as const, status: result.status };
+        }
+        error_ref.current = result.error_msg;
+        force_update();
+        return { ok: false as const, status: null };
+      },
+      // Red/timeout (invoke rechazado): mensaje neutro en español, jamás
+      // err.message — map_revision_error(undefined) es exactamente ese
+      // mensaje, el mismo camino que un código no parseable.
+      (err: unknown) => {
+        void err;
+        const msg = map_revision_error(undefined);
+        is_working_ref.current = false;
+        error_ref.current = msg;
+        force_update();
+        return { ok: false as const, status: null };
+      },
+    );
+  };
+
+  const moderate = useCallback(
+    (params: ModeratePropertyParams): Promise<ModeratePropertyResult> => {
+      // No doble-submit, semántica IGNORAR (distinta de useSuspendAgency, que
+      // coalesce): mientras la primera sigue en vuelo, una segunda llamada
+      // resuelve de inmediato sin invocar la EF ni tocar el estado de la
+      // primera.
+      if (is_working_ref.current) {
+        return Promise.resolve({ ok: false, status: null });
+      }
+
+      const body: Record<string, unknown> = {
+        property_id: params.property_id,
+        action: params.action,
+      };
+      // El hook no valida `reason`; solo lo reenvía si vino — nunca manda la
+      // clave si está ausente (la UI decide cuándo es obligatorio).
+      if (params.reason !== undefined) {
+        body.reason = params.reason;
+      }
+
+      return run_action(() => invoke_moderate(body)).then((result) => {
+        if (result.ok && deps?.onSuccess) deps.onSuccess();
+        return result;
+      });
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [deps?.supabase, deps?.onSuccess],
+  );
+
+  // Getters: is_submitting y error_message son siempre el valor actual de la
+  // ref, incluso sin re-render previo (lectura síncrona del mismo tick).
+  return useMemo(() => {
+    const r: UseModeratePropertyReturn = {
+      moderate,
+      get is_submitting() {
+        return is_working_ref.current;
+      },
+      get error_message() {
+        return error_ref.current;
+      },
+    };
+    return r;
+
+  }, [moderate]);
 }

@@ -428,7 +428,11 @@ describe('useModerateProperty — estado', () => {
     expect(result.current.error_message).not.toBeNull();
 
     const mock_ok = make_client(ok_invoke('active'));
-    rerender({ client: mock_ok.client });
+    // RNTL 14: rerender es async (memoria rntl14_renderhook_async) — sin
+    // `await`, el siguiente `act(async)` de este mismo test se anida sobre un
+    // "act scope" no asentado y corrompe el estado interno de React/RNTL para
+    // los tests SIGUIENTES del archivo (reparación 218.1, ver bitácora).
+    await rerender({ client: mock_ok.client });
 
     await act(async () => {
       await result.current.moderate({ property_id: TEST_PROPERTY_ID, action: 'approve' });
@@ -453,7 +457,14 @@ describe('useModerateProperty — 🔴 no doble-submit (ignorar)', () => {
 
     let first!: Promise<ModeratePropertyResult>;
     let second!: Promise<ModeratePropertyResult>;
-    act(() => {
+    // `await act(async () => {...})`, no el `act(() => {...})` síncrono: con
+    // React concurrente el act síncrono no aplica el estado (is_working_ref +
+    // force_update) de forma confiable y corrompe el entorno de test para los
+    // casos siguientes del archivo (reparación 218.1, ver bitácora). Ninguna
+    // de las dos llamadas se espera aquí dentro — ambas promesas quedan
+    // `pending` (o, en el caso de la segunda, ya resuelta sin red) hasta los
+    // `await` explícitos de abajo.
+    await act(async () => {
       first = result.current.moderate({ property_id: TEST_PROPERTY_ID, action: 'approve' });
       second = result.current.moderate({ property_id: TEST_PROPERTY_ID, action: 'reject', reason: 'x' });
     });
@@ -479,7 +490,8 @@ describe('useModerateProperty — 🔴 no doble-submit (ignorar)', () => {
     const { result } = await renderHook(() => useModerateProperty({ supabase: mock.client }));
 
     let first!: Promise<ModeratePropertyResult>;
-    act(() => {
+    // Mismo fix que EC-17: `await act(async () => {...})`, no el síncrono.
+    await act(async () => {
       first = result.current.moderate({ property_id: TEST_PROPERTY_ID, action: 'approve' });
       void result.current.moderate({ property_id: TEST_PROPERTY_ID, action: 'reject', reason: 'x' });
     });
