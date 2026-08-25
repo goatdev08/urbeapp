@@ -42,6 +42,21 @@
 --       diferenciador propio (mismo principio que ends_at en
 --       notify_ads_expiring_soon, 20260822000001) o el segundo envío se
 --       perdería en silencio.
+--       🔴 PISTA FALSA (hallazgo del guardian post-GREEN, hardening
+--       2026-08-25): la frase de arriba predecía que el GREEN necesitaría un
+--       índice con un diferenciador extra (tipo ends_at). El GREEN real
+--       (20260825000001) resolvió esto MÁS simple y correcto: admin_
+--       revision_pending NO lleva NINGÚN índice de idempotencia — un trigger
+--       de FILA (no un job batch como notify_ads_expiring_soon) solo se
+--       dispara una vez por INSERT/UPDATE real, así que no existe ninguna
+--       forma legítima de que se re-dispare para el MISMO evento; proteger
+--       contra eso sería YAGNI. El contrato que este archivo fija es
+--       puramente OBSERVABLE — "nunca se deduplica" (sección 5,
+--       REV9-REV11) — sin prescribir el mecanismo; el guardian confirmó con
+--       el mutante (g) que ese contrato queda cazado igual sin necesidad de
+--       un índice/diferenciador. Dejar esta nota para que nadie reintroduzca
+--       por error un índice de idempotencia en este evento leyendo solo la
+--       frase original de arriba.
 --   Los 4 escritores insertan hacia TODOS los public.users.role='admin' (sin
 --   relación con agency_members — es el admin de PLATAFORMA, distinto del
 --   owner/admin de organización de notify_ads_expiring_soon). 0 admins ⇒ el
@@ -159,10 +174,20 @@
 --   BORRA) sin importar read_at/deleted_at; función catalogada (returns void,
 --   security definer, search_path vacío); job registrado en cron.job con
 --   jobname/schedule/command exactos.
+-- Sección 9 — 🔴 hardening post-guardian (2026-08-25, mutante (e) sobreviviente
+--   original: quitar `on conflict ... do nothing` del writer de ads NO hacía
+--   fallar la suite, porque D-ANCLA solo prueba el índice con INSERTs crudos
+--   y cada writer se dispara una sola vez por entidad en las secciones 2-5) —
+--   rama de CONFLICTO real de un writer: se pre-inserta a mano un aviso con
+--   la MISMA ancla que el writer generaría para CADA admin y luego se
+--   dispara el evento real; el evento no debe abortar (a) y el conteo de
+--   avisos no debe cambiar — no-op silencioso (b). 2 caminos representativos
+--   (ads por UPDATE, agencies por INSERT), mismo criterio de "una vez por
+--   estilo de disparo" que la sección 7.
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(70);
+select plan(76);
 
 create or replace function pg_temp.act_as(p_uid uuid, p_role text default 'authenticated')
 returns void language plpgsql as $$
@@ -779,6 +804,92 @@ select is(
 select is(
   (select count(*)::int from public.notifications where id = '00000000-0000-0000-0000-000000710085'),
   0, 'PURGE5_40d_ya_borrado_por_el_usuario_TAMBIEN_se_purga_fisicamente_deleted_at_no_exime'
+);
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 9) 🔴 Hardening post-guardian — rama de CONFLICTO real de `on conflict ...
+--    do nothing` (mutante (e) sobreviviente). D-ANCLA (sección 6) solo prueba
+--    el ÍNDICE con INSERTs crudos aislados; ningún assert anterior hace que
+--    el WRITER MISMO choque contra una llave ya ocupada. Aquí se pre-inserta
+--    a mano un aviso con la MISMA ancla (user_id, related_entity_id, type)
+--    que el writer real generaría para CADA admin, y luego se dispara el
+--    evento real — bajo la semántica BLOQUEANTE (sección 7/DECISIÓN ABRAHAM
+--    2026-08-25) la diferencia es real: sin `on conflict ... do nothing`, el
+--    segundo INSERT de la fila ya ocupada lanza 23505 SIN bloque EXCEPTION y
+--    aborta el evento de negocio entero (el ad no se movería / la agencia no
+--    se crearía) — exactamente lo que el mutante (e) dejaba sin cazar. 2
+--    caminos representativos (UPDATE ads, INSERT agencies), mismo criterio
+--    de "una vez por estilo de disparo" que la sección 7 — los 3 writers de
+--    disparo único comparten el mismo mecanismo (índice + on conflict do
+--    nothing sobre la MISMA tabla notifications).
+-- ════════════════════════════════════════════════════════════════════════════
+
+-- ── 9.1) camino UPDATE — ads: ambos admins YA tienen el aviso anclado ──────
+insert into public.ads (id, agency_id, creative_id, title, cta_type, cta_value, status, starts_at, ends_at) values
+  ('00000000-0000-0000-0000-000000710091', '00000000-0000-0000-0000-000000710012',
+   '00000000-0000-0000-0000-000000710013', 'Ad Conflict OnConflict 71', 'phone', '+5213300007104',
+   'draft', now() - interval '1 day', now() + interval '30 days');
+
+insert into public.notifications (id, user_id, type, title, related_entity_type, related_entity_id) values
+  ('00000000-0000-0000-0000-000000710092', '00000000-0000-0000-0000-000000710001',
+   'admin_ad_pending', 'Anuncio pendiente de revisión (pre-anclado admin1)', 'ad', '00000000-0000-0000-0000-000000710091'),
+  ('00000000-0000-0000-0000-000000710093', '00000000-0000-0000-0000-000000710002',
+   'admin_ad_pending', 'Anuncio pendiente de revisión (pre-anclado admin2)', 'ad', '00000000-0000-0000-0000-000000710091');
+
+create temp table result_conflict_ads_71 (ok boolean, err_sqlstate text);
+do $$
+begin
+  update public.ads set status = 'pending_review' where id = '00000000-0000-0000-0000-000000710091';
+  insert into result_conflict_ads_71 values (true, null);
+exception when others then
+  insert into result_conflict_ads_71 values (false, sqlstate);
+end $$;
+
+select is((select ok from result_conflict_ads_71), true,
+  'CONFLICT1_ads_ambos_admins_ya_anclados_el_evento_NO_aborta_on_conflict_do_nothing'
+);
+select is(
+  (select status::text from public.ads where id = '00000000-0000-0000-0000-000000710091'),
+  'pending_review', 'CONFLICT2_ads_la_transicion_SI_procedio_pese_al_conflicto_de_ancla'
+);
+select is(
+  (select count(*)::int from public.notifications
+    where related_entity_id = '00000000-0000-0000-0000-000000710091' and type = 'admin_ad_pending'),
+  2, 'CONFLICT3_ads_el_conteo_de_avisos_NO_cambia_no_op_silencioso_sigue_en_2'
+);
+
+-- ── 9.2) camino INSERT — agencies: ambos admins YA tienen el aviso anclado ──
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-000000710094', 'creador_agencia_conflict_71@urbea.mx');
+
+insert into public.notifications (id, user_id, type, title, related_entity_type, related_entity_id) values
+  ('00000000-0000-0000-0000-000000710096', '00000000-0000-0000-0000-000000710001',
+   'admin_agency_pending', 'Inmobiliaria pendiente (pre-anclado admin1)', 'agency', '00000000-0000-0000-0000-000000710095'),
+  ('00000000-0000-0000-0000-000000710097', '00000000-0000-0000-0000-000000710002',
+   'admin_agency_pending', 'Inmobiliaria pendiente (pre-anclado admin2)', 'agency', '00000000-0000-0000-0000-000000710095');
+
+create temp table result_conflict_agy_71 (ok boolean, err_sqlstate text);
+do $$
+begin
+  insert into public.agencies (id, name, slug, status, created_by_user_id) values
+    ('00000000-0000-0000-0000-000000710095', 'Agencia Conflict OnConflict 71', 'agencia-conflict-onconflict-71',
+     default, '00000000-0000-0000-0000-000000710094');
+  insert into result_conflict_agy_71 values (true, null);
+exception when others then
+  insert into result_conflict_agy_71 values (false, sqlstate);
+end $$;
+
+select is((select ok from result_conflict_agy_71), true,
+  'CONFLICT4_agencies_ambos_admins_ya_anclados_el_evento_NO_aborta_on_conflict_do_nothing'
+);
+select is(
+  (select count(*)::int from public.agencies where id = '00000000-0000-0000-0000-000000710095'),
+  1, 'CONFLICT5_agencies_la_agencia_SI_quedo_creada_pese_al_conflicto_de_ancla'
+);
+select is(
+  (select count(*)::int from public.notifications
+    where related_entity_id = '00000000-0000-0000-0000-000000710095' and type = 'admin_agency_pending'),
+  2, 'CONFLICT6_agencies_el_conteo_de_avisos_NO_cambia_no_op_silencioso_sigue_en_2'
 );
 
 select * from finish();
