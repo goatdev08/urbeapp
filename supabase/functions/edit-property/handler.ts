@@ -297,6 +297,16 @@ export async function handler(
   }
 
   // 8. Diff §15.5 → ramifica a revisión (crítico) o aplicación directa
+  //
+  // NOTA (218.4): `input` viaja COMPLETO como `changed_fields` (abajo y en
+  // directPropertyUpdater.apply) — no se construye filtrando por una lista
+  // de campos editables aquí, porque `EditPropertyInput` (types.ts) YA ES
+  // exactamente ese whitelist tipado: sus keys coinciden 1:1 con
+  // `EDITABLE_PROPERTY_FIELDS` (_shared/property_field_whitelist.ts), que a
+  // su vez es el espejo TS del whitelist real (SQL, RPC
+  // moderate_property_atomic). property_field_whitelist.test.ts (EC-2)
+  // verifica esa coincidencia invocando este handler — si `EditPropertyInput`
+  // gana o pierde un campo sin que ambos lados se actualicen, ese test truena.
   if (has_critical_change(input, current)) {
     const upsertResult = await deps!.revisionUpserter.upsert(
       input.property_id,

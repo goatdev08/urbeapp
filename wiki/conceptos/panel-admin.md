@@ -7,8 +7,12 @@ codigo:
   - mobile/app/admin/
   - mobile/src/features/admin/
   - mobile/src/features/admin/hooks/useAdminQueueCounts.ts
+  - mobile/src/features/admin/hooks/useAdminRevisions.ts
+  - mobile/src/features/admin/hooks/useModerateProperty.ts
+  - mobile/app/admin/revisions/index.tsx
   - mobile/src/features/profile/ProfileScreen.tsx
-actualizado: 2026-08-24
+  - supabase/functions/_shared/property_field_whitelist.ts
+actualizado: 2026-08-25
 ---
 
 # Panel admin (centro operativo)
@@ -23,9 +27,9 @@ actualizado: 2026-08-24
 - **Home** (`mobile/app/admin/index.tsx`): lista de agencias (alta/suspensión/`can_advertise`, #209) + sección **«Colas»** con **5 contadores vivos** — anuncios `pending_review`, `property_revisions` `pending`, `property_reports` `new`, `agent_applications` `pending`, `agencies` `pending_approval`.
 - Los counts los da `useAdminQueueCounts` (`mobile/src/features/admin/hooks/useAdminQueueCounts.ts`): 5 queries `count: 'exact', head: true` **en paralelo, sin RPC nueva** — las policies RLS con `private.is_admin()` ya autorizan los SELECT al admin. **Todo-o-nada** (patrón `useAdStats`): si UNA falla, `counts=null` + mensaje neutro — nunca 4 números reales y una mentira. Los badges no pueden mentir porque **son** la cola, no una copia.
 - **Gestión de anuncios en `/admin/ads`** (#208): cola de `pending_review` con creativo firmado bajo demanda, aprobar/rechazar con motivo; pause/resume/reject de activos (#210). Ver [[publicidad-anuncios]].
+- **Cola de revisiones en `/admin/revisions`** (#218, M1): revisiones `pending|needs_changes` FIFO con **diff campo a campo** (`useAdminRevisions`: embed a `properties`, sin RPC nueva; el diff filtra a valores realmente distintos — `edit-property` guarda el input COMPLETO en `changed_fields`) y **Aprobar / Pedir cambios / Rechazar** (`useModerateProperty` → EF `moderate-property`; **motivo obligatorio en la UI** para las dos últimas aunque la EF lo deje opcional). Aprobar aplica el snapshot vía la RPC atómica — el bug del precio editado que nadie podía aprobar está muerto. Lado publicador: bucket «En revisión» en Mis publicaciones + badge veraz `suspended`; el aviso con motivo al publicador nace en M2 ([[notificaciones]]).
 
-## Qué llega (M1–M5, una tarea = una rama = un PR)
-- **M1 (#218)** — cola `/admin/revisions`: diff campo a campo de `property_revisions` + approve/needs_changes/reject vía `moderate-property` (hoy desplegada **sin llamador** — el bug del precio editado que nadie puede aprobar, ver [[moderacion]]).
+## Qué llega (M2–M5, una tarea = una rama = un PR)
 - **M2 (#219)** — centro de notificaciones in-app (primer lector de `notifications`) + escritores admin del catálogo v1 (PRD §22.4). Push = fase 2.
 - **M3 (#220)** — reportes §24 completo: botón Reportar, cola `/admin/reports`, auto-suspensión 3 reportes/24h.
 - **M4 (#221)** — cola `/admin/requests` unificada: solicitudes de agente, registros de inmobiliaria y el canal nuevo de cuenta comercial.

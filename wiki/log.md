@@ -954,3 +954,6 @@ Abraham fija: PRD.md vuelve a ser LA fuente de verdad (PRD-beta/demo retirados);
 
 ## [2026-08-25] tarea | #217 M0 — panel admin: entrada en ⋮, badges de colas y verdad documental
 Entrada «Panel de administrador» en el menú ⋮ (solo admin) + sección «Colas» con 5 counts vivos (`useAdminQueueCounts`, todo-o-nada, sin RPC — RLS `is_admin()`; TDD 11/11, guardian con 1 hueco convertido en EC-11). Verdad documental: [[moderacion]] y [[propiedades-y-video]] corregidas post-#153, PRD-beta/PRD-MVP-demo retirados con banner, addendum §22.4 (7 notificaciones admin) al PRD, concepto [[panel-admin]] nuevo. Smoke en emulador verde. Módulo 041 avanza a M1 (#218).
+
+## [2026-08-25] tarea | #218 M1 — cola de revisiones: el bug del precio atorado está muerto
+`/admin/revisions` lee `property_revisions` (FIFO, diff campo a campo filtrado a lo realmente cambiado) y modera vía `moderate-property` — la EF estrena llamador. Motivo obligatorio en UI para pedir cambios/rechazar. Lado publicador: bucket «En revisión» + badge veraz `suspended` (#136 recortado). #124 redefinida: guardia TS↔SQL del whitelist (16 columnas, parseo de la RPC por contenido). TDD: 33 RNTL nuevos + 4 Deno (guardian PASS ×2). Smoke E2E en preview-ads: aprobar aplicó 45000→48500; needs_changes persistió motivo sin tocar properties. Suites: 125/1621 Jest · 1384 Deno.
