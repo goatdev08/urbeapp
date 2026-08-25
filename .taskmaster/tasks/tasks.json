@@ -9981,8 +9981,53 @@
           "212"
         ],
         "priority": "high",
-        "subtasks": [],
-        "updatedAt": "2026-08-24T23:04:32.029Z"
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Entrada «Panel de administrador» en el menú ⋮ del perfil",
+            "description": "Ítem nuevo en el bottom sheet de ProfileScreen, visible SOLO si user.role===admin, navega a /admin. Muere el deep link como única vía.",
+            "details": "PLAN: footprint mobile/src/features/profile/ProfileScreen.tsx (lista de ítems del menú, patrón de los existentes listings/ads/signout) · agente=mobile · criticidad=NO (pantalla) → tsc+lint+tests del feature+smoke emulador (visible admin / invisible buscador) · impacto-prod=sin riesgo (UI, viaja por OTA futuro). El guard de /admin ya existe (admin-layout) — esto es solo el punto de entrada.",
+            "testStrategy": "RNTL: ítem presente con role=admin, ausente con user/agent; navegación a /admin. Smoke visual con la sesión admin.ads del emulador.",
+            "status": "pending",
+            "dependencies": [],
+            "subtasks": [],
+            "updatedAt": "2026-08-25T02:41:54.823Z"
+          },
+          {
+            "id": 2,
+            "title": "Badges de colas vivas en el home del panel",
+            "description": "El home /admin muestra contadores por cola: anuncios pending_review, revisiones de edición pendientes, reportes nuevos, solicitudes de agente, inmobiliarias pending_approval. Counts leídos de las tablas (imposible que mientan).",
+            "details": "PLAN: primero verificar qué counts salen con SELECT directo bajo RLS admin (ads y agencies sí — patrón usePendingAds; property_revisions/property_reports/agent_applications probablemente NO tienen policy de lectura admin → si falta, RPC admin_queue_counts() security definer con private.is_admin() fail-closed, migración aditiva + rollback + pgTAP) · agente=supabase si hay migración, mobile para el hook/UI · criticidad=CRÍTICA si hay migración/RPC y para el hook (hooks/**); la UI del home NO · impacto-prod=sin riesgo (lectura pura). Badge=0 se oculta; los counts alimentarán después el catálogo v1 (#219).",
+            "testStrategy": "pgTAP para la RPC si existe (admin ve counts, no-admin 0 filas/fail-closed); RNTL del hook; smoke: counts cuadran contra SQL en la rama preview.",
+            "status": "pending",
+            "dependencies": [],
+            "subtasks": [],
+            "updatedAt": "2026-08-25T02:41:54.823Z"
+          },
+          {
+            "id": 3,
+            "title": "Verdad documental: vault #153, retiro PRD-beta/demo, addendum §22.x, concepto panel-admin",
+            "description": "Corregir conceptos/moderacion.md y propiedades-y-video.md (la revisión previa está suspendida — decisión 0010); banner de retiro en PRD-beta.md y PRD-MVP-demo.md; addendum §22.x (notificaciones al admin, catálogo v1 de 041) en docs/PRD.md; crear wiki/conceptos/panel-admin.md.",
+            "details": "PLAN: footprint wiki/conceptos/*, docs/PRD*.md · agente=orquestador o general · criticidad=NO (docs) · impacto-prod=ninguno. El addendum al PRD reproduce el catálogo v1 tal cual quedó aprobado en la exploración 041 — sin inventar eventos nuevos.",
+            "testStrategy": "Revisión de consistencia: ninguna página del vault vuelve a afirmar que publicar pasa por revisión previa; los tres docs enlazan a 0010/041.",
+            "status": "pending",
+            "dependencies": [],
+            "subtasks": [],
+            "updatedAt": "2026-08-25T02:41:54.823Z"
+          },
+          {
+            "id": 4,
+            "title": "Verificación, smoke e ingest de cierre",
+            "description": "Suites completas + smoke del recorrido (menú → panel → badges cuadran) + ingest (mapa-codebase, log) + gate §0.5 + PR.",
+            "details": "PLAN: agente=orquestador · criticidad=NO · impacto-prod=migración de 217.2 (si existe) se despliega a preview-ads y producción con sonda pasiva, patrón 212.6.",
+            "testStrategy": "pnpm tsc + lint + pnpm test verdes; capturas del emulador con badges reales de la rama preview; sonda pasiva en producción.",
+            "status": "pending",
+            "dependencies": [],
+            "subtasks": [],
+            "updatedAt": "2026-08-25T02:41:54.823Z"
+          }
+        ],
+        "updatedAt": "2026-08-25T02:41:54.823Z"
       },
       {
         "id": "218",
