@@ -10121,13 +10121,83 @@
         "description": "Pantalla campana para TODOS los roles que lee public.notifications (lista, no-leídas, marcar leída/todas, deep links) — primer lector de la tabla. Más los 7 escritores del catálogo v1 (doc 041) hacia users.role=admin y las escrituras espejo al usuario afectado (§28.4, solo in-app en beta).",
         "details": "Origen: exploración 041 · bloque M2 · decisión 3 (badges + centro in-app; push = fase 2). ADOPTA 77.4 (centro in-app); el resto de #77 (device_tokens, EF push-dispatch, toggles, resumen semanal) queda como fase 2 — el centro debe quedar listo para conectarle push sin rehacer nada. Patrón de escritor: calcar notify_ads_expiring_soon (20260822000001): índice único parcial de idempotencia, to_char en UTC (nunca to_jsonb(timestamptz)), un aviso borrado sigue anclando. RLS ya limita el update del usuario a read_at/deleted_at. Catálogo v1: admin_ad_pending, admin_revision_pending, admin_report_new, admin_report_autosuspend, admin_agent_application, admin_agency_pending, admin_advertising_request + espejos de resultado al usuario. Escritura en la MISMA transacción del evento. Footprint: supabase/migrations/*, mobile/src/features/notifications/*, campana en el header.",
         "testStrategy": "Escritores = CRÍTICA (pgTAP: idempotencia del índice, destinatarios = todos los users.role=admin, espejo al afectado, misma transacción — fallo de escritura no rompe el evento o sí, decidir y fijar en RED). Hook lector = CRÍTICA (RNTL). Smoke en preview: moderar algo → campana del otro admin sube.",
-        "status": "pending",
+        "status": "in-progress",
         "dependencies": [
           "218"
         ],
         "priority": "high",
-        "subtasks": [],
-        "updatedAt": "2026-08-24T23:04:32.029Z"
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Escritores admin: 4 triggers de eventos con fuente viva + idempotencia + purga 30d (TDD pgTAP)",
+            "description": "Migración aditiva: triggers en la MISMA transacción del evento que insertan en public.notifications hacia TODOS los users.role=admin — admin_ad_pending (ads → pending_review), admin_revision_pending (property_revisions → pending, incluye re-envío needs_changes→pending), admin_agent_application (agent_applications → pending), admin_agency_pending (agencies → pending_approval). Los 3 tipos restantes del catálogo v1 (admin_report_new, admin_report_autosuspend, admin_advertising_request) nacen con M3/M4 — sus fuentes no existen. Patrón notify_ads_expiring_soon: índice único parcial de idempotencia + on conflict do nothing, to_char UTC (nunca to_jsonb(timestamptz)), deep links del PRD §22.4. + job pg_cron de purga a 30 días (retención prometida por 0007). Rollback verbatim.",
+            "details": "\n<info added on 2026-08-25T21:16:52.825Z>\nPLAN: migración aditiva `notify_admin_events` — escritores hacia TODOS los users.role='admin' para los 4 eventos con fuente viva. OJO (analista, verificado contra schema real): NO es un patrón uniforme de 4 triggers iguales — ads llega a pending_review por UPDATE (trigger AFTER UPDATE nuevo, SIN tocar la función BEFORE UPDATE handle_ad_status_change 20260816000006); agencies y agent_applications nacen ya en pending_approval/pending por DEFAULT (AFTER INSERT); property_revisions nace pending por INSERT y RE-ENTRA a pending por UPDATE en el reenvío needs_changes→pending (cubrir ambos). Tipos/deep links del PRD §22.4: admin_ad_pending→/admin/ads, admin_revision_pending→/admin/revisions, admin_agent_application y admin_agency_pending→/admin/requests (ruta aún no construida, M4 — el deep link se escribe igual, la campana lo ignora si la ruta no existe aún o navega y cae en 404 suave: fijar en RED el comportamiento del dato, no de la UI). Los 3 tipos restantes del catálogo (report_new, report_autosuspend, advertising_request) nacen con M3/M4. Idempotencia: índice único parcial + on conflict do nothing, ancla en data con to_char UTC (patrón 20260822000001; un aviso borrado sigue anclando). DECISIÓN ABRAHAM (2026-08-25): fallo del escritor = BLOQUEANTE — INSERT en la misma transacción SIN try/catch, coherente con admin_actions; o el evento y su aviso existen los dos, o ninguno. + job pg_cron de purga a 30 días (deleted_at O created_at>30d; patrón purge_ad_impressions, horario UTC distinto de los jobs existentes). Rollback verbatim en rollbacks/. · agente=supabase · skills=urbea-supabase,urbea-testing · criticidad=CRÍTICA (supabase/migrations/**) → TDD pgTAP: destinatarios exactos (todos los admin y nadie más; sin admins = 0 filas sin error), idempotencia, re-envío needs_changes→pending genera aviso NUEVO (ancla distinta) o no (fijar en RED), purga respeta la ventana, fallo aborta el evento · impacto-prod=sin riesgo (aditiva pura: funciones/triggers/índices nuevos, cero contrato tocado; deploy remoto post-merge) · footprint=supabase/migrations/2026082X_notify_admin_events.sql (nuevo), rollbacks/, supabase/tests/6X_notify_admin_events_test.sql\n</info added on 2026-08-25T21:16:52.825Z>",
+            "testStrategy": "CRÍTICA (supabase/migrations/**): pgTAP — destinatarios exactos (todos los admin, nadie más), idempotencia (mismo evento no duplica), aviso borrado sigue anclando, semántica de fallo del escritor fijada en RED, deep_link/type/data por evento, purga respeta read/unread a 30 días.",
+            "status": "in-progress",
+            "dependencies": [],
+            "subtasks": [],
+            "updatedAt": "2026-08-25T21:17:13.992Z",
+            "parentId": "219"
+          },
+          {
+            "id": 2,
+            "title": "Espejos de resultado al usuario afectado en las RPCs de moderación (TDD pgTAP)",
+            "description": "Escrituras espejo (§28.4, solo in-app): al resolverse un evento, aviso al afectado en la MISMA transacción — moderate_property_atomic (approve/needs_changes/reject → submitted_by de la revisión u owner de la propiedad, con motivo cuando exista), moderate_ad_atomic (approve/reject/pause → owners/admins activos de la organización, patrón de destinatarios de notify_ads_expiring_soon), triggers de aprobación de agent_applications y agencies (aprobada/rechazada → solicitante). create or replace partiendo del cuerpo VIGENTE de cada función (gotcha #168: nunca del cuerpo viejo). Cero cambio de contrato observable de las EFs. Rollback verbatim.",
+            "details": "\n<info added on 2026-08-25T21:16:52.890Z>\nPLAN: espejos de resultado al afectado (§28.4, solo in-app) vía create or replace de 4 funciones VIVAS partiendo de su cuerpo VIGENTE (gotcha #168 — nunca de una copia vieja): moderate_property_atomic (última def 20260815000005 — 🔴 el test de guardia de 218.4 supabase/functions/_shared/property_field_whitelist.test.ts descubre la última definición POR CONTENIDO y parsea su CASE WHEN: copiar el bloque de 16 columnas VERBATIM y solo AÑADIR el INSERT del espejo; correr ese test Deno explícitamente en el GREEN), moderate_ad_atomic (última def 20260822000002; 000003 tocó el trigger, no la RPC), handle_agency_status_change y handle_agent_application_status_change (20260805000007; verificado por el analista: HOY no escriben en notifications — cero doble-escritura; 219.1 cubre la ENTRADA a pending, esta cubre la RESOLUCIÓN, eventos disjuntos). Destinatarios: revisión → submitted_by (con rejection_reason cuando exista); ad → owners/admins ACTIVOS de la organización (patrón notify_ads_expiring_soon vía agency_members directo); solicitudes → el solicitante. Nunca el admin actor. Deep links del espejo: default sensato = my-listings para revisiones (su gestión), /ads del anunciante para ads, perfil para solicitudes — el test-author los fija en RED. DECISIÓN ABRAHAM: fallo = BLOQUEANTE (misma transacción, sin catch), igual que 219.1. Firma y returns de las 4 funciones IDÉNTICOS (cero cambio de contrato observable). Rollback verbatim de los 4 cuerpos. · agente=supabase · skills=urbea-supabase,urbea-testing · criticidad=CRÍTICA (supabase/migrations/**) → TDD pgTAP: cada rama escribe SU espejo con motivo, destinatario correcto, idempotencia, los pgTAP existentes de las 4 funciones siguen verdes + el test de guardia de 218.4 sigue verde · impacto-prod=⚠️ create-or-replace de RPCs vivas PERO firma/contrato idénticos (efecto nuevo = INSERT interno adicional); sin orden OTA; deploy remoto post-merge con verificación · footprint=supabase/migrations/2026082X_notify_moderation_mirrors.sql (nuevo), rollbacks/, supabase/tests/6Y_notify_moderation_mirrors_test.sql\n</info added on 2026-08-25T21:16:52.890Z>",
+            "testStrategy": "CRÍTICA (supabase/migrations/**): pgTAP — cada rama de moderación escribe SU espejo con el motivo, destinatario correcto (nunca el admin actor), idempotencia, los tests existentes de las RPCs siguen verdes.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "subtasks": [],
+            "updatedAt": "2026-08-25T21:16:52.890Z",
+            "parentId": "219"
+          },
+          {
+            "id": 3,
+            "title": "Hook lector: useNotifications (lista, no-leídas, marcar leída/todas) (TDD RNTL)",
+            "description": "mobile/src/features/notifications/hooks/useNotifications.ts: lista (deleted_at null, orden created_at desc), unread_count, mark_read(id) y mark_all_read (UPDATE read_at — RLS ya restringe a read_at/deleted_at), refetch por tick (sin realtime en beta; el badge refresca al montar/focus). Patrón useAdminRevisions/useAdminQueueCounts: cliente encadenado sin desprender, ignore/generación, mensajes neutros es-MX. Listo para conectarle push en fase 2 sin rehacer nada.",
+            "details": "\n<info added on 2026-08-25T21:16:52.956Z>\nPLAN: mobile/src/features/notifications/hooks/useNotifications.ts — lista (deleted_at is null, orden created_at desc, límite razonable p.ej. 50), unread_count derivado, mark_read(id) y mark_all_read (UPDATE de read_at — la RLS ya restringe el update del usuario a read_at/deleted_at, sin RPC nueva), refetch por tick; sin realtime en beta (badge refresca al montar/focus); diseño listo para conectar push fase 2 sin rehacer. Patrón useAdminRevisions/useAdminQueueCounts: cliente encadenado sin desprender (memoria supabase_js_metodo_desprendido), ignore/generación (EC-11), mensajes neutros es-MX, tipos en features/notifications/types.ts. mark_read: optimista o refetch — el test-author lo fija en RED. La tabla notifications EXISTE desde 0007 (el hook no depende de 219.1/219.2; fixtures propios) · agente=mobile · skills=urbea-expo,urbea-testing · criticidad=CRÍTICA (mobile/**/hooks/**) → TDD RNTL: carga/error/vacío, data null sin error = error, carrera de generaciones vía refetch, mark_read/mark_all_read (cadena exacta + efecto en unread_count), no desprender · impacto-prod=sin riesgo (feature nueva, OTA-able) · footprint=mobile/src/features/notifications/hooks/useNotifications.ts, mobile/src/features/notifications/types.ts, mobile/src/features/notifications/__tests__/useNotifications.test.tsx\n</info added on 2026-08-25T21:16:52.956Z>",
+            "testStrategy": "CRÍTICA (mobile/**/hooks/**): TDD RNTL — carga/error/vacío, data null sin error = error, carrera de generaciones, mark_read optimista o refetch (fijar en RED), cadena exacta de queries.",
+            "status": "pending",
+            "dependencies": [],
+            "subtasks": [],
+            "updatedAt": "2026-08-25T21:16:52.956Z",
+            "parentId": "219"
+          },
+          {
+            "id": 4,
+            "title": "Pantalla campana + badge de no-leídas + deep links",
+            "description": "mobile/app/(protected)/notifications.tsx (o ruta equivalente): lista del centro (título, cuerpo, tiempo relativo, no-leída resaltada), tap = marcar leída + navegar al deep_link si existe, «marcar todas como leídas», estados carga/error/vacío. Campana con badge de no-leídas en el punto de entrada decidido con Abraham. Lenguaje visual: identidad (tokens theme.ts), pantalla utilitaria tipo panel.",
+            "details": "\n<info added on 2026-08-25T21:16:53.021Z>\nPLAN: pantalla mobile/app/(protected)/notifications.tsx — lista del centro (título, cuerpo, tiempo relativo REUSANDO el helper existente de leads si aplica (relative_time — reusar > reescribir, ponytail), no-leída resaltada), tap = mark_read + router.push(deep_link) si existe, «marcar todas como leídas», estados carga/error(Reintentar)/vacío. DECISIÓN ABRAHAM (2026-08-25): la campana vive en PERFIL, botón circular flotante junto al menú ⋮ de ProfileScreen (mismo patrón visual 40×40 paper_2, ícono Bell de phosphor) con badge de no-leídas (oculto en 0, patrón badge de colas del panel); única superficie común a todos los roles; NO tab nueva (la contradicción con PRD §22.1 se anota en el ingest de 219.5: gana la decisión 041/219). Lenguaje visual: pantalla utilitaria (patrón admin/ads), tokens de theme.ts · agente=mobile · skills=urbea-expo · criticidad=NO (pantalla/presentación) → tsc + lint + tests del feature + smoke visual en emulador · impacto-prod=sin riesgo (JS/UI, OTA-able) · footprint=mobile/app/(protected)/notifications.tsx (nuevo), mobile/src/features/notifications/components/ (nuevos), mobile/src/features/profile/ProfileScreen.tsx (campana + badge)\n</info added on 2026-08-25T21:16:53.021Z>",
+            "testStrategy": "NO crítica (pantalla/presentación): tsc + lint + tests del feature + smoke visual en emulador.",
+            "status": "pending",
+            "dependencies": [
+              3
+            ],
+            "subtasks": [],
+            "updatedAt": "2026-08-25T21:16:53.021Z",
+            "parentId": "219"
+          },
+          {
+            "id": 5,
+            "title": "Cierre: verificación completa, smoke E2E en preview y gate §0.5",
+            "description": "Suites completas (pnpm test, deno test, pgTAP local de las migraciones nuevas), smoke E2E contra preview-ads: moderar algo como admin → la campana del admin sube y el afectado recibe su espejo con motivo; deep links navegan. Gate §0.5: migraciones ADITIVAS con rollback probado (hay migraciones nuevas en esta tarea — verificar idempotencia y cero contratos rotos), deploy remoto de migraciones = paso post-merge explícito. Ingest al vault (notificaciones.md a vivo, panel-admin, mapa-codebase, log).",
+            "details": "\n<info added on 2026-08-25T21:16:53.086Z>\nPLAN: cierre de #219 — (1) verificación completa: pnpm tsc/lint/test (mobile), deno test (EFs — incluye el guardia de 218.4), pgTAP local de las migraciones nuevas + suites pgTAP existentes de las 4 funciones reemplazadas; rollback probado de las 2 migraciones (aplicar→revertir→re-aplicar en el stack local vía docker exec psql — NUNCA db reset, stack compartido con urbea-perfil2). (2) Smoke E2E contra preview-ads (el emulador apunta a la rama — memoria emulator-env-preview-ads; aplicar las 2 migraciones a la rama vía MCP apply_migration): moderar algo como admin → campana del admin sube (badge en Perfil) → abrir centro → tap navega al deep link; el afectado recibe su espejo con motivo (verificar por SQL su fila + si hay segunda cuenta, su campana). Regla de cuota: fuera del feed, estacionar fuera del feed. (3) Gate §0.5: migraciones ADITIVAS con rollback probado, cero contrato roto (firmas idénticas), deploy remoto de las migraciones = paso post-merge EXPLÍCITO anotado (como edit-property de #218 — pendiente de la decisión de release de Abraham). (4) Ingest: wiki/conceptos/notificaciones.md → estado: vivo (catálogo v1, patrón escritor, decisiones bloqueante/campana-en-perfil, tensión §22.1 vs 041 resuelta a favor de 041), panel-admin.md (M2 vivo), mapa-codebase.md, log.md, estado-actual.md · agente=orquestador directo (patrón 217.4/218.5) · skills=urbea-expo,urbea-supabase,urbea-testing · criticidad=NO · impacto-prod=deploy de migraciones al remoto post-merge; cliente OTA-able · footprint=wiki/** + evidencia en bitácora\n</info added on 2026-08-25T21:16:53.086Z>",
+            "testStrategy": "Verificación ligera + evidencia real de comandos en la bitácora.",
+            "status": "pending",
+            "dependencies": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "subtasks": [],
+            "updatedAt": "2026-08-25T21:16:53.086Z",
+            "parentId": "219"
+          }
+        ],
+        "updatedAt": "2026-08-25T21:17:13.992Z"
       },
       {
         "id": "220",
@@ -10174,7 +10244,7 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-08-25T18:47:21.164Z",
+      "lastModified": "2026-08-25T21:17:13.992Z",
       "taskCount": 222,
       "completedCount": 135,
       "tags": [
