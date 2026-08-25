@@ -1,9 +1,15 @@
 ---
 tipo: estado
-actualizado: 2026-08-22
+actualizado: 2026-08-25
 ---
 
-## Hoy (2026-08-22) — La épica comercial está DESPLEGADA y APAGADA
+## Hoy (2026-08-25) — Panel admin M0+M1 en `main`: el bug del precio atorado está muerto
+
+**Módulo 041 (panel admin centro operativo) avanza: #217 (M0) y #218 (M1) mergeados a `main`** (PRs #104 y #105). El admin entra por el menú ⋮ del perfil, ve los 5 contadores vivos de colas, y la cola `/admin/revisions` ya lee y resuelve `property_revisions` vía `moderate-property` (que estrenó llamador): aprobar APLICA el snapshot (verificado E2E en preview-ads: 45,000→48,500), pedir cambios/rechazar exigen motivo en la UI. Lado publicador: bucket «En revisión» en Mis publicaciones + badge veraz `suspended`. #124 quedó redefinida y cerrada dentro de 218.4 (guardia TS↔SQL del whitelist de 16 columnas). Detalle en [[panel-admin]] y [[moderacion]].
+
+**Pendientes de release (decisión de Abraham, nada urge):** (1) **OTA a testers** — explícitamente pospuesto ("sin mandar OTA"); acumula #209–#212, #217, #218. (2) **Redeploy de `edit-property` a producción** — refactor interno sin cambio de comportamiento; sin OTA no hay llamador nuevo, cero urgencia. (3) Lo que sigue del módulo: **M2 #219** (centro de notificaciones — ahí nace el aviso al publicador con el motivo) → M3 #220 → M4 #221 → M5 #222 (incluye OTA + testing guiado).
+
+## Antes (2026-08-22) — La épica comercial está DESPLEGADA y APAGADA
 
 **Producción (`mvpvqmyhrrkwbnpctpuq`) ya tiene las 24 migraciones y las 3 Edge Functions de anuncios. `ads_enabled = false`.** Ese es el punto: la base quedó lista y **nadie nota nada**. Verificado tras aplicar — `ads_feed_config()` → `false`, 0 anuncios, 0 creativos, 24 propiedades intactas, `publish_property_atomic` con una sola versión de 20 args (sin overload ambiguo), aviso de privacidad v2.0 sembrado con `is_current = false`.
 
