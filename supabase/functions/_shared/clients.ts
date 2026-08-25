@@ -1554,11 +1554,14 @@ export function make_revision_finder(client: SupabaseClient): RevisionFinder {
 
 /**
  * Adaptador real de ModerationWriter (#130). UNA llamada a la RPC
- * moderate_property_atomic (20260809000007), que ejecuta en la MISMA
- * transacción: snapshot de la revisión sobre `properties` (semántica por
- * presencia de clave — el whitelist de columnas vive en la RPC, no aquí),
- * transición de status, resolución de property_revisions y el INSERT de
- * auditoría en admin_actions. Reemplaza a los tres adaptadores previos
+ * moderate_property_atomic (20260809000007, última definición vigente
+ * 20260815000005), que ejecuta en la MISMA transacción: snapshot de la
+ * revisión sobre `properties` (semántica por presencia de clave — el
+ * whitelist de columnas es de APLICACIÓN y vive en la RPC, no aquí;
+ * `_shared/property_field_whitelist.ts` guarda el espejo TS de ese mismo
+ * whitelist + el test de guardia TS↔SQL que los mantiene sincronizados —
+ * subtarea 218.4), transición de status, resolución de property_revisions y
+ * el INSERT de auditoría en admin_actions. Reemplaza a los tres adaptadores previos
  * (make_property_updater / make_revision_resolver / make_admin_action_recorder),
  * cuyos round-trips sueltos dejaban propiedades activas sin rastro de
  * auditoría cuando el último paso fallaba.
