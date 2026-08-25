@@ -150,9 +150,10 @@ function QueueRow({
   );
 }
 
-/** Las 5 colas del home admin (#217). Solo `ads_pending` navega (ruta real,
- * /admin/ads); el resto son informativas hasta #218-#221 (ponytail: sin
- * pantallas placeholder para rutas que aún no existen). */
+/** Las 5 colas del home admin (#217). `ads_pending` (/admin/ads, 208.3) y
+ * `revisions_pending` (/admin/revisions, 218.2) navegan; el resto son
+ * informativas hasta #219-#221 (ponytail: sin pantallas placeholder para
+ * rutas que aún no existen). */
 const QUEUE_ROW_DEFS: readonly {
   key: keyof AdminQueueCounts;
   label: string;
@@ -160,7 +161,7 @@ const QUEUE_ROW_DEFS: readonly {
   testID: string;
 }[] = [
   { key: 'ads_pending', label: 'Anuncios por revisar', navigable: true, testID: 'admin-ads-entry' },
-  { key: 'revisions_pending', label: 'Revisiones de ediciones', navigable: false, testID: 'admin-queue-revisions' },
+  { key: 'revisions_pending', label: 'Revisiones de ediciones', navigable: true, testID: 'admin-queue-revisions' },
   { key: 'reports_new', label: 'Reportes', navigable: false, testID: 'admin-queue-reports' },
   { key: 'agent_applications_pending', label: 'Solicitudes de agente', navigable: false, testID: 'admin-queue-agent-applications' },
   { key: 'agencies_pending', label: 'Inmobiliarias por aprobar', navigable: false, testID: 'admin-queue-agencies' },
@@ -224,6 +225,18 @@ export default function AdminAgencyListScreen(): React.ReactElement {
   const handle_ads_press = useCallback(() => {
     router.push('/admin/ads');
   }, [router]);
+
+  // 218.2: entrada a la cola de revisiones de ediciones.
+  const handle_revisions_press = useCallback(() => {
+    router.push('/admin/revisions');
+  }, [router]);
+
+  // Mapa key→handler para las filas navegables de QUEUE_ROW_DEFS — cada cola
+  // navega a su propia ruta (ads_pending y revisions_pending hoy).
+  const queue_row_handlers: Partial<Record<keyof AdminQueueCounts, () => void>> = {
+    ads_pending: handle_ads_press,
+    revisions_pending: handle_revisions_press,
+  };
 
   // ------ Estados de la pantalla ------
 
@@ -295,7 +308,7 @@ export default function AdminAgencyListScreen(): React.ReactElement {
           label={row.label}
           count={queue_counts?.[row.key]}
           is_unresolved={queues_loading || queues_error_message !== null}
-          on_press={row.navigable ? handle_ads_press : undefined}
+          on_press={row.navigable ? queue_row_handlers[row.key] : undefined}
           testID={row.testID}
         />
       ))}

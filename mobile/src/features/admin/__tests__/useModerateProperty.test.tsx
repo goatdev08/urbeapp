@@ -94,6 +94,13 @@
  *
  * ### 🔴 Integridad del cliente supabase-js
  * - (EC-19) no_desprende_functions_invoke_del_cliente
+ *
+ * ### onSuccess (218.2 — refuerzo pedido por el guardian de 218.1: la rama
+ * onSuccess de :160 quedó sin EC propio en el RED original; calca
+ * useSuspendAgency.test.tsx EC-14/15/16)
+ * - (EC-20) on_success_se_llama_solo_en_exito_de_moderate
+ * - (EC-21) on_success_no_se_llama_tras_error
+ * - (EC-22) on_success_es_opcional_sin_deps_onSuccess_no_truena
  */
 
 import { FunctionsHttpError } from '@supabase/supabase-js';
@@ -525,5 +532,59 @@ describe('useModerateProperty — 🔴 no desprender métodos de supabase-js (#2
     // falla mudo (nota supabase_js_metodo_desprendido). El mock lo detecta.
     expect(mock.was_detached()).toBe(false);
     expect(mock.calls).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// onSuccess (218.2 — refuerzo: la rama onSuccess de useModerateProperty.ts:160
+// quedó sin EC propio en el RED original de 218.1, anotado por el guardian).
+// Calca useSuspendAgency.test.tsx EC-14/15/16.
+// ---------------------------------------------------------------------------
+
+describe('useModerateProperty — onSuccess', () => {
+  it('EC-20 onSuccess se llama solo en éxito de moderate', async () => {
+    const on_success = jest.fn();
+    const mock = make_client(ok_invoke('active'));
+    const { result } = await renderHook(() =>
+      useModerateProperty({ supabase: mock.client, onSuccess: on_success }),
+    );
+
+    await act(async () => {
+      await result.current.moderate({ property_id: TEST_PROPERTY_ID, action: 'approve' });
+    });
+
+    expect(on_success).toHaveBeenCalledTimes(1);
+  });
+
+  it('EC-21 onSuccess NO se llama tras error', async () => {
+    const on_success = jest.fn();
+    const mock = make_client(failing_invoke('DB_ERROR', 500));
+    const { result } = await renderHook(() =>
+      useModerateProperty({ supabase: mock.client, onSuccess: on_success }),
+    );
+
+    await act(async () => {
+      await result.current.moderate({ property_id: TEST_PROPERTY_ID, action: 'approve' });
+    });
+
+    expect(on_success).not.toHaveBeenCalled();
+  });
+
+  it('EC-22 onSuccess es opcional: sin deps.onSuccess, un éxito no truena', async () => {
+    const mock = make_client(ok_invoke('active'));
+    const { result } = await renderHook(() => useModerateProperty({ supabase: mock.client }));
+
+    let res!: ModeratePropertyResult;
+    let threw: unknown = null;
+    await act(async () => {
+      try {
+        res = await result.current.moderate({ property_id: TEST_PROPERTY_ID, action: 'approve' });
+      } catch (e) {
+        threw = e;
+      }
+    });
+
+    expect(threw).toBeNull();
+    expect(res.ok).toBe(true);
   });
 });
