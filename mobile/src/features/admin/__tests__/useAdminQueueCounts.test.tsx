@@ -65,9 +65,15 @@
  *      ERROR, no como 0 (EC-8) — decisión de este RED: un 0 fabricado le
  *      miente al admin sobre el tamaño real de la cola.
  *   5. Respuesta tardía tras `unmount()` no debe hacer `setState` ni lanzar
- *      (EC-9).
+ *      (EC-9 — cobertura parcial, ver su comentario in situ).
  *   6. `refetch()` vuelve a disparar las 5 queries y refleja un count que
  *      cambió entre la carga inicial y el refetch (EC-5).
+ *   7. El flag `ignore` también descarta la respuesta tardía de una
+ *      generación VIEJA cuando el hook sigue MONTADO y ya hay una generación
+ *      NUEVA asentada — la vieja no puede pisar el estado de la nueva (EC-11,
+ *      hardening post-guardian: el mutante "borrar los 3 `if (ignore)
+ *      return;`" sobrevivía porque EC-9 solo prueba el caso desmontado, que
+ *      React 19 ya no-opea por sí solo).
  *
  * PATRÓN DE MOCK: `jest.mock('@/lib/supabase/client', ...)` con un holder
  * mutable `mock_supabase_holder` (mismo patrón que
@@ -97,6 +103,8 @@
  * - (EC-8) count_null_sin_error_se_trata_como_error_nunca_como_cero_fabricado
  * - (EC-9) respuesta_tardia_tras_unmount_no_hace_setstate_ni_lanza
  * - (EC-10) rechazo_de_promesa_en_una_query_tambien_cae_en_mensaje_neutro_sin_lanzar
+ * - (EC-11) respuesta_tardia_de_una_generacion_vieja_estando_montado_no_pisa_la_generacion_nueva
+ *   (hardening post-guardian, mutante M5 — ver comentario en el test)
  */
 
 import { renderHook, act } from '@testing-library/react-native';
@@ -365,6 +373,16 @@ describe('useAdminQueueCounts', () => {
   });
 
   // ── EC-9: respuesta tardía tras unmount ──────────────────────────────────
+  //
+  // LÍMITE CONOCIDO (hardening post-guardian, mutante M5): tras unmount(),
+  // `result.current` queda congelado en el último snapshot pre-unmount y
+  // React 19 hace no-op silencioso ante un setState sobre un fiber
+  // desmontado — con o sin el guard `if (ignore) return;`, este test pasa
+  // igual, así que NO distingue el código correcto del mutante que borra los
+  // 3 guards. Se conserva porque sí prueba algo real y barato: que la
+  // respuesta tardía no LANZA tras unmount. El invariante fuerte del flag
+  // `ignore` (que una generación vieja no pise el estado observable de una
+  // nueva) lo cubre EC-11, con el hook MONTADO durante toda la carrera.
 
   it('(EC-9) respuesta_tardia_tras_unmount_no_hace_setstate_ni_lanza: una query lenta que resuelve después de unmount no actualiza el estado congelado', async () => {
     let resolve_agencies!: (v: CountResult) => void;
@@ -416,5 +434,51 @@ describe('useAdminQueueCounts', () => {
     expect(thrown).toBeNull();
     expect(final_state?.error_message).toBe(NEUTRAL_ERROR_MESSAGE);
     expect(final_state?.counts).toBeNull();
+  });
+
+  // ── EC-11: carrera entre generaciones, hook MONTADO ──────────────────────
+
+  it('(EC-11) respuesta_tardia_de_una_generacion_vieja_estando_montado_no_pisa_la_generacion_nueva: la generación vieja no puede sobrescribir el estado ya asentado de la generación nueva', async () => {
+    // gen1: 4 de 5 resuelven, agencies queda pendiente (guardamos el resolve).
+    let resolve_agencies_gen1!: (v: CountResult) => void;
+    const pending_gen1 = new Promise<CountResult>((resolve) => {
+      resolve_agencies_gen1 = resolve;
+    });
+    mock_supabase_holder.client = make_supabase_mock({ agencies: pending_gen1 });
+
+    const { result } = await renderHook(() => useAdminQueueCounts());
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(result.current.is_loading).toBe(true);
+    expect(result.current.counts).toBeNull();
+
+    // gen2: swap del cliente ANTES del refetch — la nueva generación resuelve
+    // las 5 de inmediato, agencies = 99.
+    mock_supabase_holder.client = make_supabase_mock({ agencies: { count: 99, error: null } });
+
+    await act(async () => {
+      result.current.refetch();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(result.current.is_loading).toBe(false);
+    expect(result.current.error_message).toBeNull();
+    expect(result.current.counts).toEqual({ ...EXPECTED_DEFAULT_COUNTS, agencies_pending: 99 });
+
+    // Recién ahora resuelve la promesa tardía de gen1 — hook sigue montado.
+    await act(async () => {
+      resolve_agencies_gen1({ count: 4, error: null });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // Invariante: gen1 (vieja) no puede pisar el estado de gen2 (nueva).
+    expect(result.current.counts?.agencies_pending).toBe(99);
+    expect(result.current.is_loading).toBe(false);
+    expect(result.current.error_message).toBeNull();
   });
 });
