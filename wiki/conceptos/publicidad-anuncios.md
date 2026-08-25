@@ -116,6 +116,19 @@ El producto usa la palabra *vista* para dos números que **miden cosas distintas
 
 Ver también [[rls-seguridad]], [[feed-vertical-video]], [[privacidad-datos]].
 
+## El dashboard por anuncio (#212, 2026-08-24) — la vista Meta-style
+
+Sobre el mismo patrón de #171 pero POR anuncio: `ad_stats_totals` / `ad_stats_daily` /
+`ad_stats_zones` (`20260824000001`, desplegadas en producción) resuelven la agencia vía
+`ads.agency_id` y autorizan fail-closed igual que `ad_metrics_for_agency`. Dos decisiones
+propias: **D-DAILY-ELIGIBLE** (la serie diaria sale SOLO del crudo elegible — un mes
+congelado aporta 0 días aunque sí sume en totales/zonas vía monthly; sin umbral k porque
+no tiene dimensión geográfica) y **D-GRANULARIDAD-AD** (el k≥5 de zonas se evalúa por
+(ad, zona), nunca por (agencia, zona)). UI: `useAdStats` (todo-o-nada en error, «—»
+nunca 0 fabricado) + `AdDailyLineChart`/`AdZoneBarsChart` + lista con 3 métricas y
+detalle con selector Hoy/30días/Máximo — techo visual: `mobile/design-previews/212-dashboard-anuncios.html`
+(aprobado por Abraham). El gate de entrada es `can_advertise` **o** ≥1 anuncio.
+
 ## El panel del anunciante (#171) — solo agregados, y el umbral que lo hace honesto
 
 `ad_metrics_for_agency(p_agency_id, p_from?, p_to?)` es la única ruta por la que un
