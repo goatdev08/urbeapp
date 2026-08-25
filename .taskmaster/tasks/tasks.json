@@ -10039,13 +10039,81 @@
         "description": "Pantalla /admin/revisions: property_revisions pendientes con diff campo por campo (valor publicado → valor propuesto); approve / needs_changes / reject con motivo vía EF moderate-property. Pestañas de estado en «Mis publicaciones» para el publicador. Desatasca el bug vivo: hoy editar precio/dirección crea una revisión que nadie puede aprobar.",
         "details": "Origen: exploración 041 · bloque M1 · decisión 2 del grilling (la re-revisión §15.5 se mantiene: es antifraude, no depende de pagos). Modelo doble versión §15.6: la propiedad viva NUNCA se toca hasta aprobar; approve aplica changed_fields por whitelist y el status sigue active. Backend YA desplegado (property_revisions 20260809000003 + EF moderate-property) — esto es UI + hooks. ADOPTA: #136 (pestañas pending_review/needs_changes/rejected en Mis publicaciones) y #124 (hardening: unificar el whitelist de campos duplicado entre edit-property y moderate-property, de paso). Footprint: mobile/app/admin/revisions/*, mobile/src/features/admin/hooks/*, pantalla my-listings del perfil.",
         "testStrategy": "Hooks = CRÍTICA (TDD RNTL: DI del cliente, null en carga/error, coalescing, mensajes por mapa de códigos). Pantallas = ligeras. Smoke E2E en preview: editar precio → aparece en cola con diff → aprobar → precio nuevo visible en el detalle público; needs_changes/reject llegan al publicador con motivo.",
-        "status": "pending",
+        "status": "in-progress",
         "dependencies": [
           "217"
         ],
         "priority": "high",
-        "subtasks": [],
-        "updatedAt": "2026-08-24T23:04:32.029Z"
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Hooks de revisiones: useAdminRevisions + useModerateProperty (TDD)",
+            "description": "Lógica pura del bloque: useAdminRevisions lee property_revisions activas (pending|needs_changes) con datos de la propiedad para el diff (valor publicado vs changed_fields); useModerateProperty invoca la EF moderate-property (approve/needs_changes/reject con reason) y expone loading/error por mapa de códigos. Patrón useAdminQueueCounts/useAdStats: cliente encadenado sin desprender, todo-o-nada, ignore/generación, mensajes neutros.",
+            "details": "\n<info added on 2026-08-25T05:29:38.851Z>\nPLAN: useAdminRevisions (lectura: property_revisions activas pending|needs_changes con embed PostgREST a properties para el diff — RLS admin ya lo permite vía properties_select, sin RPC nueva) + useModerateProperty (mutación: functions.invoke('moderate-property') con action approve|needs_changes|reject + reason; mapa de códigos INVALID_INPUT/UNAUTHENTICATED/FORBIDDEN/PROPERTY_NOT_FOUND/INVALID_TRANSITION/NOTHING_TO_MODERATE/DB_ERROR → mensajes es-MX en revision_error_messages.ts, patrón org_advertising_error_messages) · decisión usuario: reason OBLIGATORIO en UI para needs_changes/reject (la EF lo deja opcional; el hook lo pasa siempre que venga) · agente=mobile · skills=urbea-expo,urbea-testing · criticidad=CRÍTICA (mobile/**/hooks/**) → TDD RNTL: RED con edge cases (carga, error, data null, generación vieja tardía tras refetch, códigos de la EF, cliente encadenado sin desprender) → GREEN → guardian · impacto-prod=sin riesgo (lecturas RLS existentes + primer llamador de EF ya desplegada, contrato fijo) · footprint=mobile/src/features/admin/hooks/useAdminRevisions.ts, useModerateProperty.ts, mobile/src/features/admin/revision_error_messages.ts, mobile/src/features/admin/__tests__/useAdminRevisions.test.tsx, useModerateProperty.test.tsx\n</info added on 2026-08-25T05:29:38.851Z>",
+            "testStrategy": "CRÍTICA (mobile/**/hooks/**): TDD RNTL estricto — RED con edge cases enumerados (carga, error, count/data null, respuesta tardía de generación vieja, códigos de error de la EF, refetch tras moderar), GREEN, guardian.",
+            "status": "in-progress",
+            "dependencies": [],
+            "subtasks": [],
+            "updatedAt": "2026-08-25T05:30:06.130Z",
+            "parentId": "218"
+          },
+          {
+            "id": 2,
+            "title": "Pantalla /admin/revisions: cola con diff campo a campo y acciones",
+            "description": "Ruta mobile/app/admin/revisions/index.tsx: lista de revisiones pendientes; cada una muestra la propiedad y el diff campo por campo (valor publicado → valor propuesto, solo los campos en changed_fields); acciones Aprobar / Pedir cambios / Rechazar (las dos últimas con motivo). Activa la navegación de la fila «Revisiones de ediciones» del home del panel (hoy fila informativa sin ruta). Refresca contadores/lista tras moderar.",
+            "details": "\n<info added on 2026-08-25T05:29:38.916Z>\nPLAN: pantalla mobile/app/admin/revisions/index.tsx — lista de revisiones activas; por revisión: propiedad (título/dirección) + diff campo a campo SOLO de las keys en changed_fields (valor publicado → valor propuesto); acciones Aprobar / Pedir cambios / Rechazar; las dos últimas exigen motivo (decisión usuario: obligatorio en UI). Tras moderar: refrescar lista (refetch) — el badge del home se refresca solo al volver (useAdminQueueCounts por montaje). Flip de la fila «Revisiones de ediciones» en mobile/app/admin/index.tsx:163 navigable:false→true + onPress router.push('/admin/revisions') (patrón fila ads_pending). Lenguaje visual: calcar app/admin/ads/index.tsx (pantalla utilitaria del panel, sin mockup propio) · agente=mobile · skills=urbea-expo · criticidad=NO (pantalla/presentación) → tsc+lint+tests del feature+smoke emulador con revisión sembrada vía edit-property en stack local · impacto-prod=sin riesgo (OTA-able, sin contrato nuevo) · footprint=mobile/app/admin/revisions/index.tsx (nuevo), mobile/app/admin/index.tsx (flip navegación), componente de diff en features/admin/components si hace falta\n</info added on 2026-08-25T05:29:38.916Z>",
+            "testStrategy": "NO crítica (pantalla): tsc + lint + tests del feature + smoke en emulador con una revisión sembrada en el stack local.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "subtasks": [],
+            "updatedAt": "2026-08-25T05:29:38.916Z",
+            "parentId": "218"
+          },
+          {
+            "id": 3,
+            "title": "Mis publicaciones: bucket «En revisión» + copy + acciones (#136)",
+            "description": "Adopta #136: pestaña/bucket «En revisión» en my-listings agrupando pending_review + needs_changes + rejected con conteo; corregir el copy del alert de éxito de step5 en modo creación (ya no dice «disponible en el feed» si nace en revisión); dar acciones del menú a esos estados (editar/eliminar); entrada suspended en STATUS_BADGE/CONTEXTUAL_SUBROW de PropertyListItem (badge es-MX, subfila que no mienta «Cerrada»).",
+            "details": "\n<info added on 2026-08-25T05:29:38.980Z>\nPLAN: adopta #136 RECORTADO por evidencia del analista: (a) bucket «En revisión» en my-listings agrupando pending_review+needs_changes+rejected con conteo (FilterTabs wrapper + is_in_review_bucket + filtered_listings); (b) entrada 'suspended' en STATUS_BADGE y CONTEXTUAL_SUBROW de PropertyListItem (hoy cae a fallback inglés + subfila «Cerrada» mentirosa); (c) PropertyActionMenu: VERIFICAR solamente — Editar/Eliminar ya son incondicionales (get_actions L81/L96), probablemente cero diff. FUERA DE ALCANCE (decidido con evidencia): el copy del alert de step5 NO se toca — hoy publicar nace 'active' (decisión 0010/#153, re-scope de #136 que lo cedió a #152 y #152 cerró sin trabajo); el copy actual es correcto · agente=mobile · skills=urbea-expo · criticidad=NO (pantallas/componentes) → tsc+lint+tests existentes del feature+smoke visual · impacto-prod=sin riesgo (agrupación visual + copy, OTA-able) · footprint=mobile/src/features/profile/components/FilterTabs.tsx, mobile/app/(protected)/profile/my-listings.tsx, mobile/src/features/profile/components/PropertyListItem.tsx (+ PropertyActionMenu.tsx solo si la verificación lo desmiente)\n</info added on 2026-08-25T05:29:38.980Z>",
+            "testStrategy": "NO crítica (pantallas/componentes): tsc + lint + tests existentes del feature + smoke visual.",
+            "status": "pending",
+            "dependencies": [],
+            "subtasks": [],
+            "updatedAt": "2026-08-25T05:29:38.980Z",
+            "parentId": "218"
+          },
+          {
+            "id": 4,
+            "title": "Whitelist compartido edit-property ↔ moderate-property (#124, TDD Deno)",
+            "description": "Adopta #124: factorizar el whitelist de campos editables a supabase/functions/_shared (EDITABLE_PROPERTY_FIELDS + project_property_fields()) e importarlo desde ambas EFs, eliminando la copia duplicada. Cero cambio de contrato observable; requiere redeploy de edit-property y moderate-property tras el merge.",
+            "details": "\n<info added on 2026-08-25T05:29:39.046Z>\nPLAN (REDEFINE el brief heredado de #124 — decisión usuario 2026-08-24): la duplicación TS↔TS ya NO existe (desde #130/migración 20260809000007+20260815000005 el whitelist de aplicación vive en SQL dentro de la RPC moderate_property_atomic; _shared/clients.ts lo documenta). Enfoque elegido: TEST DE GUARDIA TS↔SQL sin migración — (1) factorizar el whitelist de edit-property a supabase/functions/_shared/property_field_whitelist.ts (fuente única TS), edit-property/handler.ts lo importa; (2) test Deno que parsea la(s) migración(es) de la RPC (lista CASE WHEN p_changed_fields ? '<col>') y compara conjuntos exactos contra el whitelist TS — si divergen, la suite truena con el diff de columnas. Cero migraciones, cero cambio de contrato observable; redeploy de edit-property post-merge (moderate-property no se toca en TS). Actualizar el comentario cruzado en _shared/clients.ts si aplica · agente=supabase · skills=urbea-supabase,urbea-testing · criticidad=CRÍTICA (supabase/functions/**) → TDD Deno: RED = test de igualdad de conjuntos que falla contra el estado actual (whitelist inline) o por módulo inexistente → GREEN factoriza → guardian · impacto-prod=sin riesgo (refactor aditivo TS-only; redeploy edit-property post-merge, sin OTA implicada — no cambia contrato observable) · footprint=supabase/functions/_shared/property_field_whitelist.ts (nuevo), supabase/functions/_shared/property_field_whitelist.test.ts (nuevo), supabase/functions/edit-property/handler.ts (importar), supabase/functions/_shared/clients.ts (comentario)\n</info added on 2026-08-25T05:29:39.046Z>",
+            "testStrategy": "CRÍTICA (supabase/functions/**): TDD Deno — test que fija que ambas EFs proyectan exactamente el mismo conjunto de columnas; las suites existentes de ambas EFs siguen verdes sin tocar sus asserts.",
+            "status": "pending",
+            "dependencies": [],
+            "subtasks": [],
+            "updatedAt": "2026-08-25T05:29:39.046Z",
+            "parentId": "218"
+          },
+          {
+            "id": 5,
+            "title": "Cierre: verificación completa, smoke E2E del flujo y gate §0.5",
+            "description": "Suite completa (pnpm tsc, lint, pnpm test, deno test de EFs), smoke E2E en emulador contra stack local: editar precio como owner → aparece en /admin/revisions con diff → aprobar → precio nuevo en el detalle → needs_changes/reject visibles para el publicador en «En revisión». Gate de producción viva §0.5 (sin migraciones nuevas; redeploy de EFs = post-merge). Ingest al vault (panel-admin, moderacion, mapa-codebase, log).",
+            "details": "\n<info added on 2026-08-25T05:29:39.112Z>\nPLAN: cierre de #218 — (1) verificación completa: cd mobile && pnpm tsc --noEmit, pnpm lint, pnpm test (suite completa), deno test de las EFs tocadas (edit-property + _shared); (2) smoke E2E en emulador contra stack local: editar precio como owner (genera la revisión vía edit-property — NO seed SQL, ejercita el flujo real; no hay script previo, es trabajo de esta subtarea) → cola /admin/revisions muestra el diff → aprobar → precio nuevo en el detalle público → needs_changes/reject visibles en el bucket «En revisión» del publicador con motivo; regla de cuota: navegar fuera del feed al aterrizar, estacionar la app fuera del feed al terminar; (3) gate §0.5: cero migraciones nuevas (confirmado por diseño de 218.4), cero contratos rotos (moderate-property estrena llamador — ningún build instalado dependía de otro contrato), redeploy de edit-property anotado como paso post-merge; (4) ingest: wiki/conceptos/panel-admin.md (+moderacion.md: la EF ya tiene llamador, el bug del precio atorado muere aquí), mapa-codebase.md, wiki/log.md · agente=mobile (orquestador puede ejecutar directo como en 217.4) · skills=urbea-expo,urbea-supabase,urbea-testing · criticidad=NO · impacto-prod=redeploy edit-property post-merge; todo lo demás OTA-able · footprint=wiki/** + evidencia en bitácora\n</info added on 2026-08-25T05:29:39.112Z>",
+            "testStrategy": "Verificación ligera + evidencia real de comandos en la bitácora.",
+            "status": "pending",
+            "dependencies": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "subtasks": [],
+            "updatedAt": "2026-08-25T05:29:39.112Z",
+            "parentId": "218"
+          }
+        ],
+        "updatedAt": "2026-08-25T05:30:06.130Z"
       },
       {
         "id": "219",
@@ -10106,7 +10174,7 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-08-25T04:34:03.436Z",
+      "lastModified": "2026-08-25T05:30:06.130Z",
       "taskCount": 222,
       "completedCount": 134,
       "tags": [
