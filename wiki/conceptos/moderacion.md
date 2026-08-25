@@ -2,20 +2,20 @@
 tipo: concepto
 dominio: producto
 estado: vivo
-fuentes: [docs/PRD.md §14-16, .taskmaster (tarea #73)]
+fuentes: [docs/PRD.md §14-16, .taskmaster (tareas #73, #153, #217), wiki/decisiones/0010-prd-canonico-beta-sin-pagos.md, .taskmaster/docs/exploraciones/041-panel-admin-centro-operativo.md]
 codigo: [supabase/migrations/20260809000002_property_status_operational_values.sql, supabase/migrations/20260809000003_property_revisions.sql, supabase/migrations/20260809000004_property_video_slots.sql, supabase/migrations/20260809000005_publish_property_atomic_video_slot.sql, supabase/functions/publish-property/, supabase/functions/edit-property/, supabase/functions/moderate-property/, supabase/functions/update-property-status/, supabase/tests/36_property_status_operational_test.sql, supabase/tests/37_property_revisions_test.sql, supabase/tests/38_property_video_slots_test.sql, mobile/app/(protected)/publish/step{1..5}.tsx, mobile/src/features/publish/hooks/useDraftAutosave.ts, mobile/src/features/profile/components/PropertyListItem.tsx]
-actualizado: 2026-08-09
+actualizado: 2026-08-24
 ---
 
 # Moderación
 
-> En beta, **toda publicación pasa por revisión manual** de un admin antes de ser pública. Sin cola/panel visual todavía — el admin transiciona por Supabase Studio o SQL directo (el panel web es Ola 3). El pipeline y la máquina de estados sí son código real (tarea #73, PRD §14-16).
+> **En beta, publicar es DIRECTO: la propiedad nace `active`, sin revisión previa** (#153, 2026-08-11; ratificado por la decisión [[0010-prd-canonico-beta-sin-pagos]]: el §15.1 del PRD queda **suspendido durante la beta** y regresa post-beta junto con los pagos). Lo que **SÍ sigue vigente** es la re-revisión de EDICIONES (§15.5/§15.6): `edit-property` escribe `property_revisions`, y la UI que lee/aprueba esas revisiones nace en la tarea **#218** (cola `/admin/revisions` del [[panel-admin]]) — hasta entonces la EF `moderate-property` está desplegada **sin llamador**. El pipeline y la máquina de estados son código real (tarea #73, PRD §14-16), listos para el re-flip post-beta.
 
 ## Máquina de estados (`property_status`, 17 valores)
 Enum extendido en `20260809000002` (aditivo puro, migración SOLA por el gotcha `ALTER TYPE ADD VALUE` + uso en la misma transacción). Los 7 originales del MVP (`draft, pending_review, needs_changes, active, paused, closed, suspended`) + 10 operativos del PRD §15.4: `uploading_media, media_failed, pending_payment, approved, expired, rented, sold, rejected, deleted_soft, deleted_hard`. `closed` se mantiene vivo solo para filas históricas (`closed_reason` incluye `withdrawn`, que el modelo nuevo no contempla); código nuevo ya no lo escribe.
 
 Solo una parte del grafo completo del PRD está cableada hoy (lo que #73 implementó):
-- `draft → pending_review` (publicar, EF `publish-property`) → `active | needs_changes | rejected` (EF `moderate-property`, sin revisión activa).
+- `draft → active` **directo al publicar** (EF `publish-property`, desde #153 — el handler manda `property_status='active'`, marcado `ponytail:` como flip temporal). El camino con revisión previa `draft → pending_review → active | needs_changes | rejected` (EF `moderate-property`, sin revisión activa) sigue cableado y probado, **dormido durante la beta** — el re-flip a `'pending_review'` regresa post-beta con los pagos (decisión 0010).
 - `active → suspended` (fraude/reporte, inmediato, EF `moderate-property` acción `suspend`) — bloqueado si el estado ya es terminal (`sold`, `rented`, `deleted_hard`, `deleted_soft`).
 - `active | paused | approved → rented | sold` (cierre manual, EF `update-property-status`) — **terminales, sin reapertura en MVP** (`VALID_TRANSITIONS[rented] = []`).
 - `active → paused → active` (pausar/reanudar, sin re-revisión).
@@ -28,7 +28,7 @@ Antes de invocar al publisher, dos checkers en orden fijo (si el primero falla, 
 1. **`videoStatusChecker`** — el video (`cloudflare_uid` + `agent_id` del caller verificado, nunca del payload) debe existir, estar `status='ready'` y durar entre **60 y 120 segundos INCLUSIVE**. Códigos: `VIDEO_NOT_FOUND`=404, `VIDEO_NOT_READY`=409, `VIDEO_DURATION_INVALID`=400.
 2. **`duplicatePropertyChecker`** — firma de duplicado: mismo `owner_user_id` + misma `address` normalizada (`lower(trim())` en ambos lados, evita comportamiento raro de `ilike`) ya publicada con `status NOT IN (rejected, deleted_soft, deleted_hard)` (una rechazada o eliminada no cuenta — el agente puede resubir). `DUPLICATE_PROPERTY`=409.
 
-Si ambos pasan, `propertyPublisher.publish()` llama la RPC `publish_property_atomic` (SECURITY DEFINER) que en una sola transacción: inserta `properties` con `status='pending_review'` (parámetro `p_property_status`, ya no hardcodeado), enlaza el video en vuelo (`property_videos.property_id`) y crea la fila en `property_video_slots` (abstracción de vigencia, ver [[propiedades-y-video]] §Ola 1). 201 → `{property_id}`.
+Si ambos pasan, `propertyPublisher.publish()` llama la RPC `publish_property_atomic` (SECURITY DEFINER) que en una sola transacción: inserta `properties` con el status del parámetro `p_property_status` (**desde #153 la EF manda `'active'`** — publicar directo en beta; el re-flip a `'pending_review'` es un cambio de una línea en el handler), enlaza el video en vuelo (`property_videos.property_id`) y crea la fila en `property_video_slots` (abstracción de vigencia, ver [[propiedades-y-video]] §Ola 1). 201 → `{property_id}`.
 
 ## `property_revisions` — doble versión (PRD §15.6, migración `20260809000003`)
 La propiedad **viva** (`properties`, lo que el feed/detalle público lee) y su **revisión pendiente** (`property_revisions`) coexisten sin pisarse. Invariante 🔒: a lo más **una** revisión activa (`status IN pending, needs_changes`) por propiedad — índice único parcial. `changed_fields` guarda el payload COMPLETO del editor (críticos y no-críticos juntos, se aplican todos al aprobar). Escritura exclusiva de `service_role` — sin policies de INSERT/UPDATE para `authenticated`, la única puerta de entrada es la EF `edit-property`.
@@ -48,14 +48,14 @@ Decisión de diseño: **no** 4 EFs separadas (`approve`/`needs_changes`/`reject`
 - **`approve`/`needs_changes`/`reject`**, con revisión activa (`property_revisions.status IN pending, needs_changes`):
   - `approve` → aplica `changed_fields` sobre `properties` vía un **whitelist explícito** de columnas editables (`project_property_snapshot_fields` en `_shared/clients.ts` — 12 campos + `location` condicional; **nunca spread crudo**, ver defecto #3 abajo), `properties.status` **no cambia** (sigue `active`); revisión → `approved`.
   - `needs_changes`/`reject` → solo tocan la revisión (`status` + `rejection_reason`), `properties` intacta.
-- **Sin revisión activa** (publicación inicial): exige `properties.status='pending_review'` (si no, `NOTHING_TO_MODERATE` 400) y transiciona `properties.status` directo: `approve→active`, `needs_changes→needs_changes`, `reject→rejected`.
+- **Sin revisión activa** (publicación inicial): exige `properties.status='pending_review'` (si no, `NOTHING_TO_MODERATE` 400) y transiciona `properties.status` directo: `approve→active`, `needs_changes→needs_changes`, `reject→rejected`. ⚠️ Rama **dormida durante la beta**: con #153 vigente ninguna propiedad llega a `pending_review`.
 - **TODAS** las ramas exitosas registran en `admin_actions` (append-only, inmutable, migración 0007) — `action_type`=la acción, `old_values`/`new_values`={status} o {revision_status} según la rama, nunca ambos. El fallo de auditoría también es 500 (no best-effort — si no se pudo auditar, la operación no cuenta como completa).
 
 ## Cierre y baja (§16.1, EF `update-property-status`, tarea 73.8)
 `rented`/`sold` son `new_status` **directo** (autodescriptivo, sin `closed_reason`) desde `active`/`paused`/`approved` — **terminales, sin reapertura en MVP** (`VALID_TRANSITIONS[rented] = VALID_TRANSITIONS[sold] = []`). El camino viejo `closed`+`closed_reason` (`rented`/`sold`/`withdrawn`/`expired`) sigue vivo para no-regresión pero código nuevo usa directamente `rented`/`sold`.
 
-## Reportes (`property_reports`) — sigue diferido
-No forma parte de la Ola 1 (#73). La tabla existe desde migración `0007` (`reason`: not_exist_fraud, misleading, false_price, wrong_address, inappropriate, duplicate, other; `status`: new, reviewing, resolved, dismissed; 🔒 1 reporte por (property, user)) pero sin flujo ni auto-suspensión a 3 reportes/24h. Pendiente de ola futura.
+## Reportes (`property_reports`) — entra con el módulo panel-admin
+No formó parte de la Ola 1 (#73). La tabla existe desde migración `0007` (`reason`: not_exist_fraud, misleading, false_price, wrong_address, inappropriate, duplicate, other; `status`: new, reviewing, resolved, dismissed; 🔒 1 reporte por (property, user)) pero sin flujo ni auto-suspensión a 3 reportes/24h. **El flujo completo (§24: botón Reportar, cola `/admin/reports`, auto-suspensión 3 reportes/24h) llega en la tarea #220** (bloque M3 del módulo 041, ver [[panel-admin]]).
 
 ## 🔴 Los 3 defectos críticos que el guardian encontró contra la DB real (tarea #73, lección de proceso)
 Los tres pasaron TODA la suite mockeada en verde y solo aparecieron al verificar contra el stack local real — ninguno lo hubiera cazado un test contra dobles/fakes:
@@ -66,7 +66,7 @@ Los tres pasaron TODA la suite mockeada en verde y solo aparecieron al verificar
 **Heurística que deja la lección** (aplicable a futuros adaptadores "delgados"): la pregunta correcta para decidir si un adaptador necesita test contra schema real no es *"¿es una sola sentencia SQL?"* sino *"¿transforma o proyecta datos cuyo shape define otro componente?"* — los adaptadores que solo pasan parámetros tal cual (wrappers de una query obvia) estuvieron siempre correctos; los que proyectaban/transformaban (el cableo params→RPC de #1, el parser EWKB de #2, el whitelist de #3) fueron exactamente los que tenían el bug.
 
 ## Detalle exhaustivo
-- `docs/PRD.md` §14 (wizard+autosave), §15 (moderación, pipeline, estados, re-revisión, visibilidad), §16 (cierre) · migraciones `20260809000002`-`20260809000005` · [[db-schema-map]]
+- `docs/PRD.md` §14 (wizard+autosave), §15 (moderación, pipeline, estados, re-revisión, visibilidad — **§15.1 suspendido en beta**, ver `wiki/decisiones/0010-prd-canonico-beta-sin-pagos.md`), §16 (cierre) · migraciones `20260809000002`-`20260809000005` · [[db-schema-map]]
 
 ## Relacionados
-[[propiedades-y-video]] · [[rls-seguridad]] · [[notificaciones]]
+[[propiedades-y-video]] · [[panel-admin]] · [[rls-seguridad]] · [[notificaciones]] · [[0010-prd-canonico-beta-sin-pagos]]
