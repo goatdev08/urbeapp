@@ -1,13 +1,15 @@
 /**
  * FilterTabs — tabs de filtro horizontal para "Mis publicaciones".
  *
- * Tabs: Todas / Activas / Pausadas / Cerradas (es-MX).
+ * Tabs: Todas / Activas / Pausadas / En revisión / Cerradas (es-MX).
  * Filtrado client-side: el padre mantiene el estado y pasa `value` + `on_change`.
  *
- * Decisión sobre `draft`:
- *   `draft`, `pending_review`, `needs_changes` y `suspended` no tienen tab propio.
- *   Caen bajo "Todas" únicamente. El mockup (pantalla 9) no muestra tab Draft,
- *   y el plan lo confirma. Si en el futuro se necesita, se añade aquí.
+ * Decisión sobre `draft` / `suspended` (#218.3, adopta #136):
+ *   `pending_review`, `needs_changes` y `rejected` SÍ tienen tab propio ("En
+ *   revisión", bucket agregado — ver my-listings.tsx `is_in_review_bucket`).
+ *   `draft` y `suspended` siguen SIN tab propio; caen bajo "Todas" únicamente.
+ *   El mockup (pantalla 9) no muestra tab Draft, y el plan lo confirma. Si en
+ *   el futuro se necesita uno para ellos, se añade aquí.
  *
  * Refactorizado en 15.7: delega el renderizado al FilterTabs genérico de
  * src/components/. Mantiene la misma API pública (value, on_change, counts)
@@ -26,7 +28,7 @@ import { FilterTabs as GenericFilterTabs } from '@/components/FilterTabs';
 // ---------------------------------------------------------------------------
 
 /** Valores de filtro de esta pantalla. */
-export type FilterValue = 'all' | 'active' | 'paused' | 'closed';
+export type FilterValue = 'all' | 'active' | 'paused' | 'in_review' | 'closed';
 
 export interface FilterTabsProps {
   /** Valor seleccionado actualmente. */
@@ -45,10 +47,11 @@ export interface FilterTabsProps {
 // ---------------------------------------------------------------------------
 
 const TABS: { value: FilterValue; base_label: string }[] = [
-  { value: 'all',    base_label: 'Todas' },
-  { value: 'active', base_label: 'Activas' },
-  { value: 'paused', base_label: 'Pausadas' },
-  { value: 'closed', base_label: 'Cerradas' },
+  { value: 'all',        base_label: 'Todas' },
+  { value: 'active',     base_label: 'Activas' },
+  { value: 'paused',     base_label: 'Pausadas' },
+  { value: 'in_review',  base_label: 'En revisión' },
+  { value: 'closed',     base_label: 'Cerradas' },
 ];
 
 // ---------------------------------------------------------------------------

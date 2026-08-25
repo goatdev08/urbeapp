@@ -91,25 +91,34 @@ export default function MyListingsScreen() {
   const is_closed_bucket = (status: ListingItem['status']) =>
     status === 'closed' || status === 'rented' || status === 'sold';
 
+  // #218.3 (adopta #136): bucket "En revisión" agrupa los 3 status que
+  // dependen de una decisión del equipo (pipeline dormido en beta salvo
+  // re-revisión de ediciones, ver [[moderacion]]) — análogo a is_closed_bucket.
+  const is_in_review_bucket = (status: ListingItem['status']) =>
+    status === 'pending_review' || status === 'needs_changes' || status === 'rejected';
+
   /** Conteos calculados sobre el array completo (no el filtrado). */
   const counts: Record<FilterValue, number> = {
-    all:    listings.length,
-    active: listings.filter((i) => i.status === 'active').length,
-    paused: listings.filter((i) => i.status === 'paused').length,
-    closed: listings.filter((i) => is_closed_bucket(i.status)).length,
+    all:       listings.length,
+    active:    listings.filter((i) => i.status === 'active').length,
+    paused:    listings.filter((i) => i.status === 'paused').length,
+    in_review: listings.filter((i) => is_in_review_bucket(i.status)).length,
+    closed:    listings.filter((i) => is_closed_bucket(i.status)).length,
   };
 
   /**
    * Array filtrado que recibe el FlatList.
-   * 'all' muestra TODOS los items (draft/pending_review/needs_changes/suspended
-   * también aparecen aquí — no tienen tab propio; ver FilterTabs.tsx §decisión).
+   * 'all' muestra TODOS los items (draft/suspended también aparecen aquí —
+   * no tienen tab propio; ver FilterTabs.tsx §decisión).
    */
   const filtered_listings: ListingItem[] =
     active_filter === 'all'
       ? listings
       : active_filter === 'closed'
         ? listings.filter((i) => is_closed_bucket(i.status))
-        : listings.filter((i) => i.status === active_filter);
+        : active_filter === 'in_review'
+          ? listings.filter((i) => is_in_review_bucket(i.status))
+          : listings.filter((i) => i.status === active_filter);
 
   // ── Menú de tres puntos (17.4) ───────────────────────────────────────────
   // null = cerrado; MyProperty = abierto para ese item

@@ -12,6 +12,7 @@
  *   pending_review  → primary_tint bg + primary     ("En revisión")     — #73.7 (§15.3)
  *   needs_changes   → accent_tint bg + accent       ("Cambios solicitados") — #73.7
  *   rejected        → danger bg + blanco            ("Rechazada")       — #73.7
+ *   suspended       → danger bg + blanco            ("Suspendida")      — #218.3
  *   (otros status del enum extendido en #73.1: fallback genérico humanizado,
  *   ver `humanize_status` — no se agregan todos los 17 valores hasta que una
  *   subtarea los use realmente, p.ej. 73.6/73.9).
@@ -20,6 +21,7 @@
  *   active/draft                          → 4 contadores reales (view, like, save, contact)
  *   paused                                 → "Sin visibilidad en el feed"
  *   pending_review/needs_changes/rejected → texto contextual propio (#73.7)
+ *   suspended                              → texto contextual propio, NO "Cerrada" (#218.3)
  *   closed (y cualquier otro status)      → closed_reason traducido o "Cerrada" como fallback
  *
  * ponytail: íconos como Text unicode (react-native-svg no instalado); sin animaciones.
@@ -61,6 +63,11 @@ const STATUS_BADGE: Record<string, BadgeConfig> = {
   // terminales, pero con copy propio en vez del fallback humanizado en inglés.
   rented: { label: 'Rentada', bg: colors.accent_deep, text: '#FFFFFF' },
   sold:   { label: 'Vendida', bg: colors.accent_deep, text: '#FFFFFF' },
+  // #218.3 — suspensión administrativa inmediata (fraude/reporte, EF
+  // moderate-property acción `suspend`, ver [[moderacion]] §Excepción 15.6).
+  // Mismo tratamiento visual que "Rechazada" (danger) — precedente
+  // agency_status_labels.ts, donde suspended/rejected comparten rojo.
+  suspended: { label: 'Suspendida', bg: colors.danger, text: '#FFFFFF' },
 };
 
 /**
@@ -93,6 +100,10 @@ const CONTEXTUAL_SUBROW: Record<string, string> = {
   pending_review: 'Esperando aprobación del equipo',
   needs_changes:  'Revisa los cambios solicitados',
   rejected:       'No se aprobó — puedes editarla y reenviarla',
+  // #218.3 — oculta del feed de inmediato por decisión del equipo (fraude o
+  // reporte, ver [[moderacion]]); texto propio para no caer en el fallback
+  // "Cerrada" (mentiroso: no fue el agente quien la cerró).
+  suspended:      'Suspendida por el equipo — oculta del feed',
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
