@@ -10012,10 +10012,10 @@
             "description": "Corregir conceptos/moderacion.md y propiedades-y-video.md (la revisión previa está suspendida — decisión 0010); banner de retiro en PRD-beta.md y PRD-MVP-demo.md; addendum §22.x (notificaciones al admin, catálogo v1 de 041) en docs/PRD.md; crear wiki/conceptos/panel-admin.md.",
             "details": "PLAN: footprint wiki/conceptos/*, docs/PRD*.md · agente=orquestador o general · criticidad=NO (docs) · impacto-prod=ninguno. El addendum al PRD reproduce el catálogo v1 tal cual quedó aprobado en la exploración 041 — sin inventar eventos nuevos.\n<info added on 2026-08-25T04:23:23.550Z>\nHECHO 217.3 — verdad documental (agente general, verificación ligera; docs/wiki solamente, cero código).\n\nArchivos (6):\n1. wiki/conceptos/moderacion.md — corregida completa: en beta publicar nace `active` (#153, decisión 0010, §15.1 suspendido, regresa post-beta con pagos); re-revisión de EDICIONES (§15.5/§15.6) explícitamente VIGENTE; `moderate-property` desplegada sin llamador hasta #218; grafo de estados corregido (`draft → active` directo, camino `pending_review` cableado pero dormido); `publish_property_atomic` verificado contra publish-property/handler.ts:288 (manda 'active'); Reportes ahora apunta a #220/M3; enlaces [[panel-admin]] y [[0010-prd-canonico-beta-sin-pagos]].\n2. wiki/conceptos/propiedades-y-video.md — DOS instancias del texto falso (flujo del wizard ~L37 y bullet Ola 1 ~L86), ambas corregidas apuntando a [[moderacion]].\n3. docs/PRD-beta.md — banner 🔴 DOCUMENTO RETIRADO (2026-08-24) tras el título, cita decisión 0010, fuente de verdad = docs/PRD.md; Estado → retirado. Contenido histórico intacto.\n4. docs/PRD-MVP-demo.md — mismo banner; Estado → retirado.\n5. docs/PRD.md — addendum `### 22.4` insertado en L1079 (tras §22.3): catálogo v1 fiel del doc 041 — 7 eventos con type y deep link (admin_ad_pending→/admin/ads, admin_revision_pending→/admin/revisions, admin_report_new y admin_report_autosuspend→/admin/reports, admin_agent_application / admin_agency_pending / admin_advertising_request→/admin/requests), nota de escritor/idempotencia, transporte en beta = badges + centro in-app (push fase 2), referencias a 0010 y 041. Nada más del PRD tocado.\n6. wiki/conceptos/panel-admin.md — NUEVA (formato hermano de publicidad-anuncios.md, estado: vivo): qué es (centro operativo, módulo 041, #217–#222), cómo se llega (entrada ⋮ de 217.1 + deep link urbea://admin, scheme verificado en app.config.js:27), qué contiene hoy (agencias + sección «Colas» con useAdminQueueCounts todo-o-nada sin RPC, RLS private.is_admin(); /admin/ads), M1–M5 una línea por bloque, enlaces.\n\nVerificación (salida real): grep -i \"toda publicación pasa|revisión manual|pasa por revisión\" sobre las 2 páginas corregidas → 0 coincidencias (exit 1); las únicas menciones vigentes de revisión son la re-revisión de ediciones (viva).\n\nPendiente anotado para 217.4: mapa-codebase.md + log.md (ingest) y revisar si wiki/estado/estado-actual.md aún carga la referencia podrida a «#141 UI de moderación».\n</info added on 2026-08-25T04:23:23.550Z>",
             "testStrategy": "Revisión de consistencia: ninguna página del vault vuelve a afirmar que publicar pasa por revisión previa; los tres docs enlazan a 0010/041.",
-            "status": "in-progress",
+            "status": "done",
             "dependencies": [],
             "subtasks": [],
-            "updatedAt": "2026-08-25T04:23:23.550Z",
+            "updatedAt": "2026-08-25T04:23:26.304Z",
             "parentId": "undefined"
           },
           {
@@ -10024,14 +10024,14 @@
             "description": "Suites completas + smoke del recorrido (menú → panel → badges cuadran) + ingest (mapa-codebase, log) + gate §0.5 + PR.",
             "details": "PLAN: agente=orquestador · criticidad=NO · impacto-prod=migración de 217.2 (si existe) se despliega a preview-ads y producción con sonda pasiva, patrón 212.6.",
             "testStrategy": "pnpm tsc + lint + pnpm test verdes; capturas del emulador con badges reales de la rama preview; sonda pasiva en producción.",
-            "status": "pending",
+            "status": "in-progress",
             "dependencies": [],
             "subtasks": [],
-            "updatedAt": "2026-08-25T02:41:54.823Z",
+            "updatedAt": "2026-08-25T04:23:28.223Z",
             "parentId": "undefined"
           }
         ],
-        "updatedAt": "2026-08-25T04:23:23.550Z"
+        "updatedAt": "2026-08-25T04:23:28.223Z"
       },
       {
         "id": "218",
@@ -10106,7 +10106,7 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-08-25T04:18:30.604Z",
+      "lastModified": "2026-08-25T04:23:28.223Z",
       "taskCount": 222,
       "completedCount": 133,
       "tags": [
