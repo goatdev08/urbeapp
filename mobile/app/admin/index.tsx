@@ -27,6 +27,10 @@ import { supabase } from '@/lib/supabase/client';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import type { Database } from '@/types/database';
 import { agency_status_color, format_agency_status } from '@/features/admin/agency_status_labels';
+import {
+  useAdminQueueCounts,
+  type AdminQueueCounts,
+} from '@/features/admin/hooks/useAdminQueueCounts';
 
 // ---------------------------------------------------------------------------
 // Tipos
@@ -81,6 +85,88 @@ function AgencyCard({ item, on_press }: AgencyCardProps): React.ReactElement {
 }
 
 // ---------------------------------------------------------------------------
+// Subcomponente: fila de cola (217.2)
+//
+// Reusa el patrón visual ya existente en esta pantalla (antes solo la fila
+// "Anuncios por revisar", ver git blame): tarjeta con borde sutil, texto +
+// indicador a la derecha. Solo la fila con `on_press` navega (chevron
+// visible); las demás son informativas — sus pantallas llegan en #218-#221.
+// ---------------------------------------------------------------------------
+
+interface QueueRowProps {
+  label: string;
+  count: number | undefined;
+  /** true mientras carga O si el hook falló (todo-o-nada) — se muestra "—". */
+  is_unresolved: boolean;
+  on_press?: (() => void) | undefined;
+  testID: string;
+}
+
+function QueueRow({
+  label,
+  count,
+  is_unresolved,
+  on_press,
+  testID,
+}: QueueRowProps): React.ReactElement {
+  const indicator = is_unresolved ? (
+    <Text style={styles.queue_count_placeholder}>—</Text>
+  ) : count !== undefined && count > 0 ? (
+    <View style={styles.queue_badge}>
+      <Text style={styles.queue_badge_text}>{count}</Text>
+    </View>
+  ) : null;
+
+  const content = (
+    <>
+      <Text style={styles.ads_entry_text}>{label}</Text>
+      <View style={styles.queue_row_right}>
+        {indicator}
+        {on_press !== undefined && (
+          <Text style={styles.ads_entry_chevron}>›</Text>
+        )}
+      </View>
+    </>
+  );
+
+  if (on_press !== undefined) {
+    return (
+      <Pressable
+        style={({ pressed }) => [styles.ads_entry, pressed && styles.card_pressed]}
+        onPress={on_press}
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        testID={testID}
+      >
+        {content}
+      </Pressable>
+    );
+  }
+
+  return (
+    <View style={styles.ads_entry} testID={testID}>
+      {content}
+    </View>
+  );
+}
+
+/** Las 5 colas del home admin (#217). Solo `ads_pending` navega (ruta real,
+ * /admin/ads); el resto son informativas hasta #218-#221 (ponytail: sin
+ * pantallas placeholder para rutas que aún no existen). */
+const QUEUE_ROW_DEFS: readonly {
+  key: keyof AdminQueueCounts;
+  label: string;
+  navigable: boolean;
+  testID: string;
+}[] = [
+  { key: 'ads_pending', label: 'Anuncios por revisar', navigable: true, testID: 'admin-ads-entry' },
+  { key: 'revisions_pending', label: 'Revisiones de ediciones', navigable: false, testID: 'admin-queue-revisions' },
+  { key: 'reports_new', label: 'Reportes', navigable: false, testID: 'admin-queue-reports' },
+  { key: 'agent_applications_pending', label: 'Solicitudes de agente', navigable: false, testID: 'admin-queue-agent-applications' },
+  { key: 'agencies_pending', label: 'Inmobiliarias por aprobar', navigable: false, testID: 'admin-queue-agencies' },
+];
+
+// ---------------------------------------------------------------------------
 // Pantalla principal
 // ---------------------------------------------------------------------------
 
@@ -92,6 +178,15 @@ export default function AdminAgencyListScreen(): React.ReactElement {
   const [agencies, set_agencies] = useState<AgencyRow[]>([]);
   const [is_loading, set_is_loading] = useState(true);
   const [error, set_error] = useState<string | null>(null);
+
+  // 217.2: contadores vivos de las 5 colas del panel — hook propio, no bloquea
+  // la carga de la lista de inmobiliarias de abajo.
+  const {
+    counts: queue_counts,
+    is_loading: queues_loading,
+    error_message: queues_error_message,
+    refetch: refetch_queues,
+  } = useAdminQueueCounts();
 
   const load_agencies = useCallback(async () => {
     set_is_loading(true);
@@ -178,16 +273,32 @@ export default function AdminAgencyListScreen(): React.ReactElement {
         <Text style={styles.title}>Inmobiliarias</Text>
       </View>
 
-      <Pressable
-        style={({ pressed }) => [styles.ads_entry, pressed && styles.card_pressed]}
-        onPress={handle_ads_press}
-        accessibilityRole="button"
-        accessibilityLabel="Ir a la cola de anuncios por revisar"
-        testID="admin-ads-entry"
-      >
-        <Text style={styles.ads_entry_text}>Anuncios por revisar</Text>
-        <Text style={styles.ads_entry_chevron}>›</Text>
-      </Pressable>
+      <Text style={styles.section_label}>Colas</Text>
+
+      {queues_error_message !== null && (
+        <View style={styles.queues_error_banner} testID="queues-error-banner">
+          <Text style={styles.queues_error_text}>{queues_error_message}</Text>
+          <Pressable
+            onPress={refetch_queues}
+            accessibilityRole="button"
+            accessibilityLabel="Reintentar carga de contadores"
+            testID="queues-retry"
+          >
+            <Text style={styles.queues_error_retry}>Reintentar</Text>
+          </Pressable>
+        </View>
+      )}
+
+      {QUEUE_ROW_DEFS.map((row) => (
+        <QueueRow
+          key={row.key}
+          label={row.label}
+          count={queue_counts?.[row.key]}
+          is_unresolved={queues_loading || queues_error_message !== null}
+          on_press={row.navigable ? handle_ads_press : undefined}
+          testID={row.testID}
+        />
+      ))}
 
       <FlatList
         data={agencies}
@@ -247,6 +358,62 @@ const styles = StyleSheet.create({
   },
   ads_entry_text: { fontSize: 16, fontWeight: '600', color: '#17140F' },
   ads_entry_chevron: { fontSize: 22, color: '#9A7150' },
+
+  // ── Sección de colas (217.2) ────────────────────────────────────────────
+  section_label: {
+    marginHorizontal: 20,
+    marginBottom: 8,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6B7280',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  queue_row_right: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  queue_count_placeholder: {
+    fontSize: 14,
+    color: '#9A968C',
+  },
+  queue_badge: {
+    minWidth: 26,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 13,
+    backgroundColor: '#1A5E441A',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  queue_badge_text: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1A5E44',
+  },
+  queues_error_banner: {
+    marginHorizontal: 20,
+    marginBottom: 12,
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: '#FBEAEA',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  queues_error_text: {
+    flex: 1,
+    fontSize: 13,
+    color: '#D94A4A',
+    marginRight: 12,
+  },
+  queues_error_retry: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1A5E44',
+  },
+
   container: {
     flex: 1,
     backgroundColor: COLOR_BG,
