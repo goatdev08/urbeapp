@@ -43,6 +43,7 @@ import { useAuth } from '@/features/auth/context';
 import { useAgencyRole } from '@/features/leads/hooks/useAgencyRole';
 import { fetch_own_membership } from '@/features/agency/api';
 import { useCanAdvertise } from '@/features/ads/hooks/useCanAdvertise';
+import { useMyAds } from '@/features/ads/hooks/useMyAds';
 import { useAgentProfile } from './hooks/useAgentProfile';
 import { useAgentStats } from './hooks/useAgentStats';
 import { ProfileHeader } from './components/ProfileHeader';
@@ -95,6 +96,12 @@ export function ProfileScreen({
   // la alcanzaría igual sin ese Redirect); esto es solo el punto de entrada
   // visible, mismo patrón que isOwner/can_manage_members de abajo.
   const { can_advertise } = useCanAdvertise();
+  // 212.5 / exploración 040: la entrada también se muestra si la org YA
+  // tiene ≥1 anuncio propio, aunque `can_advertise` se haya apagado después
+  // — mismo fallback que app/(protected)/ads/_layout.tsx (ver su docblock),
+  // reusando useMyAds() en vez de una consulta nueva.
+  const my_ads_for_menu = useMyAds();
+  const show_ads_entry = can_advertise || my_ads_for_menu.ads.length > 0;
   const [menu_visible, set_menu_visible] = useState(false);
 
   // Owner O admin de agencia → opción "Miembros" (gestión de agentes, #71.6).
@@ -200,7 +207,7 @@ export function ProfileScreen({
   // sin cambio de rol hasta 71.5).
   const menu_items: ProfileMenuItem[] = [
     { key: 'listings', label: 'Mis publicaciones', icon: Storefront, onPress: handle_my_listings },
-    ...(can_advertise
+    ...(show_ads_entry
       ? [{ key: 'ads', label: 'Mis anuncios', icon: Megaphone, onPress: handle_my_ads }]
       : []),
     ...(isOwner

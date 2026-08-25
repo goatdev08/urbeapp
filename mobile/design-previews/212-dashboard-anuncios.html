@@ -1,0 +1,720 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Urbea — Preview dashboard de anuncios (212.2)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Hanken+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  /* ═══════════════════════════════════════════════════════════════════════
+     TOKENS — copiados byte a byte de mobile/src/theme/theme.ts (NO de
+     urbea-identidad-visual.html, que quedó desactualizada tras el flash
+     2026-07-06: primary pasó de Salvia #5A8A5E al verde del logo #1A5E44).
+     Fuente: mobile/src/theme/theme.ts (colors, radii, shadows, fonts,
+     type_scale, spacing).
+     ═══════════════════════════════════════════════════════════════════════ */
+  :root{
+    --font-display: 'Space Grotesk', -apple-system, 'Segoe UI', sans-serif;
+    --font-sans:    'Hanken Grotesk', -apple-system, 'Segoe UI', sans-serif;
+
+    --color_primary:      #1A5E44;
+    --color_primary_soft: #5E9379;
+    --color_primary_tint: #DCE8E1;
+    --color_primary_deep: #123A2C;
+    --color_on_primary:   #FFFFFF;
+    --color_surface:      #FFFFFF;
+
+    --color_accent:       #9A7150;
+    --color_accent_soft:  #C2A07C;
+    --color_accent_tint:  #EADBCE;
+    --color_accent_deep:  #5E4226;
+
+    --color_ink_feed:     #17140F;
+    --color_ink:          #1E1A15;
+    --color_paper:        #F6F2EB;
+    --color_paper_2:      #EEE7DC;
+    --color_paper_3:      #E3DCCF;
+    --color_gray_1:       #A39A8C;
+    --color_gray_2:       #857C70;
+    --color_gray_3:       #6B6256;
+    --color_silver:       #C2C2BD;
+    --color_silver_dk:    #8C8E8A;
+    --color_danger:       #C94B3E;
+
+    /* radii */
+    --r_4:4px; --r_8:8px; --r_12:12px; --r_16:16px; --r_24:24px; --r_pill:999px;
+    /* spacing (base-4) */
+    --s_4:4px; --s_8:8px; --s_12:12px; --s_16:16px; --s_20:20px; --s_24:24px; --s_32:32px; --s_40:40px;
+    /* sombras (traducidas de theme.ts shadows) */
+    --sh_sm: 0 1px 3px rgba(30,22,12,.08), 0 1px 2px rgba(30,22,12,.06);
+    --sh_md: 0 8px 22px -8px rgba(30,22,12,.22);
+    --sh_lg: 0 22px 55px -18px rgba(30,22,12,.40);
+    --sh_primary: 0 8px 20px -6px rgba(26,94,68,.5);
+  }
+
+  *{ box-sizing:border-box; }
+  body{
+    margin:0;
+    background:#EDE7DC;
+    color:var(--color_ink);
+    font-family:var(--font-sans);
+    padding:32px 24px 64px;
+  }
+  .wrap{ max-width:1280px; margin:0 auto; }
+
+  /* ── Panel de spec (encabezado de la página, NO es UI de la app) ────── */
+  .spec{
+    background:var(--color_surface);
+    border:1px solid var(--color_paper_3);
+    border-radius:var(--r_16);
+    padding:22px 26px;
+    box-shadow:var(--sh_sm);
+    margin-bottom:36px;
+  }
+  .spec h1{
+    font-family:var(--font-display); font-weight:600; font-size:21px;
+    letter-spacing:-.01em; margin:0 0 4px;
+  }
+  .spec .sub{ font-size:13px; color:var(--color_gray_2); margin:0 0 14px; line-height:1.5; }
+  .spec .chips{ display:flex; gap:8px; flex-wrap:wrap; }
+  .spec .tag{
+    font-size:11px; font-weight:700; letter-spacing:.02em;
+    padding:5px 10px; border-radius:var(--r_pill);
+    background:var(--color_paper_2); color:var(--color_gray_3);
+  }
+  .spec .tag b{ color:var(--color_primary_deep); }
+
+  /* ── Frames lado a lado ──────────────────────────────────────────────── */
+  .frames-row{
+    display:flex; gap:40px; flex-wrap:wrap; align-items:flex-start;
+    justify-content:center; margin-bottom:44px;
+  }
+  .frame-col{ display:flex; flex-direction:column; align-items:center; }
+  .frame-cap{
+    font-family:var(--font-display); font-weight:600; font-size:15px;
+    color:var(--color_ink); margin-bottom:4px; text-align:center;
+  }
+  .frame-cap-sub{
+    font-size:12px; color:var(--color_gray_2); margin-bottom:16px;
+    text-align:center; max-width:340px; line-height:1.45;
+  }
+
+  /* ── Bisel de teléfono — SOLO presentación, no es un componente real ─── */
+  .phone{
+    width:412px; height:866px;
+    border-radius:46px;
+    background:#0c0b09;
+    padding:11px;
+    box-shadow:var(--sh_lg), 0 0 0 2px #232019;
+    position:relative;
+  }
+  .phone::before{
+    content:""; position:absolute; top:11px; left:50%; transform:translateX(-50%);
+    width:110px; height:26px; background:#0c0b09; border-radius:0 0 16px 16px; z-index:30;
+  }
+  .screen{
+    width:100%; height:100%; border-radius:36px; overflow:hidden;
+    background:var(--color_paper); color:var(--color_ink);
+    display:flex; flex-direction:column; position:relative;
+  }
+
+  .statusbar{
+    flex:none; height:44px; display:flex; align-items:center; justify-content:space-between;
+    padding:0 22px; font-size:14px; font-weight:600; color:var(--color_ink);
+  }
+  .statusbar .icons{ display:flex; align-items:center; gap:5px; }
+  .statusbar .bars{ display:flex; align-items:flex-end; gap:2px; height:10px; }
+  .statusbar .bars i{ width:3px; background:var(--color_ink); border-radius:1px; display:block; }
+  .statusbar .batt{ width:22px; height:11px; border:1.4px solid var(--color_ink); border-radius:3px; position:relative; }
+  .statusbar .batt::after{ content:""; position:absolute; right:-4px; top:3px; width:2px; height:5px; background:var(--color_ink); border-radius:0 1px 1px 0; }
+  .statusbar .batt::before{ content:""; position:absolute; inset:1.5px; width:70%; background:var(--color_ink); border-radius:1px; }
+
+  .app-header{
+    flex:none; padding:2px 20px 14px; border-bottom:1px solid var(--color_paper_3);
+    display:flex; align-items:center; gap:10px;
+  }
+  .app-header .back{ width:28px; height:28px; display:flex; align-items:center; justify-content:center; color:var(--color_primary); flex:none; }
+  .app-header .titles{ flex:1; min-width:0; }
+  .app-header .h-title{
+    font-family:var(--font-sans); font-weight:600; font-size:17px; color:var(--color_ink);
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .app-header .h-sub{ font-size:12px; color:var(--color_gray_2); margin-top:1px; }
+
+  .scroll-content{
+    flex:1; overflow-y:auto; padding:16px 16px 100px;
+    scrollbar-width:none;
+  }
+  .scroll-content::-webkit-scrollbar{ display:none; }
+
+  .home-indicator{
+    position:absolute; bottom:8px; left:50%; transform:translateX(-50%);
+    width:134px; height:5px; border-radius:3px; background:rgba(30,22,12,.35); z-index:20;
+  }
+
+  /* ═══════════════════════════════════════════════════════════════════
+     FRAME A — Lista "Mis anuncios"
+     ═══════════════════════════════════════════════════════════════════ */
+  .ad-card{
+    background:var(--color_surface);
+    border-radius:var(--r_16);
+    border:1px solid var(--color_paper_3);
+    box-shadow:var(--sh_sm);
+    padding:var(--s_12);
+    margin-bottom:var(--s_12);
+  }
+  .ad-card-top{ display:flex; gap:var(--s_12); align-items:flex-start; }
+  .thumb{
+    width:56px; height:56px; border-radius:var(--r_12); flex:none; position:relative; overflow:hidden;
+    background:linear-gradient(155deg,#3A3226 0%,#23201A 55%,#17140F 100%);
+  }
+  .thumb::after{
+    content:"▶"; position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    color:rgba(246,242,235,.8); font-size:13px;
+  }
+  .ad-card-info{ flex:1; min-width:0; }
+  .ad-card-row1{ display:flex; align-items:flex-start; justify-content:space-between; gap:var(--s_8); }
+  .ad-headline{
+    font-family:var(--font-sans); font-weight:600; font-size:14.5px; color:var(--color_ink);
+    line-height:1.25; overflow:hidden; text-overflow:ellipsis; display:-webkit-box;
+    -webkit-line-clamp:2; -webkit-box-orient:vertical;
+  }
+  .ad-meta{ font-size:12px; color:var(--color_gray_2); margin-top:3px; }
+  .chev{ flex:none; color:var(--color_gray_1); margin-top:2px; }
+
+  .badge{
+    flex:none; border-radius:var(--r_pill); padding:4px 10px; font-size:10.5px; font-weight:700;
+    letter-spacing:.02em; white-space:nowrap;
+  }
+  .badge-activo{ background:var(--color_primary); color:var(--color_on_primary); }
+  .badge-pausado{ background:var(--color_accent_soft); color:var(--color_ink); }
+  .badge-revision{ background:var(--color_primary_tint); color:var(--color_primary_deep); }
+  .badge-rechazado{ background:var(--color_danger); color:#fff; }
+
+  .metrics-row{
+    display:flex; margin-top:var(--s_12); padding-top:var(--s_12);
+    border-top:1px solid var(--color_paper_2);
+  }
+  .metric{ flex:1; text-align:center; }
+  .metric + .metric{ border-left:1px solid var(--color_paper_3); }
+  .metric-value{
+    font-family:var(--font-sans); font-weight:700; font-size:19px; color:var(--color_ink);
+    line-height:1.15;
+  }
+  .metric-value.dim{ color:var(--color_gray_1); }
+  .metric-label{
+    font-size:9.5px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+    color:var(--color_gray_2); margin-top:2px;
+  }
+
+  .list-caption{
+    font-size:11.5px; color:var(--color_gray_2); text-align:center; margin:2px 0 14px; line-height:1.4;
+  }
+
+  /* ═══════════════════════════════════════════════════════════════════
+     FRAME B — Detalle del anuncio
+     ═══════════════════════════════════════════════════════════════════ */
+  .detail-badge-row{ display:flex; align-items:center; gap:6px; margin-top:2px; }
+
+  .segmented{
+    display:flex; background:var(--color_paper_2); border-radius:var(--r_pill);
+    padding:3px; margin:var(--s_16) 0;
+  }
+  .seg-btn{
+    flex:1; text-align:center; padding:8px 0; border-radius:var(--r_pill);
+    font-family:var(--font-sans); font-size:12.5px; font-weight:600; color:var(--color_gray_3);
+    border:none; background:transparent; cursor:pointer; transition:.15s ease;
+  }
+  .seg-btn.active{ background:var(--color_surface); color:var(--color_primary_deep); box-shadow:var(--sh_sm); }
+
+  .kpi-row{ display:flex; gap:var(--s_8); margin-bottom:var(--s_16); }
+  .kpi-tile{
+    flex:1; background:var(--color_surface); border:1.5px solid var(--color_paper_3);
+    border-radius:var(--r_16); padding:12px 8px; text-align:center; cursor:pointer;
+    transition:.15s ease;
+  }
+  .kpi-tile.selected{ border-color:var(--color_primary); background:var(--color_primary_tint); }
+  .kpi-value{
+    font-family:var(--font-display); font-weight:600; font-size:22px; letter-spacing:-.02em;
+    color:var(--color_ink); line-height:1.1;
+  }
+  .kpi-tile.selected .kpi-value{ color:var(--color_primary_deep); }
+  .kpi-label{ font-size:9.5px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--color_gray_2); margin-top:5px; line-height:1.3; }
+
+  .section-title{
+    font-size:11px; font-weight:700; letter-spacing:.1em; text-transform:uppercase;
+    color:var(--color_gray_2); margin:var(--s_20) 0 var(--s_8);
+  }
+
+  .chart-card{
+    background:var(--color_surface); border-radius:var(--r_16); border:1px solid var(--color_paper_3);
+    box-shadow:var(--sh_sm); padding:14px 14px 12px;
+  }
+  .chart-hint{ font-size:11px; color:var(--color_gray_2); margin-bottom:8px; }
+  .chart-svg-wrap{ position:relative; }
+  .chart-empty{
+    display:none; height:120px; flex-direction:column; align-items:center; justify-content:center;
+    gap:6px; text-align:center; padding:0 20px;
+  }
+  .chart-empty p{ font-size:12px; color:var(--color_gray_2); line-height:1.4; margin:0; }
+  .chart-axis{ display:flex; justify-content:space-between; margin-top:4px; }
+  .chart-axis span{ font-size:10px; color:var(--color_gray_2); }
+  .monthly-block{ display:none; align-items:flex-end; gap:6px; margin-bottom:8px; padding-bottom:8px; border-bottom:1px dashed var(--color_paper_3); }
+  .monthly-chip{ display:flex; flex-direction:column; align-items:center; gap:3px; }
+  .monthly-bar{ width:20px; border-radius:3px 3px 0 0; background:var(--color_accent_soft); }
+  .monthly-lab{ font-size:9px; color:var(--color_gray_2); }
+  .monthly-note{ font-size:10.5px; color:var(--color_gray_2); flex:1; padding-left:6px; line-height:1.35; }
+  .range-note{
+    display:none; font-size:11px; color:var(--color_gray_2); background:var(--color_paper_2);
+    border-radius:var(--r_8); padding:8px 10px; margin-top:10px; line-height:1.4;
+  }
+
+  .zone-row{ padding:10px 0; border-bottom:1px solid var(--color_paper_2); }
+  .zone-row:last-child{ border-bottom:none; }
+  .zone-row-top{ display:flex; justify-content:space-between; align-items:baseline; gap:8px; margin-bottom:6px; }
+  .zone-name{ font-size:13px; font-weight:600; color:var(--color_ink); }
+  .zone-name.muted{ font-style:italic; font-weight:500; color:var(--color_gray_3); }
+  .zone-counts{ font-size:11.5px; color:var(--color_gray_2); white-space:nowrap; }
+  .zone-bar-track{ height:8px; border-radius:var(--r_pill); background:var(--color_paper_2); overflow:hidden; }
+  .zone-bar-fill{ height:100%; border-radius:var(--r_pill); background:var(--color_primary); }
+  .zone-bar-fill.other{ background:repeating-linear-gradient(135deg, var(--color_gray_1), var(--color_gray_1) 4px, var(--color_paper_2) 4px, var(--color_paper_2) 8px); }
+  .zone-caption{ font-size:10.5px; color:var(--color_gray_2); margin-top:5px; line-height:1.4; }
+
+  .vigencia-note{
+    display:flex; align-items:center; gap:6px; margin-top:var(--s_20);
+    font-size:11.5px; color:var(--color_gray_2); background:var(--color_paper_2);
+    border-radius:var(--r_12); padding:10px 12px; line-height:1.4;
+  }
+  .vigencia-note b{ color:var(--color_ink); font-weight:600; }
+
+  /* ── Muestras de estado (fuera del frame de teléfono) ────────────────── */
+  .states-row{ display:flex; gap:28px; flex-wrap:wrap; justify-content:center; margin-bottom:44px; }
+  .state-tile{
+    width:342px; background:var(--color_surface); border-radius:var(--r_16);
+    border:1px solid var(--color_paper_3); box-shadow:var(--sh_sm); padding:20px;
+  }
+  .state-tile-cap{ font-family:var(--font-display); font-weight:600; font-size:14px; margin-bottom:12px; }
+
+  .empty-state{ display:flex; flex-direction:column; align-items:center; text-align:center; padding:22px 10px; }
+  .empty-icon{
+    width:52px; height:52px; border-radius:var(--r_16); border:2px dashed var(--color_silver);
+    display:flex; align-items:center; justify-content:center; color:var(--color_gray_1); margin-bottom:12px;
+  }
+  .empty-title{ font-family:var(--font-sans); font-weight:600; font-size:14px; color:var(--color_ink); margin-bottom:4px; }
+  .empty-sub{ font-size:12px; color:var(--color_gray_2); line-height:1.5; max-width:26ch; }
+
+  @keyframes pulse-op{ 0%,100%{ opacity:1; } 50%{ opacity:.5; } }
+  .skel{ background:var(--color_paper_2); border-radius:var(--r_8); animation:pulse-op 1.3s ease-in-out infinite; }
+  .skel-row{ display:flex; gap:8px; margin-bottom:10px; }
+  .skel-tile{ flex:1; height:52px; border-radius:var(--r_16); }
+  .skel-line{ height:12px; margin-bottom:8px; }
+  .skel-chart{ height:100px; border-radius:var(--r_16); margin-top:4px; }
+
+  /* ── Notas de diseño (footer) ───────────────────────────────────────── */
+  .notes{
+    background:var(--color_surface); border:1px solid var(--color_paper_3); border-radius:var(--r_16);
+    padding:22px 26px; box-shadow:var(--sh_sm); max-width:900px; margin:0 auto;
+  }
+  .notes h2{ font-family:var(--font-display); font-weight:600; font-size:16px; margin:0 0 12px; }
+  .notes ul{ margin:0; padding-left:18px; font-size:12.5px; line-height:1.6; color:var(--color_gray_3); }
+  .notes li{ margin-bottom:7px; }
+  .notes b{ color:var(--color_ink); }
+  .notes code{ background:var(--color_paper_2); padding:1px 5px; border-radius:4px; font-family:ui-monospace,monospace; font-size:11px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="spec">
+    <h1>Preview aprobable — Dashboard de anuncios (212.2)</h1>
+    <p class="sub">
+      Cards de 3 métricas por anuncio + detalle con selector de periodo, línea diaria y barras por zona.
+      Identidad: <code>mobile/src/theme/theme.ts</code>. Layout: <code>Urbea Prototipo (standalone).html</code>.
+      Referencia de <b>estructura</b> (nunca color/tipografía): screenshots de Meta Ads Manager descritos en
+      <code>.taskmaster/docs/exploraciones/040-comercial-completo-stats-y-promocion.md</code>.
+      Interactivo: toca los 3 tiles grandes del detalle para cambiar la métrica graficada, y el selector
+      Hoy / 30 días / Máximo para ver cómo cambia el número y el gráfico.
+    </p>
+    <div class="chips">
+      <span class="tag"><b>ad_stats_totals</b> → cards + tiles grandes</span>
+      <span class="tag"><b>ad_stats_daily</b> → línea de rendimiento</span>
+      <span class="tag"><b>ad_stats_zones</b> → barras por zona</span>
+      <span class="tag">gate branding: LEVANTADO (CLAUDE.md §8)</span>
+    </div>
+  </div>
+
+  <div class="frames-row">
+
+    <!-- ═══════════════ FRAME A — LISTA ═══════════════ -->
+    <div class="frame-col">
+      <div class="frame-cap">A · Mis anuncios (lista)</div>
+      <div class="frame-cap-sub">Cards estilo Meta: miniatura, headline, badge de estado, vigencia y 3 métricas. Totales desde el inicio del anuncio (equivalente a “Máximo”).</div>
+      <div class="phone"><div class="screen">
+        <div class="statusbar">
+          <span>9:41</span>
+          <div class="icons">
+            <div class="bars"><i style="height:4px"></i><i style="height:6px"></i><i style="height:8px"></i><i style="height:10px"></i></div>
+            <div class="batt"></div>
+          </div>
+        </div>
+        <div class="app-header">
+          <div class="titles">
+            <div class="h-title">Mis anuncios</div>
+            <div class="h-sub">3 anuncios · Casa Vlad Inmobiliaria</div>
+          </div>
+        </div>
+        <div class="scroll-content">
+
+          <!-- Card 1 — Activo -->
+          <div class="ad-card">
+            <div class="ad-card-top">
+              <div class="thumb"></div>
+              <div class="ad-card-info">
+                <div class="ad-card-row1">
+                  <div>
+                    <div class="ad-headline">Depa moderno en Providencia</div>
+                    <div class="ad-meta">Vence en 18 días</div>
+                  </div>
+                  <span class="badge badge-activo">Activo</span>
+                </div>
+              </div>
+            </div>
+            <div class="metrics-row">
+              <div class="metric"><div class="metric-value">12.5k</div><div class="metric-label">Impresiones</div></div>
+              <div class="metric"><div class="metric-value">3.9k</div><div class="metric-label">Vistas completas</div></div>
+              <div class="metric"><div class="metric-value">214</div><div class="metric-label">Toques al contacto</div></div>
+            </div>
+          </div>
+
+          <!-- Card 2 — Pausado -->
+          <div class="ad-card">
+            <div class="ad-card-top">
+              <div class="thumb"></div>
+              <div class="ad-card-info">
+                <div class="ad-card-row1">
+                  <div>
+                    <div class="ad-headline">Casa con alberca, Zapopan</div>
+                    <div class="ad-meta">Pausado manualmente</div>
+                  </div>
+                  <span class="badge badge-pausado">Pausado</span>
+                </div>
+              </div>
+            </div>
+            <div class="metrics-row">
+              <div class="metric"><div class="metric-value">8.9k</div><div class="metric-label">Impresiones</div></div>
+              <div class="metric"><div class="metric-value">2.1k</div><div class="metric-label">Vistas completas</div></div>
+              <div class="metric"><div class="metric-value">96</div><div class="metric-label">Toques al contacto</div></div>
+            </div>
+          </div>
+
+          <!-- Card 3 — En revisión (sin datos aún) -->
+          <div class="ad-card">
+            <div class="ad-card-top">
+              <div class="thumb"></div>
+              <div class="ad-card-info">
+                <div class="ad-card-row1">
+                  <div>
+                    <div class="ad-headline">Oficina corporativa, Puerta de Hierro</div>
+                    <div class="ad-meta">Pendiente de aprobación</div>
+                  </div>
+                  <span class="badge badge-revision">En revisión</span>
+                </div>
+              </div>
+            </div>
+            <div class="metrics-row">
+              <div class="metric"><div class="metric-value dim">—</div><div class="metric-label">Impresiones</div></div>
+              <div class="metric"><div class="metric-value dim">—</div><div class="metric-label">Vistas completas</div></div>
+              <div class="metric"><div class="metric-value dim">—</div><div class="metric-label">Toques al contacto</div></div>
+            </div>
+          </div>
+
+          <p class="list-caption">Toca un anuncio para abrir su detalle → (frame B, a la derecha, muestra el detalle del primer anuncio “Activo”).</p>
+
+        </div>
+        <div class="home-indicator"></div>
+      </div></div>
+    </div>
+
+    <!-- ═══════════════ FRAME B — DETALLE ═══════════════ -->
+    <div class="frame-col">
+      <div class="frame-cap">B · Detalle del anuncio</div>
+      <div class="frame-cap-sub">Selector de periodo + 3 métricas grandes (doblan como selector del gráfico) + línea diaria + barras por zona.</div>
+      <div class="phone"><div class="screen">
+        <div class="statusbar">
+          <span>9:41</span>
+          <div class="icons">
+            <div class="bars"><i style="height:4px"></i><i style="height:6px"></i><i style="height:8px"></i><i style="height:10px"></i></div>
+            <div class="batt"></div>
+          </div>
+        </div>
+        <div class="app-header">
+          <div class="back">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <div class="titles">
+            <div class="h-title">Depa moderno en Providencia</div>
+            <div class="detail-badge-row">
+              <span class="badge badge-activo" style="font-size:9.5px; padding:3px 8px;">Activo</span>
+              <span class="h-sub" style="margin-top:0">Casa Vlad Inmobiliaria</span>
+            </div>
+          </div>
+        </div>
+        <div class="scroll-content">
+
+          <div class="segmented" id="segmented">
+            <button class="seg-btn" data-range="hoy">Hoy</button>
+            <button class="seg-btn active" data-range="d30">30 días</button>
+            <button class="seg-btn" data-range="max">Máximo</button>
+          </div>
+
+          <div class="kpi-row" id="kpiRow">
+            <div class="kpi-tile selected" data-metric="impressions">
+              <div class="kpi-value" id="kpi-impressions">4,820</div>
+              <div class="kpi-label">Impresiones</div>
+            </div>
+            <div class="kpi-tile" data-metric="views">
+              <div class="kpi-value" id="kpi-views">1,240</div>
+              <div class="kpi-label">Vistas completas</div>
+            </div>
+            <div class="kpi-tile" data-metric="taps">
+              <div class="kpi-value" id="kpi-taps">86</div>
+              <div class="kpi-label">Toques al contacto</div>
+            </div>
+          </div>
+
+          <div class="section-title">Rendimiento por día</div>
+          <div class="chart-card">
+            <div class="chart-hint" id="chartHint">Impresiones · toca un tile arriba para cambiar la métrica</div>
+
+            <div class="monthly-block" id="monthlyBlock">
+              <div class="monthly-chip"><div class="monthly-bar" style="height:22px"></div><span class="monthly-lab">jun</span></div>
+              <div class="monthly-chip"><div class="monthly-bar" style="height:30px"></div><span class="monthly-lab">jul</span></div>
+              <span class="monthly-note">Agregado mensual (congelado) — sin línea diaria disponible</span>
+            </div>
+
+            <div class="chart-svg-wrap">
+              <svg id="chartSvg" viewBox="0 0 342 130" width="100%" height="120" preserveAspectRatio="none">
+                <line x1="0" y1="32" x2="342" y2="32" stroke="var(--color_paper_3)" stroke-width="1"/>
+                <line x1="0" y1="76" x2="342" y2="76" stroke="var(--color_paper_3)" stroke-width="1"/>
+                <path id="chartArea" fill="var(--color_primary_tint)" opacity="0.7" d=""/>
+                <path id="chartLine" fill="none" stroke="var(--color_primary)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" d=""/>
+                <circle id="chartDot" r="4" fill="var(--color_primary)" stroke="#fff" stroke-width="2"/>
+              </svg>
+              <div class="chart-empty" id="chartEmpty">
+                <p>Un solo día no arma una tendencia.<br>Selecciona <b>30 días</b> o <b>Máximo</b> para ver la línea diaria.</p>
+              </div>
+            </div>
+            <div class="chart-axis" id="chartAxis">
+              <span>hace 30 días</span><span>hace 15 días</span><span>hoy</span>
+            </div>
+
+            <div class="range-note" id="rangeNote">
+              Los periodos de más de 90 días se agregan por mes (el backend congela el rollup mensual) —
+              por eso “Máximo” muestra la línea diaria solo de los últimos 90 días y un agregado mensual antes de eso.
+            </div>
+          </div>
+
+          <div class="section-title">Por zona</div>
+          <div class="chart-card">
+            <div class="zone-row">
+              <div class="zone-row-top"><span class="zone-name">Providencia</span><span class="zone-counts">2,140 · 560 · 39</span></div>
+              <div class="zone-bar-track"><div class="zone-bar-fill" style="width:100%"></div></div>
+            </div>
+            <div class="zone-row">
+              <div class="zone-row-top"><span class="zone-name">Chapalita</span><span class="zone-counts">1,320 · 340 · 24</span></div>
+              <div class="zone-bar-track"><div class="zone-bar-fill" style="width:62%"></div></div>
+            </div>
+            <div class="zone-row">
+              <div class="zone-row-top"><span class="zone-name">Puerta de Hierro</span><span class="zone-counts">780 · 190 · 15</span></div>
+              <div class="zone-bar-track"><div class="zone-bar-fill" style="width:36%"></div></div>
+            </div>
+            <div class="zone-row">
+              <div class="zone-row-top"><span class="zone-name muted">Otras zonas</span><span class="zone-counts">580 · 150 · 8</span></div>
+              <div class="zone-bar-track"><div class="zone-bar-fill other" style="width:27%"></div></div>
+              <div class="zone-caption">Zonas con muy poca audiencia para mostrarlas por separado.</div>
+            </div>
+          </div>
+
+          <div class="vigencia-note">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style="flex:none"><circle cx="12" cy="12" r="9" stroke="var(--color_gray_2)" stroke-width="1.8"/><path d="M12 7v5l3.5 2" stroke="var(--color_gray_2)" stroke-width="1.8" stroke-linecap="round"/></svg>
+            <span>Vigencia: activo hasta <b>14 de septiembre de 2026</b> (18 días restantes).</span>
+          </div>
+
+        </div>
+        <div class="home-indicator"></div>
+      </div></div>
+    </div>
+
+  </div>
+
+  <!-- ═══════════════ Muestras de estado (vacío / cargando) ═══════════════ -->
+  <div class="states-row">
+    <div class="state-tile">
+      <div class="state-tile-cap">Muestra · estado vacío</div>
+      <div class="empty-state">
+        <div class="empty-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M3 11v2a1 1 0 001 1h2l5 4V6L6 10H4a1 1 0 00-1 1z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M16 9a3 3 0 010 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        </div>
+        <div class="empty-title">Aún no hay datos</div>
+        <div class="empty-sub">Cuando tu anuncio reciba impresiones aparecerán aquí sus estadísticas.</div>
+      </div>
+    </div>
+    <div class="state-tile">
+      <div class="state-tile-cap">Muestra · estado cargando (skeleton)</div>
+      <div class="skel-row">
+        <div class="skel skel-tile"></div>
+        <div class="skel skel-tile"></div>
+        <div class="skel skel-tile"></div>
+      </div>
+      <div class="skel skel-line" style="width:40%"></div>
+      <div class="skel skel-chart"></div>
+    </div>
+  </div>
+
+  <div class="notes">
+    <h2>Decisiones de diseño</h2>
+    <ul>
+      <li><b>Color primario = verde Urbea <code>#1A5E44</code></b> (tomado de <code>theme.ts</code>), no la salvia de <code>urbea-identidad-visual.html</code> — esa referencia quedó desactualizada tras el flash 2026-07-06.</li>
+      <li><b>Badges de estado</b> calcan 1:1 <code>AD_STATUS_BADGE</code> de <code>app/(protected)/ads/index.tsx</code>: Activo = <code>primary</code>/<code>on_primary</code>, Pausado = <code>accent_soft</code>/<code>ink</code>, En revisión = <code>primary_tint</code>/<code>primary_deep</code>, Rechazado = <code>danger</code>/blanco.</li>
+      <li><b>Métricas grandes del detalle</b> reusan la escala numérica de énfasis existente (<code>type_scale.price</code>/<code>h1</code> del sistema); los números de card reusan el mismo tratamiento que <code>TotalsRow</code> en el panel actual de #171.</li>
+      <li><b>Barras horizontales para zonas</b> (no verticales): los nombres de colonia son largos y variables — horizontal deja leer la etiqueta completa sin truncar. Mismo patrón que la tabla de "Ubicación" de Meta Ads.</li>
+      <li>La fila <b>“Otras zonas”</b> (bucket k&lt;5) se distingue con relleno rayado + texto en cursiva + caption — mismo copy ya usado en <code>ads/index.tsx</code> (<code>OTHER_ZONES_CAPTION</code>), para dejar claro que es un agregado de privacidad, no una zona real.</li>
+      <li><b>Selector Hoy / 30 días / Máximo</b>: “Hoy” oculta la línea (1 solo punto no es una tendencia); “Máximo” muestra un bloque de agregados mensuales + nota explicando <code>D-RANGO-MONTHLY</code> — evita prometer granularidad diaria que el backend no puede dar para periodos &gt;90 días.</li>
+      <li>Los <b>3 tiles de métricas grandes doblan como selector</b> de la línea (tap → cambia la métrica graficada) — simplifica la UI: no hace falta una fila de pills separada como en la referencia de Meta.</li>
+      <li>Cards de la lista muestran <b>totales desde el inicio del anuncio</b> (equivalente a “Máximo” implícito, sin selector); el detalle sí respeta el selector de periodo.</li>
+      <li>Anuncio <b>en revisión</b> (<code>pending_review</code>) muestra <b>“—”</b> en las 3 métricas, nunca “0” — mismo criterio que <code>useAdMetrics</code> (null ≠ 0, evita insinuar que el anuncio ya circuló sin alcance).</li>
+      <li>Línea del gráfico dibujada con <b>segmentos rectos</b> (sin suavizado bezier) — más simple de portar 1:1 a <code>Path</code>/<code>Polyline</code> de <code>react-native-svg</code> en 212.4; suavizado queda como mejora opcional futura.</li>
+      <li>Zonas quedan con dataset fijo en este preview (no reaccionan al selector de periodo) — la RPC <code>ad_stats_zones</code> sí acepta <code>p_from</code>/<code>p_to</code>; el cableado real a 30/90 días/Máximo se resuelve en 212.4/212.5.</li>
+      <li>Skeleton de carga: bloques grises con pulso de opacidad (CSS aquí; en RN se implementa con <code>Animated.View</code> + loop de <code>opacity</code>, sin librería de shimmer nueva).</li>
+      <li>Mapeo a RPCs (212.1, ya en <code>done</code>): <code>ad_stats_totals</code> → números de card + los 3 tiles grandes; <code>ad_stats_daily</code> → línea de rendimiento diario; <code>ad_stats_zones</code> → barras horizontales por zona (incluye el bucket "Otras zonas").</li>
+      <li>El bisel de teléfono es <b>solo para presentación</b> (ancho 390px de contenido simulando safe areas) — no representa ningún componente real de la app.</li>
+    </ul>
+  </div>
+
+</div>
+
+<script>
+  // Datos de ejemplo por rango — impresiones/vistas/toques, serie diaria con
+  // MUESTREO cada ~3 días (no los 30 puntos literales) para que la línea sea
+  // legible en un frame de 390px; el componente RN real (212.4) recibirá la
+  // serie completa que devuelve ad_stats_daily y decide su propio muestreo.
+  var DATA = {
+    hoy: {
+      totals: { impressions: 312, views: 78, taps: 5 },
+      series: null
+    },
+    d30: {
+      totals: { impressions: 4820, views: 1240, taps: 86 },
+      series: {
+        impressions: [120, 150, 140, 180, 210, 190, 230, 260, 240, 280],
+        views:       [34,  42,  39,  50,  59,  53,  64,  73,  67,  78],
+        taps:        [6,   8,   7,   9,   11,  10,  12,  13,  12,  14]
+      }
+    },
+    max: {
+      totals: { impressions: 12480, views: 3860, taps: 214 },
+      series: {
+        impressions: [120, 150, 140, 180, 210, 190, 230, 260, 240, 280],
+        views:       [34,  42,  39,  50,  59,  53,  64,  73,  67,  78],
+        taps:        [6,   8,   7,   9,   11,  10,  12,  13,  12,  14]
+      }
+    }
+  };
+
+  var METRIC_LABEL = { impressions: 'Impresiones', views: 'Vistas completas', taps: 'Toques al contacto' };
+  var state = { range: 'd30', metric: 'impressions' };
+
+  function fmt(n) {
+    if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
+    return String(n);
+  }
+  function fmt_full(n) { return n.toLocaleString('es-MX'); }
+
+  function render() {
+    var d = DATA[state.range];
+
+    document.getElementById('kpi-impressions').textContent = fmt_full(d.totals.impressions);
+    document.getElementById('kpi-views').textContent = fmt_full(d.totals.views);
+    document.getElementById('kpi-taps').textContent = fmt_full(d.totals.taps);
+
+    document.querySelectorAll('.kpi-tile').forEach(function (el) {
+      el.classList.toggle('selected', el.dataset.metric === state.metric);
+    });
+    document.querySelectorAll('.seg-btn').forEach(function (el) {
+      el.classList.toggle('active', el.dataset.range === state.range);
+    });
+
+    var svgWrap = document.getElementById('chartSvg');
+    var emptyEl = document.getElementById('chartEmpty');
+    var axisEl = document.getElementById('chartAxis');
+    var monthlyEl = document.getElementById('monthlyBlock');
+    var rangeNoteEl = document.getElementById('rangeNote');
+    var hintEl = document.getElementById('chartHint');
+
+    hintEl.textContent = METRIC_LABEL[state.metric] + ' · toca un tile arriba para cambiar la métrica';
+
+    if (state.range === 'hoy' || !d.series) {
+      svgWrap.style.display = 'none';
+      emptyEl.style.display = 'flex';
+      axisEl.style.display = 'none';
+      monthlyEl.style.display = 'none';
+      rangeNoteEl.style.display = 'none';
+      return;
+    }
+
+    svgWrap.style.display = 'block';
+    emptyEl.style.display = 'none';
+    axisEl.style.display = 'flex';
+
+    var values = d.series[state.metric];
+    var max = Math.max.apply(null, values) * 1.15 || 1;
+    var w = 342, topPad = 10, baseline = 122;
+    var usable = baseline - topPad;
+    var stepX = w / (values.length - 1);
+
+    var pts = values.map(function (v, i) {
+      var x = i * stepX;
+      var y = baseline - (v / max) * usable;
+      return [x, y];
+    });
+
+    var lineD = 'M' + pts.map(function (p) { return p[0].toFixed(1) + ',' + p[1].toFixed(1); }).join(' L');
+    var areaD = lineD + ' L' + pts[pts.length - 1][0].toFixed(1) + ',130 L0,130 Z';
+
+    document.getElementById('chartLine').setAttribute('d', lineD);
+    document.getElementById('chartArea').setAttribute('d', areaD);
+    var lastPt = pts[pts.length - 1];
+    document.getElementById('chartDot').setAttribute('cx', lastPt[0].toFixed(1));
+    document.getElementById('chartDot').setAttribute('cy', lastPt[1].toFixed(1));
+
+    if (state.range === 'max') {
+      monthlyEl.style.display = 'flex';
+      rangeNoteEl.style.display = 'block';
+      axisEl.innerHTML = '<span>hace 90 días</span><span>hace 45 días</span><span>hoy</span>';
+    } else {
+      monthlyEl.style.display = 'none';
+      rangeNoteEl.style.display = 'none';
+      axisEl.innerHTML = '<span>hace 30 días</span><span>hace 15 días</span><span>hoy</span>';
+    }
+  }
+
+  document.getElementById('segmented').addEventListener('click', function (e) {
+    var btn = e.target.closest('.seg-btn');
+    if (!btn) return;
+    state.range = btn.dataset.range;
+    render();
+  });
+  document.getElementById('kpiRow').addEventListener('click', function (e) {
+    var tile = e.target.closest('.kpi-tile');
+    if (!tile) return;
+    state.metric = tile.dataset.metric;
+    render();
+  });
+
+  render();
+</script>
+
+</body>
+</html>

@@ -1,32 +1,48 @@
 /**
- * Layout del grupo `ads/` — gate de CAPACIDAD por RUTA (subtarea 169.8).
+ * Layout del grupo `ads/` — gate de CAPACIDAD por RUTA (subtarea 169.8;
+ * ampliado en 212.5 con el fallback de exploración 040).
  *
- * 🔴 Sin `can_advertise` la RUTA NO EXISTE — no basta ocultar un botón,
- * porque un deep link (`urbea://ads/...`) la alcanzaría igual. Mismo patrón
- * que mobile/src/features/admin/admin-layout.tsx y
+ * 🔴 Sin capacidad NI anuncios previos la RUTA NO EXISTE — no basta ocultar
+ * un botón, porque un deep link (`urbea://ads/...`) la alcanzaría igual.
+ * Mismo patrón que mobile/src/features/admin/admin-layout.tsx y
  * mobile/app/(protected)/agency/invitations.tsx (useAgencyRole().isOwner +
- * Redirect), aplicado aquí sobre useCanAdvertise().
+ * Redirect), aplicado aquí sobre useCanAdvertise() + useMyAds().
+ *
+ * 🔴 212.5 (decisión registrada en .taskmaster/docs/exploraciones/040-
+ * comercial-completo-stats-y-promocion.md): la entrada es visible/alcanzable
+ * si `can_advertise` **O** la organización YA tiene ≥1 anuncio propio — una
+ * capacidad revocada DESPUÉS de haber anunciado no debe esconder el
+ * dashboard de estadísticas de anuncios que ya circularon. useMyAds() ya
+ * falla cerrado por su cuenta (ver su docblock: cualquier error ⇒ ads=[]) —
+ * basta leer `.ads.length` aquí, sin duplicar su lógica de RLS/membresía.
  *
  * Contrato:
- *   - loading=true  → indicador de carga; el Slot NUNCA se monta (evita que
- *     un frame optimista deje pasar contenido antes de resolver la
- *     capacidad — useCanAdvertise ya garantiza can_advertise=false mientras
- *     loading=true, pero el gate tampoco debe decidir sobre ese valor).
- *   - loading=false, can_advertise=false → <Redirect> fuera de ads/.
- *   - loading=false, can_advertise=true  → <Slot /> (las pantallas del
- *     wizard, 169.9, aún no existen — esta subtarea es solo el gate).
+ *   - can_advertise loading=true → indicador de carga; el Slot NUNCA se
+ *     monta (mismo criterio que antes de 212.5 — useMyAds() SIEMPRE se
+ *     invoca porque los hooks no pueden ser condicionales, pero su
+ *     resultado se ignora mientras la capacidad no resuelve).
+ *   - can_advertise=true (ya resuelto) → <Slot/> DE INMEDIATO, sin esperar
+ *     a useMyAds() — la capacidad sola ya autoriza; bloquear aquí solo
+ *     agregaría latencia a la ruta más común (anunciante activo).
+ *   - can_advertise=false (ya resuelto) → SOLO entonces se espera a
+ *     useMyAds(): con ≥1 anuncio propio → <Slot/>; con 0 (o su propio error,
+ *     que ya deja ads=[]) → <Redirect> fuera de ads/.
  */
 import React from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { Redirect, Slot } from 'expo-router';
 
 import { useCanAdvertise } from '@/features/ads/hooks/useCanAdvertise';
+import { useMyAds } from '@/features/ads/hooks/useMyAds';
 import { colors } from '@/theme/theme';
 
 export default function AdsLayout(): React.ReactElement {
-  const { can_advertise, loading } = useCanAdvertise();
+  const { can_advertise, loading: capability_loading } = useCanAdvertise();
+  // Invocado SIEMPRE (regla de hooks) — su resultado solo se consulta en la
+  // rama can_advertise=false, ver docblock.
+  const my_ads = useMyAds();
 
-  if (loading) {
+  if (capability_loading) {
     return (
       <View style={styles.center} testID="ads-gate-loading">
         <ActivityIndicator size="large" color={colors.primary} />
@@ -34,11 +50,23 @@ export default function AdsLayout(): React.ReactElement {
     );
   }
 
-  if (!can_advertise) {
-    return <Redirect href="/(protected)/(tabs)/profile" />;
+  if (can_advertise) {
+    return <Slot />;
   }
 
-  return <Slot />;
+  if (my_ads.loading) {
+    return (
+      <View style={styles.center} testID="ads-gate-loading">
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
+
+  if (my_ads.ads.length > 0) {
+    return <Slot />;
+  }
+
+  return <Redirect href="/(protected)/(tabs)/profile" />;
 }
 
 const styles = StyleSheet.create({

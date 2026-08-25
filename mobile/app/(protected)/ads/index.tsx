@@ -32,21 +32,22 @@
  * igual con el texto de reserva ("Zona sin nombre").
  */
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-native';
-import { Stack } from 'expo-router';
-import { Megaphone } from 'phosphor-react-native';
+import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Stack, useRouter } from 'expo-router';
+import { Megaphone, Play } from 'phosphor-react-native';
 
 import { supabase } from '@/lib/supabase/client';
 import { EmptyState } from '@/features/profile/components/EmptyState';
 import { useMyAds, type MyAd } from '@/features/ads/hooks/useMyAds';
 import { useAdMetrics, type AdZoneMetrics, type AdZoneTotals } from '@/features/ads/hooks/useAdMetrics';
-import { colors, radii, spacing, type_scale } from '@/theme/theme';
+import { useAdStats, type AdStatsTotals } from '@/features/ads/hooks/useAdStats';
+import { colors, fonts, radii, spacing, type_scale } from '@/theme/theme';
 
 // ---------------------------------------------------------------------------
 // Copy / mapas de estado
 // ---------------------------------------------------------------------------
 
-interface BadgeConfig {
+export interface BadgeConfig {
   label: string;
   bg: string;
   text: string;
@@ -54,7 +55,11 @@ interface BadgeConfig {
 
 // Mismo patrón que PropertyListItem.tsx (STATUS_BADGE + fallback humanizado):
 // nunca se pinta el string crudo del enum en pantalla.
-const AD_STATUS_BADGE: Record<string, BadgeConfig> = {
+// Exportado: app/(protected)/ads/[id].tsx (212.5) reusa el MISMO badge —
+// dos pantallas hermanas del mismo folder, no un componente de src/features/
+// importando una ruta (la razón por la que AdZoneBarsChart SÍ duplica en vez
+// de importar, ver su docblock).
+export const AD_STATUS_BADGE: Record<string, BadgeConfig> = {
   draft:           { label: 'Borrador',    bg: colors.paper_2,     text: colors.gray_3 },
   pending_review:  { label: 'En revisión', bg: colors.primary_tint, text: colors.primary },
   active:          { label: 'Activo',      bg: colors.primary,      text: colors.on_primary },
@@ -73,13 +78,29 @@ function humanize_ad_status(status: string): string {
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
-function get_ad_badge(status: string): BadgeConfig {
+export function get_ad_badge(status: string): BadgeConfig {
   return AD_STATUS_BADGE[status] ?? { label: humanize_ad_status(status), bg: colors.gray_2, text: colors.ink };
 }
 
-function format_date_short(iso: string): string {
+export function format_date_short(iso: string): string {
   return new Date(iso).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
 }
+
+/**
+ * Estados que NUNCA pudieron tener exposición real (ningún camino de la
+ * máquina de estados los lleva a 'active' sin pasar antes por moderación) —
+ * sus 3 métricas por card se fuerzan a "—" SIN llamar a useAdStats con su
+ * id real (evita la RPC y evita que un 0 legítimo — "SIEMPRE una fila si la
+ * autorización pasa, 0 si no hay actividad", ad_stats_totals — se confunda
+ * con "aún no aplica"). Decisión del preview aprobado 212.2 ("en revisión
+ * muestra '—', nunca '0'").
+ *
+ * 🔴 'rejected' queda FUERA a propósito: la matriz de transiciones
+ * (supabase/migrations/20260816000006_ads_state_machine.sql:122-129) SOLO
+ * permite active→rejected — nunca pending_review→rejected — así que un
+ * anuncio rechazado SÍ estuvo activo y puede tener alcance real que reportar.
+ */
+const NEVER_EXPOSED_STATUSES = new Set(['draft', 'pending_review']);
 
 /** Contador compacto: ≥1000 → "1.2k" (mismo criterio que PropertyListItem.tsx). */
 function format_count(n: number): string {
@@ -107,8 +128,13 @@ function zone_label(
 // Sub-componentes
 // ---------------------------------------------------------------------------
 
-/** Fila de un anuncio propio: título, estado y vigencia. */
+/**
+ * Fila de un anuncio propio: thumbnail, título, estado, vigencia y las 3
+ * métricas "Máximo" (subtarea 212.5, techo = design-previews/212-dashboard-
+ * anuncios.html, frame A). Tap → navega al detalle (/ads/<id>, 212.5).
+ */
 function AdListItem({ ad }: { ad: MyAd }) {
+  const router = useRouter();
   const badge = get_ad_badge(ad.status);
   const caption = ad.paused_by_suspension
     ? 'Pausado porque tu organización está suspendida'
@@ -116,18 +142,69 @@ function AdListItem({ ad }: { ad: MyAd }) {
       ? ad.rejection_reason
       : null;
 
+  // "Máximo" implícito, sin selector (mismos totales que mostraría el tab
+  // "Máximo" del detalle) — null para estados que nunca tuvieron exposición
+  // (NEVER_EXPOSED_STATUSES) evita disparar las 3 RPCs y fuerza "—".
+  const stats_ad_id = NEVER_EXPOSED_STATUSES.has(ad.status) ? null : ad.id;
+  const stats = useAdStats(stats_ad_id, 'max');
+
   return (
-    <View style={styles.ad_row}>
-      <View style={styles.ad_row_top}>
-        <Text style={styles.ad_title} numberOfLines={1}>{ad.title}</Text>
-        <View style={[styles.badge, { backgroundColor: badge.bg }]}>
-          <Text style={[styles.badge_label, { color: badge.text }]}>{badge.label}</Text>
+    <Pressable
+      style={({ pressed }) => [styles.ad_row, pressed && styles.ad_row_pressed]}
+      onPress={() => router.push(`/ads/${ad.id}`)}
+      accessibilityRole="button"
+      accessibilityLabel={`Ver detalle de ${ad.title}`}
+    >
+      <View style={styles.ad_card_top}>
+        {/* ponytail: caja decorativa (color sólido + ícono ▶), sin
+            thumbnail_url real de ad_creatives — el preview usa un gradiente
+            puramente decorativo (sin <img> ni dato ligado), y cargarlo real
+            exigiría tocar useMyAds.ts (mobile/**​/hooks/** es CRÍTICO por
+            CLAUDE.md §5, fuera de alcance de esta subtarea de pantallas). */}
+        <View style={styles.thumb}>
+          <Play size={16} color="rgba(246,242,235,0.8)" weight="fill" />
+        </View>
+        <View style={styles.ad_card_info}>
+          <View style={styles.ad_row_top}>
+            <Text style={styles.ad_title} numberOfLines={2}>{ad.title}</Text>
+            <View style={[styles.badge, { backgroundColor: badge.bg }]}>
+              <Text style={[styles.badge_label, { color: badge.text }]}>{badge.label}</Text>
+            </View>
+          </View>
+          <Text style={styles.ad_vigencia}>
+            {format_date_short(ad.starts_at)} – {format_date_short(ad.ends_at)}
+          </Text>
+          {caption && <Text style={styles.ad_caption}>{caption}</Text>}
         </View>
       </View>
-      <Text style={styles.ad_vigencia}>
-        {format_date_short(ad.starts_at)} – {format_date_short(ad.ends_at)}
-      </Text>
-      {caption && <Text style={styles.ad_caption}>{caption}</Text>}
+
+      <AdCardMetricsRow totals={stats.totals} />
+    </Pressable>
+  );
+}
+
+const AD_CARD_METRIC_ITEMS: { key: keyof AdStatsTotals; label: string }[] = [
+  { key: 'impressions', label: 'Impresiones' },
+  { key: 'views', label: 'Vistas completas' },
+  { key: 'cta_taps', label: 'Toques al contacto' },
+];
+
+/**
+ * Fila de 3 métricas de UN anuncio (card de la lista). totals=null → "—" en
+ * las 3 (carga, error, sin autorización o estado nunca-expuesto) — NUNCA un
+ * "0" fabricado, mismo invariante que TotalsRow pero a nivel de un solo ad.
+ */
+function AdCardMetricsRow({ totals }: { totals: AdStatsTotals | null }) {
+  return (
+    <View style={styles.card_metrics_row}>
+      {AD_CARD_METRIC_ITEMS.map((item, index) => (
+        <View key={item.key} style={[styles.card_metric, index > 0 && styles.card_metric_divider]}>
+          <Text style={[styles.card_metric_value, totals === null && styles.card_metric_value_dim]}>
+            {totals === null ? '—' : format_count(totals[item.key])}
+          </Text>
+          <Text style={styles.card_metric_label}>{item.label}</Text>
+        </View>
+      ))}
     </View>
   );
 }
@@ -424,12 +501,32 @@ const styles = StyleSheet.create({
   ad_row: {
     backgroundColor: colors.surface,
     borderRadius: radii.r_16,
-    padding: spacing.s_16,
+    padding: spacing.s_12,
+  },
+  ad_row_pressed: {
+    opacity: 0.85,
+  },
+  ad_card_top: {
+    flexDirection: 'row',
+    gap: spacing.s_12,
+    alignItems: 'flex-start',
+  },
+  thumb: {
+    width: 56,
+    height: 56,
+    borderRadius: radii.r_12,
+    backgroundColor: colors.ink_feed,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ad_card_info: {
+    flex: 1,
+    minWidth: 0,
   },
   ad_row_top: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: spacing.s_8,
   },
   ad_title: {
@@ -457,6 +554,40 @@ const styles = StyleSheet.create({
     textTransform: 'none',
     letterSpacing: 0,
     color: colors.accent,
+    marginTop: spacing.s_4,
+  },
+
+  // ── Fila de 3 métricas por card (212.5) ─────────────────────────────────
+  card_metrics_row: {
+    flexDirection: 'row',
+    marginTop: spacing.s_12,
+    paddingTop: spacing.s_12,
+    borderTopWidth: 1,
+    borderTopColor: colors.paper_2,
+  },
+  card_metric: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  card_metric_divider: {
+    borderLeftWidth: 1,
+    borderLeftColor: colors.paper_3,
+  },
+  card_metric_value: {
+    fontFamily: fonts.sans_bold,
+    fontSize: 19,
+    lineHeight: 22,
+    color: colors.ink,
+  },
+  card_metric_value_dim: {
+    color: colors.gray_1,
+  },
+  card_metric_label: {
+    ...type_scale.caption,
+    fontSize: 9.5,
+    lineHeight: 12,
+    color: colors.gray_2,
+    textAlign: 'center',
     marginTop: spacing.s_4,
   },
 });

@@ -43,23 +43,40 @@
  * (RNTL 14 — sin `await` el resultado queda `undefined`). PROHIBIDO
  * `expect(act(...)).resolves.not.toThrow()` (vacuo, ver CLAUDE.md/nota
  * rntl14_renderhook_async).
+ *
+ * 🔴 Ampliado en 212.5 (cada card gana thumbnail + fila de 3 métricas
+ * "Máximo" vía useAdStats, y navega al detalle) — CAMBIOS a este archivo:
+ *   - `useAdStats` se mockea (igual que useMyAds/useAdMetrics): cada
+ *     AdListItem lo invoca por su cuenta y, sin mock, intentaría llamar
+ *     `.rpc()` sobre el mock de supabase de este archivo (que solo
+ *     implementa `.from().select().in()` para el catálogo de zonas) y
+ *     tronaría.
+ *   - `expo-router` gana `useRouter` (mockeado con un `push` espiable) —
+ *     AdListItem navega al detalle con `router.push`.
+ *   - (EC-S6/EC-S7) nuevos: la fila de métricas por card formatea los
+ *     totales de useAdStats, el tap navega, y un anuncio 'pending_review'
+ *     fuerza ad_id=null hacia useAdStats (nunca dispara su RPC) y pinta "—".
  */
 
 import React from 'react';
-import { render, act, cleanup, screen } from '@testing-library/react-native';
+import { render, act, cleanup, screen, fireEvent } from '@testing-library/react-native';
 
 import type { MyAd, UseMyAdsResult } from '@/features/ads/hooks/useMyAds';
 import type { UseAdMetricsState } from '@/features/ads/hooks/useAdMetrics';
+import type { UseAdStatsState } from '@/features/ads/hooks/useAdStats';
 
 // ---------------------------------------------------------------------------
 // Mocks — ANTES de importar el SUT.
 // ---------------------------------------------------------------------------
+
+const mock_router_push = jest.fn();
 
 jest.mock('expo-router', () => ({
   // Stack.Screen es solo configuración de header — sin navigator real bajo
   // RNTL no aporta nada al smoke, mismo criterio que _layout.test.tsx con
   // Redirect/Slot.
   Stack: { Screen: () => null },
+  useRouter: () => ({ push: mock_router_push }),
 }));
 
 jest.mock('@/features/ads/hooks/useMyAds', () => ({
@@ -68,6 +85,10 @@ jest.mock('@/features/ads/hooks/useMyAds', () => ({
 
 jest.mock('@/features/ads/hooks/useAdMetrics', () => ({
   useAdMetrics: jest.fn(),
+}));
+
+jest.mock('@/features/ads/hooks/useAdStats', () => ({
+  useAdStats: jest.fn(),
 }));
 
 // Chain mínima .from(table).select(cols).in(col, ids) → Promise — la
@@ -98,10 +119,12 @@ jest.mock('@/lib/supabase/client', () => ({
 
 import { useMyAds } from '@/features/ads/hooks/useMyAds';
 import { useAdMetrics } from '@/features/ads/hooks/useAdMetrics';
+import { useAdStats } from '@/features/ads/hooks/useAdStats';
 import AdsScreen from '../index';
 
 const mock_use_my_ads = useMyAds as jest.MockedFunction<typeof useMyAds>;
 const mock_use_ad_metrics = useAdMetrics as jest.MockedFunction<typeof useAdMetrics>;
+const mock_use_ad_stats = useAdStats as jest.MockedFunction<typeof useAdStats>;
 
 type RenderResult = Awaited<ReturnType<typeof render>>;
 
@@ -124,6 +147,18 @@ function metrics(overrides: Partial<UseAdMetricsState>): UseAdMetricsState {
   return { zones: [], other_zones: null, totals: null, loading: false, error: null, ...overrides };
 }
 
+function ad_stats(overrides: Partial<UseAdStatsState>): UseAdStatsState {
+  return {
+    totals: null,
+    daily: [],
+    zones: [],
+    is_loading: false,
+    error_message: null,
+    refetch: jest.fn(),
+    ...overrides,
+  };
+}
+
 async function render_screen(): Promise<RenderResult> {
   let q!: RenderResult;
   await act(async () => {
@@ -134,6 +169,9 @@ async function render_screen(): Promise<RenderResult> {
 
 beforeEach(() => {
   mock_supabase_holder.client = make_catalog_mock([]);
+  // Default seguro: cualquier card renderizada sin override explícito pinta
+  // "—" (totals=null) en vez de tronar contra un mock de RPC inexistente.
+  mock_use_ad_stats.mockReturnValue(ad_stats({}));
 });
 
 afterEach(() => {
@@ -265,5 +303,47 @@ describe('EC-S5: catalogo_de_nombres_falla_los_numeros_se_pintan_igual', () => {
     expect(screen.getByText('7 · 2 · 1')).toBeTruthy();
     expect(screen.getByText('Municipio sin nombre')).toBeTruthy();
     expect(screen.queryByText('14039')).toBeNull();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// (EC-S6) 212.5 — card pinta thumbnail + 3 métricas por anuncio, tap navega
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('EC-S6: tarjeta_pinta_metricas_por_anuncio_y_navega_al_detalle', () => {
+  it('ad activo con totals reales → formatea las 3 métricas (12.5k/3.9k/214) y el tap navega a /ads/<id>', async () => {
+    mock_use_my_ads.mockReturnValue(my_ads({ ads: [AD], loading: false, error: null }));
+    mock_use_ad_metrics.mockReturnValue(metrics({}));
+    mock_use_ad_stats.mockReturnValue(
+      ad_stats({ totals: { impressions: 12500, views: 3900, cta_taps: 214 } }),
+    );
+
+    await render_screen();
+
+    expect(mock_use_ad_stats).toHaveBeenCalledWith('ad-1', 'max');
+    expect(screen.getByText('12.5k')).toBeTruthy();
+    expect(screen.getByText('3.9k')).toBeTruthy();
+    expect(screen.getByText('214')).toBeTruthy();
+
+    fireEvent.press(screen.getByLabelText('Ver detalle de Anuncio Uno'));
+    expect(mock_router_push).toHaveBeenCalledWith('/ads/ad-1');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// (EC-S7) 212.5 — 'pending_review' fuerza "—" sin pedirle su id a la RPC
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("EC-S7: anuncio_en_revision_fuerza_guiones_sin_pedir_su_id_a_useAdStats", () => {
+  it("status='pending_review' → useAdStats se llama con ad_id=null (nunca dispara su RPC) y la card pinta '—' en las 3 métricas", async () => {
+    const pending_ad: MyAd = { ...AD, id: 'ad-2', status: 'pending_review' };
+    mock_use_my_ads.mockReturnValue(my_ads({ ads: [pending_ad], loading: false, error: null }));
+    mock_use_ad_metrics.mockReturnValue(metrics({}));
+    mock_use_ad_stats.mockReturnValue(ad_stats({ totals: null }));
+
+    await render_screen();
+
+    expect(mock_use_ad_stats).toHaveBeenCalledWith(null, 'max');
+    expect(screen.queryAllByText('—')).toHaveLength(3);
   });
 });
