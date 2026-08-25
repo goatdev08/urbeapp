@@ -124,7 +124,18 @@ function DiffRow({
 }
 
 function RevisionDiff({ item }: { item: AdminRevisionItem }): React.ReactElement {
-  const keys = Object.keys(item.changed_fields);
+  // edit-property guarda el INPUT COMPLETO en changed_fields (verificado en el
+  // smoke de 218.5), no solo lo que cambió — aquí se filtra al diff real:
+  // fuera property_id (metadato, no campo editable) y fuera las keys cuyo valor
+  // propuesto es idéntico al publicado.
+  const keys = Object.keys(item.changed_fields).filter(
+    (key) =>
+      key !== 'property_id' &&
+      !Object.is(
+        item.changed_fields[key] ?? null,
+        item.property[key as keyof AdminRevisionPropertySnapshot] ?? null
+      )
+  );
   const new_currency =
     (item.changed_fields.currency as string | undefined) ?? item.property.currency;
 
