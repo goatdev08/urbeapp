@@ -1076,6 +1076,27 @@ El CRM clasifica automáticamente cada lead con un puntaje basado en sus interac
 - Cada categoría de notificación se controla con un toggle en Configuración → Notificaciones.
 - El resumen semanal consolida actividad reciente para evitar ruido por cada like/guardado individual.
 
+### 22.4 Addendum (2026-08-24): notificaciones al administrador
+
+> Enmienda registrada por la decisión `wiki/decisiones/0010-prd-canonico-beta-sin-pagos.md`. El catálogo §22.3 no contempla ninguna notificación con audiencia **Admin**; este addendum incorpora el **catálogo v1** aprobado en la exploración `.taskmaster/docs/exploraciones/041-panel-admin-centro-operativo.md` (módulo panel-admin, tareas #217–#222).
+
+Escritor: trigger/EF según el evento inserta UNA fila en `notifications` por cada usuario con `users.role='admin'`. Idempotencia por índice único parcial (patrón `notify_ads_expiring_soon`). `deep_link` apunta a la pantalla del panel admin correspondiente.
+
+
+| Evento                                                     | type                        | Deep link          |
+| ---------------------------------------------------------- | --------------------------- | ------------------ |
+| Anuncio entra a `pending_review`                           | `admin_ad_pending`          | `/admin/ads`       |
+| Revisión de edición creada (`property_revisions` pending)  | `admin_revision_pending`    | `/admin/revisions` |
+| Reporte nuevo (1º y 2º de una propiedad)                   | `admin_report_new`          | `/admin/reports`   |
+| Auto-suspensión por 3 reportes/24h                         | `admin_report_autosuspend`  | `/admin/reports`   |
+| Solicitud de agente nueva                                  | `admin_agent_application`   | `/admin/requests`  |
+| Registro de inmobiliaria pendiente                         | `admin_agency_pending`      | `/admin/requests`  |
+| Solicitud de cuenta comercial nueva                        | `admin_advertising_request` | `/admin/requests`  |
+
+
+- **Transporte en beta: badges + centro in-app.** Los badges del home del panel admin son contadores vivos leídos de las colas; el centro de notificaciones in-app (§22.1) es el lector de `notifications`. **Push a admins = fase 2** (no forma parte de la beta).
+- Referencias: decisión `wiki/decisiones/0010-prd-canonico-beta-sin-pagos.md` · exploración `.taskmaster/docs/exploraciones/041-panel-admin-centro-operativo.md`.
+
 ---
 
 ## 23. Perfiles, visibilidad y configuración

@@ -1,6 +1,14 @@
 # PRD — Urbea MVP-Demo (beta cerrada · 3 semanas)
 
-> **Versión:** 1.0 · **Fecha:** 2026-06-17 · **Estado:** en revisión
+> ## 🔴 DOCUMENTO RETIRADO (2026-08-24)
+>
+> **Este documento quedó RETIRADO como referencia** por la decisión
+> `wiki/decisiones/0010-prd-canonico-beta-sin-pagos.md`. **La fuente de verdad
+> de producto es `docs/PRD.md`.** Ninguna sesión debe planear con este
+> documento; se conserva únicamente como registro histórico del hito de la
+> demo cerrada (2026-06/07).
+
+> **Versión:** 1.0 · **Fecha:** 2026-06-17 · **Estado:** ~~en revisión~~ **retirado** (2026-08-24)
 > **Objetivo de fecha:** demo lista ~2026-07-08 (3 semanas)
 > Este documento define el alcance del **primer hito de desarrollo**: una demo/beta cerrada.
 > Es un subconjunto reducido del [PRD oficial](./PRD.md) (35 secciones), que queda como roadmap.

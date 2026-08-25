@@ -1,6 +1,15 @@
 # PRD-beta — Urbea (camino demo → beta → producción)
 
-> **Estado:** vivo · **v0.2** (2026-07-13) · **Spec completa: todas las olas (0–4) detalladas y descompuestas en 107 subtareas** (épicas TM 67–84). Decisiones locked por módulo. Listo para ejecutar por `/tm-plan`/`/tm-tarea`.
+> ## 🔴 DOCUMENTO RETIRADO (2026-08-24)
+>
+> **Este documento quedó RETIRADO como referencia** por la decisión
+> `wiki/decisiones/0010-prd-canonico-beta-sin-pagos.md`: el escalonamiento por
+> "olas" deja de gobernar el alcance y el criterio pasa a ser
+> **"beta = producción menos pagos"**. **La fuente de verdad de producto es
+> `docs/PRD.md`.** Ninguna sesión debe planear con este documento; se conserva
+> únicamente como registro histórico.
+
+> **Estado:** ~~vivo~~ **retirado** · **v0.2** (2026-07-13) · **Spec completa: todas las olas (0–4) detalladas y descompuestas en 107 subtareas** (épicas TM 67–84). Decisiones locked por módulo. Listo para ejecutar por `/tm-plan`/`/tm-tarea`.
 > **Fuente de verdad de producto:** `docs/PRD.md` (v1.0, 35 secciones). Este documento **acota y prioriza** ese alcance para la beta y define la secuencia de construcción. Decisión de arquitectura: `wiki/decisiones/0008-arquitectura-real-prd.md`. Brechas: `wiki/estado/brechas-demo-vs-prd.md`.
 
 ## 0. Cómo leer este documento
