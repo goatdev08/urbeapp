@@ -99,8 +99,21 @@
  * envueltas en `await act(async () => {...})`; `unmount()` dentro de `act`.
  *
  * ---------------------------------------------------------------------------
- * EDGE CASES CUBIERTOS (27):
+ * EDGE CASES CUBIERTOS (27 + 3 de hardening post-guardian = 30):
  * ---------------------------------------------------------------------------
+ *
+ * Hardening post-guardian (219.3, ver describe('hardening post-guardian')):
+ *   - EC-10 endurecido a igualdad EXACTA del string de columnas (antes
+ *     `toContain` por columna dejaba pasar over-fetch — mutante h).
+ *   - EC-26 reescrito: el assert original (`console.error` tras unmount) era
+ *     vacuo (React 19 no emite ese warning para function components; el
+ *     mutante f lo pasaba en verde). Ahora ancla un invariante real
+ *     (snapshot de `result.current` congelado en el instante del unmount +
+ *     sin throw/unhandledRejection) y documenta que el mutante f se mata en
+ *     EC-25, no aquí — ver comentario inline.
+ *   - (H-1..H-3) rama sin sesión (`user: null`): sin red, `is_loading` cae a
+ *     `false`, `notifications`/`error_message` sin fabricar, `mark_read` y
+ *     `mark_all_read` son no-op.
  *
  * ### Happy path
  * - (EC-1)  camino_feliz_dos_notificaciones_shape_completo_orden_del_server_respetado
@@ -341,6 +354,19 @@ function set_auth_user(user_id: string): void {
   } as any);
 }
 
+/** Sin sesión — `user: null` (harness pedido por el guardian de 219.3). */
+function set_auth_user_sin_sesion(): void {
+  mock_use_auth.mockReturnValue({
+    user: null,
+    session: null,
+    isLoading: false,
+    signIn: jest.fn(),
+    signOut: jest.fn(),
+    requestPasswordReset: jest.fn(),
+    updatePassword: jest.fn(),
+  } as any);
+}
+
 const ROW_1 = make_notification_row({
   id: 'notif-uuid-1',
   type: 'lead_new',
@@ -538,11 +564,13 @@ describe('useNotifications — construcción exacta de la query de lista', () =>
 
     const inv = select_invocation(mock);
     const select_arg = inv.entry_arg as string;
-    for (const col of CONTRACT_COLUMNS) {
-      expect(select_arg).toContain(col);
-    }
-    // Ninguna columna administrativa/ajena al contrato (defensa contra over-fetch).
-    expect(select_arg).not.toContain('user_id');
+    // Endurecido post-guardian (mutante h — columnas de más como
+    // `deleted_at, updated_at` sobrevivía a un `toContain` por columna):
+    // igualdad EXACTA contra el string derivado de CONTRACT_COLUMNS, cuyo
+    // orden viene de una fuente independiente del SUT — el DDL de la
+    // migración (supabase/migrations/20260604000007_analytics_moderation_
+    // audit.sql:56-69) — no del propio SELECT_COLUMNS del hook.
+    expect(select_arg).toBe(CONTRACT_COLUMNS.join(', '));
   });
 });
 
@@ -876,7 +904,41 @@ describe('useNotifications — refetch, carrera y unmount', () => {
   });
 
   it('(EC-26) unmount_durante_fetch_en_vuelo_no_setState_sin_warning', async () => {
+    // ---------------------------------------------------------------------
+    // Endurecido post-guardian: el `expect(...).not.toHaveBeenCalled()`
+    // original era VACUO — React 19 nunca emite el warning legacy "state
+    // update on an unmounted component" para componentes función, así que
+    // el espía jamás dispara pase lo que pase con el SUT (verificado: el
+    // mutante (f), quitar `return () => { ignore = true }`, seguía pasando
+    // este assert en verde).
+    //
+    // Investigación (bitácora 219.3, hardening): tras instrumentar el hook
+    // real con console.error/warn spies + listener de unhandledRejection +
+    // snapshot de `result.current`, un unmount() real + resolución tardía
+    // produce EXACTAMENTE la misma salida observable con y sin el cleanup
+    // `ignore = true` — React descarta la actualización de un fiber ya
+    // desmontado de forma total y silenciosa (sin log, sin excepción, sin
+    // re-render), sea o no diligente el propio hook. Es decir: para el
+    // escenario de UNMOUNT PURO, ningún test de caja negra puede discriminar
+    // el mutante (f) — la garantía "no state tras unmount" ya la da React,
+    // no el `ignore` del hook. El mutante SÍ muere en EC-25 (el `ignore`
+    // existe para la generación viva-pero-obsoleta durante un re-render por
+    // cambio de deps, no para el unmount).
+    //
+    // Este test se conserva como ancla de un invariante real y distinto:
+    // el snapshot final expuesto a cualquier consumidor de `result.current`
+    // queda CONGELADO tal cual estaba en el instante del unmount (nunca
+    // "salta" a reflejar la respuesta tardía), y unmountear a media
+    // descarga no revienta ni deja una promesa rechazada sin atrapar.
+    // ---------------------------------------------------------------------
     const console_error_spy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const console_warn_spy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    let unhandled_rejection: unknown = null;
+    const on_unhandled_rejection = (reason: unknown) => {
+      unhandled_rejection = reason;
+    };
+    process.on('unhandledRejection', on_unhandled_rejection);
+
     let resolve_select!: (v: SelectResult) => void;
     const pending = new Promise<SelectResult>((resolve) => {
       resolve_select = resolve;
@@ -890,14 +952,27 @@ describe('useNotifications — refetch, carrera y unmount', () => {
       unmount();
     });
 
+    // Snapshot congelado en el instante exacto del unmount — ninguna
+    // resolución posterior puede ya alcanzarlo.
+    const frozen_snapshot = { ...result.current };
+
     await act(async () => {
       resolve_select({ data: [ROW_1, ROW_2], error: null });
       await Promise.resolve();
       await Promise.resolve();
+      await Promise.resolve();
     });
 
+    expect(result.current.is_loading).toBe(frozen_snapshot.is_loading);
+    expect(result.current.notifications).toBe(frozen_snapshot.notifications);
+    expect(result.current.error_message).toBe(frozen_snapshot.error_message);
     expect(console_error_spy).not.toHaveBeenCalled();
+    expect(console_warn_spy).not.toHaveBeenCalled();
+    expect(unhandled_rejection).toBeNull();
+
     console_error_spy.mockRestore();
+    console_warn_spy.mockRestore();
+    process.off('unhandledRejection', on_unhandled_rejection);
   });
 });
 
@@ -923,5 +998,69 @@ describe('useNotifications — métodos no desprendidos', () => {
     // alguna vez desprende `supabase.from` (`const {from} = supabase`),
     // este flujo lo cazaría (memoria supabase_js_metodo_desprendido).
     expect(mock.was_detached()).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Hardening post-guardian (219.3) — rama sin sesión sin ancla.
+// ---------------------------------------------------------------------------
+
+describe('hardening post-guardian', () => {
+  it('(H-1) sin_sesion_user_null_is_loading_false_notifications_null_sin_llamada_de_red_ni_error_fabricado', async () => {
+    const mock = make_supabase_mock({ select_result: { data: [ROW_1, ROW_2], error: null } });
+    mock_supabase_holder.client = mock.client;
+    set_auth_user_sin_sesion();
+
+    const { result } = await renderHook(() => useNotifications());
+
+    expect(result.current.is_loading).toBe(false);
+    expect(result.current.notifications).toBeNull();
+    expect(result.current.error_message).toBeNull();
+    expect(result.current.unread_count).toBe(0);
+    // Sin user_id, el hook nunca debe tocar la red — ni una sola invocación
+    // select() capturada, aunque el mock esté listo para responder con datos.
+    expect(mock.invocations).toHaveLength(0);
+  });
+
+  it('(H-2) sin_sesion_mark_read_es_no_op_no_dispara_red', async () => {
+    const mock = make_supabase_mock({
+      select_result: { data: [ROW_1], error: null },
+      update_results: [{ data: null, error: null }],
+    });
+    mock_supabase_holder.client = mock.client;
+    set_auth_user_sin_sesion();
+
+    const { result } = await renderHook(() => useNotifications());
+    expect(result.current.notifications).toBeNull();
+
+    await act(async () => {
+      await result.current.mark_read('notif-uuid-1');
+    });
+
+    const update_inv = mock.invocations.find((i) => i.kind === 'update');
+    expect(update_inv).toBeUndefined();
+    // Estado sigue exactamente como antes — no hay lista que "marcar".
+    expect(result.current.notifications).toBeNull();
+    expect(result.current.unread_count).toBe(0);
+  });
+
+  it('(H-3) sin_sesion_mark_all_read_es_no_op_no_dispara_red', async () => {
+    const mock = make_supabase_mock({
+      select_result: { data: [ROW_1, ROW_2], error: null },
+      update_results: [{ data: null, error: null }],
+    });
+    mock_supabase_holder.client = mock.client;
+    set_auth_user_sin_sesion();
+
+    const { result } = await renderHook(() => useNotifications());
+
+    await act(async () => {
+      await result.current.mark_all_read();
+    });
+
+    const update_inv = mock.invocations.find((i) => i.kind === 'update');
+    expect(update_inv).toBeUndefined();
+    expect(result.current.notifications).toBeNull();
+    expect(result.current.unread_count).toBe(0);
   });
 });
