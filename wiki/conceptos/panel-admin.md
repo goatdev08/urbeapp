@@ -12,7 +12,7 @@ codigo:
   - mobile/app/admin/revisions/index.tsx
   - mobile/src/features/profile/ProfileScreen.tsx
   - supabase/functions/_shared/property_field_whitelist.ts
-actualizado: 2026-08-25
+actualizado: 2026-08-27
 ---
 
 # Panel admin (centro operativo)
@@ -29,8 +29,9 @@ actualizado: 2026-08-25
 - **Gestión de anuncios en `/admin/ads`** (#208): cola de `pending_review` con creativo firmado bajo demanda, aprobar/rechazar con motivo; pause/resume/reject de activos (#210). Ver [[publicidad-anuncios]].
 - **Cola de revisiones en `/admin/revisions`** (#218, M1): revisiones `pending|needs_changes` FIFO con **diff campo a campo** (`useAdminRevisions`: embed a `properties`, sin RPC nueva; el diff filtra a valores realmente distintos — `edit-property` guarda el input COMPLETO en `changed_fields`) y **Aprobar / Pedir cambios / Rechazar** (`useModerateProperty` → EF `moderate-property`; **motivo obligatorio en la UI** para las dos últimas aunque la EF lo deje opcional). Aprobar aplica el snapshot vía la RPC atómica — el bug del precio editado que nadie podía aprobar está muerto. Lado publicador: bucket «En revisión» en Mis publicaciones + badge veraz `suspended`; el aviso con motivo al publicador nace en M2 ([[notificaciones]]).
 
-## Qué llega (M2–M5, una tarea = una rama = un PR)
-- **M2 (#219)** — centro de notificaciones in-app (primer lector de `notifications`) + escritores admin del catálogo v1 (PRD §22.4). Push = fase 2.
+- **Centro de notificaciones (#219, M2, vivo)**: 4 escritores admin por trigger + espejos de resolución en las 4 funciones de moderación (catálogo v1), hook `useNotifications`, campana con badge en el Perfil y pantalla `(protected)/notifications`. Detalle y decisiones en [[notificaciones]].
+
+## Qué llega (M3–M5, una tarea = una rama = un PR)
 - **M3 (#220)** — reportes §24 completo: botón Reportar, cola `/admin/reports`, auto-suspensión 3 reportes/24h.
 - **M4 (#221)** — cola `/admin/requests` unificada: solicitudes de agente, registros de inmobiliaria y el canal nuevo de cuenta comercial.
 - **M5 (#222)** — testing profundo del ciclo comercial (checklist guiado + Maestro E2E), ponytail-audit de `features/admin`, OTA.
