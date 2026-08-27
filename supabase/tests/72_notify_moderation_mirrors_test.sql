@@ -922,10 +922,13 @@ select is(
   array['00000000-0000-0000-0072-000000000011'::uuid],
   'AGY1_pending_approval_a_active_solo_el_solicitante_recibe'
 );
+-- Solo types de espejo: el admin SÍ recibe la legítima admin_agency_pending (219.1,
+-- mismo related_entity_id — agencies no tiene entidad "revisión" intermedia).
 select is(
   (select count(*)::int from public.notifications
     where user_id = '00000000-0000-0000-0072-000000000001'
-      and related_entity_id = '00000000-0000-0000-0072-000000000301'),
+      and related_entity_id = '00000000-0000-0000-0072-000000000301'
+      and type in ('agency_approved', 'agency_rejected')),
   0, 'AGY2_admin_actor_NUNCA_recibe_agency_approved'
 );
 
@@ -1029,10 +1032,13 @@ select is(
   array['00000000-0000-0000-0072-000000000012'::uuid],
   'APP1_pending_a_approved_independent_solo_el_solicitante_recibe'
 );
+-- Solo types de espejo: el admin SÍ recibe la legítima admin_agent_application (219.1,
+-- mismo related_entity_id — agent_applications no tiene entidad "revisión" intermedia).
 select is(
   (select count(*)::int from public.notifications
     where user_id = '00000000-0000-0000-0072-000000000001'
-      and related_entity_id = '00000000-0000-0000-0072-000000000401'),
+      and related_entity_id = '00000000-0000-0000-0072-000000000401'
+      and type in ('agent_application_approved', 'agent_application_rejected')),
   0, 'APP2_admin_actor_NUNCA_recibe_agent_application_approved'
 );
 
