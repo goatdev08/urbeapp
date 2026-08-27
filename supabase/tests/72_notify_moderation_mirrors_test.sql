@@ -177,7 +177,7 @@
 begin;
 -- 🔴 #223.1: +7 asserts sobre el plan(100) original de #219.2 (PROP37-41,
 -- AD20-21) -- PROP5/PROP21 se CORRIGIERON in-place (no suman al plan).
-select plan(107);
+select plan(109);
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- Fixtures globales — 1 admin actor (reusado en TODAS las secciones, NUNCA
@@ -745,6 +745,64 @@ select is(
   (select count(*)::int from public.notifications
     where related_entity_id = '00000000-0000-0000-0072-000000000109' and type like 'property_revision_%'),
   2, 'PROP36_misma_revision_id_dos_resoluciones_reales_dos_espejos_nunca_deduplicados_entre_si'
+);
+
+-- ── 4.3) 🔴 HARDENING #223.1 — retry EXACTO en la rama SIN revisión ─────────
+--    Toda la sección 4 pasaba p_revision_id, así que ejercitaba SOLO la rama
+--    CON revisión: la mitad `v_old_property_status is distinct from
+--    p_new_property_status` del guard nunca estuvo anclada (hueco preexistente
+--    de #219.2, detectado por el mutante propio m7 del guardian de 223.1 —
+--    perder esa mitad duplicaba el espejo y la suite seguía verde). PROP41
+--    ancló la mitad nueva (`is not null`); estos dos anclan la otra.
+insert into public.properties
+  (id, owner_user_id, operation_type, property_type, price, address, location, status)
+values (
+  '00000000-0000-0000-0072-000000000113', '00000000-0000-0000-0072-000000000002',
+  'sale', 'casa', 3100000, 'Calle Espejo Retry Sin Revision 72',
+  extensions.ST_SetSRID(extensions.ST_Point(-99.1, 19.4), 4326)::extensions.geography,
+  'pending_review'
+);
+
+select public.moderate_property_atomic(
+  p_admin_id            => '00000000-0000-0000-0072-000000000001'::uuid,
+  p_property_id         => '00000000-0000-0000-0072-000000000113'::uuid,
+  p_action_type         => 'approve',
+  p_old_values          => '{}'::jsonb,
+  p_new_values          => '{}'::jsonb,
+  p_reason              => null,
+  p_new_property_status => 'active',
+  p_changed_fields      => null,
+  p_revision_id         => null,
+  p_revision_status     => null,
+  p_revision_reason     => null
+);
+
+select is(
+  (select count(*)::int from public.notifications
+    where related_entity_id = '00000000-0000-0000-0072-000000000113' and type like 'property_revision_%'),
+  1, 'PROP42_primer_approve_sin_revision_genera_exactamente_1_espejo'
+);
+
+-- Reintento EXACTO: la propiedad ya quedó en 'active', así que el status NO
+-- transiciona y el espejo NO debe repetirse.
+select public.moderate_property_atomic(
+  p_admin_id            => '00000000-0000-0000-0072-000000000001'::uuid,
+  p_property_id         => '00000000-0000-0000-0072-000000000113'::uuid,
+  p_action_type         => 'approve',
+  p_old_values          => '{}'::jsonb,
+  p_new_values          => '{}'::jsonb,
+  p_reason              => null,
+  p_new_property_status => 'active',
+  p_changed_fields      => null,
+  p_revision_id         => null,
+  p_revision_status     => null,
+  p_revision_reason     => null
+);
+
+select is(
+  (select count(*)::int from public.notifications
+    where related_entity_id = '00000000-0000-0000-0072-000000000113' and type like 'property_revision_%'),
+  1, 'PROP43_reintento_exacto_sin_revision_NO_duplica_el_espejo_sigue_en_1'
 );
 
 -- ════════════════════════════════════════════════════════════════════════════
