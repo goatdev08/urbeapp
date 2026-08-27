@@ -10119,7 +10119,7 @@
         "id": "219",
         "title": "feat(041-M2): centro de notificaciones in-app + escritores admin",
         "description": "Pantalla campana para TODOS los roles que lee public.notifications (lista, no-leídas, marcar leída/todas, deep links) — primer lector de la tabla. Más los 7 escritores del catálogo v1 (doc 041) hacia users.role=admin y las escrituras espejo al usuario afectado (§28.4, solo in-app en beta).",
-        "details": "Origen: exploración 041 · bloque M2 · decisión 3 (badges + centro in-app; push = fase 2). ADOPTA 77.4 (centro in-app); el resto de #77 (device_tokens, EF push-dispatch, toggles, resumen semanal) queda como fase 2 — el centro debe quedar listo para conectarle push sin rehacer nada. Patrón de escritor: calcar notify_ads_expiring_soon (20260822000001): índice único parcial de idempotencia, to_char en UTC (nunca to_jsonb(timestamptz)), un aviso borrado sigue anclando. RLS ya limita el update del usuario a read_at/deleted_at. Catálogo v1: admin_ad_pending, admin_revision_pending, admin_report_new, admin_report_autosuspend, admin_agent_application, admin_agency_pending, admin_advertising_request + espejos de resultado al usuario. Escritura en la MISMA transacción del evento. Footprint: supabase/migrations/*, mobile/src/features/notifications/*, campana en el header.",
+        "details": "Origen: exploración 041 · bloque M2 · decisión 3 (badges + centro in-app; push = fase 2). ADOPTA 77.4 (centro in-app); el resto de #77 (device_tokens, EF push-dispatch, toggles, resumen semanal) queda como fase 2 — el centro debe quedar listo para conectarle push sin rehacer nada. Patrón de escritor: calcar notify_ads_expiring_soon (20260822000001): índice único parcial de idempotencia, to_char en UTC (nunca to_jsonb(timestamptz)), un aviso borrado sigue anclando. RLS ya limita el update del usuario a read_at/deleted_at. Catálogo v1: admin_ad_pending, admin_revision_pending, admin_report_new, admin_report_autosuspend, admin_agent_application, admin_agency_pending, admin_advertising_request + espejos de resultado al usuario. Escritura en la MISMA transacción del evento. Footprint: supabase/migrations/*, mobile/src/features/notifications/*, campana en el header.\n\nDERIVADAS: #223 (code review PR #106 — double check)",
         "testStrategy": "Escritores = CRÍTICA (pgTAP: idempotencia del índice, destinatarios = todos los users.role=admin, espejo al afectado, misma transacción — fallo de escritura no rompe el evento o sí, decidir y fijar en RED). Hook lector = CRÍTICA (RNTL). Smoke en preview: moderar algo → campana del otro admin sube.",
         "status": "done",
         "dependencies": [
@@ -10208,7 +10208,7 @@
             "parentId": "undefined"
           }
         ],
-        "updatedAt": "2026-08-27T20:23:15.881Z"
+        "updatedAt": "2026-08-27T21:27:24.482799Z"
       },
       {
         "id": "220",
@@ -10251,6 +10251,69 @@
         "priority": "high",
         "subtasks": [],
         "updatedAt": "2026-08-24T23:04:32.029Z"
+      },
+      {
+        "id": "223",
+        "title": "fix(219): deep links muertos, semántica de espejos y filtros del centro de notificaciones",
+        "description": "Origen: subtareas 219.2/219.3/219.6 · Detectado por: code review PR #106 (double check). Seis hallazgos confirmados que las 2186 aserciones no podían ver por ser cross-layer (SQL que promete rutas y semántica que el cliente no cumple): 2 deep_link a rutas inexistentes, un resume de anuncio anunciado como aprobación, el fan-out admin sin filtrar borrados, el badge capado por la página de 50 y el retry-dedup con params nulos. Ventana limpia: las 2 migraciones de #219 NO están deployadas a producción, así que el fix entra ANTES del deploy y nunca se escribe una sola fila con deep_link muerto.",
+        "details": "Hallazgos del review, con su destino en esta tarea:\n1. deep_link '/my-listings' inexistente (ruta real '/profile/my-listings') → 223.1\n2. deep_link '/admin/requests' inexistente hasta #221 → 223.2 (interino '/admin')\n3. paused→active manda 'ad_approved' («fue aprobado y ya está activo») → 223.1\n4. fan-out admin sin `and u.deleted_at is null` ×4 (notifica borrados + seq scan por índice parcial, dentro de la transacción bloqueante) → 223.2\n5. badge y mark_all_read capados por `.limit(50)` → 223.3\n6. retry-dedup con p_revision_id y p_new_property_status ambos NULL (latente) → 223.1\n7. menores: mark_all_read sin filtro deleted_at → 223.3; comments no restaurados por el rollback → 223.1; purga 30d vs anclas → 223.4 (deuda documentada, decisión).\nDeuda de simplificación NO incluida (ponytail, no bugs): fan-out escrito 4 veces (candidato private.notify_platform_admins), NotificationItem a mano vs Row generado, ref-espejo del hook.",
+        "testStrategy": "TDD estricto en 223.1–223.3 (migraciones y hooks/** son críticos por la regla determinista de path). Guardian con mutantes en cada GREEN. 223.4 verifica las suites completas y el round-trip de rollbacks.",
+        "status": "pending",
+        "dependencies": [
+          "219"
+        ],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Espejos de moderación: deep_link real, resume ≠ aprobación y retry-dedup sin params",
+            "description": "Migración correctiva sobre las 3 funciones de espejo de 20260826000001 (nada de esto está deployado a producción todavía).",
+            "details": "SUT: nueva migración supabase/migrations/20260827000001_fix_moderation_mirror_semantics.sql (create or replace, aditiva e idempotente) + rollback.\n(a) moderate_property_atomic: deep_link '/my-listings' → '/profile/my-listings' (la ruta real es mobile/app/(protected)/profile/my-listings.tsx; ProfileScreen.tsx:154 ya empuja esa). '/my-listings' NO existe → Unmatched Route.\n(b) moderate_property_atomic: hoyo del retry-dedup — en la rama SIN revisión, `v_old_property_status is distinct from p_new_property_status` da TRUE cuando p_new_property_status es NULL, así que una llamada sin revisión y sin nuevo status espejea una aprobación que nunca ocurrió. Exigir `p_new_property_status is not null and ...`.\n(c) moderate_ad_atomic: 'ad_approved' SOLO cuando v_old_status = 'pending_review'. Hoy cualquier →active (incluido un resume de paused) manda «Tu anuncio fue aprobado y ya está activo», que es falso en un resume. Decisión: un resume NO se espejea (mismo criterio que active↔suspended en agencias); un tipo 'ad_resumed' queda como opción de fase 2 documentada.\n(d) Restaurar los `comment on function` en el rollback (hallazgo menor del review).\nAUTORIZADO explícitamente: los asserts de 20260826000001 que codificaron '/my-listings' (PROP5 y familia) en supabase/tests/72_notify_moderation_mirrors_test.sql se CORRIGEN — expectativa equivocada, no test debilitado.",
+            "testStrategy": "pgTAP en supabase/tests/72_notify_moderation_mirrors_test.sql: RED con (1) deep_link '/profile/my-listings' en las 3 ramas de property, (2) llamada sin revisión y sin p_new_property_status → 0 espejos, (3) paused→active → 0 espejos y pending_review→active → 1 'ad_approved'. Round-trip del rollback. Suite completa 72 + pgTAP global verde.",
+            "status": "pending",
+            "dependencies": [],
+            "subtasks": [],
+            "updatedAt": "2026-08-27T21:27:24.482799Z",
+            "parentId": "223"
+          },
+          {
+            "id": 2,
+            "title": "Eventos admin: fan-out sin admins borrados y deep_link a una ruta que existe",
+            "description": "Migración correctiva sobre las 4 funciones notify_admin_* de 20260825000001.",
+            "details": "SUT: nueva migración supabase/migrations/20260827000002_fix_admin_notify_recipients.sql (create or replace) + rollback.\n(a) Las 4 funciones hacen `from public.users u where u.role = 'admin'` SIN `and u.deleted_at is null`: notifica a admins dados de baja y además fuerza seq scan porque users_role_idx es PARCIAL (`where deleted_at is null`, 20260604000002:34-35) — y esto corre DENTRO de la transacción bloqueante del evento. Añadir el filtro en las 4.\n(b) deep_link '/admin/requests' (admin_agency_pending y admin_agent_application) NO existe: mobile/app/admin/ solo tiene index/ads/agencies/revisions. Interino → '/admin' (el índice admin es justo la lista de inmobiliarias y el hub de las colas). #221 (M4 solicitudes) lo re-apunta a '/admin/requests' cuando esa pantalla exista.\n(c) Actualizar el catálogo de la cabecera del archivo original en el header de la correctiva.\nAUTORIZADO: los asserts de supabase/tests/71_notify_admin_events_test.sql que esperan '/admin/requests' se corrigen a '/admin'.",
+            "testStrategy": "pgTAP en supabase/tests/71_notify_admin_events_test.sql: RED con (1) admin con deleted_at NO recibe en los 4 eventos, (2) deep_link '/admin' en agency_pending y agent_application. Round-trip del rollback. Suite 71 + pgTAP global verde.",
+            "status": "pending",
+            "dependencies": [],
+            "subtasks": [],
+            "updatedAt": "2026-08-27T21:27:24.482799Z",
+            "parentId": "223"
+          },
+          {
+            "id": 3,
+            "title": "Badge real (no capado por la página de 50) y mark_all_read con filtro deleted_at",
+            "description": "Corrige el conteo de no leídas del hook y el UPDATE masivo.",
+            "details": "SUT: mobile/src/features/notifications/hooks/useNotifications.ts (+ types.ts si cambia el contrato).\n(a) `unread_count` se deriva del arreglo ya capado por `.limit(50)`: con más de 50 notificaciones el badge MIENTE y mark_all_read solo marca la primera página. Fix: conteo por query de cabecera — `.select('id', { count: 'exact', head: true }).eq('user_id', user.id).is('deleted_at', null).is('read_at', null)` (el índice notifications_unread_idx existe exactamente para eso). El optimismo de mark_read/mark_all_read debe seguir siendo exacto sobre ese conteo, con revert en fallo.\n(b) El UPDATE de mark_all_read no lleva `.is('deleted_at', null)`: estampa read_at sobre notificaciones borradas. Añadirlo (el SELECT ya lo lleva).\nNO entra: paginación / cargar más de 50 (queda fuera de alcance, ponytail).",
+            "testStrategy": "RNTL en mobile/src/features/notifications/__tests__/useNotifications.test.tsx: RED con (1) lista de 50 y 73 no leídas → unread_count = 73, (2) mark_all_read hace el UPDATE con .is('deleted_at', null), (3) optimismo y revert exactos sobre el conteo nuevo. Suite mobile completa + tsc + lint.",
+            "status": "pending",
+            "dependencies": [],
+            "subtasks": [],
+            "updatedAt": "2026-08-27T21:27:24.482799Z",
+            "parentId": "223"
+          },
+          {
+            "id": 4,
+            "title": "Cierre: verificación completa, deuda documentada e ingest",
+            "description": "Gate §0.5, verificación de las suites completas, deuda menor documentada y actualización del vault.",
+            "details": "(a) Verificación completa con salidas reales: pgTAP global, mobile (tsc/lint/test), round-trip de AMBOS rollbacks nuevos.\n(b) Deuda documentada SIN cambio de código (decisiones, no bugs): la purga de 30 días borra las anclas de idempotencia (un evento aún pendiente a los 31 días puede re-notificar — se acepta: la retención le gana a la anti-duplicación); opción 'ad_resumed' para el resume, fase 2; deep_link '/admin' es interino de #221.\n(c) Ingest: wiki/conceptos/notificaciones.md (catálogo con los deep_link corregidos + las 3 decisiones), wiki/log.md, wiki/estado/estado-actual.md.\n(d) Gate §0.5: ambas migraciones son aditivas (create or replace de funciones existentes, misma firma y mismo returns), no rompen contrato publicado y pueden deployarse antes o después del OTA. Nada de #219+#223 está en producción todavía → el deploy sale ya corregido.",
+            "testStrategy": "Salidas reales pegadas en la bitácora (nada narrado de memoria). PR con gh y squash-merge a main.",
+            "status": "pending",
+            "dependencies": [],
+            "subtasks": [],
+            "updatedAt": "2026-08-27T21:27:24.482799Z",
+            "parentId": "223"
+          }
+        ],
+        "updatedAt": "2026-08-27T21:27:24.482799Z"
       }
     ],
     "metadata": {
