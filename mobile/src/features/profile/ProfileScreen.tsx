@@ -45,6 +45,7 @@ import { useAgencyRole } from '@/features/leads/hooks/useAgencyRole';
 import { fetch_own_membership } from '@/features/agency/api';
 import { useCanAdvertise } from '@/features/ads/hooks/useCanAdvertise';
 import { useMyAds } from '@/features/ads/hooks/useMyAds';
+import { NotificationBellButton } from '@/features/notifications/components/NotificationBellButton';
 import { useAgentProfile } from './hooks/useAgentProfile';
 import { useAgentStats } from './hooks/useAgentStats';
 import { ProfileHeader } from './components/ProfileHeader';
@@ -271,6 +272,14 @@ export function ProfileScreen({
           en el perfil propio (#147). En el tab Perfil no hay nada que popear. */}
       {show_back && <BackButton floating />}
 
+      {/* Campana de notificaciones flotante — junto al menú "⋯" (219.4,
+          DECISIÓN ABRAHAM 2026-08-25: único punto de entrada al centro, NO
+          tab nueva). Solo en perfil propio: las notificaciones son de la
+          cuenta autenticada, no del perfil ajeno que se esté viendo. */}
+      {is_own_profile && (
+        <NotificationBellButton style={[styles.bell_btn, { top: insets.top + spacing.s_8 }]} />
+      )}
+
       {/* Botón "⋯" flotante arriba-derecha — abre el menú de acciones.
           Solo en perfil propio (las acciones son del dueño de la cuenta). */}
       {is_own_profile && (
@@ -360,5 +369,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.paper_2,
+  },
+  // A la izquierda del menu_btn: 40 (su ancho) + s_8 (respiro) de separación.
+  bell_btn: {
+    position: 'absolute',
+    right: spacing.s_16 + 40 + spacing.s_8,
+    zIndex: 10,
   },
 });
