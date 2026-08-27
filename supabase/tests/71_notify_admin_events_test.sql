@@ -184,10 +184,43 @@
 --   avisos no debe cambiar — no-op silencioso (b). 2 caminos representativos
 --   (ads por UPDATE, agencies por INSERT), mismo criterio de "una vez por
 --   estilo de disparo" que la sección 7.
+-- Sección 10 — 🔴 BUG REAL detectado en el smoke E2E de #219.5 (subtarea
+--   #219.6): esta suite (secciones 2/9) solo ejercita admin_ad_pending vía la
+--   transición UPDATE draft->pending_review. Pero el flujo REAL del wizard de
+--   anuncios de un anunciante es la RPC public.create_ad_campaign_atomic
+--   (20260820000005, invocada desde mobile/app/(protected)/ads/new/step5.tsx)
+--   — esa RPC INSERTa el ad YA NACIDO en pending_review, nunca pasa por
+--   draft. El trigger vigente (AFTER UPDATE WHEN old.status='draft' and
+--   new.status='pending_review') JAMÁS se dispara para ese camino: en
+--   producción, el admin nunca recibe el aviso de una campaña real creada
+--   por un anunciante. El camino draft->pending_review (Studio, vía
+--   grant_ad_slot_atomic — revoke'd de authenticated) sigue siendo legítimo,
+--   su cobertura (sección 2) no se toca.
+--   10.1 happy path — se invoca la RPC REAL create_ad_campaign_atomic (vía
+--     impersonación JWT, mismo patrón que 60_create_ad_campaign_atomic_
+--     test.sql) porque es el seam MÁS fiel al bug: reproduce el camino de
+--     producción exacto, no un espejo a mano de las columnas que la RPC
+--     escribe. Los 2 admins de plataforma reciben admin_ad_pending con
+--     data->>'ad_title' igual al título real de la campaña.
+--   10.2 un ad nacido por INSERT crudo en OTRO status ('draft', el que usa
+--     grant_ad_slot_atomic) NO dispara — el gate depende del VALOR de
+--     status, no de que sea un INSERT contra ads.
+--   10.3 el ancla de idempotencia cubre el camino nuevo: (a) tras el happy
+--     path de 10.1, un INSERT crudo duplicado con la MISMA llave (user_id,
+--     ad_id, type) es rechazado por el índice compartido
+--     notifications_admin_ad_pending_anchor_idx (20260825000001) — prueba
+--     que las filas que deja el escritor nuevo caen bajo el MISMO índice que
+--     ancla el escritor UPDATE existente; (b) un ad DISTINTO que nace
+--     pending_review con la ancla YA pre-ocupada por ambos admins no aborta
+--     el evento y el conteo de avisos no cambia (no-op silencioso, mismo
+--     criterio que la sección 9) — INVARIANTE hoy (nada intenta escribir sin
+--     el trigger nuevo), el guardian debe reverificar tras el GREEN que sigue
+--     en verde por la razón correcta (on conflict do nothing), no por
+--     ausencia del SUT.
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(76);
+select plan(85);
 
 create or replace function pg_temp.act_as(p_uid uuid, p_role text default 'authenticated')
 returns void language plpgsql as $$
@@ -890,6 +923,143 @@ select is(
   (select count(*)::int from public.notifications
     where related_entity_id = '00000000-0000-0000-0000-000000710095' and type = 'admin_agency_pending'),
   2, 'CONFLICT6_agencies_el_conteo_de_avisos_NO_cambia_no_op_silencioso_sigue_en_2'
+);
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 10) 🔴 BUG REAL (#219.6) — admin_ad_pending para ads nacidos DIRECTO en
+--    pending_review vía la RPC create_ad_campaign_atomic (el wizard real del
+--    anunciante), no vía la transición UPDATE draft->pending_review que ya
+--    cubren las secciones 2/9. Ver cabecera "Sección 10" arriba.
+-- ════════════════════════════════════════════════════════════════════════════
+
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-000000710211', 'owner_ads_insert_71@urbea.mx');
+insert into public.agencies (id, name, slug, status, created_by_user_id, can_advertise, advertiser_category) values
+  ('00000000-0000-0000-0000-000000710212', 'Agencia Notify Insert Pending 71', 'agencia-notify-insert-pending-71',
+   'active', '00000000-0000-0000-0000-000000710211', true, 'otro');
+insert into public.agency_members (agency_id, user_id, member_role, status) values
+  ('00000000-0000-0000-0000-000000710212', '00000000-0000-0000-0000-000000710211', 'owner', 'active');
+insert into public.ad_creatives (id, agency_id, cloudflare_uid, status) values
+  ('00000000-0000-0000-0000-000000710213', '00000000-0000-0000-0000-000000710212', 'cf-notify-insert-71', 'ready');
+
+-- ── 10.1) happy path — RPC REAL create_ad_campaign_atomic, el ad nace
+--    DIRECTO en pending_review, jamás pasa por draft ───────────────────────
+create temp table result_rpc_ad_71 (ok boolean, ad_id uuid, err_message text);
+do $$
+declare v_ad_id uuid;
+begin
+  perform pg_temp.act_as('00000000-0000-0000-0000-000000710211');
+  v_ad_id := public.create_ad_campaign_atomic(
+    '00000000-0000-0000-0000-000000710213'::uuid,
+    'Ad Wizard Real 71',
+    'phone'::ad_cta_type,
+    '+5213300007105',
+    '[]'::jsonb,
+    null,
+    30
+  );
+  reset role;
+  insert into result_rpc_ad_71 (ok, ad_id) values (true, v_ad_id);
+exception when others then
+  reset role;
+  insert into result_rpc_ad_71 (ok, err_message) values (false, sqlerrm);
+end $$;
+
+select is((select ok from result_rpc_ad_71), true,
+  'RPCINS1_la_RPC_real_del_wizard_no_lanza_en_el_happy_path -- ' ||
+  coalesce((select err_message from result_rpc_ad_71), '')
+);
+select is(
+  (select status::text from public.ads where id = (select ad_id from result_rpc_ad_71)),
+  'pending_review',
+  'RPCINS2_precondicion_el_ad_de_la_RPC_SI_nacio_directo_en_pending_review_jamas_paso_por_draft'
+);
+select is(
+  (select array_agg(user_id order by user_id) from public.notifications
+    where related_entity_id = (select ad_id from result_rpc_ad_71) and type = 'admin_ad_pending'),
+  array[
+    '00000000-0000-0000-0000-000000710001'::uuid,
+    '00000000-0000-0000-0000-000000710002'::uuid
+  ],
+  'RPCINS3_BUG_219_6_los_2_admins_de_plataforma_y_solo_ellos_reciben_admin_ad_pending_aunque_el_ad_nazca_por_INSERT_via_la_RPC_del_wizard'
+);
+select is(
+  (select data->>'ad_title' from public.notifications
+    where user_id = '00000000-0000-0000-0000-000000710001'
+      and related_entity_id = (select ad_id from result_rpc_ad_71)
+      and type = 'admin_ad_pending'),
+  'Ad Wizard Real 71',
+  'RPCINS4_data_ad_title_es_el_titulo_real_de_la_campana_creada_por_la_RPC'
+);
+
+-- ── 10.2) INSERT crudo nacido en 'draft' (el status que usa
+--    grant_ad_slot_atomic) — NO dispara: el gate depende del VALOR de
+--    status, no de que sea un INSERT contra ads ────────────────────────────
+insert into public.ads (id, agency_id, creative_id, title, cta_type, cta_value, status, starts_at, ends_at) values
+  ('00000000-0000-0000-0000-000000710214', '00000000-0000-0000-0000-000000710212',
+   '00000000-0000-0000-0000-000000710213', 'Ad Nace Draft Via Insert 71', 'phone', '+5213300007106',
+   'draft', now() - interval '1 day', now() + interval '30 days');
+
+select is(
+  (select count(*)::int from public.notifications
+    where related_entity_id = '00000000-0000-0000-0000-000000710214' and type = 'admin_ad_pending'),
+  0, 'RPCINS5_INSERT_directo_nacido_en_draft_NO_dispara_solo_pending_review_dispara_por_INSERT'
+);
+
+-- ── 10.3a) el ancla es COMPARTIDA por el camino nuevo — tras el happy path
+--    de 10.1, un INSERT crudo duplicado con la MISMA llave (user_id, ad_id,
+--    type) sobre el ad de la RPC es rechazado por el índice único parcial
+--    notifications_admin_ad_pending_anchor_idx (20260825000001) — las filas
+--    que deja el escritor INSERT nuevo caen bajo el MISMO índice que ya
+--    ancla al escritor UPDATE existente (sección 6) ─────────────────────────
+select throws_ok(
+  format(
+    $$ insert into public.notifications (id, user_id, type, title, related_entity_type, related_entity_id) values
+       ('00000000-0000-0000-0000-000000710216', '00000000-0000-0000-0000-000000710001',
+        'admin_ad_pending', 'Anuncio pendiente de revisión (duplicado del camino INSERT)', 'ad', %L) $$,
+    (select ad_id from result_rpc_ad_71)
+  ),
+  '23505', null,
+  'RPCINS6_el_ancla_compartida_rechaza_un_INSERT_duplicado_con_la_llave_que_dejo_el_camino_nuevo'
+);
+
+-- ── 10.3b) hardening — un ad DISTINTO que nace pending_review con la ancla
+--    YA pre-ocupada por ambos admins no aborta el evento y el conteo no
+--    cambia (no-op silencioso, mismo criterio que la sección 9). INVARIANTE
+--    hoy: nada intenta escribir sin el trigger AFTER INSERT nuevo — el
+--    guardian debe reverificar tras el GREEN que sigue en verde por la razón
+--    correcta (on conflict do nothing), no por ausencia del SUT ───────────
+insert into public.notifications (id, user_id, type, title, related_entity_type, related_entity_id) values
+  ('00000000-0000-0000-0000-000000710218', '00000000-0000-0000-0000-000000710001',
+   'admin_ad_pending', 'Anuncio pendiente de revisión (pre-anclado admin1, camino INSERT)', 'ad',
+   '00000000-0000-0000-0000-000000710217'),
+  ('00000000-0000-0000-0000-000000710219', '00000000-0000-0000-0000-000000710002',
+   'admin_ad_pending', 'Anuncio pendiente de revisión (pre-anclado admin2, camino INSERT)', 'ad',
+   '00000000-0000-0000-0000-000000710217');
+
+create temp table result_rpcins_conflict_71 (ok boolean, err_sqlstate text);
+do $$
+begin
+  insert into public.ads (id, agency_id, creative_id, title, cta_type, cta_value, status, starts_at, ends_at) values
+    ('00000000-0000-0000-0000-000000710217', '00000000-0000-0000-0000-000000710212',
+     '00000000-0000-0000-0000-000000710213', 'Ad Conflict Insert Pending 71', 'phone', '+5213300007107',
+     'pending_review', now() - interval '1 day', now() + interval '30 days');
+  insert into result_rpcins_conflict_71 values (true, null);
+exception when others then
+  insert into result_rpcins_conflict_71 values (false, sqlstate);
+end $$;
+
+select is((select ok from result_rpcins_conflict_71), true,
+  'RPCINS7_ads_nace_pending_review_con_la_ancla_ya_ocupada_el_evento_NO_aborta_on_conflict_do_nothing'
+);
+select is(
+  (select status::text from public.ads where id = '00000000-0000-0000-0000-000000710217'),
+  'pending_review', 'RPCINS8_el_ad_SI_quedo_creado_en_pending_review_pese_al_conflicto_de_ancla'
+);
+select is(
+  (select count(*)::int from public.notifications
+    where related_entity_id = '00000000-0000-0000-0000-000000710217' and type = 'admin_ad_pending'),
+  2, 'RPCINS9_el_conteo_de_avisos_NO_cambia_no_op_silencioso_sigue_en_2'
 );
 
 select * from finish();
