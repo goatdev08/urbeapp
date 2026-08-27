@@ -148,10 +148,24 @@
 --              mueve de todas formas, dado que el guard ya excepciona por
 --              el fault-injection). El guardian debe re-verificar tras
 --              GREEN que sostienen por la razón correcta.
+--
+-- ── 🔴 Hardening post-guardian (sección 9, tras el GREEN 20260826000001) ────
+-- El análisis de mutantes del guardian encontró 4 supervivientes reales: (e)
+-- quitar `v_recipient is distinct from p_admin_id` en moderate_property_
+-- atomic, (i)/(j) quitar el guard "nunca el admin actor" en los 2 triggers
+-- de agencies/agent_applications, (d2) en la rama active↔suspended de
+-- agencies, escribir un espejo con type FUERA del catálogo (p.ej.
+-- 'agency_suspended'). Causa raíz: ningún fixture de las secciones 1-8 pone
+-- al admin actor como destinatario NATURAL (submitted_by/owner_user_id/
+-- created_by_user_id/user_id) — los asserts "el admin no recibe" eran
+-- ciertos pero no discriminantes (nunca podían coincidir). El único
+-- discriminante previo era AD14 (§5.7: el admin actor es ADEMÁS owner activo
+-- de la agencia). Sección 9 repite ese patrón para los otros 3 escritores +
+-- un escenario de type fuera de catálogo sin filtro (para d2).
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(95);
+select plan(100);
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- Fixtures globales — 1 admin actor (reusado en TODAS las secciones, NUNCA
@@ -1170,6 +1184,125 @@ select is(
   (select count(*)::int from public.admin_actions
     where entity_type = 'property' and entity_id = '00000000-0000-0000-0072-000000000110'),
   0, 'FAULT3_atomicidad_no_quedo_fila_huerfana_en_admin_actions_tampoco_se_escribio'
+);
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 9) 🔴 Hardening post-guardian — el admin actor como destinatario NATURAL
+--    (mutantes (e)/(i)/(j)/(d2) sobrevivientes). Ver header del archivo.
+-- ════════════════════════════════════════════════════════════════════════════
+
+-- ── 9.1) mata (e) — moderate_property_atomic: el admin actor ES el
+--    submitted_by de la revisión que él mismo resuelve → sin el guard
+--    `v_recipient is distinct from p_admin_id` el INSERT SÍ ocurriría con
+--    v_recipient = p_admin_id → 0 filas totales para esta propiedad (el
+--    ÚNICO destinatario posible en la rama CON revisión es el admin actor) ──
+insert into public.properties
+  (id, owner_user_id, operation_type, property_type, price, address, location, status)
+values (
+  '00000000-0000-0000-0072-000000000111', '00000000-0000-0000-0072-000000000002',
+  'rent', 'departamento', 9000, 'Calle Espejo Admin Es Submitted By 72',
+  extensions.ST_SetSRID(extensions.ST_Point(-99.1, 19.4), 4326)::extensions.geography,
+  'pending_review'
+);
+insert into public.property_revisions (id, property_id, status, changed_fields, submitted_by)
+values (
+  '00000000-0000-0000-0072-000000000156', '00000000-0000-0000-0072-000000000111',
+  'pending', '{}'::jsonb, '00000000-0000-0000-0072-000000000001'
+);
+
+select public.moderate_property_atomic(
+  p_admin_id            => '00000000-0000-0000-0072-000000000001'::uuid,
+  p_property_id         => '00000000-0000-0000-0072-000000000111'::uuid,
+  p_action_type         => 'approve',
+  p_old_values          => '{}'::jsonb,
+  p_new_values          => '{}'::jsonb,
+  p_reason              => null,
+  p_new_property_status => 'active',
+  p_changed_fields      => null,
+  p_revision_id         => '00000000-0000-0000-0072-000000000156'::uuid,
+  p_revision_status     => 'approved',
+  p_revision_reason     => null
+);
+
+select is(
+  (select count(*)::int from public.notifications
+    where related_entity_id = '00000000-0000-0000-0072-000000000111'),
+  0,
+  'HARD_PROP1_mata_e_admin_actor_es_el_submitted_by_que_el_mismo_resuelve_0_espejos_totales'
+);
+
+-- ── 9.2) mata (i) — handle_agency_status_change: el admin actor ES el
+--    created_by_user_id de la agencia que él mismo aprueba → 0 espejos
+--    agency_approved/agency_rejected. SÍ recibe la legítima admin_agency_
+--    pending de 219.1 (todo admin la recibe al nacer la agencia) — se filtra
+--    por type, mismo criterio que AGY2. GUC urbea.admin_actor_id ya está en
+--    el admin actor desde la sección 6 (persiste toda la transacción). La
+--    membresía owner activa que AD14 (§5.7) le dio en la agencia 201 se
+--    limpia primero — la cascada de aprobación (MEMBER_OF_OTHER_AGENCY)
+--    exige que el creador NO tenga ya una membresía activa en otra agencia,
+--    y esa membresía era solo un fixture del §5.7, ajeno a esta sección ────
+delete from public.agency_members
+ where agency_id = '00000000-0000-0000-0072-000000000201'
+   and user_id = '00000000-0000-0000-0072-000000000001';
+
+insert into public.agencies (id, name, slug, status, created_by_user_id) values
+  ('00000000-0000-0000-0072-000000000303', 'Agencia Espejo Admin Es Solicitante 72',
+   'agencia-espejo-admin-es-solicitante-72', default, '00000000-0000-0000-0072-000000000001');
+
+update public.agencies set status = 'active' where id = '00000000-0000-0000-0072-000000000303';
+
+select is(
+  (select count(*)::int from public.notifications
+    where user_id = '00000000-0000-0000-0072-000000000001'
+      and related_entity_id = '00000000-0000-0000-0072-000000000303'
+      and type in ('agency_approved', 'agency_rejected')),
+  0,
+  'HARD_AGY1_mata_i_admin_actor_es_el_solicitante_que_el_mismo_aprueba_0_espejos'
+);
+
+-- ── 9.3) mata (j) — handle_agent_application_status_change: el admin actor
+--    ES el user_id de la solicitud que él mismo aprueba → 0 espejos agent_
+--    application_approved/rejected (filtrado igual que APP2, la legítima
+--    admin_agent_application de 219.1 SÍ existe). 🔴 HALLAZGO: el FIX 2
+--    (20260805000010) usa `role = case when role = 'admin' then role else
+--    'agent' end` — protege al admin de perder su role incluso cuando
+--    aprueba SU PROPIA solicitud independent (verificado abajo) ────────────
+insert into public.agent_applications (id, user_id, application_type, status) values
+  ('00000000-0000-0000-0072-000000000404', '00000000-0000-0000-0072-000000000001', 'independent', 'pending');
+
+update public.agent_applications set status = 'approved'
+ where id = '00000000-0000-0000-0072-000000000404';
+
+select is(
+  (select count(*)::int from public.notifications
+    where user_id = '00000000-0000-0000-0072-000000000001'
+      and related_entity_id = '00000000-0000-0000-0072-000000000404'
+      and type in ('agent_application_approved', 'agent_application_rejected')),
+  0,
+  'HARD_APP1_mata_j_admin_actor_es_el_solicitante_que_el_mismo_aprueba_0_espejos'
+);
+select is(
+  (select role::text from public.users where id = '00000000-0000-0000-0072-000000000001'),
+  'admin',
+  'HARD_APP2_role_del_admin_actor_se_mantiene_admin_pese_a_aprobar_su_propia_solicitud_independent'
+);
+
+-- ── 9.4) mata (d2) — handle_agency_status_change, rama active↔suspended:
+--    reabre la ventana ya ejercitada por AGY14 (agencia 301, solicitante
+--    0011) y la cierra con la reactivación suspended→active, luego cuenta
+--    TODAS las notificaciones del solicitante sobre esa agencia SIN filtro
+--    de type — AGY13/AGY14 solo filtraban por el catálogo agency_approved/
+--    agency_rejected, así que un espejo espurio con un type FUERA del
+--    catálogo (p.ej. 'agency_suspended') no los movía; aquí sí, porque no
+--    hay filtro de type que lo esconda ─────────────────────────────────────
+update public.agencies set status = 'active' where id = '00000000-0000-0000-0072-000000000301';
+
+select is(
+  (select count(*)::int from public.notifications
+    where user_id = '00000000-0000-0000-0072-000000000011'
+      and related_entity_id = '00000000-0000-0000-0072-000000000301'),
+  1,
+  'HARD_AGY2_mata_d2_ventana_active_suspended_active_ningun_espejo_espurio_sin_filtro_de_type_sigue_en_1'
 );
 
 select * from finish();
