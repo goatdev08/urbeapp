@@ -1,9 +1,15 @@
 ---
 tipo: estado
-actualizado: 2026-08-25
+actualizado: 2026-08-27
 ---
 
-## Hoy (2026-08-25) — Panel admin M0+M1 en `main`: el bug del precio atorado está muerto
+## Hoy (2026-08-27) — #219 (041-M2): el centro de notificaciones existe, y el smoke cazó el aviso que nunca habría llegado
+
+**La tarea #219 está completa en su rama (`tarea/219-centro-notificaciones`), lista para PR.** `notifications` tiene sus primeros escritores (4 avisos admin por trigger + espejos de resolución en las 4 funciones de moderación, decisión BLOQUEANTE: el aviso vive en la transacción del evento) y su primer lector (`useNotifications` + campana con badge en el Perfil + pantalla del centro). Suites: pgTAP 2186/2186, mobile 1651/1651, rollback round-trip de ambas migraciones probado. Detalle y decisiones en [[notificaciones]].
+
+**La joya del cierre fue el smoke E2E (219.5):** encontró que el aviso `admin_ad_pending` de 219.1 estaba colgado de un UPDATE `draft→pending_review` que el wizard real jamás hace (`create_ad_campaign_atomic` INSERTa el ad nacido `pending_review`) — 185 asserts verdes y el aviso de producción no habría existido. El fix (219.6, trigger AFTER INSERT + RED que invoca la RPC real por impersonación) quedó dentro de la misma rama. También salió de ahí el refetch del badge al re-enfocar el Perfil.
+
+**Post-merge explícito (nada de esto ocurre solo):** (1) **deploy de las 2 migraciones de #219 a producción** (`20260825000001` + `20260826000001`, aditivas, rollback probado) — hasta entonces los escritores solo viven en local y preview-ads; (2) **OTA sigue pospuesto** por decisión de Abraham (acumula #209–#212, #217, #218, #219); (3) redeploy de `edit-property` (desde #218, cero urgencia). Siguiente: **M3 #220** (reportes) → M4 #221 → M5 #222 (OTA + testing guiado).
 
 **Módulo 041 (panel admin centro operativo) avanza: #217 (M0) y #218 (M1) mergeados a `main`** (PRs #104 y #105). El admin entra por el menú ⋮ del perfil, ve los 5 contadores vivos de colas, y la cola `/admin/revisions` ya lee y resuelve `property_revisions` vía `moderate-property` (que estrenó llamador): aprobar APLICA el snapshot (verificado E2E en preview-ads: 45,000→48,500), pedir cambios/rechazar exigen motivo en la UI. Lado publicador: bucket «En revisión» en Mis publicaciones + badge veraz `suspended`. #124 quedó redefinida y cerrada dentro de 218.4 (guardia TS↔SQL del whitelist de 16 columnas). Detalle en [[panel-admin]] y [[moderacion]].
 
