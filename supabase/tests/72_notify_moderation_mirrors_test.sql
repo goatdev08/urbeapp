@@ -715,10 +715,13 @@ select is(
       and related_entity_id = '00000000-0000-0000-0072-000000000221'),
   0, 'AD3_member_role_agent_no_recibe'
 );
+-- Solo types de espejo: desde 219.6 el fixture (INSERT crudo nacido
+-- pending_review) dispara el admin_ad_pending legítimo hacia el admin.
 select is(
   (select count(*)::int from public.notifications
     where user_id = '00000000-0000-0000-0072-000000000001'
-      and related_entity_id = '00000000-0000-0000-0072-000000000221'),
+      and related_entity_id = '00000000-0000-0000-0072-000000000221'
+      and type in ('ad_approved', 'ad_rejected', 'ad_paused')),
   0, 'AD4_admin_actor_NUNCA_recibe'
 );
 
@@ -782,8 +785,12 @@ select lives_ok(
        '00000000-0000-0000-0072-000000000001'::uuid) $$,
   'AD_0MIEMBROS1_sin_owner_admin_activos_la_RPC_no_lanza'
 );
+-- Solo types de espejo (219.6: el fixture nacido pending_review genera el
+-- admin_ad_pending legítimo con este mismo related_entity_id).
 select is(
-  (select count(*)::int from public.notifications where related_entity_id = '00000000-0000-0000-0072-000000000223'),
+  (select count(*)::int from public.notifications
+    where related_entity_id = '00000000-0000-0000-0072-000000000223'
+      and type in ('ad_approved', 'ad_rejected', 'ad_paused')),
   0, 'AD_0MIEMBROS2_0_espejos_generados_sin_error'
 );
 
@@ -851,8 +858,11 @@ select throws_ok(
   'P0001', 'INVALID_NEXT_STATUS',
   'AD_INVALID1_next_status_expired_sigue_rechazado_por_el_guard_existente'
 );
+-- Solo types de espejo (219.6: ídem AD_0MIEMBROS2).
 select is(
-  (select count(*)::int from public.notifications where related_entity_id = '00000000-0000-0000-0072-000000000226'),
+  (select count(*)::int from public.notifications
+    where related_entity_id = '00000000-0000-0000-0072-000000000226'
+      and type in ('ad_approved', 'ad_rejected', 'ad_paused')),
   0, 'AD_INVALID2_next_status_invalido_0_espejos'
 );
 

@@ -1,8 +1,10 @@
--- Rollback: 20260825000001_notify_admin_events.sql (subtarea #219.1)
+-- Rollback: 20260825000001_notify_admin_events.sql (subtarea #219.1, #219.6)
 -- Desprograma el job de pg_cron PRIMERO (un job huérfano apuntando a una
 -- función que ya no existe fallaría en silencio cada día a las 11:00 UTC),
--- luego quita los 4 triggers (y sus funciones), los 3 índices únicos de
--- idempotencia y public.purge_notifications(). NO se desinstala la extensión
+-- luego quita los 5 triggers (4 de #219.1 + ads_notify_admin_pending_insert
+-- de #219.6, MISMA función notify_admin_ad_pending) y sus funciones, los 3
+-- índices únicos de idempotencia y public.purge_notifications(). NO se
+-- desinstala la extensión
 -- pg_cron ni se tocan los jobs rollup_ad_impressions_monthly_daily/
 -- purge_ad_impressions_daily/notify_ads_expiring_soon_daily: son
 -- infraestructura compartida, otros jobs dependen de ella. NO se toca
@@ -27,6 +29,7 @@ drop function if exists public.notify_admin_agent_application();
 drop trigger if exists agencies_notify_admin_pending on public.agencies;
 drop function if exists public.notify_admin_agency_pending();
 
+drop trigger if exists ads_notify_admin_pending_insert on public.ads;
 drop trigger if exists ads_notify_admin_pending on public.ads;
 drop function if exists public.notify_admin_ad_pending();
 

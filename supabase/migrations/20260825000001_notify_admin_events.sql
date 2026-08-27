@@ -16,10 +16,14 @@
 -- QUÉ: 4 eventos con fuente viva avisan a TODOS los public.users.role='admin'
 -- (admin de PLATAFORMA, sin relación con agency_members — distinto del owner/
 -- admin de organización de notify_ads_expiring_soon, 20260822000001):
---   (a) ads: SOLO draft→pending_review (AFTER UPDATE, WHEN old.status='draft'
---       and new.status='pending_review'). La democión de SISTEMA
---       active→pending_review (#192, 20260818000001) NO dispara — contrato
---       explícito, la WHEN clause solo matchea draft→pending_review.
+--   (a) ads: entra a pending_review por NACIMIENTO (AFTER INSERT, WHEN
+--       new.status='pending_review' -- camino REAL del wizard de anuncios
+--       vía create_ad_campaign_atomic, 20260820000005, que inserta el ad YA
+--       en pending_review, #219.6) o por draft→pending_review (AFTER
+--       UPDATE, WHEN old.status='draft' and new.status='pending_review' --
+--       camino de Studio vía grant_ad_slot_atomic). La democión de SISTEMA
+--       active→pending_review (#192, 20260818000001) sigue SIN disparar —
+--       contrato explícito, ninguna WHEN clause matchea esa transición.
 --   (b) agencies: SOLO nacer en pending_approval (AFTER INSERT, WHEN
 --       new.status='pending_approval'). Un INSERT directo con status='active'
 --       (bypaseando la cola) NO dispara.
@@ -175,18 +179,37 @@ end;
 $$;
 
 comment on function public.notify_admin_ad_pending() is
-  'AFTER UPDATE en ads (#219.1): avisa a TODOS los admin de plataforma cuando '
-  'un anuncio entra a draft->pending_review (WHEN clause del trigger -- '
-  'ninguna otra transición dispara, incluida la democión de sistema '
-  'active->pending_review de #192). NO reemplaza ni toca '
-  'public.handle_ad_status_change (20260816000006), que sigue siendo la '
-  'única autoridad de la transición en sí.';
+  'AFTER INSERT/UPDATE en ads (#219.1, #219.6): avisa a TODOS los admin de '
+  'plataforma cuando un anuncio entra a pending_review por nacimiento '
+  '(INSERT, camino real del wizard vía create_ad_campaign_atomic) o por '
+  'draft->pending_review (UPDATE, camino Studio vía grant_ad_slot_atomic) '
+  '-- ninguna otra transición dispara, incluida la democión de sistema '
+  'active->pending_review de #192. El ON CONFLICT DO NOTHING sobre '
+  'notifications_admin_ad_pending_anchor_idx protege el doble disparo. NO '
+  'reemplaza ni toca public.handle_ad_status_change (20260816000006), que '
+  'sigue siendo la única autoridad de la transición en sí.';
 
 drop trigger if exists ads_notify_admin_pending on public.ads;
 create trigger ads_notify_admin_pending
   after update on public.ads
   for each row
   when (old.status = 'draft' and new.status = 'pending_review')
+  execute function public.notify_admin_ad_pending();
+
+-- Camino real del wizard de anuncios (#219.6): create_ad_campaign_atomic
+-- (20260820000005) inserta el ad YA en pending_review -- jamás pasa por
+-- draft, así que el AFTER UPDATE de arriba nunca se dispara para ese
+-- INSERT. Trigger AFTER INSERT independiente, MISMA función: el ON
+-- CONFLICT DO NOTHING sobre notifications_admin_ad_pending_anchor_idx ya
+-- protege el doble disparo si algún día un ad pasara por ambos caminos
+-- (INSERT directo a pending_review + UPDATE draft->pending_review nunca
+-- ocurren para la misma fila, pero el ancla compartida lo cubre de todos
+-- modos).
+drop trigger if exists ads_notify_admin_pending_insert on public.ads;
+create trigger ads_notify_admin_pending_insert
+  after insert on public.ads
+  for each row
+  when (new.status = 'pending_review')
   execute function public.notify_admin_ad_pending();
 
 -- ════════════════════════════════════════════════════════════════════════════

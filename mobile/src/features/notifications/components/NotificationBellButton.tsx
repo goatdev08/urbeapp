@@ -17,9 +17,9 @@
  * on_primary) en vez de translúcido: aquí se superpone sobre el ícono, no
  * queda inline junto a texto, y necesita más contraste. Oculto en 0.
  */
-import React from 'react';
+import React, { useCallback, useRef } from 'react';
 import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { Bell } from 'phosphor-react-native';
 
 import { colors, radii, spacing } from '@/theme/theme';
@@ -32,7 +32,22 @@ interface NotificationBellButtonProps {
 
 export function NotificationBellButton({ style }: NotificationBellButtonProps) {
   const router = useRouter();
-  const { unread_count } = useNotifications();
+  const { unread_count, refetch } = useNotifications();
+
+  // El badge refresca al re-enfocar la pantalla que lo monta (hallazgo del
+  // smoke de 219.5: quedaba rancio al volver de otra tab). Se salta el primer
+  // focus porque coincide con el mount — el hook ya fetchea ahí (mismo patrón
+  // que SavedScreen).
+  const is_first_focus = useRef(true);
+  useFocusEffect(
+    useCallback(() => {
+      if (is_first_focus.current) {
+        is_first_focus.current = false;
+        return;
+      }
+      refetch();
+    }, [refetch]),
+  );
 
   return (
     <Pressable
