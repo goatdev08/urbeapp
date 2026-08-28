@@ -1,0 +1,21 @@
+-- Rollback: 20260828000005_user_reports.sql (subtarea #220.6).
+-- Elimina la tabla public.user_reports por completo. 20260828000005 es la
+-- ÚNICA migración que la crea (el STUB del RED, mismo nombre de archivo sin
+-- el sufijo `_stub`, se eliminó del árbol antes de integrar — era andamio de
+-- test, no un artefacto que deba viajar a producción).
+--
+-- 🔴 POR QUÉ UN DROP Y NO DEJAR LA TABLA A MEDIAS: un rollback que quitara
+-- solo los CHECK/índice único/policies pero dejara la tabla existiendo
+-- rompería una de dos formas silenciosas: (a) sin RLS policies pero con RLS
+-- ENABLED, la tabla queda deny-total — el cliente ve errores de permiso
+-- confusos en vez de "el feature no existe"; (b) si además se deshabilitara
+-- RLS, la tabla quedaría abierta sin las invariantes de negocio (dedupe,
+-- no-auto-reporte). Con el DROP, cualquier INSERT/SELECT sobre
+-- public.user_reports falla ruidoso (42P01 "relation does not exist"), que
+-- es el comportamiento correcto ante un rollback: visible, no silencioso.
+--
+-- Idempotente: `if exists`. Tabla nueva y aditiva (§0.5) — sin datos en
+-- producción hasta que 220.6 despliegue, así que el DROP no arriesga datos
+-- reales de usuarios existentes.
+
+drop table if exists public.user_reports;

@@ -150,10 +150,10 @@ function QueueRow({
   );
 }
 
-/** Las 5 colas del home admin (#217). `ads_pending` (/admin/ads, 208.3) y
- * `revisions_pending` (/admin/revisions, 218.2) navegan; el resto son
- * informativas hasta #219-#221 (ponytail: sin pantallas placeholder para
- * rutas que aún no existen). */
+/** Las 5 colas del home admin (#217). `ads_pending` (/admin/ads, 208.3),
+ * `revisions_pending` (/admin/revisions, 218.2) y `reports_new`
+ * (/admin/reports, 220.4) navegan; el resto son informativas hasta #220-#221
+ * (ponytail: sin pantallas placeholder para rutas que aún no existen). */
 const QUEUE_ROW_DEFS: readonly {
   key: keyof AdminQueueCounts;
   label: string;
@@ -162,7 +162,7 @@ const QUEUE_ROW_DEFS: readonly {
 }[] = [
   { key: 'ads_pending', label: 'Anuncios por revisar', navigable: true, testID: 'admin-ads-entry' },
   { key: 'revisions_pending', label: 'Revisiones de ediciones', navigable: true, testID: 'admin-queue-revisions' },
-  { key: 'reports_new', label: 'Reportes', navigable: false, testID: 'admin-queue-reports' },
+  { key: 'reports_new', label: 'Reportes', navigable: true, testID: 'admin-queue-reports' },
   { key: 'agent_applications_pending', label: 'Solicitudes de agente', navigable: false, testID: 'admin-queue-agent-applications' },
   { key: 'agencies_pending', label: 'Inmobiliarias por aprobar', navigable: false, testID: 'admin-queue-agencies' },
 ];
@@ -231,11 +231,17 @@ export default function AdminAgencyListScreen(): React.ReactElement {
     router.push('/admin/revisions');
   }, [router]);
 
+  // 220.4: entrada a la cola de reportes de propiedad.
+  const handle_reports_press = useCallback(() => {
+    router.push('/admin/reports');
+  }, [router]);
+
   // Mapa key→handler para las filas navegables de QUEUE_ROW_DEFS — cada cola
-  // navega a su propia ruta (ads_pending y revisions_pending hoy).
+  // navega a su propia ruta (ads_pending, revisions_pending y reports_new hoy).
   const queue_row_handlers: Partial<Record<keyof AdminQueueCounts, () => void>> = {
     ads_pending: handle_ads_press,
     revisions_pending: handle_revisions_press,
+    reports_new: handle_reports_press,
   };
 
   // ------ Estados de la pantalla ------

@@ -15,6 +15,7 @@ import {
   make_admin_verifier,
   make_moderation_writer,
   make_property_fetcher,
+  make_reports_resolution_writer,
   make_revision_finder,
   service_client,
 } from "../_shared/clients.ts";
@@ -27,5 +28,6 @@ Deno.serve((req: Request) => {
     propertyFetcher: make_property_fetcher(client),
     revisionFinder: make_revision_finder(client),
     moderationWriter: make_moderation_writer(client),
+    reportsResolutionWriter: make_reports_resolution_writer(client),
   });
 });

@@ -1,12 +1,12 @@
 ---
 tipo: codebase
-actualizado: 2026-06-17
+actualizado: 2026-08-28
 ---
 
 # Mapa del esquema de datos
 
 Cada tabla → migración que la crea → concepto del vault. Fuente: `supabase/migrations/`.
-Proyecto live `urbea-app` (`mvpvqmyhrrkwbnpctpuq`). 20 tablas, migraciones `0001`–`0010`.
+Proyecto live `urbea-app` (`mvpvqmyhrrkwbnpctpuq`). Base `0001`–`0010` (20 tablas) **más las migraciones aditivas posteriores**, fechadas `2026MMDD…` — el detalle de esas vive en [[mapa-codebase]], aquí solo se listan las tablas que crean.
 
 ## Migraciones
 | # | Archivo | Qué hace |
@@ -41,8 +41,9 @@ Proyecto live `urbea-app` (`mvpvqmyhrrkwbnpctpuq`). 20 tablas, migraciones `0001
 | `leads` | 0006 | [[crm-leads]] | vivo |
 | `lead_origin_properties` | 0006 | [[crm-leads]] | vivo |
 | `events_raw` | 0007 | [[rls-seguridad]] | latente |
-| `property_reports` | 0007 | [[moderacion]] | diferido |
-| `notifications` | 0007 | [[notificaciones]] | diferido |
+| `property_reports` | 0007; CHECK «other exige texto» `20260828000001`, trigger de auto-suspensión `20260828000002`, RPC de resolución `20260828000004` (#220) | [[moderacion]] | vivo |
+| `user_reports` | `20260828000005` (#220.6) — reportes de PERFIL; reusa el enum `property_report_reason`; sin cola de resolución ni auto-suspensión de cuentas | [[moderacion]] | vivo (alcance mínimo) |
+| `notifications` | 0007; escritores desde `20260825000001` (#219) y `20260828000002`/`20260828000004` (#220) | [[notificaciones]] | vivo |
 | `admin_actions` | 0007 | [[rls-seguridad]] | latente |
 
 ## Enums clave (0001)

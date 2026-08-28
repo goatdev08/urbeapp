@@ -89,6 +89,8 @@ import type {
   ModerationWriteParams,
   ModerationWriter,
   PropertyFetcher,
+  ReportsResolutionWriteParams,
+  ReportsResolutionWriter,
   RevisionFinder,
 } from "../moderate-property/types.ts";
 import type {
@@ -1581,6 +1583,33 @@ export function make_moderation_writer(client: SupabaseClient): ModerationWriter
         p_revision_id: params.revision_id ?? null,
         p_revision_status: params.revision_status ?? null,
         p_revision_reason: params.revision_reason ?? null,
+      });
+      if (error) {
+        return { ok: false as const, error_code: "DB_ERROR" as const, message: error.message };
+      }
+      return { ok: true as const };
+    },
+  };
+}
+
+/**
+ * Adaptador real de ReportsResolutionWriter (subtarea 220.3). UNA llamada a
+ * la RPC resolve_property_reports_atomic (20260828000004): guard de origen
+ * (property.status='suspended'), transición de properties (status o
+ * deleted_at según la acción), cierre de property_reports 'new'->'resolved',
+ * admin_actions y espejo a notifications al owner viajan en la MISMA
+ * transacción — mismo patrón que make_moderation_writer (#130).
+ */
+export function make_reports_resolution_writer(
+  client: SupabaseClient,
+): ReportsResolutionWriter {
+  return {
+    async apply(params: ReportsResolutionWriteParams) {
+      const { error } = await client.rpc("resolve_property_reports_atomic", {
+        p_admin_id: params.admin_id,
+        p_property_id: params.property_id,
+        p_action_type: params.action_type,
+        p_reason: params.reason,
       });
       if (error) {
         return { ok: false as const, error_code: "DB_ERROR" as const, message: error.message };

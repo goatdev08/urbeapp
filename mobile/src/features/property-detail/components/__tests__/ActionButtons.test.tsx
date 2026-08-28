@@ -19,6 +19,13 @@
  *   - jest.mock de los módulos de hooks (useLikeProperty + useSaveProperty).
  *   - Los mocks controlan el estado (isLiked/isSaved) y exponen spies para toggles.
  *   - No se mockea useAuth: los hooks completos están mockeados a nivel de módulo.
+ *   - 220.5: se agrega jest.mock de useReportProperty (SIN llamarlo — estos
+ *     tests no pasan owner_user_id, así que el botón "Reportar" nunca se
+ *     renderiza). Necesario porque el import estático de useReportProperty
+ *     arrastra @/features/auth/context → @/lib/supabase/client, que revienta
+ *     en este entorno de test por falta de EXPO_PUBLIC_SUPABASE_URL si no se
+ *     mockea el módulo completo (mismo motivo por el que useSaveProperty ya
+ *     estaba mockeado).
  *
  * NOTA RNTL v14: render() retorna Promise → todos los tests son async + await render(...).
  *
@@ -39,6 +46,10 @@
  *
  * ### Boundary / error
  * - (EC-10) sin_videos_boton_save_presente_aunque_video_id_nulo
+ *
+ * ### Hardening 220.5 (mutantes M8 — guard de owner en can_report)
+ * - (EC-11) owner_ve_su_propia_publicacion_boton_reportar_no_se_renderiza
+ * - (EC-12) no_owner_ve_boton_reportar_visible
  */
 
 import React from 'react';
@@ -50,6 +61,7 @@ import { render, fireEvent } from '@testing-library/react-native';
 
 import { useLikeProperty } from '@/features/feed/hooks/useLikeProperty';
 import { useSaveProperty } from '@/features/feed/hooks/useSaveProperty';
+import { useReportProperty } from '@/features/property-detail/hooks/useReportProperty';
 import { ActionButtons } from '../ActionButtons';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -62,6 +74,13 @@ jest.mock('@/features/feed/hooks/useLikeProperty', () => ({
 
 jest.mock('@/features/feed/hooks/useSaveProperty', () => ({
   useSaveProperty: jest.fn(),
+}));
+
+// 220.5: ninguno de estos tests pasa owner_user_id, así que el botón
+// "Reportar" nunca se renderiza y el hook nunca se llama — el mock solo
+// existe para que el import estático no evalúe el módulo real (ver docblock).
+jest.mock('@/features/property-detail/hooks/useReportProperty', () => ({
+  useReportProperty: jest.fn(),
 }));
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -77,6 +96,7 @@ const TEST_VIDEO_ID = 'video-uuid-primer-video-xyz789';
 
 const mock_use_like = useLikeProperty as jest.MockedFunction<typeof useLikeProperty>;
 const mock_use_save = useSaveProperty as jest.MockedFunction<typeof useSaveProperty>;
+const mock_use_report = useReportProperty as jest.MockedFunction<typeof useReportProperty>;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Spies reutilizables
@@ -282,6 +302,42 @@ describe('ActionButtons', () => {
 
     // Save no depende del video_id → debe seguir renderizado
     expect(queryByLabelText('Guardar propiedad')).not.toBeNull();
+  });
+
+  // ── (EC-11) Hardening M8: owner_user_id + is_owner=true → sin botón "Reportar" ──
+
+  it('(EC-11) owner_ve_su_propia_publicacion_boton_reportar_no_se_renderiza: owner_user_id presente + is_owner=true → botón "Reportar publicación" NO se renderiza', async () => {
+    const { queryByLabelText } = await render(
+      <ActionButtons
+        property_id={TEST_PROPERTY_ID}
+        property_video_id={TEST_VIDEO_ID}
+        owner_user_id="owner-uuid-detalle-xyz"
+        is_owner={true}
+      />
+    );
+
+    expect(queryByLabelText('Reportar publicación')).toBeNull();
+  });
+
+  // ── (EC-12) Hardening M8: owner_user_id + is_owner=false → botón "Reportar" visible ──
+
+  it('(EC-12) no_owner_ve_boton_reportar_visible: owner_user_id presente + is_owner=false → botón "Reportar publicación" SÍ se renderiza', async () => {
+    mock_use_report.mockReturnValue({
+      submit_report: jest.fn().mockResolvedValue({ ok: true }),
+      is_submitting: false,
+      error_message: null,
+    });
+
+    const { queryByLabelText } = await render(
+      <ActionButtons
+        property_id={TEST_PROPERTY_ID}
+        property_video_id={TEST_VIDEO_ID}
+        owner_user_id="owner-uuid-detalle-xyz"
+        is_owner={false}
+      />
+    );
+
+    expect(queryByLabelText('Reportar publicación')).not.toBeNull();
   });
 
 });

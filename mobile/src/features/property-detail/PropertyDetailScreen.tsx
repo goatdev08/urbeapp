@@ -40,6 +40,7 @@ import { CaretLeft, HouseLine, MapPinSimple } from 'phosphor-react-native';
 
 import { colors, fonts, layout, spacing } from '@/theme/theme';
 import { ContactAgentButton } from '@/components/ContactAgentButton';
+import { useAuth } from '@/features/auth/context';
 import { usePropertyDetail } from './hooks/usePropertyDetail';
 import { PropertyVideoPlayer } from './components/PropertyVideoPlayer';
 import { PropertyInfoHeader } from './components/PropertyInfoHeader';
@@ -65,6 +66,8 @@ export function PropertyDetailScreen(): React.JSX.Element {
 
   const { data, isLoading, error } = usePropertyDetail(property_id);
   const insets = useSafeAreaInsets();
+  // 220.5: el rail de acciones oculta "Reportar" para el owner de la propiedad.
+  const { user } = useAuth();
 
   // ── Loading — skeleton animado (10.7) ────────────────────────────────────
   if (isLoading) {
@@ -93,6 +96,11 @@ export function PropertyDetailScreen(): React.JSX.Element {
       </View>
     );
   }
+
+  // 220.6: sesión actual == agente mostrado — misma expresión que ActionButtons
+  // usa para is_owner (220.5); se calcula UNA vez aquí y se reusa en ambos
+  // consumidores (rail de acciones + AgentCard) para no duplicarla.
+  const is_agent_self = user !== null && user.id === data.agent.id;
 
   // ID del video primario (menor position) — para useLikeProperty en ActionButtons.
   // ponytail: misma lógica que PropertyVideoPlayer.find_primary_video.
@@ -125,6 +133,8 @@ export function PropertyDetailScreen(): React.JSX.Element {
           <ActionButtons
             property_id={property_id}
             property_video_id={primary_video_id}
+            owner_user_id={data.agent.id}
+            is_owner={is_agent_self}
           />
         </View>
       </View>
@@ -171,6 +181,7 @@ export function PropertyDetailScreen(): React.JSX.Element {
             agent={data.agent}
             agency={data.agency}
             property_id={property_id}
+            is_self={is_agent_self}
           />
         </View>
 

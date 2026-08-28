@@ -26,8 +26,32 @@ import { error_response, json_response } from "../_shared/response.ts";
 import type {
   ModerateAction,
   ModeratePropertyDeps,
-  ModeratePropertyInput,
+  ReportsResolutionAction,
+  ReportsResolutionWriter,
 } from "./types.ts";
+
+// 220.3: deps del handler, ampliadas ADITIVAMENTE con el seam nuevo de
+// resolución de reportes. `ModeratePropertyDeps` (types.ts) NO se toca —
+// mismo criterio documentado en el archivo hermano de test
+// (report_resolution.test.ts): más propiedades de las requeridas siguen
+// siendo asignables donde se pide `ModeratePropertyDeps` (TS estructural).
+// Opcional porque los 41 tests vigentes de handler.test.ts construyen deps
+// sin este campo (nunca lo necesitan: solo se lee en la rama nueva).
+export type HandlerDeps = ModeratePropertyDeps & {
+  reportsResolutionWriter?: ReportsResolutionWriter;
+};
+
+// 220.3: unión local de action — el payload HTTP real siempre fue JSON sin
+// tipar en el límite; `ModerateAction` deliberadamente NO se amplía (rompería
+// los Records exhaustivos INITIAL_PUBLISH_TARGET_STATUS/REVISION_TARGET_STATUS
+// de abajo, que dependen de `Exclude<ModerateAction, "suspend">`).
+type AnyModerateAction = ModerateAction | ReportsResolutionAction;
+
+interface ParsedInput {
+  property_id: string;
+  action: AnyModerateAction;
+  reason?: string;
+}
 
 // Estados terminales desde los que suspend NUNCA transiciona (PRD §16.1: "no se
 // contempla reabrir"). Documentado también en la subtarea 73.9 (bitácora RED).
@@ -44,6 +68,26 @@ const VALID_ACTIONS = new Set<ModerateAction>([
   "reject",
   "suspend",
 ]);
+
+// 220.3: 4 acciones nuevas de resolución de reportes, solo válidas sobre una
+// propiedad 'suspended' (guard de origen en el handler, ver más abajo).
+// Literales EN INGLÉS DISTINTOS de los vigentes a propósito — 'needs_changes'
+// ya significa "resolver una property_revision" (ambiguo reusarlo aquí).
+const REPORTS_RESOLUTION_ACTIONS = new Set<ReportsResolutionAction>([
+  "restore",
+  "request_changes",
+  "keep_suspended",
+  "delete",
+]);
+
+// status RESULTANTE en la respuesta para cada acción de resolución de
+// reportes (delete NUNCA expone deleted_at en el body, igual que la RPC).
+const REPORTS_RESOLUTION_TARGET_STATUS: Record<ReportsResolutionAction, string> = {
+  restore: "active",
+  request_changes: "needs_changes",
+  keep_suspended: "suspended",
+  delete: "suspended",
+};
 
 // status resultante de properties para cada acción en la rama SIN-revisión
 // (publicación inicial, properties.status pasa de 'pending_review' a esto).
@@ -69,7 +113,7 @@ const REVISION_TARGET_STATUS: Record<
 // ── Validación del payload ────────────────────────────────────────────────────
 
 type ParseResult =
-  | { success: true; data: ModeratePropertyInput }
+  | { success: true; data: ParsedInput }
   | { success: false; message: string };
 
 function invalid(message: string): ParseResult {
@@ -96,10 +140,14 @@ function parse_input(raw: unknown): ParseResult {
     obj.action === undefined ||
     obj.action === null ||
     typeof obj.action !== "string" ||
-    !VALID_ACTIONS.has(obj.action as ModerateAction)
+    !(
+      VALID_ACTIONS.has(obj.action as ModerateAction) ||
+      REPORTS_RESOLUTION_ACTIONS.has(obj.action as ReportsResolutionAction)
+    )
   ) {
     return invalid(
-      "action debe ser 'approve', 'needs_changes', 'reject' o 'suspend'",
+      "action debe ser 'approve', 'needs_changes', 'reject', 'suspend', " +
+        "'restore', 'request_changes', 'keep_suspended' o 'delete'",
     );
   }
 
@@ -115,7 +163,7 @@ function parse_input(raw: unknown): ParseResult {
     success: true,
     data: {
       property_id: obj.property_id,
-      action: obj.action as ModerateAction,
+      action: obj.action as AnyModerateAction,
       reason,
     },
   };
@@ -125,7 +173,7 @@ function parse_input(raw: unknown): ParseResult {
 
 export async function handler(
   req: Request,
-  deps?: ModeratePropertyDeps,
+  deps?: HandlerDeps,
 ): Promise<Response> {
   // 1. CORS preflight
   if (req.method === "OPTIONS") {
@@ -219,6 +267,44 @@ export async function handler(
 
     return json_response(
       { property_id: input.property_id, status: "suspended" },
+      200,
+    );
+  }
+
+  // 7.5 (220.3). Rama de resolución de reportes — 4 acciones nuevas, solo
+  // válidas sobre una propiedad 'suspended' (guard de origen). NUNCA toca
+  // property_revisions (mismo criterio que 'suspend' — revisionFinder no se
+  // invoca en esta rama, ni en el guard ni en el camino feliz).
+  if (REPORTS_RESOLUTION_ACTIONS.has(input.action as ReportsResolutionAction)) {
+    const reportsAction = input.action as ReportsResolutionAction;
+
+    if (property.status !== "suspended") {
+      return error_response(
+        "INVALID_TRANSITION",
+        `No se puede aplicar '${reportsAction}' sobre una propiedad en estado '${property.status}'`,
+        400,
+      );
+    }
+
+    const writeResult = await deps!.reportsResolutionWriter!.apply({
+      property_id: input.property_id,
+      admin_id,
+      action_type: reportsAction,
+      reason,
+    });
+    if (!writeResult.ok) {
+      return error_response(
+        "DB_ERROR",
+        writeResult.message ?? "Error de base de datos",
+        500,
+      );
+    }
+
+    return json_response(
+      {
+        property_id: input.property_id,
+        status: REPORTS_RESOLUTION_TARGET_STATUS[reportsAction],
+      },
       200,
     );
   }
