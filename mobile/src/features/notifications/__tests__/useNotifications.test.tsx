@@ -211,6 +211,21 @@
  *
  * ### Hardening — sin sesión, extiende H-1..H-3
  * - (H-4)  sin_sesion_no_se_llama_la_query_de_conteo_de_cabecera
+ *
+ * ---------------------------------------------------------------------------
+ * Hardening post-guardian (223.3) — dos mutantes sobrevivientes (guardian:
+ * 12/14 muertos) + un fixture rancio (`deep_link: '/my-listings'`, ruta que
+ * ya no existe desde que 223.1 corrigió la migración — ahora
+ * '/profile/my-listings', sin ancla propia por ser pass-through).
+ * ---------------------------------------------------------------------------
+ *
+ * - (EC-37) carrera_de_generaciones_conteo_tardio_de_un_refetch_viejo_no_pisa_el_conteo_nuevo
+ *   — calca EC-25 (lista) pero sobre `run_fetch_count`: mata el mutante que
+ *   quitaba el `if (ignore) return;` de su handler.
+ * - (EC-38) cambio_de_usuario_resetea_el_conteo_de_cabecera_a_cero_de_inmediato_sin_esperar_la_respuesta_nueva
+ *   — mata el mutante que quitaba `set_unread_count(0)` del arranque de
+ *   `start()`; sin el reset, el badge del usuario A queda visible en la
+ *   sesión de B mientras la query nueva está en vuelo (fuga entre cuentas).
  */
 
 import { renderHook, act } from '@testing-library/react-native';
@@ -482,7 +497,7 @@ const ROW_2 = make_notification_row({
   type: 'property_approved',
   title: 'Publicación aprobada',
   body: null,
-  deep_link: '/my-listings',
+  deep_link: '/profile/my-listings',
   related_entity_type: 'property',
   related_entity_id: 'prop-uuid-2',
   data: { foo: 'bar' },
@@ -1403,5 +1418,83 @@ describe('hardening post-guardian', () => {
     // Sin user_id, tampoco se debe construir la query de conteo de
     // cabecera aunque el mock esté listo para responder con 73.
     expect(mock.invocations.filter((i) => i.kind === 'count')).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Hardening post-guardian (223.3) — dos mutantes sobrevivientes del guardian
+// de la subtarea (12/14 muertos): EC-37 calca el patrón de carrera de EC-25
+// pero sobre la query de CONTEO en vez de la de lista; EC-38 ancla que el
+// badge de un usuario nunca queda visible para el siguiente tras un cambio
+// de sesión (fuga de datos entre cuentas, no un detalle cosmético).
+// ---------------------------------------------------------------------------
+
+describe('useNotifications — hardening post-guardian (223.3)', () => {
+  it('(EC-37) carrera_de_generaciones_conteo_tardio_de_un_refetch_viejo_no_pisa_el_conteo_nuevo', async () => {
+    let resolve_count_gen1!: (v: CountResult) => void;
+    const pending_count_gen1 = new Promise<CountResult>((resolve) => {
+      resolve_count_gen1 = resolve;
+    });
+    mock_supabase_holder.client = make_supabase_mock({
+      select_result: { data: [ROW_1], error: null },
+      count_result: pending_count_gen1,
+    }).client;
+
+    const { result } = await renderHook(() => useNotifications());
+    expect(result.current.notifications).toHaveLength(1);
+
+    // gen2: swap del cliente ANTES del refetch — su conteo de cabecera
+    // resuelve de inmediato con un valor DISTINTO al de gen1.
+    mock_supabase_holder.client = make_supabase_mock({
+      select_result: { data: [ROW_1], error: null },
+      count_result: { count: 40, error: null },
+    }).client;
+
+    await act(async () => {
+      result.current.refetch();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(result.current.unread_count).toBe(40);
+
+    // Recién ahora resuelve la promesa tardía del conteo de gen1 (el hook
+    // sigue montado) — no puede pisar el conteo de gen2.
+    await act(async () => {
+      resolve_count_gen1({ count: 73, error: null });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(result.current.unread_count).toBe(40);
+  });
+
+  it('(EC-38) cambio_de_usuario_resetea_el_conteo_de_cabecera_a_cero_de_inmediato_sin_esperar_la_respuesta_nueva', async () => {
+    mock_supabase_holder.client = make_supabase_mock({
+      select_result: { data: [ROW_1], error: null },
+      count_result: { count: 73, error: null },
+    }).client;
+
+    const { result, rerender } = await renderHook(() => useNotifications());
+    expect(result.current.unread_count).toBe(73);
+
+    // Cambio de sesión a un usuario B — su conteo de cabecera queda
+    // pendiente indefinidamente (deliberado: aísla el instante del
+    // arranque de la carga, antes de que cualquier respuesta llegue).
+    mock_supabase_holder.client = make_supabase_mock({
+      select_result: { data: [], error: null },
+      count_result: new Promise<CountResult>(() => {}),
+    }).client;
+    set_auth_user('usuario-uuid-notif-otro-223-3');
+
+    await act(async () => {
+      rerender(undefined);
+    });
+
+    // El badge del usuario A (73) no puede seguir visible para B mientras
+    // la query nueva sigue en vuelo: eso expone que A tiene 73
+    // notificaciones a la sesión de B, no es cosmético. Se limpia al
+    // ARRANCAR la nueva carga, no al terminarla.
+    expect(result.current.unread_count).toBe(0);
   });
 });
