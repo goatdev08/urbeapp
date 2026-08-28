@@ -54,7 +54,7 @@
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(33);
+select plan(34);
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- Fixtures — UUIDs prefijo '00000000-0000-0000-0000-000000073XXX' (subtarea
@@ -182,6 +182,18 @@ select throws_ok(
      values ('00000000-0000-0000-0000-000000073110', '00000000-0000-0000-0000-000000073001', 'other', '    ') $$,
   '23514', null,
   'OTHER3_other_con_reason_text_solo_espacios_es_rechazado_por_el_check'
+);
+
+-- [DELTA — hardening 220.1, hallazgo del guardian] trim() en Postgres recorta
+-- SOLO el espacio ASCII: un reason_text de puro tabulador/salto de línea pasaba
+-- el CHECK original y dejaba el invariante "other exige texto" sin dientes.
+-- No inserta fila (es un rechazo), así que no mueve los conteos absolutos de
+-- DEDUPE2/RLS5 río abajo.
+select throws_ok(
+  $$ insert into public.property_reports (property_id, reported_by_user_id, reason, reason_text)
+     values ('00000000-0000-0000-0000-000000073110', '00000000-0000-0000-0000-000000073001', 'other', E'\t\n\r ') $$,
+  '23514', null,
+  'OTHER6_other_con_reason_text_de_solo_whitespace_no_ascii_tab_nl_es_rechazado'
 );
 
 -- boundary: un solo carácter no-espacio ya cuenta como texto real.
