@@ -40,6 +40,7 @@ import { CaretLeft, HouseLine, MapPinSimple } from 'phosphor-react-native';
 
 import { colors, fonts, layout, spacing } from '@/theme/theme';
 import { ContactAgentButton } from '@/components/ContactAgentButton';
+import { useAuth } from '@/features/auth/context';
 import { usePropertyDetail } from './hooks/usePropertyDetail';
 import { PropertyVideoPlayer } from './components/PropertyVideoPlayer';
 import { PropertyInfoHeader } from './components/PropertyInfoHeader';
@@ -65,6 +66,8 @@ export function PropertyDetailScreen(): React.JSX.Element {
 
   const { data, isLoading, error } = usePropertyDetail(property_id);
   const insets = useSafeAreaInsets();
+  // 220.5: el rail de acciones oculta "Reportar" para el owner de la propiedad.
+  const { user } = useAuth();
 
   // ── Loading — skeleton animado (10.7) ────────────────────────────────────
   if (isLoading) {
@@ -125,6 +128,8 @@ export function PropertyDetailScreen(): React.JSX.Element {
           <ActionButtons
             property_id={property_id}
             property_video_id={primary_video_id}
+            owner_user_id={data.agent.id}
+            is_owner={user !== null && user.id === data.agent.id}
           />
         </View>
       </View>
