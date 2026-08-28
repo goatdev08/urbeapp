@@ -71,7 +71,10 @@
 // - property_id cadena vacía → 400 INVALID_INPUT
 // - property_id solo espacios → 400 INVALID_INPUT
 // - action ausente → 400 INVALID_INPUT
-// - action con valor fuera del enum ('delete') → 400 INVALID_INPUT
+// - action con valor fuera del enum ('archive') → 400 INVALID_INPUT
+//   (era 'delete' hasta 220.3: el catálogo creció con las acciones de resolución
+//    de reportes y 'delete' pasó a ser una acción VÁLIDA; el caso que este test
+//    protege es "literal desconocido", así que se cambió el ejemplo.)
 // - reason presente pero no-string (number) → 400 INVALID_INPUT
 // - reason presente pero cadena vacía/solo espacios → 400 INVALID_INPUT
 //
@@ -742,9 +745,9 @@ Deno.test("action ausente → 400 INVALID_INPUT", async () => {
   assertEquals(body.error.code, "INVALID_INPUT");
 });
 
-Deno.test("action fuera del enum ('delete') → 400 INVALID_INPUT", async () => {
+Deno.test("action fuera del enum ('archive') → 400 INVALID_INPUT", async () => {
   const res = await handler(
-    make_request("POST", { property_id: PROPERTY_ID, action: "delete" }),
+    make_request("POST", { property_id: PROPERTY_ID, action: "archive" }),
     build_deps(),
   );
   assertEquals(res.status, 400);

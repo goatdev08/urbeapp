@@ -114,7 +114,7 @@
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(83);
+select plan(89);
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- Fixtures compartidos — 1 admin actor, 2 owners (uno normal, uno que también
@@ -248,6 +248,25 @@ select is(
   (select count(*)::int from public.admin_actions
     where entity_id = '00000000-0000-0000-0000-000000075101' and action_type = 'restore'),
   1, 'RESTORE6_exactamente_1_admin_actions'
+);
+
+-- ── Hardening (mutantes P4/P7 del guardian, 2026-08-28) — admin_actions.
+--    old_values/new_values reflejan el estado REAL de la transición (D-
+--    ADMIN-ACTIONS), no valores fabricados/copiados uno del otro. ─────────
+select is(
+  (select old_values->>'status' from public.admin_actions
+    where entity_id = '00000000-0000-0000-0000-000000075101' and action_type = 'restore'),
+  'suspended', 'RESTORE_AA1_admin_actions_old_values_status_es_el_estado_anterior_real'
+);
+select is(
+  (select new_values->>'status' from public.admin_actions
+    where entity_id = '00000000-0000-0000-0000-000000075101' and action_type = 'restore'),
+  'active', 'RESTORE_AA2_admin_actions_new_values_status_es_el_destino_de_la_accion'
+);
+select is(
+  (select (new_values ? 'deleted') from public.admin_actions
+    where entity_id = '00000000-0000-0000-0000-000000075101' and action_type = 'restore'),
+  false, 'RESTORE_AA3_admin_actions_new_values_NO_trae_la_clave_deleted_fuera_de_delete'
 );
 
 create temp table result_restore_notif_75 (
@@ -502,6 +521,14 @@ select is(
   1, 'DELETE5_exactamente_1_admin_actions'
 );
 
+-- ── Hardening (mutante P7 del guardian) — new_values SÍ trae {deleted:true}
+--    en la acción delete (D-ADMIN-ACTIONS). ─────────────────────────────────
+select is(
+  (select (new_values->>'deleted')::boolean from public.admin_actions
+    where entity_id = '00000000-0000-0000-0000-000000075106' and action_type = 'delete'),
+  true, 'DELETE_AA1_admin_actions_new_values_deleted_true_en_la_accion_delete'
+);
+
 create temp table result_delete_notif_75 (n_type text, n_deep_link text, n_user uuid, n_resolution text);
 insert into result_delete_notif_75
   select type, deep_link, user_id, data->>'resolution'
@@ -586,6 +613,20 @@ select is(
 select is(
   (select count(*)::int from public.admin_actions where entity_id = '00000000-0000-0000-0000-000000075110'),
   0, 'SCOPE4_0_admin_actions_para_B'
+);
+
+-- ── Hardening (mutante P1 del guardian) — reusa la llamada de A (SCOPE,
+--    'restore' con p_reason=null sobre 075109, ya hecha arriba): NO se
+--    fabrica texto por defecto cuando el admin no da motivo. ───────────────
+select is(
+  (select resolution from public.property_reports
+    where property_id = '00000000-0000-0000-0000-000000075109'),
+  null, 'SCOPE5_property_reports_resolution_es_null_cuando_p_reason_es_null_no_se_fabrica_texto'
+);
+select is(
+  (select (data ? 'resolution') from public.notifications
+    where related_entity_id = '00000000-0000-0000-0000-000000075109'),
+  false, 'SCOPE6_notifications_data_no_trae_la_clave_resolution_cuando_p_reason_es_null'
 );
 
 -- ════════════════════════════════════════════════════════════════════════════
