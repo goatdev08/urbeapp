@@ -24,14 +24,20 @@
  * NOTA RNTL v14: render() retorna Promise → todos los tests son async + await render(...).
  * Los tests RNTL no ven layout — no se asierta nada dependiente de altura/posición.
  *
- * EDGE CASES CUBIERTOS (5 casos, hardening del mutante M9 — can_submit sin
- * guard de texto en "Otro"):
+ * EDGE CASES CUBIERTOS (7 casos: 5 hardening del mutante M9 — can_submit sin
+ * guard de texto en "Otro" — + 2 del prop `title` nuevo, subtarea 220.6):
  *
  * - (EC-1) los_7_motivos_se_muestran
  * - (EC-2) elegir_otro_revela_campo_de_texto
  * - (EC-3) otro_con_texto_vacio_submit_deshabilitado_no_dispara_envio
  * - (EC-4) otro_con_texto_real_dispara_envio_con_reason_text
  * - (EC-5) motivo_distinto_de_otro_submit_habilitado_sin_texto
+ *
+ * ### 🔴 220.6 — prop `title` nuevo (reuso del sheet para reportar PERFILES,
+ * botón en AgentCard). Aditivo puro: sin `title`, el heading sigue siendo
+ * "Reportar publicación" (el call site de ActionButtons/220.5 no cambia).
+ * - (EC-6) sin_title_el_heading_por_default_es_reportar_publicacion
+ * - (EC-7) con_title_reportar_perfil_el_heading_usa_el_texto_pasado
  */
 
 import React from 'react';
@@ -178,6 +184,38 @@ describe('ReportPropertySheet', () => {
 
     expect(on_submit).toHaveBeenCalledTimes(1);
     expect(on_submit).toHaveBeenCalledWith({ reason: 'false_price' });
+  });
+
+  // ── (EC-6/EC-7) prop `title` nuevo (220.6) ─────────────────────────────────
+
+  it('(EC-6) sin_title_el_heading_por_default_es_reportar_publicacion: sin pasar `title`, el heading sigue siendo "Reportar publicación"', async () => {
+    const { queryByText } = await render(
+      <ReportPropertySheet
+        visible
+        on_dismiss={jest.fn()}
+        on_submit={make_on_submit()}
+        is_submitting={false}
+        error_message={null}
+      />
+    );
+
+    expect(queryByText('Reportar publicación')).not.toBeNull();
+  });
+
+  it('(EC-7) con_title_reportar_perfil_el_heading_usa_el_texto_pasado: title="Reportar perfil" → el heading usa ese texto, no el default de propiedad', async () => {
+    const { queryByText } = await render(
+      <ReportPropertySheet
+        visible
+        on_dismiss={jest.fn()}
+        on_submit={make_on_submit()}
+        is_submitting={false}
+        error_message={null}
+        title="Reportar perfil"
+      />
+    );
+
+    expect(queryByText('Reportar perfil')).not.toBeNull();
+    expect(queryByText('Reportar publicación')).toBeNull();
   });
 
 });
