@@ -10,9 +10,12 @@ codigo:
   - mobile/src/features/admin/hooks/useAdminRevisions.ts
   - mobile/src/features/admin/hooks/useModerateProperty.ts
   - mobile/app/admin/revisions/index.tsx
+  - mobile/app/admin/reports/index.tsx
+  - mobile/src/features/admin/hooks/useAdminReports.ts
+  - mobile/src/features/admin/hooks/useResolveReport.ts
   - mobile/src/features/profile/ProfileScreen.tsx
   - supabase/functions/_shared/property_field_whitelist.ts
-actualizado: 2026-08-27
+actualizado: 2026-08-28
 ---
 
 # Panel admin (centro operativo)
@@ -30,9 +33,10 @@ actualizado: 2026-08-27
 - **Cola de revisiones en `/admin/revisions`** (#218, M1): revisiones `pending|needs_changes` FIFO con **diff campo a campo** (`useAdminRevisions`: embed a `properties`, sin RPC nueva; el diff filtra a valores realmente distintos — `edit-property` guarda el input COMPLETO en `changed_fields`) y **Aprobar / Pedir cambios / Rechazar** (`useModerateProperty` → EF `moderate-property`; **motivo obligatorio en la UI** para las dos últimas aunque la EF lo deje opcional). Aprobar aplica el snapshot vía la RPC atómica — el bug del precio editado que nadie podía aprobar está muerto. Lado publicador: bucket «En revisión» en Mis publicaciones + badge veraz `suspended`; el aviso con motivo al publicador nace en M2 ([[notificaciones]]).
 
 - **Centro de notificaciones (#219, M2, vivo)**: 4 escritores admin por trigger + espejos de resolución en las 4 funciones de moderación (catálogo v1), hook `useNotifications`, campana con badge en el Perfil y pantalla `(protected)/notifications`. Detalle y decisiones en [[notificaciones]].
+- **Cola de reportes en `/admin/reports` (#220, M3, viva)**: `mobile/app/admin/reports/index.tsx` lee `useAdminReports` (`property_reports` con `status='new'`, `order created_at desc` sobre `property_reports_queue_idx`, embed a `properties` **solo con campos de display**) y **agrupa por propiedad EN MEMORIA** — sin RPC nueva, preservando la primera aparición de cada `property_id` y el orden del server dentro del grupo. 🔴 **Nunca filtra por `reported_by_user_id`**: es la cola de ADMIN, no «mis reportes» (el gotcha invertido de la nota de FlashList). Las 4 acciones (`useResolveReport` → la MISMA EF `moderate-property`) se habilitan solo si la propiedad está `suspended`, y **pedir cambios / eliminar exigen motivo en la UI** aunque la EF lo deje opcional — mismo criterio que ya usaba `/admin/revisions`. La fila «Reportes» del home (`reports_new`) pasó de informativa a **navegable**; `useAdminQueueCounts` no se tocó (ya contaba `property_reports.status='new'`). La pantalla usa **tokens de `theme.ts`, cero hex sueltos** — el guardian contó 0 contra 30 en `revisions/index.tsx` y 50 en `ads/index.tsx`: mejora el estándar en vez de calcarlo.
+- Lado usuario, misma tarea: botón «Reportar» en el detalle de la propiedad y «Reportar perfil» en la tarjeta del agente, ambos ocultos si el objeto es tuyo. Ver [[moderacion]].
 
-## Qué llega (M3–M5, una tarea = una rama = un PR)
-- **M3 (#220)** — reportes §24 completo: botón Reportar, cola `/admin/reports`, auto-suspensión 3 reportes/24h.
+## Qué llega (M4–M5, una tarea = una rama = un PR)
 - **M4 (#221)** — cola `/admin/requests` unificada: solicitudes de agente, registros de inmobiliaria y el canal nuevo de cuenta comercial.
 - **M5 (#222)** — testing profundo del ciclo comercial (checklist guiado + Maestro E2E), ponytail-audit de `features/admin`, OTA.
 
