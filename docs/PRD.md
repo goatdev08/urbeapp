@@ -1170,6 +1170,11 @@ Reglas adicionales:
 - Reportes de comentarios: definidos en la sección Comentarios.
 - **Bloqueo entre usuarios:** no incluido en MVP. El contacto real entre usuario y agente ocurre en WhatsApp, donde WhatsApp tiene su propio bloqueo.
 
+> **Enmienda 2026-08-28 (tarea #220.6) — alcance implementado.** Esta sección era una sola línea, así que se acotó a un **alcance mínimo** decidido con Abraham:
+> - **Sí se implementó:** tabla `user_reports` con la misma forma que `property_reports` (los mismos 7 motivos de §24.1 —se reusa el enum, no se duplica—, un reporte por reportante, motivo obligatorio en «otro», RLS de inserción propia, prohibición de auto-reportarse y lectura de admin) y botón «Reportar perfil» en la tarjeta del publicador, oculto si el perfil es el tuyo.
+> - **No se implementó, a propósito:** no hay pantalla pública de perfil de publicador —hoy la única superficie que muestra su identidad es la tarjeta del detalle—, no hay cola de resolución para estos reportes (la lectura de admin es de solo consulta) y **no hay auto-suspensión de cuentas**: suspender personas es §28.3-4 y es trabajo futuro, distinto de suspender una publicación.
+> - **Siguiente paso natural** (tarea derivada, cuando haya volumen real): acciones de resolución sobre `user_reports` y su cola de admin.
+
 ---
 
 ## 25. Eliminación de cuenta y baja de contenido

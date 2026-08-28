@@ -14,14 +14,16 @@
 -- mecanismo de creación que property_reports (220.5: sin Edge Function, INSERT
 -- directo) — decisión 2026-08-28 extendida a perfiles.
 --
--- SUT (AÚN NO EXISTE — RED): tabla public.user_reports completa. A diferencia
--- de property_reports (que YA existía desde la migración 0007 y solo le
--- faltaba el CHECK de 220.1), esta tabla es NUEVA — la trae el STUB
--- 20260828000005_user_reports_stub.sql (columnas/tipos/FK/índice por target/
--- trigger set_updated_at, RLS ENABLED sin policies) SOLO para que la tabla
--- exista con la forma correcta y estos INSERT/SELECT no aborten por catálogo
--- (42P01/42703). El STUB deja fuera a propósito, porque SON las invariantes
--- nuevas bajo prueba en este archivo:
+-- SUT: tabla public.user_reports completa, implementada en
+-- supabase/migrations/20260828000005_user_reports.sql (GREEN). El RED usó un
+-- STUB del mismo nombre con sufijo `_stub` (columnas/tipos/FK/índice por
+-- target/trigger set_updated_at, RLS ENABLED sin policies) SOLO para que la
+-- tabla existiera con la forma correcta y estos INSERT/SELECT no abortaran
+-- por catálogo (42P01/42703) — ese archivo YA NO EXISTE en el árbol: se
+-- consolidó en la migración GREEN antes de integrar (mismo criterio que
+-- 220.3/20260828000004, el STUB es andamio de test, no algo que deba viajar a
+-- producción). Las siguientes son las invariantes de negocio que este archivo
+-- ancla (ya implementadas en el GREEN):
 --   - CHECK user_reports_other_requires_text (mismo patrón que
 --     property_reports_other_requires_text, 20260828000001: `reason <>
 --     'other' or (reason_text is not null and reason_text ~ '\S')` — la clase
@@ -90,14 +92,30 @@
 --              invariantes nuevas: ENUM1-7, DEF1-4, OTHER4/OTHER5, TXT1/TXT2,
 --              SELF2, DEDUPE2, ABSENCE1-3, FK1/FK2.
 --
--- Verificado corriendo la suite completa contra el STUB (docker exec ... psql):
--- `# Looks like you failed 11 tests of 35` — exactamente OTHER1/OTHER2/OTHER3/
--- OTHER6, SELF1, DEDUPE1b/DEDUPE3/DEDUPE4, RLS1/RLS3/RLS5. Ninguno más, ninguno
--- menos — coincide 1:1 con la lista DELTA de arriba.
+-- Verificado en el RED corriendo la suite completa contra el STUB (35 asserts,
+-- docker exec ... psql): `# Looks like you failed 11 tests of 35` —
+-- exactamente OTHER1/OTHER2/OTHER3/OTHER6, SELF1, DEDUPE1b/DEDUPE3/DEDUPE4,
+-- RLS1/RLS3/RLS5. Ninguno más, ninguno menos — coincide 1:1 con la lista
+-- DELTA de arriba.
+--
+-- ── Hardening post-GREEN (guardian, mismo día) ───────────────────────────────
+-- El guardian encontró que la suite original (35 asserts) no anclaba 2 huecos
+-- reales, cada uno demostrado con un mutante que dejaba la suite en 35/35 pese
+-- a introducir un bug: (a) un trigger de auto-suspensión con umbral 3 sobre
+-- user_reports (el escenario EXACTO que ABSENCE1 promete vigilar, pero el
+-- fixture original — T17, sección 6 — nunca llega a 3 reportantes DISTINTOS
+-- con el dedupe real; el 3er intento es justo el que rechaza DEDUPE1b); (b)
+-- una policy de UPDATE permisiva (`for update using(true) with check(true)`),
+-- sin ningún assert que ejercite UPDATE/DELETE; (c) grant + policy permisiva
+-- para `anon`, sin ningún assert que impersone ese rol. Se agregaron 7 asserts
+-- nuevos para cerrar los 3 huecos (sección 6.5 + 7.3 + 7.4 + ABSENCE0) — plan
+-- sube de 35 a 42. Los 3 mutantes se aplicaron a mano sobre la base local y
+-- cada uno murió con los asserts nuevos (evidencia en la bitácora de la
+-- subtarea 220.6, hardening 2026-08-28).
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(35);
+select plan(42);
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- Fixtures — UUIDs prefijo '00000000-0000-0000-0000-000000076XXX' (subtarea
@@ -335,6 +353,27 @@ select is(
 );
 
 -- ════════════════════════════════════════════════════════════════════════════
+-- 6.5) [INVARIANTE] Fixture — 3 reportantes DISTINTOS sobre el MISMO
+--    publicador (T20), para poder anclar en la sección 8 que 3 reportes
+--    REALES ya persistidos (con reportantes distintos, el umbral exacto que
+--    §28.3-4 dejaría para tarea futura) no disparan ningún efecto sobre
+--    public.users. Con el índice de dedupe real, T17 (sección 6) nunca pasa
+--    de 2 reportantes distintos — llegar a 3 exige 3 reportantes distintos de
+--    verdad, no 3 intentos del mismo. T20 hoy solo aparece en RLS2 (un INSERT
+--    rechazado por RLS que nunca persiste) — libre para este fixture.
+--    Mueve RLS5 de 16 a 18 filas (+1×U1 +1×U2, los dos reportantes que caen
+--    dentro de su filtro `reported_by_user_id in (U1,U2)`); el 3er reporte,
+--    de ADMIN, cae FUERA de ese filtro a propósito — no se ensancha RLS5 más
+--    de lo necesario para no acoplar dos aserciones distintas. No toca
+--    DEDUPE3 (que filtra únicamente T17).
+-- ════════════════════════════════════════════════════════════════════════════
+
+insert into public.user_reports (reported_user_id, reported_by_user_id, reason, reason_text) values
+  ('00000000-0000-0000-0000-000000076120', '00000000-0000-0000-0000-000000076001', 'inappropriate', null),
+  ('00000000-0000-0000-0000-000000076120', '00000000-0000-0000-0000-000000076002', 'misleading', null),
+  ('00000000-0000-0000-0000-000000076120', '00000000-0000-0000-0000-000000076003', 'duplicate', null);
+
+-- ════════════════════════════════════════════════════════════════════════════
 -- 7) [DELTA/COINCIDE — RED] RLS — policies user_reports_insert/select, aún
 --    sin crear (el STUB deja la tabla con RLS ENABLED y CERO policies).
 -- ════════════════════════════════════════════════════════════════════════════
@@ -384,37 +423,113 @@ select is(
 );
 reset role;
 
--- [DELTA] El admin debe ver TODOS los reportes creados por este archivo (16
--- filas post-GREEN: 15×U1 + 1×U2, contando solo los INSERT que sobreviven al
--- GREEN — T01-T07, T12, T13, T14, T15, T16, T17(×1 U1), T18, T19, más
--- T17(×1 U2) = 15+1). Hoy ve 0 (deny-total, ni siquiera el admin tiene bypass
--- sin una policy que lo otorgue).
+-- [DELTA] El admin debe ver TODOS los reportes creados por este archivo (18
+-- filas post-GREEN dentro del filtro reported_by_user_id in (U1,U2): 16×U1 +
+-- 2×U2 — U1 = T01-T07, T12, T13, T14, T15, T16, T17, T18, T19(RLS1), T20
+-- (sección 6.5) = 16; U2 = T17(DEDUPE3), T20(sección 6.5) = 2. El 3er reporte
+-- de T20 (ADMIN, sección 6.5) queda fuera de este filtro a propósito — ver
+-- nota de la sección 6.5. Hoy ve 0 (deny-total, ni siquiera el admin tiene
+-- bypass sin una policy que lo otorgue).
 select pg_temp.act_as('00000000-0000-0000-0000-000000076003', 'authenticated'); -- ADMIN
 select is(
   (select count(*)::int from public.user_reports
      where reported_by_user_id in ('00000000-0000-0000-0000-000000076001', '00000000-0000-0000-0000-000000076002')),
-  16, 'RLS5_un_admin_ve_todos_los_reportes_del_archivo_16_filas_post_green'
+  18, 'RLS5_un_admin_ve_todos_los_reportes_del_archivo_18_filas_post_green'
+);
+reset role;
+
+-- ── 7.3 UPDATE/DELETE: SIN policies de update/delete — permiso de tabla
+--    revocado por completo a `authenticated` (alcance mínimo, sin cola de
+--    acciones: un reporte insertado no se edita ni se borra desde el
+--    cliente). Sin GRANT, la denegación ocurre a nivel de PRIVILEGIO de
+--    tabla, ANTES de que RLS evalúe nada — mismo código 42501 que una policy
+--    ausente, pero por una razón distinta (falta el GRANT, no falta una
+--    policy). Ambos casos (reporte propio y ajeno) deben rechazarse igual,
+--    para que una policy permisiva futura (p.ej. `for update using(true)`) no
+--    pase inadvertida solo porque el propio no se probó. ─────────────────────
+
+select pg_temp.act_as('00000000-0000-0000-0000-000000076001'); -- U1
+select throws_ok(
+  $$ update public.user_reports set status = 'reviewing'
+     where reported_user_id = '00000000-0000-0000-0000-000000076101' and reported_by_user_id = '00000000-0000-0000-0000-000000076001' $$,
+  '42501', null,
+  'UPDATE1_el_reportante_NO_puede_actualizar_su_propio_reporte_sin_cola_de_acciones'
+);
+reset role;
+
+select pg_temp.act_as('00000000-0000-0000-0000-000000076001'); -- U1
+select throws_ok(
+  $$ update public.user_reports set status = 'reviewing'
+     where reported_user_id = '00000000-0000-0000-0000-000000076117' and reported_by_user_id = '00000000-0000-0000-0000-000000076002' $$,
+  '42501', null,
+  'UPDATE2_un_usuario_NO_puede_actualizar_el_reporte_de_otro_usuario'
+);
+reset role;
+
+select pg_temp.act_as('00000000-0000-0000-0000-000000076001'); -- U1
+select throws_ok(
+  $$ delete from public.user_reports
+     where reported_user_id = '00000000-0000-0000-0000-000000076101' and reported_by_user_id = '00000000-0000-0000-0000-000000076001' $$,
+  '42501', null,
+  'DELETE1_el_reportante_NO_puede_borrar_su_propio_reporte_sin_cola_de_acciones'
+);
+reset role;
+
+select pg_temp.act_as('00000000-0000-0000-0000-000000076001'); -- U1
+select throws_ok(
+  $$ delete from public.user_reports
+     where reported_user_id = '00000000-0000-0000-0000-000000076117' and reported_by_user_id = '00000000-0000-0000-0000-000000076002' $$,
+  '42501', null,
+  'DELETE2_un_usuario_NO_puede_borrar_el_reporte_de_otro_usuario'
+);
+reset role;
+
+-- ── 7.4 anon: SIN grant, SIN policy — un no-autenticado no lee ni inserta ──
+--    (`revoke all on public.user_reports from anon, authenticated` en el
+--    GREEN; luego solo `authenticated` recibe select+insert). Mismo patrón de
+--    impersonación que 02/03/04/11/13/16/18/19/22/23_*.sql: uid=null, role='anon'.
+
+select pg_temp.act_as(null, 'anon');
+select throws_ok(
+  $$ select count(*) from public.user_reports $$,
+  '42501', null,
+  'ANON1_un_usuario_no_autenticado_no_puede_leer_reportes_de_perfil'
+);
+reset role;
+
+select pg_temp.act_as(null, 'anon');
+select throws_ok(
+  $$ insert into public.user_reports (reported_user_id, reported_by_user_id, reason, reason_text)
+     values ('00000000-0000-0000-0000-000000076101', '00000000-0000-0000-0000-000000076001', 'inappropriate', null) $$,
+  '42501', null,
+  'ANON2_un_usuario_no_autenticado_no_puede_insertar_reportes_de_perfil'
 );
 reset role;
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- 8) [INVARIANTE — ancla de AUSENCIA] Alcance mínimo: SIN cola de acciones ni
---    auto-suspensión de cuentas (§28.3-4 es tarea futura). Reportar 3 veces al
---    MISMO publicador (T17 acumula reportes en la sección 6) no cambia NADA de
---    su fila en public.users, ni escribe admin_actions, ni notifications.
---    Verdadero HOY y debe seguir siendo verdadero tras el GREEN — el alcance
---    de 220.6 deliberadamente NO incluye ese trigger.
+--    auto-suspensión de cuentas (§28.3-4 es tarea futura). Reportar con 3
+--    reportantes DISTINTOS al MISMO publicador (T20, fixture de la sección
+--    6.5 — con el dedupe real, T17 nunca pasa de 2 reportantes distintos) no
+--    cambia NADA de su fila en public.users, ni escribe admin_actions, ni
+--    notifications. El alcance de 220.6 deliberadamente NO incluye ese
+--    trigger (§28.3-4 es tarea futura).
 -- ════════════════════════════════════════════════════════════════════════════
 
 select is(
-  (select row(role, deleted_at)::text from public.users where id = '00000000-0000-0000-0000-000000076117'),
+  (select count(*)::int from public.user_reports where reported_user_id = '00000000-0000-0000-0000-000000076120'),
+  3, 'ABSENCE0_precondicion_T20_tiene_3_reportantes_distintos_persistidos'
+);
+select is(
+  (select row(role, deleted_at)::text from public.users where id = '00000000-0000-0000-0000-000000076120'),
   (select row('user'::user_role, null::timestamptz)::text),
-  'ABSENCE1_el_publicador_reportado_repetidamente_no_cambia_de_role_ni_se_marca_borrado'
+  'ABSENCE1_el_publicador_reportado_por_3_reportantes_distintos_no_cambia_de_role_ni_se_marca_borrado'
 );
 select is(
   (select count(*)::int from public.admin_actions
      where entity_id in (
        '00000000-0000-0000-0000-000000076101', '00000000-0000-0000-0000-000000076117',
+       '00000000-0000-0000-0000-000000076120',
        '00000000-0000-0000-0000-000000076001', '00000000-0000-0000-0000-000000076002'
      )),
   0, 'ABSENCE2_cero_filas_nuevas_en_admin_actions_para_los_publicadores_reportados_de_este_archivo'
@@ -422,7 +537,8 @@ select is(
 select is(
   (select count(*)::int from public.notifications
      where related_entity_id in (
-       '00000000-0000-0000-0000-000000076101', '00000000-0000-0000-0000-000000076117'
+       '00000000-0000-0000-0000-000000076101', '00000000-0000-0000-0000-000000076117',
+       '00000000-0000-0000-0000-000000076120'
      )),
   0, 'ABSENCE3_cero_notificaciones_generadas_reportar_un_perfil_no_dispara_ningun_aviso_alcance_minimo'
 );

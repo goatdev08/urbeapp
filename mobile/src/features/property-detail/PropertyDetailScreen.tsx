@@ -97,6 +97,11 @@ export function PropertyDetailScreen(): React.JSX.Element {
     );
   }
 
+  // 220.6: sesión actual == agente mostrado — misma expresión que ActionButtons
+  // usa para is_owner (220.5); se calcula UNA vez aquí y se reusa en ambos
+  // consumidores (rail de acciones + AgentCard) para no duplicarla.
+  const is_agent_self = user !== null && user.id === data.agent.id;
+
   // ID del video primario (menor position) — para useLikeProperty en ActionButtons.
   // ponytail: misma lógica que PropertyVideoPlayer.find_primary_video.
   const primary_video_id: string | null =
@@ -129,7 +134,7 @@ export function PropertyDetailScreen(): React.JSX.Element {
             property_id={property_id}
             property_video_id={primary_video_id}
             owner_user_id={data.agent.id}
-            is_owner={user !== null && user.id === data.agent.id}
+            is_owner={is_agent_self}
           />
         </View>
       </View>
@@ -176,6 +181,7 @@ export function PropertyDetailScreen(): React.JSX.Element {
             agent={data.agent}
             agency={data.agency}
             property_id={property_id}
+            is_self={is_agent_self}
           />
         </View>
 

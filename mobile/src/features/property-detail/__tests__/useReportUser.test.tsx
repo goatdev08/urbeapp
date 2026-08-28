@@ -20,7 +20,7 @@
  *   }
  *
  * UserReportReason = PropertyReportReason (mismo enum reusado a nivel SQL,
- * decisión documentada en supabase/migrations/20260828000005_user_reports_stub.sql
+ * decisión documentada en supabase/migrations/20260828000005_user_reports.sql
  * — NO se crea un enum gemelo). Los 7 valores: not_exist_fraud | misleading |
  * false_price | wrong_address | inappropriate | duplicate | other.
  *

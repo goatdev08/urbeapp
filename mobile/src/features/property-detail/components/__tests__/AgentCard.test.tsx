@@ -125,7 +125,10 @@ describe('AgentCard — botón "Reportar" de perfil (220.6)', () => {
     // Antes del tap el sheet no muestra su título (Modal visible=false).
     expect(queryByText('Reportar perfil')).toBeNull();
 
-    fireEvent.press(queryByLabelText('Reportar perfil')!);
+    // 🔴 `await` obligatorio: fireEvent es async en RNTL 14.0.1 y el commit del
+    // <Modal> (visible false→true) queda diferido hasta que la promesa resuelve
+    // — sin él la aserción de abajo lee el árbol viejo (gotcha de 220.5).
+    await fireEvent.press(queryByLabelText('Reportar perfil')!);
 
     expect(queryByText('Reportar perfil')).not.toBeNull();
   });

@@ -52,6 +52,13 @@ export interface ReportPropertySheetProps {
   is_submitting: boolean;
   /** useReportProperty().error_message — se muestra inline, el sheet NO se cierra en error. */
   error_message: string | null;
+  /**
+   * Título del heading (220.6) — opcional, aditivo. Sin pasarlo, sigue siendo
+   * "Reportar publicación" (backward-compat, el call site de ActionButtons
+   * 220.5 no cambia). AgentCard (220.6) pasa "Reportar perfil" al reusar
+   * este sheet para reportar publicadores.
+   */
+  title?: string;
 }
 
 // ─── Motivos (PRD §24.1, enum property_report_reason) ─────────────────────
@@ -74,6 +81,7 @@ export function ReportPropertySheet({
   on_submit,
   is_submitting,
   error_message,
+  title = 'Reportar publicación',
 }: ReportPropertySheetProps): React.JSX.Element {
   const insets = useSafeAreaInsets();
   const [selected_reason, set_selected_reason] = useState<PropertyReportReason | null>(null);
@@ -129,7 +137,7 @@ export function ReportPropertySheet({
           <View style={styles.handle} />
 
           <View style={styles.header}>
-            <Text style={styles.title}>Reportar publicación</Text>
+            <Text style={styles.title}>{title}</Text>
             <Pressable
               onPress={handle_dismiss}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}

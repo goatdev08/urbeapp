@@ -14,15 +14,27 @@
  * el agente recibía el mensaje y en Urbea no quedaba lead (ni acceso a datos §19.2,
  * ni scoring, ni fila en el CRM). Ahora usa useContactAgent, el mismo camino que
  * el CTA sticky y el feed.
+ *
+ * 220.6: botón "Reportar perfil" — mirror del patrón owner_user_id/is_owner de
+ * ActionButtons (220.5). is_self (calculado por el padre, AgentCard NO llama
+ * a useAuth) oculta el botón cuando la sesión ES el agente mostrado (1ª capa;
+ * la 2ª es el guard dentro de useReportUser, la 3ª el CHECK SQL
+ * user_reports_no_self_report). Reusa ReportPropertySheet sin bifurcar, con
+ * title="Reportar perfil". El botón + sheet + useReportUser viven en
+ * ReportProfileAction, un sub-componente aparte (mismo patrón que ReportAction
+ * en ActionButtons) para que useReportUser (que llama useAuth internamente)
+ * solo se monte cuando hace falta.
  */
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Image } from 'expo-image';
-import { WhatsappLogo } from 'phosphor-react-native';
+import { Flag, WhatsappLogo } from 'phosphor-react-native';
 
 import { colors, fonts, radii, shadows, spacing } from '@/theme/theme';
 import { useR2Urls } from '@/hooks/useR2Urls';
 import { useContactAgent } from '@/hooks/useContactAgent';
+import { useReportUser } from '../hooks/useReportUser';
+import { ReportPropertySheet } from './ReportPropertySheet';
 import type { AgentInfo, AgencyInfo } from '../types';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -48,13 +60,15 @@ interface AgentCardProps {
   agency: AgencyInfo | null;
   /** UUID de la propiedad — la EF `contact-agent` lo necesita para crear el lead (75.4). */
   property_id: string;
+  /** true si la sesión actual ES el agente mostrado — oculta "Reportar perfil" (default false, 220.6). */
+  is_self?: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Componente
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function AgentCard({ agent, agency, property_id }: AgentCardProps) {
+export function AgentCard({ agent, agency, property_id, is_self = false }: AgentCardProps) {
   const [img_error, set_img_error] = useState(false);
   const { contact_agent, is_contacting } = useContactAgent();
 
@@ -122,7 +136,50 @@ export function AgentCard({ agent, agency, property_id }: AgentCardProps) {
         </Pressable>
       )}
 
+      {/* Reportar perfil (220.6): ausente si la sesión ES el agente mostrado */}
+      {!is_self && <ReportProfileAction agent_id={agent.id} />}
+
     </View>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ReportProfileAction — botón "Reportar perfil" + sheet reusado +
+// useReportUser, aislados en su propio componente para que el hook (y su
+// useAuth interno) solo se monte cuando el botón puede aparecer (mismo
+// patrón que ReportAction en ActionButtons.tsx, 220.5).
+// ─────────────────────────────────────────────────────────────────────────────
+
+function ReportProfileAction({ agent_id }: { agent_id: string }): React.JSX.Element {
+  const [sheet_visible, set_sheet_visible] = useState(false);
+  const { submit_report, is_submitting, error_message } = useReportUser({
+    reported_user_id: agent_id,
+  });
+
+  return (
+    <>
+      <Pressable
+        style={({ pressed }) => [
+          styles.report_button,
+          pressed && styles.report_button_pressed,
+        ]}
+        onPress={() => set_sheet_visible(true)}
+        accessibilityRole="button"
+        accessibilityLabel="Reportar perfil"
+        hitSlop={8}
+      >
+        <Flag size={22} color={colors.gray_2} weight="bold" />
+      </Pressable>
+
+      <ReportPropertySheet
+        visible={sheet_visible}
+        on_dismiss={() => set_sheet_visible(false)}
+        on_submit={submit_report}
+        is_submitting={is_submitting}
+        error_message={error_message}
+        title="Reportar perfil"
+      />
+    </>
   );
 }
 
@@ -204,5 +261,18 @@ const styles = StyleSheet.create({
   wa_button_pressed: {
     opacity: 0.7,
     transform: [{ scale: 0.94 }],
+  },
+
+  // ── Reportar perfil (220.6) ───────────────────────────────────────────────
+  report_button: {
+    width: 44,
+    height: 44,
+    borderRadius: radii.r_pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  report_button_pressed: {
+    opacity: 0.6,
   },
 });
