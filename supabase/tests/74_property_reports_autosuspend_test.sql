@@ -151,7 +151,7 @@
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(90);
+select plan(93);
 
 create or replace function pg_temp.act_as(p_uid uuid, p_role text default 'authenticated')
 returns void language plpgsql as $$
@@ -661,6 +661,16 @@ begin
     using errcode = '23505';
 end
 $poison$;
+-- 🔴 Los 2 primeros reportes de FAULTB (8.2) son LEGÍTIMOS y tienen que ocurrir
+-- ANTES de instalar el veneno: disparan admin_report_new, así que con el trigger
+-- ya puesto reventarían fuera de un throws_ok y abortarían la transacción entera
+-- de psql (fix del RED, 220.2 — la versión original los tenía después y dejaba
+-- 19 asserts sin correr).
+insert into public.property_reports (property_id, reported_by_user_id, reason, reason_text) values
+  ('00000000-0000-0000-0000-000000074109', '00000000-0000-0000-0000-000000074042', 'inappropriate', null);
+insert into public.property_reports (property_id, reported_by_user_id, reason, reason_text) values
+  ('00000000-0000-0000-0000-000000074109', '00000000-0000-0000-0000-000000074043', 'inappropriate', null);
+
 create trigger poison_notifications_before_insert_74
   before insert on public.notifications
   for each row execute function pg_temp.poison_notifications_insert_74();
@@ -680,12 +690,7 @@ select is(
 
 -- ── 8.2) FAULTB — 00000000-...-074109: camino compuesto, el 3er reporte
 --    (autosuspend + UPDATE properties + 3 tipos de aviso) revierte TODO
---    junto. Los 2 primeros reportes ocurren ANTES del poison (legítimos). ───
-insert into public.property_reports (property_id, reported_by_user_id, reason, reason_text) values
-  ('00000000-0000-0000-0000-000000074109', '00000000-0000-0000-0000-000000074042', 'inappropriate', null);
-insert into public.property_reports (property_id, reported_by_user_id, reason, reason_text) values
-  ('00000000-0000-0000-0000-000000074109', '00000000-0000-0000-0000-000000074043', 'inappropriate', null);
-
+--    junto. Sus 2 primeros reportes ya se sembraron arriba, antes del poison. ─
 select throws_ok(
   $$ insert into public.property_reports (property_id, reported_by_user_id, reason, reason_text)
      values ('00000000-0000-0000-0000-000000074109', '00000000-0000-0000-0000-000000074044', 'inappropriate', null) $$,
@@ -852,6 +857,44 @@ select is(
 );
 
 -- ════════════════════════════════════════════════════════════════════════════
+-- 10.b) SELFSUSP — 00000000-...-074112: el guard "nunca el actor" en la rama
+--    de AUTOSUSPEND. La sección 10 solo probaba el caso positivo (el admin
+--    reportó ANTES y el 3er reporte lo hace otro), así que el guard de esa
+--    rama estaba sin anclar y se podía borrar con la suite en verde
+--    (hallazgo del guardian, 220.2). Aquí el admin ES el 3er reportero: el
+--    que DISPARA la suspensión.
+-- ════════════════════════════════════════════════════════════════════════════
+
+insert into public.property_reports (property_id, reported_by_user_id, reason, reason_text) values
+  ('00000000-0000-0000-0000-000000074112', '00000000-0000-0000-0000-000000074021', 'inappropriate', null);
+insert into public.property_reports (property_id, reported_by_user_id, reason, reason_text) values
+  ('00000000-0000-0000-0000-000000074112', '00000000-0000-0000-0000-000000074022', 'inappropriate', null);
+-- 3er reportero = el admin 074014 → dispara la autosuspensión y es el ACTOR.
+insert into public.property_reports (property_id, reported_by_user_id, reason, reason_text) values
+  ('00000000-0000-0000-0000-000000074112', '00000000-0000-0000-0000-000000074014', 'inappropriate', null);
+
+select is(
+  (select status::text from public.properties where id = '00000000-0000-0000-0000-000000074112'),
+  'suspended', 'SELFSUSP1_el_3er_reporte_hecho_por_un_admin_igual_suspende'
+);
+select is(
+  (select array_agg(distinct user_id order by user_id) from public.notifications
+    where related_entity_id = '00000000-0000-0000-0000-000000074112' and type = 'admin_report_autosuspend'),
+  array[
+    '00000000-0000-0000-0000-000000074011'::uuid,
+    '00000000-0000-0000-0000-000000074012'::uuid
+  ],
+  'SELFSUSP2_el_admin_que_disparo_la_suspension_NO_recibe_su_propio_admin_report_autosuspend'
+);
+select is(
+  (select array_agg(user_id) from public.notifications
+    where related_entity_id = '00000000-0000-0000-0000-000000074112'
+      and type = 'property_suspended_by_reports'),
+  array['00000000-0000-0000-0000-000000074013'::uuid],
+  'SELFSUSP3_el_owner_SI_recibe_su_espejo_aunque_el_actor_sea_admin'
+);
+
+-- ════════════════════════════════════════════════════════════════════════════
 -- 11) ACTIONS — cero filas nuevas en admin_actions en todo el archivo
 --    (decisión Abraham 2026-08-28: sin actor humano, admin_id es NOT NULL FK
 --    restrict).
@@ -871,7 +914,8 @@ select is(
       '00000000-0000-0000-0000-000000074108'::uuid,
       '00000000-0000-0000-0000-000000074109'::uuid,
       '00000000-0000-0000-0000-000000074110'::uuid,
-      '00000000-0000-0000-0000-000000074111'::uuid
+      '00000000-0000-0000-0000-000000074111'::uuid,
+      '00000000-0000-0000-0000-000000074112'::uuid
     ])),
   0, 'ACTIONS1_cero_filas_nuevas_en_admin_actions_para_ninguna_de_las_propiedades_del_archivo'
 );
