@@ -134,3 +134,41 @@ export interface ModeratePropertySuccessBody {
   property_id: string;
   status: string;
 }
+
+// ── Resolución admin de reportes (subtarea 220.3) — EXTENSIÓN ADITIVA ─────────
+// 4 acciones NUEVAS, solo válidas cuando la propiedad está 'suspended' (mismo
+// PropertyFetcher de arriba decide el guard de origen en el handler). Literales
+// EN INGLÉS DISTINTOS de los 4 vigentes a propósito: 'needs_changes' ya
+// significa "resolver una property_revision" — reusarlo aquí para un origen
+// 'suspended' sería ambiguo (decisión test-author, fijada en el RED).
+// Deliberadamente NO se unen a `ModerateAction` (rompería por compilación los
+// Records exhaustivos INITIAL_PUBLISH_TARGET_STATUS/REVISION_TARGET_STATUS de
+// handler.ts, que dependen de `Exclude<ModerateAction, "suspend">`).
+//
+// Nunca tocan property_revisions (mismo criterio que 'suspend' — el
+// RevisionFinder no se invoca en esta rama). 'delete' es soft-delete
+// (properties.deleted_at) — NUNCA los valores vestigiales
+// deleted_soft/deleted_hard del enum property_status, que nadie escribe.
+
+export type ReportsResolutionAction =
+  | "restore"
+  | "request_changes"
+  | "keep_suspended"
+  | "delete";
+
+export interface ReportsResolutionWriteParams {
+  property_id: string;
+  admin_id: string;
+  action_type: ReportsResolutionAction;
+  reason: string | null;
+}
+
+export type ReportsResolutionWriteResult =
+  | { ok: true }
+  | { ok: false; error_code: "DB_ERROR"; message?: string };
+
+export interface ReportsResolutionWriter {
+  apply(
+    params: ReportsResolutionWriteParams,
+  ): Promise<ReportsResolutionWriteResult>;
+}
