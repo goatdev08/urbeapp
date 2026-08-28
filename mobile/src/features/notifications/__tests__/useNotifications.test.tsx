@@ -159,6 +159,73 @@
  *
  * ### Infra del mock
  * - (EC-27) el_cliente_mock_depende_de_this_ligado_from_desprendido_se_detecta
+ *
+ * ---------------------------------------------------------------------------
+ * 223.3 — RED de dos defectos confirmados por el code review del PR #106
+ * (módulo 041-M2, sobre el contrato ya fijado arriba en 219.3). 10 tests
+ * nuevos (EC-28..EC-36 + H-4); los 30 anteriores NO se tocan.
+ * ---------------------------------------------------------------------------
+ *
+ * (a) BADGE MENTIROSO — `unread_count` se derivaba del arreglo YA CAPADO por
+ * `.limit(50)`: con más de 50 notificaciones (o más de 50 no leídas) el
+ * badge miente, y `mark_all_read` solo marcaba la primera página. FIX
+ * FIJADO: el conteo viene de una query de CABECERA independiente
+ * (el índice `notifications_unread_idx` existe exactamente para esto):
+ *
+ *   supabase
+ *     .from('notifications')
+ *     .select('id', { count: 'exact', head: true })
+ *     .eq('user_id', user.id)          // 🔴 explícito — mismo invariante que la lista
+ *     .is('deleted_at', null)
+ *     .is('read_at', null)
+ *
+ * mark_read/mark_all_read siguen optimistas, pero el optimismo ahora opera
+ * sobre este conteo de cabecera (no sobre `notifications.filter(...)`):
+ * decremento/reseteo exacto, con revert exacto en fallo al valor previo del
+ * conteo de cabecera (nunca una recomputación desde el arreglo capado).
+ *
+ * 🔴 DECISIÓN FIJADA — fallo SOLO de la query de conteo (lista con éxito):
+ * la lista se muestra igual (sin `error_message`) y el conteo CAE A 0 — no
+ * se conserva el último valor válido. Razón: 0 es el valor "seguro" (nunca
+ * sobreestima un badge, coincide con el estado inicial antes de la primera
+ * carga) y no exige guardar un estado adicional de "último conteo bueno"
+ * que podría quedar obsoleto igual de mentiroso que el bug original. Ver
+ * EC-35.
+ *
+ * (b) mark_all_read ESTAMPA BORRADAS — el UPDATE masivo no llevaba
+ * `.is('deleted_at', null)` (el SELECT sí lo lleva), así que ponía
+ * `read_at` sobre notificaciones borradas. Ver EC-36.
+ *
+ * ### Conteo real de cabecera (badge no capado) — PR #106 defecto (a)
+ * - (EC-28) lista_de_50_con_8_no_leidas_visibles_pero_el_conteo_de_cabecera_es_73_unread_count_refleja_73_no_8
+ * - (EC-29) la_query_de_conteo_de_cabecera_se_construye_select_id_count_exact_head_true_eq_user_id_is_deleted_at_null_is_read_at_null
+ * - (EC-30) mark_read_de_una_no_leida_baja_el_conteo_optimista_en_exactamente_uno_73_a_72
+ * - (EC-31) mark_read_falla_revierte_el_conteo_optimista_exactamente_a_73
+ * - (EC-32) mark_all_read_pone_el_conteo_optimista_en_cero_usando_el_conteo_de_cabecera_no_el_derivado_de_la_lista
+ * - (EC-33) mark_all_read_falla_revierte_el_conteo_optimista_al_valor_previo_exacto_73
+ * - (EC-34) refetch_vuelve_a_pedir_el_conteo_de_cabecera
+ * - (EC-35) fallo_solo_de_la_query_de_conteo_la_lista_se_muestra_igual_el_conteo_cae_a_cero
+ *
+ * ### mark_all_read respeta deleted_at — PR #106 defecto (b)
+ * - (EC-36) mark_all_read_update_incluye_is_deleted_at_null_ademas_de_eq_user_id_e_is_read_at_null
+ *
+ * ### Hardening — sin sesión, extiende H-1..H-3
+ * - (H-4)  sin_sesion_no_se_llama_la_query_de_conteo_de_cabecera
+ *
+ * ---------------------------------------------------------------------------
+ * Hardening post-guardian (223.3) — dos mutantes sobrevivientes (guardian:
+ * 12/14 muertos) + un fixture rancio (`deep_link: '/my-listings'`, ruta que
+ * ya no existe desde que 223.1 corrigió la migración — ahora
+ * '/profile/my-listings', sin ancla propia por ser pass-through).
+ * ---------------------------------------------------------------------------
+ *
+ * - (EC-37) carrera_de_generaciones_conteo_tardio_de_un_refetch_viejo_no_pisa_el_conteo_nuevo
+ *   — calca EC-25 (lista) pero sobre `run_fetch_count`: mata el mutante que
+ *   quitaba el `if (ignore) return;` de su handler.
+ * - (EC-38) cambio_de_usuario_resetea_el_conteo_de_cabecera_a_cero_de_inmediato_sin_esperar_la_respuesta_nueva
+ *   — mata el mutante que quitaba `set_unread_count(0)` del arranque de
+ *   `start()`; sin el reset, el badge del usuario A queda visible en la
+ *   sesión de B mientras la query nueva está en vuelo (fuga entre cuentas).
  */
 
 import { renderHook, act } from '@testing-library/react-native';
@@ -227,13 +294,17 @@ function make_notification_row(overrides: Partial<NotificationItem> = {}): Notif
 
 type SelectResult = { data: NotificationItem[] | null; error: null | { message: string } };
 type UpdateResult = { data: null; error: null | { message: string } };
+/** Respuesta de una query de cabecera `.select('id', { count: 'exact', head: true })`. */
+type CountResult = { count: number | null; error: null | { message: string } };
 type ResultLike<R> = R | Promise<R> | (() => Promise<R>);
 
 type RecordedCall = { method: string; args: unknown[] };
 interface Invocation {
-  kind: 'select' | 'update';
+  kind: 'select' | 'update' | 'count';
   table: string;
   entry_arg: string | Record<string, unknown>;
+  /** Segundo argumento de `.select(cols, options)` — solo presente en `kind: 'count'`. */
+  entry_options?: Record<string, unknown>;
   chain: RecordedCall[];
 }
 
@@ -262,8 +333,28 @@ function make_chain_proxy(promise: Promise<unknown>, chain: RecordedCall[]): unk
 
 interface MockOptions {
   select_result?: ResultLike<SelectResult>;
+  /**
+   * Respuesta de la query de cabecera (`count: 'exact', head: true`). Si se
+   * omite, se DERIVA de `select_result` (no-leídas del arreglo de lista) —
+   * mantiene en verde los 30 tests preexistentes que nunca mencionan el
+   * conteo de cabecera explícitamente. Los tests de 223.3 que fijan el
+   * defecto (a) SIEMPRE lo pasan explícito y distinto del derivado de la
+   * lista, para poder discriminar "cuenta del arreglo capado" de "cuenta de
+   * cabecera real".
+   */
+  count_result?: ResultLike<CountResult>;
   /** Consumidos en orden de invocación de `.update(...)`; el último se repite si se agotan. */
   update_results?: ResultLike<UpdateResult>[];
+}
+
+/** Deriva un `CountResult` por defecto a partir de `select_result` cuando el test no fija uno explícito. */
+function default_count_from_select(select_result: ResultLike<SelectResult> | undefined): CountResult {
+  if (!select_result || typeof select_result === 'function' || select_result instanceof Promise) {
+    return { count: 0, error: null };
+  }
+  const data = select_result.data;
+  if (!data) return { count: 0, error: null };
+  return { count: data.filter((n) => n.read_at === null).length, error: null };
 }
 
 function make_supabase_mock(opts: MockOptions = {}) {
@@ -280,7 +371,15 @@ function make_supabase_mock(opts: MockOptions = {}) {
     from(this: unknown, table: string) {
       if (this !== client) detached = true;
       return {
-        select: (cols: string) => {
+        select: (cols: string, options?: { count?: string; head?: boolean }) => {
+          if (options?.head) {
+            const inv: Invocation = { kind: 'count', table, entry_arg: cols, entry_options: options, chain: [] };
+            invocations.push(inv);
+            return make_chain_proxy(
+              resolve_result(opts.count_result ?? default_count_from_select(opts.select_result)),
+              inv.chain,
+            );
+          }
           const inv: Invocation = { kind: 'select', table, entry_arg: cols, chain: [] };
           invocations.push(inv);
           const default_result: SelectResult = { data: [], error: null };
@@ -333,6 +432,26 @@ function find_chain_call(chain: RecordedCall[], method: string): RecordedCall | 
   return chain.find((c) => c.method === method);
 }
 
+/** Invocación 'count' (query de cabecera); `undefined` si el SUT nunca la construyó — se asserta explícito. */
+function find_count_invocation(mock: ReturnType<typeof make_supabase_mock>): Invocation | undefined {
+  return mock.invocations.find((i) => i.kind === 'count');
+}
+
+/**
+ * Página de `total` notificaciones con exactamente `unread` no-leídas al
+ * frente del arreglo — usada para EC-28: simula la respuesta real de
+ * `.limit(50)` cuando hay MÁS de 50 (o más de 50 no-leídas) en la tabla.
+ */
+function make_notification_list(total: number, unread: number): NotificationItem[] {
+  return Array.from({ length: total }, (_, i) =>
+    make_notification_row({
+      id: `notif-uuid-page-${i}`,
+      read_at: i < unread ? null : '2026-08-19T00:00:00.000Z',
+      created_at: '2026-08-20T10:00:00.000Z',
+    }),
+  );
+}
+
 /** Valor ISO "reciente", acotado por el reloj real de la prueba — no una recomputación del SUT. */
 function expect_recent_iso(value: unknown, before_ms: number, after_ms: number): void {
   expect(typeof value).toBe('string');
@@ -378,7 +497,7 @@ const ROW_2 = make_notification_row({
   type: 'property_approved',
   title: 'Publicación aprobada',
   body: null,
-  deep_link: '/my-listings',
+  deep_link: '/profile/my-listings',
   related_entity_type: 'property',
   related_entity_id: 'prop-uuid-2',
   data: { foo: 'bar' },
@@ -1002,6 +1121,227 @@ describe('useNotifications — métodos no desprendidos', () => {
 });
 
 // ---------------------------------------------------------------------------
+// 223.3 — Conteo real de cabecera (badge no capado por .limit(50))
+// PR #106 defecto (a). Ver docblock superior para la query exacta y la
+// decisión fijada sobre el fallo aislado del conteo.
+// ---------------------------------------------------------------------------
+
+describe('useNotifications — conteo real de cabecera (badge no capado, PR #106 defecto a)', () => {
+  it('(EC-28) lista_de_50_con_8_no_leidas_visibles_pero_el_conteo_de_cabecera_es_73_unread_count_refleja_73_no_8', async () => {
+    const page = make_notification_list(50, 8);
+    const mock = make_supabase_mock({
+      select_result: { data: page, error: null },
+      count_result: { count: 73, error: null },
+    });
+    mock_supabase_holder.client = mock.client;
+
+    const { result } = await renderHook(() => useNotifications());
+
+    expect(result.current.notifications).toHaveLength(50);
+    // El defecto: hoy `unread_count` se deriva del arreglo YA CAPADO por
+    // `.limit(50)` y daría 8. El fix consulta una cabecera independiente
+    // (count: 'exact', head: true) — notifications_unread_idx existe
+    // exactamente para esto.
+    expect(result.current.unread_count).toBe(73);
+    expect(result.current.unread_count).not.toBe(8);
+  });
+
+  it("(EC-29) la_query_de_conteo_de_cabecera_se_construye_select_id_count_exact_head_true_eq_user_id_is_deleted_at_null_is_read_at_null", async () => {
+    const mock = make_supabase_mock({
+      select_result: { data: [], error: null },
+      count_result: { count: 0, error: null },
+    });
+    mock_supabase_holder.client = mock.client;
+
+    await renderHook(() => useNotifications());
+
+    const count_inv = find_count_invocation(mock);
+    expect(count_inv).toBeDefined();
+    expect(count_inv!.table).toBe('notifications');
+    expect(count_inv!.entry_arg).toBe('id');
+    expect(count_inv!.entry_options).toEqual({ count: 'exact', head: true });
+
+    const chain = count_inv!.chain;
+    // 🔴 mismo invariante que la lista: `.eq('user_id', ...)` EXPLÍCITO, la
+    // policy notifications_select lleva `OR is_admin()`.
+    expect(chain).toContainEqual({ method: 'eq', args: ['user_id', TEST_USER_ID] });
+    expect(chain).toContainEqual({ method: 'is', args: ['deleted_at', null] });
+    expect(chain).toContainEqual({ method: 'is', args: ['read_at', null] });
+  });
+
+  it('(EC-30) mark_read_de_una_no_leida_baja_el_conteo_optimista_en_exactamente_uno_73_a_72', async () => {
+    let resolve_update!: (v: UpdateResult) => void;
+    const pending_update = new Promise<UpdateResult>((resolve) => {
+      resolve_update = resolve;
+    });
+    const mock = make_supabase_mock({
+      select_result: { data: [ROW_1], error: null }, // ROW_1 no-leída, visible en la página
+      count_result: { count: 73, error: null }, // cabecera real: 73 (mayor que lo visible)
+      update_results: [pending_update],
+    });
+    mock_supabase_holder.client = mock.client;
+
+    const { result } = await renderHook(() => useNotifications());
+    expect(result.current.unread_count).toBe(73);
+
+    let mark_read_promise!: Promise<void>;
+    await act(async () => {
+      mark_read_promise = result.current.mark_read('notif-uuid-1');
+      await Promise.resolve();
+    });
+
+    // Optimista sobre el conteo de CABECERA: 73 → 72 exacto, nunca una
+    // recomputación desde el arreglo (ya capado) visible.
+    expect(result.current.unread_count).toBe(72);
+
+    await act(async () => {
+      resolve_update({ data: null, error: null });
+      await mark_read_promise;
+    });
+    expect(result.current.unread_count).toBe(72);
+  });
+
+  it('(EC-31) mark_read_falla_revierte_el_conteo_optimista_exactamente_a_73', async () => {
+    const mock = make_supabase_mock({
+      select_result: { data: [ROW_1], error: null },
+      count_result: { count: 73, error: null },
+      update_results: [{ data: null, error: { message: 'RLS denied' } }],
+    });
+    mock_supabase_holder.client = mock.client;
+
+    const { result } = await renderHook(() => useNotifications());
+    expect(result.current.unread_count).toBe(73);
+
+    await act(async () => {
+      await result.current.mark_read('notif-uuid-1');
+    });
+
+    // Estado veraz: el UPDATE falló, el conteo de cabecera vuelve a 73.
+    expect(result.current.unread_count).toBe(73);
+  });
+
+  it('(EC-32) mark_all_read_pone_el_conteo_optimista_en_cero_usando_el_conteo_de_cabecera_no_el_derivado_de_la_lista', async () => {
+    const mock = make_supabase_mock({
+      select_result: {
+        data: [ROW_1, make_notification_row({ id: 'n-x', read_at: null })], // solo 2 no-leídas visibles
+        error: null,
+      },
+      count_result: { count: 73, error: null }, // cabecera real: 73
+      update_results: [{ data: null, error: null }],
+    });
+    mock_supabase_holder.client = mock.client;
+
+    const { result } = await renderHook(() => useNotifications());
+    expect(result.current.unread_count).toBe(73);
+
+    await act(async () => {
+      await result.current.mark_all_read();
+    });
+
+    expect(result.current.unread_count).toBe(0);
+  });
+
+  it('(EC-33) mark_all_read_falla_revierte_el_conteo_optimista_al_valor_previo_exacto_73', async () => {
+    const mock = make_supabase_mock({
+      select_result: {
+        data: [ROW_1, make_notification_row({ id: 'n-x', read_at: null })],
+        error: null,
+      },
+      count_result: { count: 73, error: null },
+      update_results: [{ data: null, error: { message: 'network down' } }],
+    });
+    mock_supabase_holder.client = mock.client;
+
+    const { result } = await renderHook(() => useNotifications());
+    expect(result.current.unread_count).toBe(73);
+
+    await act(async () => {
+      await result.current.mark_all_read();
+    });
+
+    // Revierte al valor previo EXACTO del conteo de cabecera (73), no a lo
+    // que resultaría de recomputar desde el arreglo local (2).
+    expect(result.current.unread_count).toBe(73);
+  });
+
+  it('(EC-34) refetch_vuelve_a_pedir_el_conteo_de_cabecera', async () => {
+    const mock1 = make_supabase_mock({
+      select_result: { data: [ROW_1], error: null },
+      count_result: { count: 73, error: null },
+    });
+    mock_supabase_holder.client = mock1.client;
+
+    const { result } = await renderHook(() => useNotifications());
+    expect(result.current.unread_count).toBe(73);
+    expect(mock1.invocations.filter((i) => i.kind === 'count')).toHaveLength(1);
+
+    const mock2 = make_supabase_mock({
+      select_result: { data: [ROW_1], error: null },
+      count_result: { count: 40, error: null },
+    });
+    mock_supabase_holder.client = mock2.client;
+
+    await act(async () => {
+      result.current.refetch();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(result.current.unread_count).toBe(40);
+    expect(mock2.invocations.filter((i) => i.kind === 'count')).toHaveLength(1);
+  });
+
+  it('(EC-35) fallo_solo_de_la_query_de_conteo_la_lista_se_muestra_igual_el_conteo_cae_a_cero', async () => {
+    // Decisión fijada — ver docblock superior "223.3": fallo SOLO del
+    // conteo de cabecera (la lista tiene éxito) ⇒ la lista se muestra
+    // normal, SIN error_message, y el badge cae a 0 (no conserva el último
+    // valor válido).
+    const mock = make_supabase_mock({
+      select_result: { data: [ROW_1, ROW_2], error: null },
+      count_result: { count: null, error: { message: 'RLS denied en conteo' } },
+    });
+    mock_supabase_holder.client = mock.client;
+
+    const { result } = await renderHook(() => useNotifications());
+
+    expect(result.current.notifications).toHaveLength(2);
+    expect(result.current.error_message).toBeNull();
+    expect(result.current.unread_count).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 223.3 — mark_all_read respeta deleted_at (PR #106 defecto b)
+// ---------------------------------------------------------------------------
+
+describe('useNotifications — mark_all_read respeta deleted_at (PR #106 defecto b)', () => {
+  it('(EC-36) mark_all_read_update_incluye_is_deleted_at_null_ademas_de_eq_user_id_e_is_read_at_null', async () => {
+    const mock = make_supabase_mock({
+      select_result: { data: [ROW_1], error: null },
+      count_result: { count: 1, error: null },
+      update_results: [{ data: null, error: null }],
+    });
+    mock_supabase_holder.client = mock.client;
+
+    const { result } = await renderHook(() => useNotifications());
+
+    await act(async () => {
+      await result.current.mark_all_read();
+    });
+
+    const update_inv = mock.invocations.find((i) => i.kind === 'update');
+    expect(update_inv).toBeDefined();
+    const chain = update_inv!.chain;
+    // Defecto confirmado por code review PR #106: el SELECT ya lleva
+    // `.is('deleted_at', null)` pero el UPDATE masivo no — estampaba
+    // `read_at` sobre notificaciones borradas.
+    expect(chain).toContainEqual({ method: 'is', args: ['deleted_at', null] });
+    expect(chain).toContainEqual({ method: 'is', args: ['read_at', null] });
+    expect(chain).toContainEqual({ method: 'eq', args: ['user_id', TEST_USER_ID] });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Hardening post-guardian (219.3) — rama sin sesión sin ancla.
 // ---------------------------------------------------------------------------
 
@@ -1061,6 +1401,100 @@ describe('hardening post-guardian', () => {
     const update_inv = mock.invocations.find((i) => i.kind === 'update');
     expect(update_inv).toBeUndefined();
     expect(result.current.notifications).toBeNull();
+    expect(result.current.unread_count).toBe(0);
+  });
+
+  it('(H-4) sin_sesion_no_se_llama_la_query_de_conteo_de_cabecera', async () => {
+    const mock = make_supabase_mock({
+      select_result: { data: [ROW_1, ROW_2], error: null },
+      count_result: { count: 73, error: null },
+    });
+    mock_supabase_holder.client = mock.client;
+    set_auth_user_sin_sesion();
+
+    const { result } = await renderHook(() => useNotifications());
+
+    expect(result.current.unread_count).toBe(0);
+    // Sin user_id, tampoco se debe construir la query de conteo de
+    // cabecera aunque el mock esté listo para responder con 73.
+    expect(mock.invocations.filter((i) => i.kind === 'count')).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Hardening post-guardian (223.3) — dos mutantes sobrevivientes del guardian
+// de la subtarea (12/14 muertos): EC-37 calca el patrón de carrera de EC-25
+// pero sobre la query de CONTEO en vez de la de lista; EC-38 ancla que el
+// badge de un usuario nunca queda visible para el siguiente tras un cambio
+// de sesión (fuga de datos entre cuentas, no un detalle cosmético).
+// ---------------------------------------------------------------------------
+
+describe('useNotifications — hardening post-guardian (223.3)', () => {
+  it('(EC-37) carrera_de_generaciones_conteo_tardio_de_un_refetch_viejo_no_pisa_el_conteo_nuevo', async () => {
+    let resolve_count_gen1!: (v: CountResult) => void;
+    const pending_count_gen1 = new Promise<CountResult>((resolve) => {
+      resolve_count_gen1 = resolve;
+    });
+    mock_supabase_holder.client = make_supabase_mock({
+      select_result: { data: [ROW_1], error: null },
+      count_result: pending_count_gen1,
+    }).client;
+
+    const { result } = await renderHook(() => useNotifications());
+    expect(result.current.notifications).toHaveLength(1);
+
+    // gen2: swap del cliente ANTES del refetch — su conteo de cabecera
+    // resuelve de inmediato con un valor DISTINTO al de gen1.
+    mock_supabase_holder.client = make_supabase_mock({
+      select_result: { data: [ROW_1], error: null },
+      count_result: { count: 40, error: null },
+    }).client;
+
+    await act(async () => {
+      result.current.refetch();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(result.current.unread_count).toBe(40);
+
+    // Recién ahora resuelve la promesa tardía del conteo de gen1 (el hook
+    // sigue montado) — no puede pisar el conteo de gen2.
+    await act(async () => {
+      resolve_count_gen1({ count: 73, error: null });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(result.current.unread_count).toBe(40);
+  });
+
+  it('(EC-38) cambio_de_usuario_resetea_el_conteo_de_cabecera_a_cero_de_inmediato_sin_esperar_la_respuesta_nueva', async () => {
+    mock_supabase_holder.client = make_supabase_mock({
+      select_result: { data: [ROW_1], error: null },
+      count_result: { count: 73, error: null },
+    }).client;
+
+    const { result, rerender } = await renderHook(() => useNotifications());
+    expect(result.current.unread_count).toBe(73);
+
+    // Cambio de sesión a un usuario B — su conteo de cabecera queda
+    // pendiente indefinidamente (deliberado: aísla el instante del
+    // arranque de la carga, antes de que cualquier respuesta llegue).
+    mock_supabase_holder.client = make_supabase_mock({
+      select_result: { data: [], error: null },
+      count_result: new Promise<CountResult>(() => {}),
+    }).client;
+    set_auth_user('usuario-uuid-notif-otro-223-3');
+
+    await act(async () => {
+      rerender(undefined);
+    });
+
+    // El badge del usuario A (73) no puede seguir visible para B mientras
+    // la query nueva sigue en vuelo: eso expone que A tiene 73
+    // notificaciones a la sesión de B, no es cosmético. Se limpia al
+    // ARRANCAR la nueva carga, no al terminarla.
     expect(result.current.unread_count).toBe(0);
   });
 });

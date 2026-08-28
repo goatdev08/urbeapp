@@ -1,7 +1,15 @@
 ---
 tipo: estado
-actualizado: 2026-08-27
+actualizado: 2026-08-28
 ---
+
+## Hoy (2026-08-28) — #223: el code review de #219 encontró 6 bugs que 2186 aserciones no podían ver
+
+**#219 se mergeó (PR #106) y Abraham pidió un último code review como double check. Valió la pena: 6 hallazgos confirmados, todos cross-layer** — SQL que promete rutas y semántica que el cliente no cumple, la clase exacta de defecto que una suite pgTAP no puede cazar porque el RED de cada uno había codificado la expectativa equivocada y estaba **verde**. Dos `deep_link` a rutas que no existen en el Expo Router (`/my-listings`, `/admin/requests`), un **resume** de anuncio anunciado como «fue aprobado», el fan-out a admins sin filtrar bajas (que además dejaba inusable el índice parcial `users_role_idx` dentro de la transacción bloqueante), el badge derivado de una lista capada a 50 (mentía con más de 50 no leídas) y un retry-dedup que espejeaba con params nulos. Todo corregido en **#223** (tarea derivada, 3 ciclos TDD con guardian PASS + 2 rondas de hardening), en la rama `tarea/223-fix-notificaciones-review`. Suites: pgTAP 72 archivos / **2205** asserts · mobile 126 suites / **1663** tests · tsc y lint limpios.
+
+**Lo que hizo posible el arreglo limpio: las 2 migraciones de #219 seguían SIN deployar a producción.** El fix entra antes del deploy, así que en producción nunca existirá una fila con un `deep_link` muerto — no hubo que migrar datos ni deprecar nada. Las 2 migraciones correctivas (`20260827000001`, `20260827000002`) son create-or-replace aditivas, con firma y `returns` idénticos y rollback probado por round-trip; **se deployan junto con las de #219, en cualquier orden respecto al OTA** (escriben avisos que nadie lee hasta que llegue el cliente).
+
+**Deuda registrada, no olvidada:** `/admin` es destino **interino** — #221 (M4 solicitudes) debe re-apuntar los 2 avisos a `/admin/requests` y actualizar los asserts AGY4/APP4 al hacerlo (anclado en el comment de las funciones, la cabecera de la migración y el nombre de los asserts). Un type `ad_resumed` queda como opción de fase 2 si algún día se quiere avisar del resume.
 
 ## Hoy (2026-08-27) — #219 (041-M2): el centro de notificaciones existe, y el smoke cazó el aviso que nunca habría llegado
 
@@ -9,7 +17,7 @@ actualizado: 2026-08-27
 
 **La joya del cierre fue el smoke E2E (219.5):** encontró que el aviso `admin_ad_pending` de 219.1 estaba colgado de un UPDATE `draft→pending_review` que el wizard real jamás hace (`create_ad_campaign_atomic` INSERTa el ad nacido `pending_review`) — 185 asserts verdes y el aviso de producción no habría existido. El fix (219.6, trigger AFTER INSERT + RED que invoca la RPC real por impersonación) quedó dentro de la misma rama. También salió de ahí el refetch del badge al re-enfocar el Perfil.
 
-**Post-merge explícito (nada de esto ocurre solo):** (1) **deploy de las 2 migraciones de #219 a producción** (`20260825000001` + `20260826000001`, aditivas, rollback probado) — hasta entonces los escritores solo viven en local y preview-ads; (2) **OTA sigue pospuesto** por decisión de Abraham (acumula #209–#212, #217, #218, #219); (3) redeploy de `edit-property` (desde #218, cero urgencia). Siguiente: **M3 #220** (reportes) → M4 #221 → M5 #222 (OTA + testing guiado).
+**Post-merge explícito (nada de esto ocurre solo):** (1) **deploy de las migraciones de #219 a producción** (`20260825000001` + `20260826000001`, **más las 2 correctivas de #223** `20260827000001` + `20260827000002` — deployar las 4 juntas, no las de #219 solas: el fix corrige rutas y semántica que de otro modo se escribirían mal desde el primer aviso) — hasta entonces los escritores solo viven en local y preview-ads; (2) **OTA sigue pospuesto** por decisión de Abraham (acumula #209–#212, #217, #218, #219); (3) redeploy de `edit-property` (desde #218, cero urgencia). Siguiente: **M3 #220** (reportes) → M4 #221 → M5 #222 (OTA + testing guiado).
 
 **Módulo 041 (panel admin centro operativo) avanza: #217 (M0) y #218 (M1) mergeados a `main`** (PRs #104 y #105). El admin entra por el menú ⋮ del perfil, ve los 5 contadores vivos de colas, y la cola `/admin/revisions` ya lee y resuelve `property_revisions` vía `moderate-property` (que estrenó llamador): aprobar APLICA el snapshot (verificado E2E en preview-ads: 45,000→48,500), pedir cambios/rechazar exigen motivo en la UI. Lado publicador: bucket «En revisión» en Mis publicaciones + badge veraz `suspended`. #124 quedó redefinida y cerrada dentro de 218.4 (guardia TS↔SQL del whitelist de 16 columnas). Detalle en [[panel-admin]] y [[moderacion]].
 

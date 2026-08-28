@@ -25,7 +25,12 @@ export interface NotificationItem {
 export interface UseNotificationsResult {
   /** null mientras carga o tras un error — nunca `[]` fabricado (todo-o-nada). */
   notifications: NotificationItem[] | null;
-  /** Derivado de `notifications` (filas con `read_at === null`); 0 si `notifications` es null. */
+  /**
+   * Conteo REAL de no-leídas (223.3) — viene de una query de cabecera
+   * independiente (`count: 'exact', head: true`), no del arreglo
+   * `notifications` (capado por `.limit(50)`, mentiría con más de 50
+   * no-leídas). 0 mientras carga, sin sesión, o si esa query falla.
+   */
   unread_count: number;
   is_loading: boolean;
   /** Mensaje neutro es-MX; null si no hay error. */

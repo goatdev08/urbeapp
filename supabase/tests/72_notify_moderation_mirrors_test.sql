@@ -34,7 +34,17 @@
 --
 -- ── D-KEY/D-TYPE/D-LINK (decisiones de diseño del test-author, fijadas aquí,
 --    nombres dados por el orquestador) ───────────────────────────────────────
---   property_revision_approved       → deep_link '/my-listings' · related_entity_type 'property' · related_entity_id = property_id
+-- 🔴 CORRECCIÓN #223.1 (review del PR #106, 2026-08-27): la ruta real de la
+-- pantalla "mis publicaciones" es `/profile/my-listings` (archivo
+-- mobile/app/(protected)/profile/my-listings.tsx; ProfileScreen.tsx:154 ya
+-- empuja exactamente esa ruta) — `/my-listings` NO existe como screen del
+-- Expo Router y produce Unmatched Route. El RED original de #219.2 codificó
+-- la ruta equivocada como expectativa (PROP5/PROP21) y por eso corría
+-- VERDE contra un valor incorrecto; se corrige aquí la EXPECTATIVA (no se
+-- debilita el test — el valor nuevo es el contrato real de la app) y se
+-- añade cobertura de deep_link para needs_changes/reject (antes solo
+-- approve lo verificaba, PROP37-PROP40).
+--   property_revision_approved       → deep_link '/profile/my-listings' · related_entity_type 'property' · related_entity_id = property_id
 --   property_revision_needs_changes  → ídem, + data->>'rejection_reason'
 --   property_revision_rejected       → ídem, + data->>'rejection_reason'
 --     (el MISMO trío de tipos se usa tanto en la rama CON revisión activa
@@ -165,7 +175,9 @@
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(100);
+-- 🔴 #223.1: +7 asserts sobre el plan(100) original de #219.2 (PROP37-41,
+-- AD20-21) -- PROP5/PROP21 se CORRIGIERON in-place (no suman al plan).
+select plan(109);
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- Fixtures globales — 1 admin actor (reusado en TODAS las secciones, NUNCA
@@ -260,7 +272,9 @@ insert into result_prop11_72
     and type = 'property_revision_approved';
 
 select is((select n_type from result_prop11_72), 'property_revision_approved', 'PROP4_type_property_revision_approved');
-select is((select n_deep_link from result_prop11_72), '/my-listings', 'PROP5_deep_link_my_listings');
+-- 🔴 CORRECCIÓN #223.1: era '/my-listings' (ruta inexistente, Unmatched
+-- Route) — la real es '/profile/my-listings' (ver nota del header).
+select is((select n_deep_link from result_prop11_72), '/profile/my-listings', 'PROP5_deep_link_profile_my_listings');
 select is((select n_rel_type from result_prop11_72), 'property', 'PROP6_related_entity_type_property');
 select is((select n_rel_id from result_prop11_72), '00000000-0000-0000-0072-000000000101'::uuid, 'PROP7_related_entity_id_property_id');
 select is((select n_address from result_prop11_72), 'Calle Espejo Con Revision Approve 72', 'PROP8_data_address_es_la_direccion_real');
@@ -416,7 +430,9 @@ insert into result_prop21_72
     and type = 'property_revision_approved';
 
 select is((select n_type from result_prop21_72), 'property_revision_approved', 'PROP20_type_property_revision_approved');
-select is((select n_deep_link from result_prop21_72), '/my-listings', 'PROP21_deep_link_my_listings_sin_revision');
+-- 🔴 CORRECCIÓN #223.1: idem PROP5 — era '/my-listings', la real es
+-- '/profile/my-listings'.
+select is((select n_deep_link from result_prop21_72), '/profile/my-listings', 'PROP21_deep_link_profile_my_listings_sin_revision');
 select is((select n_address from result_prop21_72), 'Calle Espejo Sin Revision Approve 72', 'PROP22_data_address_sin_revision');
 select is((select n_has_reason from result_prop21_72), false, 'PROP23_approve_sin_revision_NUNCA_lleva_rejection_reason');
 
@@ -505,6 +521,78 @@ select is(
     where user_id = '00000000-0000-0000-0072-000000000002'
       and related_entity_id = '00000000-0000-0000-0072-000000000106'),
   'Contenido prohibido', 'PROP29_data_rejection_reason_es_p_reason_reject_sin_revision'
+);
+
+-- ── 2.4) 🔴 #223.1 — deep_link real en las 3 ramas (approve ya cubierto por
+--    PROP5/PROP21 arriba; aquí needs_changes y reject, CON y SIN revisión
+--    activa, reusando los fixtures de las secciones 1.2/1.3/2.2/2.3). Antes
+--    de esta corrección solo la rama approve verificaba deep_link — un
+--    GREEN que arreglara approve y dejara needs_changes/reject apuntando a
+--    '/my-listings' habría pasado la suite igual. ───────────────────────────
+select is(
+  (select deep_link from public.notifications
+    where user_id = '00000000-0000-0000-0072-000000000003'
+      and related_entity_id = '00000000-0000-0000-0072-000000000102'
+      and type = 'property_revision_needs_changes'),
+  '/profile/my-listings', 'PROP37_deep_link_profile_my_listings_needs_changes_con_revision'
+);
+select is(
+  (select deep_link from public.notifications
+    where user_id = '00000000-0000-0000-0072-000000000003'
+      and related_entity_id = '00000000-0000-0000-0072-000000000103'
+      and type = 'property_revision_rejected'),
+  '/profile/my-listings', 'PROP38_deep_link_profile_my_listings_reject_con_revision'
+);
+select is(
+  (select deep_link from public.notifications
+    where user_id = '00000000-0000-0000-0072-000000000002'
+      and related_entity_id = '00000000-0000-0000-0072-000000000105'
+      and type = 'property_revision_needs_changes'),
+  '/profile/my-listings', 'PROP39_deep_link_profile_my_listings_needs_changes_sin_revision'
+);
+select is(
+  (select deep_link from public.notifications
+    where user_id = '00000000-0000-0000-0072-000000000002'
+      and related_entity_id = '00000000-0000-0000-0072-000000000106'
+      and type = 'property_revision_rejected'),
+  '/profile/my-listings', 'PROP40_deep_link_profile_my_listings_reject_sin_revision'
+);
+
+-- ── 2.5) 🔴 #223.1(c) — retry-dedup con params NULOS: SIN revisión
+--    (p_revision_id null) y SIN nuevo status (p_new_property_status null),
+--    'active' IS DISTINCT FROM NULL es TRUE hoy → espejea una "aprobación"
+--    aunque NADA transicionó. El EF vigente siempre manda new_property_
+--    status (hoyo latente, sin caller vivo), pero el invariante debe
+--    sostenerse igual: sin new_property_status no hay transición que
+--    resolver, así que NO debe haber espejo. ─────────────────────────────────
+insert into public.properties
+  (id, owner_user_id, operation_type, property_type, price, address, location, status)
+values (
+  '00000000-0000-0000-0072-000000000112', '00000000-0000-0000-0072-000000000002',
+  'sale', 'casa', 2000000, 'Calle Espejo Retry Dedup Params Nulos 72',
+  extensions.ST_SetSRID(extensions.ST_Point(-99.1, 19.4), 4326)::extensions.geography,
+  'active'
+);
+
+select public.moderate_property_atomic(
+  p_admin_id            => '00000000-0000-0000-0072-000000000001'::uuid,
+  p_property_id         => '00000000-0000-0000-0072-000000000112'::uuid,
+  p_action_type         => 'approve',
+  p_old_values          => '{}'::jsonb,
+  p_new_values          => '{}'::jsonb,
+  p_reason              => null,
+  p_new_property_status => null,
+  p_changed_fields      => null,
+  p_revision_id         => null,
+  p_revision_status     => null,
+  p_revision_reason     => null
+);
+
+select is(
+  (select count(*)::int from public.notifications
+    where related_entity_id = '00000000-0000-0000-0072-000000000112' and type like 'property_revision_%'),
+  0,
+  'PROP41_retry_dedup_sin_revision_y_sin_new_property_status_0_espejos_nada_transiciono'
 );
 
 -- ════════════════════════════════════════════════════════════════════════════
@@ -657,6 +745,64 @@ select is(
   (select count(*)::int from public.notifications
     where related_entity_id = '00000000-0000-0000-0072-000000000109' and type like 'property_revision_%'),
   2, 'PROP36_misma_revision_id_dos_resoluciones_reales_dos_espejos_nunca_deduplicados_entre_si'
+);
+
+-- ── 4.3) 🔴 HARDENING #223.1 — retry EXACTO en la rama SIN revisión ─────────
+--    Toda la sección 4 pasaba p_revision_id, así que ejercitaba SOLO la rama
+--    CON revisión: la mitad `v_old_property_status is distinct from
+--    p_new_property_status` del guard nunca estuvo anclada (hueco preexistente
+--    de #219.2, detectado por el mutante propio m7 del guardian de 223.1 —
+--    perder esa mitad duplicaba el espejo y la suite seguía verde). PROP41
+--    ancló la mitad nueva (`is not null`); estos dos anclan la otra.
+insert into public.properties
+  (id, owner_user_id, operation_type, property_type, price, address, location, status)
+values (
+  '00000000-0000-0000-0072-000000000113', '00000000-0000-0000-0072-000000000002',
+  'sale', 'casa', 3100000, 'Calle Espejo Retry Sin Revision 72',
+  extensions.ST_SetSRID(extensions.ST_Point(-99.1, 19.4), 4326)::extensions.geography,
+  'pending_review'
+);
+
+select public.moderate_property_atomic(
+  p_admin_id            => '00000000-0000-0000-0072-000000000001'::uuid,
+  p_property_id         => '00000000-0000-0000-0072-000000000113'::uuid,
+  p_action_type         => 'approve',
+  p_old_values          => '{}'::jsonb,
+  p_new_values          => '{}'::jsonb,
+  p_reason              => null,
+  p_new_property_status => 'active',
+  p_changed_fields      => null,
+  p_revision_id         => null,
+  p_revision_status     => null,
+  p_revision_reason     => null
+);
+
+select is(
+  (select count(*)::int from public.notifications
+    where related_entity_id = '00000000-0000-0000-0072-000000000113' and type like 'property_revision_%'),
+  1, 'PROP42_primer_approve_sin_revision_genera_exactamente_1_espejo'
+);
+
+-- Reintento EXACTO: la propiedad ya quedó en 'active', así que el status NO
+-- transiciona y el espejo NO debe repetirse.
+select public.moderate_property_atomic(
+  p_admin_id            => '00000000-0000-0000-0072-000000000001'::uuid,
+  p_property_id         => '00000000-0000-0000-0072-000000000113'::uuid,
+  p_action_type         => 'approve',
+  p_old_values          => '{}'::jsonb,
+  p_new_values          => '{}'::jsonb,
+  p_reason              => null,
+  p_new_property_status => 'active',
+  p_changed_fields      => null,
+  p_revision_id         => null,
+  p_revision_status     => null,
+  p_revision_reason     => null
+);
+
+select is(
+  (select count(*)::int from public.notifications
+    where related_entity_id = '00000000-0000-0000-0072-000000000113' and type like 'property_revision_%'),
+  1, 'PROP43_reintento_exacto_sin_revision_NO_duplica_el_espejo_sigue_en_1'
 );
 
 -- ════════════════════════════════════════════════════════════════════════════
@@ -926,6 +1072,43 @@ select is((select n_type from result_ad58_72), 'ad_paused', 'AD16_type_ad_paused
 select is((select n_deep_link from result_ad58_72), '/ads', 'AD17_deep_link_ads_pause');
 select is((select n_ad_title from result_ad58_72), 'Ad Espejo Pause 72', 'AD18_data_ad_title_pause');
 select is((select n_has_reason from result_ad58_72), false, 'AD19_pause_NUNCA_lleva_rejection_reason');
+
+-- ── 5.9) 🔴 #223.1(b) — RESUME (paused → active) NO es una aprobación:
+--    decisión de producto (Abraham, 2026-08-27, hallazgo del review PR #106)
+--    -- un admin que REANUDA un anuncio pausado NO debe generar el espejo
+--    ad_approved ("Tu anuncio fue aprobado y ya está activo" sería FALSO,
+--    el anuncio ya había sido aprobado antes). El mapeo correcto: 'ad_approved'
+--    SOLO cuando el estado anterior era 'pending_review' -- eso ya lo cubre
+--    AD1 (§5.1, pending_review→active, NO se duplica aquí). Cualquier otro
+--    →active (hoy en la práctica solo paused→active, el guard de
+--    p_next_status no admite otro origen intermedio) NO escribe notificación
+--    alguna -- ni ad_approved ni ningún otro type. Reusa agencia 201 /
+--    miembros .005 (owner activo) y .006 (admin activo) de §5. ─────────────
+insert into public.ads (id, agency_id, creative_id, title, cta_type, cta_value, status, starts_at, ends_at, paused_at) values
+  ('00000000-0000-0000-0072-000000000229', '00000000-0000-0000-0072-000000000201',
+   '00000000-0000-0000-0072-000000000211', 'Ad Espejo Resume 72', 'phone', '+5213300007209',
+   'paused', now() - interval '1 day', now() + interval '30 days', now() - interval '1 hour');
+
+select public.moderate_ad_atomic(
+  '00000000-0000-0000-0072-000000000229'::uuid, 'active', null,
+  '00000000-0000-0000-0072-000000000001'::uuid
+);
+
+select is(
+  (select count(*)::int from public.notifications
+    where user_id in ('00000000-0000-0000-0072-000000000005', '00000000-0000-0000-0072-000000000006')
+      and related_entity_id = '00000000-0000-0000-0072-000000000229'
+      and type = 'ad_approved'),
+  0,
+  'AD20_resume_paused_a_active_NO_genera_ad_approved_a_los_miembros'
+);
+select is(
+  (select count(*)::int from public.notifications
+    where related_entity_id = '00000000-0000-0000-0072-000000000229'
+      and type in ('ad_approved', 'ad_rejected', 'ad_paused')),
+  0,
+  'AD21_resume_paused_a_active_cero_espejos_de_cualquier_tipo_un_resume_no_se_espeja'
+);
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- 6) handle_agency_status_change — espejo al SOLICITANTE (created_by_user_id).
