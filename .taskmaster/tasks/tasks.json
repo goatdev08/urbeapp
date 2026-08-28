@@ -10221,8 +10221,110 @@
           "219"
         ],
         "priority": "high",
-        "subtasks": [],
-        "updatedAt": "2026-08-24T23:04:32.029Z"
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Backend: creación de reporte — CHECK other + probes RLS/dedupe",
+            "description": "Vía de creación = INSERT directo del cliente (decisión Abraham 2026-08-28): la RLS reports_insert y el índice único property_reports_one_per_user YA existen. Solo falta el CHECK aditivo \"reason=other exige reason_text\" y anclar por pgTAP el contrato completo de creación.",
+            "details": "SUT: migración nueva supabase/migrations/ (CHECK constraint property_reports_other_requires_text, patrón property_closed_requires_reason de 20260604000005; NOT VALID no hace falta — la tabla está vacía en prod) + rollback. Suite pgTAP nueva que ancla: los 7 reasons del enum aceptados, other sin texto rechazado, other con texto ok, reason<>other con y sin texto ok, dedupe (2º INSERT mismo usuario+propiedad → unique_violation), RLS: usuario solo inserta con reported_by_user_id=auth.uid(), no reporta propiedades inexistentes (FK), admin lee todo / usuario no lee reportes ajenos (probar policies existentes de 20260604000010 que hoy no tienen test). Cero cambios a la tabla ni a las policies existentes.\n<info added on 2026-08-28T16:11:11.039Z>\nPLAN: INSERT directo del cliente + CHECK constraint aditivo (decisión Abraham 2026-08-28; RLS reports_insert e índice único de dedupe YA existen en 20260604000010/20260604000007 — cero backend nuevo salvo el CHECK). Anclar por pgTAP todo el contrato de creación, incluidas las policies existentes hoy sin test. · agente=supabase · skills=urbea-supabase,urbea-testing · criticidad=crítica · impacto-prod=sin riesgo (CHECK aditivo sobre tabla vacía en prod, rollback probado) · footprint=supabase/migrations/<nueva>_property_reports_create.sql + rollback + supabase/tests/<NN>_property_reports_create_test.sql\n</info added on 2026-08-28T16:11:11.039Z>",
+            "testStrategy": "CRÍTICA (supabase/migrations/**): TDD pgTAP RED→GREEN→guardian. Rollback round-trip + idempotencia (2ª aplicación exit 0).",
+            "status": "pending",
+            "dependencies": [],
+            "subtasks": [],
+            "updatedAt": "2026-08-28T16:11:11.039Z",
+            "parentId": "220"
+          },
+          {
+            "id": 2,
+            "title": "Backend: trigger auto-suspensión 3/24h + notificaciones de ambos lados",
+            "description": "Trigger AFTER INSERT en property_reports: 3 reportes de usuarios DISTINTOS en ventana deslizante de 24h → properties.status=suspended (idempotente, no re-suspende). Escritores de notificaciones patrón #219: admin_report_new (1º y 2º reporte → admins vivos), admin_report_autosuspend (al suspender → admins vivos) y property_suspended_by_reports (espejo al owner, con motivo).",
+            "details": "SUT: migración nueva + rollback. Misma transacción del INSERT, SIN bloque EXCEPTION (🔒 decisión 041). Ventana deslizante real por created_at (count distinct reported_by_user_id en las últimas 24h). Idempotencia: guard status<>suspended + FOR UPDATE contra la carrera; SIN índice único de dedupe para permitir re-suspensión futura tras restaurar (patrón admin_revision_pending). Guard de admins: role=admin AND deleted_at is null (lección 223.2, índice parcial users_role_idx). deep_link /admin/reports para admins (la pantalla nace en 220.4 — misma tarea, no es ruta muerta al cerrar) y /profile/my-listings para el owner (ruta viva). Decisión Abraham 2026-08-28: NO escribe en admin_actions (no hay actor humano; el rastro = filas de property_reports + notificaciones + status). Gate §0.5: toca properties.status — idempotente, rollback probado, cero efecto en filas existentes al migrar.\n<info added on 2026-08-28T16:11:11.110Z>\nPLAN: trigger AFTER INSERT en property_reports, misma transacción SIN EXCEPTION (🔒 041); ventana deslizante 24h por created_at contando reported_by_user_id DISTINTOS; guard idempotente status<>suspended + FOR UPDATE; SIN índice único (re-suspensión futura posible tras restaurar). Notificaciones patrón #219/#223: admin_report_new (1º y 2º), admin_report_autosuspend, property_suspended_by_reports al owner; admins con role=admin AND deleted_at is null; deep_links /admin/reports (nace en 220.4, misma tarea) y /profile/my-listings — verificar contra mobile/app/ antes de los asserts (lección PR #106). Decisión Abraham 2026-08-28: NO escribe en admin_actions (sin actor humano). · agente=supabase · skills=urbea-supabase,urbea-testing · criticidad=crítica · impacto-prod=⚠️ toca properties.status — idempotente, rollback probado, cero efecto en filas existentes al migrar (gate §0.5) · footprint=supabase/migrations/<nueva>_property_reports_autosuspend.sql + rollback + supabase/tests/<NN>_property_reports_autosuspend_test.sql\n</info added on 2026-08-28T16:11:11.110Z>",
+            "testStrategy": "CRÍTICA: pgTAP — 3 distintos en 24h dispara, 2 no, duplicado del mismo usuario no cuenta ni crea fila, ventana deslizante real (3º reporte con los 2 primeros >24h atrás NO dispara), re-suspensión no-op, suspended no notifica doble, fault-injection (escritor truena → INSERT del reporte revierte), admin borrado no recibe. Verificar deep_links contra mobile/app/ ANTES de escribir asserts (lección PR #106).",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "subtasks": [],
+            "updatedAt": "2026-08-28T16:11:11.110Z",
+            "parentId": "220"
+          },
+          {
+            "id": 3,
+            "title": "Backend: resolución admin — extender moderate-property con las acciones de reportes",
+            "description": "Decisión Abraham 2026-08-28: EXTENDER la EF moderate-property existente (1 EF con action parametrizada, moderacion.md), NO crear EF paralela. Acciones nuevas de la cola: restaurar / pedir cambios / mantener suspendida / eliminar, sobre una propiedad suspended; cierran las filas property_reports asociadas y espejan la resolución al owner.",
+            "details": "SUT: supabase/functions/moderate-property/ (types.ts, handler.ts — extensión ADITIVA de VALID_ACTIONS; el contrato de las acciones vigentes NO cambia: EF ya desplegada y usada por la cola de revisiones #218) + migración que extiende moderate_property_atomic (o función hermana) para: transición desde suspended (hoy el branch sin revisión exige pending_review → NOTHING_TO_MODERATE), cierre de reportes (status new→reviewed con reviewed_by_admin_id/reviewed_at/resolution), admin_actions (aquí SÍ hay actor humano), espejo al owner. \"Eliminar\" reusa el soft-delete existente (deleted_at), NO los valores vestigiales deleted_hard/deleted_soft del enum. Retry-dedup en memoria (estado anterior vs solicitado, lección 223.1).\n<info added on 2026-08-28T16:11:11.172Z>\nPLAN: EXTENDER moderate-property (decisión Abraham 2026-08-28; moderacion.md: 1 EF con action parametrizada). Acciones nuevas restaurar/pedir cambios/mantener suspendida/eliminar sobre origen suspended (hoy el branch sin revisión exige pending_review); cierran property_reports (new→reviewed + reviewed_by_admin_id/reviewed_at/resolution), escriben admin_actions (aquí SÍ hay actor) y espejan al owner con retry-dedup en memoria (lección 223.1). Eliminar = soft-delete deleted_at (NO deleted_hard/soft vestigiales). Contrato vigente INTACTO: extensión aditiva de VALID_ACTIONS, EF ya desplegada y usada por la cola de revisiones #218. · agente=supabase · skills=urbea-supabase,urbea-testing · criticidad=crítica · impacto-prod=⚠️ contrato: EF publicada — solo aditivo, smoke del flujo de revisiones existente antes de cerrar; deploy remoto queda como decisión de Abraham · footprint=supabase/functions/moderate-property/{types,handler,handler.test}.ts + supabase/migrations/<nueva>_moderate_report_resolution.sql + rollback + pgTAP\n</info added on 2026-08-28T16:11:11.172Z>",
+            "testStrategy": "CRÍTICA (functions/** + migrations/**): Deno tests de la EF (acciones nuevas + las 4 vigentes sin regresión) y pgTAP de la función atómica (cada acción, idempotencia/retry, reportes cerrados exactamente los de esa propiedad, espejo al owner con motivo, admin actor no se auto-notifica).",
+            "status": "pending",
+            "dependencies": [
+              2
+            ],
+            "subtasks": [],
+            "updatedAt": "2026-08-28T16:11:11.172Z",
+            "parentId": "220"
+          },
+          {
+            "id": 4,
+            "title": "Mobile: cola /admin/reports — hooks + pantalla + 4 acciones",
+            "description": "Pantalla mobile/app/admin/reports/ (agrupa reportes por propiedad, muestra motivos/textos/conteo, acciones de 220.3) + hooks useAdminReports/useResolveReport calcando useAdminRevisions/useModerateProperty. Voltear reports_new.navigable=true en el home del panel (mobile/app/admin/index.tsx) con su handler.",
+            "details": "Footprint: mobile/src/features/admin/hooks/useAdminReports.ts + useResolveReport.ts (nuevos, CRÍTICOS) + tests RNTL, mobile/app/admin/reports/index.tsx (nueva), mobile/app/admin/index.tsx (flag+handler). Layout del prototipo + lenguaje de la identidad; sin mockup específico → mini-spec (patrón de las colas /admin/revisions y /admin/ads). RNTL 14: await renderHook, act en rerender/unmount, supabase.from encadenado (no desprendido), .eq(user_id) explícito donde aplique.\n<info added on 2026-08-28T16:11:11.233Z>\nPLAN: cola /admin/reports calcando el patrón de /admin/revisions (218.1): useAdminReports (agrupa por propiedad, motivos+conteo) + useResolveReport (llama moderate-property con las acciones de 220.3) + pantalla + voltear reports_new.navigable=true con handler en mobile/app/admin/index.tsx. Layout del prototipo + lenguaje de la identidad; mini-spec (sin mockup específico). RNTL 14: await renderHook, act en rerender/unmount, supabase.from encadenado. · agente=mobile · skills=urbea-expo,urbea-testing · criticidad=crítica (hooks en mobile/**/hooks/**; desempate por mezcla) · impacto-prod=sin riesgo (UI+lectura autenticada; viaja por OTA cuando Abraham lo decida) · footprint=mobile/src/features/admin/hooks/{useAdminReports,useResolveReport}.ts + __tests__/ + mobile/app/admin/reports/index.tsx + mobile/app/admin/index.tsx\n</info added on 2026-08-28T16:11:11.233Z>",
+            "testStrategy": "CRÍTICA por mezcla hooks+UI (desempate §5): RNTL para los hooks (estados, optimismo/revert si aplica, error paths); pantalla con tsc+lint+smoke en emulador por CLI.",
+            "status": "pending",
+            "dependencies": [
+              3
+            ],
+            "subtasks": [],
+            "updatedAt": "2026-08-28T16:11:11.233Z",
+            "parentId": "220"
+          },
+          {
+            "id": 5,
+            "title": "Mobile: botón «Reportar» en el detalle — hook + bottom sheet de motivos",
+            "description": "Botón bandera en el rail de acciones del detalle → bottom sheet (calca PropertyActionMenu) con los 7 motivos del PRD, campo de texto obligatorio solo en «Otro», INSERT directo vía useReportProperty; duplicado (unique_violation 23505) → mensaje amable «ya reportaste esta publicación».",
+            "details": "Footprint: mobile/src/features/property-detail/hooks/useReportProperty.ts (nuevo, CRÍTICO) + test RNTL, components/ReportPropertySheet.tsx (nuevo), ActionButtons.tsx (botón), PropertyDetailScreen.tsx (wiring). El publicador no puede reportar su propia propiedad (guard en el hook; la UI oculta el botón si owner). Mini-spec antes de implementar (sin mockup en la identidad; bottom sheet + radio list, tokens de theme.ts).\n<info added on 2026-08-28T16:11:11.294Z>\nPLAN: botón bandera en ActionButtons del detalle → ReportPropertySheet (calca PropertyActionMenu; 7 motivos del enum, texto obligatorio solo en other) → useReportProperty con INSERT directo (220.1); 23505 → mensaje «ya reportaste esta publicación»; owner no ve el botón ni puede reportar su propiedad (guard en hook + UI). Mini-spec antes de implementar; tokens de theme.ts. · agente=mobile · skills=urbea-expo,urbea-testing · criticidad=crítica (useReportProperty en hooks/) · impacto-prod=sin riesgo · footprint=mobile/src/features/property-detail/hooks/useReportProperty.ts + test + components/{ReportPropertySheet,ActionButtons}.tsx + PropertyDetailScreen.tsx\n</info added on 2026-08-28T16:11:11.294Z>",
+            "testStrategy": "CRÍTICA por el hook: RNTL (éxito, other sin texto bloqueado en cliente, 23505 → mensaje de duplicado, error de red → revert/estado). UI ligera: tsc+lint+smoke.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "subtasks": [],
+            "updatedAt": "2026-08-28T16:11:11.294Z",
+            "parentId": "220"
+          },
+          {
+            "id": 6,
+            "title": "Reporte de perfil de publicador (alcance mínimo) + enmienda PRD §24.2",
+            "description": "Decisión Abraham 2026-08-28: alcance MÍNIMO. Tabla nueva user_reports (misma forma que property_reports: 7 reasons, dedupe 1×usuario, CHECK other), botón «Reportar» en AgentCard reusando el mismo bottom sheet con target user, lectura admin de SOLO consulta (sin cola de acciones ni auto-suspensión de cuentas). Enmienda anotada en el PRD §24.2.",
+            "details": "SUT: migración user_reports + RLS (insert propio reported_by_user_id=auth.uid() y no auto-reportarse, select admin) + rollback + pgTAP. Mobile: generalizar ReportPropertySheet/useReportProperty a target property|user (o hook hermano — lo que pida menos código), botón en AgentCard oculto si el publicador eres tú. docs/PRD.md §24.2: enmienda con la fecha y el alcance (acciones de resolución = tarea derivada futura si hay volumen real). SIN trigger de auto-suspensión de cuentas (fuera de alcance, §28.3-4 es tarea futura).\n<info added on 2026-08-28T16:11:11.356Z>\nPLAN: alcance MÍNIMO (decisión Abraham 2026-08-28): tabla nueva user_reports (misma forma: 7 reasons, dedupe 1×usuario, CHECK other, RLS insert propio + no auto-reportarse + select admin) + botón en AgentCard reusando el sheet con target user + lectura admin de SOLO consulta (sin cola de acciones ni auto-suspensión de cuentas — §28.3-4 futuro). Enmienda anotada en docs/PRD.md §24.2 con fecha y alcance; acciones de resolución = tarea derivada futura si hay volumen. Generalizar sheet/hook a target property|user solo si pide MENOS código que un hermano (ponytail). · agente=supabase+mobile · skills=urbea-supabase,urbea-expo,urbea-testing · criticidad=crítica (migración + hook) · impacto-prod=sin riesgo (tabla nueva aditiva) · footprint=supabase/migrations/<nueva>_user_reports.sql + rollback + pgTAP + mobile/src/features/property-detail/ (sheet/hook/AgentCard) + docs/PRD.md\n</info added on 2026-08-28T16:11:11.356Z>",
+            "testStrategy": "CRÍTICA (migración + hook): pgTAP de user_reports (dedupe, CHECK, RLS, no auto-reporte) + RNTL del camino user. La lectura admin mínima puede ser consulta en el detalle del admin o quedar solo en Studio — decidir en la subtarea con criterio ponytail.",
+            "status": "pending",
+            "dependencies": [
+              5
+            ],
+            "subtasks": [],
+            "updatedAt": "2026-08-28T16:11:11.356Z",
+            "parentId": "220"
+          },
+          {
+            "id": 7,
+            "title": "Cierre: verificación completa + smoke E2E + ingest al vault + gate §0.5",
+            "description": "Suites completas (pgTAP total, mobile, tsc, lint), smoke del flujo completo en emulador (reportar → 3 cuentas → auto-suspensión → cola admin → restaurar) y del flujo de revisiones EXISTENTE (moderate-property extendida no debe regresarlo). Ingest: notificaciones.md (3 types nuevos al catálogo), moderacion.md, panel-admin.md, mapa-codebase, log. Gate §0.5 documentado.",
+            "details": "Verificación: pgTAP archivo por archivo + pnpm test/tsc/lint en mobile + smoke E2E con 3 cuentas buscador en el stack local (NUNCA db reset — stack compartido con urbea-perfil2). Gate §0.5: migraciones aditivas+rollback, contrato de moderate-property intacto para builds instalados (acciones vigentes byte-compatibles), deploy remoto/preview-ads y OTA quedan como decisión de Abraham (se acumulan con #219/#223).\n<info added on 2026-08-28T16:11:11.415Z>\nPLAN: verificación completa (pgTAP archivo por archivo, pnpm test/tsc/lint en mobile) + smoke E2E en emulador por CLI del flujo nuevo (reportar → 3 cuentas → auto-suspensión → cola admin → restaurar) Y del flujo de revisiones EXISTENTE (la EF extendida no debe regresarlo). NUNCA db reset (stack compartido con urbea-perfil2). Ingest: notificaciones.md (admin_report_new, admin_report_autosuspend, property_suspended_by_reports al catálogo), moderacion.md, panel-admin.md, mapa-codebase.md, log.md. Gate §0.5 documentado; deploy remoto/preview-ads y OTA = decisión de Abraham (se acumulan con #219/#223). · agente=mobile (coordina) · skills=urbea-testing · criticidad=no · impacto-prod=gate documental · footprint=wiki/** + docs/PRD.md (verificación, sin código nuevo)\n</info added on 2026-08-28T16:11:11.415Z>",
+            "testStrategy": "No crítica (docs/wiki/verificación). El smoke pega las salidas reales en la bitácora — jamás narradas de memoria.",
+            "status": "pending",
+            "dependencies": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6
+            ],
+            "subtasks": [],
+            "updatedAt": "2026-08-28T16:11:11.415Z",
+            "parentId": "220"
+          }
+        ],
+        "updatedAt": "2026-08-28T16:11:11.415Z"
       },
       {
         "id": "221",
