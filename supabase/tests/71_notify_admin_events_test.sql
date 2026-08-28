@@ -75,8 +75,17 @@
 --    catálogo v1 docs/PRD.md §22.4) ──────────────────────────────────────────
 --   admin_ad_pending          → deep_link '/admin/ads'      · related_entity_type 'ad'
 --   admin_revision_pending    → deep_link '/admin/revisions'· related_entity_type 'property_revision'
---   admin_agent_application   → deep_link '/admin/requests' · related_entity_type 'agent_application'
---   admin_agency_pending      → deep_link '/admin/requests' · related_entity_type 'agency'
+--   admin_agent_application   → deep_link '/admin'          · related_entity_type 'agent_application'
+--   admin_agency_pending      → deep_link '/admin'          · related_entity_type 'agency'
+--   🔴 CORREGIDO (tarea #223.2, code review del PR #106 de #219, ANTES del
+--   deploy a producción): la fijación original de este RED (2026-08-25) puso
+--   '/admin/requests' para estos 2 tipos, pero esa ruta NUNCA existió
+--   (mobile/app/admin/ solo tiene index/ads/agencies/revisions) — era una
+--   expectativa equivocada del test-author, no una implementación que se
+--   debilitó después. Destino interino: '/admin' (el índice admin es la
+--   lista de inmobiliarias y el hub de las colas); #221 (M4 solicitudes)
+--   re-apuntará a '/admin/requests' cuando esa pantalla exista. Ver AGY4/
+--   APP4 abajo.
 --   data lleva SIEMPRE 'ad_title' (ads) / 'address' (revisiones) /
 --   'application_type' (solicitudes) / 'agency_name' (inmobiliarias) — llaves
 --   snake_case sin colisionar con las columnas de la fila (title/body son del
@@ -184,6 +193,16 @@
 --   avisos no debe cambiar — no-op silencioso (b). 2 caminos representativos
 --   (ads por UPDATE, agencies por INSERT), mismo criterio de "una vez por
 --   estilo de disparo" que la sección 7.
+-- Sección 11 — 🔴 defecto (a), tarea #223.2 (nace del code review del PR #106
+--   de #219, ANTES del deploy a producción): las 4 funciones notify_admin_*
+--   hacen el fan-out con `from public.users u where u.role = 'admin'` SIN
+--   `and u.deleted_at is null` — un admin dado de baja sigue en la lista de
+--   destinatarios. Se siembra un 3er admin de plataforma CON deleted_at
+--   poblado DESPUÉS de que las secciones 2-5/9/10 ya corrieron sus asserts
+--   de array exacto (para no invalidar retroactivamente esas fijaciones) y
+--   se dispara cada uno de los 4 eventos con una entidad NUEVA: los 2 admins
+--   vivos siguen recibiendo el aviso (ya cubierto arriba, no se duplica) y
+--   el admin borrado NO debe aparecer — HOY sí aparece (RED).
 -- Sección 10 — 🔴 BUG REAL detectado en el smoke E2E de #219.5 (subtarea
 --   #219.6): esta suite (secciones 2/9) solo ejercita admin_ad_pending vía la
 --   transición UPDATE draft->pending_review. Pero el flujo REAL del wizard de
@@ -220,7 +239,7 @@
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(85);
+select plan(95);
 
 create or replace function pg_temp.act_as(p_uid uuid, p_role text default 'authenticated')
 returns void language plpgsql as $$
@@ -397,7 +416,11 @@ insert into result_agy_row_71
     and type = 'admin_agency_pending';
 
 select is((select n_type from result_agy_row_71), 'admin_agency_pending', 'AGY3_type_admin_agency_pending');
-select is((select n_deep_link from result_agy_row_71), '/admin/requests', 'AGY4_deep_link_admin_requests_PRD_22_4');
+-- 🔴 CORREGIDO (#223.2, review PR #106 de #219): '/admin/requests' no existe
+-- (mobile/app/admin/ solo index/ads/agencies/revisions) -- expectativa
+-- equivocada del RED original, no un debilitamiento. Interino '/admin' hasta
+-- que #221 (M4 solicitudes) cree la pantalla real.
+select is((select n_deep_link from result_agy_row_71), '/admin', 'AGY4_deep_link_admin_interino_hasta_221_PRD_22_4');
 select is((select n_rel_type from result_agy_row_71), 'agency', 'AGY5_related_entity_type_agency');
 select is((select n_rel_id from result_agy_row_71), '00000000-0000-0000-0000-000000710022'::uuid,
   'AGY6_related_entity_id_es_el_id_de_la_agencia');
@@ -458,7 +481,8 @@ insert into result_app_row_71
     and type = 'admin_agent_application';
 
 select is((select n_type from result_app_row_71), 'admin_agent_application', 'APP3_type_admin_agent_application');
-select is((select n_deep_link from result_app_row_71), '/admin/requests', 'APP4_deep_link_admin_requests_PRD_22_4');
+-- 🔴 CORREGIDO (#223.2, review PR #106 de #219): mismo caso que AGY4 arriba.
+select is((select n_deep_link from result_app_row_71), '/admin', 'APP4_deep_link_admin_interino_hasta_221_PRD_22_4');
 select is((select n_rel_type from result_app_row_71), 'agent_application', 'APP5_related_entity_type_agent_application');
 select is((select n_rel_id from result_app_row_71), '00000000-0000-0000-0000-000000710032'::uuid,
   'APP6_related_entity_id_es_el_id_de_la_solicitud');
@@ -1060,6 +1084,133 @@ select is(
   (select count(*)::int from public.notifications
     where related_entity_id = '00000000-0000-0000-0000-000000710217' and type = 'admin_ad_pending'),
   2, 'RPCINS9_el_conteo_de_avisos_NO_cambia_no_op_silencioso_sigue_en_2'
+);
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 11) 🔴 defecto (a) tarea #223.2 — FAN-OUT A ADMINS BORRADOS. Las 4 funciones
+--    hacen `from public.users u where u.role = 'admin'` SIN
+--    `and u.deleted_at is null`: notifican también a admins dados de baja
+--    (y encima el índice users_role_idx es PARCIAL where deleted_at is null,
+--    20260604000002:34-35, así que hoy esa query cae en seq scan dentro de
+--    la transacción bloqueante del evento). Se siembra el 3er admin (borrado)
+--    AQUÍ, DESPUÉS de que las secciones 2-5/9/10 ya corrieron sus arrays
+--    exactos [admin1,admin2] — sembrarlo antes invalidaría esas fijaciones
+--    por una razón AJENA a lo que prueban. Cada evento se dispara con una
+--    entidad NUEVA para no interferir con conteos ya fijados arriba.
+-- ════════════════════════════════════════════════════════════════════════════
+
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-000000710301', 'admin_borrado_71@urbea.mx');
+update public.users set role = 'admin', deleted_at = now()
+ where id = '00000000-0000-0000-0000-000000710301';
+
+select is(
+  (select count(*)::int from public.users where role = 'admin'), 3,
+  'FIXTURE_ANCHOR4_ahora_3_usuarios_con_role_admin_2_vivos_1_borrado'
+);
+select is(
+  (select count(*)::int from public.users where role = 'admin' and deleted_at is null), 2,
+  'FIXTURE_ANCHOR5_de_esos_3_solo_2_siguen_vivos_deleted_at_is_null'
+);
+
+-- ── 11.1) admin_ad_pending — draft -> pending_review con un ad NUEVO ───────
+insert into public.ads (id, agency_id, creative_id, title, cta_type, cta_value, status, starts_at, ends_at) values
+  ('00000000-0000-0000-0000-000000710310', '00000000-0000-0000-0000-000000710012',
+   '00000000-0000-0000-0000-000000710013', 'Ad Notify Admin Borrado 71', 'phone', '+5213300007108',
+   'draft', now() - interval '1 day', now() + interval '30 days');
+update public.ads set status = 'pending_review' where id = '00000000-0000-0000-0000-000000710310';
+
+select is(
+  (select array_agg(user_id order by user_id) from public.notifications
+    where related_entity_id = '00000000-0000-0000-0000-000000710310' and type = 'admin_ad_pending'),
+  array[
+    '00000000-0000-0000-0000-000000710001'::uuid,
+    '00000000-0000-0000-0000-000000710002'::uuid
+  ],
+  'DELADM_ADS1_solo_los_2_admins_vivos_reciben_admin_ad_pending_el_admin_borrado_queda_fuera'
+);
+select is(
+  (select count(*)::int from public.notifications
+    where user_id = '00000000-0000-0000-0000-000000710301'
+      and related_entity_id = '00000000-0000-0000-0000-000000710310'
+      and type = 'admin_ad_pending'),
+  0, 'DELADM_ADS2_el_admin_borrado_NO_recibe_admin_ad_pending'
+);
+
+-- ── 11.2) admin_agency_pending — INSERT en pending_approval con agencia NUEVA
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-000000710311', 'creador_agencia_admin_borrado_71@urbea.mx');
+insert into public.agencies (id, name, slug, status, created_by_user_id) values
+  ('00000000-0000-0000-0000-000000710312', 'Agencia Notify Admin Borrado 71', 'agencia-notify-admin-borrado-71',
+   default, '00000000-0000-0000-0000-000000710311');
+
+select is(
+  (select array_agg(user_id order by user_id) from public.notifications
+    where related_entity_id = '00000000-0000-0000-0000-000000710312' and type = 'admin_agency_pending'),
+  array[
+    '00000000-0000-0000-0000-000000710001'::uuid,
+    '00000000-0000-0000-0000-000000710002'::uuid
+  ],
+  'DELADM_AGY1_solo_los_2_admins_vivos_reciben_admin_agency_pending_el_admin_borrado_queda_fuera'
+);
+select is(
+  (select count(*)::int from public.notifications
+    where user_id = '00000000-0000-0000-0000-000000710301'
+      and related_entity_id = '00000000-0000-0000-0000-000000710312'
+      and type = 'admin_agency_pending'),
+  0, 'DELADM_AGY2_el_admin_borrado_NO_recibe_admin_agency_pending'
+);
+
+-- ── 11.3) admin_agent_application — INSERT en pending con solicitud NUEVA ──
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-000000710313', 'aplicante_admin_borrado_71@urbea.mx');
+insert into public.agent_applications (id, user_id, application_type) values
+  ('00000000-0000-0000-0000-000000710314', '00000000-0000-0000-0000-000000710313', 'independent');
+
+select is(
+  (select array_agg(user_id order by user_id) from public.notifications
+    where related_entity_id = '00000000-0000-0000-0000-000000710314' and type = 'admin_agent_application'),
+  array[
+    '00000000-0000-0000-0000-000000710001'::uuid,
+    '00000000-0000-0000-0000-000000710002'::uuid
+  ],
+  'DELADM_APP1_solo_los_2_admins_vivos_reciben_admin_agent_application_el_admin_borrado_queda_fuera'
+);
+select is(
+  (select count(*)::int from public.notifications
+    where user_id = '00000000-0000-0000-0000-000000710301'
+      and related_entity_id = '00000000-0000-0000-0000-000000710314'
+      and type = 'admin_agent_application'),
+  0, 'DELADM_APP2_el_admin_borrado_NO_recibe_admin_agent_application'
+);
+
+-- ── 11.4) admin_revision_pending — INSERT en pending con revisión NUEVA ────
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-000000710315', 'owner_revision_admin_borrado_71@urbea.mx');
+insert into public.properties (id, owner_user_id, property_type, operation_type, address, location, price, status) values
+  ('00000000-0000-0000-0000-000000710316', '00000000-0000-0000-0000-000000710315',
+   'departamento', 'rent', 'Depa Notify Admin Borrado 71, CDMX',
+   extensions.ST_SetSRID(extensions.ST_MakePoint(-103.37, 20.69), 4326)::extensions.geography,
+   9000, 'active');
+insert into public.property_revisions (id, property_id, submitted_by, status, changed_fields) values
+  ('00000000-0000-0000-0000-000000710317', '00000000-0000-0000-0000-000000710316',
+   '00000000-0000-0000-0000-000000710315', 'pending', '{"price": 9500}'::jsonb);
+
+select is(
+  (select array_agg(user_id order by user_id) from public.notifications
+    where related_entity_id = '00000000-0000-0000-0000-000000710317' and type = 'admin_revision_pending'),
+  array[
+    '00000000-0000-0000-0000-000000710001'::uuid,
+    '00000000-0000-0000-0000-000000710002'::uuid
+  ],
+  'DELADM_REV1_solo_los_2_admins_vivos_reciben_admin_revision_pending_el_admin_borrado_queda_fuera'
+);
+select is(
+  (select count(*)::int from public.notifications
+    where user_id = '00000000-0000-0000-0000-000000710301'
+      and related_entity_id = '00000000-0000-0000-0000-000000710317'
+      and type = 'admin_revision_pending'),
+  0, 'DELADM_REV2_el_admin_borrado_NO_recibe_admin_revision_pending'
 );
 
 select * from finish();
