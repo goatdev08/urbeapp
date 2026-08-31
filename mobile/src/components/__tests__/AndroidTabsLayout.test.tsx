@@ -48,13 +48,17 @@ import { AndroidTabsLayout } from '../AndroidTabsLayout';
 const mock_auth_role: { role: string | null } = { role: null };
 
 /** name → options con las que el layout declaró cada Tabs.Screen. */
-const declared_screens: Array<{ name: string; options: Record<string, unknown> }> = [];
+const declared_screens: { name: string; options: Record<string, unknown> }[] = [];
 
 jest.mock('expo-router', () => {
   const R = jest.requireActual('react');
-  const Tabs = ({ children }: { children: React.ReactNode }) =>
-    R.createElement(R.Fragment, null, children);
-  Tabs.Screen = ({ name, options }: { name: string; options?: Record<string, unknown> }) => {
+  function Tabs({ children }: { children: React.ReactNode }) {
+    return R.createElement(R.Fragment, null, children);
+  }
+  Tabs.Screen = function TabsScreen({
+    name,
+    options,
+  }: { name: string; options?: Record<string, unknown> }) {
     declared_screens.push({ name, options: options ?? {} });
     return null;
   };

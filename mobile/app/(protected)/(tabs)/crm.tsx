@@ -23,8 +23,12 @@ export default function CRMTab(): React.ReactElement {
     return <></>;
   }
 
-  // No es agente → redirige al home de la app
-  if (user?.role !== 'agent') {
+  // No es agente (ni admin) → redirige al home de la app.
+  // `admin` es SUPERCONJUNTO de `agent` (#224): el backend ya lo trata así
+  // —RLS `properties_insert` acepta ARRAY['agent','admin'] y la EF
+  // `publish-property` verifica role IN ('agent','admin')—, así que el
+  // cliente no puede quitarle a un admin lo que un agente sí tiene.
+  if (user?.role !== 'agent' && user?.role !== 'admin') {
     return <Redirect href="/(protected)" />;
   }
 

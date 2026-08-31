@@ -35,18 +35,23 @@ import { IosNativeTabsLayout } from '../IosNativeTabsLayout';
 const mock_auth_role: { role: string | null } = { role: null };
 
 /** name → hidden con el que el layout declaró cada Trigger. */
-const declared_triggers: Array<{ name: string; hidden: boolean }> = [];
+const declared_triggers: { name: string; hidden: boolean }[] = [];
 
 jest.mock('expo-router/unstable-native-tabs', () => {
   const R = jest.requireActual('react');
-  const NativeTabs = ({ children }: { children: React.ReactNode }) =>
-    R.createElement(R.Fragment, null, children);
-  const Trigger = ({ name, hidden }: { name: string; hidden?: boolean }) => {
+  function NativeTabs({ children }: { children: React.ReactNode }) {
+    return R.createElement(R.Fragment, null, children);
+  }
+  function Trigger({ name, hidden }: { name: string; hidden?: boolean }) {
     declared_triggers.push({ name, hidden: hidden === true });
     return null;
+  }
+  Trigger.Icon = function TriggerIcon() {
+    return null;
   };
-  Trigger.Icon = () => null;
-  Trigger.Label = () => null;
+  Trigger.Label = function TriggerLabel() {
+    return null;
+  };
   NativeTabs.Trigger = Trigger;
   return { NativeTabs };
 });

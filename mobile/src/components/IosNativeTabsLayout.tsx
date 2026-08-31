@@ -184,7 +184,9 @@ function to_local(module_source: ImageSourcePropType, local_uri?: string | null)
 export function IosNativeTabsLayout() {
   const { user } = useAuth();
   const router = useRouter();
-  const is_agent = user?.role === 'agent';
+  // `admin` es SUPERCONJUNTO de `agent` (#224) — ver nota en
+  // AndroidTabsLayout.tsx; misma regla, mismo slot 4 compartido.
+  const is_agent = user?.role === 'agent' || user?.role === 'admin';
   const icons = useLocalTabIcons();
 
   return (
