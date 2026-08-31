@@ -2,6 +2,16 @@
 
 Append-only. Prefijo: `## [YYYY-MM-DD] tipo | título`.
 
+## [2026-08-31] operación | 3 administradores con cuenta comercial + kill-switch de anuncios encendido
+
+Tras el release: Abraham (`swacg08@`), Santiago (`s.ramos2308@`) y Vladimir (`vladimiryeh@`) quedan `role='admin'`, cada uno con acceso a una organización con `can_advertise=true`. **Restricción que mandó el diseño**: el índice `agency_members_one_active_per_user` permite UNA sola organización activa por persona, y Santiago y Vladimir ya eran owners de «Tu Casa con Vlad» (8 propiedades activas de Vlad). Mover a alguien habría desapuntado esas propiedades, así que se creó **«Desarrolladora»** (razón social, `slug=desarrolladora`, publicar + anunciar, categoría `otro`) solo para Abraham y a «Tu Casa con Vlad» se le encendió la capacidad comercial vía `set_org_advertising_atomic` — la puerta real, con su fila de auditoría. `app_config.ads_enabled` pasó a `true` (flip en runtime, sin OTA, reversible al instante). ⚠️ **No existe columna `razon_social`**: la razón social vive en `agencies.name`.
+
+**Bug corregido de paso**: `users.agency_id` de Santiago apuntaba a «Urbea Inmobiliaria», donde no tiene membresía — la RLS `properties_insert` exige `agency_role_of(agency_id) is not null`, así que **hoy no habría podido publicar** sus 3 borradores. Se realineó a «Tu Casa con Vlad», su membresía real.
+
+**Bug latente encontrado y anotado (#225)**: `admin_create_agency_atomic` hace `set role='agent'` al owner SIN condicionar, así que degradó la cuenta admin de Abraham al crearle la organización (se restauró en la misma transacción). Le falta el guard `case when role='admin' then role else 'agent' end` que la migración `20260805000010` ya añadió a los DOS triggers de aprobación: la regla estaba decidida y este RPC se quedó fuera del barrido. Mismo patrón «invariante en dos capas, anclada en una sola» de #220.
+
+**Sonda final**: propiedades vivas `active=8, draft=3` (idéntico a antes del release), las 8 activas de Vlad intactas en su organización, 0 notificaciones espurias, 4 admins vivos, 3 membresías activas, `ads_feed_config()` → `ads_enabled=true, n=8, max=5`.
+
 ## [2026-08-31] release | producción al día: 8 migraciones + 5 Edge Functions + #224 (admin ⊃ agent)
 
 Release completo a `urbea-app` tras 9 tareas acumuladas sin desplegar. **8 migraciones** aplicadas en orden (#219 `notify_admin_events` y `notify_moderation_mirrors`; #223 `fix_moderation_mirror_semantics` y `fix_admin_notify_recipients`; #220 el CHECK de `other`, el trigger de auto-suspensión, `resolve_property_reports_atomic` y la tabla `user_reports`). Gate previo al CHECK: **0 filas** infractoras. Sonda posterior: 3 CHECKs, 7 triggers, el job de pg_cron, 2 policies — y **0 notificaciones generadas por el propio deploy** con las propiedades intactas (`active=8, draft=3`), o sea ninguna suspensión retroactiva.
