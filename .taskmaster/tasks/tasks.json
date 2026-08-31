@@ -10214,7 +10214,7 @@
         "id": "220",
         "title": "feat(041-M3): reportes de usuarios (§24) — botón, cola y auto-suspensión",
         "description": "Botón «Reportar» en la app (popup de detalle + perfil de publicador; 7 motivos del PRD; 1 por usuario), cola /admin/reports (restaurar / pedir cambios / mantener suspendida / eliminar), trigger de auto-suspensión: 3 reportes independientes en 24h → suspended automático. Notificaciones de ambos lados vía #219.",
-        "details": "Origen: exploración 041 · bloque M3 · PRD §24.1 + §30. ADOPTA 79.1 y 79.2 (79.3 evidencia-antifraude queda fuera; bloqueo entre usuarios fuera de MVP §35). La tabla property_reports YA existe (20260604000007: 7 reasons, unique (property,user), índice de cola) con cero escritores/lectores — falta: EF de creación (frontera de confianza: valida motivo, texto obligatorio en other, dedupe), UI de usuario, cola admin, trigger 3/24h. ⚠️ Gate §0.5: el trigger toca properties.status — idempotente (no re-suspende una suspendida), rollback probado, cero efecto en filas existentes al migrar. suspend ya oculta inmediato sin tocar property_revisions (§15.6). Reportes de perfil: el PRD solo tiene 1 línea → alcance mínimo (mismo mecanismo, entidad user) y anotar la enmienda en el PRD.",
+        "details": "Origen: exploración 041 · bloque M3 · PRD §24.1 + §30. ADOPTA 79.1 y 79.2 (79.3 evidencia-antifraude queda fuera; bloqueo entre usuarios fuera de MVP §35). La tabla property_reports YA existe (20260604000007: 7 reasons, unique (property,user), índice de cola) con cero escritores/lectores — falta: EF de creación (frontera de confianza: valida motivo, texto obligatorio en other, dedupe), UI de usuario, cola admin, trigger 3/24h. ⚠️ Gate §0.5: el trigger toca properties.status — idempotente (no re-suspende una suspendida), rollback probado, cero efecto en filas existentes al migrar. suspend ya oculta inmediato sin tocar property_revisions (§15.6). Reportes de perfil: el PRD solo tiene 1 línea → alcance mínimo (mismo mecanismo, entidad user) y anotar la enmienda en el PRD.\n\nDERIVADAS: #224 (usuario, alta de admins en producción)",
         "testStrategy": "EF + trigger = CRÍTICA (pgTAP: exactamente 3 reporteros DISTINTOS dentro de 24h dispara, 2 no, duplicado del mismo usuario no cuenta ni crea fila, re-suspensión no-op, ventana deslizante real; Deno para la EF). UI ligera. Smoke E2E en preview con 3 cuentas buscador.",
         "status": "done",
         "dependencies": [
@@ -10324,7 +10324,7 @@
             "parentId": "220"
           }
         ],
-        "updatedAt": "2026-08-28T20:36:35.675Z"
+        "updatedAt": "2026-08-31T23:37:01.519Z"
       },
       {
         "id": "221",
@@ -10416,6 +10416,20 @@
           }
         ],
         "updatedAt": "2026-08-28T15:36:44.295Z"
+      },
+      {
+        "id": "224",
+        "title": "fix(220.6): el rol 'admin' no es superconjunto de 'agent' en el cliente — el admin pierde el CRM y el tab de Leads",
+        "description": "Origen: subtarea 220.6 · Detectado por: usuario (alta de Vladimir y Santiago como administradores, 2026-08-31). El backend YA trata admin como superconjunto de agent (RLS properties_insert acepta ARRAY['agent','admin'], y publish-property verifica role IN ('agent','admin')), pero el cliente compara por igualdad estricta contra 'agent' en 3 puntos, así que un usuario con role='admin' pierde funcionalidad de agente en vez de ganarla.",
+        "details": "PUNTOS EXACTOS (grep de user.role en mobile/, 3 archivos / 3 líneas):\n1. mobile/app/(protected)/(tabs)/crm.tsx:27 — `if (user?.role !== 'agent') return <Redirect href=\"/(protected)\" />` → un admin que abre el CRM es EXPULSADO al home.\n2. mobile/src/components/AndroidTabsLayout.tsx:88 — `const is_agent = user?.role === 'agent'` → el tab «Leads» se oculta (href:null) y en su lugar aparece «Guardados».\n3. mobile/src/components/IosNativeTabsLayout.tsx:187 — idéntico en iOS.\n\nFIX: en los 3 puntos, la condición pasa a incluir 'admin' (admin = superconjunto de agent, alineado con el backend).\n\nNO SE TOCA: ProfileScreen.tsx:229 (`role === 'user'` → «Convertirme en agente»/«Registrar mi inmobiliaria», correcto: un admin no se auto-promueve) ni :235 (`role === 'admin'` → «Panel de administrador», correcto). Las entradas «Mis anuncios»/«Invitar agentes»/«Miembros» se gatean por agency_members, no por users.role, así que ya funcionan para un admin que además es owner.\n\nCRITICIDAD: NO crítica por la regla determinista de CLAUDE.md §5 (footprint = components/** y app/**, cero lógica en lib/hooks/utils) → verificación ligera (tsc + lint + suite completa). Aun así se ancla con tests RNTL: el patrón «una invariante en dos capas y anclada en ninguna» ya nos costó 5 hallazgos en #220.\n\nIMPACTO-PROD: sin riesgo. Cambio puramente aditivo de visibilidad en el cliente; ningún contrato de backend tocado; viaja por OTA.",
+        "testStrategy": "RNTL: (a) el tab de Leads es visible con role='admin' y con role='agent', y NO con role='user'; (b) el guard del CRM renderiza la pantalla con 'admin' y con 'agent', y redirige con 'user'. Cada assert verificado matando su mutante (revertir la condición a la comparación estricta debe matarlos). Verificación: pnpm tsc --noEmit, pnpm lint (línea base 0 errores / 110 warnings) y pnpm test completo.",
+        "status": "pending",
+        "dependencies": [
+          "220"
+        ],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2026-08-31T23:37:01.519Z"
       }
     ],
     "metadata": {
