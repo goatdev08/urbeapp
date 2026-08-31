@@ -85,7 +85,10 @@ export function AndroidTabsLayout() {
   // ponytail: href:null oculta el tab; omitir la prop = visible normal.
   // exactOptionalPropertyTypes exige no asignar undefined a href, por eso
   // se construye el objeto de opciones condicionalmente.
-  const is_agent = user?.role === 'agent';
+  // `admin` es SUPERCONJUNTO de `agent` (#224): un administrador conserva
+  // todo lo del agente (Leads en el slot 4) y además gana el panel de admin
+  // desde el menú del perfil. El backend ya lo trata así.
+  const is_agent = user?.role === 'agent' || user?.role === 'admin';
 
   return (
     <Tabs

@@ -4,7 +4,7 @@ dominio: producto
 estado: vivo
 fuentes: [docs/PRD.md §4, docs/PRD-MVP-demo.md]
 codigo: [supabase/migrations/20260604000002_identity_users.sql, supabase/migrations/20260708000001_signup_default_buscador.sql, supabase/migrations/20260729000001_register_user_atomic_rpc.sql, supabase/functions/register/, mobile/app/register.tsx, mobile/src/features/auth/context.tsx, mobile/src/features/auth/api.ts, supabase/migrations/20260805000001_premium_derived_helper.sql, supabase/migrations/20260805000004_upgrade_to_agent_rpc.sql, supabase/functions/upgrade-to-agent/, supabase/functions/request-agent-upgrade/, mobile/app/(protected)/upgrade.tsx, mobile/src/features/upgrade/]
-actualizado: 2026-08-07
+actualizado: 2026-08-31
 ---
 
 # Roles y permisos
@@ -35,6 +35,7 @@ Un buscador (`role='user'`) puede subir a agente DESPUÉS de registrarse, desde 
 - **buscador** (`role='user'`) — usuario final público que llega por registro libre; consume el feed y contacta agentes.
 
 ## Reglas / gotchas
+- ⭐ **`admin` es SUPERCONJUNTO de `agent`** (#224, 2026-08-31). El backend siempre lo trató así — RLS `properties_insert` acepta `ARRAY['agent','admin']` y `publish-property/handler.ts` verifica `role IN ('agent','admin')` — pero el **cliente** comparaba por igualdad estricta contra `'agent'` en 3 puntos y un admin **perdía** el CRM y el tab de Leads en vez de ganar acceso. Se descubrió al volver administradores a dos agentes reales con leads vivos en producción. Regla derivada: **toda comparación de `users.role` contra `'agent'` en el cliente debe incluir `'admin'`**; las comparaciones contra `'user'` y contra `'admin'` NO son casos de superconjunto y quedan estrictas. Los permisos de organización (`Mis anuncios`, `Invitar agentes`, `Miembros`) no dependen de `users.role` sino de `agency_members` — ahí no aplica. Anclado por `crm.test.tsx`, `AndroidTabsLayout.test.tsx`, `IosNativeTabsLayout.test.tsx` (14 casos, ambos mutantes verificados).
 - 🔒 **Anti-escalación:** grants **column-level** impiden que el cliente modifique `users.role` o `users.agency_id`. El cambio de rol es **server-side** (Edge Function / admin). Ver [[rls-seguridad]].
 - El rol determina visibilidad vía helpers RLS (`current_user_role`, `is_admin`).
 
