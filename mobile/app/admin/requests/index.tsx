@@ -5,10 +5,12 @@
  * (a) Solicitudes de agente — agent_applications status='pending'. Aprobar
  *     directo / rechazar con motivo obligatorio, vía
  *     resolve_agent_application (RPC pinneada de 221.2).
- * (b) Inmobiliarias por aprobar — agencies status='pending_approval'. Fila
- *     de SOLO lectura que LINKEA al detalle existente
- *     `/admin/agencies/[id]` — ahí ya se aprueba/rechaza (211.1/71.5); no se
- *     duplica esa acción aquí.
+ * (b) Inmobiliarias por aprobar — agencies status='pending_approval'.
+ *     Aprobar directo / rechazar con motivo INLINE (follow-up del
+ *     coordinador: antes solo existía por Studio) vía
+ *     resolve_agency_registration (RPC del backend), + un link "Ver
+ *     detalle" que sigue apuntando a `/admin/agencies/[id]` (211.1/71.5 —
+ *     token de invitación, miembros; esta pantalla NO lo duplica).
  * (c) Solicitudes de cuenta comercial — advertising_requests status
  *     'pending' (tabla nueva de 221.1). Aprobar directo / rechazar con
  *     motivo obligatorio, vía resolve_advertising_request (RPC pinneada).
@@ -45,6 +47,7 @@ import {
 import {
   useResolveAgentApplication,
   useResolveAdvertisingRequest,
+  useResolveAgencyRegistration,
 } from '@/features/admin/hooks/useResolveRequest';
 import { ADVERTISER_CATEGORY_LABELS } from '@/features/admin/components/advertiser-category-select';
 import { colors, radii, spacing, type_scale } from '@/theme/theme';
@@ -233,11 +236,28 @@ function AgentApplicationsSection(): React.ReactElement {
 
 function PendingAgenciesSection(): React.ReactElement {
   const { items, is_loading, error_message, refetch } = useAdminPendingAgencies();
+  const { resolve, is_submitting, error_message: resolve_error } = useResolveAgencyRegistration({
+    onSuccess: refetch,
+  });
   const router = useRouter();
+  const [reject_target, set_reject_target] = useState<AdminPendingAgency | null>(null);
 
-  const handle_press = useCallback(
+  const handle_view_detail = useCallback(
     (item: AdminPendingAgency) => router.push(`/admin/agencies/${item.id}`),
     [router],
+  );
+  const handle_approve = useCallback(
+    (id: string) => void resolve({ agency_id: id, approve: true }),
+    [resolve],
+  );
+  const handle_reject_confirm = useCallback(
+    (reason: string) => {
+      if (reject_target === null) return;
+      void resolve({ agency_id: reject_target.id, approve: false, reason }).then((res) => {
+        if (res.ok) set_reject_target(null);
+      });
+    },
+    [reject_target, resolve],
   );
 
   return (
@@ -254,22 +274,58 @@ function PendingAgenciesSection(): React.ReactElement {
         </Text>
       ) : (
         (items ?? []).map((item) => (
-          <Pressable
-            key={item.id}
-            style={styles.card}
-            onPress={() => handle_press(item)}
-            accessibilityRole="button"
-            accessibilityLabel={`Ver el detalle de ${item.name}`}
-            testID={`pending-agency-${item.id}`}
-          >
+          <View key={item.id} style={styles.card} testID={`pending-agency-${item.id}`}>
             <Text style={styles.card_title}>{item.name}</Text>
             <Text style={styles.card_meta}>@{item.slug}</Text>
             {item.contact_name !== null && (
               <Text style={styles.card_body}>{item.contact_name}</Text>
             )}
             <Text style={styles.card_date}>{format_date(item.created_at)}</Text>
-          </Pressable>
+
+            <Pressable
+              style={styles.link_row}
+              onPress={() => handle_view_detail(item)}
+              accessibilityRole="button"
+              accessibilityLabel={`Ver el detalle de ${item.name}`}
+              testID={`view-agency-detail-${item.id}`}
+            >
+              <Text style={styles.link_text}>Ver detalle</Text>
+            </Pressable>
+
+            <View style={styles.actions_row}>
+              <Pressable
+                style={[styles.primary_button, is_submitting && styles.button_disabled]}
+                disabled={is_submitting}
+                onPress={() => handle_approve(item.id)}
+                accessibilityRole="button"
+                accessibilityLabel={`Aprobar el registro de ${item.name}`}
+                testID={`approve-agency-${item.id}`}
+              >
+                <Text style={styles.primary_text}>Aprobar</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.secondary_button, is_submitting && styles.button_disabled]}
+                disabled={is_submitting}
+                onPress={() => set_reject_target(item)}
+                accessibilityRole="button"
+                accessibilityLabel={`Rechazar el registro de ${item.name}`}
+                testID={`reject-agency-${item.id}`}
+              >
+                <Text style={styles.secondary_text}>Rechazar</Text>
+              </Pressable>
+            </View>
+          </View>
         ))
+      )}
+
+      {reject_target !== null && (
+        <RejectionReasonModal
+          title={`Rechazar el registro de ${reject_target.name}`}
+          is_submitting={is_submitting}
+          error_message={resolve_error}
+          on_confirm={handle_reject_confirm}
+          on_close={() => set_reject_target(null)}
+        />
       )}
     </View>
   );
@@ -442,6 +498,9 @@ const styles = StyleSheet.create({
   card_meta: { fontSize: 13, color: colors.gray_2, marginTop: spacing.s_4 },
   card_body: { fontSize: 14, color: colors.ink, marginTop: spacing.s_8 },
   card_date: { fontSize: 12, color: colors.gray_2, marginTop: spacing.s_8 },
+
+  link_row: { marginTop: spacing.s_12 },
+  link_text: { fontSize: 13, fontWeight: '600', color: colors.primary },
 
   actions_row: { flexDirection: 'row', gap: spacing.s_12, marginTop: spacing.s_12 },
   primary_button: {
