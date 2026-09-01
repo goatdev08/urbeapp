@@ -150,8 +150,8 @@ describe('useAddressSearch — predicciones de dirección dirigidas por query ex
       initialProps: { query: '' },
     });
 
-    await act(async () => rerender({ query: 'Av' }));
-    await advance(300); // dispara la 1ra búsqueda ("Av"), queda en vuelo
+    await act(async () => rerender({ query: 'Ave' }));
+    await advance(300); // dispara la 1ra búsqueda ("Ave"), queda en vuelo
 
     await act(async () => rerender({ query: 'Av. Chapultepec' }));
     await advance(300); // dispara la 2da búsqueda, resuelve YA (mock 2)
