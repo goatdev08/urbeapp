@@ -69,8 +69,15 @@ select 'test-157-villa-' || i, '14039', 'Villatest Prueba ' || i,
 from generate_series(1, 25) as i;
 
 -- ── 1-2) Las funciones existen ──────────────────────────────────────────────
-select has_function('public', 'search_places', array['text', 'integer'],
-  'public.search_places(text, integer) existe');
+-- #159 (2026-09-02): la firma creció a 4 argumentos (p_lat/p_lng opcionales) y
+-- la de 2 se dropeó — dejar ambas volvía AMBIGUA la llamada publicada
+-- {p_query, p_limit} (42725). Solo se actualizó este assert estructural: los
+-- 23 asserts de comportamiento de este archivo, que llaman search_places con
+-- 1 y 2 argumentos, siguen tal cual y verdes — ésa es la prueba de que el
+-- contrato de los builds instalados sobrevivió. Ver 80_search_places_v2_test.sql.
+select has_function('public', 'search_places',
+  array['text', 'integer', 'double precision', 'double precision'],
+  'public.search_places(text, integer, double precision, double precision) existe');
 select has_function('public', 'get_neighborhood_geojson', array['bigint'],
   'public.get_neighborhood_geojson(bigint) existe');
 
