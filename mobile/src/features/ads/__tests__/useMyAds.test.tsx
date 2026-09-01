@@ -165,6 +165,7 @@ const SAMPLE_AD: MyAd = {
   paused_at: null,
   paused_by_suspension: false,
   rejection_reason: null,
+  property_id: null,
 };
 
 const SAMPLE_AD_2: MyAd = {
@@ -176,6 +177,7 @@ const SAMPLE_AD_2: MyAd = {
   paused_at: null,
   paused_by_suspension: false,
   rejection_reason: 'creativo con texto ilegible',
+  property_id: null,
 };
 
 type AdsResult = { data: MyAd[] | null; error: { code?: string; message: string } | null };

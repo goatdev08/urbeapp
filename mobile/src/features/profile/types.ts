@@ -68,6 +68,13 @@ export interface MyProperty {
   address: PropertyRow['address'];
   created_at: PropertyRow['created_at'];
   closed_reason: PropertyRow['closed_reason'];
+  /**
+   * 213: gate de "Promocionar" en PropertyActionMenu — la promo es de
+   * organizaciones publicadoras (RPC promote_property_atomic exige
+   * agency_id no nulo, mismo predicado que la RLS properties_insert). Un
+   * agente independiente (agency_id null) no ve la acción.
+   */
+  agency_id: PropertyRow['agency_id'];
   /** Contadores reales de la tabla properties (no requieren tarea #11). */
   view_count: PropertyRow['view_count'];
   like_count: PropertyRow['like_count'];

@@ -26,6 +26,7 @@ import {
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 
+import { usePromoteProperty } from '@/features/ads/hooks/usePromoteProperty';
 import { ClosePropertyDialog } from '@/features/profile/components/ClosePropertyDialog';
 import { DeletePropertyDialog } from '@/features/profile/components/DeletePropertyDialog';
 import { EmptyState } from '@/features/profile/components/EmptyState';
@@ -82,6 +83,11 @@ export default function MyListingsScreen() {
   // en vuelo → deshabilita las acciones del menú para evitar disparos concurrentes.
   const { pauseProperty, unpauseProperty, closeProperty, deleteProperty, isWorking } =
     usePropertyActions();
+
+  // 213: promocionar una propiedad ya publicada — confirmación de UN paso,
+  // sin pantalla ni componente nuevo (ponytail: Alert.alert nativo). Gate =
+  // moderación (misma cola /admin/ads), no can_advertise ni pago.
+  const { submit: submit_promote } = usePromoteProperty();
 
   // ── Filtro de status (17.6) ──────────────────────────────────────────────
   const [active_filter, set_active_filter] = useState<FilterValue>('all');
@@ -167,6 +173,32 @@ export default function MyListingsScreen() {
       close_menu();
       set_delete_dialog_item(item);
     },
+    on_promote: () => {
+      close_menu();
+      Alert.alert(
+        'Promocionar publicación',
+        'Se mostrará como anuncio en su municipio durante 30 días, después de que la revisemos. ¿Enviar a revisión?',
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          {
+            text: 'Enviar',
+            onPress: () => {
+              void submit_promote(item.id).then((result) => {
+                if (result.ok) {
+                  Alert.alert(
+                    'Enviada a revisión',
+                    'Tu promoción quedó en revisión. Te avisaremos cuando esté activa.',
+                  );
+                  refetch();
+                } else {
+                  Alert.alert('Error', result.error ?? 'No se pudo enviar la promoción.');
+                }
+              });
+            },
+          },
+        ],
+      );
+    },
   });
 
   return (
@@ -235,6 +267,7 @@ export default function MyListingsScreen() {
           on_toggle_pause: close_menu,
           on_close: close_menu,
           on_delete: close_menu,
+          on_promote: close_menu,
         }}
       />
 

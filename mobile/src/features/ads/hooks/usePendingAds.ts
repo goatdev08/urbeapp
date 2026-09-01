@@ -39,14 +39,21 @@ export interface PendingAd {
   title: string;
   description: string | null;
   agency_id: string;
-  creative_id: string;
-  cta_type: string;
-  cta_value: string;
+  /** 213: null en una promo — el video sale de property_videos vía property_id. */
+  creative_id: string | null;
+  cta_type: string | null;
+  cta_value: string | null;
   starts_at: string;
   ends_at: string;
   created_at: string;
   /** Embed PostgREST muchos-a-uno: moderar sin saber quién lo subió es moderar a ciegas. */
   agencies: { name: string } | null;
+  /**
+   * 213: no nulo ⟺ es una PROMO (RPC promote_property_atomic) en vez de un
+   * anuncio display. `title` en una promo es la DIRECCIÓN de la propiedad
+   * (ads.title = properties.address — properties no tiene columna title).
+   */
+  property_id: string | null;
 }
 
 export interface UsePendingAdsResult {
@@ -63,7 +70,7 @@ const NEUTRAL_ERROR_MESSAGE = 'No se pudo cargar la cola de anuncios. Intenta de
 // instalado no espera (§0.5, compatibilidad hacia atrás).
 const PENDING_AD_COLUMNS =
   'id, title, description, agency_id, creative_id, cta_type, cta_value, ' +
-  'starts_at, ends_at, created_at, agencies(name)';
+  'starts_at, ends_at, created_at, agencies(name), property_id';
 
 export function usePendingAds(): UsePendingAdsResult {
   const [ads, set_ads] = useState<PendingAd[]>([]);

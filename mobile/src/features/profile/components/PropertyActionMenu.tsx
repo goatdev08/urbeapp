@@ -47,6 +47,12 @@ export interface PropertyActionCallbacks {
   /** Eliminar propiedad — abre confirmación destructiva (17.7). */
   on_delete: () => void;
   /**
+   * 213: abre la confirmación de un paso para promocionar la publicación.
+   * Visible solo cuando status='active' y la propiedad tiene agency_id (la
+   * promo es de organizaciones publicadoras — ver get_actions).
+   */
+  on_promote: () => void;
+  /**
    * true mientras hay una acción asíncrona en vuelo (isWorking del hook, #25).
    * Deshabilita y atenúa las filas de acción para evitar que reabrir el menú
    * dispare una segunda mutación concurrente. Cancelar sigue habilitado.
@@ -74,11 +80,22 @@ interface MenuAction {
   destructive?: boolean;
 }
 
-function get_actions(status: PropertyStatus, cb: PropertyActionCallbacks): MenuAction[] {
+/**
+ * 213: "Promocionar" gana cuando status='active' Y la propiedad tiene
+ * agency_id — la promo es de organizaciones publicadoras (mismo predicado
+ * que la RLS properties_insert / la RPC promote_property_atomic). Un agente
+ * independiente (agency_id null) no ve la acción.
+ */
+function get_actions(item: MyProperty, cb: PropertyActionCallbacks): MenuAction[] {
+  const { status } = item;
   const actions: MenuAction[] = [];
 
   // Editar — siempre disponible
   actions.push({ key: 'edit', label: 'Editar', handler: cb.on_edit });
+
+  if (status === 'active' && item.agency_id) {
+    actions.push({ key: 'promote', label: 'Promocionar', handler: cb.on_promote });
+  }
 
   // Pausar / Reanudar — solo active o paused
   if (status === 'active') {
@@ -110,7 +127,7 @@ export function PropertyActionMenu({
   const insets = useSafeAreaInsets();
   if (!item) return null;
 
-  const actions = get_actions(item.status, callbacks);
+  const actions = get_actions(item, callbacks);
   const is_disabled = callbacks.disabled ?? false;
 
   /** Cierra el modal ANTES de invocar el handler para evitar flickering. */

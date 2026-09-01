@@ -61,6 +61,7 @@ import {
 import { useVideoPlayer, VideoView } from 'expo-video';
 
 import { supabase } from '@/lib/supabase/client';
+import { mint_videos } from '@/features/feed/lib/feedProperties';
 import { usePendingAds, type PendingAd } from '@/features/ads/hooks/usePendingAds';
 import { useActiveAds, type ActiveAd } from '@/features/ads/hooks/useActiveAds';
 import { useModerateAd, type ModerateResult } from '@/features/ads/hooks/useModerateAd';
@@ -98,6 +99,23 @@ async function mint_one(creative_id: string): Promise<MintedAdUrl | null> {
   const urls = (data as { urls?: unknown } | null)?.urls;
   if (!Array.isArray(urls) || urls.length === 0) return null;
   return urls[0] as MintedAdUrl;
+}
+
+/**
+ * 213: pide a mint-video-url (la MISMA EF que resuelve el video de una
+ * propiedad en el feed — `mint_videos`, sin duplicar el fetch) el video de
+ * la propiedad promocionada. Nunca `mint_one(null)`: una promo no tiene
+ * creative_id. Fail-closed por item, mismo criterio que mint_one.
+ */
+async function mint_one_promo(property_id: string): Promise<MintedAdUrl | null> {
+  try {
+    const videos = await mint_videos(supabase, [property_id]);
+    const video = videos[0];
+    if (!video) return null;
+    return { creative_id: property_id, posterUrl: video.posterUrl ?? '', videoUrl: video.signed_url };
+  } catch {
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -206,18 +224,23 @@ function PendingAdCard({
   on_press: (ad: PendingAd) => void;
 }): React.ReactElement {
   const waiting = days_waiting(item.created_at);
+  // 213: una promo NO tiene creative propio — `title` es la dirección de la
+  // propiedad (ads.title = properties.address, ajuste de contrato 213.2).
+  // Prefijo "Promoción · " para que el admin distinga el origen sin abrir la
+  // tarjeta.
+  const display_title = item.property_id ? `Promoción · ${item.title}` : item.title;
 
   return (
     <Pressable
       style={({ pressed }) => [styles.card, pressed && styles.card_pressed]}
       onPress={() => on_press(item)}
       accessibilityRole="button"
-      accessibilityLabel={`Revisar el anuncio ${item.title}`}
+      accessibilityLabel={`Revisar el anuncio ${display_title}`}
       testID={`pending-ad-${item.id}`}
     >
       <View style={styles.card_header}>
         <Text style={styles.card_title} numberOfLines={1}>
-          {item.title}
+          {display_title}
         </Text>
         {waiting > 0 && (
           <View style={styles.waiting_badge}>
@@ -262,10 +285,17 @@ function ModerationSheet({
     p.loop = false;
   });
 
+  // 213: una promo (ad.property_id no nulo) mintea su video con
+  // mint-video-url por property_id — NUNCA mint_one(null), ad.creative_id es
+  // null en una promo (CHECK ads_exactly_one_source).
   const load_video = useCallback(async () => {
     set_is_minting(true);
     set_mint_failed(false);
-    const minted = await mint_one(ad.creative_id);
+    const minted = ad.property_id
+      ? await mint_one_promo(ad.property_id)
+      : ad.creative_id
+        ? await mint_one(ad.creative_id)
+        : null;
     set_is_minting(false);
     if (!minted) {
       set_mint_failed(true);
@@ -273,7 +303,7 @@ function ModerationSheet({
     }
     set_video_url(minted.videoUrl);
     set_poster_url(minted.posterUrl);
-  }, [ad.creative_id]);
+  }, [ad.creative_id, ad.property_id]);
 
   const can_reject = reason.trim().length > 0 && !is_moderating;
 
@@ -292,7 +322,7 @@ function ModerationSheet({
         </View>
 
         <ScrollView contentContainerStyle={styles.sheet_body}>
-          <Text style={styles.sheet_title}>{ad.title}</Text>
+          <Text style={styles.sheet_title}>{ad.property_id ? `Promoción · ${ad.title}` : ad.title}</Text>
           <Text style={styles.card_agency}>{ad.agencies?.name ?? 'Organización desconocida'}</Text>
 
           {ad.description !== null && ad.description.length > 0 && (
@@ -308,7 +338,9 @@ function ModerationSheet({
           <View style={styles.meta_row}>
             <Text style={styles.meta_label}>Destino</Text>
             <Text style={styles.meta_value} numberOfLines={1}>
-              {ad.cta_type}: {ad.cta_value}
+              {/* 213: una promo no tiene CTA propio — tocarla lleva al
+                  detalle de la propiedad, no a un destino externo. */}
+              {ad.property_id ? 'Detalle de la publicación' : `${ad.cta_type}: ${ad.cta_value}`}
             </Text>
           </View>
 
@@ -491,12 +523,15 @@ function ActiveAdCard({
   // la base (20260816000006), no una convención del cliente — ver docblock
   // de useActiveAds.
   const is_paused = item.paused_at !== null;
+  // 213: misma convención que PendingAdCard — una promo no tiene creative
+  // propio, `title` es la dirección de la propiedad.
+  const display_title = item.property_id ? `Promoción · ${item.title}` : item.title;
 
   return (
     <View style={styles.card} testID={`active-ad-${item.id}`}>
       <View style={styles.card_header}>
         <Text style={styles.card_title} numberOfLines={1}>
-          {item.title}
+          {display_title}
         </Text>
         {is_paused && (
           <View style={styles.paused_badge} testID={`paused-badge-${item.id}`}>
