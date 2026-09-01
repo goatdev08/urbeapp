@@ -10,6 +10,16 @@
  * validate_ad_duration_ms (169.6) ya corre DENTRO de useAdUpload.upload()
  * antes de tocar la red — este screen no la reimplementa, solo muestra el
  * mensaje que el hook produce en `error`.
+ *
+ * #230 — PRE-APROBACIÓN: "Siguiente" se habilita en cuanto el binario llega
+ * al 100% (status 'polling') — la duración y el peso ya pasaron el pre-flight
+ * del cliente, y la transcodificación sigue en segundo plano (el uid llega
+ * por on_minted y se guarda en el form de inmediato; `creative_ready` se
+ * marca solo si el poll alcanza 'ready' antes de navegar). La VERDAD del
+ * creativo la resuelve el paso 5 con wait_for_creative_ready antes de crear
+ * la campaña — incluido el rechazo tardío por duración cuando el picker no
+ * reportó metadata (fail-open de #189). Revisita con uid sin confirmar →
+ * estado 'polling' honesto, sin poll vivo (navegar desmonta el hook, D5).
  */
 import React, { useCallback, useState } from 'react';
 import {
@@ -38,8 +48,10 @@ export default function AdStep1Screen() {
   const { state, update } = useAdForm();
 
   const [local_uri, set_local_uri] = useState<string | null>(state.video_local_uri);
+  // #230: revisita — uid confirmado → 'ready'; uid sin confirmar → 'polling'
+  // (binario completo, transcodificación en curso; sin poll vivo).
   const [ui_status, set_ui_status] = useState<AdUploadStatus>(
-    state.cloudflare_uid ? 'ready' : 'idle',
+    state.creative_ready ? 'ready' : state.cloudflare_uid ? 'polling' : 'idle',
   );
   const [ui_error, set_ui_error] = useState<string | null>(null);
   const [ui_progress, set_ui_progress] = useState(state.cloudflare_uid ? 1 : 0);
@@ -47,6 +59,9 @@ export default function AdStep1Screen() {
   const hook = useAdUpload({
     on_status_change: set_ui_status,
     on_progress: (p) => set_ui_progress(Math.round(p * 100) / 100),
+    // #230: el uid se guarda APENAS mint resuelve — es lo que deja continuar
+    // al 100% del binario sin esperar 'ready'.
+    on_minted: (uid) => update({ cloudflare_uid: uid, creative_ready: false }),
   });
 
   const video_player = useVideoPlayer(local_uri, (player) => {
@@ -71,7 +86,7 @@ export default function AdStep1Screen() {
     set_ui_error(null);
     // Limpia el uid previo — un nuevo pick reemplaza al anterior (supersede
     // dentro del hook), no queremos avanzar con el uid del video descartado.
-    update({ video_local_uri: uri, video_duration_ms: asset.duration ?? null, cloudflare_uid: null });
+    update({ video_local_uri: uri, video_duration_ms: asset.duration ?? null, cloudflare_uid: null, creative_ready: false });
 
     await hook.upload({ local_uri: uri, duration_ms: asset.duration ?? null });
 
@@ -80,7 +95,11 @@ export default function AdStep1Screen() {
     set_ui_status(hook.status);
     set_ui_error(hook.error);
     if (hook.status === 'ready' && hook.cloudflare_uid) {
-      update({ cloudflare_uid: hook.cloudflare_uid });
+      update({ cloudflare_uid: hook.cloudflare_uid, creative_ready: true });
+    } else if (hook.status === 'failed') {
+      // #230: un desenlace fallido invalida la pre-aprobación — sin esto,
+      // "Siguiente" seguiría armado con el uid de un creativo muerto.
+      update({ cloudflare_uid: null, creative_ready: false });
     }
   }, [hook, update]);
 
@@ -92,20 +111,24 @@ export default function AdStep1Screen() {
     set_ui_status(hook.status);
     set_ui_error(hook.error);
     if (hook.status === 'ready' && hook.cloudflare_uid) {
-      update({ cloudflare_uid: hook.cloudflare_uid });
+      update({ cloudflare_uid: hook.cloudflare_uid, creative_ready: true });
+    } else if (hook.status === 'failed') {
+      update({ cloudflare_uid: null, creative_ready: false });
     }
   }, [hook, local_uri, state.video_duration_ms, update]);
-
-  const handle_next = useCallback(() => {
-    if (ui_status !== 'ready') return;
-    router.push('/ads/new/step2');
-  }, [ui_status, router]);
 
   const has_video = local_uri !== null;
   const is_uploading = ui_status === 'uploading';
   const is_polling = ui_status === 'polling';
   const is_ready = ui_status === 'ready';
   const is_failed = ui_status === 'failed';
+  // #230: pre-aprobación — el binario al 100% (polling) ya deja continuar.
+  const can_continue = is_ready || is_polling;
+
+  const handle_next = useCallback(() => {
+    if (!can_continue) return;
+    router.push('/ads/new/step2');
+  }, [can_continue, router]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -166,7 +189,13 @@ export default function AdStep1Screen() {
             />
           )}
           {is_polling && (
-            <UploadProgressBar indeterminate label="Procesando video… esto toma unos segundos" />
+            <>
+              <Text style={styles.success_text}>✓ Video subido</Text>
+              <UploadProgressBar
+                indeterminate
+                label="Se sigue procesando en segundo plano — puedes continuar"
+              />
+            </>
           )}
           {is_ready && (
             <View style={styles.status_row}>
@@ -189,7 +218,7 @@ export default function AdStep1Screen() {
           label="Siguiente"
           onPress={handle_next}
           surface="light"
-          disabled={!is_ready}
+          disabled={!can_continue}
         />
       </View>
     </SafeAreaView>

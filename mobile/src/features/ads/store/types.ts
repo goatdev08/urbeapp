@@ -24,8 +24,19 @@ export interface AdFormState {
   // Step 1 — creativo (video)
   video_local_uri: string | null;
   video_duration_ms: number | null;
-  /** uid de Cloudflare Stream, solo una vez el creativo llega a 'ready' (useAdUpload, 169.7). */
+  /**
+   * uid de Cloudflare Stream. #230 (pre-aprobación): se guarda desde que el
+   * mint resuelve y el binario completa — ya NO espera al 'ready' (antes
+   * 169.7). La confirmación del servidor viaja aparte en `creative_ready`.
+   */
   cloudflare_uid: string | null;
+  /**
+   * true solo cuando el creativo llegó a 'ready' confirmado por el servidor.
+   * false con uid presente = binario al 100%, transcodificación en curso
+   * (pre-aprobado por el pre-flight de duración/peso del cliente) — el paso 5
+   * resuelve la verdad con wait_for_creative_ready antes de crear la campaña.
+   */
+  creative_ready: boolean;
 
   // Step 2 — título
   title: string;
@@ -43,6 +54,7 @@ export const INITIAL_AD_FORM_STATE: AdFormState = {
   video_local_uri: null,
   video_duration_ms: null,
   cloudflare_uid: null,
+  creative_ready: false,
   title: '',
   cta_type: null,
   cta_value: null,

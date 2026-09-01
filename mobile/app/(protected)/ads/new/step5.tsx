@@ -20,6 +20,16 @@
  * El único paso extra del cliente es resolver el `creative_id` a partir del
  * `cloudflare_uid` que dejó useAdUpload (169.7): el wizard guarda el uid de
  * Stream, y la RPC —como mint-ad-urls— autoriza por CREATIVO.
+ *
+ * #230 — PRE-APROBACIÓN: desde step1 se puede llegar aquí con el binario al
+ * 100% pero la transcodificación EN CURSO (creative_ready=false). Antes de la
+ * RPC, este paso resuelve la VERDAD del creativo con wait_for_creative_ready
+ * (espera acotada ~2 min, tolerante a blips de red #229): 'ready' → envía;
+ * 'failed_duration' → mensaje de duración + volver al paso 1 (el rechazo
+ * tardío del servidor, posible cuando el picker no reportó metadata, #189);
+ * 'failed' → mensaje de transcodificación + volver; 'timeout' → mensaje
+ * neutro reintentable. La RPC sigue exigiendo status='ready' — esta espera es
+ * UX, no la autorización.
  */
 import React, { useCallback, useState } from 'react';
 import { Alert, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -27,6 +37,8 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAdForm } from '@/features/ads/store/AdFormContext';
+import { default_check_ad_creative_status } from '@/features/ads/hooks/useAdUpload';
+import { wait_for_creative_ready } from '@/features/ads/lib/waitForCreativeReady';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { supabase } from '@/lib/supabase/client';
 import { colors, radii, spacing, type_scale } from '@/theme/theme';
@@ -48,6 +60,17 @@ const ERROR_MESSAGES: Record<string, string> = {
 };
 const GENERIC_ERROR =
   'No se pudo enviar la campaña. Revisa tu conexión e intenta de nuevo.';
+
+// #230 — desenlaces de wait_for_creative_ready (espejo de los mensajes de
+// useAdUpload: mismo problema, mismo texto).
+const CREATIVE_WAIT_MESSAGES = {
+  failed_duration:
+    'El video debe durar entre 10 y 120 segundos (máx 2 min). Vuelve al primer paso y sube otro video.',
+  failed:
+    'El video no se pudo procesar. Vuelve al primer paso y sube el video de nuevo.',
+  timeout:
+    'Tu video sigue procesándose y está tardando más de lo normal. Espera un momento e intenta enviar de nuevo.',
+} as const;
 
 function message_for(error: unknown): string {
   const raw = (error as { message?: string } | null)?.message ?? '';
@@ -74,6 +97,15 @@ export default function AdStep5Screen() {
       : state.zones.map((z) => z.name).join(', ');
 
   const [submitting, set_submitting] = useState(false);
+  // #230: true mientras se espera la transcodificación antes de enviar.
+  const [waiting_creative, set_waiting_creative] = useState(false);
+  const mounted_ref = React.useRef(true);
+  React.useEffect(() => {
+    mounted_ref.current = true;
+    return () => {
+      mounted_ref.current = false;
+    };
+  }, []);
 
   const handle_submit = useCallback(async () => {
     if (submitting) return;
@@ -83,6 +115,23 @@ export default function AdStep5Screen() {
     }
     set_submitting(true);
     try {
+      // #230: resolver la VERDAD del creativo antes de tocar la RPC — se pudo
+      // llegar aquí con la transcodificación en curso (pre-aprobación).
+      if (!state.creative_ready) {
+        set_waiting_creative(true);
+        const outcome = await wait_for_creative_ready({
+          cloudflare_uid: state.cloudflare_uid,
+          checker: (uid) => default_check_ad_creative_status(supabase as never, uid),
+          is_cancelled: () => !mounted_ref.current,
+        });
+        set_waiting_creative(false);
+        if (!mounted_ref.current || outcome === 'cancelled') return;
+        if (outcome !== 'ready') {
+          Alert.alert('No se pudo enviar', CREATIVE_WAIT_MESSAGES[outcome]);
+          return;
+        }
+      }
+
       // El wizard guarda el uid de Stream; la RPC autoriza por CREATIVO (igual
       // que mint-ad-urls), así que hay que traducirlo. El filtro por
       // cloudflare_uid basta: RLS ya acota ad_creatives a la propia agencia.
@@ -124,6 +173,7 @@ export default function AdStep5Screen() {
       Alert.alert('No se pudo enviar', message_for(err));
     } finally {
       set_submitting(false);
+      set_waiting_creative(false);
     }
   }, [submitting, state, router]);
 
@@ -140,7 +190,16 @@ export default function AdStep5Screen() {
         </View>
 
         <View style={styles.summary_card}>
-          <SummaryRow label="Video" value={state.cloudflare_uid ? 'Listo' : 'Sin subir'} />
+          <SummaryRow
+            label="Video"
+            value={
+              state.cloudflare_uid
+                ? state.creative_ready
+                  ? 'Listo'
+                  : 'Subido — procesándose'
+                : 'Sin subir'
+            }
+          />
           <SummaryRow label="Título" value={state.title || '—'} />
           <SummaryRow
             label="CTA"
@@ -157,11 +216,19 @@ export default function AdStep5Screen() {
           Un anuncio nunca se activa solo — el equipo de Urbea lo revisa antes de
           mostrarlo en el feed.
         </Text>
+
+        {waiting_creative && (
+          <Text style={styles.waiting_text}>
+            Tu video se sigue procesando… Lo enviamos en cuanto esté listo.
+          </Text>
+        )}
       </ScrollView>
 
       <View style={[styles.cta_area, { paddingBottom: 16 + insets.bottom }]}>
         <PrimaryButton
-          label={submitting ? 'Enviando…' : 'Enviar a revisión'}
+          label={
+            waiting_creative ? 'Procesando video…' : submitting ? 'Enviando…' : 'Enviar a revisión'
+          }
           onPress={() => void handle_submit()}
           surface="light"
           disabled={submitting}
@@ -244,6 +311,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.gray_2,
     lineHeight: 18,
+  },
+  waiting_text: {
+    ...type_scale.body,
+    color: colors.primary,
+    textAlign: 'center',
+    marginTop: spacing.s_12,
   },
   cta_area: {
     paddingHorizontal: spacing.s_20,
