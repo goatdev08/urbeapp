@@ -145,6 +145,13 @@ export interface UseAdUploadDeps {
   poll_interval_ms?: number;
   /** Notificado en cada transición de status durante upload() — ver gotcha O2 del hermano. */
   on_status_change?: (status: AdUploadStatus) => void;
+  /**
+   * #230 — notificado con el uid de Stream APENAS mint resuelve (antes del
+   * binario y del poll). El wizard lo usa para la pre-aprobación: guardar el
+   * uid en el form y dejar continuar al 100% del binario sin esperar 'ready'.
+   * El contrato de `cloudflare_uid` (no-null SOLO en ready) no cambia.
+   */
+  on_minted?: (cloudflare_uid: string) => void;
   /** Notificado con cada avance de progreso 0..1. */
   on_progress?: (progress: number) => void;
 }
@@ -209,8 +216,10 @@ function default_tus_uploader(args: {
  * Checker por defecto — consulta `ad_creatives` por cloudflare_uid. Sin fila →
  * 'missing'. #189: pide TAMBIÉN `failure_reason` y traduce un 'failed' por
  * duración a 'failed_duration', para que el hook no tenga que adivinar.
+ * Exportado desde #230: el paso 5 del wizard lo reusa (waitForCreativeReady)
+ * para verificar el estado real antes de crear la campaña.
  */
-async function default_check_ad_creative_status(
+export async function default_check_ad_creative_status(
   supabase_client: AdsSupabaseClient,
   cloudflare_uid: string,
 ): Promise<AdCreativeCheckStatus> {
@@ -323,6 +332,7 @@ export function useAdUpload(deps?: UseAdUploadDeps): UseAdUploadResult {
   const poll_interval_ms = deps?.poll_interval_ms ?? DEFAULT_POLL_INTERVAL_MS;
   const on_status_change = deps?.on_status_change;
   const on_progress = deps?.on_progress;
+  const on_minted = deps?.on_minted;
   const tus_uploader = deps?.tus_uploader ?? default_tus_uploader;
 
   const status_ref = useRef<AdUploadStatus>('idle');
@@ -458,6 +468,9 @@ export function useAdUpload(deps?: UseAdUploadDeps): UseAdUploadResult {
         upload_url = data.uploadUrl;
         stream_uid = data.uid;
         protocol = data.protocol === 'tus' ? 'tus' : 'basic';
+        // #230: el uid existe desde aquí — la pre-aprobación del wizard lo
+        // necesita antes de 'ready' (cloudflare_uid del resultado no cambia).
+        on_minted?.(stream_uid);
       } catch {
         if (!is_current()) return;
         set_status('failed');
@@ -542,7 +555,7 @@ export function useAdUpload(deps?: UseAdUploadDeps): UseAdUploadResult {
       if (is_current()) abort_ref.current = null;
     },
 
-    [supabase_client, check_ad_creative_status, poll_attempts, poll_interval_ms, on_status_change, on_progress, tus_uploader],
+    [supabase_client, check_ad_creative_status, poll_attempts, poll_interval_ms, on_status_change, on_progress, on_minted, tus_uploader],
   );
 
   return useMemo(

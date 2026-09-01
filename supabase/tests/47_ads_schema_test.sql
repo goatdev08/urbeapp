@@ -498,13 +498,13 @@ select throws_ok(
   $$ insert into public.ad_creatives (agency_id, cloudflare_uid, duration_seconds)
      values ('00000000-0000-0000-0000-000000470201', 'cfuid-ads-47-dur5', 5) $$,
   '23514', null,
-  'DUR1_duration_seconds_5_es_rechazado_fuera_del_rango_6_30'
+  'DUR1_duration_seconds_5_es_rechazado_fuera_del_rango_10_120'
 );
 select throws_ok(
   $$ insert into public.ad_creatives (agency_id, cloudflare_uid, duration_seconds)
-     values ('00000000-0000-0000-0000-000000470201', 'cfuid-ads-47-dur31', 31) $$,
+     values ('00000000-0000-0000-0000-000000470201', 'cfuid-ads-47-dur121', 121) $$,
   '23514', null,
-  'DUR2_duration_seconds_31_es_rechazado_fuera_del_rango_6_30'
+  'DUR2_duration_seconds_121_es_rechazado_fuera_del_rango_10_120'
 );
 
 create temp table result_dur_accept (label text, ok boolean, duration int);
@@ -512,24 +512,24 @@ do $$
 begin
   begin
     insert into public.ad_creatives (id, agency_id, cloudflare_uid, duration_seconds)
-      values ('00000000-0000-0000-0000-000000470302', '00000000-0000-0000-0000-000000470201', 'cfuid-ads-47-dur6', 6);
-    insert into result_dur_accept values ('dur6', true, 6);
+      values ('00000000-0000-0000-0000-000000470302', '00000000-0000-0000-0000-000000470201', 'cfuid-ads-47-dur10', 10);
+    insert into result_dur_accept values ('dur10', true, 10);
   exception when others then
-    insert into result_dur_accept values ('dur6', false, null);
+    insert into result_dur_accept values ('dur10', false, null);
   end;
   begin
     insert into public.ad_creatives (id, agency_id, cloudflare_uid, duration_seconds)
-      values ('00000000-0000-0000-0000-000000470303', '00000000-0000-0000-0000-000000470201', 'cfuid-ads-47-dur30', 30);
-    insert into result_dur_accept values ('dur30', true, 30);
+      values ('00000000-0000-0000-0000-000000470303', '00000000-0000-0000-0000-000000470201', 'cfuid-ads-47-dur120', 120);
+    insert into result_dur_accept values ('dur120', true, 120);
   exception when others then
-    insert into result_dur_accept values ('dur30', false, null);
+    insert into result_dur_accept values ('dur120', false, null);
   end;
 end $$;
 
-select is((select ok from result_dur_accept where label = 'dur6'), true,
-  'DUR3_duration_seconds_6_frontera_inferior_inclusive_es_aceptado');
-select is((select ok from result_dur_accept where label = 'dur30'), true,
-  'DUR4_duration_seconds_30_frontera_superior_inclusive_es_aceptado');
+select is((select ok from result_dur_accept where label = 'dur10'), true,
+  'DUR3_duration_seconds_10_frontera_inferior_inclusive_es_aceptado');
+select is((select ok from result_dur_accept where label = 'dur120'), true,
+  'DUR4_duration_seconds_120_frontera_superior_inclusive_es_aceptado');
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- 9) UNIQUE cloudflare_uid — comportamiento real.
