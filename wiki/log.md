@@ -2,6 +2,20 @@
 
 Append-only. Prefijo: `## [YYYY-MM-DD] tipo | título`.
 
+## [2026-09-01] incidente | el OTA del release mandó a los testers de producción a la rama preview-ads
+
+`pnpm ota` corre `expo export` **en local** y luego `eas update --skip-bundler`: el bundle se arma en el paso local, así que las `EXPO_PUBLIC_*` se hornean desde `mobile/.env.local`, **nunca** desde el entorno de EAS. `.env.local` apuntaba a `preview-ads`, así que el OTA del release del 2026-08-31 mandó a los testers de producción a esa otra base — donde sus cuentas no existen. Síntoma: "credenciales inválidas" en el celular, con la contraseña correcta.
+
+El mensaje que imprime `eas update` —*"Environment variables … loaded from the 'production' environment on EAS: EXPO_PUBLIC_SUPABASE_URL …"*— **no describe el bundle que sube** cuando va con `--skip-bundler`. Leerlo como confirmación fue el error.
+
+**Lo que lo destapó:** los `auth_logs` de producción no tenían **ni un solo intento** de login desde el celular. No es que la contraseña se rechazara: la petición nunca llegaba. Los 4 intentos con contraseña del día eran las 4 sondas del propio orquestador, todas desde la misma IP. La AUSENCIA en el log fue la evidencia — buscar el error equivocado (el rechazo) habría llevado a resetear contraseñas indefinidamente.
+
+**Corregido**: OTA republicado a ambos canales con la URL de producción, verificado leyendo el `.hbc` (`strings` → `mvpvqmyhrrkwbnpctpuq`, y confirmado que la rama ya no aparece). Runtimes intactos (`374ba3dd…` Android, `ca62b26a…` iOS), así que se entrega sobre los builds v1.0.6 instalados.
+
+**Blindado**: `assert_backend_de_produccion` en `mobile/scripts/ota.sh` corre entre el export y el upload y aborta **antes de subir** si la URL horneada no es la de producción. Probado con el mutante real (apuntar `.env.local` a la rama → el guard dispara). También se realineó `.env.local` (URL **y** anon key, que estaban de proyectos distintos; respaldo en `.env.local.preview-ads.bak`).
+
+**Regla que queda:** verificar un OTA no es leer lo que imprime el CLI — es leer la URL horneada en el bundle.
+
 ## [2026-09-01] tarea | #225 — el RPC de alta de organizaciones dejaba de ser admin al que nombraba owner
 
 `admin_create_agency_atomic` hacía `set role = 'agent'` al owner **sin condicionar**: nombrar owner a un administrador lo degradaba y le quitaba el panel. Salió en vivo el 2026-08-31 al crear «Desarrolladora» (se restauró en la misma transacción, producción nunca quedó mal). La regla contraria ya estaba escrita desde `20260805000010` —"FIX 2: nunca degradar a un admin"— en los **dos** triggers de aprobación; este RPC se quedó fuera de aquel barrido. Tercer caso del patrón «una invariante en dos capas y anclada en una sola».
