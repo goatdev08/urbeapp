@@ -97,6 +97,19 @@ export function is_ad_viewed(watched_ms: number): boolean {
   return Number.isFinite(watched_ms) && watched_ms >= VIEWED_THRESHOLD_MS;
 }
 
+// ── Clamp de shown_at (#214) — STUB RED ────────────────────────────────────
+
+/** Tolerancia de skew de reloj del cliente hacia el FUTURO: 5 minutos. */
+export const SHOWN_AT_FUTURE_SKEW_MS = 5 * 60 * 1000;
+
+/** Ventana de retención del crudo `ad_impressions`: 90 días. */
+export const SHOWN_AT_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
+
+/** STUB RED (#214): hoy todo shown_at string pasa intacto. */
+export function normalize_shown_at(shown_at: string, _now: Date): string | null {
+  return shown_at;
+}
+
 // ── Ads — datos crudos, sin pre-filtrar (la decisión de elegibilidad vive en el handler) ──
 
 export interface AdRecord {
