@@ -2,6 +2,14 @@
 
 Append-only. Prefijo: `## [YYYY-MM-DD] tipo | título`.
 
+## [2026-09-01] tarea | #225 — el RPC de alta de organizaciones dejaba de ser admin al que nombraba owner
+
+`admin_create_agency_atomic` hacía `set role = 'agent'` al owner **sin condicionar**: nombrar owner a un administrador lo degradaba y le quitaba el panel. Salió en vivo el 2026-08-31 al crear «Desarrolladora» (se restauró en la misma transacción, producción nunca quedó mal). La regla contraria ya estaba escrita desde `20260805000010` —"FIX 2: nunca degradar a un admin"— en los **dos** triggers de aprobación; este RPC se quedó fuera de aquel barrido. Tercer caso del patrón «una invariante en dos capas y anclada en una sola».
+
+🔒 **La lección nueva: el guard va en el VALOR, no en el WHERE.** El fix perezoso `where id = p_owner_user_id and role <> 'admin'` salva el rol y se salta **también** la denormalización de `agency_id` — y sin ella la RLS `properties_insert` (que exige `agency_role_of(agency_id) is not null`) deja al admin sin poder publicar. La advertencia ya estaba en un comentario de `20260805000010`; ahora además está anclada por un assert y verificada matando ese mutante exacto.
+
+Se **extendió** la suite `05_admin_create_agency_test.sql` (plan 20→24) en vez de crear una nueva: el caso pareado que hacía falta —owner `user` sube a `agent`— ya vivía ahí como test 12, y sin él un "fix" que dejara el rol siempre intacto habría pasado los asserts nuevos. Tres mutantes verificados, cada uno matando **solo** su assert: quitar el guard → 22; el guard en el WHERE → 23; no promover nunca → 12. Round-trip del rollback probado (aplicarlo devuelve el 22 a rojo, o sea revierte de verdad). pgTAP 76 archivos / 2467 asserts / 0 fallos; Deno 1405 passed. Desplegada a producción con sonda transaccional real (rollback total, 0 rastro). Sin OTA ni redeploy de EF: firma, retorno y errores idénticos.
+
 ## [2026-08-31] operación | 3 administradores con cuenta comercial + kill-switch de anuncios encendido
 
 Tras el release: Abraham (`swacg08@`), Santiago (`s.ramos2308@`) y Vladimir (`vladimiryeh@`) quedan `role='admin'`, cada uno con acceso a una organización con `can_advertise=true`. **Restricción que mandó el diseño**: el índice `agency_members_one_active_per_user` permite UNA sola organización activa por persona, y Santiago y Vladimir ya eran owners de «Tu Casa con Vlad» (8 propiedades activas de Vlad). Mover a alguien habría desapuntado esas propiedades, así que se creó **«Desarrolladora»** (razón social, `slug=desarrolladora`, publicar + anunciar, categoría `otro`) solo para Abraham y a «Tu Casa con Vlad» se le encendió la capacidad comercial vía `set_org_advertising_atomic` — la puerta real, con su fila de auditoría. `app_config.ads_enabled` pasó a `true` (flip en runtime, sin OTA, reversible al instante). ⚠️ **No existe columna `razon_social`**: la razón social vive en `agencies.name`.
