@@ -24,6 +24,10 @@
  * - (EC-8) submitting_true_sincronamente_al_disparar
  * - (EC-9) submitting_false_tras_resolver
  * - (EC-10) onSuccess_no_se_llama_en_error
+ * - (EC-11) no_doble_submit_segunda_llamada_en_vuelo_se_ignora (candado #233.4
+ *   — el guardian de #221 encontró que solo la UI protegía el doble-submit;
+ *   backstop = ALREADY_PENDING del servidor. Mismo patrón que EC-7 de
+ *   useResolveRequest.test.ts: is_working_ref con early-return síncrono.)
  */
 
 import { act, renderHook } from '@testing-library/react-native';
@@ -168,5 +172,33 @@ describe('useCreateAdvertisingRequest', () => {
       await result.current.submit('seguros');
     });
     expect(on_success).not.toHaveBeenCalled();
+  });
+
+  it('EC-11: no doble-submit — segunda llamada en vuelo se ignora', async () => {
+    let resolve_fn: (v: unknown) => void = () => {};
+    const pending = new Promise((r) => {
+      resolve_fn = r;
+    });
+    const client = make_client(pending);
+    const { result } = await renderHook(() =>
+      useCreateAdvertisingRequest({ supabase: client }),
+    );
+
+    let first: Promise<unknown> | undefined;
+    let second: { ok: boolean; error: string | null } | undefined;
+    act(() => {
+      first = result.current.submit('seguros');
+    });
+    await act(async () => {
+      second = await result.current.submit('seguros');
+    });
+
+    expect(second).toEqual({ ok: false, error: null });
+    expect(client.rpc).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolve_fn({ error: null });
+      await first;
+    });
   });
 });
