@@ -29,6 +29,7 @@ import {
   Briefcase,
   Buildings,
   DotsThreeVertical,
+  HandCoins,
   Megaphone,
   Shield,
   SignOut,
@@ -166,6 +167,12 @@ export function ProfileScreen({
     router.push('/ads');
   }
 
+  // 221.3: entrada del owner para solicitar la cuenta comercial. Se oculta
+  // en cuanto can_advertise se enciende (mismo criterio que show_ads_entry).
+  function handle_advertising_request() {
+    router.push('/agency/advertising');
+  }
+
   function handle_upgrade_to_agent() {
     router.push('/upgrade');
   }
@@ -222,6 +229,11 @@ export function ProfileScreen({
       : []),
     ...(isOwner
       ? [{ key: 'invite', label: 'Invitar agentes', icon: UserPlus, onPress: handle_invite_agents }]
+      : []),
+    // 221.3: solo owner SIN can_advertise — con la cuenta comercial ya
+    // activa esta entrada no aporta nada (el estado se ve en "Mis anuncios").
+    ...(isOwner && !can_advertise
+      ? [{ key: 'advertising_request', label: 'Quiero anunciar', icon: HandCoins, onPress: handle_advertising_request }]
       : []),
     ...(can_manage_members
       ? [{ key: 'members', label: 'Miembros', icon: Users, onPress: handle_manage_members }]
