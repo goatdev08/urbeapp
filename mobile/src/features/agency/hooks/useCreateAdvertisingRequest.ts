@@ -69,6 +69,13 @@ export function useCreateAdvertisingRequest(
 
   const submit = useCallback(
     (category: AdvertiserCategory): Promise<CreateAdvertisingRequestResult> => {
+      // Candado #233.4: early-return síncrono si ya hay una petición en
+      // vuelo — antes solo la UI (disabled del botón) protegía el
+      // doble-submit; backstop = ALREADY_PENDING del servidor. Mismo patrón
+      // que useResolveRequest.ts (EC-7 de esa suite).
+      if (is_working_ref.current) {
+        return Promise.resolve({ ok: false, error: null });
+      }
       is_working_ref.current = true;
       error_ref.current = null;
       force_update();

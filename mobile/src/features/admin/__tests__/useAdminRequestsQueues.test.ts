@@ -22,13 +22,18 @@
 
 import { act, renderHook } from '@testing-library/react-native';
 
-const mock_supabase_holder: { client: ReturnType<typeof make_supabase_mock> } = {
-  client: null as never,
+import { make_binding_sensitive_supabase_mock } from '@/test-utils/supabaseMock';
+
+const mock_supabase_holder: { bundle: ReturnType<typeof make_supabase_mock> } = {
+  bundle: null as never,
 };
 
 jest.mock('@/lib/supabase/client', () => ({
   get supabase() {
-    return mock_supabase_holder.client;
+    // Candado #233.3: el cliente que ve el SUT es el sensible al binding
+    // (make_binding_sensitive_supabase_mock) — `.from`/`._calls` del bundle
+    // son solo los spies que usan las aserciones de este archivo.
+    return mock_supabase_holder.bundle?.client;
   },
 }));
 
@@ -69,11 +74,15 @@ function find_call(calls: RecordedCall[], method: string): RecordedCall | undefi
 function make_supabase_mock(table: string, result: unknown) {
   const calls: RecordedCall[] = [];
   const builder = make_chainable_query(result, calls);
-  const from = jest.fn((t: string) => {
-    if (t === table) return builder;
-    throw new Error(`tabla no mockeada en el test: ${t}`);
+  // Candado #233.3: `from` sensible al binding — el mutante
+  // `const { from } = client; from(...)` (#205) muere aquí.
+  const { client, _mock_from } = make_binding_sensitive_supabase_mock({
+    from: (t: string) => {
+      if (t === table) return builder;
+      throw new Error(`tabla no mockeada en el test: ${t}`);
+    },
   });
-  return { from, _calls: calls };
+  return { client, from: _mock_from, _calls: calls };
 }
 
 describe.each([
@@ -127,7 +136,7 @@ describe.each([
   });
 
   it('EC-1: lista vacía → items arreglo vacío', async () => {
-    mock_supabase_holder.client = make_supabase_mock(table, { data: [], error: null });
+    mock_supabase_holder.bundle = make_supabase_mock(table, { data: [], error: null });
     const { result } = await renderHook(() => hook());
     await act(async () => {});
     expect(result.current.items).toEqual([]);
@@ -135,14 +144,14 @@ describe.each([
   });
 
   it('EC-2: lista con filas → las devuelve tal cual', async () => {
-    mock_supabase_holder.client = make_supabase_mock(table, { data: [row], error: null });
+    mock_supabase_holder.bundle = make_supabase_mock(table, { data: [row], error: null });
     const { result } = await renderHook(() => hook());
     await act(async () => {});
     expect(result.current.items).toEqual([row]);
   });
 
   it('EC-3: error de query → items null, mensaje neutro', async () => {
-    mock_supabase_holder.client = make_supabase_mock(table, {
+    mock_supabase_holder.bundle = make_supabase_mock(table, {
       data: null,
       error: { message: 'boom' },
     });
@@ -153,21 +162,21 @@ describe.each([
   });
 
   it('EC-4: filtra por el status correcto', async () => {
-    mock_supabase_holder.client = make_supabase_mock(table, { data: [], error: null });
+    mock_supabase_holder.bundle = make_supabase_mock(table, { data: [], error: null });
     await renderHook(() => hook());
     await act(async () => {});
-    const eq_call = find_call(mock_supabase_holder.client._calls, 'eq');
+    const eq_call = find_call(mock_supabase_holder.bundle._calls, 'eq');
     expect(eq_call?.args).toEqual(['status', status]);
   });
 
   it('EC-5: refetch vuelve a disparar la query', async () => {
-    mock_supabase_holder.client = make_supabase_mock(table, { data: [], error: null });
+    mock_supabase_holder.bundle = make_supabase_mock(table, { data: [], error: null });
     const { result } = await renderHook(() => hook());
     await act(async () => {});
-    const calls_before = mock_supabase_holder.client.from.mock.calls.length;
+    const calls_before = mock_supabase_holder.bundle.from.mock.calls.length;
     await act(async () => {
       result.current.refetch();
     });
-    expect(mock_supabase_holder.client.from.mock.calls.length).toBeGreaterThan(calls_before);
+    expect(mock_supabase_holder.bundle.from.mock.calls.length).toBeGreaterThan(calls_before);
   });
 });
