@@ -91,8 +91,11 @@ const TRANSCODING_FAILED_MESSAGE = 'El anuncio no se pudo procesar. Intenta subi
 const SIZE_ERROR_MESSAGE = `El video supera el máximo permitido (${Math.round(MAX_STREAM_UPLOAD_BYTES / (1024 * 1024))} MB). Intenta con un video más ligero.`;
 
 // Defaults del poll (D1) — acotado, mismo criterio que verify_attempts/
-// verify_interval_ms del hermano (#103.2).
-const DEFAULT_POLL_ATTEMPTS = 10;
+// verify_interval_ms del hermano (#103.2). #229: 10→40 intentos (~2 min):
+// con #228 el creativo puede durar 2 min / pesar 500 MB y la transcodificación
+// real de Stream ya no cabía en los ~30 s originales — el poll se agotaba con
+// el video sano y reportaba un error falso.
+const DEFAULT_POLL_ATTEMPTS = 40;
 const DEFAULT_POLL_INTERVAL_MS = 3000;
 
 /** Estado observable del hook. 'polling' cubre el tramo entre el 2xx del binario y el desenlace del creativo. */
@@ -258,49 +261,52 @@ async function poll_until_resolved(params: {
   set_status('polling');
   set_progress(0.99);
 
-  try {
-    for (let attempt = 0; attempt < attempts; attempt += 1) {
-      if (attempt > 0) {
-        await sleep(interval_ms);
-      }
-      if (!is_current()) return; // cancelado/superado/desmontado mientras dormía
-
-      const check_status = await checker(cloudflare_uid);
-      if (!is_current()) return; // cancelado/superado/desmontado mientras el checker resolvía
-
-      if (check_status === 'ready') {
-        set_cloudflare_uid(cloudflare_uid);
-        set_status('ready');
-        set_progress(1);
-        set_error(null);
-        return;
-      }
-
-      if (check_status === 'failed_duration') {
-        // #189: el servidor rechazó por DURACIÓN. Ya no se adivina — la razón
-        // viene de ad_creatives.failure_reason. Mismo mensaje que el
-        // pre-flight, porque es el mismo problema.
-        set_status('failed');
-        set_error(AD_DURATION_INVALID_MESSAGE);
-        return;
-      }
-
-      if (check_status === 'failed') {
-        // Falló sin razón registrada, o con una que no es de duración
-        // (errorReasonCode de Cloudflare): el mensaje genérico es el correcto.
-        set_status('failed');
-        set_error(TRANSCODING_FAILED_MESSAGE);
-        return;
-      }
-
-      // 'processing' | 'uploading' | 'missing' → sigue en curso, reintentar.
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (attempt > 0) {
+      await sleep(interval_ms);
     }
-  } catch (err) {
-    if (!is_current()) return;
-    console.warn('[useAdUpload] check_ad_creative_status failed:', err);
-    set_status('failed');
-    set_error(NEUTRAL_ERROR_MESSAGE);
-    return;
+    if (!is_current()) return; // cancelado/superado/desmontado mientras dormía
+
+    // #229: una excepción del checker es un intento fallido que se REINTENTA,
+    // no un desenlace — cambiar de red wifi durante el poll produce exactamente
+    // ese blip, y antes mataba el ciclo con el video sano (incidente
+    // 2026-09-01). Terminal solo al agotar los intentos.
+    let check_status: AdCreativeCheckStatus;
+    try {
+      check_status = await checker(cloudflare_uid);
+    } catch (err) {
+      if (!is_current()) return;
+      console.warn('[useAdUpload] check_ad_creative_status falló (reintentable):', err);
+      continue;
+    }
+    if (!is_current()) return; // cancelado/superado/desmontado mientras el checker resolvía
+
+    if (check_status === 'ready') {
+      set_cloudflare_uid(cloudflare_uid);
+      set_status('ready');
+      set_progress(1);
+      set_error(null);
+      return;
+    }
+
+    if (check_status === 'failed_duration') {
+      // #189: el servidor rechazó por DURACIÓN. Ya no se adivina — la razón
+      // viene de ad_creatives.failure_reason. Mismo mensaje que el
+      // pre-flight, porque es el mismo problema.
+      set_status('failed');
+      set_error(AD_DURATION_INVALID_MESSAGE);
+      return;
+    }
+
+    if (check_status === 'failed') {
+      // Falló sin razón registrada, o con una que no es de duración
+      // (errorReasonCode de Cloudflare): el mensaje genérico es el correcto.
+      set_status('failed');
+      set_error(TRANSCODING_FAILED_MESSAGE);
+      return;
+    }
+
+    // 'processing' | 'uploading' | 'missing' → sigue en curso, reintentar.
   }
 
   if (!is_current()) return;
@@ -429,6 +435,9 @@ export function useAdUpload(deps?: UseAdUploadDeps): UseAdUploadResult {
       // exacto) y responde protocol:'tus'. Una EF vieja lo ignora y responde
       // sin protocol → rama básica (orden de deploy EF/OTA independiente,
       // mismo criterio que 192.2 en el hermano).
+      // #229: `replace: true` → la EF cancela el creativo pendiente de la
+      // ORGANIZACIÓN antes del 409 (espejo del hermano) — sin esto, una fila
+      // 'uploading' atorada por un cambio de wifi bloqueaba 15 min sin escape.
       let upload_url: string;
       let stream_uid: string;
       let protocol: 'tus' | 'basic';
@@ -437,7 +446,7 @@ export function useAdUpload(deps?: UseAdUploadDeps): UseAdUploadResult {
           uploadUrl: string;
           uid: string;
           protocol?: 'tus' | 'basic';
-        }>('mint-ad-upload-url', { body: { size_bytes: file.size } });
+        }>('mint-ad-upload-url', { body: { replace: true, size_bytes: file.size } });
         if (!is_current()) return; // cancelado/superado mientras minteaba
 
         if (mint_error || !data?.uploadUrl || !data?.uid) {

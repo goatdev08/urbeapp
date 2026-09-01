@@ -248,7 +248,7 @@ describe('useVideoUpload', () => {
   it('(EC0) estado_inicial_es_idle: al montar, status=idle, progress=0, error=null', async () => {
     const mock_supabase = make_mock_supabase({});
     const { result } = await renderHook(() =>
-      useVideoUpload({ supabase: mock_supabase as never }),
+      useVideoUpload({ supabase: mock_supabase as never, verify_attempts: 2, verify_interval_ms: 0 }),
     );
 
     expect(result.current.status).toBe('idle');
@@ -261,7 +261,7 @@ describe('useVideoUpload', () => {
   it('(EC1) uri_nula_no_invoca_mint_upload_url: local_uri null → status=error, sin invocar mint-upload-url ni escribir al form', async () => {
     const mock_supabase = make_mock_supabase({});
     const { result } = await renderHook(() =>
-      useVideoUpload({ supabase: mock_supabase as never }),
+      useVideoUpload({ supabase: mock_supabase as never, verify_attempts: 2, verify_interval_ms: 0 }),
     );
 
     await act(async () => {
@@ -281,7 +281,7 @@ describe('useVideoUpload', () => {
     const mock_supabase = make_mock_supabase({});
 
     const { result } = await renderHook(() =>
-      useVideoUpload({ supabase: mock_supabase as never }),
+      useVideoUpload({ supabase: mock_supabase as never, verify_attempts: 2, verify_interval_ms: 0 }),
     );
 
     await act(async () => {
@@ -302,7 +302,7 @@ describe('useVideoUpload', () => {
     const mock_supabase = make_mock_supabase({});
 
     const { result } = await renderHook(() =>
-      useVideoUpload({ supabase: mock_supabase as never }),
+      useVideoUpload({ supabase: mock_supabase as never, verify_attempts: 2, verify_interval_ms: 0 }),
     );
 
     await act(async () => {
@@ -321,7 +321,7 @@ describe('useVideoUpload', () => {
     const mock_supabase = make_mock_supabase({});
 
     const { result } = await renderHook(() =>
-      useVideoUpload({ supabase: mock_supabase as never }),
+      useVideoUpload({ supabase: mock_supabase as never, verify_attempts: 2, verify_interval_ms: 0 }),
     );
 
     await act(async () => {
@@ -344,7 +344,7 @@ describe('useVideoUpload', () => {
     const mock_supabase = make_mock_supabase({ invoke_result: { data: null, error: ef_error } });
 
     const { result } = await renderHook(() =>
-      useVideoUpload({ supabase: mock_supabase as never }),
+      useVideoUpload({ supabase: mock_supabase as never, verify_attempts: 2, verify_interval_ms: 0 }),
     );
 
     await act(async () => {
@@ -366,7 +366,7 @@ describe('useVideoUpload', () => {
     const mock_supabase = make_mock_supabase({ invoke_result: { data: null, error: ef_error } });
 
     const { result } = await renderHook(() =>
-      useVideoUpload({ supabase: mock_supabase as never }),
+      useVideoUpload({ supabase: mock_supabase as never, verify_attempts: 2, verify_interval_ms: 0 }),
     );
 
     await act(async () => {
@@ -389,7 +389,7 @@ describe('useVideoUpload', () => {
     const mock_supabase = make_mock_supabase({ invoke_result: { data: null, error: ef_error } });
 
     const { result } = await renderHook(() =>
-      useVideoUpload({ supabase: mock_supabase as never }),
+      useVideoUpload({ supabase: mock_supabase as never, verify_attempts: 2, verify_interval_ms: 0 }),
     );
 
     await act(async () => {
@@ -410,7 +410,7 @@ describe('useVideoUpload', () => {
     const mock_supabase = make_mock_supabase({});
 
     const { result } = await renderHook(() =>
-      useVideoUpload({ supabase: mock_supabase as never }),
+      useVideoUpload({ supabase: mock_supabase as never, verify_attempts: 2, verify_interval_ms: 0 }),
     );
 
     await act(async () => {
@@ -439,7 +439,7 @@ describe('useVideoUpload', () => {
     const mock_supabase = make_mock_supabase({});
 
     const { result } = await renderHook(() =>
-      useVideoUpload({ supabase: mock_supabase as never }),
+      useVideoUpload({ supabase: mock_supabase as never, verify_attempts: 2, verify_interval_ms: 0 }),
     );
 
     await act(async () => {
@@ -463,7 +463,7 @@ describe('useVideoUpload', () => {
     const mock_supabase = make_mock_supabase({});
 
     const { result } = await renderHook(() =>
-      useVideoUpload({ supabase: mock_supabase as never }),
+      useVideoUpload({ supabase: mock_supabase as never, verify_attempts: 2, verify_interval_ms: 0 }),
     );
 
     await act(async () => {
@@ -499,7 +499,7 @@ describe('useVideoUpload', () => {
     const mock_supabase = make_mock_supabase({});
 
     const { result } = await renderHook(() =>
-      useVideoUpload({ supabase: mock_supabase as never }),
+      useVideoUpload({ supabase: mock_supabase as never, verify_attempts: 2, verify_interval_ms: 0 }),
     );
 
     act(() => {
@@ -597,7 +597,7 @@ describe('useVideoUpload', () => {
     const mock_supabase = make_mock_supabase({});
 
     const { result } = await renderHook(() =>
-      useVideoUpload({ supabase: mock_supabase as never }),
+      useVideoUpload({ supabase: mock_supabase as never, verify_attempts: 2, verify_interval_ms: 0 }),
     );
 
     await act(async () => {
@@ -634,7 +634,7 @@ describe('useVideoUpload', () => {
     const mock_supabase = make_mock_supabase({});
 
     const { result } = await renderHook(() =>
-      useVideoUpload({ supabase: mock_supabase as never }),
+      useVideoUpload({ supabase: mock_supabase as never, verify_attempts: 2, verify_interval_ms: 0 }),
     );
 
     await act(async () => {
@@ -1056,7 +1056,7 @@ describe('useVideoUpload', () => {
   it('(CX-1) mint_se_invoca_con_replace_true', async () => {
     const mock_supabase = make_mock_supabase({});
     const { result } = await renderHook(() =>
-      useVideoUpload({ supabase: mock_supabase as never }),
+      useVideoUpload({ supabase: mock_supabase as never, verify_attempts: 2, verify_interval_ms: 0 }),
     );
     await act(async () => {
       await result.current.upload(TEST_LOCAL_URI);
@@ -1134,7 +1134,7 @@ describe('useVideoUpload', () => {
     const mock_supabase = make_mock_supabase({});
 
     const { result } = await renderHook(() =>
-      useVideoUpload({ supabase: mock_supabase as never }),
+      useVideoUpload({ supabase: mock_supabase as never, verify_attempts: 2, verify_interval_ms: 0 }),
     );
 
     let upload_promise!: Promise<void>;
@@ -1178,7 +1178,7 @@ describe('useVideoUpload', () => {
     const mock_supabase = { functions: { invoke: mock_invoke } };
 
     const { result } = await renderHook(() =>
-      useVideoUpload({ supabase: mock_supabase as never }),
+      useVideoUpload({ supabase: mock_supabase as never, verify_attempts: 2, verify_interval_ms: 0 }),
     );
 
     let first_promise!: Promise<void>;

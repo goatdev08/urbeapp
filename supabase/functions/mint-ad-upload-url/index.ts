@@ -15,6 +15,7 @@ import {
   make_active_ad_upload_checker,
   make_ad_creative_registrar,
   make_advertiser_authorizer,
+  make_pending_ad_canceller,
   make_stream_upload_creator,
   service_client,
 } from "../_shared/clients.ts";
@@ -45,6 +46,7 @@ Deno.serve((req: Request) => {
   const activeAdUploadChecker = make_active_ad_upload_checker(client);
   const streamUploadCreator = make_stream_upload_creator();
   const adCreativeRegistrar = make_ad_creative_registrar(client);
+  const pendingAdCanceller = make_pending_ad_canceller(client);
 
   return handler(req, {
     callerVerifier,
@@ -52,5 +54,6 @@ Deno.serve((req: Request) => {
     activeAdUploadChecker,
     streamUploadCreator,
     adCreativeRegistrar,
+    pendingAdCanceller,
   });
 });

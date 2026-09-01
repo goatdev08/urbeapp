@@ -104,6 +104,7 @@ import type {
   AdCreativeRegistrar,
   AdvertiserAuthorizeResult,
   AdvertiserAuthorizer,
+  PendingAdCanceller,
   RegisterUploadingAdCreativeParams,
 } from "../mint-ad-upload-url/types.ts";
 import type { AdUrlMinter, MintedAdUrl } from "../mint-ad-urls/types.ts";
@@ -1746,6 +1747,49 @@ export function make_ad_creative_registrar(
       if (error) {
         throw new Error(`Insert en ad_creatives falló: ${error.message}`);
       }
+    },
+  };
+}
+
+/**
+ * Adaptador real de PendingAdCanceller (#229) — "Cambiar video" para anuncios,
+ * calco del cancel_unattached_uploads del hermano (quick-fix 2026-08-15) con
+ * las diferencias del dominio: ad_creatives NO tiene deleted_at (el "cancel"
+ * es status='failed' + failure_reason='REPLACED', un estado terminal real de
+ * su máquina) y el scope es la ORGANIZACIÓN (agency_id), no el agente.
+ * Solo toca filas en 'uploading'/'processing' NO referenciadas por `ads` —
+ * create_ad_campaign_atomic exige creativos 'ready', así que un pendiente
+ * jamás está referenciado; el filtro por ids es cinturón, no lógica viva.
+ */
+export function make_pending_ad_canceller(
+  client: SupabaseClient,
+): PendingAdCanceller {
+  return {
+    async cancel_pending_ad_creatives(agency_id: string): Promise<number> {
+      const { data: referenced, error: ref_error } = await client
+        .from("ads")
+        .select("creative_id")
+        .eq("agency_id", agency_id);
+      if (ref_error) {
+        throw new Error(`Leer ads referenciados falló: ${ref_error.message}`);
+      }
+      const referenced_ids = (referenced ?? [])
+        .map((row: { creative_id: string | null }) => row.creative_id)
+        .filter((id): id is string => id !== null);
+
+      let query = client
+        .from("ad_creatives")
+        .update({ status: "failed", failure_reason: "REPLACED" })
+        .eq("agency_id", agency_id)
+        .in("status", ["uploading", "processing"]);
+      if (referenced_ids.length > 0) {
+        query = query.not("id", "in", `(${referenced_ids.join(",")})`);
+      }
+      const { data, error } = await query.select("id");
+      if (error) {
+        throw new Error(`Cancelar creativos pendientes falló: ${error.message}`);
+      }
+      return data?.length ?? 0;
     },
   };
 }
