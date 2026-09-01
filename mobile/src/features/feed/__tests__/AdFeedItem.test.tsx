@@ -32,6 +32,14 @@ jest.mock('phosphor-react-native', () => ({
 jest.mock('@/features/location/LocationProvider', () => ({
   useLocation: () => ({ coords: { latitude: 20.6597, longitude: -103.3496 }, status: 'granted' }),
 }));
+
+// 213: la rama promo navega con router.push('/property/[id]') — se mockea
+// como en el resto del repo (PropertyDetailScreen.test.tsx et al.), NUNCA se
+// carga expo-router real bajo Jest.
+const mock_router_push = jest.fn();
+jest.mock('expo-router', () => ({
+  useRouter: () => ({ push: mock_router_push }),
+}));
 jest.mock('../lib/appSession', () => ({
   get_app_session_id: () => 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
 }));
@@ -89,6 +97,25 @@ function make_ad(overrides: Partial<FeedAd> = {}): FeedAd {
     agency_logo_url: null,
     video_url: 'https://videodelivery.net/tok/manifest/video.m3u8',
     poster_url: 'https://videodelivery.net/tok/thumbnails/thumbnail.jpg',
+    ...overrides,
+  };
+}
+
+/** 213: una promo — mismo shape que devuelve ads_for_zone para property_id no nulo. */
+function make_promo_ad(overrides: Partial<FeedAd> = {}): FeedAd {
+  return {
+    id: '33333333-3333-3333-3333-333333333333',
+    creative_id: null,
+    title: 'Depa en Providencia',
+    description: null,
+    cta_type: null,
+    cta_value: null,
+    cloudflare_uid: null,
+    agency_name: 'Inmobiliaria Ejemplo',
+    agency_logo_url: null,
+    property_id: '44444444-4444-4444-4444-444444444444',
+    video_url: 'https://videodelivery.net/tok-promo/manifest/video.m3u8',
+    poster_url: 'https://videodelivery.net/tok-promo/thumbnails/thumbnail.jpg',
     ...overrides,
   };
 }
@@ -275,5 +302,56 @@ describe('AdFeedItem — reproducción', () => {
       await r.rerender(<AdFeedItem ad={make_ad()} isActive={false} />);
     });
     expect(fake_player.pause).toHaveBeenCalled();
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// 213 — rama PROMO: badge "Anuncio", SIN bloque de CTA, tap → detalle de la
+// propiedad + registra cta_tap (contrato #213 §4).
+// ───────────────────────────────────────────────────────────────────────────
+describe('AdFeedItem — 213: rama promo', () => {
+  it('(EC-PROMO-1) el badge dice "Anuncio", NO "Patrocinado"', async () => {
+    const r = await render(<AdFeedItem ad={make_promo_ad()} isActive />);
+    expect(r.getByText('Anuncio')).toBeTruthy();
+    expect(r.queryByText('Patrocinado')).toBeNull();
+  });
+
+  it('(EC-PROMO-2) un display normal sigue diciendo "Patrocinado" (no se rompió el caso existente)', async () => {
+    const r = await render(<AdFeedItem ad={make_ad()} isActive />);
+    expect(r.getByText('Patrocinado')).toBeTruthy();
+    expect(r.queryByText('Anuncio')).toBeNull();
+  });
+
+  it('(EC-PROMO-3) SIN bloque de CTA — ni botón ni fallback', async () => {
+    const r = await render(<AdFeedItem ad={make_promo_ad()} isActive />);
+    expect(r.queryByTestId('ad-cta-button')).toBeNull();
+    expect(r.queryByTestId('ad-cta-fallback')).toBeNull();
+  });
+
+  it('(EC-PROMO-4) tocar la tarjeta navega al detalle de la propiedad', async () => {
+    const r = await render(<AdFeedItem ad={make_promo_ad()} isActive />);
+    await act(async () => {
+      fireEvent.press(r.getByTestId('ad-promo-press'));
+    });
+    expect(mock_router_push).toHaveBeenCalledWith(
+      '/property/44444444-4444-4444-4444-444444444444',
+    );
+  });
+
+  it('(EC-PROMO-5) ese mismo tap registra cta_tap en la cola de impresiones', async () => {
+    const r = await render(<AdFeedItem ad={make_promo_ad()} isActive />);
+    await act(async () => {
+      fireEvent.press(r.getByTestId('ad-promo-press'));
+    });
+    expect(mock_report_tap).toHaveBeenCalledTimes(1);
+    expect(mock_report_tap.mock.calls[0][0]).toMatchObject({
+      ad_id: '33333333-3333-3333-3333-333333333333',
+      session_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+    });
+  });
+
+  it('(EC-PROMO-6) un display NO tiene el Pressable de navegación de promo', async () => {
+    const r = await render(<AdFeedItem ad={make_ad()} isActive />);
+    expect(r.queryByTestId('ad-promo-press')).toBeNull();
   });
 });

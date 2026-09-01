@@ -55,7 +55,13 @@
 
 import { renderHook, act } from '@testing-library/react-native';
 
+// 213.3: `mint_videos` se deja REAL (jest.requireActual) — es la misma
+// función pura que resuelve el video de una promo a partir de
+// client.functions.invoke('mint-video-url', ...), y los tests de la
+// partición display/promo (más abajo) necesitan ejercer esa llamada de
+// verdad para poder asertar sobre ella, no un doble que la reimplemente.
 jest.mock('../lib/feedProperties', () => ({
+  ...jest.requireActual('../lib/feedProperties'),
   fetchFeedProperties: jest.fn(),
 }));
 
@@ -1097,5 +1103,219 @@ describe('useFeedProperties — onPropertyDeleted preserva los anuncios del feed
     await act(async () => {
       unmount();
     });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// RED 213.3 — partición display/promo: ads_for_zone ahora puede devolver
+// anuncios "promo" (property_id no nulo, creative_id null) además de los
+// "display" de siempre (creative_id no nulo). Contrato pinneado (#213 §4):
+// los display siguen resolviéndose con mint-ad-urls (creative_ids); los
+// promo se resuelven con mint-video-url (property_ids) — LA MISMA EF/helper
+// que feedProperties.ts usa para las propiedades del feed (mint_videos,
+// exportada de ese módulo, no un fetch duplicado).
+//
+// Tolerancia OTA (impacto-prod, orquestador): un backend viejo (antes de la
+// migración 213.3-SQL) no manda `property_id` en absoluto → `undefined` se
+// trata como null (EC-PROMO-5) — el cliente de este lote puede convivir con
+// un backend sin desplegar todavía.
+// ─────────────────────────────────────────────────────────────────────────
+describe('useFeedProperties — 213.3: partición display/promo (mint-ad-urls vs mint-video-url)', () => {
+  const PROP_A = make_property('feed-prop-promo-a');
+  const PROP_B = make_property('feed-prop-promo-b');
+
+  function make_promo_ad(id: string, property_id: string, overrides: Partial<FeedAd> = {}): FeedAd {
+    return {
+      id,
+      creative_id: null,
+      title: `Depa en ${id}`,
+      description: null,
+      cta_type: null,
+      cta_value: null,
+      cloudflare_uid: null,
+      agency_name: 'Constructora Ejemplo',
+      agency_logo_url: null,
+      property_id,
+      ...overrides,
+    };
+  }
+
+  function wire_config_and_ads(ads: FeedAd[]) {
+    mock_supabase.rpc!.mockImplementation((fn: string) => {
+      if (fn === 'ads_feed_config') {
+        return Promise.resolve({
+          data: [make_config({ ads_enabled: true, ad_frequency_n: 1, ad_max_per_session: 5 })],
+          error: null,
+        });
+      }
+      if (fn === 'ads_for_zone') return Promise.resolve({ data: ads, error: null });
+      throw new Error(`llamada inesperada a ${fn}`);
+    });
+  }
+
+  /** Mock de functions.invoke que responde AMBOS endpoints (mint-ad-urls y mint-video-url). */
+  function wire_both_minters() {
+    mock_mint_invoke.mockImplementation((name: string, opts: { body?: Record<string, unknown> }) => {
+      if (name === 'mint-ad-urls') {
+        const ids = (opts?.body?.creative_ids as string[] | undefined) ?? [];
+        return Promise.resolve({
+          data: { urls: ids.map((creative_id) => ({ creative_id, posterUrl: `poster-${creative_id}`, videoUrl: `video-${creative_id}` })) },
+          error: null,
+        });
+      }
+      if (name === 'mint-video-url') {
+        const property_ids = (opts?.body?.property_ids as string[] | undefined) ?? [];
+        return Promise.resolve({
+          data: {
+            videos: property_ids.map((property_id) => ({
+              property_id,
+              video_id: `video-of-${property_id}`,
+              signed_url: `https://cdn.urbea.app/signed/${property_id}.mp4`,
+              posterUrl: `https://cdn.urbea.app/poster/${property_id}.jpg`,
+            })),
+          },
+          error: null,
+        });
+      }
+      throw new Error(`invoke inesperado: ${name}`);
+    });
+  }
+
+  beforeEach(() => {
+    mock_fetch_feed_properties.mockResolvedValue({ data: [PROP_A, PROP_B], nextCursor: null });
+  });
+
+  it('(EC-PROMO-1) un ad con property_id se resuelve con mint-video-url, NUNCA con mint-ad-urls', async () => {
+    const PROMO = make_promo_ad('promo-1', 'property-uuid-1');
+    wire_config_and_ads([PROMO]);
+    wire_both_minters();
+
+    await render_loaded_hook();
+
+    const video_calls = mock_mint_invoke.mock.calls.filter((c) => c[0] === 'mint-video-url');
+    const ad_calls = mock_mint_invoke.mock.calls.filter((c) => c[0] === 'mint-ad-urls');
+    expect(video_calls).toHaveLength(1);
+    expect((video_calls[0]?.[1] as { body: { property_ids: string[] } }).body.property_ids).toEqual([
+      'property-uuid-1',
+    ]);
+    expect(ad_calls).toHaveLength(0);
+  });
+
+  it('(EC-PROMO-2) el item de promo trae video_url/poster_url de mint-video-url y conserva title/agency del ad', async () => {
+    const PROMO = make_promo_ad('promo-2', 'property-uuid-2');
+    wire_config_and_ads([PROMO]);
+    wire_both_minters();
+
+    const { result } = await render_loaded_hook();
+
+    const ad_item = as_feed_items(result.current.data).find((i) => i.kind === 'ad');
+    expect(ad_item).toBeDefined();
+    const ad = (ad_item as { kind: 'ad'; ad: FeedAd }).ad;
+    expect(ad.video_url).toBe('https://cdn.urbea.app/signed/property-uuid-2.mp4');
+    expect(ad.poster_url).toBe('https://cdn.urbea.app/poster/property-uuid-2.jpg');
+    expect(ad.title).toBe('Depa en promo-2');
+    expect(ad.agency_name).toBe('Constructora Ejemplo');
+    expect(ad.property_id).toBe('property-uuid-2');
+  });
+
+  it('(EC-PROMO-3) 🔴 una promo sin URL autorizada (mint-video-url no la devuelve) no se sirve', async () => {
+    // 4 propiedades con every_n=1 dejan hueco para más de un anuncio — mismo
+    // criterio que EC-MINT-3 (2 propiedades no distinguiría "omitida" de "sin hueco").
+    mock_fetch_feed_properties.mockResolvedValue({
+      data: [PROP_A, PROP_B, make_property('feed-prop-promo-c'), make_property('feed-prop-promo-d')],
+      nextCursor: null,
+    });
+    const PROMO_OK = make_promo_ad('promo-ok', 'property-uuid-ok');
+    const PROMO_SIN_VIDEO = make_promo_ad('promo-sin-video', 'property-uuid-sin-video');
+    wire_config_and_ads([PROMO_OK, PROMO_SIN_VIDEO]);
+    // mint-video-url solo autoriza una de las dos propiedades.
+    mock_mint_invoke.mockImplementation((name: string) => {
+      if (name === 'mint-video-url') {
+        return Promise.resolve({
+          data: {
+            videos: [
+              {
+                property_id: 'property-uuid-ok',
+                video_id: 'video-ok',
+                signed_url: 'https://cdn.urbea.app/signed/ok.mp4',
+                posterUrl: 'https://cdn.urbea.app/poster/ok.jpg',
+              },
+            ],
+          },
+          error: null,
+        });
+      }
+      throw new Error(`invoke inesperado: ${name}`);
+    });
+
+    const { result } = await render_loaded_hook();
+
+    const served_ids = as_feed_items(result.current.data)
+      .filter((i) => i.kind === 'ad')
+      .map((i) => (i as { kind: 'ad'; ad: FeedAd }).ad.id);
+    expect(served_ids.length).toBeGreaterThan(0);
+    expect(new Set(served_ids)).toEqual(new Set(['promo-ok']));
+    expect(served_ids).not.toContain('promo-sin-video');
+  });
+
+  it('(EC-PROMO-4) mezcla display+promo en el mismo ads_for_zone: cada uno se mintea con su EF correspondiente', async () => {
+    // 4 propiedades con every_n=1: con solo 2 (el fixture por defecto del
+    // describe) apenas cabe UN anuncio en el feed y el test no podría
+    // distinguir "el otro se omitió" de "no había hueco" (mismo criterio que
+    // EC-PROMO-3/EC-MINT-3).
+    mock_fetch_feed_properties.mockResolvedValue({
+      data: [PROP_A, PROP_B, make_property('feed-prop-promo-e'), make_property('feed-prop-promo-f')],
+      nextCursor: null,
+    });
+    const DISPLAY = make_ad('ad-display-1');
+    const PROMO = make_promo_ad('promo-4', 'property-uuid-4');
+    wire_config_and_ads([DISPLAY, PROMO]);
+    wire_both_minters();
+
+    const { result } = await render_loaded_hook();
+
+    const ad_calls = mock_mint_invoke.mock.calls.filter((c) => c[0] === 'mint-ad-urls');
+    const video_calls = mock_mint_invoke.mock.calls.filter((c) => c[0] === 'mint-video-url');
+    expect(ad_calls).toHaveLength(1);
+    expect(video_calls).toHaveLength(1);
+    expect((ad_calls[0]?.[1] as { body: { creative_ids: string[] } }).body.creative_ids).toEqual([
+      'creative-ad-display-1',
+    ]);
+    expect((video_calls[0]?.[1] as { body: { property_ids: string[] } }).body.property_ids).toEqual([
+      'property-uuid-4',
+    ]);
+
+    const served_ids = as_feed_items(result.current.data)
+      .filter((i) => i.kind === 'ad')
+      .map((i) => (i as { kind: 'ad'; ad: FeedAd }).ad.id);
+    expect(new Set(served_ids)).toEqual(new Set(['ad-display-1', 'promo-4']));
+  });
+
+  it('(EC-PROMO-5) property_id undefined (backend sin desplegar la migración 213.3-SQL) se trata como null: mint-video-url NUNCA se invoca', async () => {
+    // Ad "display" tal cual lo devuelve un backend viejo — ni siquiera trae
+    // la clave property_id en la fila.
+    const OLD_AD = make_ad('ad-old-backend');
+    wire_config_and_ads([OLD_AD]);
+    wire_both_minters();
+
+    await render_loaded_hook();
+
+    const video_calls = mock_mint_invoke.mock.calls.filter((c) => c[0] === 'mint-video-url');
+    expect(video_calls).toHaveLength(0);
+  });
+
+  it('(EC-PROMO-6) fallo total de mint-video-url degrada SOLO la porción promo (fail-soft), sin marcar error visible', async () => {
+    const PROMO = make_promo_ad('promo-6', 'property-uuid-6');
+    wire_config_and_ads([PROMO]);
+    mock_mint_invoke.mockImplementation((name: string) => {
+      if (name === 'mint-video-url') return Promise.reject(new Error('offline'));
+      throw new Error(`invoke inesperado: ${name}`);
+    });
+
+    const { result } = await render_loaded_hook();
+
+    expect(result.current.data).toEqual(props_only([PROP_A, PROP_B]));
+    expect(result.current.error).toBeNull();
+    expect(ads_failure_signals()).toEqual([{ stage: 'mint' }]);
   });
 });

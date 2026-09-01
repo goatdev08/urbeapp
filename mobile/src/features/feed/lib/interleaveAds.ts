@@ -33,16 +33,35 @@ export interface FeedAd {
    * la URL FIRMADA de reproducción — esa EF autoriza y firma por creativo, no
    * por anuncio. Sin él, el anuncio era una tarjeta estática en un feed de
    * video.
+   *
+   * 213: null en una promo (el video sale de property_videos vía
+   * mint-video-url, no de un creativo propio — ver `property_id`).
    */
-  creative_id: string;
+  creative_id: string | null;
   title: string;
-  description: string;
-  cta_type: string;
-  cta_value: string;
-  cloudflare_uid: string;
+  /** 213: null en una promo (sin creative propio, sin descripción). */
+  description: string | null;
+  /** 213: null en una promo (sin CTA propio — tocar el video abre el detalle). */
+  cta_type: string | null;
+  /** 213: null en una promo. */
+  cta_value: string | null;
+  /** 213: null en una promo. */
+  cloudflare_uid: string | null;
   agency_name: string;
   /** null si la agencia no tiene logo cargado. */
   agency_logo_url: string | null;
+  /**
+   * 213: id de la propiedad promocionada (RPC `promote_property_atomic` +
+   * columna `ads.property_id`, migración 20260903300001). No nulo ⟺ es una
+   * PROMO, no un anuncio display — mutuamente excluyente con `creative_id`
+   * (CHECK `ads_exactly_one_source` en la base).
+   *
+   * `undefined` (ausente por completo, no solo null) es el caso de un backend
+   * anterior a esta migración: `ads_for_zone` todavía no manda esta columna.
+   * El cliente lo trata igual que `null` — tolerancia OTA (este cliente puede
+   * salir ANTES de que las 3 migraciones de #213 estén desplegadas).
+   */
+  property_id?: string | null;
   /**
    * URLs firmadas de Stream, adjuntadas durante la composición del feed (no
    * vienen de la RPC). null = el minteo falló para este anuncio.

@@ -49,6 +49,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { Image } from 'expo-image';
+import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import * as Clipboard from 'expo-clipboard';
@@ -91,11 +92,17 @@ export function AdFeedItem({ ad, isActive }: AdFeedItemProps) {
   // INFO_BOTTOM de PropertyOverlay, que ya resolvió esto en #65.11.
   const insets = useSafeAreaInsets();
   const { coords } = useLocation();
+  const router = useRouter();
 
   const [fallback_message, set_fallback_message] = useState<string | null>(null);
   const [copied, set_copied] = useState(false);
 
-  const target = build_cta_target(ad.cta_type, ad.cta_value);
+  // 213: una PROMO es una propiedad publicada mostrada como anuncio (badge
+  // "Anuncio", sin CTA propio — el video ES el de la propiedad y tocarlo
+  // lleva al detalle normal, ver open_promo abajo). Mutuamente excluyente con
+  // el CTA de un display (ad.cta_type siempre null en una promo).
+  const is_promo = ad.property_id != null;
+  const target = ad.cta_type ? build_cta_target(ad.cta_type, ad.cta_value) : null;
   const segments = linkify_description(ad.description);
 
   // ── Reproducción ──────────────────────────────────────────────────────────
@@ -212,7 +219,7 @@ export function AdFeedItem({ ad, isActive }: AdFeedItemProps) {
 
   const copy_value = useCallback(async () => {
     if (!target) return;
-    await Clipboard.setStringAsync(target.kind === 'external_url' ? target.url : ad.cta_value);
+    await Clipboard.setStringAsync(target.kind === 'external_url' ? target.url : (ad.cta_value ?? ''));
     set_copied(true);
   }, [target, ad.cta_value]);
 
@@ -220,11 +227,29 @@ export function AdFeedItem({ ad, isActive }: AdFeedItemProps) {
     void Linking.openURL(url).catch(() => set_fallback_message('No se pudo abrir el enlace.'));
   }, []);
 
-  const CtaIcon = CTA_ICON[ad.cta_type] ?? ArrowSquareOut;
-  const cta_style = ad.cta_type === 'whatsapp' ? styles.cta_whatsapp : styles.cta_primary;
+  /**
+   * 213: tap en el video/overlay de una promo → detalle de la propiedad
+   * (patrón `PropertyOverlay.onPropertyPress`) + registra `cta_tap` en la
+   * misma cola de impresiones que un display — para métricas, el tap de
+   * contacto real ocurre en el detalle, que no conoce el ad; techo
+   * documentado (§4 del contrato #213, ponytail: sin doble-registro aquí).
+   */
+  const open_promo = useCallback(() => {
+    if (!ad.property_id) return;
+    ad_impression_queue.report_cta_tap({
+      ad_id: ad.id,
+      session_id: get_app_session_id(),
+      cta_tapped_at: new Date().toISOString(),
+    });
+    router.push(`/property/${ad.property_id}`);
+  }, [ad.id, ad.property_id, router]);
 
-  return (
-    <View style={[styles.root, { height }]} testID="ad-feed-item">
+  const CtaIcon = (ad.cta_type && CTA_ICON[ad.cta_type]) || ArrowSquareOut;
+  const cta_style = ad.cta_type === 'whatsapp' ? styles.cta_whatsapp : styles.cta_primary;
+  const cta_label = (ad.cta_type && CTA_LABEL[ad.cta_type]) || 'Ver más';
+
+  const body = (
+    <>
       {ad.video_url ? (
         <VideoView player={player} style={styles.video} contentFit="cover" nativeControls={false} />
       ) : (
@@ -233,13 +258,16 @@ export function AdFeedItem({ ad, isActive }: AdFeedItemProps) {
         </View>
       )}
 
-      {/* 🔴 Badge legal — fuera del bloque de contenido, sin condicionar a nada. */}
+      {/* 🔴 Badge legal — fuera del bloque de contenido, sin condicionar a nada.
+          213: una promo reusa el MISMO badge con el texto "Anuncio" (decisión
+          de Abraham) en vez de "Patrocinado" — es el mismo elemento legal,
+          solo cambia el copy según el tipo de anuncio. */}
       <View
         style={[styles.badge, { top: insets.top + spacing.s_8 }]}
         testID="ad-sponsored-badge"
       >
         <Megaphone size={14} weight="fill" color={colors.ink} />
-        <Text style={styles.badge_text}>Patrocinado</Text>
+        <Text style={styles.badge_text}>{is_promo ? 'Anuncio' : 'Patrocinado'}</Text>
       </View>
 
       <View style={[styles.content, { bottom: insets.bottom + INFO_BOTTOM }]}>
@@ -276,22 +304,25 @@ export function AdFeedItem({ ad, isActive }: AdFeedItemProps) {
           </Text>
         )}
 
-        {/* Sin destino utilizable no se pinta el botón: mejor sin CTA que con
-            uno que no abre nada. */}
-        {target && (
+        {/* 213: una promo NO tiene bloque de CTA propio — tocar cualquier
+            parte del anuncio lleva al detalle de la propiedad (ver el
+            Pressable que envuelve todo el componente, abajo). Sin destino
+            utilizable en un display tampoco se pinta el botón: mejor sin CTA
+            que con uno que no abre nada. */}
+        {!is_promo && target && (
           <Pressable
             onPress={() => void open_cta()}
             style={({ pressed }) => [styles.cta, cta_style, pressed && styles.cta_pressed]}
             accessibilityRole="button"
-            accessibilityLabel={CTA_LABEL[ad.cta_type] ?? 'Ver más'}
+            accessibilityLabel={cta_label}
             testID="ad-cta-button"
           >
             <CtaIcon size={18} weight="fill" color={colors.on_primary} />
-            <Text style={styles.cta_text}>{CTA_LABEL[ad.cta_type] ?? 'Ver más'}</Text>
+            <Text style={styles.cta_text}>{cta_label}</Text>
           </Pressable>
         )}
 
-        {fallback_message && (
+        {!is_promo && fallback_message && (
           <View style={styles.fallback} testID="ad-cta-fallback">
             <Text style={styles.fallback_text}>{fallback_message}</Text>
             <Pressable onPress={() => void copy_value()} accessibilityRole="button">
@@ -300,6 +331,29 @@ export function AdFeedItem({ ad, isActive }: AdFeedItemProps) {
           </View>
         )}
       </View>
+    </>
+  );
+
+  // 213: toda la tarjeta de una promo es tappable — video, badge y contenido
+  // (patrón "tap en el video/overlay" del contrato #213 §4) — hacen lo mismo
+  // que el bloque de info de PropertyOverlay: abrir el detalle. Un display
+  // conserva su árbol tal cual (sin Pressable envolvente: el CTA es su único
+  // tap accionable).
+  return (
+    <View style={[styles.root, { height }]} testID="ad-feed-item">
+      {is_promo ? (
+        <Pressable
+          style={StyleSheet.absoluteFill}
+          onPress={open_promo}
+          accessibilityRole="button"
+          accessibilityLabel="Ver detalle de la publicación"
+          testID="ad-promo-press"
+        >
+          {body}
+        </Pressable>
+      ) : (
+        body
+      )}
     </View>
   );
 }

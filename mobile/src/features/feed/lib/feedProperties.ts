@@ -59,7 +59,12 @@ const RADIUS_MULTIPLIER = 2;
  */
 export const UNLIMITED_RADIUS_M = 21_000_000;
 
-type MintedVideo = {
+/**
+ * Exportado (213.3): useFeedProperties.ts la reusa TAL CUAL para resolver el
+ * video de las promos (ads.property_id) — mismo minteo que usan las
+ * propiedades del feed, sin duplicar el fetch a mint-video-url.
+ */
+export type MintedVideo = {
   property_id: string;
   video_id: string;
   signed_url: string;
@@ -114,7 +119,7 @@ const FEED_SELECT = `id, price, operation_type, property_type, currency, price_v
  * #144.2: separado del merge para poder disparar EN PARALELO con el select de
  * PostgREST — la EF solo necesita los page_ids de la RPC, no las filas.
  */
-async function mint_videos(client: any, property_ids: string[]): Promise<MintedVideo[]> {
+export async function mint_videos(client: any, property_ids: string[]): Promise<MintedVideo[]> {
   const { data: ef_data, error: ef_error } = (await client.functions.invoke('mint-video-url', {
     body: { property_ids },
   })) as { data: { videos: MintedVideo[] } | null; error: { message: string } | null };
