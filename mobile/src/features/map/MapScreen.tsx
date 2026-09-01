@@ -75,6 +75,18 @@ const AREA_PILL_DEBOUNCE_MS = 500;
  */
 const ADDRESS_POINT_DELTA = 0.01;
 
+/**
+ * Mensaje visible cuando el fetch del polígono de una colonia (RPC
+ * get_neighborhood_geojson, vía fetch_neighborhood_polygon) rechaza —
+ * candado del guardian (#233, hallazgo 1): el catch de handle_select_place
+ * era MUDO pese a que el testStrategy de #161 pedía "mensaje visible".
+ * Reusa el mecanismo de error ya existente en esta pantalla
+ * (styles.error_overlay/error_text, hoy solo alimentado por el error de
+ * useMapProperties) — cero UI nueva.
+ */
+export const NEIGHBORHOOD_POLYGON_ERROR_MESSAGE =
+  'No se pudo cargar el polígono de esa colonia. Intenta de nuevo.';
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Error Boundary — evita crash si el módulo nativo no está enlazado
 // ─────────────────────────────────────────────────────────────────────────────
@@ -139,6 +151,8 @@ function MapContent(): React.JSX.Element {
   const [neighborhood_id, set_neighborhood_id] = useState<string | null>(null);
   const [active_polygon, set_active_polygon] = useState<NeighborhoodPolygon | null>(null);
   const [municipality, set_municipality] = useState<ActiveMunicipality | null>(null);
+  // Candado #233.1: mensaje visible cuando el fetch del polígono rechaza.
+  const [polygon_error, set_polygon_error] = useState<string | null>(null);
 
   const { data, loading, error } = useMapProperties(undefined, filters, neighborhood_id, municipality);
   const [initial_region] = useState<Region>(() =>
@@ -276,6 +290,7 @@ function MapContent(): React.JSX.Element {
     const request_id = ++select_request_id_ref.current;
     place_search.clear();
     Keyboard.dismiss();
+    set_polygon_error(null); // nueva selección — descarta el error de la anterior
 
     if (suggestion.kind === 'neighborhood') {
       try {
@@ -295,9 +310,11 @@ function MapContent(): React.JSX.Element {
         if (suggestion.bbox) fit_bbox(suggestion.bbox);
       } catch {
         // fail-soft (#161 fix 1): fetch falló — el filtro/zona ANTERIOR queda
-        // intacto. Encuadra igual si hay bbox (best-effort visual).
-        if (request_id === select_request_id_ref.current && suggestion.bbox) {
-          fit_bbox(suggestion.bbox);
+        // intacto. Encuadra igual si hay bbox (best-effort visual). #233.1:
+        // el catch ya NO es mudo — mensaje visible vía polygon_error.
+        if (request_id === select_request_id_ref.current) {
+          set_polygon_error(NEIGHBORHOOD_POLYGON_ERROR_MESSAGE);
+          if (suggestion.bbox) fit_bbox(suggestion.bbox);
         }
       }
       return;
@@ -436,6 +453,17 @@ function MapContent(): React.JSX.Element {
       {error !== null && !loading && (
         <View style={styles.error_overlay} pointerEvents="none">
           <Text style={styles.error_text}>{error}</Text>
+        </View>
+      )}
+
+      {/*
+       * ── Overlay de error del fetch de polígono (#233.1) ───────────────
+       * Mismo mecanismo/estilo que el overlay de arriba (error_overlay/
+       * error_text) — el catch de handle_select_place ya NO es mudo.
+       */}
+      {polygon_error !== null && (
+        <View style={styles.error_overlay} pointerEvents="none">
+          <Text style={styles.error_text}>{polygon_error}</Text>
         </View>
       )}
 

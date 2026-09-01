@@ -133,4 +133,18 @@ describe('PlaceSearch — buscador unificado (#232, smoke)', () => {
     expect(on_out_of_coverage).toHaveBeenCalledWith({ lat: 32.5, lng: -117.0 });
     expect(on_select_place).not.toHaveBeenCalled();
   });
+
+  it('modo inline: el contenedor de sugerencias NO usa position:absolute (candado #233.2 — #231, overlay absoluto en ScrollView es zona MUERTA al tacto en Android)', async () => {
+    const { toJSON } = await render(
+      <PlaceSearch query="provi" suggestions={[NEIGHBORHOOD]} on_select_place={jest.fn()} inline />,
+    );
+
+    const root = toJSON() as { props: { style: unknown } } | null;
+    const raw_style = root?.props.style;
+    const flat_style: Record<string, unknown> = Array.isArray(raw_style)
+      ? Object.assign({}, ...raw_style)
+      : ((raw_style as Record<string, unknown>) ?? {});
+
+    expect(flat_style.position).not.toBe('absolute');
+  });
 });

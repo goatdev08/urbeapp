@@ -24,10 +24,16 @@
 
 import { resolve_place_at_point } from '../lib/placeAtPoint';
 import type { PlaceRpcRow } from '../lib/placeSearch';
+import { make_binding_sensitive_supabase_mock } from '@/test-utils/supabaseMock';
 
 function make_mock_supabase(result: { data: PlaceRpcRow[] | null; error: { message: string } | null }) {
-  const mock_rpc = jest.fn().mockResolvedValue(result);
-  return { rpc: mock_rpc, _mock_rpc: mock_rpc };
+  // Candado #233.3: `rpc` sensible al binding — el mutante
+  // `const { rpc } = client; rpc(...)` (#205) muere si alguien lo
+  // reintroduce en placeAtPoint.ts. Spread conserva la forma {rpc,_mock_rpc}.
+  const { client, _mock_rpc } = make_binding_sensitive_supabase_mock({
+    rpc: () => Promise.resolve(result),
+  });
+  return { ...client, _mock_rpc };
 }
 
 const ROW_COLONIA: PlaceRpcRow = {
