@@ -78,7 +78,7 @@ describe('useResolveAgentApplication', () => {
   });
 
   it('EC-3: éxito devuelve ok:true y llama onSuccess', async () => {
-    const { client, rpc } = make_client({ error: null });
+    const { client } = make_client({ error: null });
     const on_success = jest.fn();
     const { result } = await renderHook(() =>
       useResolveAgentApplication({ supabase: client, onSuccess: on_success }),
@@ -92,7 +92,7 @@ describe('useResolveAgentApplication', () => {
   });
 
   it('EC-4: REASON_REQUIRED produce mensaje en español', async () => {
-    const { client, rpc } = make_client({ error: { message: 'REASON_REQUIRED' } });
+    const { client } = make_client({ error: { message: 'REASON_REQUIRED' } });
     const { result } = await renderHook(() => useResolveAgentApplication({ supabase: client }));
     let outcome: { ok: boolean; error: string | null } | undefined;
     await act(async () => {
@@ -102,7 +102,7 @@ describe('useResolveAgentApplication', () => {
   });
 
   it('EC-5: ALREADY_RESOLVED produce mensaje distinto', async () => {
-    const { client, rpc } = make_client({ error: { message: 'ALREADY_RESOLVED' } });
+    const { client } = make_client({ error: { message: 'ALREADY_RESOLVED' } });
     const { result } = await renderHook(() => useResolveAgentApplication({ supabase: client }));
     let outcome: { ok: boolean; error: string | null } | undefined;
     await act(async () => {
@@ -112,7 +112,7 @@ describe('useResolveAgentApplication', () => {
   });
 
   it('EC-6: código desconocido cae a mensaje genérico', async () => {
-    const { client, rpc } = make_client({ error: { message: 'WAT' } });
+    const { client } = make_client({ error: { message: 'WAT' } });
     const { result } = await renderHook(() => useResolveAgentApplication({ supabase: client }));
     let outcome: { ok: boolean; error: string | null } | undefined;
     await act(async () => {
@@ -148,7 +148,7 @@ describe('useResolveAgentApplication', () => {
   });
 
   it('EC-8: is_submitting=false tras resolver', async () => {
-    const { client, rpc } = make_client({ error: null });
+    const { client } = make_client({ error: null });
     const { result } = await renderHook(() => useResolveAgentApplication({ supabase: client }));
     await act(async () => {
       await result.current.resolve({ application_id: 'app-1', approve: true });
@@ -157,7 +157,7 @@ describe('useResolveAgentApplication', () => {
   });
 
   it('EC-9: APPLICATION_NOT_FOUND produce mensaje propio del carril', async () => {
-    const { client, rpc } = make_client({ error: { message: 'APPLICATION_NOT_FOUND' } });
+    const { client } = make_client({ error: { message: 'APPLICATION_NOT_FOUND' } });
     const { result } = await renderHook(() => useResolveAgentApplication({ supabase: client }));
     let outcome: { ok: boolean; error: string | null } | undefined;
     await act(async () => {
@@ -167,7 +167,7 @@ describe('useResolveAgentApplication', () => {
   });
 
   it('EC-10: STATUS_CHANGE_REQUIRES_ADMIN produce mensaje propio', async () => {
-    const { client, rpc } = make_client({ error: { message: 'STATUS_CHANGE_REQUIRES_ADMIN' } });
+    const { client } = make_client({ error: { message: 'STATUS_CHANGE_REQUIRES_ADMIN' } });
     const { result } = await renderHook(() => useResolveAgentApplication({ supabase: client }));
     let outcome: { ok: boolean; error: string | null } | undefined;
     await act(async () => {
@@ -204,7 +204,7 @@ describe('useResolveAdvertisingRequest', () => {
   });
 
   it('EC-3: éxito devuelve ok:true y llama onSuccess', async () => {
-    const { client, rpc } = make_client({ error: null });
+    const { client } = make_client({ error: null });
     const on_success = jest.fn();
     const { result } = await renderHook(() =>
       useResolveAdvertisingRequest({ supabase: client, onSuccess: on_success }),
@@ -218,7 +218,7 @@ describe('useResolveAdvertisingRequest', () => {
   });
 
   it('EC-4: REASON_REQUIRED produce mensaje en español', async () => {
-    const { client, rpc } = make_client({ error: { message: 'REASON_REQUIRED' } });
+    const { client } = make_client({ error: { message: 'REASON_REQUIRED' } });
     const { result } = await renderHook(() => useResolveAdvertisingRequest({ supabase: client }));
     let outcome: { ok: boolean; error: string | null } | undefined;
     await act(async () => {
@@ -228,7 +228,7 @@ describe('useResolveAdvertisingRequest', () => {
   });
 
   it('EC-5: ALREADY_RESOLVED produce mensaje distinto', async () => {
-    const { client, rpc } = make_client({ error: { message: 'ALREADY_RESOLVED' } });
+    const { client } = make_client({ error: { message: 'ALREADY_RESOLVED' } });
     const { result } = await renderHook(() => useResolveAdvertisingRequest({ supabase: client }));
     let outcome: { ok: boolean; error: string | null } | undefined;
     await act(async () => {
@@ -238,7 +238,7 @@ describe('useResolveAdvertisingRequest', () => {
   });
 
   it('EC-6: código desconocido cae a mensaje genérico', async () => {
-    const { client, rpc } = make_client({ error: { message: 'WAT' } });
+    const { client } = make_client({ error: { message: 'WAT' } });
     const { result } = await renderHook(() => useResolveAdvertisingRequest({ supabase: client }));
     let outcome: { ok: boolean; error: string | null } | undefined;
     await act(async () => {
@@ -274,7 +274,7 @@ describe('useResolveAdvertisingRequest', () => {
   });
 
   it('EC-8: is_submitting=false tras resolver', async () => {
-    const { client, rpc } = make_client({ error: null });
+    const { client } = make_client({ error: null });
     const { result } = await renderHook(() => useResolveAdvertisingRequest({ supabase: client }));
     await act(async () => {
       await result.current.resolve({ request_id: 'req-1', approve: true });
@@ -283,7 +283,7 @@ describe('useResolveAdvertisingRequest', () => {
   });
 
   it('EC-9: REQUEST_NOT_FOUND produce mensaje propio del carril', async () => {
-    const { client, rpc } = make_client({ error: { message: 'REQUEST_NOT_FOUND' } });
+    const { client } = make_client({ error: { message: 'REQUEST_NOT_FOUND' } });
     const { result } = await renderHook(() => useResolveAdvertisingRequest({ supabase: client }));
     let outcome: { ok: boolean; error: string | null } | undefined;
     await act(async () => {
@@ -293,7 +293,7 @@ describe('useResolveAdvertisingRequest', () => {
   });
 
   it('EC-10: STATUS_CHANGE_REQUIRES_ADMIN produce mensaje propio', async () => {
-    const { client, rpc } = make_client({ error: { message: 'STATUS_CHANGE_REQUIRES_ADMIN' } });
+    const { client } = make_client({ error: { message: 'STATUS_CHANGE_REQUIRES_ADMIN' } });
     const { result } = await renderHook(() => useResolveAdvertisingRequest({ supabase: client }));
     let outcome: { ok: boolean; error: string | null } | undefined;
     await act(async () => {
@@ -330,7 +330,7 @@ describe('useResolveAgencyRegistration', () => {
   });
 
   it('EC-3: éxito devuelve ok:true y llama onSuccess', async () => {
-    const { client, rpc } = make_client({ error: null });
+    const { client } = make_client({ error: null });
     const on_success = jest.fn();
     const { result } = await renderHook(() =>
       useResolveAgencyRegistration({ supabase: client, onSuccess: on_success }),
@@ -344,7 +344,7 @@ describe('useResolveAgencyRegistration', () => {
   });
 
   it('EC-4: REASON_REQUIRED produce mensaje en español', async () => {
-    const { client, rpc } = make_client({ error: { message: 'REASON_REQUIRED' } });
+    const { client } = make_client({ error: { message: 'REASON_REQUIRED' } });
     const { result } = await renderHook(() => useResolveAgencyRegistration({ supabase: client }));
     let outcome: { ok: boolean; error: string | null } | undefined;
     await act(async () => {
@@ -354,7 +354,7 @@ describe('useResolveAgencyRegistration', () => {
   });
 
   it('EC-5: ALREADY_RESOLVED produce mensaje distinto', async () => {
-    const { client, rpc } = make_client({ error: { message: 'ALREADY_RESOLVED' } });
+    const { client } = make_client({ error: { message: 'ALREADY_RESOLVED' } });
     const { result } = await renderHook(() => useResolveAgencyRegistration({ supabase: client }));
     let outcome: { ok: boolean; error: string | null } | undefined;
     await act(async () => {
@@ -364,7 +364,7 @@ describe('useResolveAgencyRegistration', () => {
   });
 
   it('EC-6: código desconocido cae a mensaje genérico', async () => {
-    const { client, rpc } = make_client({ error: { message: 'WAT' } });
+    const { client } = make_client({ error: { message: 'WAT' } });
     const { result } = await renderHook(() => useResolveAgencyRegistration({ supabase: client }));
     let outcome: { ok: boolean; error: string | null } | undefined;
     await act(async () => {
@@ -400,7 +400,7 @@ describe('useResolveAgencyRegistration', () => {
   });
 
   it('EC-8: is_submitting=false tras resolver', async () => {
-    const { client, rpc } = make_client({ error: null });
+    const { client } = make_client({ error: null });
     const { result } = await renderHook(() => useResolveAgencyRegistration({ supabase: client }));
     await act(async () => {
       await result.current.resolve({ agency_id: 'agency-1', approve: true });
@@ -409,7 +409,7 @@ describe('useResolveAgencyRegistration', () => {
   });
 
   it('EC-9: AGENCY_NOT_FOUND produce mensaje propio del carril', async () => {
-    const { client, rpc } = make_client({ error: { message: 'AGENCY_NOT_FOUND' } });
+    const { client } = make_client({ error: { message: 'AGENCY_NOT_FOUND' } });
     const { result } = await renderHook(() => useResolveAgencyRegistration({ supabase: client }));
     let outcome: { ok: boolean; error: string | null } | undefined;
     await act(async () => {
@@ -419,7 +419,7 @@ describe('useResolveAgencyRegistration', () => {
   });
 
   it('EC-10: STATUS_CHANGE_REQUIRES_ADMIN produce mensaje propio', async () => {
-    const { client, rpc } = make_client({ error: { message: 'STATUS_CHANGE_REQUIRES_ADMIN' } });
+    const { client } = make_client({ error: { message: 'STATUS_CHANGE_REQUIRES_ADMIN' } });
     const { result } = await renderHook(() => useResolveAgencyRegistration({ supabase: client }));
     let outcome: { ok: boolean; error: string | null } | undefined;
     await act(async () => {

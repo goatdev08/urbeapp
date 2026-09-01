@@ -28,6 +28,15 @@
  *   — el guardian de #221 encontró que solo la UI protegía el doble-submit;
  *   backstop = ALREADY_PENDING del servidor. Mismo patrón que EC-7 de
  *   useResolveRequest.test.ts: is_working_ref con early-return síncrono.)
+ * - (EC-12) tras_error_resuelto_el_guard_se_libera_segunda_llamada_SI_invoca_rpc
+ *   (candado del guardian tras EC-11: sin este caso, mover
+ *   `is_working_ref.current = false` a solo la rama de éxito — dejando la
+ *   rama de error sin liberar el guard — sobrevive con la suite en verde:
+ *   el early-return de #233.4 devolvería {ok:false,error:null} EN SILENCIO
+ *   para siempre tras el primer error.)
+ * - (EC-13) tras_rechazo_de_la_promesa_el_guard_se_libera_segunda_llamada_SI_invoca_rpc
+ *   (mismo hallazgo que EC-12 pero para la rama de rechazo — borrar el reset
+ *   ahí también sobrevivía.)
  */
 
 import { act, renderHook } from '@testing-library/react-native';
@@ -200,5 +209,37 @@ describe('useCreateAdvertisingRequest', () => {
       resolve_fn({ error: null });
       await first;
     });
+  });
+
+  it('EC-12: tras un error resuelto por la RPC, el guard se libera — la siguiente llamada SÍ invoca rpc de nuevo', async () => {
+    const client = make_client({ error: { message: 'NOT_OWNER' } });
+    const { result } = await renderHook(() =>
+      useCreateAdvertisingRequest({ supabase: client }),
+    );
+
+    await act(async () => {
+      await result.current.submit('seguros');
+    });
+    await act(async () => {
+      await result.current.submit('seguros');
+    });
+
+    expect(client.rpc).toHaveBeenCalledTimes(2);
+  });
+
+  it('EC-13: tras un rechazo de la promesa, el guard se libera — la siguiente llamada SÍ invoca rpc de nuevo', async () => {
+    const client = { rpc: jest.fn(() => Promise.reject(new Error('network'))) };
+    const { result } = await renderHook(() =>
+      useCreateAdvertisingRequest({ supabase: client }),
+    );
+
+    await act(async () => {
+      await result.current.submit('seguros');
+    });
+    await act(async () => {
+      await result.current.submit('seguros');
+    });
+
+    expect(client.rpc).toHaveBeenCalledTimes(2);
   });
 });

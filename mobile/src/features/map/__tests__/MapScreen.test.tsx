@@ -29,8 +29,14 @@ import type { PlaceSuggestion } from '../lib/placeSearch';
 // ---------------------------------------------------------------------------
 
 jest.mock('react-native-maps', () => {
-  const React2 = require('react');
-  const MapViewStub = React2.forwardRef((props: any, _ref: any) => props.children ?? null);
+  // El `React` importado arriba NO es visible aquí: babel-plugin-jest-hoist
+  // eleva jest.mock() por encima de los imports y solo permite identificadores
+  // definidos DENTRO del factory (verificado: referenciar `React` truena con
+  // "not allowed to reference any out-of-scope variables") — require() local
+  // es la única forma correcta, no una regresión de estilo.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const ReactForMock = require('react');
+  const MapViewStub = ReactForMock.forwardRef((props: any, _ref: any) => props.children ?? null);
   return {
     __esModule: true,
     default: MapViewStub,
@@ -131,6 +137,30 @@ describe('MapScreen — candado #233.1 (fetch de polígono fallido)', () => {
     const { queryByText } = await render(<MapScreen />);
 
     const latest_props = mock_place_search_calls[mock_place_search_calls.length - 1];
+    await act(async () => {
+      await latest_props.on_select_place(NEIGHBORHOOD);
+    });
+
+    expect(queryByText(NEIGHBORHOOD_POLYGON_ERROR_MESSAGE)).toBeNull();
+  });
+
+  it('fallo→éxito: una segunda selección que SÍ resuelve limpia el mensaje de la anterior (candado del guardian — mutante: borrar el reset de polygon_error al inicio de handle_select_place)', async () => {
+    mock_fetch_neighborhood_polygon.mockRejectedValueOnce(new Error('network fail'));
+
+    const { getByText, queryByText } = await render(<MapScreen />);
+    const latest_props = mock_place_search_calls[mock_place_search_calls.length - 1];
+
+    await act(async () => {
+      await latest_props.on_select_place(NEIGHBORHOOD);
+    });
+    expect(getByText(NEIGHBORHOOD_POLYGON_ERROR_MESSAGE)).toBeTruthy();
+
+    mock_fetch_neighborhood_polygon.mockResolvedValueOnce({
+      id: '42',
+      name: 'Providencia',
+      polygons: [],
+      bbox: { min_lat: 0, min_lng: 0, max_lat: 1, max_lng: 1 },
+    });
     await act(async () => {
       await latest_props.on_select_place(NEIGHBORHOOD);
     });
