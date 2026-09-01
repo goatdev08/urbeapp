@@ -30,16 +30,25 @@ import { cluster_properties } from './lib/clusterMarkers';
 import { viewport_to_area } from './lib/viewportToArea';
 import { bbox_to_region } from './lib/bboxRegion';
 import { fetch_neighborhood_polygon, type NeighborhoodPolygon } from './lib/neighborhoodPolygon';
-import type { PlaceSuggestion } from './lib/placeSearch';
+import type { PlaceBBox, PlaceSuggestion } from './lib/placeSearch';
 import { PropertyMarker } from './components/PropertyMarker';
 import { ClusterMarker } from './components/ClusterMarker';
 import { PropertyMiniCard } from './components/PropertyMiniCard';
 import { AreaSearchPill } from './components/AreaSearchPill';
 import { MapSearchBar } from './components/MapSearchBar';
-import { MapSearchSuggestions } from './components/MapSearchSuggestions';
+import { PlaceSearch } from './components/PlaceSearch';
 import { FilterSheet } from '../search/components/FilterSheet';
 import { ZoneActiveChip } from '../search/components/ZoneActiveChip';
 import type { MapProperty } from './types';
+
+/** Municipio activo (#232) — id/bbox para la RPC properties_within_municipality
+ * + name para el chip. Estado local de MapScreen, mismo espíritu que
+ * neighborhood_id (decisión D6 de #157: no vive en FilterState). */
+interface ActiveMunicipality {
+  id: string;
+  bbox: PlaceBBox;
+  name: string;
+}
 
 /**
  * Alto aproximado de MapSearchBar (#56.5, mini-spec): paddingVertical s_12*2
@@ -56,6 +65,15 @@ const MAP_SEARCH_BAR_HEIGHT_APPROX = spacing.s_24 * 2;
  * .taskmaster/docs/exploraciones/030-buscar-en-esta-zona.md).
  */
 const AREA_PILL_DEBOUNCE_MS = 500;
+
+/**
+ * Delta de zoom (#232.3) al centrar en un punto de dirección FUERA de
+ * cobertura del catálogo (place_at_point → 0 filas): sin polígono ni bbox
+ * que encuadrar, solo un zoom "a nivel de calle" fijo — mismo orden de
+ * magnitud que MIN_DELTA de bboxRegion.ts pero un poco más abierto (una
+ * dirección puntual, no un bbox ya calculado).
+ */
+const ADDRESS_POINT_DELTA = 0.01;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Error Boundary — evita crash si el módulo nativo no está enlazado
@@ -104,18 +122,25 @@ function MapContent(): React.JSX.Element {
 
   const { filters, set_filter, active_filter_count } = useFilters();
 
-  // ── Búsqueda de lugares + colonia seleccionada (#157) ─────────────────────
-  // La colonia es estado LOCAL del mapa (decisión D6: no vive en FilterState —
-  // el feed no la consume). neighborhood_id fluye como 3er parámetro a
-  // useMapProperties; active_polygon pinta el perímetro.
-  const place_search = usePlaceSearch();
-  const [neighborhood_id, set_neighborhood_id] = useState<string | null>(null);
-  const [active_polygon, set_active_polygon] = useState<NeighborhoodPolygon | null>(null);
-
-  const { data, loading, error } = useMapProperties(undefined, filters, neighborhood_id);
   // Ubicación real (LocationProvider, permiso obligatorio #41): centra el mapa
   // en la ciudad del usuario en vez de GDL fija. Fallback: GDL_REGION.
   const { coords: user_coords } = useLocation();
+
+  // ── Búsqueda de lugares + colonia/municipio seleccionados (#157, #232) ────
+  // Colonia/municipio son estado LOCAL del mapa (decisión D6: no viven en
+  // FilterState — el feed no los consume). Fluyen como 3er/4to parámetro a
+  // useMapProperties; active_polygon pinta el perímetro de colonia.
+  // coords (#232): activa ranking por cercanía en search_places, igual que
+  // el resto del mapa (useMapProperties ya usa user_coords para proximidad).
+  const place_search = usePlaceSearch(
+    undefined,
+    user_coords ? { lat: user_coords.latitude, lng: user_coords.longitude } : null,
+  );
+  const [neighborhood_id, set_neighborhood_id] = useState<string | null>(null);
+  const [active_polygon, set_active_polygon] = useState<NeighborhoodPolygon | null>(null);
+  const [municipality, set_municipality] = useState<ActiveMunicipality | null>(null);
+
+  const { data, loading, error } = useMapProperties(undefined, filters, neighborhood_id, municipality);
   const [initial_region] = useState<Region>(() =>
     user_coords !== null
       ? {
@@ -131,6 +156,10 @@ function MapContent(): React.JSX.Element {
   const [filter_visible, set_filter_visible] = useState(false);
   const [show_area_pill, set_show_area_pill] = useState(false);
   const area_pill_timer_ref = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Anti-stale (#161, bug 2): contador de request de handle_select_place —
+  // solo el ÚLTIMO fetch de polígono en vuelo puede mutar el estado de zona
+  // activa. Mismo patrón que usePlaceSearch/useAddressSearch.
+  const select_request_id_ref = useRef(0);
 
   /*
    * coords_used_ref: arranca en true si ya montamos con coords reales (nada que
@@ -200,7 +229,7 @@ function MapContent(): React.JSX.Element {
    * onPress del pill: convierte el viewport actual a {center, radius_m}
    * (#56.1), lo setea como `filters.area` y navega al feed — la capa de
    * datos (56.3) ya reacciona sola al cambio de `area`, sin plomería extra.
-   * #157 (D9): además limpia la colonia activa — colonia y area son
+   * #157 (D9): además limpia la colonia/municipio activos — son todos
    * mutuamente excluyentes (dos acotaciones simultáneas serían ambiguas).
    */
   function handle_area_search(): void {
@@ -208,6 +237,7 @@ function MapContent(): React.JSX.Element {
     set_filter('area', area);
     set_show_area_pill(false);
     clear_neighborhood();
+    set_municipality(null);
     router.push('/');
   }
 
@@ -218,44 +248,91 @@ function MapContent(): React.JSX.Element {
   }
 
   /**
-   * Selección de una sugerencia del autocomplete (#157.8).
+   * Selección de una sugerencia del buscador unificado (#157.8, #232.3) —
+   * catálogo directo O dirección ya resuelta a zona de catálogo (PlaceSearch
+   * llama esta MISMA función con el resultado de resolve_address_to_zone;
+   * `meta` se ignora aquí, solo lo usa ads/step4 para el hint de UI).
+   *
    * - Colonia: baja su polígono (get_neighborhood_geojson), lo dibuja, encuadra
    *   el bbox con fitToCoordinates y activa el filtro espacial (neighborhood_id
-   *   → RPC properties_within_neighborhood). Limpia `filters.area` (D9).
-   * - Municipio: no hay polígono municipal — encuadra su bbox precalculado
-   *   (D4) y reusa el mecanismo de área de #56 (círculo del viewport, D5).
-   *   bbox null (municipio sin colonias cargadas) → solo cierra el dropdown.
+   *   → RPC properties_within_neighborhood). Limpia `filters.area` + municipio
+   *   (D9) — pero SOLO dentro del bloque de ÉXITO del fetch (#161 fix 1): un
+   *   fetch fallido o tardío YA NO destruye la zona activa previa.
+   * - Municipio (#232): filtra vía RPC properties_within_municipality (ya no
+   *   el círculo clamped a 50km de #157) — encuadra su bbox precalculado (D4)
+   *   con animateToRegion, igual que antes. bbox null (municipio sin colonias
+   *   cargadas) → solo limpia colonia, sin encuadre ni filtro (D4, limitación
+   *   pre-existente).
+   * - Anti-stale (#161 fix 2): un request_id en ref descarta el fetch de
+   *   polígono que resuelve TARDE si el usuario ya seleccionó otra cosa.
+   *
    * En ambos casos la barra se limpia: el estado visible queda en el CHIP
    * ("<Nombre> · Quitar"), no en el texto de la barra.
    */
-  async function handle_select_place(suggestion: PlaceSuggestion): Promise<void> {
+  async function handle_select_place(
+    suggestion: PlaceSuggestion,
+    _meta?: { source: 'address'; address_text: string },
+  ): Promise<void> {
+    const request_id = ++select_request_id_ref.current;
     place_search.clear();
     Keyboard.dismiss();
 
     if (suggestion.kind === 'neighborhood') {
-      set_filter('area', null); // D9: excluyentes
       try {
         const polygon = await fetch_neighborhood_polygon(suggestion.id);
+        if (request_id !== select_request_id_ref.current) return; // selección más nueva ya ganó
+
         if (polygon) {
+          set_filter('area', null); // D9: excluyentes — DENTRO del bloque de éxito
+          set_municipality(null);
           set_active_polygon(polygon);
           set_neighborhood_id(suggestion.id);
           fit_bbox(polygon.bbox);
           return;
         }
+        // Colonia sin polígono (not-found): fail-soft, encuadra si hay bbox,
+        // pero NO toca el filtro/zona previamente activos.
+        if (suggestion.bbox) fit_bbox(suggestion.bbox);
       } catch {
-        // fail-soft: sin polígono no hay filtro; al menos encuadra si hay bbox.
+        // fail-soft (#161 fix 1): fetch falló — el filtro/zona ANTERIOR queda
+        // intacto. Encuadra igual si hay bbox (best-effort visual).
+        if (request_id === select_request_id_ref.current && suggestion.bbox) {
+          fit_bbox(suggestion.bbox);
+        }
       }
-      if (suggestion.bbox) fit_bbox(suggestion.bbox);
       return;
     }
 
-    // Municipio
+    // Municipio (#232.3): RPC properties_within_municipality en vez del
+    // círculo clamped a 50km (D4/D5 viejo, ver mapProperties.ts).
     clear_neighborhood();
-    if (!suggestion.bbox) return; // sin colonias cargadas → sin encuadre (D4)
+    if (!suggestion.bbox) {
+      set_municipality(null);
+      return; // sin colonias cargadas → sin encuadre ni filtro (D4)
+    }
     const muni_region = bbox_to_region(suggestion.bbox);
     map_ref.current?.animateToRegion(muni_region, 400);
-    set_filter('area', viewport_to_area(muni_region));
+    set_filter('area', null); // D9: el municipio ya no vive en filters.area
+    set_municipality({ id: suggestion.id, bbox: suggestion.bbox, name: suggestion.name });
     set_show_area_pill(false);
+  }
+
+  /**
+   * Dirección FUERA de cobertura del catálogo (#232.3 — place_at_point → 0
+   * filas): centra la cámara en el punto geocodificado SIN aplicar ningún
+   * filtro (el usuario ve dónde cae la dirección, pero el mapa no inventa
+   * una zona). No toca neighborhood_id/municipality/filters.area existentes.
+   */
+  function handle_address_out_of_coverage(point: { lat: number; lng: number }): void {
+    map_ref.current?.animateToRegion(
+      {
+        latitude: point.lat,
+        longitude: point.lng,
+        latitudeDelta: ADDRESS_POINT_DELTA,
+        longitudeDelta: ADDRESS_POINT_DELTA,
+      },
+      400,
+    );
   }
 
   /** Encuadra un bbox con padding — para el perímetro de colonia. */
@@ -381,12 +458,24 @@ function MapContent(): React.JSX.Element {
       {/*
        * Chip de colonia activa (#157.8) — mismo componente, con el nombre de
        * la colonia como label ("Chapalita · Quitar"). Nunca coexiste con el
-       * chip de area (D9: mutuamente excluyentes), así que comparten ancla.
+       * chip de area ni con el de municipio (D9: mutuamente excluyentes), así
+       * que comparten ancla.
        */}
       {active_polygon != null && (
         <ZoneActiveChip
           label={active_polygon.name}
           on_press={clear_neighborhood}
+          style={{
+            top: insets.top + spacing.s_8 + MAP_SEARCH_BAR_HEIGHT_APPROX + spacing.s_8,
+          }}
+        />
+      )}
+
+      {/* Chip de municipio activo (#232.3) — mismo mecanismo que colonia. */}
+      {municipality != null && (
+        <ZoneActiveChip
+          label={municipality.name}
+          on_press={() => set_municipality(null)}
           style={{
             top: insets.top + spacing.s_8 + MAP_SEARCH_BAR_HEIGHT_APPROX + spacing.s_8,
           }}
@@ -405,13 +494,17 @@ function MapContent(): React.JSX.Element {
         on_change={place_search.set_query}
         on_filter_press={() => set_filter_visible(true)}
         active_filter_count={active_filter_count}
+        loading={place_search.loading}
       />
 
-      {/* Dropdown de sugerencias (#157.8) — después de la barra en orden de
-          render para quedar encima de los chips cuando está abierto. */}
-      <MapSearchSuggestions
+      {/* Buscador unificado (#232.2/.3) — catálogo + direcciones, después de
+          la barra en orden de render para quedar encima de los chips. */}
+      <PlaceSearch
+        query={place_search.query}
         suggestions={place_search.suggestions}
-        on_select={(s) => void handle_select_place(s)}
+        error={place_search.error}
+        on_select_place={(s, meta) => void handle_select_place(s, meta)}
+        on_address_out_of_coverage={handle_address_out_of_coverage}
         top={insets.top + spacing.s_8 + MAP_SEARCH_BAR_HEIGHT_APPROX + spacing.s_8}
       />
 

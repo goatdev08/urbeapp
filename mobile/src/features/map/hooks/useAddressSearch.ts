@@ -48,6 +48,7 @@ export function useAddressSearch(query: string, deps?: AddressPlacesDeps): UseAd
 
     if (!available || trimmed.length < MIN_QUERY_LENGTH) {
       request_id_ref.current += 1; // invalida cualquier request en vuelo
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset síncrono del guard (query corta/sin key): no dispara fetch, solo limpia estado ya obsoleto antes de la próxima búsqueda.
       set_predictions([]);
       set_loading(false);
       set_error(null);

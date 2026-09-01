@@ -96,7 +96,10 @@ describe('PlaceSearch — buscador unificado (#232, smoke)', () => {
       await Promise.resolve();
     });
 
-    expect(on_select_place).toHaveBeenCalledWith(NEIGHBORHOOD);
+    expect(on_select_place).toHaveBeenCalledWith(NEIGHBORHOOD, {
+      source: 'address',
+      address_text: 'Av. Chapultepec 123',
+    });
   });
 
   it('dirección fuera de cobertura llama on_address_out_of_coverage y NO on_select_place', async () => {
