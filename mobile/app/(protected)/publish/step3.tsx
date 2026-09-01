@@ -17,7 +17,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Switch,
@@ -147,7 +146,7 @@ export default function Step3Screen() {
     state.built_square_meters !== null ? String(state.built_square_meters) : '';
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -349,7 +348,7 @@ export default function Step3Screen() {
           <PrimaryButton label="Siguiente" onPress={handle_next} surface="light" />
         </View>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }
 

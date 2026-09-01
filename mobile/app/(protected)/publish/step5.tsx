@@ -22,7 +22,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -256,7 +255,7 @@ export default function Step5Screen() {
   const is_processing_failed = is_success && ready_status === 'failed';
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       {/* ── Encabezado ───────────────────────────────────────────────── */}
       <View style={styles.header}>
         <Text style={styles.page_title}>Video de la propiedad</Text>
@@ -414,7 +413,7 @@ export default function Step5Screen() {
           disabled={(!is_video_ready && !can_publish_without_new_video) || is_publishing}
         />
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 

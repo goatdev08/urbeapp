@@ -32,7 +32,7 @@
  * UX, no la autorización.
  */
 import React, { useCallback, useState } from 'react';
-import { Alert, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -178,7 +178,7 @@ export default function AdStep5Screen() {
   }, [submitting, state, router]);
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scroll_content}
@@ -234,7 +234,7 @@ export default function AdStep5Screen() {
           disabled={submitting}
         />
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 
