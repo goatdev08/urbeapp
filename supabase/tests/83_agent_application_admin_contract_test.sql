@@ -1,14 +1,30 @@
 -- Tests pgTAP — CONTRATO ADMIN de public.agent_applications (subtarea #221.2,
 -- tarea 221 "cola de solicitudes", exploración 041-M4).
--- Ejecutar con: supabase test db supabase/tests/80_agent_application_admin_contract_test.sql --local
+-- Ejecutar con: supabase test db supabase/tests/83_agent_application_admin_contract_test.sql --local
 --
 -- ════════════════════════════════════════════════════════════════════════════
--- 🔴 ESTE ARCHIVO NO ES UN RED. NO HAY CÓDIGO NUEVO DETRÁS.
+-- Este archivo tiene DOS mitades con naturalezas distintas:
+--   secciones 1-4 = [ANCLA] del contrato que YA existía (pasan sin código nuevo).
+--   sección 5     = [DELTA] la RPC public.resolve_agent_application, que SÍ es
+--                   código nuevo (migración 20260902100002).
 --
--- La subtarea 221.2 pedía crear una RPC `resolve_agent_application` "si hoy
--- solo existe vía Studio". La investigación (bitácora 221.2) encontró que el
--- contrato admin YA EXISTE COMPLETO y funciona con el JWT de un admin de
--- plataforma — o sea, desde el panel móvil vía PostgREST, sin Edge Function ni
+-- 🔴 POR QUÉ HAY UNA RPC SI EL CONTRATO YA FUNCIONABA (cambio de decisión,
+-- orquestador 2026-09-01). La investigación original de 221.2 concluyó "no
+-- dupliques": el UPDATE directo con JWT de admin ya dispara todo el ciclo. El
+-- orquestador mantuvo el análisis pero pidió la RPC igual, por dos razones de
+-- INTEGRACIÓN: (a) el agente de UI ya programó contra
+-- client.rpc('resolve_agent_application', …) —contrato pinneado del carril
+-- paralelo—, y (b) una puerta ÚNICA con códigos uniformes
+-- (APPLICATION_NOT_FOUND / ALREADY_RESOLVED / REASON_REQUIRED, los mismos
+-- verbos que resolve_advertising_request y resolve_agency_registration)
+-- simplifica el cliente frente a tres formas distintas de fallar.
+-- La RPC es un WRAPPER DELGADO: valida al admin y hace EL MISMO UPDATE que
+-- valida la mitad ANCLA de este archivo. NO duplica ni una línea del grafo de
+-- estados, la promoción de role, la auditoría ni el espejo — todo eso lo sigue
+-- haciendo el trigger de 71.5/#219.2, que es la única autoridad.
+--
+-- El contrato admin de agent_applications YA EXISTÍA COMPLETO y funciona con el
+-- JWT de un admin de plataforma — o sea, desde el panel móvil vía PostgREST, sin Edge Function ni
 -- RPC nueva:
 --   - policy `agent_app_update` (20260604000010:236): `using (private.is_admin())
 --     with check (private.is_admin())` — el admin de plataforma SÍ puede
@@ -20,24 +36,21 @@
 --     reviewed_at, promueve role SOLO si application_type='independent',
 --     audita en admin_actions y escribe el espejo a notifications — TODO en la
 --     misma transacción del UPDATE.
--- Añadir una RPC encima sería una SEGUNDA copia del mismo contrato (justo lo
--- que 20260823000001 y suspend-agency evitan a propósito): reusar > reescribir
--- (CLAUDE.md §0). Lo que SÍ faltaba era dejar ese contrato ANCLADO por un
--- test, porque la UI de la cola (#221.4) va a depender de él y hoy nada lo
--- protege de una regresión (la suite 25_admin_approvals_test.sql cubre el
--- trigger, pero por el camino GUC/Studio, no por el JWT del admin).
---
--- Por eso los 14 asserts de este archivo son TODOS [ANCLA]: pasan HOY, sin
--- implementación nueva. Su valor es de REGRESIÓN — si alguien endurece las
--- policies, cambia el grafo de estados o toca el trigger, esta suite lo caza
--- antes de que la cola del admin deje de funcionar en producción.
+-- Ese contrato no estaba ANCLADO por ningún test: la UI de la cola (#221.4)
+-- depende de él y la suite 25_admin_approvals_test.sql solo lo cubre por el
+-- camino GUC/Studio, no por el JWT del admin. Los 14 asserts de las secciones
+-- 1-4 son de REGRESIÓN pura (pasan sin implementación nueva): si alguien
+-- endurece las policies, cambia el grafo de estados o toca el trigger, esta
+-- suite lo caza antes de que la cola deje de funcionar en producción. Y como
+-- la RPC de la sección 5 delega en ESE mismo camino, esas 14 anclas son
+-- también la red de seguridad del wrapper.
 --
 -- Corre como superusuario en una transacción revertida; las aserciones del
 -- camino admin impersonan con pg_temp.act_as (patrón 02/…/76/79_*).
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(14);
+select plan(30);
 
 -- Fixtures — prefijo '00000000-0000-0000-0000-000000080XXX'.
 --   ADMIN(080001)      admin de plataforma (resuelve la cola).
@@ -183,6 +196,110 @@ reset role;
 select isnt(
   (select role::text from public.users where id = '00000000-0000-0000-0000-000000080004'),
   'agent', 'UNDER1_under_agency_no_promueve_el_role'
+);
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 5) [DELTA] public.resolve_agent_application(p_application_id, p_approve,
+--    p_reason) — la puerta ÚNICA que consume la UI (#221.4). Wrapper delgado:
+--    valida al admin (private.resolve_admin_actor) y hace el MISMO UPDATE de
+--    arriba; el trigger sigue siendo la única autoridad del resto.
+--    Códigos P0001: STATUS_CHANGE_REQUIRES_ADMIN, APPLICATION_NOT_FOUND,
+--    ALREADY_RESOLVED, REASON_REQUIRED (motivo real, `~ '\S'`).
+--    🔴 ALREADY_RESOLVED, no INVALID_STATUS_TRANSITION: el guard propio de la
+--    RPC corre ANTES del UPDATE, así que el cliente recibe siempre el mismo
+--    verbo que en resolve_advertising_request / resolve_agency_registration.
+-- ════════════════════════════════════════════════════════════════════════════
+
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-000000080006', 'rpc_indep_80@test.local'),
+  ('00000000-0000-0000-0000-000000080007', 'rpc_rej_80@test.local');
+
+insert into public.agent_applications (id, user_id, application_type, agency_id, status) values
+  ('00000000-0000-0000-0000-000000080104', '00000000-0000-0000-0000-000000080006', 'independent', null, 'pending'),
+  ('00000000-0000-0000-0000-000000080105', '00000000-0000-0000-0000-000000080007', 'independent', null, 'pending');
+
+-- Autorización: el solicitante NO es admin -> el gate rebota ANTES de tocar la
+-- fila (y sin revelar si existe).
+select pg_temp.act_as('00000000-0000-0000-0000-000000080006'); -- solicitante
+select throws_ok(
+  $$ select public.resolve_agent_application('00000000-0000-0000-0000-000000080104', true) $$,
+  'P0001', 'STATUS_CHANGE_REQUIRES_ADMIN', 'RPC_ADM1_solo_admin_resuelve'
+);
+reset role;
+
+select is(
+  (select status::text from public.agent_applications where id = '00000000-0000-0000-0000-000000080104'),
+  'pending', 'RPC_ADM2_el_intento_no_admin_no_movio_nada'
+);
+
+select pg_temp.act_as('00000000-0000-0000-0000-000000080001'); -- ADMIN
+select throws_ok(
+  $$ select public.resolve_agent_application('00000000-0000-0000-0000-0000000801ff', true) $$,
+  'P0001', 'APPLICATION_NOT_FOUND', 'RPC_NF1_solicitud_inexistente'
+);
+select throws_ok(
+  $$ select public.resolve_agent_application('00000000-0000-0000-0000-000000080105', false) $$,
+  'P0001', 'REASON_REQUIRED', 'RPC_REASON1_rechazo_sin_motivo'
+);
+select throws_ok(
+  $$ select public.resolve_agent_application('00000000-0000-0000-0000-000000080105', false, E' \t\n ') $$,
+  'P0001', 'REASON_REQUIRED', 'RPC_REASON2_motivo_solo_whitespace'
+);
+select lives_ok(
+  $$ select public.resolve_agent_application('00000000-0000-0000-0000-000000080104', true) $$,
+  'RPC_APP0_admin_aprueba_por_rpc'
+);
+reset role;
+
+select is(
+  (select status::text from public.agent_applications where id = '00000000-0000-0000-0000-000000080104'),
+  'approved', 'RPC_APP1_status_approved'
+);
+select is(
+  (select reviewed_by_admin_id from public.agent_applications where id = '00000000-0000-0000-0000-000000080104'),
+  '00000000-0000-0000-0000-000000080001'::uuid, 'RPC_APP2_reviewed_by_es_el_admin'
+);
+select is(
+  (select role::text from public.users where id = '00000000-0000-0000-0000-000000080006'),
+  'agent', 'RPC_APP3_promocion_del_trigger_intacta'
+);
+select is(
+  (select count(*)::int from public.admin_actions
+    where action_type = 'approve_agent_application'
+      and entity_id   = '00000000-0000-0000-0000-000000080104'),
+  1, 'RPC_APP4_una_sola_fila_de_auditoria_la_del_trigger'
+);
+select is(
+  (select count(*)::int from public.notifications
+    where user_id = '00000000-0000-0000-0000-000000080006'
+      and type    = 'agent_application_approved'),
+  1, 'RPC_APP5_espejo_del_trigger_intacto'
+);
+
+select pg_temp.act_as('00000000-0000-0000-0000-000000080001'); -- ADMIN, 2a resolución
+select throws_ok(
+  $$ select public.resolve_agent_application('00000000-0000-0000-0000-000000080104', false, 'me arrepentí') $$,
+  'P0001', 'ALREADY_RESOLVED', 'RPC_STATE1_segunda_resolucion_con_verbo_uniforme'
+);
+select lives_ok(
+  $$ select public.resolve_agent_application('00000000-0000-0000-0000-000000080105', false, 'Cédula vencida') $$,
+  'RPC_REJ0_admin_rechaza_por_rpc'
+);
+reset role;
+
+select is(
+  (select status::text from public.agent_applications where id = '00000000-0000-0000-0000-000000080105'),
+  'rejected', 'RPC_REJ1_status_rejected'
+);
+select is(
+  (select rejection_reason from public.agent_applications where id = '00000000-0000-0000-0000-000000080105'),
+  'Cédula vencida', 'RPC_REJ2_motivo_persistido_en_la_fila'
+);
+select is(
+  (select data ->> 'rejection_reason' from public.notifications
+    where user_id = '00000000-0000-0000-0000-000000080007'
+      and type    = 'agent_application_rejected'),
+  'Cédula vencida', 'RPC_REJ3_el_motivo_viaja_al_solicitante'
 );
 
 select * from finish();
