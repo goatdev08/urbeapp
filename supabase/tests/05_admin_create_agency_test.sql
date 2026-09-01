@@ -2,11 +2,12 @@
 -- Fase RED subtarea 7.4: tests 1–8 (agencia básica).
 -- Fase RED subtarea 7.5: tests 9–13 (owner_user_id, agency_members, ALREADY_ACTIVE_MEMBER).
 -- Fase RED subtarea 7.6: tests 14–20 (p_token_hash, agency_invitation_tokens, admin_actions).
+-- Fase RED tarea 225: tests 21–24 (el RPC NO debe degradar a un admin a 'agent').
 -- Ejecutar con: supabase test db
 -- Corre como superusuario dentro de una transacción revertida.
 
 begin;
-select plan(20);
+select plan(24);
 
 -- ── Fixtures ─────────────────────────────────────────────────────────────────
 -- El trigger handle_new_user (migración 0002) crea public.users al insertar en auth.users.
@@ -16,7 +17,14 @@ insert into auth.users (id, email) values
   -- owner para los tests de 7.5 (a03 se usa en #10 y #13; ya tendrá membresía activa)
   ('00000000-0000-0000-0000-000000000a03', 'owner_test@urbea.mx'),
   -- owner fresco para el test de éxito de 7.6 (#15): no tiene membresía previa
-  ('00000000-0000-0000-0000-000000000a04', 'owner2_test@urbea.mx');
+  ('00000000-0000-0000-0000-000000000a04', 'owner2_test@urbea.mx'),
+  -- 225: owner que YA es admin de plataforma y no tiene membresía previa.
+  ('00000000-0000-0000-0000-000000000a05', 'admin_owner_test@urbea.mx');
+
+-- 225: a05 nace 'user' por el trigger handle_new_user; lo subimos a admin ANTES
+-- de la llamada para que el caso bajo prueba sea "un admin es asignado owner".
+update public.users set role = 'admin'
+ where id = '00000000-0000-0000-0000-000000000a05'::uuid;
 
 -- Agencia existente para tests de unicidad de slug y name
 insert into public.agencies (id, name, slug, status, created_by_user_id) values
@@ -275,6 +283,68 @@ select is(
     limit 1),
   true,
   'admin_actions: new_values contiene token_id (not null) tras crear agencia con token'
+);
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Tarea 225 — el RPC NO debe DEGRADAR a un administrador de plataforma.
+--
+-- 🔴 El bug: `update public.users set role = 'agent' ...` va SIN condicionar, así
+-- que asignar a un admin como owner de una organización nueva lo baja a 'agent'
+-- y le quita el panel de administrador. Ocurrió en PRODUCCIÓN el 2026-08-31 al
+-- crear «Desarrolladora» (se restauró en la misma transacción).
+--
+-- La regla ya estaba decidida: la migración 20260805000010 añadió el guard
+-- `case when role = 'admin' then role else 'agent' end` a los DOS triggers de
+-- aprobación (handle_agency_status_change y handle_agent_application_status_change).
+-- Este RPC se quedó fuera de aquel barrido — mismo patrón «una invariante en dos
+-- capas y anclada en una sola» que dio 5 hallazgos en #220.
+--
+-- El test #12 (owner 'user' → 'agent') ya existe y es el caso PAREADO: sin él,
+-- un "fix" que dejara el role SIEMPRE intacto pasaría los tests de aquí abajo.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+-- ── 21) Crear la organización con un owner que ya es admin no truena ─────────
+select lives_ok(
+  $$ select public.admin_create_agency_atomic(
+       'Desarrolladora Test MX'::text,
+       'desarrolladora-test-mx'::text,
+       null::text,
+       null::text,
+       null::text,
+       '00000000-0000-0000-0000-000000000a05'::uuid,
+       '00000000-0000-0000-0000-000000000a05'::uuid) $$,
+  '225: crear organización asignando como owner a un admin se ejecuta sin error'
+);
+
+-- ── 22) 🔴 EL ASSERT DE LA TAREA: el admin SIGUE siendo admin ────────────────
+select is(
+  (select role::text from public.users where id = '00000000-0000-0000-0000-000000000a05'::uuid),
+  'admin',
+  '225: un admin asignado owner CONSERVA role=admin (el RPC no lo degrada a agent)'
+);
+
+-- ── 23) …pero agency_id SÍ se denormaliza igual ─────────────────────────────
+-- La mitad sutil: un "fix" perezoso tipo `where id = p_owner_user_id and role <> 'admin'`
+-- salvaría el role y se saltaría TAMBIÉN la denormalización, dejando al admin sin
+-- organización — exactamente el fallo contra el que advierte el comentario de
+-- 20260805000010 ("agency_id SÍ se denormaliza siempre; role solo se promueve").
+select is(
+  (select ag.name::text
+     from public.users u join public.agencies ag on ag.id = u.agency_id
+    where u.id = '00000000-0000-0000-0000-000000000a05'::uuid),
+  'Desarrolladora Test MX',
+  '225: agency_id del admin SÍ apunta a la organización nueva (la denormalización no se salta)'
+);
+
+-- ── 24) La membresía de owner se crea igual para un admin ───────────────────
+select is(
+  (select member_role::text
+     from public.agency_members
+    where user_id = '00000000-0000-0000-0000-000000000a05'::uuid
+      and status = 'active'
+    limit 1),
+  'owner',
+  '225: el admin queda como owner activo de la organización (ser admin no salta la membresía)'
 );
 
 select * from finish();

@@ -10437,19 +10437,19 @@
         "description": "Origen: tarea 224 · Detectado por: orquestador (alta de la organización «Desarrolladora» en producción, 2026-08-31). El RPC pone `role='agent'` al owner SIN condicionar, así que un administrador asignado como owner de una organización nueva pierde silenciosamente el rol admin — y con él el panel de administrador.",
         "details": "EVIDENCIA VIVA: al crear «Desarrolladora» con `p_owner_user_id` = la cuenta de Abraham (role='admin'), el RPC la dejó en `role='agent'`. Se restauró a mano en la MISMA transacción del alta, así que producción quedó correcta — pero el bug sigue en el RPC.\n\nLÍNEA EXACTA (public.admin_create_agency_atomic, migración 20260816000004 la última que lo redefinió):\n  update public.users set role = 'agent', agency_id = v_agency_id where id = p_owner_user_id;\n\nFIX: el mismo guard que la migración 20260805000010 ya añadió a los DOS triggers de aprobación (`handle_agency_status_change` y `handle_agent_application_status_change`) cuando se cerró este mismo agujero allá:\n  set role = case when role = 'admin' then role else 'agent' end\nO sea: la regla YA está decidida y escrita en el repo — este RPC simplemente se quedó fuera del barrido de 000010. Es el mismo patrón «una invariante en dos capas y anclada en una sola» de #220.\n\nRUTA REAL AFECTADA: la EF `admin-create-agency` (redesplegada el 2026-08-31 tras 6 semanas de desfase) y la pantalla `mobile/app/admin/agencies/create.tsx`. Cualquier admin que se asigne a sí mismo —o a otro admin— como owner de una organización nueva desde el panel se degrada solo.\n\nCRITICIDAD: CRÍTICA por la regla determinista de CLAUDE.md §5 (footprint = supabase/migrations/**). TDD estricto: pgTAP que cree una organización con un owner role='admin' y verifique que sigue siendo 'admin'; más el caso pareado (owner role='user' SÍ sube a 'agent'), que es lo que ningún assert cubriría si el fix se pasara de listo.\n\nIMPACTO-PROD: migración ADITIVA (create or replace de una función), sin cambio de firma ni de contrato — el caller viejo se comporta igual salvo en el caso que hoy está mal. Sin OTA.",
         "testStrategy": "pgTAP sobre admin_create_agency_atomic: (1) owner con role='admin' conserva 'admin' tras crear la org; (2) no-regresión: owner con role='user' pasa a 'agent'; (3) en ambos casos users.agency_id queda apuntando a la organización nueva. Cada assert verificado matando su mutante (quitar el guard debe matar (1) y solo (1); dejar el role intacto siempre debe matar (2) y solo (2)). Rollback probado por round-trip.",
-        "status": "pending",
+        "status": "in-progress",
         "dependencies": [
           "224"
         ],
         "priority": "medium",
         "subtasks": [],
-        "updatedAt": "2026-08-31T23:50:50.571Z"
+        "updatedAt": "2026-09-01T00:08:00.449Z"
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-08-31T23:44:50.168Z",
-      "taskCount": 224,
+      "lastModified": "2026-09-01T00:08:00.449Z",
+      "taskCount": 225,
       "completedCount": 139,
       "tags": [
         "master"
