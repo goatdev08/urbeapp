@@ -3,6 +3,10 @@ tipo: estado
 actualizado: 2026-09-01
 ---
 
+## Hoy (2026-09-02) — lote multi-agente: admin M4 + búsqueda por dirección, desplegado
+
+4 agentes en worktrees paralelos + 2 guardianes cerraron #221 (cola /admin/requests: agentes, inmobiliarias y el canal «Quiero anunciar» del owner) y #232 (+#159/#160/#161: búsqueda unificada colonia+municipio+dirección→zona de catálogo, en wizard de campañas y mapa). 7 migraciones aditivas en producción + OTA verificado. Pendientes elegidos por Abraham para después: #213 (promocionar propiedad) y #222 (M5 — recorrido guiado CON él, siguiente sesión natural). Derivadas nuevas: #233/#234/#235. Detalle en `wiki/log.md`.
+
 ## Hoy (2026-09-01, tarde) — #229/#230/#231: la subida sobrevive la red, el wizard pre-aprueba, y los dos bugs de UI de Android
 
 Tres incidentes reportados por Abraham probando anuncios en su dispositivo, los tres resueltos y DESPLEGADOS el mismo día (EFs + migración CHECK 10–120 + OTAs verificados): **#229** cambio de wifi durante la subida (replace para anuncios + poll tolerante a blips, 40 intentos), **#230** «procesando video» eterno (la 4ª capa: el CHECK de `ad_creatives` seguía en 6–30 y reventaba el webhook con 500; + pre-aprobación: step1 continúa al 100% del binario y step5 resuelve la verdad con `wait_for_creative_ready`), **#231** el dropdown de colonias no scrolleaba (overlay absoluto dentro de ScrollView = zona muerta al tacto en Android → modo `inline`) y el panel admin/notificaciones bajo el status bar (`SafeAreaView` de RN es iOS-only; regla nueva: siempre el de safe-area-context). Detalle en `wiki/log.md`.
