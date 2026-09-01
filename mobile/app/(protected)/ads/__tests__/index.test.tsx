@@ -91,6 +91,12 @@ jest.mock('@/features/ads/hooks/useAdStats', () => ({
   useAdStats: jest.fn(),
 }));
 
+// #227: la pantalla condiciona el botón de alta (headerRight + CTA del
+// EmptyState) a useCanAdvertise — default true (anunciante vigente).
+jest.mock('@/features/ads/hooks/useCanAdvertise', () => ({
+  useCanAdvertise: jest.fn(),
+}));
+
 // Chain mínima .from(table).select(cols).in(col, ids) → Promise — la
 // pantalla solo usa esta forma para resolver nombres de zona.
 function make_catalog_mock(rows: { id: string | number; name: string }[] | null, error: unknown = null) {
@@ -120,11 +126,13 @@ jest.mock('@/lib/supabase/client', () => ({
 import { useMyAds } from '@/features/ads/hooks/useMyAds';
 import { useAdMetrics } from '@/features/ads/hooks/useAdMetrics';
 import { useAdStats } from '@/features/ads/hooks/useAdStats';
+import { useCanAdvertise } from '@/features/ads/hooks/useCanAdvertise';
 import AdsScreen from '../index';
 
 const mock_use_my_ads = useMyAds as jest.MockedFunction<typeof useMyAds>;
 const mock_use_ad_metrics = useAdMetrics as jest.MockedFunction<typeof useAdMetrics>;
 const mock_use_ad_stats = useAdStats as jest.MockedFunction<typeof useAdStats>;
+const mock_use_can_advertise = useCanAdvertise as jest.MockedFunction<typeof useCanAdvertise>;
 
 type RenderResult = Awaited<ReturnType<typeof render>>;
 
@@ -172,6 +180,9 @@ beforeEach(() => {
   // Default seguro: cualquier card renderizada sin override explícito pinta
   // "—" (totals=null) en vez de tronar contra un mock de RPC inexistente.
   mock_use_ad_stats.mockReturnValue(ad_stats({}));
+  // #227: default anunciante VIGENTE — los casos de capacidad revocada lo
+  // sobreescriben explícito.
+  mock_use_can_advertise.mockReturnValue({ can_advertise: true, loading: false });
 });
 
 afterEach(() => {
@@ -345,5 +356,35 @@ describe("EC-S7: anuncio_en_revision_fuerza_guiones_sin_pedir_su_id_a_useAdStats
 
     expect(mock_use_ad_stats).toHaveBeenCalledWith(null, 'max');
     expect(screen.queryAllByText('—')).toHaveLength(3);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// (EC-S8) #227 — entrada al wizard de alta desde el estado vacío
+// ═══════════════════════════════════════════════════════════════════════════
+// El headerRight no es anclable aquí (Stack.Screen → null bajo RNTL, ver el
+// mock de expo-router arriba); el CTA del EmptyState sí, y ambos comparten
+// destino y condición.
+
+describe('EC-S8: estado_vacio_con_capacidad_ofrece_crear_anuncio', () => {
+  it('can_advertise=true, ads=[] → CTA "Crear anuncio" visible y navega a /ads/new/step1', async () => {
+    mock_use_my_ads.mockReturnValue(my_ads({ ads: [], loading: false, error: null }));
+    mock_use_ad_metrics.mockReturnValue(metrics({ totals: null, loading: false, error: null }));
+
+    await render_screen();
+
+    fireEvent.press(screen.getByLabelText('Crear anuncio'));
+    expect(mock_router_push).toHaveBeenCalledWith('/ads/new/step1');
+  });
+
+  it('can_advertise=false (dashboard histórico) → SIN CTA de alta; mint respondería 403', async () => {
+    mock_use_can_advertise.mockReturnValue({ can_advertise: false, loading: false });
+    mock_use_my_ads.mockReturnValue(my_ads({ ads: [], loading: false, error: null }));
+    mock_use_ad_metrics.mockReturnValue(metrics({ totals: null, loading: false, error: null }));
+
+    await render_screen();
+
+    expect(screen.queryByLabelText('Crear anuncio')).toBeNull();
+    expect(mock_router_push).not.toHaveBeenCalled();
   });
 });

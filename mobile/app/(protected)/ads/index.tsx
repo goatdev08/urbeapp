@@ -9,6 +9,14 @@
  *   - TRES contadores globales: impresiones, vistas (≥3s), taps al CTA.
  *   - Desglose de esos contadores por zona.
  *   - SIN GRÁFICAS (llegan con #80). Cualquier UI extra es tarea derivada.
+ *   - #227 (tarea derivada de 171.3): entrada al wizard de alta — botón "+"
+ *     en headerRight + CTA del estado vacío → /ads/new/step1. El wizard
+ *     (169.9) existía completo pero NADA navegaba a él: 169.9 construyó las
+ *     pantallas y este techo de R23 no incluía el botón — cada subtarea
+ *     cumplió su lista y el producto quedó sin puerta. Ambas entradas se
+ *     condicionan a useCanAdvertise(): esta ruta también es alcanzable con
+ *     la capacidad REVOCADA (dashboard de anuncios históricos, gate del
+ *     _layout) y ahí mint-ad-upload-url respondería 403.
  *
  * ⚠️ Pantalla ausente del mockup canónico (CLAUDE.md §8) — el techo es
  * exactamente lo listado arriba.
@@ -34,10 +42,11 @@
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
-import { Megaphone, Play } from 'phosphor-react-native';
+import { Megaphone, Play, Plus } from 'phosphor-react-native';
 
 import { supabase } from '@/lib/supabase/client';
 import { EmptyState } from '@/features/profile/components/EmptyState';
+import { useCanAdvertise } from '@/features/ads/hooks/useCanAdvertise';
 import { useMyAds, type MyAd } from '@/features/ads/hooks/useMyAds';
 import { useAdMetrics, type AdZoneMetrics, type AdZoneTotals } from '@/features/ads/hooks/useAdMetrics';
 import { useAdStats, type AdStatsTotals } from '@/features/ads/hooks/useAdStats';
@@ -306,8 +315,13 @@ function MetricsSummary({
 // ---------------------------------------------------------------------------
 
 export default function AdsScreen() {
+  const router = useRouter();
   const my_ads = useMyAds();
   const metrics = useAdMetrics(my_ads.agency_id);
+  // #227: el botón de alta solo aparece con la capacidad vigente — la ruta
+  // también es alcanzable con can_advertise revocada (dashboard histórico,
+  // gate del _layout) y ahí crear una campaña terminaría en 403.
+  const { can_advertise } = useCanAdvertise();
 
   // Resolución de nombres de zona en lote — ver docblock de arriba (§decisión
   // del PLAN). No bloquea el pintado de los contadores/desglose.
@@ -362,6 +376,22 @@ export default function AdsScreen() {
             color: colors.ink,
             fontSize: 17,
           },
+          // #227: entrada persistente al wizard de alta (mismo patrón de
+          // headerRight que profile/edit.tsx). Spread condicional — con
+          // exactOptionalPropertyTypes no se puede pasar undefined explícito.
+          ...(can_advertise && {
+            headerRight: () => (
+              <Pressable
+                onPress={() => router.push('/ads/new/step1')}
+                style={({ pressed }) => [styles.header_add_btn, pressed && styles.header_add_btn_pressed]}
+                accessibilityRole="button"
+                accessibilityLabel="Crear anuncio"
+                hitSlop={8}
+              >
+                <Plus size={22} color={colors.primary} weight="bold" />
+              </Pressable>
+            ),
+          }),
         }}
       />
 
@@ -391,8 +421,20 @@ export default function AdsScreen() {
           ) : (
             <EmptyState
               message="Aún no tienes anuncios"
-              subtitle="Cuando tengas una campaña activa aparecerá aquí."
+              // #227: voz ACTIVA + CTA — el usuario sin anuncios es justo el
+              // que quiere crear el primero. Sin capacidad vigente no hay
+              // acción que ofrecer (solo dashboard histórico) y se conserva
+              // el copy descriptivo.
+              subtitle={
+                can_advertise
+                  ? 'Crea tu primera campaña de video y llega a más personas.'
+                  : 'Cuando tengas una campaña activa aparecerá aquí.'
+              }
               icon={Megaphone}
+              {...(can_advertise && {
+                cta_label: 'Crear anuncio',
+                onPressCta: () => router.push('/ads/new/step1'),
+              })}
             />
           )
         }
@@ -423,6 +465,12 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.s_32,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  header_add_btn: {
+    padding: spacing.s_4,
+  },
+  header_add_btn_pressed: {
+    opacity: 0.6,
   },
 
   // ── Bloque de métricas ────────────────────────────────────────────────────
