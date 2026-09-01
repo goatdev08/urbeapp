@@ -700,11 +700,14 @@ describe('useAgentLeads', () => {
     // act() de RNTL finaliza sin esperarla (comportamiento de React 18 con Promises arbitrarias).
     const pending_query = new Promise<{ data: RawLeadRow[]; error: null }>(() => {});
 
+    // #226: la cadena SIEMPRE lleva .eq (alcance explícito) antes del .is.
     mock_supabase_holder.client = {
       from: jest.fn().mockReturnValue({
         select: jest.fn().mockReturnValue({
-          is: jest.fn().mockReturnValue({
-            order: jest.fn().mockReturnValue(pending_query),
+          eq: jest.fn().mockReturnValue({
+            is: jest.fn().mockReturnValue({
+              order: jest.fn().mockReturnValue(pending_query),
+            }),
           }),
         }),
       }),
@@ -784,27 +787,92 @@ describe('useAgentLeads', () => {
     expect(mock_client._mock_eq).toHaveBeenCalledWith('agent_id', 'agent-123');
   });
 
-  // ── (EC-nuevo-2) agentId null/ausente → NO agrega filtro .eq ────────────
+  // ── (EC-nuevo-2, REESCRITO por #226) agentId null/ausente → filtro EXPLÍCITO ──
   //
-  // Semántica AGREGADO / RLS-driven: sin agentId explícito (null o ausente),
-  // NO se llama .eq('agent_id', …) — el filtro lo hace RLS (owner ve todos
-  // los leads de su agencia con "Todos los agentes"; agente normal ve solo
-  // los suyos, idéntico al comportamiento histórico EC-1..10).
+  // 🔴 #226 mata la semántica "RLS decide" de 28.3: en producción, para un
+  // usuario con users.role='admin', "RLS decide" significó "todo" — la cuenta
+  // admin de Abraham veía el pipeline completo de Tu Casa con Vlad, teléfono
+  // del buscador incluido. Regla ya aprendida (memoria FlatList/mis-X): "mis X"
+  // SIEMPRE filtra explícito aunque RLS "ya filtre" — RLS es la 2ª capa, no el
+  // alcance. Sin agentId y sin scope de equipo → .eq('agent_id', <uid propio>).
 
-  it('(EC-nuevo-2) agentId_null_o_ausente_no_agrega_filtro_eq_agent_id: useAgentLeads(null) y useAgentLeads() no llaman .eq("agent_id", …) — RLS decide', async () => {
+  it('(EC-nuevo-2) agentId_null_o_ausente_filtra_explicito_por_el_uid_propio: useAgentLeads(null) y useAgentLeads() llaman .eq("agent_id", <uid de sesión>) — nunca query sin alcance (#226)', async () => {
     const mock_client_null = make_supabase_mock_leads();
     mock_supabase_holder.client = mock_client_null;
 
     await renderHook(() => useAgentLeads(null));
 
-    expect(mock_client_null._mock_eq).not.toHaveBeenCalled();
+    expect(mock_client_null._mock_eq).toHaveBeenCalledWith('agent_id', TEST_AGENT_ID);
 
     const mock_client_sin_arg = make_supabase_mock_leads();
     mock_supabase_holder.client = mock_client_sin_arg;
 
     await renderHook(() => useAgentLeads());
 
-    expect(mock_client_sin_arg._mock_eq).not.toHaveBeenCalled();
+    expect(mock_client_sin_arg._mock_eq).toHaveBeenCalledWith('agent_id', TEST_AGENT_ID);
+  });
+
+  // ── #226 — scope de equipo explícito (tercer parámetro) ──────────────────
+  //
+  // CRMScreen ya resuelve el rol con useAgencyRole; se lo pasa al hook como
+  // `scope` para que el alcance del AGREGADO sea explícito:
+  //   - canViewTeam && agencyId → .eq('agency_id', agencyId)  (owner/admin de
+  //     inmobiliaria ve el pipeline de SU organización — nunca de otras).
+  //   - si no → .eq('agent_id', <uid propio>).
+  //   - scope.loading=true → NO se dispara ninguna query (evita un primer
+  //     fetch sin alcance mientras la membresía resuelve).
+  //   - agentId string GANA sobre el scope (owner filtrando un agente).
+
+  it('(EC-226-1) scope_equipo_filtra_por_agency_id: canViewTeam=true + agencyId → .eq("agency_id", agencyId) y NUNCA .eq("agent_id", …)', async () => {
+    const mock_client = make_supabase_mock_leads({
+      query_result: { data: [RAW_LEAD_COMPLETO], error: null },
+    });
+    mock_supabase_holder.client = mock_client;
+
+    await renderHook(() =>
+      useAgentLeads(null, 'score', { loading: false, canViewTeam: true, agencyId: 'agencia-x-226' }),
+    );
+
+    expect(mock_client._mock_eq).toHaveBeenCalledWith('agency_id', 'agencia-x-226');
+    expect(mock_client._mock_eq).not.toHaveBeenCalledWith('agent_id', expect.anything());
+  });
+
+  it('(EC-226-2) scope_sin_equipo_filtra_por_uid_propio: canViewTeam=false → .eq("agent_id", <uid de sesión>)', async () => {
+    const mock_client = make_supabase_mock_leads();
+    mock_supabase_holder.client = mock_client;
+
+    await renderHook(() =>
+      useAgentLeads(null, 'score', { loading: false, canViewTeam: false, agencyId: null }),
+    );
+
+    expect(mock_client._mock_eq).toHaveBeenCalledWith('agent_id', TEST_AGENT_ID);
+  });
+
+  it('(EC-226-3) scope_cargando_no_dispara_query: loading=true → from() no se llama y el hook queda en loading', async () => {
+    const mock_client = make_supabase_mock_leads();
+    mock_supabase_holder.client = mock_client;
+
+    const { result } = await renderHook(() =>
+      useAgentLeads(null, 'score', { loading: true, canViewTeam: false, agencyId: null }),
+    );
+
+    expect(mock_client.from).not.toHaveBeenCalled();
+    expect(result.current.loading).toBe(true);
+    expect(result.current.leads).toEqual([]);
+  });
+
+  it('(EC-226-4) agentId_explicito_gana_sobre_el_scope: useAgentLeads("agent-zzz", …, scope de equipo) filtra por ese agente, no por agencia', async () => {
+    const mock_client = make_supabase_mock_leads({
+      query_result: { data: [RAW_LEAD_COMPLETO], error: null },
+    });
+    mock_supabase_holder.client = mock_client;
+
+    await renderHook(() =>
+      useAgentLeads('agent-zzz', 'score', { loading: false, canViewTeam: true, agencyId: 'agencia-x-226' }),
+    );
+
+    expect(mock_client._mock_eq).toHaveBeenCalledWith('agent_id', 'agent-zzz');
+    expect(mock_client._mock_eq).not.toHaveBeenCalledWith('agency_id', expect.anything());
   });
 
   // ── (EC-nuevo-3) cambiar agentId entre renders redispara el fetch ───────

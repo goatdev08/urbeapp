@@ -4,7 +4,7 @@
  *
  * Query: from('leads').select(<embedded+score+level+is_follow_up>).eq('agent_id',agentId)?
  *   .is('deleted_at', null).order(<primario>, {...}).order('updated_at', {ascending:false})
- *   - RLS (migración 0008) filtra agent_id = auth.uid() — sin filtro explícito aquí.
+ *   - #226: el alcance es SIEMPRE explícito (.eq por agent_id o agency_id); RLS queda como 2ª capa.
  *   - Embeds: users!leads_user_id_fkey(first_name, last_name, avatar_url, phone)
  *     (FK explícita: leads tiene DOS FKs a users — user_id/buscador y agent_id)
  *             lead_origin_properties(property_id, properties(address, property_videos(thumbnail_url, position)))
@@ -153,13 +153,36 @@ function transform_raw_to_agent_lead(raw: RawLead): AgentLead {
 // ---------------------------------------------------------------------------
 
 /**
+ * Scope del AGREGADO (#226) — lo resuelve el caller (CRMScreen vía
+ * useAgencyRole) y se pasa explícito: el hook nunca vuelve a delegar el
+ * alcance a RLS.
+ */
+export interface AgentLeadsScope {
+  /** true mientras la membresía de agencia aún no resuelve — NO se dispara query. */
+  loading: boolean;
+  /** true si el caller es owner/admin ACTIVO de su agencia (useAgencyRole.canViewTeam). */
+  canViewTeam: boolean;
+  /** Agencia activa del caller (null si independiente / sin membresía). */
+  agencyId: string | null;
+}
+
+/**
  * Carga los leads del agente autenticado, o de un agente específico si se
  * pasa `agentId` (caso owner: ver los leads de cualquier agente de su agencia).
  *
- * Semántica AGREGADO / RLS-driven (subtarea 28.3):
- *   - agentId es string → añade .eq('agent_id', agentId) a la query.
- *   - agentId es null/undefined (default) → sin filtro explícito; RLS decide
- *     (agente normal ve solo los suyos, owner ve todos los de su agencia).
+ * 🔴 Semántica del AGREGADO reescrita por #226 (antes 28.3 "RLS decide"):
+ * en producción, para un usuario con users.role='admin', "RLS decide"
+ * significó "todo" — la cuenta admin veía el pipeline completo de una
+ * organización ajena, teléfono del buscador incluido. Regla de la casa:
+ * "mis X" SIEMPRE filtra explícito aunque RLS "ya filtre" (RLS = 2ª capa,
+ * no el alcance).
+ *   - agentId es string → .eq('agent_id', agentId) — gana sobre el scope.
+ *   - agentId null/undefined + scope.canViewTeam && scope.agencyId →
+ *     .eq('agency_id', scope.agencyId) (el pipeline de SU organización).
+ *   - agentId null/undefined en cualquier otro caso → .eq('agent_id', <uid
+ *     de sesión>). Sin uid de sesión → no se consulta (fail-closed).
+ *   - scope.loading=true → NO se dispara la query todavía (evita un primer
+ *     fetch sin alcance mientras la membresía resuelve).
  *
  * Expone refetch() para re-disparar la query (p.ej. tras cambiar estado de un lead).
  *
@@ -170,11 +193,12 @@ function transform_raw_to_agent_lead(raw: RawLead): AgentLead {
 export function useAgentLeads(
   agentId?: string | null,
   sortBy: LeadSortMode = 'score',
+  scope?: AgentLeadsScope,
 ): UseAgentLeadsState {
-  // Consumimos useAuth para alinear el patrón del repo (contexto de sesión activa).
-  // El filtro real de agent_id lo hace RLS (o el .eq condicional de abajo) —
-  // no necesitamos el id de sesión aquí.
-  useAuth();
+  // #226: el uid de sesión ES parte del contrato — ancla el filtro explícito
+  // del caso "mis leads".
+  const { user } = useAuth();
+  const session_uid = user?.id ?? null;
 
   const [leads, set_leads] = useState<AgentLead[]>([]);
   const [loading, set_loading] = useState(true); // EC-8: inicia en true
@@ -182,13 +206,40 @@ export function useAgentLeads(
   // ponytail: tick counter como señal de refetch — más simple que useReducer
   const [tick, set_tick] = useState(0);
 
+  // #226: piezas primitivas del scope como deps del efecto (un objeto literal
+  // inline recrearía el efecto en cada render del caller).
+  const scope_loading = scope?.loading ?? false;
+  const scope_can_view_team = scope?.canViewTeam ?? false;
+  const scope_agency_id = scope?.agencyId ?? null;
+
   useEffect(() => {
     // Flag de cancelación — evita setState tras desmontaje o refetch solapado
     let ignore = false;
 
+    // #226: sin alcance resuelto no hay query — evita el fetch sin filtro que
+    // era la mitad cliente de la fuga. Sin setState síncrono (regla del lint):
+    // `loading` ya inicia en true y el efecto se re-dispara cuando el scope
+    // resuelve (scope_loading está en las deps).
+    if (typeof agentId !== 'string' && scope_loading) {
+      return;
+    }
+
     async function fetch_leads(): Promise<void> {
       // Resetea loading en cada fetch (incluyendo refetches)
       set_loading(true);
+
+      // #226 fail-closed: sin equipo y sin uid de sesión no hay "mis leads"
+      // que consultar — jamás una query sin alcance.
+      if (
+        typeof agentId !== 'string' &&
+        !(scope_can_view_team && scope_agency_id !== null) &&
+        session_uid === null
+      ) {
+        set_leads([]);
+        set_error(null);
+        set_loading(false);
+        return;
+      }
 
       const base_query = supabase
         .from('leads')
@@ -206,10 +257,16 @@ export function useAgentLeads(
           'id, user_id, agent_id, status, internal_notes, first_contact_at, last_contact_at, updated_at, created_at, deleted_at, score, level, is_follow_up, users!leads_user_id_fkey(first_name, last_name, avatar_url, phone), lead_origin_properties(property_id, properties(address, property_videos(thumbnail_url, position)))' as never
         );
 
-      // agentId string → filtra por ese agente (caso owner viendo a un agente
-      // específico). null/undefined → sin filtro explícito, RLS decide.
+      // #226: el alcance SIEMPRE es explícito — nunca una query sin filtro.
+      //   agentId string → ese agente (owner filtrando a uno de su equipo).
+      //   scope de equipo → la organización del caller (agency_id).
+      //   si no → los leads propios (agent_id = uid de sesión).
       const filtered_query =
-        typeof agentId === 'string' ? base_query.eq('agent_id', agentId) : base_query;
+        typeof agentId === 'string'
+          ? base_query.eq('agent_id', agentId)
+          : scope_can_view_team && scope_agency_id !== null
+            ? base_query.eq('agency_id', scope_agency_id)
+            : base_query.eq('agent_id', session_uid as string);
 
       const filtered_and_deleted_query = filtered_query.is('deleted_at', null);
 
@@ -251,7 +308,7 @@ export function useAgentLeads(
     return () => {
       ignore = true;
     };
-  }, [tick, agentId, sortBy]);
+  }, [tick, agentId, sortBy, scope_loading, scope_can_view_team, scope_agency_id, session_uid]);
 
   // ponytail: useCallback sin deps — set_tick es estable (React garantía)
   const refetch = useCallback(() => set_tick((t) => t + 1), []);
