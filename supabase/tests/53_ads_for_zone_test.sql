@@ -303,10 +303,18 @@ end $$;
 
 select is((select ok from result_sig_53), true,
   'SIG1_la_funcion_resuelve_por_catalogo_con_la_firma_esperada');
+-- #213 (213.3): `property_id uuid` se agrega AL FINAL. El assert NO se
+-- debilita — sigue siendo la firma EXACTA, y sigue excluyendo por
+-- construccion cualquier columna de agencies que un usuario final no debe ver
+-- (contact_phone, status, created_by_user_id...). Lo unico que cambia es el
+-- contrato: un anuncio ahora trae creative_id (display) XOR property_id
+-- (promocion de una publicacion). El orden de las 9 anteriores es intocable:
+-- los builds instalados leen por nombre y una reordenacion no los rompe, pero
+-- perder o renombrar una si.
 select is(
   (select result_sig from result_sig_53),
-  'TABLE(id uuid, creative_id uuid, title text, description text, cta_type ad_cta_type, cta_value text, cloudflare_uid text, agency_name text, agency_logo_url text)',
-  'SIG2_firma_de_retorno_EXACTA_8_columnas_incluye_description_agency_name_agency_logo_url_y_nada_mas_de_agencies'
+  'TABLE(id uuid, creative_id uuid, title text, description text, cta_type ad_cta_type, cta_value text, cloudflare_uid text, agency_name text, agency_logo_url text, property_id uuid)',
+  'SIG2_firma_de_retorno_EXACTA_10_columnas_incluye_description_agency_name_agency_logo_url_property_id_y_nada_mas_de_agencies'
 );
 select is(
   (select args_sig from result_sig_53),
