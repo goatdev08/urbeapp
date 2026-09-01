@@ -1687,4 +1687,60 @@ describe('useAdUpload', () => {
       expect(result.current.status).toBe('ready');
     });
   });
+
+  // ── #230 — on_minted: el uid disponible desde el mint (pre-aprobación) ────
+  // El wizard necesita el uid ANTES de 'ready' para dejar continuar al 100%
+  // del binario; el contrato de `cloudflare_uid` (solo-en-ready) NO cambia.
+
+  describe('#230 on_minted', () => {
+    it('(EC38) on_minted_se_notifica_con_el_uid_apenas_mint_resuelve_antes_del_ready', async () => {
+      const file_instance = make_mock_file({});
+      MockFile.mockImplementation(() => file_instance as never);
+      const mock_supabase = make_mock_supabase({});
+      const on_minted = jest.fn();
+      const seen_before_ready: string[] = [];
+
+      const { result } = await renderHook(() =>
+        useAdUpload({
+          supabase: mock_supabase as never,
+          on_minted,
+          check_ad_creative_status: jest.fn().mockImplementation(() => {
+            // El poll aún corre: on_minted ya debió dispararse.
+            seen_before_ready.push(...on_minted.mock.calls.map((c: string[]) => c[0] as string));
+            return Promise.resolve('ready');
+          }),
+          poll_attempts: 2,
+          poll_interval_ms: 0,
+        }),
+      );
+
+      await act(async () => {
+        await result.current.upload({ local_uri: TEST_LOCAL_URI, duration_ms: VALID_DURATION_MS });
+      });
+
+      expect(on_minted).toHaveBeenCalledTimes(1);
+      expect(on_minted).toHaveBeenCalledWith(STREAM_UID);
+      expect(seen_before_ready).toContain(STREAM_UID);
+    });
+
+    it('(EC39) on_minted_NO_se_notifica_si_mint_falla', async () => {
+      const file_instance = make_mock_file({});
+      MockFile.mockImplementation(() => file_instance as never);
+      const mock_supabase = make_mock_supabase({
+        invoke_result: { data: null, error: make_ef_error({ code: 'FORBIDDEN', message: 'nope' }, 403) },
+      });
+      const on_minted = jest.fn();
+
+      const { result } = await renderHook(() =>
+        useAdUpload({ supabase: mock_supabase as never, on_minted }),
+      );
+
+      await act(async () => {
+        await result.current.upload({ local_uri: TEST_LOCAL_URI, duration_ms: VALID_DURATION_MS });
+      });
+
+      expect(on_minted).not.toHaveBeenCalled();
+      expect(result.current.status).toBe('failed');
+    });
+  });
 });
