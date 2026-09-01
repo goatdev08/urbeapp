@@ -12,6 +12,22 @@ codigo:
 
 Cómo enviar cambios a clientes/beta testers (Android + iOS) **sin recompilar cada vez** ni romper base de datos/backend con apps viejas en la calle.
 
+
+## 🔴 El OTA hornea el backend desde `.env.local`, no desde EAS (incidente 2026-08-31)
+
+`pnpm ota` corre `expo export` **en local** y luego `eas update --skip-bundler`. El bundle se arma en el paso local, así que las `EXPO_PUBLIC_*` salen de **`mobile/.env.local`** — nunca del entorno de EAS. El mensaje que imprime `eas update` (*"Environment variables … loaded from the 'production' environment on EAS"*) **no describe el bundle que sube**: con `--skip-bundler` ya venía armado. Es ruido.
+
+**Qué pasó:** con `.env.local` apuntando a la rama `preview-ads`, el OTA del release mandó a los testers de producción a esa otra base. Sus cuentas no existen ahí → login con "credenciales inválidas", y en producción **no aparecía ni un intento de login** en `auth_logs`. Esa ausencia fue la pista.
+
+**La verificación que no miente** — leer la URL horneada en el bundle:
+```bash
+find dist -name '*.hbc' ! -name '*.map' -exec strings {} \; | grep -oE 'https://[a-z0-9]+\.supabase\.co' | sort -u
+```
+
+Automatizado en `assert_backend_de_produccion` (`mobile/scripts/ota.sh`): corre entre el export y el upload y **aborta antes de subir** si la URL no es la de producción. Verificado con el mutante real.
+
+⚠️ Ojo también con la **anon key**: `.env.local` tiene varias comentadas por bloques; al descomentar la URL de producción es fácil dejar activa la key de otro proyecto, y URL + key de proyectos distintos también rompe auth.
+
 ## Infra ya cableada
 - `expo-updates` instalado; `updates.url` → proyecto EAS `85c7157a-…`; `checkAutomatically: ON_LOAD`.
 - `runtimeVersion.policy: 'fingerprint'` (desde #67, 2026-07-13; antes `appVersion` fijo `1.0.x`). EAS calcula la **huella del código nativo** (deps, config, plugins) en build time y empareja cada OTA solo con builds de la misma huella. Canales en `eas.json`: **`preview`** (Android APK de feedback) y **`production`** (iOS/TestFlight).
