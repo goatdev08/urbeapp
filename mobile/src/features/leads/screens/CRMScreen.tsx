@@ -141,10 +141,22 @@ export function CRMScreen(): React.ReactElement {
   // "no hay membresía" — antes se ignoraba y ambos casos degradaban en
   // silencio a la vista de agente individual, escondiendo que RLS sigue
   // devolviendo los leads de TODO el equipo (mal etiquetados como propios).
-  const { canViewTeam, agencyId, error: role_error, refetch: refetch_role } = useAgencyRole();
+  const {
+    canViewTeam,
+    agencyId,
+    loading: role_loading,
+    error: role_error,
+    refetch: refetch_role,
+  } = useAgencyRole();
   const { agents } = useAgencyAgents(agencyId, canViewTeam);
   const [selected_agent_id, set_selected_agent_id] = useState<string | null>(null);
-  const { leads, loading, error, refetch } = useAgentLeads(selected_agent_id);
+  // #226: el alcance del agregado se pasa EXPLÍCITO — el hook ya no delega a
+  // RLS (para un admin de plataforma, "RLS decide" significaba "todo").
+  const { leads, loading, error, refetch } = useAgentLeads(selected_agent_id, 'score', {
+    loading: role_loading,
+    canViewTeam,
+    agencyId,
+  });
   const [filter, set_filter] = useState<CrmFilter>('all');
   const [search, set_search] = useState('');
   const [selected_lead, set_selected_lead] = useState<AgentLead | null>(null);

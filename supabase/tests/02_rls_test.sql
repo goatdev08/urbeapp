@@ -87,7 +87,10 @@ select is((select count(*) from public.leads)::int, 2, 'Owner O ve leads de sus 
 select is((select count(*) from public.leads where agent_id = '00000000-0000-0000-0000-0000000000b3')::int, 0, 'Owner O no ve leads del agente independiente G3');
 reset role;
 
--- 5) El admin ve todos los leads.
+-- 5) #226: el admin de PLATAFORMA ya NO ve leads ajenos — el "Admin ve todos
+-- los leads" original (molde 0008 "el admin lo ve todo") era exactamente la
+-- fuga que #226 elimina: pipeline comercial de organizaciones ajenas, con el
+-- teléfono del buscador. La cobertura fina vive en 77_leads_admin_plataforma.
 -- Los conteos de admin/anon se acotan a las filas del fixture: la base local puede tener
 -- datos de seed.sql y un count(*) global haría el test dependiente del contenido previo.
 select pg_temp.act_as('00000000-0000-0000-0000-0000000000d1');
@@ -95,7 +98,7 @@ select is((select count(*) from public.leads where agent_id in (
     '00000000-0000-0000-0000-0000000000b1',
     '00000000-0000-0000-0000-0000000000b2',
     '00000000-0000-0000-0000-0000000000b3'))::int,
-  3, 'Admin ve todos los leads');
+  0, 'Admin de plataforma sin relación con las agencias ve 0 leads ajenos (#226)');
 reset role;
 
 -- 6) Público (anon) ve solo propiedades activas (2), no el draft.

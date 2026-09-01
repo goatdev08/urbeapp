@@ -700,11 +700,14 @@ describe('useAgentLeads', () => {
     // act() de RNTL finaliza sin esperarla (comportamiento de React 18 con Promises arbitrarias).
     const pending_query = new Promise<{ data: RawLeadRow[]; error: null }>(() => {});
 
+    // #226: la cadena SIEMPRE lleva .eq (alcance explícito) antes del .is.
     mock_supabase_holder.client = {
       from: jest.fn().mockReturnValue({
         select: jest.fn().mockReturnValue({
-          is: jest.fn().mockReturnValue({
-            order: jest.fn().mockReturnValue(pending_query),
+          eq: jest.fn().mockReturnValue({
+            is: jest.fn().mockReturnValue({
+              order: jest.fn().mockReturnValue(pending_query),
+            }),
           }),
         }),
       }),
