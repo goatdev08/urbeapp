@@ -786,7 +786,10 @@ describe('useVideoUpload', () => {
 
   // ── (EC17) Excepción del propio checker — fail-closed ─────────────────────
 
-  it('(EC17) checker_lanza_excepcion_fail_closed_sin_update: check_video_status rechaza → status=error, mensaje neutro (fail-closed), update NO llamado', async () => {
+  // #229 (REESCRITO): una excepción del checker ya NO es terminal — cambiar de
+  // red wifi durante la verificación produce exactamente ese blip, y matar el
+  // ciclo por eso reporta un error falso. Reintentable hasta agotar attempts.
+  it('(EC17) checker_lanza_SIEMPRE_error_neutro_solo_al_agotar_sin_update: check_video_status rechaza en TODOS los intentos → status=error, update NO llamado, checker llamado attempts veces', async () => {
     const upload_task = make_failing_upload_task();
     const file_instance = make_mock_file({ upload_task });
     MockFile.mockImplementation(() => file_instance as never);
@@ -809,10 +812,37 @@ describe('useVideoUpload', () => {
     expect(result.current.status).toBe('error');
     expect(result.current.error).toBe(NEUTRAL_ERROR_MESSAGE);
     expect(mock_update).not.toHaveBeenCalled();
-    // Distingue "fail-closed tras invocar el checker" de "el checker nunca
-    // se llamó" (el viejo camino de error inmediato produce el MISMO
-    // desenlace observable — sin esta aserción el test no sería RED).
-    expect(mock_check_video_status).toHaveBeenCalledTimes(1);
+    // Los 2 intentos se consumieron — no murió a la primera excepción.
+    expect(mock_check_video_status).toHaveBeenCalledTimes(2);
+  });
+
+  it('(EC17b) #229 checker_lanza_una_vez_y_luego_ready_termina_en_processing (cambio de wifi sobrevivido)', async () => {
+    const upload_task = make_failing_upload_task();
+    const file_instance = make_mock_file({ upload_task });
+    MockFile.mockImplementation(() => file_instance as never);
+    const mock_supabase = make_mock_supabase({});
+    const mock_check_video_status = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('network changed'))
+      .mockResolvedValueOnce('ready');
+
+    const { result } = await renderHook(() =>
+      useVideoUpload({
+        supabase: mock_supabase as never,
+        check_video_status: mock_check_video_status,
+        verify_attempts: 3,
+        verify_interval_ms: 0,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.upload(TEST_LOCAL_URI);
+    });
+
+    expect(mock_check_video_status).toHaveBeenCalledTimes(2);
+    expect(result.current.status).toBe('processing');
+    expect(result.current.error).toBeNull();
+    expect(mock_update).toHaveBeenCalledTimes(1);
   });
 
   // ── (EC18) Reintentos: 'uploading' → 'ready' en el 2º intento ─────────────
