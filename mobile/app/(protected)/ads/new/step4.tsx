@@ -1,16 +1,19 @@
 /**
  * /ads/new/step4 — Paso 4 del wizard de anuncios: zonas.
- * Subtarea 169.9.
+ * Subtarea 169.9 (base) + 232.2 (buscador unificado con direcciones).
  *
  * REUSO OBLIGATORIO (CLAUDE.md §0, verificado por el analista): usePlaceSearch
- * + MapSearchSuggestions (#157) — el selector de zonas NO escribe búsqueda
- * nueva, reusa `search_places` tal cual.
+ * (catálogo, SIN cambios) + PlaceSearch (#232 — absorbe MapSearchSuggestions
+ * y agrega la sección "Direcciones" con el MISMO texto del input). Una
+ * dirección resuelta a zona de catálogo entra por el MISMO handle_select_place
+ * que una colonia/municipio elegidos directo — validate_ad_zones no distingue
+ * el origen; solo la UI muestra un hint transitorio de dónde salió.
  *
  * 🔴 Lista VACÍA es VÁLIDA = inventario nacional (D3 de 169.1, ver cabecera
  * de lib/validation.ts) — este screen lo dice explícito en la UI, nunca lo
  * trata como error.
  */
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ScrollView,
   StyleSheet,
@@ -25,13 +28,15 @@ import { Buildings, MapPin, X } from 'phosphor-react-native';
 
 import { useAdForm } from '@/features/ads/store/AdFormContext';
 import { usePlaceSearch } from '@/features/map/hooks/usePlaceSearch';
-import { MapSearchSuggestions } from '@/features/map/components/MapSearchSuggestions';
+import { PlaceSearch } from '@/features/map/components/PlaceSearch';
 import type { PlaceSuggestion } from '@/features/map/lib/placeSearch';
 import { validate_ad_zones, type AdZoneInput } from '@/features/ads/lib/validation';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { colors, radii, spacing, type_scale } from '@/theme/theme';
 
 const SEARCH_INPUT_HEIGHT = 48;
+/** El hint "Colonia resuelta de la dirección" se auto-oculta tras esto (ms). */
+const ADDRESS_HINT_DURATION_MS = 4000;
 
 function to_ad_zone_inputs(zones: PlaceSuggestion[]): AdZoneInput[] {
   return zones.map((z) => ({
@@ -46,8 +51,18 @@ export default function AdStep4Screen() {
   const { state, update } = useAdForm();
   const place_search = usePlaceSearch();
 
-  const handle_select = useCallback(
-    (suggestion: PlaceSuggestion) => {
+  // Hint transitorio "Colonia resuelta de la dirección" (#232.2) — solo
+  // cuando el origen de la zona agregada fue una dirección, no el catálogo.
+  const [address_hint, set_address_hint] = useState<string | null>(null);
+  const hint_timer_ref = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (hint_timer_ref.current) clearTimeout(hint_timer_ref.current);
+    };
+  }, []);
+
+  const handle_select_place = useCallback(
+    (suggestion: PlaceSuggestion, meta?: { source: 'address'; address_text: string }) => {
       const already_selected = state.zones.some(
         (z) => z.kind === suggestion.kind && z.id === suggestion.id,
       );
@@ -55,6 +70,14 @@ export default function AdStep4Screen() {
         update({ zones: [...state.zones, suggestion] });
       }
       place_search.clear();
+
+      if (hint_timer_ref.current) clearTimeout(hint_timer_ref.current);
+      if (meta?.source === 'address') {
+        set_address_hint(`Colonia resuelta de la dirección: ${meta.address_text}`);
+        hint_timer_ref.current = setTimeout(() => set_address_hint(null), ADDRESS_HINT_DURATION_MS);
+      } else {
+        set_address_hint(null);
+      }
     },
     [state.zones, update, place_search],
   );
@@ -104,12 +127,17 @@ export default function AdStep4Screen() {
               absoluto queda muerto al tacto en Android — no scrolleaba la
               lista de colonias (bug 2026-09-01, mismo patrón que
               ZoneAutocomplete en FilterSheet). */}
-          <MapSearchSuggestions
+          <PlaceSearch
+            query={place_search.query}
             suggestions={place_search.suggestions}
-            on_select={handle_select}
+            loading={place_search.loading}
+            error={place_search.error}
+            on_select_place={handle_select_place}
             inline
           />
         </View>
+
+        {address_hint != null && <Text style={styles.address_hint}>{address_hint}</Text>}
 
         <View style={styles.zones_list}>
           {state.zones.length === 0 ? (
@@ -190,6 +218,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: colors.ink,
     backgroundColor: colors.surface,
+  },
+  address_hint: {
+    marginTop: spacing.s_12,
+    fontSize: 12,
+    color: colors.primary,
+    fontStyle: 'italic' as const,
   },
   zones_list: {
     marginTop: spacing.s_20,

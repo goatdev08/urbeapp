@@ -57,8 +57,16 @@ interface PlaceSearchProps {
   loading?: boolean;
   /** Error del catálogo (#161) — texto discreto en el dropdown. */
   error?: string | null;
-  /** Colonia/municipio de catálogo elegido directo, O resuelto de una dirección. */
-  on_select_place: (suggestion: PlaceSuggestion) => void;
+  /**
+   * Colonia/municipio de catálogo elegido directo, O resuelto de una
+   * dirección — el 2do argumento SOLO viene poblado en el caso de dirección
+   * (el caller lo usa, p.ej., para el copy "Colonia resuelta de la
+   * dirección" en ads/step4; el mapa puede ignorarlo).
+   */
+  on_select_place: (
+    suggestion: PlaceSuggestion,
+    meta?: { source: 'address'; address_text: string },
+  ) => void;
   /** Dirección fuera de cobertura del catálogo (0 filas de place_at_point). */
   on_address_out_of_coverage?: (point: { lat: number; lng: number }) => void;
   /** Offset superior (bajo la barra) — lo calcula el padre. Solo overlay. */
@@ -87,7 +95,7 @@ export function PlaceSearch({
     async (prediction: AddressPrediction) => {
       const result = await resolver.resolve(prediction.place_id);
       if (result.kind === 'resolved') {
-        on_select_place(result.zone);
+        on_select_place(result.zone, { source: 'address', address_text: prediction.main_text });
       } else if (result.kind === 'out_of_coverage') {
         on_address_out_of_coverage?.(result.point);
       }
