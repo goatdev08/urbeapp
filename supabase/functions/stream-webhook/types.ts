@@ -85,15 +85,16 @@ export interface VideoEventNotifier {
 // anuncios que intentar" (200 idempotente, igual que antes de 169.5), nunca
 // como error.
 //
-// AD_DURATION_INVALID (R2 de la tarea 169: duración 6–30 s de un anuncio,
-// distinta de los 60–120 s de propiedades): Stream ya capó el MÁXIMO en 30 s
-// (mint-ad-upload-url pide maxDurationSeconds:30, subtarea 169.4). El MÍNIMO
-// de 6 s solo se puede verificar contra `payload.duration`, la duración REAL
-// que reporta ESTE webhook al pasar a 'ready'. Fuera de [6,30] ⇒ mark_failed
-// con reason_code=AD_DURATION_INVALID en vez de mark_ready — el creativo va a
+// AD_DURATION_INVALID (R2 de la tarea 169, rango cambiado por #228): desde la
+// decisión de producto 2026-08-31 el anuncio acepta el MISMO rango que una
+// propiedad — 10–120 s (antes 6–30). Stream ya capa el MÁXIMO en 120 s
+// (mint-ad-upload-url pide maxDurationSeconds:120). El MÍNIMO de 10 s solo se
+// puede verificar contra `payload.duration`, la duración REAL que reporta
+// ESTE webhook al pasar a 'ready'. Fuera de [10,120] ⇒ mark_failed con
+// reason_code=AD_DURATION_INVALID en vez de mark_ready — el creativo va a
 // 'failed', NUNCA a 'ready', aunque Stream haya reportado state='ready'.
 // Duración AUSENTE en el payload 'ready' ⇒ también AD_DURATION_INVALID:
-// fail-closed, sin duration_seconds no hay forma de verificar el mínimo de 6 s
+// fail-closed, sin duration_seconds no hay forma de verificar el mínimo de 10 s
 // (mismo criterio fail-closed que el resto del repo: no se asume válido lo que
 // no se puede verificar).
 //
@@ -104,8 +105,8 @@ export interface VideoEventNotifier {
 // decisión de GREEN fuera del alcance de este RED.
 
 export const AD_DURATION_INVALID = "AD_DURATION_INVALID";
-export const AD_MIN_DURATION_SECONDS = 6;
-export const AD_MAX_DURATION_SECONDS = 30;
+export const AD_MIN_DURATION_SECONDS = 10;
+export const AD_MAX_DURATION_SECONDS = 120;
 
 export interface MarkAdCreativeReadyParams {
   cloudflare_uid: string;

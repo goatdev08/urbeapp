@@ -117,7 +117,7 @@ export default function AdStep1Screen() {
         <View style={styles.page_header}>
           <Text style={styles.page_title}>Video del anuncio</Text>
           <Text style={styles.page_subtitle}>
-            Sube un video vertical de 6 a 30 segundos.
+            Sube un video vertical de 10 segundos a 2 minutos.
           </Text>
         </View>
 

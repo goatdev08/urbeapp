@@ -78,3 +78,39 @@ Deno.test("188_la_ventana_de_processing_es_FINITA_nunca_infinita", () => {
     "processing debe tener una ventana finita y positiva",
   );
 });
+
+// ════════════════════════════════════════════════════════════════════════════
+// #228 — PARIDAD DE LÍMITES DE VIDEO (decisión de producto 2026-08-31): el
+// video de un anuncio acepta EXACTAMENTE los mismos parámetros que el de una
+// propiedad — mismo tope de duración en el mint (Cloudflare rechaza al
+// ingerir) y mismo techo de bytes por TUS. Mismo patrón que las ventanas de
+// arriba: literales independientes por EF (scope separado), paridad anclada
+// AQUÍ. La "diferencia 1" de 169.4 (30 vs 120) quedó eliminada.
+// ════════════════════════════════════════════════════════════════════════════
+
+import {
+  MAX_UPLOAD_SIZE_BYTES as PROPERTY_MAX_UPLOAD_SIZE_BYTES,
+  STREAM_MAX_DURATION_SECONDS as PROPERTY_STREAM_MAX_DURATION_SECONDS,
+} from "../mint-upload-url/types.ts";
+import {
+  MAX_UPLOAD_SIZE_BYTES as AD_MAX_UPLOAD_SIZE_BYTES,
+  STREAM_MAX_DURATION_SECONDS as AD_STREAM_MAX_DURATION_SECONDS,
+} from "../mint-ad-upload-url/types.ts";
+
+Deno.test("228_los_dos_dominios_usan_el_MISMO_tope_de_duracion_en_el_mint", () => {
+  assertEquals(
+    AD_STREAM_MAX_DURATION_SECONDS,
+    PROPERTY_STREAM_MAX_DURATION_SECONDS,
+    "STREAM_MAX_DURATION_SECONDS divergió entre mint-upload-url y mint-ad-upload-url. " +
+      "Desde #228 el tope es el MISMO por decisión de producto: si se cambia uno, " +
+      "cámbiese el otro o justifíquese aquí.",
+  );
+});
+
+Deno.test("228_los_dos_dominios_usan_el_MISMO_techo_de_bytes", () => {
+  assertEquals(
+    AD_MAX_UPLOAD_SIZE_BYTES,
+    PROPERTY_MAX_UPLOAD_SIZE_BYTES,
+    "MAX_UPLOAD_SIZE_BYTES divergió entre los dos dominios (#228: 500 MB en ambos).",
+  );
+});

@@ -4,7 +4,7 @@
  * REUSO deliberado (CLAUDE.md §0) del pipeline de
  * mobile/src/features/publish/hooks/useVideoUpload.ts: mismo patrón de
  * File(local_uri) (expo-file-system v56, getters síncronos .exists/.size),
- * mismo techo MAX_STREAM_UPLOAD_BYTES=200MB,
+ * mismo techo MAX_STREAM_UPLOAD_BYTES=500MB (#228, = MAX_VIDEO_SIZE_BYTES),
  * file.createUploadTask(uploadUrl, {onProgress, signal}).uploadAsync(), y el
  * mismo extract_error_code sobre FunctionsHttpError. Este hook NO depende de
  * ningún wizard/contexto (169.8/169.9 no existen todavía): expone
@@ -48,7 +48,19 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { File, UploadType } from 'expo-file-system';
 
-import { AD_DURATION_INVALID, validate_ad_duration_ms } from '../lib/validation';
+import {
+  AD_DURATION_INVALID,
+  AD_MAX_DURATION_SECONDS,
+  AD_MIN_DURATION_SECONDS,
+  validate_ad_duration_ms,
+} from '../lib/validation';
+import { MAX_VIDEO_SIZE_BYTES } from '@/features/publish/validation';
+import {
+  make_expo_chunk_sink,
+  make_file_chunk_source,
+  tus_upload,
+  type TusUploadResult,
+} from '@/features/publish/lib/tusUpload';
 import { extract_error_code } from '@/lib/supabase/edge-errors';
 import type { Database } from '@/types/database';
 
@@ -61,19 +73,22 @@ import type { Database } from '@/types/database';
  */
 type AdsSupabaseClient = SupabaseClient<Database>;
 
-// ponytail: mismo techo que el hermano (useVideoUpload) — direct upload
-// simple de Cloudflare Stream, sin tus. Ver ADR de 68.4 si algún día hace
-// falta resume/>200MB.
-export const MAX_STREAM_UPLOAD_BYTES = 200 * 1024 * 1024;
+// #228: mismo techo que el hermano (useVideoUpload) POR CONSTRUCCIÓN —
+// MAX_VIDEO_SIZE_BYTES (500 MB, publish/validation). El camino >200 MB va por
+// TUS resumable (protocol:'tus' del mint, calco de 192.2); el POST básico
+// queda para la respuesta sin protocol (EF vieja).
+export const MAX_STREAM_UPLOAD_BYTES = MAX_VIDEO_SIZE_BYTES;
 
 const SESSION_ERROR_MESSAGE = 'No hay sesión activa. Inicia sesión para publicar.';
 const FORBIDDEN_MESSAGE = 'No tienes permiso para publicar anuncios de esta organización.';
 const AD_UPLOAD_IN_PROGRESS_MESSAGE =
   'Ya tienes un anuncio subiéndose. Espera a que termine para subir otro.';
 const NEUTRAL_ERROR_MESSAGE = 'Error al subir el anuncio. Verifica tu conexión e intenta de nuevo.';
-const AD_DURATION_INVALID_MESSAGE = 'La duración del video debe ser de entre 6 y 30 segundos.';
+// #228: mensajes espejo del wizard de propiedades — mismos límites, misma voz.
+const AD_DURATION_INVALID_MESSAGE =
+  `El video debe durar entre ${AD_MIN_DURATION_SECONDS} y ${AD_MAX_DURATION_SECONDS} segundos (máx 2 min). Recórtalo o elige otro.`;
 const TRANSCODING_FAILED_MESSAGE = 'El anuncio no se pudo procesar. Intenta subir el video de nuevo.';
-const SIZE_ERROR_MESSAGE = 'El video supera el máximo permitido (200 MB). Intenta con un video más ligero.';
+const SIZE_ERROR_MESSAGE = `El video supera el máximo permitido (${Math.round(MAX_STREAM_UPLOAD_BYTES / (1024 * 1024))} MB). Intenta con un video más ligero.`;
 
 // Defaults del poll (D1) — acotado, mismo criterio que verify_attempts/
 // verify_interval_ms del hermano (#103.2).
@@ -110,6 +125,17 @@ export interface UseAdUploadDeps {
   supabase?: AdsSupabaseClient;
   /** Consulta el estado real del creativo por su cloudflare_uid — colaborador inyectable para tests. */
   check_ad_creative_status?: (cloudflare_uid: string) => Promise<AdCreativeCheckStatus>;
+  /**
+   * #228 — subida TUS (rama `protocol:'tus'` de mint-ad-upload-url, calco de
+   * 192.2). Inyectable para tests; por defecto `tus_upload` real sobre
+   * expo-file-system (publish/lib/tusUpload — REUSO, CLAUDE.md §0).
+   */
+  tus_uploader?: (args: {
+    url: string;
+    file: File;
+    signal: AbortSignal;
+    on_progress: (fraction: number) => void;
+  }) => Promise<TusUploadResult>;
   /** Intentos máximos de poll antes de rendirse con un mensaje neutro. */
   poll_attempts?: number;
   /** Espera entre intentos de poll, en ms (nunca antes del primer intento). */
@@ -158,6 +184,22 @@ function map_mint_error_code(code: string | undefined): string {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** #228 — default real de la rama TUS: fuente por FileHandle + sink por createUploadTask (PATCH). Mismo default que el hermano. */
+function default_tus_uploader(args: {
+  url: string;
+  file: File;
+  signal: AbortSignal;
+  on_progress: (fraction: number) => void;
+}): Promise<TusUploadResult> {
+  return tus_upload({
+    url: args.url,
+    source: make_file_chunk_source(args.file),
+    sink: make_expo_chunk_sink(),
+    signal: args.signal,
+    on_progress: args.on_progress,
+  });
 }
 
 /**
@@ -275,6 +317,7 @@ export function useAdUpload(deps?: UseAdUploadDeps): UseAdUploadResult {
   const poll_interval_ms = deps?.poll_interval_ms ?? DEFAULT_POLL_INTERVAL_MS;
   const on_status_change = deps?.on_status_change;
   const on_progress = deps?.on_progress;
+  const tus_uploader = deps?.tus_uploader ?? default_tus_uploader;
 
   const status_ref = useRef<AdUploadStatus>('idle');
   const progress_ref = useRef<number>(0);
@@ -381,14 +424,20 @@ export function useAdUpload(deps?: UseAdUploadDeps): UseAdUploadResult {
       }
 
       // Paso 1 — mint-ad-upload-url: crea el upload slot en Cloudflare Stream
-      // scoped por organización (169.4) y devuelve { uploadUrl, uid }.
+      // scoped por organización (169.4) y devuelve { uploadUrl, uid, protocol }.
+      // #228: `size_bytes` → la EF crea el upload por TUS (Upload-Length
+      // exacto) y responde protocol:'tus'. Una EF vieja lo ignora y responde
+      // sin protocol → rama básica (orden de deploy EF/OTA independiente,
+      // mismo criterio que 192.2 en el hermano).
       let upload_url: string;
       let stream_uid: string;
+      let protocol: 'tus' | 'basic';
       try {
         const { data, error: mint_error } = await supabase_client.functions.invoke<{
           uploadUrl: string;
           uid: string;
-        }>('mint-ad-upload-url', { body: {} });
+          protocol?: 'tus' | 'basic';
+        }>('mint-ad-upload-url', { body: { size_bytes: file.size } });
         if (!is_current()) return; // cancelado/superado mientras minteaba
 
         if (mint_error || !data?.uploadUrl || !data?.uid) {
@@ -399,6 +448,7 @@ export function useAdUpload(deps?: UseAdUploadDeps): UseAdUploadResult {
         }
         upload_url = data.uploadUrl;
         stream_uid = data.uid;
+        protocol = data.protocol === 'tus' ? 'tus' : 'basic';
       } catch {
         if (!is_current()) return;
         set_status('failed');
@@ -406,41 +456,64 @@ export function useAdUpload(deps?: UseAdUploadDeps): UseAdUploadResult {
         return;
       }
 
-      // Paso 2 — subida por streaming al Direct Creator Upload de Cloudflare
-      // Stream (mismo POST multipart/form-data que el hermano).
-      const task = file.createUploadTask(upload_url, {
-        httpMethod: 'POST',
-        uploadType: UploadType.MULTIPART,
-        fieldName: 'file',
-        signal: controller.signal,
-        onProgress: ({ bytesSent, totalBytes }) => {
-          set_progress(totalBytes > 0 ? Math.min(bytesSent / totalBytes, 0.99) : 0);
-        },
-      });
-
+      // Paso 2 — subida del binario a Stream. Dos ramas según `protocol`
+      // (#228, calco de 192.2):
+      //   'tus'   → PATCH resumable en chunks de 16 MiB (publish/lib/tusUpload):
+      //             único camino >200 MB; el progreso llega por chunk acumulado.
+      //   'basic' → POST multipart/form-data de siempre (EF vieja o fallback).
+      //
       // #103 (lección heredada del hermano, tarea #103 + subtarea 103.2):
-      // uploadAsync() puede LANZAR o resolver no-2xx aunque el binario SÍ
-      // haya llegado completo a Stream (falso negativo leyendo la respuesta
-      // HTTP). Copiar el pipeline sin copiar el arreglo hereda el bug — y
-      // aquí es peor: mint-ad-upload-url NO tiene ventana de expiración para
-      // 'processing' (types.ts — solo 'uploading' tiene stale_before), así
-      // que un falso negativo tratado como fallo real dejaría al creativo
-      // huérfano y bloquearía a la organización con 409 AD_UPLOAD_IN_PROGRESS
-      // hasta liberar la fila a mano. Por eso `stream_upload_ok` NO decide un
+      // el binario puede LANZAR o resolver no-2xx aunque SÍ haya llegado
+      // completo a Stream (falso negativo leyendo la respuesta HTTP). Copiar
+      // el pipeline sin copiar el arreglo hereda el bug — y aquí es peor:
+      // mint-ad-upload-url NO tiene ventana de expiración para 'processing'
+      // (types.ts — solo 'uploading' tiene stale_before), así que un falso
+      // negativo tratado como fallo real dejaría al creativo huérfano y
+      // bloquearía a la organización con 409 AD_UPLOAD_IN_PROGRESS hasta
+      // liberar la fila a mano. Por eso `stream_upload_ok` NO decide un
       // 'failed' aquí — solo se usa para decidir si hace falta el warning; el
-      // 2xx feliz Y el no-2xx/excepción CONFLUYEN en el MISMO
-      // poll_until_resolved de abajo (D1): verifica el estado real del
-      // creativo antes de declarar 'failed'.
+      // éxito Y el no-2xx/excepción CONFLUYEN en el MISMO poll_until_resolved
+      // de abajo (D1): verifica el estado real del creativo antes de declarar
+      // 'failed'. DIFERENCIA deliberada con el hermano: allí el éxito TUS
+      // declara 'processing' directo; aquí AMBAS ramas pasan por el poll.
       let stream_upload_ok: boolean;
-      try {
-        const { status } = await task.uploadAsync();
-        stream_upload_ok = status >= 200 && status < 300;
-      } catch (err) {
-        if (!is_current()) return; // abortado por cancel()/supersede/unmount — silencio
-        console.warn('[useAdUpload] uploadAsync failed, verificando estado real antes de fallar (#103):', err);
-        stream_upload_ok = false;
+      if (protocol === 'tus') {
+        let tus_result: TusUploadResult;
+        try {
+          tus_result = await tus_uploader({
+            url: upload_url,
+            file,
+            signal: controller.signal,
+            on_progress: (fraction) => set_progress(Math.min(fraction, 0.99)),
+          });
+        } catch (err) {
+          if (!is_current()) return; // abortado por cancel()/supersede/unmount — silencio
+          console.warn('[useAdUpload] tus_upload lanzó, verificando estado real antes de fallar (#103):', err);
+          tus_result = { ok: false, reason: 'failed' };
+        }
+        if (!is_current()) return; // cancelado/superado mientras subía
+        if (!tus_result.ok && tus_result.reason === 'aborted') return; // silencio (cancel)
+        stream_upload_ok = tus_result.ok;
+      } else {
+        const task = file.createUploadTask(upload_url, {
+          httpMethod: 'POST',
+          uploadType: UploadType.MULTIPART,
+          fieldName: 'file',
+          signal: controller.signal,
+          onProgress: ({ bytesSent, totalBytes }) => {
+            set_progress(totalBytes > 0 ? Math.min(bytesSent / totalBytes, 0.99) : 0);
+          },
+        });
+        try {
+          const { status } = await task.uploadAsync();
+          stream_upload_ok = status >= 200 && status < 300;
+        } catch (err) {
+          if (!is_current()) return; // abortado por cancel()/supersede/unmount — silencio
+          console.warn('[useAdUpload] uploadAsync failed, verificando estado real antes de fallar (#103):', err);
+          stream_upload_ok = false;
+        }
+        if (!is_current()) return; // cancelado/superado mientras subía
       }
-      if (!is_current()) return; // cancelado/superado mientras subía
 
       if (!stream_upload_ok) {
         console.warn('[useAdUpload] binario no confirmó 2xx, verificando estado real antes de fallar (#103)');
@@ -460,7 +533,7 @@ export function useAdUpload(deps?: UseAdUploadDeps): UseAdUploadResult {
       if (is_current()) abort_ref.current = null;
     },
 
-    [supabase_client, check_ad_creative_status, poll_attempts, poll_interval_ms, on_status_change, on_progress],
+    [supabase_client, check_ad_creative_status, poll_attempts, poll_interval_ms, on_status_change, on_progress, tus_uploader],
   );
 
   return useMemo(

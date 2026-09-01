@@ -8,10 +8,12 @@
 // arreglo heredaría el 409 permanente que #103 tuvo que resolver — solo que aquí
 // bloquearía a una ORGANIZACIÓN entera, no a un agente:
 //
-//   DIFERENCIA 1 — duración: STREAM_MAX_DURATION_SECONDS = 30 (propiedades usa 120).
-//     El MÍNIMO de 6 s NO lo impone esta EF (Stream no lo puede validar en el mint) —
-//     se valida al pasar a 'ready' (169.5, webhook) y al elegir el archivo en el
-//     cliente (169.6). Esta EF NUNCA rechaza por duración corta.
+//   (EX-)DIFERENCIA 1 — ELIMINADA por #228 (decisión de producto 2026-08-31):
+//     STREAM_MAX_DURATION_SECONDS = 120, el MISMO tope que propiedades (paridad
+//     anclada en upload_window_parity.test.ts). El MÍNIMO de 10 s NO lo impone
+//     esta EF (Stream no lo puede validar en el mint) — se valida al pasar a
+//     'ready' (169.5, webhook) y al elegir el archivo en el cliente (169.6).
+//     Esta EF NUNCA rechaza por duración corta.
 //
 //   DIFERENCIA 2 — concurrencia SCOPED POR ORGANIZACIÓN, tabla PROPIA: el 409 de
 //     mint-upload-url (ActiveUploadChecker) cuenta sobre `property_videos`, keyeado
@@ -54,7 +56,7 @@
 //      La respuesta JAMÁS incluye credenciales de Stream (account id, api token) ni
 //      ningún otro campo que Stream devuelva de más.
 
-export const STREAM_MAX_DURATION_SECONDS = 30;
+export const STREAM_MAX_DURATION_SECONDS = 120;
 export const STREAM_REQUIRE_SIGNED_URLS = true;
 
 // ── STALE_UPLOAD_MS — ventana de expiración del reaper (bug heredado de #103) ──
@@ -167,11 +169,29 @@ export interface StreamDirectUploadResult {
   uid: string;
 }
 
+// #228 — paridad con propiedades: mismo contrato TUS que
+// mint-upload-url/types.ts (192.1). `uploadLength` = size_bytes exacto del
+// binario (Upload-Length); la respuesta trae la URL de PATCH del cliente y el
+// uid. El adapter real ya existe (_shared/clients.ts::create_tus_upload) — se
+// comparte con propiedades, aquí solo se declara el contrato.
+export interface StreamTusUploadParams extends StreamDirectUploadParams {
+  uploadLength: number;
+}
+
 export interface StreamUploadCreator {
   create_direct_upload(
     params: StreamDirectUploadParams,
   ): Promise<StreamDirectUploadResult>;
+  create_tus_upload(
+    params: StreamTusUploadParams,
+  ): Promise<StreamDirectUploadResult>;
 }
+
+// ── MAX_UPLOAD_SIZE_BYTES — techo del binario por TUS (#228, paridad 192.1) ──
+// MISMO techo que mint-upload-url/types.ts:156 (500 MB). Literales
+// independientes a propósito (mismo criterio que STALE_*_MS); la paridad la
+// ancla upload_window_parity.test.ts.
+export const MAX_UPLOAD_SIZE_BYTES = 524288000;
 
 // ── AdCreativeRegistrar — inserta la fila 'uploading' en ad_creatives ───────────
 // Lanza (throw) si el insert falla — el handler lo traduce a 500 INTERNAL_ERROR.
@@ -199,10 +219,13 @@ export interface MintAdUploadUrlDeps {
 }
 
 // ── Shape de respuesta 200 ─────────────────────────────────────────────────────
-// EXACTAMENTE estos dos campos — nunca account id / api token / cualquier otro
-// campo que Stream devuelva de más (ver test dedicado).
+// EXACTAMENTE estos tres campos — nunca account id / api token / cualquier otro
+// campo que Stream devuelva de más (ver test dedicado). `protocol` (#228,
+// paridad 192.1) le dice al cliente cómo subir; los builds viejos lo ignoran
+// (siempre reciben 'basic' porque no mandan size_bytes).
 
 export interface MintAdUploadUrlResponse {
   uploadUrl: string;
   uid: string;
+  protocol: "basic" | "tus";
 }

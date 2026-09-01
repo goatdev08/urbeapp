@@ -5,8 +5,9 @@
  *
  * Contrato fijado por el test-author (169.6):
  *
- * 1) Duración — validate_ad_duration_ms. Rango 6–30 s INCLUSIVE, MISMO
- *    código AD_DURATION_INVALID que usa el servidor
+ * 1) Duración — validate_ad_duration_ms. Rango 10–120 s INCLUSIVE (#228: el
+ *    MISMO de propiedades, importado de publish/validation — antes 6–30),
+ *    MISMO código AD_DURATION_INVALID que usa el servidor
  *    (supabase/functions/stream-webhook/types.ts, subtarea 169.5) — mismo
  *    problema, mismo mensaje para el usuario sin importar dónde se detecte.
  *    🔴 Aprendizaje directo de 169.5: el servidor valida la duración CRUDA
@@ -60,6 +61,11 @@
  *    NACIONAL". Validar esa lista como error rompería el modelo de venta.
  */
 
+import {
+  MAX_VIDEO_DURATION_SECONDS,
+  MIN_VIDEO_DURATION_SECONDS,
+} from '@/features/publish/validation';
+
 // ---------------------------------------------------------------------------
 // Shape común — código de error explícito (no solo boolean) para que la UI
 // mapee código→mensaje en un solo lugar y el guardian compare códigos
@@ -79,8 +85,13 @@ export interface AdValidationResult {
 // 1) Duración
 // ---------------------------------------------------------------------------
 
-export const AD_MIN_DURATION_SECONDS = 6;
-export const AD_MAX_DURATION_SECONDS = 30;
+// #228 (decisión de producto 2026-08-31): el anuncio acepta EXACTAMENTE el
+// mismo rango que una propiedad — paridad POR CONSTRUCCIÓN, no por espejo a
+// mano: si publish/validation.ts cambia su rango, este lo sigue solo. El
+// import es seguro: publish/validation.ts es un módulo puro (su único import
+// es `import type`, borrado en runtime).
+export const AD_MIN_DURATION_SECONDS = MIN_VIDEO_DURATION_SECONDS;
+export const AD_MAX_DURATION_SECONDS = MAX_VIDEO_DURATION_SECONDS;
 export const AD_DURATION_INVALID = 'AD_DURATION_INVALID';
 
 export function validate_ad_duration_ms(
