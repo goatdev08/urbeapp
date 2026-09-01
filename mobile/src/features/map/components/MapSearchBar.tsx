@@ -15,7 +15,7 @@
  */
 
 import React from 'react';
-import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { MagnifyingGlass, SlidersHorizontal } from 'phosphor-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -33,6 +33,12 @@ interface MapSearchBarProps {
   on_filter_press?: () => void;
   /** Conteo de filtros activos (#12.7) — muestra un badge sobre el ícono cuando > 0. */
   active_filter_count?: number;
+  /**
+   * true mientras hay una búsqueda de lugares en vuelo (#161) — spinner
+   * discreto junto al ícono de filtros. El texto/error del resultado vive en
+   * el dropdown (PlaceSearch), no aquí.
+   */
+  loading?: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -44,6 +50,7 @@ export function MapSearchBar({
   on_change,
   on_filter_press,
   active_filter_count = 0,
+  loading = false,
 }: MapSearchBarProps) {
   const insets = useSafeAreaInsets();
 
@@ -76,6 +83,11 @@ export function MapSearchBar({
           autoCorrect={false}
           clearButtonMode="while-editing"
         />
+
+        {/* Spinner discreto (#161) — búsqueda de lugares en vuelo. */}
+        {loading && (
+          <ActivityIndicator size="small" color={colors.gray_2} style={styles.loading_spinner} />
+        )}
 
         {/*
          * Ícono de filtros — wired en #12.1: ya no es puramente visual.
@@ -160,6 +172,10 @@ const styles = StyleSheet.create({
     margin: 0,
   },
 
+  /** Spinner de búsqueda (#161) — pequeño margen para no pegarse al ícono. */
+  loading_spinner: {
+    marginRight: spacing.s_4,
+  },
   /** Envuelve el ícono de filtros para posicionar el badge de conteo (#12.7). */
   filter_icon_wrap: {
     position: 'relative',

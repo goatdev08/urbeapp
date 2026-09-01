@@ -31,6 +31,7 @@
  * - (EC-H6) query_corta_vacia_sin_llamar
  * - (EC-H7) error_de_lib_expone_message
  * - (EC-H8) clear_resetea_y_cancela_debounce
+ * - (EC-H9) coords_opcionales_se_pasan_a_la_lib (#232)
  */
 
 import { act, renderHook } from '@testing-library/react-native';
@@ -196,5 +197,14 @@ describe('usePlaceSearch — autocomplete del mapa (#157)', () => {
 
     await advance(300);                              // el timer cancelado NO dispara
     expect(mock_search_places).toHaveBeenCalledTimes(1);
+  });
+
+  it('(EC-H9) coords_opcionales_se_pasan_a_la_lib: 2do argumento {lat,lng} → 3er arg de search_places', async () => {
+    const { result } = await renderHook(() => usePlaceSearch(undefined, { lat: 20.67, lng: -103.35 }));
+
+    await act(async () => result.current.set_query('provi'));
+    await advance(300);
+
+    expect(mock_search_places).toHaveBeenCalledWith('provi', undefined, { lat: 20.67, lng: -103.35 });
   });
 });

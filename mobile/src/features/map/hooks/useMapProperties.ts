@@ -26,6 +26,7 @@ import { useLocation } from '@/features/location/LocationProvider';
 import type { FilterState } from '@/features/search/types';
 
 import { fetchMapProperties, type MapPropertiesDeps } from '../lib/mapProperties';
+import type { PlaceBBox } from '../lib/placeSearch';
 import type { MapProperty } from '../types';
 
 export interface UseMapPropertiesState {
@@ -43,6 +44,9 @@ export function useMapProperties(
   // decisión D6). Al cambiar (seleccionar/limpiar), fetch_data cambia de
   // identidad y el efecto refetchea — mismo mecanismo que `filters`.
   neighborhood_id?: string | null,
+  // #232: municipio seleccionado en el buscador unificado — mismo mecanismo
+  // que neighborhood_id, pasa directo a fetchMapProperties (4to parámetro).
+  municipality?: { id: string; bbox: PlaceBBox } | null,
 ): UseMapPropertiesState {
   const { coords } = useLocation();
   const [data, set_data] = useState<MapProperty[]>([]);
@@ -62,14 +66,14 @@ export function useMapProperties(
     set_loading(true);
     set_error(null);
     try {
-      const result = await fetchMapProperties(build_deps(), filters, neighborhood_id);
+      const result = await fetchMapProperties(build_deps(), filters, neighborhood_id, municipality);
       set_data(result);
     } catch (e) {
       set_error(e instanceof Error ? e.message : 'Error al cargar propiedades del mapa');
     } finally {
       set_loading(false);
     }
-  }, [filters, build_deps, neighborhood_id]);
+  }, [filters, build_deps, neighborhood_id, municipality]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-on-mount: dispara la carga async (fetch_data maneja su propio loading/error).
