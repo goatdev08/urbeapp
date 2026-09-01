@@ -51,17 +51,24 @@
 --           'reject_agency' que escribe el trigger (esa es la del cambio de
 --           estado y no admite reason). Solo en la rama de rechazo: aprobar no
 --           tiene motivo que guardar, así que no se escribe fila extra.
---           LIMITACIÓN CONOCIDA anclada abajo (REJ5): el espejo
---           'agency_rejected' de #219.2 NO lleva el motivo — el owner ve "fue
---           rechazada" sin el porqué. Cerrarlo exige agencies.rejection_reason
---           (cambio de esquema) o tocar el trigger; se reporta, no se hace aquí.
+--           🔴 ACTUALIZADO POR #234: la limitación que REJ5 anclaba —el espejo
+--           'agency_rejected' llegaba SIN el motivo— quedó CERRADA. La
+--           migración 20260903100001 agregó public.agencies.rejection_reason,
+--           esta RPC la puebla en el MISMO update (y la deja en null al
+--           aprobar) y el trigger mete el motivo en el `body` del espejo y en
+--           `data.rejection_reason`. La fila EXTRA de admin_actions descrita
+--           arriba SE MANTIENE: es la historia append-only de quién rechazó y
+--           por qué; la columna es el estado vigente. REJ5 quedó invertido.
+--           Contrato completo del motivo y sus edge cases: suite 85.
 --
 -- Verificado en el RED (la función aún no existía):
 --   Failed 23/27 subtests · Failed tests: 1-2, 4-8, 10-24, 26
--- Los 4 que YA pasaban (ADM3, NF3, REJ5, SELF1) son COINCIDE, no invariantes:
--- pasan porque NADA ocurrió (la agencia sigue pending_approval, no hay espejo
--- que pueda traer motivo, el admin no recibió aviso). El guardian debe
+-- Los 4 que YA pasaban (ADM3, NF3, REJ5, SELF1) eran COINCIDE, no invariantes:
+-- pasaban porque NADA ocurrió (la agencia seguía pending_approval, no había
+-- espejo que pudiera traer motivo, el admin no recibió aviso). El guardian debe
 -- revalidar que siguen verdes tras el GREEN por la razón CORRECTA.
+-- (#234 volvió a poner REJ5 en rojo a propósito antes de su propio GREEN: ahora
+-- exige el motivo en el body, y sin la migración 20260903100001 falla.)
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
@@ -252,13 +259,17 @@ select is(
     where user_id = '00000000-0000-0000-0000-000000084003' and type = 'agency_rejected'),
   1, 'REJ4_espejo_de_rechazo_al_solicitante'
 );
--- [LIMITACIÓN CONOCIDA, anclada a propósito] el espejo NO lleva el motivo:
--- agencies no tiene columna para él y esta migración no cambia el esquema.
--- Si algún día se agrega agencies.rejection_reason, este assert DEBE cambiar.
-select ok(
-  (select data ->> 'rejection_reason' from public.notifications
-    where user_id = '00000000-0000-0000-0000-000000084003' and type = 'agency_rejected') is null,
-  'REJ5_limitacion_el_espejo_no_lleva_el_motivo_ver_D_REASON'
+-- 🔴 INVERTIDO por la tarea #234 (derivada de esta subtarea). Este assert
+-- anclaba la limitación «el espejo NO lleva el motivo» y decía: «si algún día
+-- se agrega agencies.rejection_reason, este assert DEBE cambiar». Se agregó
+-- (20260903100001) y cambió. El motivo ahora viaja en el `body` —lo único que
+-- NotificationCard renderiza— y en `data.rejection_reason` (forma de
+-- ad_rejected). Contrato completo y edge cases: suite 85.
+select is(
+  (select body from public.notifications
+    where user_id = '00000000-0000-0000-0000-000000084003' and type = 'agency_rejected'),
+  'Tu inmobiliaria "Agencia 84 Dos" fue rechazada. Motivo: Acta constitutiva ilegible',
+  'REJ5_el_espejo_LLEVA_el_motivo_en_el_body_234'
 );
 
 -- ════════════════════════════════════════════════════════════════════════════
