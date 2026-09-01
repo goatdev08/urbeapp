@@ -13,7 +13,7 @@
  * REUSO deliberado (CLAUDE.md §0) del pipeline de
  * mobile/src/features/publish/hooks/useVideoUpload.ts: mismo patrón de
  * File(local_uri) (expo-file-system v56, getters síncronos .exists/.size),
- * mismo techo MAX_STREAM_UPLOAD_BYTES=200MB, mismo
+ * mismo techo MAX_STREAM_UPLOAD_BYTES=500MB (#228, antes 200), mismo
  * file.createUploadTask(uploadUrl, {onProgress, signal}).uploadAsync(), mismo
  * extract_error_code sobre FunctionsHttpError. Sin PublishFormContext: este
  * hook NO depende de ningún wizard/contexto (169.8/169.9 no existen
@@ -88,10 +88,10 @@
  *   duración se valida ANTES de tocar el filesystem (D2).
  * - (EC4) duracion_null_fail_closed_no_invoca_mint: mismo criterio fail-
  *   closed que validate_ad_duration_ms (169.6).
- * - (EC5) duracion_boundary_minimo_5999ms_invalida_6000ms_valida.
- * - (EC6) duracion_boundary_maximo_30000ms_valida_30001ms_invalida.
+ * - (EC5) duracion_boundary_minimo_9999ms_invalida_10000ms_valida.
+ * - (EC6) duracion_boundary_maximo_120000ms_valida_120001ms_invalida.
  * - (EC7) archivo_no_existe_no_invoca_mint.
- * - (EC8) excede_200mb_no_invoca_mint.
+ * - (EC8) excede_500mb_no_invoca_mint.
  *
  * ### Ramas de mint-ad-upload-url (D3, no obvias)
  * - (EC9) mint_401_unauthenticated_mensaje_de_sesion.
@@ -193,15 +193,15 @@ import { useAdUpload } from '../hooks/useAdUpload';
 const TEST_LOCAL_URI = 'file:///data/user/0/com.urbea/cache/ad-video.mp4';
 const STREAM_UID = 'stream-uid-ad-mint-test-abc123';
 const SIGNED_UPLOAD_URL = 'https://upload.videodelivery.net/tus-session/ad-abc123';
-const MAX_STREAM_UPLOAD_BYTES = 200 * 1024 * 1024; // 200 MB — mismo techo que el hermano.
-const VALID_DURATION_MS = 15000; // 15 s, cómodamente dentro de [6,30] s.
+const MAX_STREAM_UPLOAD_BYTES = 524288000; // 500 MB — mismo techo que propiedades (#228, paridad 192.2).
+const VALID_DURATION_MS = 15000; // 15 s, cómodamente dentro de [10,120] s.
 
 const SESSION_ERROR_MESSAGE = 'No hay sesión activa. Inicia sesión para publicar.';
 const FORBIDDEN_MESSAGE = 'No tienes permiso para publicar anuncios de esta organización.';
 const AD_UPLOAD_IN_PROGRESS_MESSAGE =
   'Ya tienes un anuncio subiéndose. Espera a que termine para subir otro.';
 const NEUTRAL_ERROR_MESSAGE = 'Error al subir el anuncio. Verifica tu conexión e intenta de nuevo.';
-const AD_DURATION_INVALID_MESSAGE = 'La duración del video debe ser de entre 6 y 30 segundos.';
+const AD_DURATION_INVALID_MESSAGE = 'El video debe durar entre 10 y 120 segundos (máx 2 min). Recórtalo o elige otro.';
 const TRANSCODING_FAILED_MESSAGE = 'El anuncio no se pudo procesar. Intenta subir el video de nuevo.';
 
 type MockUploadTaskResult = { status: number; body?: string; headers?: Record<string, string> };
@@ -382,7 +382,7 @@ describe('useAdUpload', () => {
     const { result } = await renderHook(() => useAdUpload({ supabase: mock_supabase as never }));
 
     await act(async () => {
-      await result.current.upload({ local_uri: TEST_LOCAL_URI, duration_ms: 3000 }); // 3s, < 6s
+      await result.current.upload({ local_uri: TEST_LOCAL_URI, duration_ms: 3000 }); // 3s, < 10s
     });
 
     expect(result.current.status).toBe('failed');
@@ -430,7 +430,7 @@ describe('useAdUpload', () => {
     const { result } = await renderHook(() => useAdUpload({ supabase: mock_supabase as never }));
 
     await act(async () => {
-      await result.current.upload({ local_uri: TEST_LOCAL_URI, duration_ms: 40_000 });
+      await result.current.upload({ local_uri: TEST_LOCAL_URI, duration_ms: 130_000 });
     });
 
     expect(result.current.status).toBe('failed');
@@ -438,15 +438,15 @@ describe('useAdUpload', () => {
     expect(mock_supabase._mock_invoke).not.toHaveBeenCalled();
   });
 
-  // ── (EC5) Boundary del mínimo: 5999ms inválido, 6000ms válido ────────────
+  // ── (EC5) Boundary del mínimo: 9999ms inválido, 10000ms válido ────────────
 
-  it('(EC5) duracion_boundary_minimo_5999ms_invalida_6000ms_valida', async () => {
+  it('(EC5) duracion_boundary_minimo_9999ms_invalida_10000ms_valida', async () => {
     const mock_supabase_below = make_mock_supabase({});
     const { result: result_below } = await renderHook(() =>
       useAdUpload({ supabase: mock_supabase_below as never }),
     );
     await act(async () => {
-      await result_below.current.upload({ local_uri: TEST_LOCAL_URI, duration_ms: 5999 });
+      await result_below.current.upload({ local_uri: TEST_LOCAL_URI, duration_ms: 9999 });
     });
     expect(result_below.current.status).toBe('failed');
     expect(result_below.current.error).toBe(AD_DURATION_INVALID_MESSAGE);
@@ -464,14 +464,14 @@ describe('useAdUpload', () => {
       }),
     );
     await act(async () => {
-      await result_at.current.upload({ local_uri: TEST_LOCAL_URI, duration_ms: 6000 });
+      await result_at.current.upload({ local_uri: TEST_LOCAL_URI, duration_ms: 10000 });
     });
     expect(mock_supabase_at._mock_invoke).toHaveBeenCalledTimes(1);
   });
 
-  // ── (EC6) Boundary del máximo: 30000ms válido, 30001ms inválido ──────────
+  // ── (EC6) Boundary del máximo: 120000ms válido, 120001ms inválido ──────────
 
-  it('(EC6) duracion_boundary_maximo_30000ms_valida_30001ms_invalida', async () => {
+  it('(EC6) duracion_boundary_maximo_120000ms_valida_120001ms_invalida', async () => {
     // Mismo motivo que EC5: checker inyectado para no caer al adapter por
     // defecto sin .from() mockeado.
     const mock_supabase_at = make_mock_supabase({});
@@ -482,7 +482,7 @@ describe('useAdUpload', () => {
       }),
     );
     await act(async () => {
-      await result_at.current.upload({ local_uri: TEST_LOCAL_URI, duration_ms: 30000 });
+      await result_at.current.upload({ local_uri: TEST_LOCAL_URI, duration_ms: 120000 });
     });
     expect(mock_supabase_at._mock_invoke).toHaveBeenCalledTimes(1);
 
@@ -491,7 +491,7 @@ describe('useAdUpload', () => {
       useAdUpload({ supabase: mock_supabase_over as never }),
     );
     await act(async () => {
-      await result_over.current.upload({ local_uri: TEST_LOCAL_URI, duration_ms: 30001 });
+      await result_over.current.upload({ local_uri: TEST_LOCAL_URI, duration_ms: 120001 });
     });
     expect(result_over.current.status).toBe('failed');
     expect(result_over.current.error).toBe(AD_DURATION_INVALID_MESSAGE);
@@ -515,9 +515,9 @@ describe('useAdUpload', () => {
     expect(mock_supabase._mock_invoke).not.toHaveBeenCalled();
   });
 
-  // ── (EC8) Techo de 200 MB ──────────────────────────────────────────────
+  // ── (EC8) Techo de 500 MB (#228) ──────────────────────────────────────────────
 
-  it('(EC8) excede_200mb_no_invoca_mint', async () => {
+  it('(EC8) excede_500mb_no_invoca_mint', async () => {
     const file_instance = make_mock_file({ size: MAX_STREAM_UPLOAD_BYTES + 1 });
     MockFile.mockImplementation(() => file_instance as never);
     const mock_supabase = make_mock_supabase({});
@@ -529,7 +529,7 @@ describe('useAdUpload', () => {
     });
 
     expect(result.current.status).toBe('failed');
-    expect(result.current.error).toMatch(/200/);
+    expect(result.current.error).toMatch(/500/);
     expect(mock_supabase._mock_invoke).not.toHaveBeenCalled();
   });
 
@@ -1525,5 +1525,128 @@ describe('useAdUpload', () => {
     expect(statuses).toEqual(['uploading', 'failed']);
     expect(result.current.status).toBe('failed');
     expect(result.current.error).toBe(AD_UPLOAD_IN_PROGRESS_MESSAGE);
+  });
+
+  // ── #228 — rama TUS (paridad con useVideoUpload/192.2) ───────────────────
+  // El hook NO implementa el protocolo (vive en publish/lib/tusUpload.ts,
+  // probado aparte): recibe `tus_uploader` inyectable y decide la RAMA por
+  // `data.protocol` del mint. DIFERENCIA con el hermano: aquí el desenlace
+  // del binario (ok O fallo) CONFLUYE en el MISMO poll de ad_creatives (D1) —
+  // nunca un 'ready' directo.
+
+  describe('#228 rama TUS (protocol:"tus")', () => {
+    const TUS_URL = 'https://upload.cloudflarestream.com/tus/ad-abc?tusv2=true';
+
+    it('(EC34) mint_recibe_size_bytes_del_archivo_en_el_body', async () => {
+      const file_instance = make_mock_file({ size: 42 * 1024 * 1024 });
+      MockFile.mockImplementation(() => file_instance as never);
+      const mock_supabase = make_mock_supabase({});
+      const { result } = await renderHook(() =>
+        useAdUpload({
+          supabase: mock_supabase as never,
+          check_ad_creative_status: jest.fn().mockResolvedValue('ready'),
+          poll_attempts: 2,
+          poll_interval_ms: 0,
+        }),
+      );
+
+      await act(async () => {
+        await result.current.upload({ local_uri: TEST_LOCAL_URI, duration_ms: VALID_DURATION_MS });
+      });
+
+      expect(mock_supabase._mock_invoke).toHaveBeenCalledWith('mint-ad-upload-url', {
+        body: { size_bytes: 42 * 1024 * 1024 },
+      });
+    });
+
+    it('(EC35) protocol_tus_usa_tus_uploader_y_NO_createUploadTask_y_confluye_en_el_poll_hasta_ready', async () => {
+      const file_instance = make_mock_file({ size: 300 * 1024 * 1024 });
+      MockFile.mockImplementation(() => file_instance as never);
+      const mock_supabase = make_mock_supabase({
+        invoke_result: { data: { uploadUrl: TUS_URL, uid: STREAM_UID, protocol: 'tus' }, error: null },
+      });
+      const tus_uploader = jest.fn().mockResolvedValue({ ok: true });
+      const mock_checker = jest.fn().mockResolvedValue('ready');
+
+      const { result } = await renderHook(() =>
+        useAdUpload({
+          supabase: mock_supabase as never,
+          tus_uploader,
+          check_ad_creative_status: mock_checker,
+          poll_attempts: 3,
+          poll_interval_ms: 0,
+        }),
+      );
+
+      await act(async () => {
+        await result.current.upload({ local_uri: TEST_LOCAL_URI, duration_ms: VALID_DURATION_MS });
+      });
+
+      expect(tus_uploader).toHaveBeenCalledTimes(1);
+      const args = tus_uploader.mock.calls[0][0];
+      expect(args.url).toBe(TUS_URL);
+      expect(args.file).toBe(file_instance);
+      expect(args.signal).toBeInstanceOf(AbortSignal);
+      expect(typeof args.on_progress).toBe('function');
+      expect(file_instance.createUploadTask).not.toHaveBeenCalled();
+      // D1 intacto: el éxito TUS NO declara ready por su cuenta — pasa por el poll.
+      expect(mock_checker).toHaveBeenCalledWith(STREAM_UID);
+      expect(result.current.status).toBe('ready');
+      expect(result.current.progress).toBe(1);
+      expect(result.current.cloudflare_uid).toBe(STREAM_UID);
+    });
+
+    it('(EC36) tus_fallido_no_declara_failed_sin_verificar_confluye_en_el_mismo_poll (#103 heredado)', async () => {
+      const file_instance = make_mock_file({ size: 300 * 1024 * 1024 });
+      MockFile.mockImplementation(() => file_instance as never);
+      const mock_supabase = make_mock_supabase({
+        invoke_result: { data: { uploadUrl: TUS_URL, uid: STREAM_UID, protocol: 'tus' }, error: null },
+      });
+      const tus_uploader = jest.fn().mockResolvedValue({ ok: false, reason: 'failed' });
+      const mock_checker = jest.fn().mockResolvedValue('ready');
+
+      const { result } = await renderHook(() =>
+        useAdUpload({
+          supabase: mock_supabase as never,
+          tus_uploader,
+          check_ad_creative_status: mock_checker,
+          poll_attempts: 3,
+          poll_interval_ms: 0,
+        }),
+      );
+
+      await act(async () => {
+        await result.current.upload({ local_uri: TEST_LOCAL_URI, duration_ms: VALID_DURATION_MS });
+      });
+
+      // El falso negativo del binario NO decide: el estado real lo da el poll.
+      expect(mock_checker).toHaveBeenCalledWith(STREAM_UID);
+      expect(result.current.status).toBe('ready');
+    });
+
+    it('(EC37) sin_protocol_en_la_respuesta_EF_vieja_usa_el_POST_basico_de_siempre', async () => {
+      const file_instance = make_mock_file({ size: 20 * 1024 * 1024 });
+      MockFile.mockImplementation(() => file_instance as never);
+      const mock_supabase = make_mock_supabase({}); // data sin protocol
+      const tus_uploader = jest.fn();
+
+      const { result } = await renderHook(() =>
+        useAdUpload({
+          supabase: mock_supabase as never,
+          tus_uploader,
+          check_ad_creative_status: jest.fn().mockResolvedValue('ready'),
+          poll_attempts: 2,
+          poll_interval_ms: 0,
+        }),
+      );
+
+      await act(async () => {
+        await result.current.upload({ local_uri: TEST_LOCAL_URI, duration_ms: VALID_DURATION_MS });
+      });
+
+      expect(tus_uploader).not.toHaveBeenCalled();
+      expect(file_instance.createUploadTask).toHaveBeenCalledTimes(1);
+      expect(result.current.status).toBe('ready');
+    });
   });
 });

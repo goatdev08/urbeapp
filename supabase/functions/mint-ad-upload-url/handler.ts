@@ -129,6 +129,7 @@ export async function handler(
   const body: MintAdUploadUrlResponse = {
     uploadUrl: stream_result.uploadURL,
     uid: stream_result.uid,
+    protocol: "basic",
   };
   return json_response(body, 200);
 }

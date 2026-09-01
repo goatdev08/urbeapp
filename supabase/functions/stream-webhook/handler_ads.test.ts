@@ -27,21 +27,21 @@
 //   rama de anuncios.
 //
 // ### Happy path — duración válida al pasar a 'ready'
-// - EC2: property afecta 0 filas + duration=6 (límite MÍNIMO inclusive) → ad
-//   updater.mark_ready con { cloudflare_uid, thumbnail_url, duration_seconds:6 }
+// - EC2: property afecta 0 filas + duration=10 (límite MÍNIMO inclusive) → ad
+//   updater.mark_ready con { cloudflare_uid, thumbnail_url, duration_seconds:10 }
 //   EXACTO; mark_failed NO se llama.
-// - EC3: property afecta 0 filas + duration=30 (límite MÁXIMO inclusive, el mismo
-//   que Stream ya capó en mint-ad-upload-url) → mark_ready con duration_seconds:30.
-// - EC4: duration fraccional dentro de rango (29.9) se pasa INTACTA a mark_ready —
+// - EC3: property afecta 0 filas + duration=120 (límite MÁXIMO inclusive, el mismo
+//   que Stream ya capó en mint-ad-upload-url) → mark_ready con duration_seconds:120.
+// - EC4: duration fraccional dentro de rango (119.9) se pasa INTACTA a mark_ready —
 //   sin redondear (regla no obvia: el handler no transforma el valor reportado).
 //
 // ### AD_DURATION_INVALID — código propio (R2 de la tarea 169)
-// - EC5: duration=5 (por debajo del mínimo 6) → mark_failed con { cloudflare_uid,
+// - EC5: duration=9 (por debajo del mínimo 10) → mark_failed con { cloudflare_uid,
 //   reason_code: AD_DURATION_INVALID }; mark_ready NO se llama.
 // - EC6: duration AUSENTE en el payload 'ready' (Stream no la reportó) →
 //   fail-closed: mark_failed con reason_code AD_DURATION_INVALID (sin duración no
-//   se puede verificar el mínimo de 6 s).
-// - EC7: duration=31 (por encima del máximo 30 — defensa en profundidad, aunque
+//   se puede verificar el mínimo de 10 s).
+// - EC7: duration=121 (por encima del máximo 120 — defensa en profundidad, aunque
 //   Stream ya lo capa en el mint) → mark_failed con reason_code AD_DURATION_INVALID.
 //
 // ### state='error' de Stream — delega al mismo failure_reason que property_videos
@@ -68,12 +68,12 @@
 //
 // ### Candado del invariante de orden — mutante "e2" del guardián: validar el
 // valor REDONDEADO pero persistir/decidir con el CRUDO (o viceversa). Ninguna
-// de las duraciones EC2-EC7 cae en (5,6) ni en (30,30.5) — los únicos rangos
+// de las duraciones EC2-EC7 cae en (9,10) ni en (120,120.5) — los únicos rangos
 // donde validar-crudo y validar-redondeado DIFIEREN de verdad.
-// - EC13: duration=5.7 → raw < 6 (inválido) pero round(5.7)=6 (válido si se
+// - EC13: duration=9.7 → raw < 10 (inválido) pero round(9.7)=10 (válido si se
 //   validara el redondeado) → debe marcar FAILED con AD_DURATION_INVALID,
 //   mark_ready NUNCA se llama. Mata el mutante "valida redondeado".
-// - EC14: duration=30.4 → raw > 30 (inválido) pero round(30.4)=30 (válido si
+// - EC14: duration=120.4 → raw > 120 (inválido) pero round(120.4)=120 (válido si
 //   se validara el redondeado) → debe marcar FAILED, mark_ready NUNCA se
 //   llama. Simétrico de EC13 en el límite superior.
 //
@@ -237,8 +237,8 @@ Deno.test("property_videos_afecta_1_fila_jamas_intenta_ad_creatives_aunque_el_up
 
 // ── Happy path: duración válida ───────────────────────────────────────────────
 
-Deno.test("ad_ready_duracion_minima_6s_marca_ready_en_ad_creatives_con_params_exactos", async () => {
-  const payload = ready_payload(6);
+Deno.test("ad_ready_duracion_minima_10s_marca_ready_en_ad_creatives_con_params_exactos", async () => {
+  const payload = ready_payload(10);
   const header = await sign_body(payload);
   const ad = ad_updater();
   const deps = make_deps({ adCreativeStatusUpdater: ad });
@@ -247,17 +247,17 @@ Deno.test("ad_ready_duracion_minima_6s_marca_ready_en_ad_creatives_con_params_ex
   const res = await respond(webhook_request(payload, header));
 
   assertEquals(res.status, 200);
-  assertEquals(ad.ready_calls.length, 1, "duración=6 (mínimo inclusive) debe marcar ready");
+  assertEquals(ad.ready_calls.length, 1, "duración=10 (mínimo inclusive) debe marcar ready");
   assertEquals(ad.ready_calls[0], {
     cloudflare_uid: AD_STREAM_UID,
     thumbnail_url: AD_THUMBNAIL_URL,
-    duration_seconds: 6,
+    duration_seconds: 10,
   });
   assertEquals(ad.failed_calls.length, 0);
 });
 
-Deno.test("ad_ready_duracion_maxima_30s_marca_ready_en_ad_creatives", async () => {
-  const payload = ready_payload(30);
+Deno.test("ad_ready_duracion_maxima_120s_marca_ready_en_ad_creatives", async () => {
+  const payload = ready_payload(120);
   const header = await sign_body(payload);
   const ad = ad_updater();
   const deps = make_deps({ adCreativeStatusUpdater: ad });
@@ -265,13 +265,13 @@ Deno.test("ad_ready_duracion_maxima_30s_marca_ready_en_ad_creatives", async () =
 
   await respond(webhook_request(payload, header));
 
-  assertEquals(ad.ready_calls.length, 1, "duración=30 (máximo inclusive, mismo cap que mint-ad-upload-url) debe marcar ready");
-  assertEquals(ad.ready_calls[0].duration_seconds, 30);
+  assertEquals(ad.ready_calls.length, 1, "duración=120 (máximo inclusive, mismo cap que mint-ad-upload-url) debe marcar ready");
+  assertEquals(ad.ready_calls[0].duration_seconds, 120);
   assertEquals(ad.failed_calls.length, 0);
 });
 
 Deno.test("ad_ready_duracion_fraccional_dentro_de_rango_se_pasa_intacta_sin_redondear", async () => {
-  const payload = ready_payload(29.9);
+  const payload = ready_payload(119.9);
   const header = await sign_body(payload);
   const ad = ad_updater();
   const deps = make_deps({ adCreativeStatusUpdater: ad });
@@ -282,15 +282,15 @@ Deno.test("ad_ready_duracion_fraccional_dentro_de_rango_se_pasa_intacta_sin_redo
   assertEquals(ad.ready_calls.length, 1);
   assertEquals(
     ad.ready_calls[0].duration_seconds,
-    29.9,
+    119.9,
     "el handler no debe redondear/truncar la duración reportada por Stream",
   );
 });
 
 // ── AD_DURATION_INVALID ────────────────────────────────────────────────────────
 
-Deno.test("ad_ready_duracion_5s_por_debajo_del_minimo_marca_failed_con_ad_duration_invalid", async () => {
-  const payload = ready_payload(5);
+Deno.test("ad_ready_duracion_9s_por_debajo_del_minimo_marca_failed_con_ad_duration_invalid", async () => {
+  const payload = ready_payload(9);
   const header = await sign_body(payload);
   const ad = ad_updater();
   const deps = make_deps({ adCreativeStatusUpdater: ad });
@@ -316,13 +316,13 @@ Deno.test("ad_ready_sin_duration_en_el_payload_fail_closed_marca_failed_con_ad_d
 
   await respond(webhook_request(payload, header));
 
-  assertEquals(ad.ready_calls.length, 0, "sin duration_seconds no se puede verificar el mínimo de 6s: fail-closed");
+  assertEquals(ad.ready_calls.length, 0, "sin duration_seconds no se puede verificar el mínimo de 10s: fail-closed");
   assertEquals(ad.failed_calls.length, 1);
   assertEquals(ad.failed_calls[0].reason_code, AD_DURATION_INVALID);
 });
 
-Deno.test("ad_ready_duracion_31s_por_encima_del_maximo_marca_failed_con_ad_duration_invalid", async () => {
-  const payload = ready_payload(31);
+Deno.test("ad_ready_duracion_121s_por_encima_del_maximo_marca_failed_con_ad_duration_invalid", async () => {
+  const payload = ready_payload(121);
   const header = await sign_body(payload);
   const ad = ad_updater();
   const deps = make_deps({ adCreativeStatusUpdater: ad });
@@ -330,17 +330,17 @@ Deno.test("ad_ready_duracion_31s_por_encima_del_maximo_marca_failed_con_ad_durat
 
   await respond(webhook_request(payload, header));
 
-  assertEquals(ad.ready_calls.length, 0, "defensa en profundidad: >30s tampoco debe marcar ready aunque Stream ya lo cape en el mint");
+  assertEquals(ad.ready_calls.length, 0, "defensa en profundidad: >120s tampoco debe marcar ready aunque Stream ya lo cape en el mint");
   assertEquals(ad.failed_calls.length, 1);
   assertEquals(ad.failed_calls[0].reason_code, AD_DURATION_INVALID);
 });
 
 // ── Candado del invariante de orden (mutante "e2": validar redondeado, no crudo) ──
-// (5,6) y (30,30.5) son los ÚNICOS rangos donde validar-crudo y
+// (9,10) y (120,120.5) son los ÚNICOS rangos donde validar-crudo y
 // validar-redondeado dan veredictos DISTINTOS — EC2-EC7 nunca cayeron ahí.
 
-Deno.test("ad_ready_duracion_5_7s_raw_invalido_aunque_redondeado_de_6_seria_valido_marca_failed", async () => {
-  const payload = ready_payload(5.7);
+Deno.test("ad_ready_duracion_9_7s_raw_invalido_aunque_redondeado_de_10_seria_valido_marca_failed", async () => {
+  const payload = ready_payload(9.7);
   const header = await sign_body(payload);
   const ad = ad_updater();
   const deps = make_deps({ adCreativeStatusUpdater: ad });
@@ -351,14 +351,14 @@ Deno.test("ad_ready_duracion_5_7s_raw_invalido_aunque_redondeado_de_6_seria_vali
   assertEquals(
     ad.ready_calls.length,
     0,
-    "5.7 crudo es < 6 (inválido): si el handler validara round(5.7)=6 en vez del crudo, esto marcaría ready incorrectamente",
+    "9.7 crudo es < 10 (inválido): si el handler validara round(9.7)=10 en vez del crudo, esto marcaría ready incorrectamente",
   );
   assertEquals(ad.failed_calls.length, 1);
   assertEquals(ad.failed_calls[0], { cloudflare_uid: AD_STREAM_UID, reason_code: AD_DURATION_INVALID });
 });
 
-Deno.test("ad_ready_duracion_30_4s_raw_invalido_aunque_redondeado_de_30_seria_valido_marca_failed", async () => {
-  const payload = ready_payload(30.4);
+Deno.test("ad_ready_duracion_120_4s_raw_invalido_aunque_redondeado_de_120_seria_valido_marca_failed", async () => {
+  const payload = ready_payload(120.4);
   const header = await sign_body(payload);
   const ad = ad_updater();
   const deps = make_deps({ adCreativeStatusUpdater: ad });
@@ -369,7 +369,7 @@ Deno.test("ad_ready_duracion_30_4s_raw_invalido_aunque_redondeado_de_30_seria_va
   assertEquals(
     ad.ready_calls.length,
     0,
-    "30.4 crudo es > 30 (inválido): si el handler validara round(30.4)=30 en vez del crudo, esto marcaría ready incorrectamente",
+    "120.4 crudo es > 120 (inválido): si el handler validara round(120.4)=120 en vez del crudo, esto marcaría ready incorrectamente",
   );
   assertEquals(ad.failed_calls.length, 1);
   assertEquals(ad.failed_calls[0], { cloudflare_uid: AD_STREAM_UID, reason_code: AD_DURATION_INVALID });

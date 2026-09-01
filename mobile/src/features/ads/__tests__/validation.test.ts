@@ -68,14 +68,27 @@ function cta(
 }
 
 // ===========================================================================
-// Constantes — el rango debe ser exactamente 6..30 s (fuente independiente:
+// Constantes — el rango debe ser exactamente 10..120 s (fuente independiente:
 // AD_MIN/MAX_DURATION_SECONDS del servidor, stream-webhook/types.ts).
 // ===========================================================================
 
 describe('constantes de duración', () => {
-  it('el rango es 6-30 s, espejo del servidor (169.5)', () => {
-    expect(AD_MIN_DURATION_SECONDS).toBe(6);
-    expect(AD_MAX_DURATION_SECONDS).toBe(30);
+  it('el rango es 10-120 s, espejo del servidor y de propiedades (#228)', () => {
+    expect(AD_MIN_DURATION_SECONDS).toBe(10);
+    expect(AD_MAX_DURATION_SECONDS).toBe(120);
+  });
+
+  it('#228 PARIDAD POR CONSTRUCCIÓN: el rango de anuncios ES el de propiedades, no un espejo a mano', () => {
+    // Decisión de producto 2026-08-31: mismos límites que el wizard de
+    // publicación normal. Si publish/validation.ts cambia su rango, el de
+    // anuncios lo sigue — este test truena si alguien los vuelve a separar.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const publish = require('@/features/publish/validation') as {
+      MIN_VIDEO_DURATION_SECONDS: number;
+      MAX_VIDEO_DURATION_SECONDS: number;
+    };
+    expect(AD_MIN_DURATION_SECONDS).toBe(publish.MIN_VIDEO_DURATION_SECONDS);
+    expect(AD_MAX_DURATION_SECONDS).toBe(publish.MAX_VIDEO_DURATION_SECONDS);
   });
 
   it('AD_DURATION_INVALID es el literal EXACTO del servidor (stream-webhook/types.ts:106), no solo consistente consigo mismo', () => {
@@ -96,47 +109,47 @@ describe('constantes de códigos de error del CTA/zonas (propios del cliente, si
 });
 
 // ===========================================================================
-// validate_ad_duration_ms — fronteras 5.9 / 6 / 30 / 30.1 explícitas.
+// validate_ad_duration_ms — fronteras 9.9 / 10 / 120 / 120.1 explícitas.
 // ===========================================================================
 
 describe('validate_ad_duration_ms', () => {
-  it('acepta 6.0 s exactos (frontera inclusiva inferior)', () => {
-    const result = validate_ad_duration_ms(6_000);
+  it('acepta 10.0 s exactos (frontera inclusiva inferior)', () => {
+    const result = validate_ad_duration_ms(10_000);
 
     expect(result.valid).toBe(true);
     expect(result.error_code).toBeNull();
   });
 
-  it('acepta 30.0 s exactos (frontera inclusiva superior)', () => {
-    const result = validate_ad_duration_ms(30_000);
+  it('acepta 120.0 s exactos (frontera inclusiva superior)', () => {
+    const result = validate_ad_duration_ms(120_000);
 
     expect(result.valid).toBe(true);
     expect(result.error_code).toBeNull();
   });
 
-  it('acepta 15 s (caso típico dentro del rango)', () => {
-    expect(validate_ad_duration_ms(15_000).valid).toBe(true);
+  it('acepta 60 s (caso típico dentro del rango)', () => {
+    expect(validate_ad_duration_ms(60_000).valid).toBe(true);
   });
 
-  it('rechaza 5.9 s con AD_DURATION_INVALID (justo debajo del mínimo)', () => {
-    const result = validate_ad_duration_ms(5_900);
+  it('rechaza 9.9 s con AD_DURATION_INVALID (justo debajo del mínimo)', () => {
+    const result = validate_ad_duration_ms(9_900);
 
     expect(result.valid).toBe(false);
     expect(result.error_code).toBe(AD_DURATION_INVALID);
   });
 
-  it('rechaza 30.1 s con AD_DURATION_INVALID (justo arriba del máximo)', () => {
-    const result = validate_ad_duration_ms(30_100);
+  it('rechaza 120.1 s con AD_DURATION_INVALID (justo arriba del máximo)', () => {
+    const result = validate_ad_duration_ms(120_100);
 
     expect(result.valid).toBe(false);
     expect(result.error_code).toBe(AD_DURATION_INVALID);
   });
 
-  it('rechaza 5.7 s — el hueco exacto que un redondeo-antes-de-comparar dejaría pasar (169.5)', () => {
-    // 5.7 redondeado da 6 (que SÍ sería válido). Este caso solo falla si la
+  it('rechaza 9.7 s — el hueco exacto que un redondeo-antes-de-comparar dejaría pasar (169.5)', () => {
+    // 9.7 redondeado da 10 (que SÍ sería válido). Este caso solo falla si la
     // implementación compara sobre el valor crudo fraccionario, nunca sobre
     // Math.round(seconds) — exactamente el mutante que coló 169.5.
-    const result = validate_ad_duration_ms(5_700);
+    const result = validate_ad_duration_ms(9_700);
 
     expect(result.valid).toBe(false);
     expect(result.error_code).toBe(AD_DURATION_INVALID);
@@ -185,8 +198,8 @@ describe('validate_ad_duration_ms', () => {
   });
 
   it('#189 CASO PAREADO: fail-open aplica SOLO a la duración ausente — una duración conocida fuera de rango sigue rechazándose', () => {
-    expect(validate_ad_duration_ms(5_900).valid).toBe(false);
-    expect(validate_ad_duration_ms(30_100).valid).toBe(false);
+    expect(validate_ad_duration_ms(9_900).valid).toBe(false);
+    expect(validate_ad_duration_ms(120_100).valid).toBe(false);
     expect(validate_ad_duration_ms(1).valid).toBe(false);
   });
 

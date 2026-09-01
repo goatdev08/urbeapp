@@ -135,6 +135,7 @@
 import { assertEquals, assertExists } from "@std/assert";
 import { handler } from "./handler.ts";
 import {
+  MAX_UPLOAD_SIZE_BYTES,
   STALE_PROCESSING_MS,
   STALE_UPLOAD_MS,
   STREAM_MAX_DURATION_SECONDS,
@@ -148,6 +149,7 @@ import {
   type RegisterUploadingAdCreativeParams,
   type StreamDirectUploadParams,
   type StreamDirectUploadResult,
+  type StreamTusUploadParams,
   type StreamUploadCreator,
 } from "./types.ts";
 
@@ -313,6 +315,11 @@ function uploader_ok(result: StreamDirectUploadResult): FakeStreamUploadCreator 
       this.calls.push(params);
       return Promise.resolve(result);
     },
+    // #228: este fake es SOLO del camino básico — que un test lo lleve a TUS
+    // es un error del test, no un caso soportado.
+    create_tus_upload(): Promise<StreamDirectUploadResult> {
+      return Promise.reject(new Error("uploader_ok no implementa TUS — usa uploader_tus_ok"));
+    },
   } as FakeStreamUploadCreator;
 }
 
@@ -323,7 +330,32 @@ function uploader_throws(): FakeStreamUploadCreator {
       this.calls.push(params);
       return Promise.reject(new Error("cloudflare stream direct_upload failed"));
     },
+    create_tus_upload(): Promise<StreamDirectUploadResult> {
+      return Promise.reject(new Error("cloudflare stream tus create failed"));
+    },
   } as FakeStreamUploadCreator;
+}
+
+// #228 — fake con AMBOS caminos: captura por separado las llamadas TUS
+// (tus_calls, con uploadLength) y las básicas (calls).
+interface FakeStreamUploadCreatorTus extends StreamUploadCreator {
+  calls: StreamDirectUploadParams[];
+  tus_calls: StreamTusUploadParams[];
+}
+
+function uploader_tus_ok(result: StreamDirectUploadResult): FakeStreamUploadCreatorTus {
+  return {
+    calls: [],
+    tus_calls: [],
+    create_direct_upload(params: StreamDirectUploadParams): Promise<StreamDirectUploadResult> {
+      this.calls.push(params);
+      return Promise.resolve(result);
+    },
+    create_tus_upload(params: StreamTusUploadParams): Promise<StreamDirectUploadResult> {
+      this.tus_calls.push(params);
+      return Promise.resolve(result);
+    },
+  } as FakeStreamUploadCreatorTus;
 }
 
 // ── Fakes — AdCreativeRegistrar ───────────────────────────────────────────────
@@ -354,10 +386,15 @@ function registrar_throws(): FakeAdCreativeRegistrar {
 
 // ── Helpers de Request/Deps ───────────────────────────────────────────────────
 
-function post_request(with_auth = true): Request {
+function post_request(with_auth = true, body?: unknown): Request {
   const headers: Record<string, string> = {};
   if (with_auth) headers["Authorization"] = "Bearer fake.jwt.token";
-  return new Request("http://localhost/mint-ad-upload-url", { method: "POST", headers });
+  // #228: body opcional (size_bytes → TUS). Sin body = contrato viejo intacto.
+  const init: RequestInit = { method: "POST", headers };
+  if (body !== undefined) {
+    init.body = typeof body === "string" ? body : JSON.stringify(body);
+  }
+  return new Request("http://localhost/mint-ad-upload-url", init);
 }
 
 function method_request(method: string): Request {
@@ -380,16 +417,16 @@ function make_deps(overrides: Partial<MintAdUploadUrlDeps> = {}): MintAdUploadUr
 
 // ── Happy path ────────────────────────────────────────────────────────────────
 
-Deno.test("happy_path_llama_uploader_con_creator_agency_id_y_maxDuration_30", async () => {
+Deno.test("happy_path_llama_uploader_con_creator_agency_id_y_maxDuration_120", async () => {
   const uploader = uploader_ok(STREAM_RESULT);
   const deps = make_deps({ streamUploadCreator: uploader });
   await handler(post_request(), deps);
   assertEquals(uploader.calls.length, 1, "el uploader de Stream debe llamarse exactamente una vez");
   assertEquals(uploader.calls[0], {
     creator: AGENCY_ID,
-    maxDurationSeconds: 30,
+    maxDurationSeconds: 120,
     requireSignedURLs: true,
-  }, "el uploader debe recibir creator=agency_id y maxDurationSeconds=30 (diferencia 1)");
+  }, "el uploader debe recibir creator=agency_id y maxDurationSeconds=120 (#228: paridad con propiedades)");
 });
 
 Deno.test("happy_path_inserta_con_agency_id_status_uploading_y_cloudflare_uid_de_stream", async () => {
@@ -428,18 +465,78 @@ Deno.test("happy_path_nunca_filtra_credenciales_de_stream_en_la_respuesta", asyn
   const body = await res.json();
   assertEquals(
     Object.keys(body).sort(),
-    ["uid", "uploadUrl"],
-    "el body de 200 debe tener EXACTAMENTE las claves uploadUrl/uid, nunca credenciales de Stream",
+    ["protocol", "uid", "uploadUrl"],
+    "el body de 200 debe tener EXACTAMENTE las claves uploadUrl/uid/protocol (#228), nunca credenciales de Stream",
   );
 });
 
-// ── Diferencia 1 — maxDurationSeconds = 30 ───────────────────────────────────
+// ── #228 — camino TUS (paridad con mint-upload-url/192.1) ────────────────────
 
-Deno.test("stream_max_duration_seconds_exportado_vale_exactamente_30", () => {
+Deno.test("228_body_con_size_bytes_llama_create_tus_upload_con_uploadLength_exacto_y_responde_protocol_tus", async () => {
+  const uploader = uploader_tus_ok(STREAM_RESULT);
+  const deps = make_deps({ streamUploadCreator: uploader });
+  const res = await handler(post_request(true, { size_bytes: 300 * 1024 * 1024 }), deps);
+
+  assertEquals(res.status, 200);
+  assertEquals(uploader.tus_calls.length, 1, "con size_bytes válido debe usarse el camino TUS");
+  assertEquals(uploader.calls.length, 0, "el camino básico NO debe tocarse cuando hay size_bytes");
+  assertEquals(uploader.tus_calls[0], {
+    creator: AGENCY_ID,
+    maxDurationSeconds: 120,
+    requireSignedURLs: true,
+    uploadLength: 300 * 1024 * 1024,
+  }, "Upload-Length debe ser el size_bytes EXACTO del body");
+  const body = await res.json();
+  assertEquals(body.protocol, "tus");
+});
+
+Deno.test("228_size_bytes_sobre_el_techo_responde_400_video_too_large_sin_llamar_stream_ni_insertar", async () => {
+  const uploader = uploader_tus_ok(STREAM_RESULT);
+  const registrar = registrar_ok();
+  const deps = make_deps({ streamUploadCreator: uploader, adCreativeRegistrar: registrar });
+  const res = await handler(post_request(true, { size_bytes: MAX_UPLOAD_SIZE_BYTES + 1 }), deps);
+
+  assertEquals(res.status, 400);
+  const body = await res.json();
+  assertEquals(body.error_code, "VIDEO_TOO_LARGE");
+  assertEquals(uploader.calls.length + uploader.tus_calls.length, 0, "sobre el techo NUNCA se toca Stream");
+  assertEquals(registrar.calls.length, 0, "sobre el techo NUNCA se inserta fila");
+});
+
+Deno.test("228_sin_size_bytes_usa_direct_upload_basico_y_responde_protocol_basic", async () => {
+  const uploader = uploader_tus_ok(STREAM_RESULT);
+  const deps = make_deps({ streamUploadCreator: uploader });
+  const res = await handler(post_request(), deps);
+
+  assertEquals(res.status, 200);
+  assertEquals(uploader.calls.length, 1, "sin size_bytes el camino es el básico de siempre (builds instalados)");
+  assertEquals(uploader.tus_calls.length, 0);
+  const body = await res.json();
+  assertEquals(body.protocol, "basic");
+});
+
+Deno.test("228_body_ilegible_o_size_bytes_invalido_no_rompe_el_contrato_viejo", async () => {
+  // Tolerante a propósito (192.1): garbage, 0, negativo, decimal, string —
+  // todo cae al camino básico, jamás a un 4xx nuevo.
+  for (const body of ["not json{{", { size_bytes: 0 }, { size_bytes: -5 }, { size_bytes: 1.5 }, { size_bytes: "300" }]) {
+    const uploader = uploader_tus_ok(STREAM_RESULT);
+    const deps = make_deps({ streamUploadCreator: uploader });
+    const res = await handler(post_request(true, body), deps);
+    assertEquals(res.status, 200, `body ${JSON.stringify(body)} debe seguir el contrato viejo`);
+    assertEquals(uploader.calls.length, 1);
+    assertEquals(uploader.tus_calls.length, 0);
+  }
+});
+
+// ── #228 — maxDurationSeconds = 120 (paridad con propiedades) ────────────────
+// La "diferencia 1" de 169.4 (30 vs 120) se ELIMINÓ por decisión de producto
+// 2026-08-31: mismos límites de video que el wizard de publicación normal.
+
+Deno.test("stream_max_duration_seconds_exportado_vale_exactamente_120", () => {
   assertEquals(
     STREAM_MAX_DURATION_SECONDS,
-    30,
-    "anuncios usa 30s (propiedades usa 120) — el mínimo de 6s NO lo impone esta EF",
+    120,
+    "#228: anuncios usa el MISMO tope que propiedades (120 s) — el mínimo de 10 s no lo impone esta EF (webhook + cliente)",
   );
 });
 
