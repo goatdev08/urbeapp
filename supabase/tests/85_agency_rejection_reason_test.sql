@@ -69,7 +69,9 @@
 --            vigente y nunca queda un motivo colgando en una agencia activa.
 --            'rejected' es TERMINAL para el trigger (INVALID_STATUS_TRANSITION
 --            desde rejected), así que "aprobar después de rechazar" NO existe
---            como camino — anclado por RR21.
+--            como camino — anclado por RR21. 🔴 Y aprobar DESCARTA el motivo
+--            que le manden, no solo lo omite cuando no viene: el cliente vivo
+--            envía p_reason sin condicionarlo a approve (sección 8, RR28).
 -- D-GRANTS   🔴 CERO grants nuevos, y NO es un olvido: en agencies el SELECT es
 --            de TABLA (relacl `authenticated=ardDxtm`, `anon=rDxtm`) y solo el
 --            UPDATE es de COLUMNA (attacl sobre las 7 escribibles: name, slug,
@@ -92,7 +94,7 @@
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(27);
+select plan(29);
 
 -- ── Andamio (a): lectura de la columna tolerante al RED ─────────────────────
 -- SECURITY INVOKER a propósito: bajo `set local role authenticated` respeta
@@ -138,13 +140,15 @@ end $$;
 --   CREATOR3(085004) creó AG3 -> RECHAZO con motivo EN BLANCO (Studio).
 --   CREATOR4(085005) creó AG4 -> APROBACIÓN.
 --   OUTSIDER(085006) tercero autenticado, ajeno a todas.
+--   CREATOR5(085007) creó AG5 -> APROBACIÓN pasando un motivo (mutante RR28).
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-000000085001', 'admin_85@test.local'),
   ('00000000-0000-0000-0000-000000085002', 'creator1_85@test.local'),
   ('00000000-0000-0000-0000-000000085003', 'creator2_85@test.local'),
   ('00000000-0000-0000-0000-000000085004', 'creator3_85@test.local'),
   ('00000000-0000-0000-0000-000000085005', 'creator4_85@test.local'),
-  ('00000000-0000-0000-0000-000000085006', 'outsider_85@test.local');
+  ('00000000-0000-0000-0000-000000085006', 'outsider_85@test.local'),
+  ('00000000-0000-0000-0000-000000085007', 'creator5_85@test.local');
 
 update public.users set role = 'admin'
  where id = '00000000-0000-0000-0000-000000085001';
@@ -153,7 +157,8 @@ insert into public.agencies (id, name, slug, status, created_by_user_id) values
   ('00000000-0000-0000-0000-000000085101', 'Agencia 85 Uno',    'agencia-85-uno',    'pending_approval', '00000000-0000-0000-0000-000000085002'),
   ('00000000-0000-0000-0000-000000085102', 'Agencia 85 Dos',    'agencia-85-dos',    'pending_approval', '00000000-0000-0000-0000-000000085003'),
   ('00000000-0000-0000-0000-000000085103', 'Agencia 85 Tres',   'agencia-85-tres',   'pending_approval', '00000000-0000-0000-0000-000000085004'),
-  ('00000000-0000-0000-0000-000000085104', 'Agencia 85 Cuatro', 'agencia-85-cuatro', 'pending_approval', '00000000-0000-0000-0000-000000085005');
+  ('00000000-0000-0000-0000-000000085104', 'Agencia 85 Cuatro', 'agencia-85-cuatro', 'pending_approval', '00000000-0000-0000-0000-000000085005'),
+  ('00000000-0000-0000-0000-000000085105', 'Agencia 85 Cinco',  'agencia-85-cinco',  'pending_approval', '00000000-0000-0000-0000-000000085007');
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- 1) La columna existe y es ADITIVA (nullable, sin default) — D-ADITIVA.
@@ -381,6 +386,44 @@ select ok(
                  and column_name = 'rejection_reason'
                  and grantee = 'authenticated' and privilege_type = 'UPDATE'),
   'RR27_authenticated_NO_reescribe_su_propio_motivo_de_rechazo'
+);
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 8) 🔴 MUTANTE DEL GUARDIAN: aprobar PASANDO un motivo.
+--    RR17/RR18 no alcanzaban este camino porque aprueban con la firma de 2
+--    argumentos, y ahí `p_reason` ya es null por default: el mutante
+--    `rejection_reason = p_reason` (aprobar NO limpia) y el código correcto
+--    son INDISTINGUIBLES por esa ruta.
+--    El camino sí es alcanzable desde el cliente vivo:
+--    mobile/src/features/admin/hooks/useResolveRequest.ts:286 hace
+--    `if (reason !== undefined) body.p_reason = reason;` SIN condicionarlo a
+--    `approve`, así que un motivo tecleado y luego aprobado llega con
+--    p_approve=true Y p_reason no nulo. Con el mutante esa agencia queda
+--    'active' con un motivo de rechazo colgando —y un lector futuro podría
+--    mostrárselo a su dueño—. La puerta debe DESCARTAR el motivo al aprobar,
+--    no solo omitirlo cuando no viene.
+-- ════════════════════════════════════════════════════════════════════════════
+
+select pg_temp.act_as('00000000-0000-0000-0000-000000085001'); -- ADMIN
+-- Aprobar con motivo no es un error de contrato: se ignora en silencio.
+select public.resolve_agency_registration(
+  '00000000-0000-0000-0000-000000085105', true, 'texto que no deberia quedar');
+reset role;
+
+-- status y columna en el MISMO assert: el mutante produce
+-- 'active | texto que no deberia quedar' y la aserción nombra las dos mitades
+-- del invariante en el mensaje de fallo.
+select is(
+  (select status::text || ' | ' || coalesce(pg_temp.agency_reason('00000000-0000-0000-0000-000000085105'), '<null>')
+     from public.agencies where id = '00000000-0000-0000-0000-000000085105'),
+  'active | <null>',
+  'RR28_aprobar_CON_motivo_deja_la_columna_en_null_y_el_status_en_active'
+);
+
+select ok(
+  (select not (data ? 'rejection_reason') from public.notifications
+    where user_id = '00000000-0000-0000-0000-000000085007' and type = 'agency_approved'),
+  'RR29_ni_el_espejo_de_esa_aprobacion_lleva_motivo'
 );
 
 select * from finish();
