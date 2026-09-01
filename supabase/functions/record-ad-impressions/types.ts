@@ -97,17 +97,48 @@ export function is_ad_viewed(watched_ms: number): boolean {
   return Number.isFinite(watched_ms) && watched_ms >= VIEWED_THRESHOLD_MS;
 }
 
-// ── Clamp de shown_at (#214) — STUB RED ────────────────────────────────────
+// ── Clamp de shown_at (#214) — frontera de confianza ───────────────────────
+//
+// `shown_at` lo escribe el CLIENTE y es la columna por la que el rollup
+// mensual (#201) agrupa: date_trunc('month', shown_at). Un valor FUTURO
+// fabrica una fila de un mes que no existe en `ad_impressions_monthly` y,
+// cuando el crudo se purga a los 90 días, esa fila queda como basura
+// PERMANENTE en la tabla FACTURABLE. Validación en frontera: no aplica
+// ponytail (CLAUDE.md §0).
 
-/** Tolerancia de skew de reloj del cliente hacia el FUTURO: 5 minutos. */
+/** Tolerancia de skew del reloj del cliente hacia el futuro: hasta 5 minutos
+ * por delante de `now` la impresión es legítima (teléfono con el reloj
+ * corrido) y se CLAMPEA a `now`; más allá se rechaza. */
 export const SHOWN_AT_FUTURE_SKEW_MS = 5 * 60 * 1000;
 
-/** Ventana de retención del crudo `ad_impressions`: 90 días. */
+/** Ventana de retención del crudo `ad_impressions`: 90 días — el MISMO
+ * literal que `purge_ad_impressions()` y que la compuerta de elegibilidad de
+ * `rollup_ad_impressions_monthly()` (migración 20260823000004). Un shown_at
+ * más viejo ya no entraría al rollup: solo sería basura en el crudo.
+ * // ponytail: si algún día la cola del cliente llegara a retener impresiones
+ * // >90 días offline, se perderían en vez de escribirse sin poder cobrarse.
+ * // Caso teórico hoy: la cola se vacía al salir del feed (#207). */
 export const SHOWN_AT_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 
-/** STUB RED (#214): hoy todo shown_at string pasa intacto. */
-export function normalize_shown_at(shown_at: string, _now: Date): string | null {
-  return shown_at;
+/**
+ * Normaliza el `shown_at` declarado por el cliente contra el reloj del
+ * servidor. Devuelve la cadena a PERSISTIR, o `null` si la impresión debe
+ * rechazarse (mismo camino que un item malformado, sin tumbar el batch).
+ * - no parseable → null
+ * - futuro dentro del skew (borde `now+5min` INCLUSIVE) → now.toISOString()
+ * - futuro más allá del skew → null
+ * - dentro de la retención (borde `now-90d` INCLUSIVE) → la MISMA cadena,
+ *   sin re-serializar: la fila conserva el instante exacto del cliente
+ * - anterior a la retención → null
+ */
+export function normalize_shown_at(shown_at: string, now: Date): string | null {
+  const shown_ms = Date.parse(shown_at);
+  if (Number.isNaN(shown_ms)) return null;
+  const now_ms = now.getTime();
+  if (shown_ms > now_ms) {
+    return shown_ms <= now_ms + SHOWN_AT_FUTURE_SKEW_MS ? now.toISOString() : null;
+  }
+  return shown_ms >= now_ms - SHOWN_AT_RETENTION_MS ? shown_at : null;
 }
 
 // ── Ads — datos crudos, sin pre-filtrar (la decisión de elegibilidad vive en el handler) ──
@@ -176,7 +207,10 @@ export interface ImpressionsWriter {
 export interface AdImpressionEventInput {
   ad_id: string;
   session_id: string;
-  shown_at: string; // ISO, informativo — la elegibilidad usa deps.now(), NUNCA shown_at
+  // ISO. La elegibilidad usa deps.now(), NUNCA shown_at; y #214: antes de
+  // persistirse pasa por normalize_shown_at (clamp del skew futuro, rechazo
+  // fuera de la ventana de retención).
+  shown_at: string;
   watched_ms: number;
   completed: boolean;
   lat: number;

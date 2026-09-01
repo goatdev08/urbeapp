@@ -21,7 +21,7 @@ import type {
   RecordAdImpressionsDeps,
   RecordAdImpressionsResponse,
 } from "./types.ts";
-import { derive_impression_id, is_ad_viewed } from "./types.ts";
+import { derive_impression_id, is_ad_viewed, normalize_shown_at } from "./types.ts";
 
 // Fix guardián 170.6 (V4a) — ad_id/session_id son columnas `uuid not null`
 // en Postgres, no strings arbitrarios. Validarlas por FORMA aquí (antes de
@@ -122,14 +122,27 @@ export async function handler(req: Request, deps?: RecordAdImpressionsDeps): Pro
 
     // 6. Separar impresiones bien formadas de las malformadas (no llegan a
     // fetch_ads) — se cuentan como rechazadas de una vez.
+    //
+    // #214 — el clamp de shown_at vive AQUÍ, en la misma compuerta y por la
+    // misma razón que la validación de uuid: un shown_at que no puede
+    // persistirse tal cual no tiene por qué gastar un fetch_ads. Rechazar
+    // (no "corregir a now") todo lo que salga de la ventana es deliberado:
+    // el instante es lo que factura el rollup mensual, así que fabricarlo
+    // sería peor que perder la impresión.
+    const now = deps!.now();
     const well_formed: AdImpressionEventInput[] = [];
     let malformed_rejected = 0;
     for (const item of impressions_raw) {
-      if (is_well_formed_impression(item)) {
-        well_formed.push(item);
-      } else {
+      if (!is_well_formed_impression(item)) {
         malformed_rejected++;
+        continue;
       }
+      const shown_at = normalize_shown_at(item.shown_at, now);
+      if (shown_at === null) {
+        malformed_rejected++;
+        continue;
+      }
+      well_formed.push({ ...item, shown_at });
     }
 
     // 7. Traer ads crudos (sin pre-filtrar) para todo el batch de una vez.
@@ -137,7 +150,6 @@ export async function handler(req: Request, deps?: RecordAdImpressionsDeps): Pro
     const ads = ad_ids.length > 0 ? await deps!.adsRepository.fetch_ads(ad_ids) : [];
     const ads_by_id = new Map(ads.map((a) => [a.id, a]));
 
-    const now = deps!.now();
     const rows: ImpressionRow[] = [];
     let impressions_rejected = malformed_rejected;
 
