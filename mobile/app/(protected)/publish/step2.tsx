@@ -15,7 +15,6 @@
  */
 import React, { useCallback } from 'react';
 import {
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -68,7 +67,7 @@ export default function Step2Screen() {
   }, [valid, router]);
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scroll_content}
@@ -108,7 +107,7 @@ export default function Step2Screen() {
           disabled={!valid}
         />
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 

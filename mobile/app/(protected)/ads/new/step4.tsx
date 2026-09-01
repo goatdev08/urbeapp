@@ -12,7 +12,6 @@
  */
 import React, { useCallback } from 'react';
 import {
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -77,7 +76,7 @@ export default function AdStep4Screen() {
   }, [state.zones, router]);
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scroll_content}
@@ -101,10 +100,14 @@ export default function AdStep4Screen() {
             placeholderTextColor={colors.gray_1}
             accessibilityLabel="Buscar zona"
           />
+          {/* inline (no overlay): dentro de este ScrollView, un dropdown
+              absoluto queda muerto al tacto en Android — no scrolleaba la
+              lista de colonias (bug 2026-09-01, mismo patrón que
+              ZoneAutocomplete en FilterSheet). */}
           <MapSearchSuggestions
             suggestions={place_search.suggestions}
             on_select={handle_select}
-            top={SEARCH_INPUT_HEIGHT + spacing.s_4}
+            inline
           />
         </View>
 
@@ -143,7 +146,7 @@ export default function AdStep4Screen() {
       <View style={[styles.cta_area, { paddingBottom: 16 + insets.bottom }]}>
         <PrimaryButton label="Siguiente" onPress={handle_next} surface="light" />
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 

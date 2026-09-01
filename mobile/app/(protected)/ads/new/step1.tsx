@@ -23,7 +23,6 @@
  */
 import React, { useCallback, useState } from 'react';
 import {
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -131,7 +130,7 @@ export default function AdStep1Screen() {
   }, [can_continue, router]);
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scroll_content}
@@ -221,7 +220,7 @@ export default function AdStep1Screen() {
           disabled={!can_continue}
         />
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 

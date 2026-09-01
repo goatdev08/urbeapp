@@ -12,11 +12,11 @@
  * Estética: utilitaria/clara — fondo #FAFAF8, consistente con la lista.
  */
 import React, { useCallback, useState } from 'react';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Switch,

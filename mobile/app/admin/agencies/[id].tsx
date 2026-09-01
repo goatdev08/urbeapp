@@ -23,12 +23,12 @@
  * Estética: utilitaria/clara — consistente con admin/index.tsx y create.tsx.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   ActivityIndicator,
   Alert,
   FlatList,
   Pressable,
-  SafeAreaView,
   StyleSheet,
   Text,
   View,

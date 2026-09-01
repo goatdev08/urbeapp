@@ -14,7 +14,8 @@
  * no trae mockup propio para esta pantalla.
  */
 import React, { useCallback } from 'react';
-import { ActivityIndicator, FlatList, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 
 import { colors, spacing, type_scale } from '@/theme/theme';

@@ -12,6 +12,12 @@
  *
  * keyboardShouldPersistTaps="handled": el tap en una sugerencia selecciona a
  * la PRIMERA (sin ese prop, el primer tap solo cierra el teclado).
+ *
+ * nestedScrollEnabled: ads/new/step4 monta este dropdown DENTRO de su
+ * ScrollView de pantalla; sin el prop, Android nunca entrega el gesto al
+ * scroll anidado y la lista queda congelada en los primeros ~5 resultados
+ * (mismo bug ya resuelto en ZoneAutocomplete). En el mapa (sin ScrollView
+ * padre) es un no-op.
  */
 import React from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -23,22 +29,34 @@ import type { PlaceSuggestion } from '../lib/placeSearch';
 interface MapSearchSuggestionsProps {
   suggestions: PlaceSuggestion[];
   on_select: (suggestion: PlaceSuggestion) => void;
-  /** Offset superior (bajo MapSearchBar) — lo calcula MapScreen. */
-  top: number;
+  /** Offset superior (bajo MapSearchBar) — lo calcula MapScreen. Solo overlay. */
+  top?: number;
+  /**
+   * Render EN FLUJO (patrón ZoneAutocomplete) en vez de overlay absoluto.
+   * Obligatorio cuando el padre es un ScrollView (ads/new/step4): un absolute
+   * que cuelga fuera del bounds de su contenedor queda MUERTO al tacto en
+   * Android — ni scroll ni tap llegan más allá del alto del padre.
+   */
+  inline?: boolean;
 }
 
 export function MapSearchSuggestions({
   suggestions,
   on_select,
   top,
+  inline = false,
 }: MapSearchSuggestionsProps): React.JSX.Element | null {
   if (suggestions.length === 0) return null;
 
   return (
-    <View style={[styles.container, { top }]} pointerEvents="box-none">
+    <View
+      style={inline ? styles.container_inline : [styles.container, { top: top ?? 0 }]}
+      pointerEvents="box-none"
+    >
       <ScrollView
         style={styles.dropdown}
         keyboardShouldPersistTaps="handled"
+        nestedScrollEnabled
         showsVerticalScrollIndicator={false}
       >
         {suggestions.map((s, index) => (
@@ -74,6 +92,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: spacing.s_16,
     right: spacing.s_16,
+  },
+  container_inline: {
+    marginTop: spacing.s_8,
   },
   dropdown: {
     maxHeight: 320,
