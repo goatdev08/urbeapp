@@ -8095,13 +8095,13 @@
         "description": "Origen: subtarea 157.2 · Detectado por: usuario (2026-08-14). Buscar 'La Estancia' NO muestra la de Zapopan aunque SÍ está en la base: hay ~19 colonias homónimas solo en Jalisco y decenas a nivel nacional; con p_limit=10 y sin sesgo de ubicación, el ranking (prefijo > similarity > nombre) llena los 10 lugares con homónimas de otros estados. No faltan datos — falta bias geográfico.",
         "details": "Diagnóstico verificado contra el remoto (2026-08-14): mx_neighborhoods tiene 75,493 filas / 32 estados / 7,928 Jalisco / 1,033 Zapopan, y 'La Estancia' (14120) existe; search_places('la estancia',10) devuelve 10 homónimas de Colima/Michoacán/Gto/etc. Propuesta (estilo Google Maps): añadir parámetros OPCIONALES p_lat/p_lng a search_places (default null → comportamiento actual intacto = contrato publicado no se rompe, gate §0.5) y, cuando vienen, ordenar los empates de similarity por distancia (ST_Distance entre el centroide/bbox de la colonia y el punto del usuario) o boost al estado/municipio del viewport. El cliente (usePlaceSearch/placeSearch.ts) pasa el centro del mapa actual. Alternativa barata: subir p_limit + agrupar por nombre en UI (peor UX). Migración aditiva create or replace + pgTAP de ranking (homónimas: la cercana primero) + test Jest del nuevo parámetro opcional.\n\n--- auditoría de backlog 2026-08-14 (.taskmaster/docs/auditoria-backlog-2026-08-14.md) ---\nFUSIÓN (F3): absorbe #163. Los tres arreglos viven en el MISMO `create or replace function search_places` y comparten suite pgTAP, así que se hacen en una migración y un PR:\n  (a) [de #163] Escapar \\, %% y _ en v_q antes de concatenar '%%': hoy '%%%%' matchea las ~75k colonias en un keystroke, '_a' hace scan ancho y 'prov\\' rompe un prefijo legítimo.\n  (b) [de #163] Rankear/limitar ANTES de computar similarity() y los 4 extents ST_X/YMin/Max: hoy se computan para CADA fila que matchea ('san', 'centro' → miles) y se tiran con el LIMIT 10. Alternativa: precomputar bbox en mx_neighborhoods como D4 ya hace para municipios. Corregir también el comentario del header, que hoy afirma lo contrario.\n  (c) [original #159] Parámetros OPCIONALES p_lat/p_lng (default null = comportamiento actual intacto, no rompe el contrato publicado) para desempatar homónimas por distancia. Sin esto, 'La Estancia' no muestra la de Zapopan pese a existir (~19 homónimas solo en Jalisco).",
         "testStrategy": "pgTAP: fixture con 2+ colonias homónimas en estados distintos; search_places con p_lat/p_lng cerca de una → esa primero; sin coords → orden actual (regresión). Jest: placeSearch pasa coords opcionales; sin coords no cambia la llamada RPC existente.",
-        "status": "pending",
+        "status": "in-progress",
         "dependencies": [
           "157"
         ],
         "priority": "high",
         "subtasks": [],
-        "updatedAt": "2026-08-14T12:00:00.000Z"
+        "updatedAt": "2026-09-02T15:30:00.000Z"
       },
       {
         "id": "160",
@@ -8109,13 +8109,13 @@
         "description": "Origen: subtarea 157.8 · Detectado por: review PR #76/#77. Seleccionar un municipio reusa filters.area (círculo del bbox) pero viewport_to_area clampa a MAX_RADIUS_M=50km: municipios grandes (Ensenada, Mexicali, Hermosillo, 100–300 km) encuadran todo el territorio y NUNCA cargan los pins fuera de 50 km del centroide, sin error; municipios chicos sobre-incluyen ~57% fuera del bbox (Zapopan muestra propiedades de GDL/Tlaquepaque).",
         "details": "MapScreen.tsx:257. Mecanismo correcto: RPC properties_within_neighborhood tiene espejo natural — properties_within_municipality(p_municipality_id text) → ids por ST_Intersects contra la unión de polígonos de las colonias del municipio (o bbox si no hay colonias). Cliente: rama nueva en fetchMapProperties (mismo patrón A1 flaco) en vez de set_filter('area', viewport_to_area(...)). Migración aditiva + pgTAP. Reevaluar D5 del plan original.",
         "testStrategy": "pgTAP: propiedad dentro/fuera del municipio, paused/deleted excluidas, grants. Jest: rama municipality en fetchMapProperties espejo de mapProperties.neighborhood.test.ts.",
-        "status": "pending",
+        "status": "in-progress",
         "dependencies": [
           "157"
         ],
         "priority": "high",
         "subtasks": [],
-        "updatedAt": "2026-08-14T00:10:00.000Z"
+        "updatedAt": "2026-09-02T15:30:00.000Z"
       },
       {
         "id": "161",
@@ -8123,13 +8123,13 @@
         "description": "Origen: subtarea 157.8 · Detectado por: review PR #77. Tres huecos en MapScreen: (1) set_filter('area', null) corre ANTES del fetch del polígono y el catch traga el error → un fetch fallido destruye la zona activa previa o deja colonia stale mientras la cámara viaja a la nueva; (2) sin guard anti-stale: la respuesta lenta de la colonia A pisa la selección más nueva B; (3) place_search.error/loading nunca se renderizan → fallo de red byte-idéntico a 'sin resultados'.",
         "details": "MapScreen.tsx:231-260, 404. Fixes: mover set_filter('area', null) y clear_neighborhood() DENTRO del bloque de éxito del fetch; contador request_id en ref (mismo patrón que usePlaceSearch) para descartar respuestas tardías; renderizar loading (spinner en la barra) y error (texto en el dropdown) desde usePlaceSearch — el hook ya expone ambos, solo falta consumirlos.",
         "testStrategy": "Jest sobre helpers extraíbles si aplica; smoke manual: colonia con avión activado a media selección → estado previo intacto + mensaje visible; doble selección rápida → gana la última.",
-        "status": "pending",
+        "status": "in-progress",
         "dependencies": [
           "157"
         ],
         "priority": "high",
         "subtasks": [],
-        "updatedAt": "2026-08-14T00:10:00.000Z"
+        "updatedAt": "2026-09-02T15:30:00.000Z"
       },
       {
         "id": "162",
@@ -10332,13 +10332,50 @@
         "description": "Cola /admin/requests unificada: agent_applications (aprobar/rechazar con motivo — hoy solo por Studio), registros de inmobiliaria pending_approval, y el canal NUEVO «Quiero anunciar»: el owner solicita cuenta comercial proponiendo categoría → el admin aprueba y eso enciende can_advertise vía la EF set-org-advertising existente.",
         "details": "Origen: exploración 041 · bloque M4 · cierra el hueco de 039:133 (el canal de solicitud se prometió y nunca se construyó; #209 solo hizo el lado del admin). agent_applications: la aprobación por trigger ya existe (71.5, pending→approved|rejected con rejection_reason obligatorio) — falta la UI y quizá EF/RPC patrón GUC admin para el caso service_role. Aprobación de agencia: mismo trigger de 71.5. Solicitud comercial: decidir en tm-plan si tabla nueva (advertising_requests) o columna/reuso — criterio ponytail. TODO audita en admin_actions en la misma transacción. Notifica ambos lados vía #219. Footprint: supabase/migrations/*, supabase/functions/*, mobile/app/admin/requests/*, botón «Quiero anunciar» en la vista de agencia del owner.",
         "testStrategy": "Backend nuevo = CRÍTICA (pgTAP + Deno: estados de la solicitud, no duplicar solicitud abierta, aprobar = can_advertise en la misma transacción, rechazo con motivo). Colas UI ligeras. Smoke en preview: solicitar desde owner.gdl → badge sube → aprobar → can_advertise=true + notificación al owner.",
-        "status": "pending",
+        "status": "in-progress",
         "dependencies": [
           "220"
         ],
         "priority": "high",
-        "subtasks": [],
-        "updatedAt": "2026-08-24T23:04:32.029Z"
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "DB solicitudes de cuenta comercial: advertising_requests + RLS + resolución atómica",
+            "description": "Tabla nueva + RPC create_advertising_request (owner) + resolve_advertising_request (admin, atómica: aprueba→can_advertise+categoría+auditoría+status en una transacción). pgTAP.",
+            "details": "",
+            "testStrategy": "",
+            "status": "pending",
+            "dependencies": []
+          },
+          {
+            "id": 2,
+            "title": "Contratos admin para agent_applications + escritores de notificación del ciclo de solicitud",
+            "description": "RPC resolve_agent_application si hoy solo existe vía Studio; writers de catálogo v1 (aditivo) para aprobado/rechazado si el catálogo lo permite.",
+            "details": "",
+            "testStrategy": "",
+            "status": "pending",
+            "dependencies": []
+          },
+          {
+            "id": 3,
+            "title": "UI owner: botón «Quiero anunciar» + estado de la solicitud",
+            "description": "Entrada del owner con categoría propuesta; estados pending/approved/rejected con motivo.",
+            "details": "",
+            "testStrategy": "",
+            "status": "pending",
+            "dependencies": []
+          },
+          {
+            "id": 4,
+            "title": "UI admin: cola /admin/requests unificada + re-apuntar deep links",
+            "description": "Tres secciones: agent_applications, inmobiliarias pending_approval (link al detalle existente), solicitudes comerciales con aprobar/rechazar+motivo.",
+            "details": "",
+            "testStrategy": "",
+            "status": "pending",
+            "dependencies": []
+          }
+        ],
+        "updatedAt": "2026-09-02T15:30:00.000Z"
       },
       {
         "id": "222",
@@ -10552,6 +10589,49 @@
           }
         ],
         "updatedAt": "2026-09-01T14:34:09.594Z"
+      },
+      {
+        "id": "232",
+        "title": "feat(157/169): búsqueda unificada con dirección — colonia+municipio+dirección resuelta a zona de catálogo",
+        "description": "Pedido de Abraham 2026-09-02: la búsqueda de zonas deja de ser solo por colonia — un solo buscador reusable acepta colonias, municipios Y direcciones (Google Places, como el wizard de propiedades); una dirección se geocodifica y se RESUELVE a la colonia del catálogo INEGI que contiene el punto (fallback municipio por bbox de menor área, precedente #194) — la zona guardada siempre es de catálogo (calidad de datos). Se cablea en el paso de zonas del wizard de campañas y en la búsqueda del mapa.",
+        "details": "Contrato RPC nuevo: place_at_point(p_lat float8, p_lng float8) → 0..1 fila con el MISMO shape de search_places (kind/id/name/context/bbox_*): ST_Contains sobre mx_neighborhoods.geom; fallback municipio cuyo bbox precalculado contiene el punto (menor área, desempate por id); fuera de cobertura = 0 filas (el cliente lo comunica, jamás inventa zona). Cliente: componente PlaceSearch unificado (sugerencias de catálogo vía search_places + sección Direcciones vía Places API New, patrón AddressAutocomplete pero con tokens de theme.ts), modo inline (lección #231) para el wizard y overlay para el mapa; degradación sin API key = solo catálogo.",
+        "testStrategy": "pgTAP para place_at_point (dentro/fuera/frontera/fallback municipio/0 filas) + TDD RNTL en hooks/libs del cliente + tsc/lint/suite completa.",
+        "status": "in-progress",
+        "dependencies": [
+          "157",
+          "169"
+        ],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "RPC place_at_point + migración + pgTAP",
+            "description": "",
+            "details": "",
+            "testStrategy": "",
+            "status": "pending",
+            "dependencies": []
+          },
+          {
+            "id": 2,
+            "title": "Componente PlaceSearch unificado + wiring en wizard step4",
+            "description": "",
+            "details": "",
+            "testStrategy": "",
+            "status": "pending",
+            "dependencies": []
+          },
+          {
+            "id": 3,
+            "title": "Wiring en la búsqueda del mapa",
+            "description": "",
+            "details": "",
+            "testStrategy": "",
+            "status": "pending",
+            "dependencies": []
+          }
+        ],
+        "updatedAt": "2026-09-02T15:30:00.000Z"
       }
     ],
     "metadata": {
