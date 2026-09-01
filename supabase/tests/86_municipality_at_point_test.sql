@@ -75,10 +75,14 @@
 --        place_at_point.
 --  EC-30 Grant intacto: authenticated sigue SIN EXECUTE sobre resolve_ad_zone
 --        (solo service_role).
+--  EC-31 ads_for_zone ya NO menciona mx_municipalities. Ancla INDEPENDIENTE
+--        DEL FORMATO: EC-17 busca el literal `bbox_max_lat - ` y es evadible
+--        partiendo la resta en dos lineas.
+--  EC-32 resolve_ad_zone ya NO menciona mx_municipalities.
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(30);
+select plan(32);
 
 -- ── Envoltura RED-safe ──────────────────────────────────────────────────────
 -- Mientras private.municipality_at_point no exista, invocarla directamente
@@ -371,6 +375,37 @@ select is(
      to_regprocedure('public.place_at_point(double precision,double precision)')::oid))),
   0,
   'EC-19 place_at_point ya NO reimplementa la expresion de area del bbox'
+);
+
+-- 🔴 EC-31 / EC-32 — ANCLA INDEPENDIENTE DEL FORMATO.
+-- EC-14..EC-19 son evadibles y no basta con ellos: un mutante que RECOPIE el
+-- order by pasa EC-14..EC-16 con solo dejar un comentario que nombre el helper,
+-- y pasa EC-17..EC-19 partiendo la resta en dos lineas —
+-- `(m.bbox_max_lat\n - m.bbox_min_lat)`— porque esos asserts buscan el LITERAL
+-- 'bbox_max_lat - '. Un assert que se rompe con un salto de linea no es un ancla.
+--
+-- El invariante que no depende del formato es mas fuerte y mas simple: despues
+-- de la extraccion, ads_for_zone y resolve_ad_zone NO TIENEN NADA QUE HACER con
+-- la tabla de municipios —resuelven la colonia y delegan todo lo demas—, asi
+-- que basta con NOMBRARLA para que salten. Cualquier reimplementacion del
+-- fallback tiene que leer mx_municipalities: no hay forma de recopiar el order
+-- by sin mencionarla.
+--
+-- place_at_point queda FUERA a proposito: si lee mx_municipalities de forma
+-- legitima, para devolver el nombre y el bbox del municipio ganador. Ahi el
+-- ancla es EC-16 + EC-19.
+select is(
+  (select position('mx_municipalities' in pg_get_functiondef(
+     to_regprocedure('public.ads_for_zone(double precision,double precision,bigint,text)')::oid))),
+  0,
+  'EC-31 ads_for_zone ya NO toca mx_municipalities: delega el fallback municipal'
+);
+
+select is(
+  (select position('mx_municipalities' in pg_get_functiondef(
+     to_regprocedure('public.resolve_ad_zone(double precision,double precision)')::oid))),
+  0,
+  'EC-32 resolve_ad_zone ya NO toca mx_municipalities: delega el fallback municipal'
 );
 
 -- ════════════════════════════════════════════════════════════════════════════
