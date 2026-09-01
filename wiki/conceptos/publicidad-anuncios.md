@@ -194,3 +194,8 @@ diario no es el lugar donde se decide una regla de negocio en silencio.
 ## Subida resiliente a cambios de red (#229, 2026-09-01)
 
 Incidente real: cambio de wifi durante el poll → excepción única del checker mataba el ciclo Y la fila `uploading` bloqueaba a la organización 15 min sin escape (el mint de anuncios no tenía `replace`). Fixes: `PendingAdCanceller` (body `replace:true` → cancela pendientes de la agencia como `failed/REPLACED` antes del 409; nunca un creativo referenciado por `ads`), polls tolerantes en `useAdUpload`/`useVideoUpload` (excepción = intento reintentable), y 40 intentos de poll (~2 min) para los videos largos de #228. Regla que deja: **al calcar un pipeline, los quick-fixes posteriores del original no viajan solos — buscar los commits del original POSTERIORES al calco.**
+
+
+## La 4ª capa del rango + pre-aprobación (#230, 2026-09-01)
+
+El CHECK de columna `ad_creatives_duration_seconds_check` seguía en 6–30 tras #228 → `mark_ready` 23514 → webhook 500 → creativo `uploading` eterno. Fix: migración `20260901000002` (10–120) + pgTAP 78 que ancla el CHECK a las constantes del webhook. **El rango vive en CUATRO capas**: cliente (`ads/lib/validation.ts`), mint (`maxDurationSeconds`), webhook (`AD_MIN/AD_MAX`) y el CHECK. Pre-aprobación: step1 deja continuar al 100% del binario (`on_minted` + `creative_ready` en el form); step5 resuelve la verdad con `wait_for_creative_ready` (`features/ads/lib/waitForCreativeReady.ts`) antes de la RPC.
