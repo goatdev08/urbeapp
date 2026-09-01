@@ -3,6 +3,10 @@ tipo: estado
 actualizado: 2026-09-01
 ---
 
+## Hoy (2026-09-01, tarde) — #229/#230/#231: la subida sobrevive la red, el wizard pre-aprueba, y los dos bugs de UI de Android
+
+Tres incidentes reportados por Abraham probando anuncios en su dispositivo, los tres resueltos y DESPLEGADOS el mismo día (EFs + migración CHECK 10–120 + OTAs verificados): **#229** cambio de wifi durante la subida (replace para anuncios + poll tolerante a blips, 40 intentos), **#230** «procesando video» eterno (la 4ª capa: el CHECK de `ad_creatives` seguía en 6–30 y reventaba el webhook con 500; + pre-aprobación: step1 continúa al 100% del binario y step5 resuelve la verdad con `wait_for_creative_ready`), **#231** el dropdown de colonias no scrolleaba (overlay absoluto dentro de ScrollView = zona muerta al tacto en Android → modo `inline`) y el panel admin/notificaciones bajo el status bar (`SafeAreaView` de RN es iOS-only; regla nueva: siempre el de safe-area-context). Detalle en `wiki/log.md`.
+
 ## Hoy (2026-09-01) — release #226/#227/#228: la puerta del wizard, la paridad de video y la fuga de leads, directo a producción
 
 **Tres hallazgos de Abraham probando en su celular, tres tareas cerradas y DESPLEGADAS el mismo día.** (1) **#227**: «Mis anuncios» no tenía botón de nueva campaña — el wizard de 169.9 estaba completo pero huérfano; entrada agregada (headerRight + CTA del vacío, gated por `useCanAdvertise`). (2) **#228** (producto): anuncios aceptan ahora los MISMOS límites de video que propiedades — 10–120 s / 500 MB TUS, paridad por construcción (constantes importadas + parity tests); tocó `stream-webhook` y `mint-ad-upload-url` (rama TUS calcada de 192.1, back-compat total con builds viejos). (3) **#226**: la cuenta admin veía los leads de Tu Casa con Vlad — `is_admin()` en `leads_select`/`can_view_lead` (arrastrado desde 0008 sin decisión) + cliente delegando el alcance a RLS; sellado en dos capas con TDD (pgTAP 77 nuevo, `02_rls` reescrito) y verificado por sonda en producción: admin=0, owner=3.
