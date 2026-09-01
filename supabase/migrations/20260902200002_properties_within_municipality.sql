@@ -48,10 +48,9 @@ as $$
 declare
   v_bbox extensions.geography;
 begin
-  if p_municipality_id is null then
-    return;
-  end if;
-
+  -- Sin guard de NULL a propósito (igual que properties_within_neighborhood):
+  -- un id NULL no matchea ninguna colonia ni ningún municipio y sale por la
+  -- rama de v_bbox NULL con 0 filas. Un `if` extra sería una rama sin efecto.
   if exists (select 1 from public.mx_neighborhoods n
               where n.municipality_id = p_municipality_id) then
     return query
