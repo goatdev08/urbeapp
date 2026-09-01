@@ -82,14 +82,18 @@ export async function handler(
   }
   const agency_id = authz.agency_id;
 
-  // 5b. #228 — body opcional (size_bytes → TUS). Body ausente/ilegible = el
-  //     contrato viejo intacto (camino básico, builds instalados).
+  // 5b. #228/#229 — body opcional (size_bytes → TUS; replace → cancelar el
+  //     creativo pendiente). Body ausente/ilegible = contrato viejo intacto.
   let size_bytes: number | undefined;
+  let replace = false;
   try {
     const parsed: unknown = await req.json();
     size_bytes = parse_size_bytes(parsed);
+    replace = typeof parsed === "object" && parsed !== null &&
+      (parsed as { replace?: unknown }).replace === true;
   } catch {
     size_bytes = undefined;
+    replace = false;
   }
 
   // 5c. #228 — techo de tamaño (2ª capa; el cliente ya valida el mismo techo).
@@ -100,6 +104,23 @@ export async function handler(
       `El video supera el máximo permitido (${Math.round(MAX_UPLOAD_SIZE_BYTES / (1024 * 1024))} MB)`,
       400,
     );
+  }
+
+  // 5d. #229 — replace: "Cambiar video" cancela el creativo pendiente de la
+  //     ORGANIZACIÓN antes del conteo (calco del quick-fix 2026-08-15 del
+  //     hermano). Sin esto, una fila 'uploading' atorada (cambio de wifi a
+  //     media subida, incidente 2026-09-01) bloquea con 409 toda la ventana
+  //     STALE_UPLOAD_MS sin escape desde la UI. Dep OPCIONAL (retrocompat).
+  if (replace && deps.pendingAdCanceller) {
+    try {
+      await deps.pendingAdCanceller.cancel_pending_ad_creatives(agency_id);
+    } catch {
+      return error_response(
+        "INTERNAL_ERROR",
+        "Error interno al cancelar el anuncio en curso",
+        500,
+      );
+    }
   }
 
   // 6. Concurrencia POR ORGANIZACIÓN (ad_creatives, tabla PROPIA — nunca

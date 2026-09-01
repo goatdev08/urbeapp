@@ -208,6 +208,21 @@ export interface AdCreativeRegistrar {
   register_uploading_ad_creative(params: RegisterUploadingAdCreativeParams): Promise<void>;
 }
 
+// ── PendingAdCanceller — "Cambiar video" cancela el creativo anterior (#229) ──
+// Calco del PendingUploadCanceller del hermano (quick-fix 2026-08-15): sin
+// esto, una fila 'uploading' atorada (p.ej. cambio de wifi a media subida,
+// incidente real 2026-09-01) bloquea a la ORGANIZACIÓN entera con 409 durante
+// toda la ventana STALE_UPLOAD_MS, sin escape desde la UI. El adapter real
+// marca failed/failure_reason='REPLACED' las filas uploading/processing de la
+// agencia NO referenciadas por `ads` (create_ad_campaign_atomic solo acepta
+// creativos 'ready', así que un pendiente jamás está referenciado — el
+// not-exists es cinturón). OPCIONAL: la suite previa construye deps sin esta
+// key y debe seguir pasando sin cambios.
+
+export interface PendingAdCanceller {
+  cancel_pending_ad_creatives(agency_id: string): Promise<number>;
+}
+
 // ── Deps inyectables del handler ──────────────────────────────────────────────
 
 export interface MintAdUploadUrlDeps {
@@ -216,6 +231,7 @@ export interface MintAdUploadUrlDeps {
   activeAdUploadChecker: ActiveAdUploadChecker;
   streamUploadCreator: StreamUploadCreator;
   adCreativeRegistrar: AdCreativeRegistrar;
+  pendingAdCanceller?: PendingAdCanceller;
 }
 
 // ── Shape de respuesta 200 ─────────────────────────────────────────────────────

@@ -1090,9 +1090,15 @@ describe('useAdUpload', () => {
     expect(result.current.cloudflare_uid).toBeNull();
   });
 
-  // ── (EC22) Poll: el checker lanza — fail-closed ───────────────────────────
+  // ── (EC22, REESCRITO #229) Poll: el checker lanza — REINTENTABLE ──────────
+  //
+  // Antes UNA excepción era terminal (fail-closed llamado_una_vez). Incidente
+  // real 2026-09-01: cambiar de red wifi durante "procesando video" produce
+  // exactamente un blip de red en el checker — matar el ciclo por eso deja al
+  // usuario con un error falso Y la fila atorada. Ahora la excepción cuenta
+  // como intento fallido y se REINTENTA; terminal solo al agotar attempts.
 
-  it('(EC22) poll_checker_lanza_excepcion_fail_closed_llamado_una_vez', async () => {
+  it('(EC22) poll_checker_lanza_SIEMPRE_falla_neutro_solo_al_agotar_los_intentos', async () => {
     const upload_task = make_mock_upload_task({ status: 200 });
     const file_instance = make_mock_file({ upload_task });
     MockFile.mockImplementation(() => file_instance as never);
@@ -1114,7 +1120,37 @@ describe('useAdUpload', () => {
 
     expect(result.current.status).toBe('failed');
     expect(result.current.error).toBe(NEUTRAL_ERROR_MESSAGE);
-    expect(mock_checker).toHaveBeenCalledTimes(1);
+    // Los 3 intentos se consumieron — no murió a la primera.
+    expect(mock_checker).toHaveBeenCalledTimes(3);
+  });
+
+  it('(EC22b) #229 poll_checker_lanza_una_vez_y_luego_ready_termina_en_READY (cambio de wifi sobrevivido)', async () => {
+    const upload_task = make_mock_upload_task({ status: 200 });
+    const file_instance = make_mock_file({ upload_task });
+    MockFile.mockImplementation(() => file_instance as never);
+    const mock_supabase = make_mock_supabase({});
+    const mock_checker = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('network changed'))
+      .mockResolvedValueOnce('ready');
+
+    const { result } = await renderHook(() =>
+      useAdUpload({
+        supabase: mock_supabase as never,
+        check_ad_creative_status: mock_checker,
+        poll_attempts: 3,
+        poll_interval_ms: 0,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.upload({ local_uri: TEST_LOCAL_URI, duration_ms: VALID_DURATION_MS });
+    });
+
+    expect(mock_checker).toHaveBeenCalledTimes(2);
+    expect(result.current.status).toBe('ready');
+    expect(result.current.error).toBeNull();
+    expect(result.current.cloudflare_uid).toBe(STREAM_UID);
   });
 
   // ── (EC23) Poll: se invoca con el uid que devolvió mint ───────────────────
@@ -1554,8 +1590,10 @@ describe('useAdUpload', () => {
         await result.current.upload({ local_uri: TEST_LOCAL_URI, duration_ms: VALID_DURATION_MS });
       });
 
+      // #229: replace:true (espejo del hermano) — un creativo pendiente
+      // atorado (cambio de wifi) se cancela en el server antes del 409.
       expect(mock_supabase._mock_invoke).toHaveBeenCalledWith('mint-ad-upload-url', {
-        body: { size_bytes: 42 * 1024 * 1024 },
+        body: { replace: true, size_bytes: 42 * 1024 * 1024 },
       });
     });
 

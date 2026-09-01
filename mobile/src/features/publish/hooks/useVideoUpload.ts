@@ -38,7 +38,8 @@
  *         - 'failed' → corta de inmediato (no agota intentos), mensaje
  *           propio de procesamiento fallido, NO escribe al form.
  *         - 'uploading' | 'missing' agotados los intentos → mensaje neutro.
- *         - el checker lanza → mensaje neutro, fail-closed (no reintenta).
+ *         - el checker lanza → intento REINTENTABLE (#229, blip de red al
+ *           cambiar de wifi); mensaje neutro solo al agotar los intentos.
  *
  * Quick fix 2026-08-15 (smoke manual): "Cambiar video" durante una subida
  * la CANCELA y deja subir otra de inmediato.
@@ -221,34 +222,39 @@ async function verify_before_failing(params: {
   set_status('verifying');
   set_progress(0.99);
 
-  try {
-    for (let attempt = 0; attempt < attempts; attempt += 1) {
-      if (attempt > 0) {
-        await sleep(interval_ms);
-      }
-      const check_status = await checker(cloudflare_uid);
-
-      if (check_status === 'ready' || check_status === 'processing') {
-        update({ video_id: cloudflare_uid, cloudflare_uid });
-        set_status('processing');
-        set_progress(1);
-        error_ref.current = null;
-        return;
-      }
-
-      if (check_status === 'failed') {
-        set_status('error');
-        error_ref.current = PROCESSING_FAILED_MESSAGE;
-        return;
-      }
-
-      // 'uploading' | 'missing' → el video sigue en curso, reintentar.
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (attempt > 0) {
+      await sleep(interval_ms);
     }
-  } catch (err) {
-    console.warn('[useVideoUpload] check_video_status failed:', err);
-    set_status('error');
-    error_ref.current = NEUTRAL_ERROR_MESSAGE;
-    return;
+
+    // #229: una excepción del checker es un intento fallido que se REINTENTA,
+    // no un desenlace — cambiar de red wifi durante la verificación produce
+    // exactamente ese blip, y antes mataba el ciclo con el video sano
+    // (incidente real en el gemelo de anuncios, 2026-09-01). Terminal solo al
+    // agotar los intentos.
+    let check_status: VideoCheckStatus;
+    try {
+      check_status = await checker(cloudflare_uid);
+    } catch (err) {
+      console.warn('[useVideoUpload] check_video_status falló (reintentable):', err);
+      continue;
+    }
+
+    if (check_status === 'ready' || check_status === 'processing') {
+      update({ video_id: cloudflare_uid, cloudflare_uid });
+      set_status('processing');
+      set_progress(1);
+      error_ref.current = null;
+      return;
+    }
+
+    if (check_status === 'failed') {
+      set_status('error');
+      error_ref.current = PROCESSING_FAILED_MESSAGE;
+      return;
+    }
+
+    // 'uploading' | 'missing' → el video sigue en curso, reintentar.
   }
 
   // Intentos agotados sin 'ready'/'processing'/'failed'.

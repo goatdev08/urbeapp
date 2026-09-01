@@ -146,6 +146,7 @@ import {
   type CallerVerifier,
   type CallerVerifyResult,
   type MintAdUploadUrlDeps,
+  type PendingAdCanceller,
   type RegisterUploadingAdCreativeParams,
   type StreamDirectUploadParams,
   type StreamDirectUploadResult,
@@ -998,4 +999,83 @@ Deno.test("188_handler_de_anuncios_pasa_stale_processing_before_y_DISTINTO_de_st
     false,
     "processing y uploading deben recibir umbrales distintos, no el mismo timestamp",
   );
+});
+
+// ── #229 — replace: "Cambiar video" cancela el creativo pendiente ────────────
+// Incidente real 2026-09-01: cambio de wifi a media subida → fila 'uploading'
+// atorada → 409 para la ORGANIZACIÓN durante toda la ventana de 15 min, sin
+// escape desde la UI (el hermano tiene replace desde el quick-fix 2026-08-15;
+// este mint no). El canceller corre ANTES del conteo de concurrencia.
+
+interface FakePendingAdCanceller extends PendingAdCanceller {
+  calls: string[];
+}
+
+function canceller_ok(): FakePendingAdCanceller {
+  return {
+    calls: [],
+    cancel_pending_ad_creatives(agency_id: string): Promise<number> {
+      this.calls.push(agency_id);
+      return Promise.resolve(1);
+    },
+  } as FakePendingAdCanceller;
+}
+
+Deno.test("229_replace_true_llama_al_canceller_con_el_agency_id_ANTES_del_checker_de_concurrencia", async () => {
+  const order: string[] = [];
+  const canceller: PendingAdCanceller = {
+    cancel_pending_ad_creatives(agency_id: string): Promise<number> {
+      order.push(`cancel:${agency_id}`);
+      return Promise.resolve(1);
+    },
+  };
+  const checker: ActiveAdUploadChecker = {
+    count_active_ad_uploads(agency_id: string): Promise<number> {
+      order.push(`count:${agency_id}`);
+      return Promise.resolve(0);
+    },
+  };
+  const deps = make_deps({ pendingAdCanceller: canceller, activeAdUploadChecker: checker });
+  const res = await handler(post_request(true, { replace: true }), deps);
+
+  assertEquals(res.status, 200);
+  assertEquals(order, [`cancel:${AGENCY_ID}`, `count:${AGENCY_ID}`],
+    "el canceller debe correr con el agency_id resuelto y ANTES del conteo — al revés, la fila atorada seguiría contando en el 409");
+});
+
+Deno.test("229_replace_true_sin_canceller_inyectado_sigue_el_flujo_viejo_sin_crash", async () => {
+  // Retrocompat: deps sin la key (shape de toda la suite previa) + un body con
+  // replace NO debe tronar ni cambiar el desenlace.
+  const res = await handler(post_request(true, { replace: true }), make_deps());
+  assertEquals(res.status, 200);
+});
+
+Deno.test("229_sin_replace_el_canceller_NO_se_llama", async () => {
+  const canceller = canceller_ok();
+  const deps = make_deps({ pendingAdCanceller: canceller });
+  await handler(post_request(true, { size_bytes: 1024 }), deps);
+  assertEquals(canceller.calls.length, 0, "sin replace:true el canceller no debe tocarse (builds viejos)");
+
+  const canceller2 = canceller_ok();
+  const deps2 = make_deps({ pendingAdCanceller: canceller2 });
+  await handler(post_request(), deps2); // sin body
+  assertEquals(canceller2.calls.length, 0);
+});
+
+Deno.test("229_canceller_lanza_responde_500_sin_tocar_stream_ni_insertar", async () => {
+  const canceller: PendingAdCanceller = {
+    cancel_pending_ad_creatives(): Promise<number> {
+      return Promise.reject(new Error("update ad_creatives failed"));
+    },
+  };
+  const uploader = uploader_tus_ok(STREAM_RESULT);
+  const registrar = registrar_ok();
+  const deps = make_deps({ pendingAdCanceller: canceller, streamUploadCreator: uploader, adCreativeRegistrar: registrar });
+  const res = await handler(post_request(true, { replace: true }), deps);
+
+  assertEquals(res.status, 500);
+  const body = await res.json();
+  assertEquals(body.error.code, "INTERNAL_ERROR");
+  assertEquals(uploader.calls.length + uploader.tus_calls.length, 0);
+  assertEquals(registrar.calls.length, 0);
 });
