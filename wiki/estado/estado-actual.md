@@ -1,7 +1,13 @@
 ---
 tipo: estado
-actualizado: 2026-08-28
+actualizado: 2026-09-01
 ---
+
+## Hoy (2026-09-01) — release #226/#227/#228: la puerta del wizard, la paridad de video y la fuga de leads, directo a producción
+
+**Tres hallazgos de Abraham probando en su celular, tres tareas cerradas y DESPLEGADAS el mismo día.** (1) **#227**: «Mis anuncios» no tenía botón de nueva campaña — el wizard de 169.9 estaba completo pero huérfano; entrada agregada (headerRight + CTA del vacío, gated por `useCanAdvertise`). (2) **#228** (producto): anuncios aceptan ahora los MISMOS límites de video que propiedades — 10–120 s / 500 MB TUS, paridad por construcción (constantes importadas + parity tests); tocó `stream-webhook` y `mint-ad-upload-url` (rama TUS calcada de 192.1, back-compat total con builds viejos). (3) **#226**: la cuenta admin veía los leads de Tu Casa con Vlad — `is_admin()` en `leads_select`/`can_view_lead` (arrastrado desde 0008 sin decisión) + cliente delegando el alcance a RLS; sellado en dos capas con TDD (pgTAP 77 nuevo, `02_rls` reescrito) y verificado por sonda en producción: admin=0, owner=3.
+
+**El release siguió §0.5 al pie:** EFs primero (`mint-ad-upload-url` con TUS, `stream-webhook` con el rango nuevo — sin `size_bytes` la rama vieja es byte-idéntica) → OTA a ambos canales (guard de backend verificado en el bundle, runtimes idénticos a los builds v1.0.6: entrega real, no NO-OP) → la migración restrictiva de leads al final, con sonda revertida como verificación. PRs #113/#114/#115 mergeados con squash. **Ya no queda backlog de deploy:** las migraciones de #219/#220/#223 se aplicaron al remoto el 2026-08-31 (verificado en `schema_migrations`: `notify_admin_events` … `user_reports`), así que producción está al día con `main` en las tres capas — migraciones, EFs y OTA.
 
 ## Hoy (2026-08-28) — #220 (041-M3): reportes §24 completo, y la invariante que vivía en dos capas con una sola anclada
 

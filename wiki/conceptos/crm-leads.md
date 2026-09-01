@@ -114,3 +114,8 @@ El agente abre el **tab CRM** (oculto a no-agentes vía `user.role === 'agent'` 
 
 ## Relacionados
 [[feed-vertical-video]] · [[propiedades-y-video]] · [[inmobiliarias-y-agentes]] · [[rls-seguridad]]
+
+
+## Fuga del admin de plataforma — sellada (#226, 2026-09-01)
+
+Un `users.role='admin'` sin relación con la agencia veía TODO el pipeline (leads + historial + `get_lead_stats`, teléfono del buscador incluido) por el `or private.is_admin()` que `leads_select` arrastraba desde 0008 — y el cliente lo amplificaba delegando el alcance a RLS (semántica «RLS decide» de #28). Fix en dos capas: migración `20260901000001` (fuera `is_admin()` de `leads_select` y `private.can_view_lead`; `leads_update/delete` lo conservan — decisión anotada) y `useAgentLeads` con alcance SIEMPRE explícito vía el 3er parámetro `scope` que `CRMScreen` arma desde `useAgencyRole`. El admin que además es owner (Abraham/Desarrolladora) conserva SU organización por `agency_role_of`. Anclado: `supabase/tests/77_leads_admin_plataforma_test.sql` (4 DELTA + 5 invariantes) y el assert de `02_rls` reescrito («Admin ve todos los leads» era la fuga hecha spec). Verificado en producción por sonda revertida: admin=0/0/0, owner=3. Regla que se refuerza: **«mis X» siempre filtra explícito; RLS es la 2ª capa, no el alcance.**

@@ -184,3 +184,8 @@ expirara. «Ya te avisé, tú lo borraste». #77 (UI de notificaciones) hereda e
 Solo se avisa de anuncios `active`. Que la vigencia pagada se pause o se pierda al
 suspender el negocio **sigue siendo una pregunta abierta** de la exploración 039, y un job
 diario no es el lugar donde se decide una regla de negocio en silencio.
+
+
+## Entrada al wizard + paridad de video (#227/#228, 2026-09-01)
+
+**#227**: el wizard (169.9) era inalcanzable — nada navegaba a `/ads/new/step1` (el techo R23 de 171.3 prohibía UI extra y el botón no estaba en ninguna lista). Entrada doble en `/ads`: «+» en headerRight y CTA del estado vacío (voz activa), ambas gated por `useCanAdvertise` (la ruta también sirve de dashboard histórico con capacidad revocada, donde mint daría 403). **#228** (decisión de producto 2026-08-31): el creativo acepta los MISMOS límites que el video de una propiedad — **10–120 s y 500 MB por TUS** (antes 6–30 s / 200 MB POST). Paridad POR CONSTRUCCIÓN: `ads/lib/validation.ts` importa `MIN/MAX_VIDEO_DURATION_SECONDS` de publish; `useAdUpload` usa `MAX_VIDEO_SIZE_BYTES` y reusa `publish/lib/tusUpload` (rama `protocol:'tus'` del mint, confluencia en el poll D1/#103 intacta); `mint-ad-upload-url` gana `size_bytes`→`create_tus_upload` + techo 400 `VIDEO_TOO_LARGE` + `protocol` en la respuesta (sin `size_bytes` = básico intacto, builds viejos); `stream-webhook` valida 10–120. Parity tests: `upload_window_parity.test.ts` (constantes entre EFs) y `validation.test.ts` (cliente). Desplegado 2026-09-01 (EFs + OTA).
