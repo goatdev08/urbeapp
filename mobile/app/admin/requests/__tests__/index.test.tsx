@@ -3,11 +3,15 @@
  * Subtarea Taskmaster: 221.4.
  *
  * Pantalla NO crítica (verificación ligera): monta con las 3 secciones,
- * cablea aprobar/rechazar de las dos colas mutables a sus respectivos
+ * cablea aprobar/rechazar de las TRES colas mutables a sus respectivos
  * hooks (ya cubiertos por sus propias suites críticas —
  * useAdminRequestsQueues.test.ts / useResolveRequest.test.ts). Aquí solo se
  * prueba que la pantalla PASE los params correctos, mismo criterio que
  * app/admin/reports/__tests__/index.test.tsx.
+ *
+ * Follow-up del coordinador: la sección (b) ganó aprobar/rechazar INLINE
+ * (antes solo linkeaba al detalle) — el link "Ver detalle" se conserva con
+ * su propio testID.
  */
 import React from 'react';
 import { render, act, cleanup, screen, fireEvent } from '@testing-library/react-native';
@@ -20,6 +24,7 @@ import {
 import {
   useResolveAgentApplication,
   useResolveAdvertisingRequest,
+  useResolveAgencyRegistration,
 } from '@/features/admin/hooks/useResolveRequest';
 import AdminRequestsScreen from '../index';
 
@@ -32,6 +37,7 @@ jest.mock('@/features/admin/hooks/useAdminRequestsQueues', () => ({
 jest.mock('@/features/admin/hooks/useResolveRequest', () => ({
   useResolveAgentApplication: jest.fn(),
   useResolveAdvertisingRequest: jest.fn(),
+  useResolveAgencyRegistration: jest.fn(),
 }));
 
 const mock_push = jest.fn();
@@ -53,6 +59,9 @@ const mock_resolve_agent_application = useResolveAgentApplication as jest.Mocked
 >;
 const mock_resolve_advertising_request = useResolveAdvertisingRequest as jest.MockedFunction<
   typeof useResolveAdvertisingRequest
+>;
+const mock_resolve_agency_registration = useResolveAgencyRegistration as jest.MockedFunction<
+  typeof useResolveAgencyRegistration
 >;
 
 type RenderResult = Awaited<ReturnType<typeof render>>;
@@ -111,6 +120,11 @@ function set_default_mocks() {
     error_message: null,
   });
   mock_resolve_advertising_request.mockReturnValue({
+    resolve: jest.fn().mockResolvedValue({ ok: true, error: null }),
+    is_submitting: false,
+    error_message: null,
+  });
+  mock_resolve_agency_registration.mockReturnValue({
     resolve: jest.fn().mockResolvedValue({ ok: true, error: null }),
     is_submitting: false,
     error_message: null,
@@ -186,12 +200,53 @@ describe('AdminRequestsScreen', () => {
     });
   });
 
-  it('tocar una inmobiliaria pendiente navega al detalle existente', async () => {
+  it('"Ver detalle" de una inmobiliaria pendiente navega al detalle existente', async () => {
     await render_screen();
     await act(async () => {
-      await fireEvent.press(screen.getByTestId('pending-agency-agency-1'));
+      await fireEvent.press(screen.getByTestId('view-agency-detail-agency-1'));
     });
     expect(mock_push).toHaveBeenCalledWith('/admin/agencies/agency-1');
+  });
+
+  it('aprobar un registro de inmobiliaria llama resolve con approve:true', async () => {
+    const resolve = jest.fn().mockResolvedValue({ ok: true, error: null });
+    mock_resolve_agency_registration.mockReturnValue({
+      resolve,
+      is_submitting: false,
+      error_message: null,
+    });
+    await render_screen();
+    await act(async () => {
+      await fireEvent.press(screen.getByTestId('approve-agency-agency-1'));
+    });
+    expect(resolve).toHaveBeenCalledWith({ agency_id: 'agency-1', approve: true });
+  });
+
+  it('rechazar un registro de inmobiliaria abre el modal y exige motivo', async () => {
+    const resolve = jest.fn().mockResolvedValue({ ok: true, error: null });
+    mock_resolve_agency_registration.mockReturnValue({
+      resolve,
+      is_submitting: false,
+      error_message: null,
+    });
+    await render_screen();
+    await act(async () => {
+      await fireEvent.press(screen.getByTestId('reject-agency-agency-1'));
+    });
+    const confirm_btn = screen.getByTestId('rejection-reason-confirm');
+    expect(confirm_btn.props.accessibilityState?.disabled).toBe(true);
+
+    await act(async () => {
+      fireEvent.changeText(screen.getByTestId('rejection-reason-input'), 'Datos incompletos');
+    });
+    await act(async () => {
+      await fireEvent.press(screen.getByTestId('rejection-reason-confirm'));
+    });
+    expect(resolve).toHaveBeenCalledWith({
+      agency_id: 'agency-1',
+      approve: false,
+      reason: 'Datos incompletos',
+    });
   });
 
   it('aprobar una solicitud de cuenta comercial llama resolve con approve:true', async () => {
