@@ -149,10 +149,15 @@ function QueueRow({
   );
 }
 
-/** Las 5 colas del home admin (#217). `ads_pending` (/admin/ads, 208.3),
- * `revisions_pending` (/admin/revisions, 218.2) y `reports_new`
- * (/admin/reports, 220.4) navegan; el resto son informativas hasta #220-#221
- * (ponytail: sin pantallas placeholder para rutas que aún no existen). */
+/** Las 4 colas del home admin (#217, #221). `ads_pending` (/admin/ads,
+ * 208.3), `revisions_pending` (/admin/revisions, 218.2) y `reports_new`
+ * (/admin/reports, 220.4) navegan cada una a su propia pantalla.
+ * `agent_applications_pending` y `agencies_pending` (221.4) se FUNDEN en una
+ * sola fila "Solicitudes" navegable a /admin/requests — esa pantalla ya
+ * cubre las dos colas (+ el canal nuevo de cuenta comercial, sin contador
+ * propio aquí: costaría una 6ª query en useAdminQueueCounts contra una tabla
+ * que este worktree puede no tener desplegada todavía, rompiendo el
+ * todo-o-nada de las OTRAS 5 colas — ver bitácora 221.4). */
 const QUEUE_ROW_DEFS: readonly {
   key: keyof AdminQueueCounts;
   label: string;
@@ -162,8 +167,6 @@ const QUEUE_ROW_DEFS: readonly {
   { key: 'ads_pending', label: 'Anuncios por revisar', navigable: true, testID: 'admin-ads-entry' },
   { key: 'revisions_pending', label: 'Revisiones de ediciones', navigable: true, testID: 'admin-queue-revisions' },
   { key: 'reports_new', label: 'Reportes', navigable: true, testID: 'admin-queue-reports' },
-  { key: 'agent_applications_pending', label: 'Solicitudes de agente', navigable: false, testID: 'admin-queue-agent-applications' },
-  { key: 'agencies_pending', label: 'Inmobiliarias por aprobar', navigable: false, testID: 'admin-queue-agencies' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -235,6 +238,12 @@ export default function AdminAgencyListScreen(): React.ReactElement {
     router.push('/admin/reports');
   }, [router]);
 
+  // 221.4: entrada a la cola unificada de solicitudes (agente + inmobiliaria
+  // + cuenta comercial).
+  const handle_requests_press = useCallback(() => {
+    router.push('/admin/requests');
+  }, [router]);
+
   // Mapa key→handler para las filas navegables de QUEUE_ROW_DEFS — cada cola
   // navega a su propia ruta (ads_pending, revisions_pending y reports_new hoy).
   const queue_row_handlers: Partial<Record<keyof AdminQueueCounts, () => void>> = {
@@ -242,6 +251,14 @@ export default function AdminAgencyListScreen(): React.ReactElement {
     revisions_pending: handle_revisions_press,
     reports_new: handle_reports_press,
   };
+
+  // 221.4: "Solicitudes" funde agent_applications_pending + agencies_pending
+  // en un solo contador — undefined mientras cualquiera de las dos falte
+  // (mismo criterio is_unresolved que las demás filas).
+  const requests_count =
+    queue_counts !== null
+      ? queue_counts.agent_applications_pending + queue_counts.agencies_pending
+      : undefined;
 
   // ------ Estados de la pantalla ------
 
@@ -317,6 +334,14 @@ export default function AdminAgencyListScreen(): React.ReactElement {
           testID={row.testID}
         />
       ))}
+
+      <QueueRow
+        label="Solicitudes"
+        count={requests_count}
+        is_unresolved={queues_loading || queues_error_message !== null}
+        on_press={handle_requests_press}
+        testID="admin-queue-requests"
+      />
 
       <FlatList
         data={agencies}

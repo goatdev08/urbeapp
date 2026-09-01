@@ -75,17 +75,21 @@
 --    catálogo v1 docs/PRD.md §22.4) ──────────────────────────────────────────
 --   admin_ad_pending          → deep_link '/admin/ads'      · related_entity_type 'ad'
 --   admin_revision_pending    → deep_link '/admin/revisions'· related_entity_type 'property_revision'
---   admin_agent_application   → deep_link '/admin'          · related_entity_type 'agent_application'
---   admin_agency_pending      → deep_link '/admin'          · related_entity_type 'agency'
---   🔴 CORREGIDO (tarea #223.2, code review del PR #106 de #219, ANTES del
---   deploy a producción): la fijación original de este RED (2026-08-25) puso
---   '/admin/requests' para estos 2 tipos, pero esa ruta NUNCA existió
---   (mobile/app/admin/ solo tiene index/ads/agencies/revisions) — era una
---   expectativa equivocada del test-author, no una implementación que se
---   debilitó después. Destino interino: '/admin' (el índice admin es la
---   lista de inmobiliarias y el hub de las colas); #221 (M4 solicitudes)
---   re-apuntará a '/admin/requests' cuando esa pantalla exista. Ver AGY4/
---   APP4 abajo.
+--   admin_agent_application   → deep_link '/admin/requests' · related_entity_type 'agent_application'
+--   admin_agency_pending      → deep_link '/admin/requests' · related_entity_type 'agency'
+--   🔴 HISTORIA DE ESTOS 2 DEEP LINKS (leer antes de tocarlos):
+--   (1) La fijación original de este RED (2026-08-25, #219.1) puso
+--       '/admin/requests', pero esa ruta NO existía todavía
+--       (mobile/app/admin/ solo tenía index/ads/agencies/revisions) — era una
+--       expectativa equivocada del test-author, no una implementación
+--       debilitada.
+--   (2) #223.2 (review del PR #106) la bajó a '/admin' como destino INTERINO,
+--       anotando "#221 (M4 solicitudes) re-apuntará a '/admin/requests'
+--       cuando esa pantalla exista".
+--   (3) 2026-09-01, #221: la pantalla EXISTE (cola unificada de M4), así que
+--       este archivo vuelve a exigir '/admin/requests' y la migración
+--       20260902100004 re-apunta los 2 writers + hace backfill de los avisos
+--       NO LEÍDOS. Ver AGY4/APP4 abajo.
 --   data lleva SIEMPRE 'ad_title' (ads) / 'address' (revisiones) /
 --   'application_type' (solicitudes) / 'agency_name' (inmobiliarias) — llaves
 --   snake_case sin colisionar con las columnas de la fila (title/body son del
@@ -416,11 +420,9 @@ insert into result_agy_row_71
     and type = 'admin_agency_pending';
 
 select is((select n_type from result_agy_row_71), 'admin_agency_pending', 'AGY3_type_admin_agency_pending');
--- 🔴 CORREGIDO (#223.2, review PR #106 de #219): '/admin/requests' no existe
--- (mobile/app/admin/ solo index/ads/agencies/revisions) -- expectativa
--- equivocada del RED original, no un debilitamiento. Interino '/admin' hasta
--- que #221 (M4 solicitudes) cree la pantalla real.
-select is((select n_deep_link from result_agy_row_71), '/admin', 'AGY4_deep_link_admin_interino_hasta_221_PRD_22_4');
+-- 🔴 #221 (2026-09-01): fin del interino de #223.2 — la cola /admin/requests
+-- ya existe, así que el writer debe apuntar ahí (migración 20260902100004).
+select is((select n_deep_link from result_agy_row_71), '/admin/requests', 'AGY4_deep_link_admin_requests_221');
 select is((select n_rel_type from result_agy_row_71), 'agency', 'AGY5_related_entity_type_agency');
 select is((select n_rel_id from result_agy_row_71), '00000000-0000-0000-0000-000000710022'::uuid,
   'AGY6_related_entity_id_es_el_id_de_la_agencia');
@@ -481,8 +483,8 @@ insert into result_app_row_71
     and type = 'admin_agent_application';
 
 select is((select n_type from result_app_row_71), 'admin_agent_application', 'APP3_type_admin_agent_application');
--- 🔴 CORREGIDO (#223.2, review PR #106 de #219): mismo caso que AGY4 arriba.
-select is((select n_deep_link from result_app_row_71), '/admin', 'APP4_deep_link_admin_interino_hasta_221_PRD_22_4');
+-- 🔴 #221 (2026-09-01): mismo caso que AGY4 arriba.
+select is((select n_deep_link from result_app_row_71), '/admin/requests', 'APP4_deep_link_admin_requests_221');
 select is((select n_rel_type from result_app_row_71), 'agent_application', 'APP5_related_entity_type_agent_application');
 select is((select n_rel_id from result_app_row_71), '00000000-0000-0000-0000-000000710032'::uuid,
   'APP6_related_entity_id_es_el_id_de_la_solicitud');
