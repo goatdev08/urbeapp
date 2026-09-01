@@ -1304,17 +1304,41 @@ describe('useFeedProperties — 213.3: partición display/promo (mint-ad-urls vs
     expect(video_calls).toHaveLength(0);
   });
 
-  it('(EC-PROMO-6) fallo total de mint-video-url degrada SOLO la porción promo (fail-soft), sin marcar error visible', async () => {
+  it('(EC-PROMO-6) fallo total de mint-video-url degrada SOLO la porción promo (fail-soft): un display en el MISMO ads_for_zone sigue sirviéndose', async () => {
+    // 🔴 candado del guardian: el fixture original solo tenía PROMO, así que
+    // "degrada SOLO la porción promo" era indistinguible de "degrada TODO"
+    // (un catch que hiciera `return to_property_items(properties)` para el
+    // lote entero pasaba igual, con la suite en verde). Un DISPLAY firmable
+    // en el MISMO ads_for_zone es el que hace la diferencia observable.
+    // 4 propiedades (every_n=1) dejan hueco para AMBOS anuncios — con 2 no
+    // se podría distinguir "el display se sirvió" de "no había hueco".
+    mock_fetch_feed_properties.mockResolvedValue({
+      data: [PROP_A, PROP_B, make_property('feed-prop-promo-g'), make_property('feed-prop-promo-h')],
+      nextCursor: null,
+    });
+    const DISPLAY = make_ad('ad-display-1');
     const PROMO = make_promo_ad('promo-6', 'property-uuid-6');
-    wire_config_and_ads([PROMO]);
-    mock_mint_invoke.mockImplementation((name: string) => {
+    wire_config_and_ads([DISPLAY, PROMO]);
+    mock_mint_invoke.mockImplementation((name: string, opts: { body?: Record<string, unknown> }) => {
+      if (name === 'mint-ad-urls') {
+        const ids = (opts?.body?.creative_ids as string[] | undefined) ?? [];
+        return Promise.resolve({
+          data: { urls: ids.map((creative_id) => ({ creative_id, posterUrl: `poster-${creative_id}`, videoUrl: `video-${creative_id}` })) },
+          error: null,
+        });
+      }
       if (name === 'mint-video-url') return Promise.reject(new Error('offline'));
       throw new Error(`invoke inesperado: ${name}`);
     });
 
     const { result } = await render_loaded_hook();
 
-    expect(result.current.data).toEqual(props_only([PROP_A, PROP_B]));
+    const served_ids = as_feed_items(result.current.data)
+      .filter((i) => i.kind === 'ad')
+      .map((i) => (i as { kind: 'ad'; ad: FeedAd }).ad.id);
+    // Presencia: el display sobrevive. Ausencia: la promo (cuyo mint falló) no.
+    expect(new Set(served_ids)).toEqual(new Set(['ad-display-1']));
+    expect(served_ids).not.toContain('promo-6');
     expect(result.current.error).toBeNull();
     expect(ads_failure_signals()).toEqual([{ stage: 'mint' }]);
   });

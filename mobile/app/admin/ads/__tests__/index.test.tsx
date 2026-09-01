@@ -14,6 +14,8 @@ import { render, screen, fireEvent, act } from '@testing-library/react-native';
 import { usePendingAds, type PendingAd } from '@/features/ads/hooks/usePendingAds';
 import { useActiveAds, type ActiveAd } from '@/features/ads/hooks/useActiveAds';
 import { useModerateAd } from '@/features/ads/hooks/useModerateAd';
+import { supabase } from '@/lib/supabase/client';
+import { mint_videos } from '@/features/feed/lib/feedProperties';
 import AdminAdsQueueScreen from '../index';
 
 jest.mock('@/features/ads/hooks/usePendingAds', () => ({ usePendingAds: jest.fn() }));
@@ -26,6 +28,8 @@ jest.mock('expo-video', () => ({ useVideoPlayer: jest.fn(), VideoView: () => nul
 const mock_use_pending_ads = usePendingAds as jest.MockedFunction<typeof usePendingAds>;
 const mock_use_active_ads = useActiveAds as jest.MockedFunction<typeof useActiveAds>;
 const mock_use_moderate_ad = useModerateAd as jest.MockedFunction<typeof useModerateAd>;
+const mock_mint_videos = mint_videos as jest.MockedFunction<typeof mint_videos>;
+const mock_invoke = supabase.functions.invoke as jest.Mock;
 
 const DISPLAY_PENDING: PendingAd = {
   id: 'ad-display-pending',
@@ -94,6 +98,7 @@ beforeEach(() => {
     is_moderating: false,
     error: null,
   } as unknown as ReturnType<typeof useModerateAd>);
+  mock_mint_videos.mockResolvedValue([]);
 });
 
 describe('AdminAdsQueueScreen — 213: distingue promo de display', () => {
@@ -110,5 +115,23 @@ describe('AdminAdsQueueScreen — 213: distingue promo de display', () => {
     });
     expect(screen.getByText('Seguro de arrendamiento Zapopan')).toBeTruthy();
     expect(screen.getByText('Promoción · Av. Vallarta 2000, Col. Americana')).toBeTruthy();
+  });
+
+  it('(EC-3) revisar una promo carga su video con mint_videos(property_id), NUNCA con mint-ad-urls', async () => {
+    const { getByTestId } = await render(<AdminAdsQueueScreen />);
+    await act(async () => {
+      fireEvent.press(getByTestId('pending-ad-ad-promo-pending'));
+    });
+    await act(async () => {
+      fireEvent.press(getByTestId('load-video'));
+    });
+
+    expect(mock_mint_videos).toHaveBeenCalledWith(supabase, ['property-uuid-1']);
+    // Ausencia: una promo no tiene creative_id — mint-ad-urls jamás debe
+    // recibir esta llamada (mutante: `mint_one(ad.creative_id)` sin guard).
+    expect(mock_invoke).not.toHaveBeenCalledWith(
+      'mint-ad-urls',
+      expect.anything(),
+    );
   });
 });

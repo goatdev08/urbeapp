@@ -34,8 +34,6 @@ import type { MyProperty } from '@/features/profile/types';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
-type PropertyStatus = MyProperty['status'];
-
 /** Callbacks de acción — sin lógica aquí; implementados en 17.7 / 17.8. */
 export interface PropertyActionCallbacks {
   /** Navegar al wizard de edición con los datos de la propiedad (17.8). */

@@ -14,10 +14,14 @@
  * Mismo criterio de parseo que useCreateAdvertisingRequest
  * (`error.message.includes(code)`).
  *
- * PATRÓN: calca useCreateAdvertisingRequest — is_working_ref + force_update
- * síncrono ANTES del primer await, DI del cliente vía `deps.supabase`,
- * getters en el objeto retornado. `client.rpc(...)` se llama DIRECTO, nunca
- * desprendido (#205).
+ * PATRÓN: calca useCreateAdvertisingRequest/useResolveRequest — is_working_ref
+ * + force_update síncrono ANTES del primer await, DI del cliente vía
+ * `deps.supabase`, getters en el objeto retornado. `client.rpc(...)` se llama
+ * DIRECTO, nunca desprendido (#205) — el doble es el de `@/test-utils/
+ * supabaseMock` (candado #233.3): `rpc()` lee `this` y LANZA si se invoca
+ * desprendido (`const { rpc } = client; rpc(...)`), así que un GREEN que
+ * desprendiera la llamada real ya no puede sobrevivir con la suite en verde
+ * (precedente #205/170.4: un doble de objeto plano es ciego a ese mutante).
  *
  * EDGE CASES:
  * - (EC-1) exito_invoca_la_rpc_con_el_nombre_y_params_exactos
@@ -33,31 +37,47 @@
  * - (EC-11) submitting_false_tras_resolver
  * - (EC-12) onSuccess_no_se_llama_en_error
  * - (EC-13) doble_submit_concurrente_solo_dispara_una_rpc (is_working_ref)
+ * - (EC-14a) tras_un_error_de_la_rpc_el_guard_se_libera_la_siguiente_llamada_SI_invoca_rpc
+ *   (candado del guardian: sin este caso, liberar `is_working_ref.current`
+ *   solo en la rama de éxito sobrevive con la suite en verde — el segundo
+ *   submit() quedaría bloqueado en silencio para siempre tras el primer error)
+ * - (EC-14b) tras_un_rechazo_de_la_promesa_el_guard_se_libera_la_siguiente_llamada_SI_invoca_rpc
+ *   (mismo hallazgo que EC-14a pero para la rama de rechazo — no liberar el
+ *   guard en el catch también sobrevivía)
  */
 
 import { act, renderHook } from '@testing-library/react-native';
 
+import { make_binding_sensitive_supabase_mock } from '@/test-utils/supabaseMock';
+
 import { usePromoteProperty } from '../hooks/usePromoteProperty';
 
-function make_client(result: unknown): { rpc: jest.Mock } {
+/**
+ * `client` es el doble sensible al binding (candado #233.3) para inyectar
+ * como `deps.supabase`; `rpc` es el spy real sobre el que se asertan las
+ * llamadas — nunca `client.rpc` directo, que ya no es un jest.fn sino el
+ * método que lanza si se desprende.
+ */
+function make_client(result: unknown): { client: unknown; rpc: jest.Mock } {
   const resolved = result instanceof Promise ? result : Promise.resolve(result);
-  return { rpc: jest.fn(() => resolved) };
+  const { client, _mock_rpc } = make_binding_sensitive_supabase_mock({ rpc: () => resolved });
+  return { client, rpc: _mock_rpc };
 }
 
 describe('usePromoteProperty', () => {
   it('EC-1: éxito invoca la RPC con nombre y params exactos', async () => {
-    const client = make_client({ error: null });
+    const { client, rpc } = make_client({ error: null });
     const { result } = await renderHook(() => usePromoteProperty({ supabase: client }));
     await act(async () => {
       await result.current.submit('prop-uuid-1');
     });
-    expect(client.rpc).toHaveBeenCalledWith('promote_property_atomic', {
+    expect(rpc).toHaveBeenCalledWith('promote_property_atomic', {
       p_property_id: 'prop-uuid-1',
     });
   });
 
   it('EC-2: éxito devuelve ok:true y llama onSuccess', async () => {
-    const client = make_client({ error: null });
+    const { client } = make_client({ error: null });
     const on_success = jest.fn();
     const { result } = await renderHook(() =>
       usePromoteProperty({ supabase: client, onSuccess: on_success }),
@@ -71,7 +91,7 @@ describe('usePromoteProperty', () => {
   });
 
   it('EC-3: PROPERTY_NOT_PUBLISHED produce mensaje en español', async () => {
-    const client = make_client({ error: { message: 'PROPERTY_NOT_PUBLISHED' } });
+    const { client } = make_client({ error: { message: 'PROPERTY_NOT_PUBLISHED' } });
     const { result } = await renderHook(() => usePromoteProperty({ supabase: client }));
     let outcome: { ok: boolean; error: string | null } | undefined;
     await act(async () => {
@@ -82,7 +102,7 @@ describe('usePromoteProperty', () => {
   });
 
   it('EC-4: ALREADY_PROMOTED produce mensaje distinto', async () => {
-    const client = make_client({ error: { message: 'ALREADY_PROMOTED' } });
+    const { client } = make_client({ error: { message: 'ALREADY_PROMOTED' } });
     const { result } = await renderHook(() => usePromoteProperty({ supabase: client }));
     let outcome: { ok: boolean; error: string | null } | undefined;
     await act(async () => {
@@ -92,7 +112,7 @@ describe('usePromoteProperty', () => {
   });
 
   it('EC-5: AGENCY_CANNOT_PUBLISH produce mensaje distinto', async () => {
-    const client = make_client({ error: { message: 'AGENCY_CANNOT_PUBLISH' } });
+    const { client } = make_client({ error: { message: 'AGENCY_CANNOT_PUBLISH' } });
     const { result } = await renderHook(() => usePromoteProperty({ supabase: client }));
     let outcome: { ok: boolean; error: string | null } | undefined;
     await act(async () => {
@@ -102,7 +122,7 @@ describe('usePromoteProperty', () => {
   });
 
   it('EC-6: ZONE_UNRESOLVED produce mensaje distinto', async () => {
-    const client = make_client({ error: { message: 'ZONE_UNRESOLVED' } });
+    const { client } = make_client({ error: { message: 'ZONE_UNRESOLVED' } });
     const { result } = await renderHook(() => usePromoteProperty({ supabase: client }));
     let outcome: { ok: boolean; error: string | null } | undefined;
     await act(async () => {
@@ -112,7 +132,7 @@ describe('usePromoteProperty', () => {
   });
 
   it('EC-7: PROPERTY_NOT_FOUND produce mensaje distinto', async () => {
-    const client = make_client({ error: { message: 'PROPERTY_NOT_FOUND' } });
+    const { client } = make_client({ error: { message: 'PROPERTY_NOT_FOUND' } });
     const { result } = await renderHook(() => usePromoteProperty({ supabase: client }));
     let outcome: { ok: boolean; error: string | null } | undefined;
     await act(async () => {
@@ -122,7 +142,7 @@ describe('usePromoteProperty', () => {
   });
 
   it('EC-8: código desconocido cae a mensaje genérico', async () => {
-    const client = make_client({ error: { message: 'WHATEVER' } });
+    const { client } = make_client({ error: { message: 'WHATEVER' } });
     const { result } = await renderHook(() => usePromoteProperty({ supabase: client }));
     let outcome: { ok: boolean; error: string | null } | undefined;
     await act(async () => {
@@ -132,7 +152,13 @@ describe('usePromoteProperty', () => {
   });
 
   it('EC-9: rechazo de la promesa no lanza, mensaje genérico', async () => {
-    const client = { rpc: jest.fn(() => Promise.reject(new Error('network'))) };
+    // Rechazo CREADO PEREZOSAMENTE (dentro del factory de rpc, no como valor
+    // ya construido): un Promise.reject ya construido antes de que el hook
+    // le cuelgue su .then/.catch dispara "unhandled rejection" en el mismo
+    // tick de definición del test, antes de que exista handler alguno.
+    const { client } = make_binding_sensitive_supabase_mock({
+      rpc: () => Promise.reject(new Error('network')),
+    });
     const { result } = await renderHook(() => usePromoteProperty({ supabase: client }));
     let outcome: { ok: boolean; error: string | null } | undefined;
     await act(async () => {
@@ -147,7 +173,7 @@ describe('usePromoteProperty', () => {
     const pending = new Promise((r) => {
       resolve_fn = r;
     });
-    const client = make_client(pending);
+    const { client } = make_client(pending);
     const { result } = await renderHook(() => usePromoteProperty({ supabase: client }));
 
     let submit_promise: Promise<unknown> | undefined;
@@ -163,7 +189,7 @@ describe('usePromoteProperty', () => {
   });
 
   it('EC-11: submitting=false tras resolver', async () => {
-    const client = make_client({ error: null });
+    const { client } = make_client({ error: null });
     const { result } = await renderHook(() => usePromoteProperty({ supabase: client }));
     await act(async () => {
       await result.current.submit('prop-uuid-1');
@@ -172,7 +198,7 @@ describe('usePromoteProperty', () => {
   });
 
   it('EC-12: onSuccess no se llama en error', async () => {
-    const client = make_client({ error: { message: 'ALREADY_PROMOTED' } });
+    const { client } = make_client({ error: { message: 'ALREADY_PROMOTED' } });
     const on_success = jest.fn();
     const { result } = await renderHook(() =>
       usePromoteProperty({ supabase: client, onSuccess: on_success }),
@@ -188,7 +214,7 @@ describe('usePromoteProperty', () => {
     const pending = new Promise((r) => {
       resolve_fn = r;
     });
-    const client = make_client(pending);
+    const { client, rpc } = make_client(pending);
     const { result } = await renderHook(() => usePromoteProperty({ supabase: client }));
 
     let first: Promise<unknown> | undefined;
@@ -198,11 +224,54 @@ describe('usePromoteProperty', () => {
       second = result.current.submit('prop-uuid-1');
     });
 
-    expect(client.rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledTimes(1);
 
     await act(async () => {
       resolve_fn({ error: null });
       await Promise.all([first, second]);
     });
+  });
+
+  it('EC-14a: tras un error de la RPC, el guard se libera — la siguiente llamada SÍ invoca rpc de nuevo', async () => {
+    const { client, rpc } = make_client({ error: { message: 'PROPERTY_NOT_PUBLISHED' } });
+    const { result } = await renderHook(() => usePromoteProperty({ supabase: client }));
+
+    await act(async () => {
+      await result.current.submit('prop-uuid-1');
+    });
+    expect(result.current.submitting).toBe(false);
+
+    await act(async () => {
+      await result.current.submit('prop-uuid-1');
+    });
+
+    expect(rpc).toHaveBeenCalledTimes(2);
+  });
+
+  it('EC-14b: tras un rechazo de la promesa, el guard se libera — la siguiente llamada SÍ invoca rpc de nuevo', async () => {
+    // 🔴 la SEGUNDA llamada resuelve distinto de la primera (rechazo → éxito):
+    // si se reutilizara una única promesa rechazada para ambas invocaciones,
+    // Jest la reportaría como "unhandled rejection" en la segunda espera
+    // (nadie la consume dos veces del mismo objeto). mockImplementationOnce
+    // por llamada evita eso sin cambiar el contrato.
+    const { client, _mock_rpc: rpc } = make_binding_sensitive_supabase_mock({
+      rpc: jest
+        .fn()
+        .mockImplementationOnce(() => Promise.reject(new Error('network')))
+        .mockImplementationOnce(() => Promise.resolve({ error: null })),
+    });
+
+    const { result } = await renderHook(() => usePromoteProperty({ supabase: client }));
+
+    await act(async () => {
+      await result.current.submit('prop-uuid-1');
+    });
+    expect(result.current.submitting).toBe(false);
+
+    await act(async () => {
+      await result.current.submit('prop-uuid-1');
+    });
+
+    expect(rpc).toHaveBeenCalledTimes(2);
   });
 });
