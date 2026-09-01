@@ -22,6 +22,8 @@
  * - (EC-PS5) bbox_parcialmente_null_cae_a_null
  * - (EC-PS6) error_de_rpc_lanza
  * - (EC-PS7) data_null_devuelve_lista_vacia
+ * - (EC-PS8) coords_opcionales_agregan_p_lat_p_lng (#232)
+ * - (EC-PS9) sin_coords_no_agrega_campos_lat_lng (#232, candado de no-regresión de EC-PS3)
  */
 
 import { search_places } from '../lib/placeSearch';
@@ -141,5 +143,27 @@ describe('search_places — autocomplete de lugares (#157)', () => {
     const mock = make_mock_supabase({ data: null, error: null });
 
     expect(await search_places('provi', { supabase: mock })).toEqual([]);
+  });
+
+  it('(EC-PS8) coords_opcionales_agregan_p_lat_p_lng: 3er argumento {lat,lng} → rpc con p_lat/p_lng agregados', async () => {
+    const mock = make_mock_supabase({ data: [], error: null });
+
+    await search_places('provi', { supabase: mock }, { lat: 20.67, lng: -103.35 });
+
+    expect(mock._mock_rpc).toHaveBeenCalledWith('search_places', {
+      p_query: 'provi',
+      p_limit: 10,
+      p_lat: 20.67,
+      p_lng: -103.35,
+    });
+  });
+
+  it('(EC-PS9) sin_coords_no_agrega_campos_lat_lng: sin 3er argumento → objeto de la RPC SIN p_lat/p_lng (candado EC-PS3)', async () => {
+    const mock = make_mock_supabase({ data: [], error: null });
+
+    await search_places('provi', { supabase: mock });
+
+    const call_args = mock._mock_rpc.mock.calls[0][1] as Record<string, unknown>;
+    expect(Object.keys(call_args).sort()).toEqual(['p_limit', 'p_query']);
   });
 });

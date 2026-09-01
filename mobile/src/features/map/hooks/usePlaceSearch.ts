@@ -16,6 +16,12 @@
  *
  * ponytail: DI opcional de deps (PlaceSearchDeps) para tests; en prod la lib
  * hace lazy-require del cliente singleton.
+ *
+ * `coords` (#232, 2do parámetro opcional): lat/lng del usuario (useLocation,
+ * mismo patrón que useMapProperties) — activa el ranking por cercanía de
+ * search_places. Se lee vía ref (coords_ref) en vez de entrar a las deps de
+ * run_search: un cambio de coords NO debe re-disparar una búsqueda que ya
+ * estaba en vuelo, solo afecta la PRÓXIMA búsqueda.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -38,7 +44,10 @@ export interface UsePlaceSearchState {
   clear: () => void;
 }
 
-export function usePlaceSearch(deps?: PlaceSearchDeps): UsePlaceSearchState {
+export function usePlaceSearch(
+  deps?: PlaceSearchDeps,
+  coords?: { lat: number; lng: number } | null,
+): UsePlaceSearchState {
   const [query, set_query_raw] = useState('');
   const [suggestions, set_suggestions] = useState<PlaceSuggestion[]>([]);
   const [loading, set_loading] = useState(false);
@@ -48,6 +57,11 @@ export function usePlaceSearch(deps?: PlaceSearchDeps): UsePlaceSearchState {
   // Anti-stale: cada búsqueda disparada incrementa el contador; el response
   // solo aplica si su id sigue siendo el vigente al resolver.
   const request_id_ref = useRef(0);
+  // coords vía ref (no dep de run_search): solo afecta la PRÓXIMA búsqueda.
+  const coords_ref = useRef(coords);
+  useEffect(() => {
+    coords_ref.current = coords;
+  }, [coords]);
 
   // Limpieza al desmontar: cancela debounce e invalida cualquier request en vuelo.
   useEffect(() => {
@@ -63,7 +77,7 @@ export function usePlaceSearch(deps?: PlaceSearchDeps): UsePlaceSearchState {
       set_loading(true);
       set_error(null);
       try {
-        const result = await search_places(text, deps);
+        const result = await search_places(text, deps, coords_ref.current ?? undefined);
         if (request_id !== request_id_ref.current) return; // response viejo — descartar
         set_suggestions(result);
       } catch (e) {

@@ -9,13 +9,21 @@
  *
  * Contrato (ver __tests__/placeSearch.test.ts):
  *   - Guard: query con < 2 caracteres útiles → [] SIN round-trip.
- *   - rpc('search_places', { p_query: query.trim(), p_limit: 10 }).
+ *   - rpc('search_places', { p_query: query.trim(), p_limit: 10, ...coords }).
+ *   - `coords` (#232, opcional, 3er parámetro): { lat, lng } del usuario
+ *     (useLocation) → activa ranking por cercanía en el server. Se agregan
+ *     SOLO cuando el caller los pasa — sin coords, el objeto de la RPC es
+ *     byte-idéntico al de antes (p_query/p_limit), sin romper EC-PS3.
  *   - bbox con CUALQUIER campo null → bbox: null (fail-closed — municipio sin
  *     colonias cargadas, decisión D4; nada de NaN llegando al mapa).
  *   - Error de RPC → throw (el hook decide qué mostrar).
  *
  * ponytail: DI opcional vía deps.supabase; prod usa lazy-require del singleton
  * (patrón idéntico a zones.ts / useSavedProperties).
+ *
+ * row_to_bbox/PlaceRpcRow se EXPORTAN para reuso en lib/placeAtPoint.ts (#232)
+ * — la RPC place_at_point devuelve el MISMO shape de fila (kind/id/name/
+ * context/bbox_*), así que el mapeo fila→PlaceSuggestion no se duplica.
  */
 
 export interface PlaceBBox {
@@ -40,7 +48,7 @@ export interface PlaceSearchDeps {
 
 const SUGGESTION_LIMIT = 10;
 
-type RpcRow = {
+export type PlaceRpcRow = {
   kind: 'neighborhood' | 'municipality';
   id: string;
   name: string;
@@ -51,7 +59,7 @@ type RpcRow = {
   max_lng: number | null;
 };
 
-function row_to_bbox(row: RpcRow): PlaceBBox | null {
+export function row_to_bbox(row: PlaceRpcRow): PlaceBBox | null {
   const { min_lat, min_lng, max_lat, max_lng } = row;
   if (min_lat == null || min_lng == null || max_lat == null || max_lng == null) {
     return null;
@@ -59,10 +67,22 @@ function row_to_bbox(row: RpcRow): PlaceBBox | null {
   return { min_lat, min_lng, max_lat, max_lng };
 }
 
+/** Fila cruda → PlaceSuggestion. Compartido con lib/placeAtPoint.ts (mismo shape). */
+export function row_to_suggestion(row: PlaceRpcRow): PlaceSuggestion {
+  return {
+    kind: row.kind,
+    id: row.id,
+    name: row.name,
+    context: row.context,
+    bbox: row_to_bbox(row),
+  };
+}
+
 /** Sugerencias de colonias + municipios para lo tecleado. [] con < 2 chars. */
 export async function search_places(
   query: string,
   deps?: PlaceSearchDeps,
+  coords?: { lat: number; lng: number },
 ): Promise<PlaceSuggestion[]> {
   const trimmed = query.trim();
   if (trimmed.length < 2) return [];
@@ -74,15 +94,10 @@ export async function search_places(
   const { data, error } = (await client.rpc('search_places', {
     p_query: trimmed,
     p_limit: SUGGESTION_LIMIT,
-  })) as { data: RpcRow[] | null; error: { message: string } | null };
+    ...(coords ? { p_lat: coords.lat, p_lng: coords.lng } : {}),
+  })) as { data: PlaceRpcRow[] | null; error: { message: string } | null };
 
   if (error) throw new Error(error.message);
 
-  return (data ?? []).map((row) => ({
-    kind: row.kind,
-    id: row.id,
-    name: row.name,
-    context: row.context,
-    bbox: row_to_bbox(row),
-  }));
+  return (data ?? []).map(row_to_suggestion);
 }
