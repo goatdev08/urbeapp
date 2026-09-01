@@ -63,8 +63,9 @@
 --   UNIQ1   segunda promo pending_review de la MISMA propiedad → 23505.
 --   UNIQ2   promo active + intento paused sobre la misma propiedad → 23505
 --           (paused es NO terminal: el reloj está congelado, no cerrado).
---   UNIQ3   promo 'rejected' NO bloquea una nueva (terminal libera).
---   UNIQ4   promo 'expired' NO bloquea una nueva (terminal libera).
+--   UNIQ3a/b una promo 'rejected' VIVA no bloquea una nueva (el ancla se
+--           asierta: sin el, el caso pasaria en vacio).
+--   UNIQ4a/b una promo 'expired' VIVA no bloquea una nueva (idem).
 --   UNIQ5   promos de propiedades DISTINTAS conviven.
 --   UNIQ6   dos display (property_id NULL) NO chocan entre sí — el índice es
 --           PARCIAL; si fuera total, publicar un segundo anuncio display
@@ -73,7 +74,7 @@
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(29);
+select plan(31);
 
 -- ── Helper: ejecuta un INSERT y devuelve su SQLSTATE, SIEMPRE deshaciendo el
 --    efecto. El `raise` interno es atrapado por el EXCEPTION del mismo bloque,
@@ -141,7 +142,12 @@ values
   ('00000000-0000-0000-0000-000000870303', '00000000-0000-0000-0000-000000870001',
    '00000000-0000-0000-0000-000000870101', 'local', 'rent', 'Calle Promo 87 #3',
    extensions.ST_SetSRID(extensions.ST_Point(-99.27, 19.33), 4326)::extensions.geography,
-   9000, 'active', now());
+   9000, 'active', now()),
+  -- Propiedad para el ciclo "promo rechazada -> se puede volver a promocionar".
+  ('00000000-0000-0000-0000-000000870304', '00000000-0000-0000-0000-000000870001',
+   '00000000-0000-0000-0000-000000870101', 'oficina', 'rent', 'Calle Promo 87 #4',
+   extensions.ST_SetSRID(extensions.ST_Point(-99.26, 19.34), 4326)::extensions.geography,
+   25000, 'active', now());
 
 -- Anuncio DISPLAY sembrado con la forma PRE-migración (creative + CTA
 -- completos, sin property_id). Representa el inventario vivo en producción:
@@ -371,24 +377,43 @@ select is(
   'UNIQ2_paused_cuenta_como_promo_ABIERTA_el_reloj_esta_congelado_no_cerrado'
 );
 
+-- Ancla PERSISTENTE: una promo 'rejected' sobre 870304. El assert del ancla no
+-- es decoracion — sin el, un GREEN que rechazara la fila dejaria el UNIQ3b de
+-- abajo pasando en vacio (nada ocupa el cupo porque nada se inserto).
 select is(
-  pg_temp.insert_sqlstate($$
+  pg_temp.try_insert($$
     insert into public.ads (id, agency_id, property_id, title, status, rejection_reason, starts_at, ends_at)
     values ('00000000-0000-0000-0000-000000870504', '00000000-0000-0000-0000-000000870101',
-            '00000000-0000-0000-0000-000000870302', 'Promo Rechazada 87',
+            '00000000-0000-0000-0000-000000870304', 'Promo Rechazada 87',
             'rejected', 'No cumple', now(), now() + interval '30 days')
   $$),
   '00000',
-  'UNIQ3_una_promo_rejected_es_terminal_y_NO_ocupa_el_cupo'
+  'UNIQ3a_una_promo_rejected_se_puede_insertar_el_ancla_del_caso_de_abajo_existe_de_verdad'
 );
 
--- Ancla terminal REAL sobre 870302 para probar que no bloquea a la siguiente.
-select pg_temp.try_insert($$
-  insert into public.ads (id, agency_id, property_id, title, status, starts_at, ends_at)
-  values ('00000000-0000-0000-0000-000000870505', '00000000-0000-0000-0000-000000870101',
-          '00000000-0000-0000-0000-000000870302', 'Promo Expirada 87',
-          'expired', now() - interval '60 days', now() - interval '30 days')
-$$);
+select is(
+  pg_temp.insert_sqlstate($$
+    insert into public.ads (id, agency_id, property_id, title, status, starts_at, ends_at)
+    values ('00000000-0000-0000-0000-000000870510', '00000000-0000-0000-0000-000000870101',
+            '00000000-0000-0000-0000-000000870304', 'Promo Tras Rechazo 87',
+            'pending_review', now(), now() + interval '30 days')
+  $$),
+  '00000',
+  'UNIQ3b_con_una_promo_rejected_viva_la_propiedad_se_puede_volver_a_promocionar_el_estado_terminal_NO_ocupa_el_cupo'
+);
+
+-- Ancla terminal REAL sobre 870302. Se asierta su SQLSTATE: si el ancla no
+-- entrara, UNIQ4 de abajo pasaria en vacio (cupo libre porque no hay nada).
+select is(
+  pg_temp.try_insert($$
+    insert into public.ads (id, agency_id, property_id, title, status, starts_at, ends_at)
+    values ('00000000-0000-0000-0000-000000870505', '00000000-0000-0000-0000-000000870101',
+            '00000000-0000-0000-0000-000000870302', 'Promo Expirada 87',
+            'expired', now() - interval '60 days', now() - interval '30 days')
+  $$),
+  '00000',
+  'UNIQ4a_el_ancla_de_promo_expired_entra_de_verdad'
+);
 
 select is(
   pg_temp.insert_sqlstate($$
@@ -398,7 +423,7 @@ select is(
             'pending_review', now(), now() + interval '30 days')
   $$),
   '00000',
-  'UNIQ4_tras_una_promo_expired_la_propiedad_se_puede_volver_a_promocionar'
+  'UNIQ4b_tras_una_promo_expired_la_propiedad_se_puede_volver_a_promocionar'
 );
 
 select is(
