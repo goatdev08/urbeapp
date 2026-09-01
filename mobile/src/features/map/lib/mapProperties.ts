@@ -1,13 +1,21 @@
 /**
  * mapProperties.ts — capa de datos del mapa global (#11.2).
  *
- * fetchMapProperties(deps?, filters?, neighborhood_id?):
+ * fetchMapProperties(deps?, filters?, neighborhood_id?, municipality?):
  *   - `neighborhood_id` string (#157) → rama de MÁXIMA prioridad (gana sobre
  *     area y todo lo demás): RPC properties_within_neighborhood (ST_Intersects
  *     con el polígono de la colonia) → ids → `.in('id', ids)` + filtros. SIN
  *     expansión ni fallback: colonia sin propiedades = [] honesto. El id NUNCA
  *     viaja por build_filter_query (invariante A1) ni vive en FilterState
  *     (decisión D6: es estado local de MapScreen, no filtro cross-screen).
+ *   - `municipality` ({id, bbox}, #232) → rama de 2da prioridad (gana sobre
+ *     area, pierde ante neighborhood_id): RPC properties_within_municipality
+ *     → ids → `.in('id', ids)` + filtros. Reemplaza el círculo clamped a
+ *     50km que #157 usaba para municipios. 🔴 FAIL-CLOSED estilo
+ *     useCanAdvertise: si la RPC responde `code 42883` (función no existe —
+ *     ventana de deploy de 232.1 sin desplegar) NO lanza, cae al círculo
+ *     clamped del bbox del municipio vía fetch_by_radius (el mecanismo
+ *     viejo, pre-#232).
  *   - `filters.radius_m === null` (#58.3) → SALTA la RPC por completo: query
  *     plana (status/deleted_at + build_filter_query), SIN `.in('id', ...)` —
  *     trae TODAS las propiedades activas que matcheen los filtros de usuario.
@@ -40,6 +48,9 @@ import { build_filter_query, EMPTY_FILTERS } from '@/features/search/lib/filterQ
 import type { FilterState } from '@/features/search/types';
 import { parse_location } from '@/features/property-detail/utils/parseLocation';
 
+import { bbox_to_region } from './bboxRegion';
+import { viewport_to_area } from './viewportToArea';
+import type { PlaceBBox } from './placeSearch';
 import type { MapProperty } from '../types';
 
 
@@ -99,11 +110,57 @@ function build_map_result(rows: QueryRow[]): MapProperty[] {
   return result;
 }
 
+/**
+ * Círculo {center, radius_m} → properties_within_radius → .in(ids) + filtros
+ * + build_map_result. Compartido por la rama `filters.area` (#56) y por el
+ * fallback fail-closed de municipio (#232, código 42883 de la RPC nueva) —
+ * MISMO mecanismo, dos orígenes del center/radius.
+ */
+async function fetch_by_radius(
+  client: any,
+  filters: FilterState | undefined,
+  center: { lat: number; lng: number },
+  radius_m: number,
+): Promise<MapProperty[]> {
+  const rpc_result = (await client.rpc('properties_within_radius', {
+    p_lat: center.lat,
+    p_lng: center.lng,
+    p_radius_m: radius_m,
+  })) as { data: RpcRow[] | null; error: { message: string } | null };
+
+  if (rpc_result.error) throw new Error(rpc_result.error.message);
+
+  const rpc_ids = (rpc_result.data ?? []).map((r) => r.id);
+  if (rpc_ids.length === 0) return [];
+
+  let query = client
+    .from('properties')
+    .select(MAP_SELECT)
+    .in('id', rpc_ids)
+    .eq('status', 'active')
+    .is('deleted_at', null);
+
+  // Filtros de usuario (#12.7) — center/radius NUNCA llegan aquí (invariante A1).
+  query = build_filter_query(query, filters ?? EMPTY_FILTERS);
+
+  const { data: rows, error } = (await query) as {
+    data: QueryRow[] | null;
+    error: { message: string } | null;
+  };
+
+  if (error) throw new Error(error.message);
+  if (!rows || rows.length === 0) return [];
+
+  return build_map_result(rows);
+}
+
 export async function fetchMapProperties(
   deps?: MapPropertiesDeps,
   filters?: FilterState,
   // ponytail: 3er parámetro opcional — las llamadas existentes con 0-2 args no cambian.
   neighborhood_id?: string | null,
+  // #232: 4to parámetro opcional — las llamadas existentes con 0-3 args no cambian.
+  municipality?: { id: string; bbox: PlaceBBox } | null,
 ): Promise<MapProperty[]> {
   // ponytail: lazy-require del cliente real; nunca se evalúa en tests (deps siempre inyectado)
 
@@ -144,6 +201,47 @@ export async function fetchMapProperties(
     return build_map_result(nb_rows);
   }
 
+  // #232: modo municipio — 2da prioridad (gana sobre area, pierde ante
+  // colonia). Reemplaza el círculo clamped a 50km que #157 usaba aquí.
+  if (municipality != null) {
+    const rpc_result = (await client.rpc('properties_within_municipality', {
+      p_municipality_id: municipality.id,
+    })) as { data: { id: string }[] | null; error: { message: string; code?: string } | null };
+
+    if (rpc_result.error) {
+      // 🔴 FAIL-CLOSED estilo useCanAdvertise (42883 = función no existe):
+      // 232.1 aún no se desplegó al remoto — cae al círculo clamped del
+      // bbox del municipio (el mecanismo viejo, pre-#232) en vez de romper
+      // la búsqueda para el usuario.
+      if (rpc_result.error.code !== '42883') throw new Error(rpc_result.error.message);
+      const fallback_area = viewport_to_area(bbox_to_region(municipality.bbox));
+      return fetch_by_radius(client, filters, fallback_area.center, fallback_area.radius_m);
+    }
+
+    const rpc_ids = (rpc_result.data ?? []).map((r) => r.id);
+    if (rpc_ids.length === 0) return [];
+
+    let muni_query = client
+      .from('properties')
+      .select(MAP_SELECT)
+      .in('id', rpc_ids)
+      .eq('status', 'active')
+      .is('deleted_at', null);
+
+    // Filtros de usuario (#12.7) — municipality.id NUNCA llega aquí (invariante A1).
+    muni_query = build_filter_query(muni_query, filters ?? EMPTY_FILTERS);
+
+    const { data: muni_rows, error: muni_error } = (await muni_query) as {
+      data: QueryRow[] | null;
+      error: { message: string } | null;
+    };
+
+    if (muni_error) throw new Error(muni_error.message);
+    if (!muni_rows || muni_rows.length === 0) return [];
+
+    return build_map_result(muni_rows);
+  }
+
   // #56: modo zona ("buscar en esta zona") — ADITIVO, corre ANTES del check
   // radius_m===null. Gana sobre la query plana de #58.3 y sobre la
   // proximidad GPS de #42.3: con area set, siempre pasa por la RPC con el
@@ -151,38 +249,7 @@ export async function fetchMapProperties(
   // null (o ausente) → esta rama no aplica, las ramas actuales corren abajo
   // inalteradas.
   if (filters?.area != null) {
-    const rpc_result = (await client.rpc('properties_within_radius', {
-      p_lat: filters.area.center.lat,
-      p_lng: filters.area.center.lng,
-      p_radius_m: filters.area.radius_m,
-    })) as { data: RpcRow[] | null; error: { message: string } | null };
-
-    if (rpc_result.error) throw new Error(rpc_result.error.message);
-
-    const rpc_ids = (rpc_result.data ?? []).map((r) => r.id);
-    if (rpc_ids.length === 0) return [];
-
-    // Query base: .in('id', ids) con TODOS los ids de la RPC (sin slice — el
-    // mapa no pagina) + filtros base, igual que el path de proximidad.
-    let zone_query = client
-      .from('properties')
-      .select(MAP_SELECT)
-      .in('id', rpc_ids)
-      .eq('status', 'active')
-      .is('deleted_at', null);
-
-    // Filtros de usuario (#12.7) — area NUNCA llega aquí (invariante A1).
-    zone_query = build_filter_query(zone_query, filters ?? EMPTY_FILTERS);
-
-    const { data: zone_rows, error: zone_error } = (await zone_query) as {
-      data: QueryRow[] | null;
-      error: { message: string } | null;
-    };
-
-    if (zone_error) throw new Error(zone_error.message);
-    if (!zone_rows || zone_rows.length === 0) return [];
-
-    return build_map_result(zone_rows);
+    return fetch_by_radius(client, filters, filters.area.center, filters.area.radius_m);
   }
 
   // #58.3: radius_m===null explícito → path plano PRE-#42, sin RPC ni

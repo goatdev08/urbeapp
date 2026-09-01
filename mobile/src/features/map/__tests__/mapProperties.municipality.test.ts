@@ -241,13 +241,20 @@ describe('fetchMapProperties — modo municipio vía RPC (#232, aditivo)', () =>
 
   it('(EC-M7) codigo_42883_cae_al_circulo_clamped_del_bbox: RPC no desplegada aún → fallback a properties_within_radius del bbox', async () => {
     const rows = [make_row('prop-fallback')];
-    const mock = make_mock_supabase({
-      query_result: { data: rows, error: null },
-      rpc_result: {
-        data: null,
-        error: { message: 'function public.properties_within_municipality(text) does not exist', code: '42883' },
-      },
-    });
+    const mock = make_mock_supabase({ query_result: { data: rows, error: null } });
+    // La 1ra llamada (properties_within_municipality) falla con 42883; la 2da
+    // (fallback, properties_within_radius) resuelve con las filas normales —
+    // make_mock_supabase solo permite UNA respuesta canned para TODAS las
+    // llamadas de rpc(), así que se sobreescribe con mockImplementation
+    // secuenciado para este caso específico.
+    mock._mock_rpc.mockImplementationOnce(async () => ({
+      data: null,
+      error: { message: 'function public.properties_within_municipality(text) does not exist', code: '42883' },
+    }));
+    mock._mock_rpc.mockImplementationOnce(async () => ({
+      data: rows.map((r) => ({ id: r.id })),
+      error: null,
+    }));
 
     const result = await fetchMapProperties({ supabase: mock }, EMPTY_FILTERS, null, MUNICIPALITY);
 
