@@ -498,7 +498,7 @@ Deno.test("228_size_bytes_sobre_el_techo_responde_400_video_too_large_sin_llamar
 
   assertEquals(res.status, 400);
   const body = await res.json();
-  assertEquals(body.error_code, "VIDEO_TOO_LARGE");
+  assertEquals(body.error.code, "VIDEO_TOO_LARGE");
   assertEquals(uploader.calls.length + uploader.tus_calls.length, 0, "sobre el techo NUNCA se toca Stream");
   assertEquals(registrar.calls.length, 0, "sobre el techo NUNCA se inserta fila");
 });

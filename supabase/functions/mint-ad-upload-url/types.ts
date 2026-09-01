@@ -8,10 +8,12 @@
 // arreglo heredaría el 409 permanente que #103 tuvo que resolver — solo que aquí
 // bloquearía a una ORGANIZACIÓN entera, no a un agente:
 //
-//   DIFERENCIA 1 — duración: STREAM_MAX_DURATION_SECONDS = 30 (propiedades usa 120).
-//     El MÍNIMO de 6 s NO lo impone esta EF (Stream no lo puede validar en el mint) —
-//     se valida al pasar a 'ready' (169.5, webhook) y al elegir el archivo en el
-//     cliente (169.6). Esta EF NUNCA rechaza por duración corta.
+//   (EX-)DIFERENCIA 1 — ELIMINADA por #228 (decisión de producto 2026-08-31):
+//     STREAM_MAX_DURATION_SECONDS = 120, el MISMO tope que propiedades (paridad
+//     anclada en upload_window_parity.test.ts). El MÍNIMO de 10 s NO lo impone
+//     esta EF (Stream no lo puede validar en el mint) — se valida al pasar a
+//     'ready' (169.5, webhook) y al elegir el archivo en el cliente (169.6).
+//     Esta EF NUNCA rechaza por duración corta.
 //
 //   DIFERENCIA 2 — concurrencia SCOPED POR ORGANIZACIÓN, tabla PROPIA: el 409 de
 //     mint-upload-url (ActiveUploadChecker) cuenta sobre `property_videos`, keyeado
@@ -54,7 +56,7 @@
 //      La respuesta JAMÁS incluye credenciales de Stream (account id, api token) ni
 //      ningún otro campo que Stream devuelva de más.
 
-export const STREAM_MAX_DURATION_SECONDS = 30;
+export const STREAM_MAX_DURATION_SECONDS = 120;
 export const STREAM_REQUIRE_SIGNED_URLS = true;
 
 // ── STALE_UPLOAD_MS — ventana de expiración del reaper (bug heredado de #103) ──
