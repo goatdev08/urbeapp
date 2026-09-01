@@ -35,7 +35,7 @@
 
 import { act, renderHook } from '@testing-library/react-native';
 
-import { useAddressSearch } from '../hooks/useAddressSearch';
+import { useAddressSearch, type UseAddressSearchState } from '../hooks/useAddressSearch';
 import type { AddressPrediction } from '../lib/addressPlaces';
 
 jest.mock('../lib/addressPlaces', () => ({
@@ -93,9 +93,10 @@ describe('useAddressSearch — predicciones de dirección dirigidas por query ex
   });
 
   it('(EC-AS3) debounce_300ms_una_llamada', async () => {
-    const { rerender } = await renderHook(({ query }) => useAddressSearch(query), {
-      initialProps: { query: '' },
-    });
+    const { rerender } = await renderHook<UseAddressSearchState, { query: string }>(
+      ({ query }) => useAddressSearch(query),
+      { initialProps: { query: '' } },
+    );
 
     await act(async () => rerender({ query: 'Av. Chapultepec' }));
     expect(mocked.fetch_address_predictions).not.toHaveBeenCalled();
@@ -109,9 +110,10 @@ describe('useAddressSearch — predicciones de dirección dirigidas por query ex
   });
 
   it('(EC-AS4) tecleos_rapidos_solo_ultima_query', async () => {
-    const { rerender } = await renderHook(({ query }) => useAddressSearch(query), {
-      initialProps: { query: '' },
-    });
+    const { rerender } = await renderHook<UseAddressSearchState, { query: string }>(
+      ({ query }) => useAddressSearch(query),
+      { initialProps: { query: '' } },
+    );
 
     await act(async () => rerender({ query: 'Av' }));
     await advance(100);
@@ -126,9 +128,10 @@ describe('useAddressSearch — predicciones de dirección dirigidas por query ex
 
   it('(EC-AS5) resultados_pueblan_predictions', async () => {
     mocked.fetch_address_predictions.mockResolvedValue([PREDICTION]);
-    const { result, rerender } = await renderHook(({ query }) => useAddressSearch(query), {
-      initialProps: { query: '' },
-    });
+    const { result, rerender } = await renderHook<UseAddressSearchState, { query: string }>(
+      ({ query }) => useAddressSearch(query),
+      { initialProps: { query: '' } },
+    );
 
     await act(async () => rerender({ query: 'Av. Chapultepec' }));
     await advance(300);
@@ -146,9 +149,10 @@ describe('useAddressSearch — predicciones de dirección dirigidas por query ex
       .mockImplementationOnce(() => first_promise)
       .mockImplementationOnce(async () => [PREDICTION]);
 
-    const { result, rerender } = await renderHook(({ query }) => useAddressSearch(query), {
-      initialProps: { query: '' },
-    });
+    const { result, rerender } = await renderHook<UseAddressSearchState, { query: string }>(
+      ({ query }) => useAddressSearch(query),
+      { initialProps: { query: '' } },
+    );
 
     await act(async () => rerender({ query: 'Ave' }));
     await advance(300); // dispara la 1ra búsqueda ("Ave"), queda en vuelo
@@ -169,9 +173,10 @@ describe('useAddressSearch — predicciones de dirección dirigidas por query ex
 
   it('(EC-AS7) error_de_lib_expone_message', async () => {
     mocked.fetch_address_predictions.mockRejectedValue(new Error('Places autocomplete: 500'));
-    const { result, rerender } = await renderHook(({ query }) => useAddressSearch(query), {
-      initialProps: { query: '' },
-    });
+    const { result, rerender } = await renderHook<UseAddressSearchState, { query: string }>(
+      ({ query }) => useAddressSearch(query),
+      { initialProps: { query: '' } },
+    );
 
     await act(async () => rerender({ query: 'Av. Chapultepec' }));
     await advance(300);
