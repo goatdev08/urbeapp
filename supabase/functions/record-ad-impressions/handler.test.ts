@@ -141,10 +141,54 @@
 // - 200 tiene forma { impressions_accepted, impressions_rejected,
 //   cta_taps_recorded } (todos number).
 // - error sigue { error: { code: string, message: string } }.
+//
+// EDGE CASES (RED) — #214 (clamp de shown_at):
+//
+// Origen: análisis del guardián en 201.1. `shown_at` lo escribe el CLIENTE y
+// hasta hoy solo se valida `typeof === "string"`. Un shown_at FUTURO pasa la
+// compuerta de elegibilidad del rollup (#201), crea una fila en
+// `ad_impressions_monthly` de un mes que no existe y, cuando el crudo se
+// purga a los 90 días, esa fila queda como basura PERMANENTE en la tabla
+// FACTURABLE. Un shown_at anterior a la retención jamás entra al rollup: solo
+// es basura en el crudo. El contrato HTTP NO cambia (mismos códigos, mismo
+// shape); cambia QUÉ items se aceptan.
+//
+// ### Función pura normalize_shown_at(shown_at, now) — fuera del handler
+// - constantes exportadas con valores EXACTOS (5 min / 90 días) — pinneadas
+//   con literales a propósito: si los tests derivaran los bordes solo de la
+//   constante, un mutante que la cambie sobreviviría.
+// - shown_at no parseable ("mañana", "", basura ISO) → null (rechazo).
+// - shown_at dentro de la ventana (now, now-1d) → MISMA cadena, byte a byte
+//   (no se re-serializa: la fila debe conservar el instante del cliente).
+// - borde exacto now-90d → aceptado, cadena intacta.
+// - now-90d-1ms → null.
+// - futuro dentro del skew (now+1ms, now+1min) → clampeado a now.toISOString().
+// - borde exacto now+5min → clampeado (no rechazado).
+// - now+5min+1ms → null.
+//
+// ### Contrato HTTP (seam público del handler)
+// - shown_at no parseable → mismo camino que un item malformado: cuenta en
+//   impressions_rejected, NO llega a fetch_ads, no tumba el batch.
+// - shown_at futuro lejano (now+1d) → rechazado; el writer no recibe la fila.
+// - shown_at futuro dentro del skew → ACEPTADO y la fila escrita lleva
+//   now.toISOString(), NUNCA el valor del cliente.
+// - shown_at anterior a la retención (now-91d) → rechazado.
+// - regresión: un shown_at normal (now-2h) llega INTACTO al writer.
+// - batch mixto (futuro lejano + no parseable + prehistórico + válido) →
+//   accepted=1/rejected=3 y SOLO la fila válida llega al writer.
+// - la respuesta sigue siendo 200 con los 4 contadores numéricos (los builds
+//   instalados no ven un contrato nuevo).
 
 import { assertEquals, assertExists } from "@std/assert";
 import { handler } from "./handler.ts";
-import { derive_impression_id, is_ad_viewed, VIEWED_THRESHOLD_MS } from "./types.ts";
+import {
+  derive_impression_id,
+  is_ad_viewed,
+  normalize_shown_at,
+  SHOWN_AT_FUTURE_SKEW_MS,
+  SHOWN_AT_RETENTION_MS,
+  VIEWED_THRESHOLD_MS,
+} from "./types.ts";
 import type {
   AdCtaTapInput,
   AdImpressionEventInput,
@@ -843,10 +887,16 @@ Deno.test("elegibilidad_usa_deps_now_nunca_shown_at_ad_vigente_por_el_reloj_pero
   const res = await handler(
     post_request({
       impressions: [
-        // AD_ACTIVE_RECORD es vigente SEGÚN deps.now() (NOW). shown_at se
-        // declara 10 días en el futuro -- FUERA de la vigencia real del ad
-        // si el boundary (erróneamente) usara shown_at.
-        impression_item({ ad_id: AD_ACTIVE, session_id: SESSION_1, shown_at: iso_plus(NOW, 10 * DAY_MS) }),
+        // AD_ACTIVE_RECORD es vigente SEGÚN deps.now() (NOW; starts_at =
+        // NOW-1d). shown_at se declara 10 días ATRÁS -- FUERA de la vigencia
+        // real del ad si el boundary (erróneamente) usara shown_at.
+        // (#214: el fixture original declaraba NOW+10d; el clamp de shown_at
+        // ahora rechaza el futuro más allá del skew, así que el mismo hueco
+        // se prueba hacia el pasado -- 10d sigue DENTRO de la retención de
+        // 90d, o sea el item es aceptable y lo único que puede rechazarlo es
+        // un boundary de vigencia leído de shown_at. La intención del test
+        // (V3 del guardián 170.6) se conserva exacta.)
+        impression_item({ ad_id: AD_ACTIVE, session_id: SESSION_1, shown_at: iso_plus(NOW, -10 * DAY_MS) }),
       ],
     }),
     deps,
@@ -1347,4 +1397,234 @@ Deno.test("198_tap_HUERFANO_no_cuenta_como_recorded_y_SI_como_orphaned", async (
     "un tap que no escribio ninguna fila NO puede contarse como registrado",
   );
   assertEquals(body.cta_taps_orphaned, 1, "debe reportarse como huerfano para que el fallo sea visible");
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// #214 — Clamp de shown_at (frontera de confianza: lo escribe el cliente)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Por qué importa: shown_at es la columna que el rollup mensual (#201)
+// agrupa por date_trunc('month', shown_at). Un valor futuro fabrica una fila
+// de un mes inexistente en ad_impressions_monthly que sobrevive a la purga
+// del crudo -> basura PERMANENTE en la tabla facturable.
+
+// ── Función pura ───────────────────────────────────────────────────────────
+
+Deno.test("clamp_constantes_valores_exactos_5min_y_90dias", () => {
+  // Pinneadas con literales: derivar los bordes solo de la constante dejaría
+  // vivo al mutante que la cambia (mismo criterio que VIEWED_THRESHOLD_MS).
+  assertEquals(SHOWN_AT_FUTURE_SKEW_MS, 300_000);
+  assertEquals(SHOWN_AT_RETENTION_MS, 7_776_000_000);
+});
+
+Deno.test("clamp_puro_shown_at_no_parseable_devuelve_null", () => {
+  assertEquals(normalize_shown_at("mañana", NOW), null);
+  assertEquals(normalize_shown_at("", NOW), null);
+  assertEquals(normalize_shown_at("2026-13-45T99:99:99Z", NOW), null);
+  assertEquals(normalize_shown_at("not-a-date", NOW), null);
+});
+
+Deno.test("clamp_puro_shown_at_igual_a_now_pasa_intacto_byte_a_byte", () => {
+  const exact = NOW.toISOString();
+  assertEquals(normalize_shown_at(exact, NOW), exact);
+});
+
+Deno.test("clamp_puro_shown_at_pasado_dentro_de_la_ventana_pasa_intacto_sin_reserializar", () => {
+  // Formato con offset (no "Z") a propósito: la EF conserva el instante que
+  // mandó el cliente, no lo normaliza a su propia serialización.
+  assertEquals(normalize_shown_at("2026-08-19T06:00:00.000-06:00", NOW), "2026-08-19T06:00:00.000-06:00");
+  assertEquals(normalize_shown_at(iso_plus(NOW, -DAY_MS), NOW), iso_plus(NOW, -DAY_MS));
+});
+
+Deno.test("clamp_puro_borde_exacto_now_menos_90d_es_aceptado_intacto", () => {
+  const borde = iso_plus(NOW, -SHOWN_AT_RETENTION_MS);
+  assertEquals(normalize_shown_at(borde, NOW), borde);
+});
+
+Deno.test("clamp_puro_1ms_antes_de_la_retencion_devuelve_null", () => {
+  assertEquals(normalize_shown_at(iso_plus(NOW, -SHOWN_AT_RETENTION_MS - 1), NOW), null);
+});
+
+Deno.test("clamp_puro_futuro_dentro_del_skew_se_clampea_a_now", () => {
+  assertEquals(normalize_shown_at(iso_plus(NOW, 1), NOW), NOW.toISOString());
+  assertEquals(normalize_shown_at(iso_plus(NOW, 60_000), NOW), NOW.toISOString());
+});
+
+Deno.test("clamp_puro_borde_exacto_now_mas_5min_se_clampea_no_se_rechaza", () => {
+  assertEquals(normalize_shown_at(iso_plus(NOW, SHOWN_AT_FUTURE_SKEW_MS), NOW), NOW.toISOString());
+});
+
+Deno.test("clamp_puro_1ms_mas_alla_del_skew_devuelve_null", () => {
+  assertEquals(normalize_shown_at(iso_plus(NOW, SHOWN_AT_FUTURE_SKEW_MS + 1), NOW), null);
+});
+
+// ── Contrato HTTP del handler ──────────────────────────────────────────────
+
+Deno.test("clamp_http_shown_at_no_parseable_se_rechaza_como_malformado_y_no_llega_a_fetch_ads", async () => {
+  const ads = ads_repo([AD_ACTIVE_RECORD, AD_ACTIVE_2_RECORD]);
+  const writer = writer_ok();
+  const deps = make_deps({ adsRepository: ads, impressionsWriter: writer, now: () => NOW });
+  const res = await handler(
+    post_request({
+      impressions: [
+        impression_item({ ad_id: AD_ACTIVE_2, session_id: SESSION_2, shown_at: "mañana" }),
+        impression_item({ ad_id: AD_ACTIVE, session_id: SESSION_1 }),
+      ],
+    }),
+    deps,
+  );
+  assertEquals(res.status, 200);
+  const body = await res.json();
+  assertEquals(body.impressions_accepted, 1);
+  assertEquals(body.impressions_rejected, 1, "un shown_at no parseable es un item MALFORMADO, no una fila que se escribe");
+  assertEquals(ads.calls[0], [AD_ACTIVE], "el item con shown_at basura no debe llegar siquiera a fetch_ads");
+  assertEquals(writer.upsert_calls[0].length, 1);
+  assertEquals(writer.upsert_calls[0][0].ad_id, AD_ACTIVE);
+});
+
+Deno.test("clamp_http_shown_at_futuro_lejano_1_dia_se_rechaza_nunca_llega_al_writer", async () => {
+  const writer = writer_ok();
+  const deps = make_deps({ impressionsWriter: writer, now: () => NOW });
+  const res = await handler(
+    post_request({
+      impressions: [impression_item({ ad_id: AD_ACTIVE, session_id: SESSION_1, shown_at: iso_plus(NOW, DAY_MS) })],
+    }),
+    deps,
+  );
+  assertEquals(res.status, 200);
+  const body = await res.json();
+  assertEquals(
+    body.impressions_accepted,
+    0,
+    "un shown_at futuro fabricaría una fila mensual de un mes que no existe: NUNCA puede nacer",
+  );
+  assertEquals(body.impressions_rejected, 1);
+  assertEquals(writer.upsert_calls.length, 0);
+});
+
+Deno.test("clamp_http_shown_at_futuro_dentro_del_skew_se_acepta_con_la_fila_clampeada_a_now", async () => {
+  const writer = writer_ok();
+  const deps = make_deps({ impressionsWriter: writer, now: () => NOW });
+  const declarado = iso_plus(NOW, 4 * 60 * 1000); // +4 min, dentro del skew
+  const res = await handler(
+    post_request({
+      impressions: [impression_item({ ad_id: AD_ACTIVE, session_id: SESSION_1, shown_at: declarado })],
+    }),
+    deps,
+  );
+  const body = await res.json();
+  assertEquals(body.impressions_accepted, 1);
+  assertEquals(body.impressions_rejected, 0);
+  assertEquals(writer.upsert_calls[0][0].shown_at, NOW.toISOString(), "el skew de reloj se clampea a now, no se conserva el futuro");
+  assertEquals(writer.upsert_calls[0][0].shown_at === declarado, false);
+});
+
+Deno.test("clamp_http_borde_exacto_now_mas_5min_se_acepta_clampeado", async () => {
+  const writer = writer_ok();
+  const deps = make_deps({ impressionsWriter: writer, now: () => NOW });
+  const res = await handler(
+    post_request({
+      impressions: [
+        impression_item({ ad_id: AD_ACTIVE, session_id: SESSION_1, shown_at: iso_plus(NOW, SHOWN_AT_FUTURE_SKEW_MS) }),
+      ],
+    }),
+    deps,
+  );
+  const body = await res.json();
+  assertEquals(body.impressions_accepted, 1, "el borde exacto del skew se conserva (clampeado), no se rechaza");
+  assertEquals(writer.upsert_calls[0][0].shown_at, NOW.toISOString());
+});
+
+Deno.test("clamp_http_1ms_mas_alla_del_skew_se_rechaza", async () => {
+  const writer = writer_ok();
+  const deps = make_deps({ impressionsWriter: writer, now: () => NOW });
+  const res = await handler(
+    post_request({
+      impressions: [
+        impression_item({
+          ad_id: AD_ACTIVE,
+          session_id: SESSION_1,
+          shown_at: iso_plus(NOW, SHOWN_AT_FUTURE_SKEW_MS + 1),
+        }),
+      ],
+    }),
+    deps,
+  );
+  const body = await res.json();
+  assertEquals(body.impressions_accepted, 0);
+  assertEquals(body.impressions_rejected, 1);
+  assertEquals(writer.upsert_calls.length, 0);
+});
+
+Deno.test("clamp_http_shown_at_anterior_a_la_retencion_91_dias_se_rechaza", async () => {
+  const writer = writer_ok();
+  const deps = make_deps({ impressionsWriter: writer, now: () => NOW });
+  const res = await handler(
+    post_request({
+      impressions: [
+        impression_item({ ad_id: AD_ACTIVE, session_id: SESSION_1, shown_at: iso_plus(NOW, -91 * DAY_MS) }),
+      ],
+    }),
+    deps,
+  );
+  const body = await res.json();
+  assertEquals(body.impressions_accepted, 0, "fuera de la ventana de retención no entra al rollup: solo sería basura en el crudo");
+  assertEquals(body.impressions_rejected, 1);
+  assertEquals(writer.upsert_calls.length, 0);
+});
+
+Deno.test("clamp_http_borde_exacto_now_menos_90d_se_acepta_con_shown_at_intacto", async () => {
+  const writer = writer_ok();
+  const deps = make_deps({ impressionsWriter: writer, now: () => NOW });
+  const borde = iso_plus(NOW, -SHOWN_AT_RETENTION_MS);
+  const res = await handler(
+    post_request({ impressions: [impression_item({ ad_id: AD_ACTIVE, session_id: SESSION_1, shown_at: borde })] }),
+    deps,
+  );
+  const body = await res.json();
+  assertEquals(body.impressions_accepted, 1, "el borde exacto de la retención es INCLUSIVE");
+  assertEquals(body.impressions_rejected, 0);
+  assertEquals(writer.upsert_calls[0][0].shown_at, borde, "dentro de la ventana el instante del cliente se conserva tal cual");
+});
+
+Deno.test("clamp_http_regresion_shown_at_normal_llega_intacto_al_writer", async () => {
+  const writer = writer_ok();
+  const deps = make_deps({ impressionsWriter: writer, now: () => NOW });
+  const normal = iso_plus(NOW, -2 * 60 * 60 * 1000); // hace 2 horas: el caso real de la cola
+  const res = await handler(
+    post_request({ impressions: [impression_item({ ad_id: AD_ACTIVE, session_id: SESSION_1, shown_at: normal })] }),
+    deps,
+  );
+  const body = await res.json();
+  assertEquals(body.impressions_accepted, 1);
+  assertEquals(body.impressions_rejected, 0);
+  assertEquals(writer.upsert_calls[0][0].shown_at, normal, "el clamp NO puede reescribir un shown_at legítimo: el rollup cobra por ese mes");
+});
+
+Deno.test("clamp_http_batch_mixto_futuro_no_parseable_y_prehistorico_solo_la_valida_llega_al_writer", async () => {
+  const writer = writer_ok();
+  const deps = make_deps({ impressionsWriter: writer, now: () => NOW });
+  const res = await handler(
+    post_request({
+      impressions: [
+        impression_item({ ad_id: AD_ACTIVE, session_id: SESSION_1, shown_at: iso_plus(NOW, 30 * DAY_MS) }),
+        impression_item({ ad_id: AD_ACTIVE, session_id: SESSION_2, shown_at: "no-es-fecha" }),
+        impression_item({ ad_id: AD_ACTIVE_2, session_id: SESSION_1, shown_at: iso_plus(NOW, -200 * DAY_MS) }),
+        impression_item({ ad_id: AD_ACTIVE_2, session_id: SESSION_2 }),
+      ],
+    }),
+    deps,
+  );
+  assertEquals(res.status, 200, "el contrato HTTP no cambia: sigue siendo 200 aunque se rechacen items");
+  const body = await res.json();
+  assertEquals(body, {
+    impressions_accepted: 1,
+    impressions_rejected: 3,
+    cta_taps_recorded: 0,
+    cta_taps_orphaned: 0,
+  });
+  assertEquals(writer.upsert_calls[0].length, 1);
+  assertEquals(writer.upsert_calls[0][0].ad_id, AD_ACTIVE_2);
+  assertEquals(writer.upsert_calls[0][0].session_id, SESSION_2);
+  assertEquals(writer.upsert_calls[0][0].shown_at, NOW.toISOString());
 });
