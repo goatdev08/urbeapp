@@ -156,13 +156,18 @@ function AdListItem({ ad }: { ad: MyAd }) {
   // (NEVER_EXPOSED_STATUSES) evita disparar las 3 RPCs y fuerza "—".
   const stats_ad_id = NEVER_EXPOSED_STATUSES.has(ad.status) ? null : ad.id;
   const stats = useAdStats(stats_ad_id, 'max');
+  // 213: una promo no tiene creative propio — `title` es la dirección de la
+  // propiedad (ads.title = properties.address). Prefijo mínimo (ponytail:
+  // reusa el mismo Text/estilo, sin componente nuevo) para distinguirla de
+  // un display en esta misma lista.
+  const display_title = ad.property_id ? `Promoción · ${ad.title}` : ad.title;
 
   return (
     <Pressable
       style={({ pressed }) => [styles.ad_row, pressed && styles.ad_row_pressed]}
       onPress={() => router.push(`/ads/${ad.id}`)}
       accessibilityRole="button"
-      accessibilityLabel={`Ver detalle de ${ad.title}`}
+      accessibilityLabel={`Ver detalle de ${display_title}`}
     >
       <View style={styles.ad_card_top}>
         {/* ponytail: caja decorativa (color sólido + ícono ▶), sin
@@ -175,7 +180,7 @@ function AdListItem({ ad }: { ad: MyAd }) {
         </View>
         <View style={styles.ad_card_info}>
           <View style={styles.ad_row_top}>
-            <Text style={styles.ad_title} numberOfLines={2}>{ad.title}</Text>
+            <Text style={styles.ad_title} numberOfLines={2}>{display_title}</Text>
             <View style={[styles.badge, { backgroundColor: badge.bg }]}>
               <Text style={[styles.badge_label, { color: badge.text }]}>{badge.label}</Text>
             </View>

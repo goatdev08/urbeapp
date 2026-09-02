@@ -145,6 +145,7 @@ const AD: MyAd = {
   paused_at: null,
   paused_by_suspension: false,
   rejection_reason: null,
+  property_id: null,
 };
 
 function my_ads(overrides: Partial<UseMyAdsResult>): UseMyAdsResult {

@@ -416,13 +416,19 @@ select is(
 -- ════════════════════════════════════════════════════════════════════════════
 
 -- EC-20
+-- 🔴 #213 (213.3): ads_for_zone gano `property_id uuid` AL FINAL para servir
+-- promociones de publicaciones. Lo que este ancla protege NO cambia: la firma
+-- de PARAMETROS es intocable y las 9 columnas anteriores conservan nombre,
+-- tipo y ORDEN. Una columna nueva al final es aditiva para los builds
+-- instalados (leen por nombre); mover o renombrar una existente los rompe, y
+-- eso sigue prohibido aqui.
 select is(
   (select pg_get_function_identity_arguments(oid) || ' -> ' || pg_get_function_result(oid)
      from pg_proc where oid = to_regprocedure('public.ads_for_zone(double precision,double precision,bigint,text)')),
   'p_lat double precision, p_lng double precision, p_neighborhood_id bigint, p_municipality_id text'
   || ' -> TABLE(id uuid, creative_id uuid, title text, description text, cta_type ad_cta_type,'
-  || ' cta_value text, cloudflare_uid text, agency_name text, agency_logo_url text)',
-  'EC-20 contrato de ads_for_zone intacto (firma + returns table, mismo orden)'
+  || ' cta_value text, cloudflare_uid text, agency_name text, agency_logo_url text, property_id uuid)',
+  'EC-20 contrato de ads_for_zone intacto (firma de parametros + 9 columnas originales en el mismo orden; property_id de #213 al final)'
 );
 
 -- EC-21

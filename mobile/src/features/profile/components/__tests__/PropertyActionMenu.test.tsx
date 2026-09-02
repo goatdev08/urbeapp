@@ -42,6 +42,7 @@ function make_callbacks(overrides?: Partial<PropertyActionCallbacks>): PropertyA
     on_toggle_pause: jest.fn(),
     on_close: jest.fn(),
     on_delete: jest.fn(),
+    on_promote: jest.fn(),
     ...overrides,
   };
 }
@@ -102,5 +103,56 @@ describe('PropertyActionMenu — disabled (#25)', () => {
     );
 
     expect(getByLabelText('Pausar').props.accessibilityState?.disabled).toBe(true);
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// 213 — "Promocionar": visible solo con status='active' Y agency_id.
+// ───────────────────────────────────────────────────────────────────────────
+describe('PropertyActionMenu — 213: acción "Promocionar"', () => {
+  it('(EC-PROMOTE-1) status=active + agency_id → "Promocionar" aparece y su tap invoca on_promote', async () => {
+    const cb = make_callbacks();
+    const item = { status: 'active', agency_id: 'agency-uuid-1' } as MyProperty;
+
+    const { getByLabelText } = await render(
+      <PropertyActionMenu visible item={item} on_dismiss={jest.fn()} callbacks={cb} />,
+    );
+
+    fireEvent.press(getByLabelText('Promocionar'));
+    expect(cb.on_promote).toHaveBeenCalledTimes(1);
+  });
+
+  it('(EC-PROMOTE-2) status=active SIN agency_id (agente independiente) → "Promocionar" NO aparece', async () => {
+    const cb = make_callbacks();
+    const item = { status: 'active', agency_id: null } as MyProperty;
+
+    const { queryByLabelText } = await render(
+      <PropertyActionMenu visible item={item} on_dismiss={jest.fn()} callbacks={cb} />,
+    );
+
+    expect(queryByLabelText('Promocionar')).toBeNull();
+  });
+
+  it('(EC-PROMOTE-3) status=paused CON agency_id → "Promocionar" NO aparece (solo publicaciones activas)', async () => {
+    const cb = make_callbacks();
+    const item = { status: 'paused', agency_id: 'agency-uuid-1' } as MyProperty;
+
+    const { queryByLabelText } = await render(
+      <PropertyActionMenu visible item={item} on_dismiss={jest.fn()} callbacks={cb} />,
+    );
+
+    expect(queryByLabelText('Promocionar')).toBeNull();
+  });
+
+  it('(EC-PROMOTE-4) disabled=true → tap en "Promocionar" no invoca el handler', async () => {
+    const cb = make_callbacks({ disabled: true });
+    const item = { status: 'active', agency_id: 'agency-uuid-1' } as MyProperty;
+
+    const { getByLabelText } = await render(
+      <PropertyActionMenu visible item={item} on_dismiss={jest.fn()} callbacks={cb} />,
+    );
+
+    fireEvent.press(getByLabelText('Promocionar'));
+    expect(cb.on_promote).not.toHaveBeenCalled();
   });
 });

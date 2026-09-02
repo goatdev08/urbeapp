@@ -55,6 +55,13 @@ export interface MyAd {
   paused_at: string | null;
   paused_by_suspension: boolean;
   rejection_reason: string | null;
+  /**
+   * 213: no nulo ⟺ es una PROMO (RPC promote_property_atomic) en vez de un
+   * anuncio display. `title` en una promo es la DIRECCIÓN de la propiedad
+   * (ads.title = properties.address — properties no tiene columna title,
+   * ajuste de contrato del carril backend 213.2), no un nombre de campaña.
+   */
+  property_id: string | null;
 }
 
 export interface UseMyAdsResult {
@@ -67,7 +74,7 @@ export interface UseMyAdsResult {
 const NEUTRAL_ERROR_MESSAGE = 'No se pudieron cargar tus anuncios. Intenta de nuevo.';
 
 const MY_AD_COLUMNS =
-  'id, title, status, starts_at, ends_at, paused_at, paused_by_suspension, rejection_reason';
+  'id, title, status, starts_at, ends_at, paused_at, paused_by_suspension, rejection_reason, property_id';
 
 export function useMyAds(): UseMyAdsResult {
   const { user } = useAuth();

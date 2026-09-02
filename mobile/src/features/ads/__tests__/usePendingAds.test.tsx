@@ -142,6 +142,7 @@ const SAMPLE_PENDING: PendingAd = {
   ends_at: '2026-10-01T00:00:00Z',
   created_at: '2026-08-20T10:00:00Z',
   agencies: { name: 'Seguros del Valle' },
+  property_id: null,
 };
 
 const SAMPLE_PENDING_2: PendingAd = {
@@ -156,6 +157,7 @@ const SAMPLE_PENDING_2: PendingAd = {
   ends_at: '2026-10-05T00:00:00Z',
   created_at: '2026-08-21T10:00:00Z',
   agencies: { name: 'Mudanzas Express' },
+  property_id: null,
 };
 
 type AdsResult = { data: PendingAd[] | null; error: { code?: string; message: string } | null };

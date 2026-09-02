@@ -52,7 +52,7 @@ import {
   type AdsFailureClient,
   type AdsFailureStage,
 } from '../lib/adsFailureSignal';
-import { fetchFeedProperties, type FeedPropertiesDeps } from '../lib/feedProperties';
+import { fetchFeedProperties, mint_videos, type FeedPropertiesDeps } from '../lib/feedProperties';
 import { interleave_ads, type FeedAd, type FeedItem } from '../lib/interleaveAds';
 import type { FeedPropertyWithUrl } from '../types';
 
@@ -82,13 +82,23 @@ const to_property_items = (properties: FeedPropertyWithUrl[]): FeedItem[] =>
 /** Fila de mint-ad-urls. */
 type MintedAdUrlRow = { creative_id: string; posterUrl: string; videoUrl: string };
 
+/** Anuncio "display": trae creative propio (170.8). Mutuamente excluyente con promo (213). */
+type DisplayAd = FeedAd & { creative_id: string };
+/** Anuncio "promo" (213): es una propiedad publicada, sin creative propio. */
+type PromoAd = FeedAd & { property_id: string };
+
+const is_display_ad = (ad: FeedAd): ad is DisplayAd => ad.creative_id != null;
+// 213: `property_id` puede venir ausente (undefined, backend sin la migración
+// 213.3-SQL) — se trata igual que null (tolerancia OTA, ver docblock de FeedAd).
+const is_promo_ad = (ad: FeedAd): ad is PromoAd => ad.property_id != null;
+
 /**
- * Pide a mint-ad-urls las URLs firmadas de estos anuncios y devuelve SOLO los
- * que quedaron firmados. `null` = la EF falló entera (distinto de "firmó cero",
- * que es una lista vacía y también deja el feed sin anuncios pero por una razón
- * legítima: ningún creativo autorizado/disponible).
+ * Pide a mint-ad-urls las URLs firmadas de estos anuncios DISPLAY y devuelve
+ * SOLO los que quedaron firmados. `null` = la EF falló entera (distinto de
+ * "firmó cero", que es una lista vacía y también deja el feed sin esos
+ * anuncios pero por una razón legítima: ningún creativo autorizado/disponible).
  */
-async function mint_ad_urls(client: unknown, ads: FeedAd[]): Promise<FeedAd[] | null> {
+async function mint_ad_urls(client: unknown, ads: DisplayAd[]): Promise<FeedAd[] | null> {
   // 🔴 #205: se comprueba el tipo sobre el método, pero se LLAMA LIGADO a
   // `functions`. Desprenderlo (`const call = ...functions.invoke`) pierde
   // `this` y el invoke real devuelve `{data:null, error:{}}` — un error MUDO
@@ -117,6 +127,27 @@ async function mint_ad_urls(client: unknown, ads: FeedAd[]): Promise<FeedAd[] | 
     const minted = by_creative.get(ad.creative_id);
     // Sin firma no se sirve: ver el comentario de compose_feed_items.
     if (minted) signed.push({ ...ad, video_url: minted.videoUrl, poster_url: minted.posterUrl });
+  }
+  return signed;
+}
+
+/**
+ * 213.3: pide a mint-video-url (la MISMA EF/helper que feedProperties.ts usa
+ * para las propiedades del feed — `mint_videos`, sin duplicar el fetch) el
+ * video de cada propiedad promocionada, y devuelve SOLO las promos que
+ * quedaron firmadas. Una promo sin video autorizado/ready NO se sirve —
+ * mismo criterio que un display sin firma (compose_feed_items).
+ */
+async function mint_promo_video_urls(client: unknown, ads: PromoAd[]): Promise<FeedAd[]> {
+  const videos = await mint_videos(client, ads.map((ad) => ad.property_id));
+  const by_property = new Map(videos.map((v) => [v.property_id, v]));
+
+  const signed: FeedAd[] = [];
+  for (const ad of ads) {
+    const minted = by_property.get(ad.property_id);
+    if (minted) {
+      signed.push({ ...ad, video_url: minted.signed_url, poster_url: minted.posterUrl ?? null });
+    }
   }
   return signed;
 }
@@ -220,19 +251,38 @@ async function compose_feed_items(
   // anunciante PAGA y que no muestra su video es peor que no servir el anuncio
   // — y se registraría igual, porque el registro de impresiones no sabe si el
   // video llegó a pintar.
-  if (ads.length > 0) {
+  //
+  // 213.3 — PARTICIÓN display/promo. ads_for_zone ahora puede devolver DOS
+  // formas mutuamente excluyentes (CHECK ads_exactly_one_source en la base):
+  // "display" (creative_id) se firma con mint-ad-urls como siempre; "promo"
+  // (property_id) se firma con mint-video-url — el mismo minteo que usan las
+  // propiedades del feed. Cada partición falla CERRADO por su cuenta: si una
+  // de las dos EFs falla entera, esa partición queda sin anuncios (señal
+  // 'mint') pero la otra no se ve afectada — el feed sigue sirviendo lo que
+  // sí se pudo firmar.
+  const display_ads = ads.filter(is_display_ad);
+  const promo_ads = ads.filter(is_promo_ad);
+  const signed_ads: FeedAd[] = [];
+
+  if (display_ads.length > 0) {
     try {
-      const signed = await mint_ad_urls(client, ads);
-      if (signed === null) {
-        signal_ads_failure(client, 'mint');
-        return to_property_items(properties);
-      }
-      ads = signed;
+      const signed = await mint_ad_urls(client, display_ads);
+      if (signed === null) signal_ads_failure(client, 'mint');
+      else signed_ads.push(...signed);
     } catch {
       signal_ads_failure(client, 'mint');
-      return to_property_items(properties);
     }
   }
+
+  if (promo_ads.length > 0) {
+    try {
+      signed_ads.push(...(await mint_promo_video_urls(client, promo_ads)));
+    } catch {
+      signal_ads_failure(client, 'mint');
+    }
+  }
+
+  ads = signed_ads;
 
   const items = interleave_ads(properties, ads, {
     every_n: config.ad_frequency_n,

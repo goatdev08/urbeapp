@@ -182,6 +182,7 @@ const SAMPLE_ACTIVE: ActiveAd = {
   paused_at: null,
   paused_by_suspension: false,
   agencies: { name: 'Seguros del Valle' },
+  property_id: null,
 };
 
 const SAMPLE_ACTIVE_2: ActiveAd = {
@@ -194,6 +195,7 @@ const SAMPLE_ACTIVE_2: ActiveAd = {
   paused_at: null,
   paused_by_suspension: false,
   agencies: { name: 'Mudanzas Express' },
+  property_id: null,
 };
 
 /** Pausado por el ADMIN (click de takedown): reanudable, EC-21. */
@@ -207,6 +209,7 @@ const SAMPLE_PAUSED_BY_ADMIN: ActiveAd = {
   paused_at: '2026-08-20T12:00:00Z',
   paused_by_suspension: false,
   agencies: { name: 'Vacacional del Pacífico' },
+  property_id: null,
 };
 
 /** Pausado por la CASCADA de suspensión de organización (#211): resume debe deshabilitarse, EC-21. */
@@ -220,6 +223,7 @@ const SAMPLE_PAUSED_BY_SUSPENSION: ActiveAd = {
   paused_at: '2026-08-21T09:00:00Z',
   paused_by_suspension: true,
   agencies: { name: 'Créditos del Bajío' },
+  property_id: null,
 };
 
 type AdsResult = { data: ActiveAd[] | null; error: { code?: string; message: string } | null };

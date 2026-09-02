@@ -56,6 +56,12 @@ export interface ActiveAd {
   paused_by_suspension: boolean;
   /** Embed PostgREST muchos-a-uno: bajar un anuncio sin saber de quién es, no. */
   agencies: { name: string } | null;
+  /**
+   * 213: no nulo ⟺ es una PROMO (RPC promote_property_atomic) en vez de un
+   * anuncio display. `title` en una promo es la DIRECCIÓN de la propiedad
+   * (ads.title = properties.address — properties no tiene columna title).
+   */
+  property_id: string | null;
 }
 
 export interface UseActiveAdsResult {
@@ -72,7 +78,7 @@ const NEUTRAL_ERROR_MESSAGE = 'No se pudo cargar la lista de anuncios activos. I
 // instalado no espera (§0.5, compatibilidad hacia atrás).
 const ACTIVE_AD_COLUMNS =
   'id, title, description, agency_id, starts_at, ends_at, ' +
-  'paused_at, paused_by_suspension, agencies(name)';
+  'paused_at, paused_by_suspension, agencies(name), property_id';
 
 /** EXTENSIÓN 210.3: incluye 'paused' además de 'active' — ver docblock. */
 const ACTIVE_OR_PAUSED_STATUSES = ['active', 'paused'] as const;
