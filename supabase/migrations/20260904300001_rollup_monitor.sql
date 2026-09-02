@@ -170,6 +170,11 @@ begin
   end if;
 
   -- ── Condición B: mes con crudo, fuera de la ventana, sin consolidar ─────
+  -- ponytail: barrido completo de ad_impressions con date_trunc por fila, sin
+  -- índice de apoyo. Techo conocido: la tabla vive 90 días por la purga y esto
+  -- corre UNA vez al día -- añadir un índice funcional por adelantado sería
+  -- optimizar sin medición. Si el volumen crece, el índice es
+  -- (date_trunc('month', shown_at)).
   for v_stale_month in
     select distinct date_trunc('month', ai.shown_at)::date
     from public.ad_impressions ai
