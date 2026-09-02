@@ -29,6 +29,8 @@ import { useRef, useReducer, useCallback, useMemo } from 'react';
 
 import { useAuth } from '@/features/auth/context';
 import { emitPropertyDeleted } from '@/lib/propertyEvents';
+import { extract_error_code } from '@/lib/supabase/edge-errors';
+import { map_publish_edit_ef_error } from '@/features/publish/publish_error_messages';
 
 // ---------------------------------------------------------------------------
 // Tipos públicos
@@ -142,17 +144,29 @@ export function usePropertyActions(deps?: UsePropertyActionsDeps): UsePropertyAc
   /**
    * invoke_status: invoca la EF update-property-status y mapea el resultado
    * al formato {ok, error}. Función pura de I/O — no gestiona isWorking.
+   *
+   * #202 (suspensión = congela la ACTUACIÓN): la EF ahora puede devolver
+   * AGENCY_MEMBERSHIP_SUSPENDED (pause/unpause/close bloqueados para un
+   * dueño con membresía de agencia no activa). Ese código se traduce
+   * reusando map_publish_edit_ef_error (mismo mensaje que ve el agente al
+   * intentar editar) — no un string nuevo. Cualquier otro código sigue el
+   * camino previo (error.message tal cual llega) — no-regresión.
    */
   const invoke_status = (body: Record<string, unknown>): Promise<ActionResult> => {
     const client = get_client();
     return (
       client.functions.invoke('update-property-status', { body }) as Promise<{
         data: unknown;
-        error: { message?: string } | null;
+        error: unknown;
       }>
-    ).then(({ error }) => {
+    ).then(async ({ error }) => {
       if (error) {
-        return { ok: false as const, error: error.message ?? 'Error al actualizar el estado' };
+        const code = await extract_error_code(error);
+        if (code === 'AGENCY_MEMBERSHIP_SUSPENDED') {
+          return { ok: false as const, error: map_publish_edit_ef_error(code) };
+        }
+        const message = (error as { message?: string } | null)?.message;
+        return { ok: false as const, error: message ?? 'Error al actualizar el estado' };
       }
       return { ok: true as const, error: null };
     });
