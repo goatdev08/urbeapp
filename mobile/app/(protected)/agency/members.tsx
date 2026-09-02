@@ -22,8 +22,18 @@
  *
  * `remove` es destructivo (baja terminal) → confirmación con Alert.alert,
  * mismo patrón que "Cerrar sesión" en ProfileScreen.
+ *
+ * #203.2 — "sin gestor": un miembro suspendido o dado de baja sigue siendo
+ * dueño (`owner_user_id`) de las propiedades que publicó — la suspensión es
+ * DEL AGENTE, no de su inventario (regla 3 de #202/#203; nada se pausa
+ * automáticamente). Su tarjeta muestra cuántas publicaciones activas le
+ * quedan (useUnmanagedInventory) y, si hay al menos una, un botón para
+ * reasignarlas a un miembro ACTIVO distinto (RPC
+ * `reassign_member_properties_atomic`, backend #203.1) vía un picker simple
+ * con Alert.alert (sin componente nuevo — no hay más de un puñado de
+ * miembros por agencia en la demo).
  */
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -46,6 +56,8 @@ import {
   type AgencyMemberRow,
   type MemberAction,
 } from '@/features/agency/api';
+import { useUnmanagedInventory } from '@/features/agency/hooks/useUnmanagedInventory';
+import { useReassignMemberProperties } from '@/features/agency/hooks/useReassignMemberProperties';
 
 // ---------------------------------------------------------------------------
 // Mensajes / etiquetas
@@ -113,10 +125,26 @@ export default function AgencyMembersScreen() {
   const [members, set_members] = useState<AgencyMemberRow[]>([]);
   const [list_loading, set_list_loading] = useState(true);
   const [list_error, set_list_error] = useState(false);
+  // Agencia del caller — se necesita para las queries/RPC de #203.2 (no venía
+  // guardada: fetch_own_membership la resolvía y se descartaba).
+  const [agency_id, set_agency_id] = useState<string | null>(null);
 
   // ── Acción en curso ───────────────────────────────────────────────────────
   const [acting_id, set_acting_id] = useState<string | null>(null);
   const [action_error, set_action_error] = useState<string | null>(null);
+
+  // ── Inventario sin gestor (#203.2) ───────────────────────────────────────
+  // suspended Y removed: ambos pueden seguir siendo owner_user_id de
+  // propiedades vivas de la agencia.
+  const unmanaged_user_ids = useMemo(
+    () => members.filter((m) => m.status !== 'active').map((m) => m.user_id),
+    [members],
+  );
+  const { counts: unmanaged_counts, refetch: refetch_unmanaged } = useUnmanagedInventory(
+    agency_id,
+    unmanaged_user_ids,
+  );
+  const reassign = useReassignMemberProperties();
 
   // tick fuerza un re-fetch tras una acción exitosa sin cambiar user.id —
   // mismo patrón que useMyProperties.ts (refetch). Async function DECLARADA
@@ -140,6 +168,7 @@ export default function AgencyMembersScreen() {
       const own = await fetch_own_membership(resolved_user_id);
       if (ignore) return;
       set_can_manage(own?.member_role === 'owner' || own?.member_role === 'admin');
+      set_agency_id(own?.agency_id ?? null);
       set_role_loading(false);
 
       set_list_loading(true);
@@ -206,6 +235,58 @@ export default function AgencyMembersScreen() {
     );
   }
 
+  // ── Reasignar inventario sin gestor (#203.2) ─────────────────────────────
+
+  async function run_reassign(from: AgencyMemberRow, to: AgencyMemberRow): Promise<void> {
+    if (agency_id === null) return;
+
+    set_action_error(null);
+    set_acting_id(from.id);
+    const result = await reassign.submit(agency_id, from.user_id, to.user_id);
+    set_acting_id(null);
+
+    if (!result.ok) {
+      set_action_error(result.error ?? UNKNOWN_ERROR_MESSAGE);
+      return;
+    }
+
+    const count = result.count ?? 0;
+    const plural = count === 1;
+    Alert.alert(
+      'Listo',
+      `${count} publicaci${plural ? 'ón' : 'ones'} reasignada${plural ? '' : 's'} a ${to.full_name ?? 'el miembro'}.`,
+    );
+    reload(); // refresca membresías por si el destino cambió de otra forma
+    refetch_unmanaged(); // el conteo sin gestor de `from` bajó a 0
+  }
+
+  function handle_reassign_press(member: AgencyMemberRow): void {
+    const candidates = members.filter(
+      (m) => m.status === 'active' && m.user_id !== member.user_id,
+    );
+
+    if (candidates.length === 0) {
+      Alert.alert(
+        'Sin miembros activos',
+        'No hay ningún miembro activo en la inmobiliaria para recibir estas publicaciones.',
+      );
+      return;
+    }
+
+    const unmanaged_count = unmanaged_counts[member.user_id] ?? 0;
+    Alert.alert(
+      'Reasignar publicaciones',
+      `Elige quién recibirá ${unmanaged_count === 1 ? 'la publicación' : `las ${unmanaged_count} publicaciones`} de ${member.full_name ?? 'este miembro'}.`,
+      [
+        ...candidates.map((candidate) => ({
+          text: candidate.full_name ?? 'Miembro',
+          onPress: () => { void run_reassign(member, candidate); },
+        })),
+        { text: 'Cancelar', style: 'cancel' as const },
+      ],
+    );
+  }
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
@@ -251,9 +332,11 @@ export default function AgencyMembersScreen() {
             key={member.id}
             member={member}
             busy={acting_id === member.id}
+            unmanaged_count={unmanaged_counts[member.user_id] ?? 0}
             onSuspend={() => { void run_action(member, 'suspend'); }}
             onReactivate={() => { void run_action(member, 'reactivate'); }}
             onRemove={() => confirm_remove(member)}
+            onReassign={() => handle_reassign_press(member)}
           />
         ))}
       </ScrollView>
@@ -268,14 +351,30 @@ export default function AgencyMembersScreen() {
 interface MemberCardProps {
   member: AgencyMemberRow;
   busy: boolean;
+  /** Publicaciones activas de la agencia cuyo owner_user_id es este miembro (#203.2). */
+  unmanaged_count: number;
   onSuspend: () => void;
   onReactivate: () => void;
   onRemove: () => void;
+  onReassign: () => void;
 }
 
-function MemberCard({ member, busy, onSuspend, onReactivate, onRemove }: MemberCardProps) {
+function MemberCard({
+  member,
+  busy,
+  unmanaged_count,
+  onSuspend,
+  onReactivate,
+  onRemove,
+  onReassign,
+}: MemberCardProps) {
   const is_owner_row = member.member_role === 'owner';
   const show_actions = !is_owner_row && member.status !== 'removed';
+  // #203.2: un miembro suspendido O removido puede seguir siendo dueño de
+  // propiedades vivas de la agencia — se muestra el inventario huérfano
+  // independiente de show_actions (que solo gobierna suspender/reactivar/dar
+  // de baja).
+  const show_unmanaged = member.status === 'suspended' || member.status === 'removed';
 
   return (
     <View style={styles.card}>
@@ -336,6 +435,24 @@ function MemberCard({ member, busy, onSuspend, onReactivate, onRemove }: MemberC
           >
             <Text style={[styles.action_text, styles.action_text_destructive]}>Dar de baja</Text>
           </Pressable>
+        </View>
+      )}
+
+      {show_unmanaged && (
+        <View style={styles.unmanaged_row}>
+          <Text style={styles.unmanaged_text}>
+            {`${unmanaged_count} publicaci${unmanaged_count === 1 ? 'ón' : 'ones'} sin gestor`}
+          </Text>
+          {!busy && unmanaged_count > 0 && (
+            <Pressable
+              style={styles.reassign_btn}
+              onPress={onReassign}
+              accessibilityRole="button"
+              accessibilityLabel={`Reasignar publicaciones de ${member.full_name ?? 'miembro'}`}
+            >
+              <Text style={styles.reassign_text}>Reasignar publicaciones</Text>
+            </Pressable>
+          )}
         </View>
       )}
     </View>
@@ -455,5 +572,33 @@ const styles = StyleSheet.create({
   },
   action_text_destructive: {
     color: colors.danger,
+  },
+
+  // ── Inventario sin gestor (#203.2) ─────────────────────────────────────
+  unmanaged_row: {
+    borderTopWidth: 1,
+    borderTopColor: colors.paper_3,
+    paddingTop: spacing.s_12,
+    gap: spacing.s_8,
+  },
+  unmanaged_text: {
+    ...type_scale.caption,
+    color: colors.gray_2,
+    textTransform: 'none',
+    letterSpacing: 0,
+  },
+  reassign_btn: {
+    borderRadius: radii.r_8,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    paddingVertical: spacing.s_8,
+    alignItems: 'center',
+  },
+  reassign_text: {
+    ...type_scale.caption,
+    color: colors.primary,
+    textTransform: 'none',
+    letterSpacing: 0,
+    fontFamily: 'HankenGrotesk_600SemiBold',
   },
 });

@@ -39,6 +39,13 @@
 
 import { act, renderHook } from '@testing-library/react-native';
 
+// ---------------------------------------------------------------------------
+// Imports DESPUÉS de registrar mocks (jest.mock se hoistea igual — patrón
+// useAgencyAgents.test.ts)
+// ---------------------------------------------------------------------------
+
+import { useUnmanagedInventory } from '../hooks/useUnmanagedInventory';
+
 const mock_supabase_holder: { client: ReturnType<typeof make_supabase_mock> } = {
   client: null as never,
 };
@@ -48,8 +55,6 @@ jest.mock('@/lib/supabase/client', () => ({
     return mock_supabase_holder.client;
   },
 }));
-
-import { useUnmanagedInventory } from '../hooks/useUnmanagedInventory';
 
 const TEST_AGENCY_ID = 'agencia-uuid-203-unmanaged';
 const SUSPENDED_A = 'user-uuid-suspendido-a';

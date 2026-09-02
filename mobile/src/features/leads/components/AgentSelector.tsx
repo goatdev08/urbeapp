@@ -9,6 +9,11 @@
  * ScrollView horizontal) y LeadCard (avatar circular con fallback de iniciales).
  *
  * ponytail: ScrollView horizontal + Pressable pill — sin librería extra.
+ *
+ * #203.2: `agents` ahora puede incluir agentes SUSPENDIDOS (useAgencyAgents
+ * ya no filtra solo status='active') — su chip se etiqueta "(suspendido)"
+ * para que el owner sepa, antes de tocarlo, que está viendo el pipeline de
+ * una cuenta congelada.
  */
 
 import React from 'react';
@@ -68,7 +73,11 @@ export function AgentSelector({
       {/* ── Un chip por agente ────────────────────────────────────────────── */}
       {agents.map((agent) => {
         const is_active = agent.id === selectedAgentId;
-        const display_name = agent.full_name ?? 'Agente';
+        const base_name = agent.full_name ?? 'Agente';
+        // #203.2: sufijo visible para que el owner sepa que el pipeline que
+        // está por filtrar pertenece a una cuenta suspendida.
+        const display_name =
+          agent.status === 'suspended' ? `${base_name} (suspendido)` : base_name;
 
         return (
           <Pressable
