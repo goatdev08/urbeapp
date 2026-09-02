@@ -3,6 +3,7 @@
 // La lógica de dominio (valid_transitions, ownership, UPDATE shape) vive aquí
 // y es ejercitada por property_status_updater.test.ts con un fake client.
 
+import type { AgencyRoleResolver } from "../_shared/agency_role.ts";
 import type {
   PropertyStatusEnum,
   PropertyStatusTarget,
@@ -56,8 +57,11 @@ export const VALID_TRANSITIONS: Record<PropertyStatusEnum, PropertyStatusTarget[
  *
  * El parámetro `client` es duck-typed para facilitar el testing con fakes.
  */
-// deno-lint-ignore no-explicit-any
-export function make_property_status_updater(client: { from(table: string): any }): PropertyStatusUpdater {
+export function make_property_status_updater(
+  // deno-lint-ignore no-explicit-any
+  client: { from(table: string): any },
+  agency_role_resolver: AgencyRoleResolver,
+): PropertyStatusUpdater {
   return {
     async update(params: UpdatePropertyStatusParams): Promise<UpdatePropertyStatusResult> {
       // 1. Verificar existencia + ownership en una query

@@ -5,7 +5,10 @@
 
 import { handler } from "./handler.ts";
 import { make_property_status_updater } from "./property_status_updater.ts";
-import { service_client } from "../_shared/clients.ts";
+import {
+  make_agency_role_resolver,
+  service_client,
+} from "../_shared/clients.ts";
 import type {
   CallerVerifier,
   CallerVerifyResult,
@@ -32,7 +35,12 @@ Deno.serve((req: Request) => {
     },
   };
 
-  const propertyStatusUpdater = make_property_status_updater(client);
+  // #202: pausar/reactivar/cerrar también son actos en nombre de la agencia —
+  // el updater necesita el MISMO resolver de membresía vigente que edit-property.
+  const propertyStatusUpdater = make_property_status_updater(
+    client,
+    make_agency_role_resolver(client),
+  );
 
   return handler(req, { callerVerifier, propertyStatusUpdater });
 });

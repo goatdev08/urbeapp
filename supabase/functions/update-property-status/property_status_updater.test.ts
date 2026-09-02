@@ -11,6 +11,7 @@
 
 import { assert, assertEquals } from "@std/assert";
 import { make_property_status_updater, VALID_TRANSITIONS } from "./property_status_updater.ts";
+import type { AgencyRoleResolver } from "../_shared/agency_role.ts";
 
 // ── Fake client ───────────────────────────────────────────────────────────────
 
@@ -22,6 +23,8 @@ interface FakeResponse {
 interface CapturedCall {
   update_payload?: Record<string, unknown>;
   eq_calls: Array<[string, unknown]>;
+  /** #202: columnas pedidas al .select() — para probar que agency_id sí se trae. */
+  select_cols?: string;
 }
 
 /**
@@ -43,7 +46,10 @@ function make_fake_client(responses: FakeResponse[]): {
   // deno-lint-ignore no-explicit-any
   function builder(response: FakeResponse, capture: CapturedCall): any {
     const b = {
-      select(_cols?: string) { return this; },
+      select(cols?: string) {
+        if (capture.select_cols === undefined) capture.select_cols = cols;
+        return this;
+      },
       update(payload: Record<string, unknown>) {
         capture.update_payload = { ...payload };
         return this;
@@ -72,10 +78,41 @@ function make_fake_client(responses: FakeResponse[]): {
   return { client, captured_calls };
 }
 
+// ── Fake AgencyRoleResolver (#202) ────────────────────────────────────────────
+//
+// Mismo patrón que edit-property/handler.test.ts: devuelve el rol configurado y
+// graba con qué (user_id, agency_id) se le preguntó. null = "sin membresía
+// vigente" (suspendida, removida o error de la query — el resolver real es
+// fail-closed y no distingue).
+
+interface FakeAgencyRoleResolver extends AgencyRoleResolver {
+  calls: { user_id: string; agency_id: string }[];
+}
+
+function resolver_role(role: string | null): FakeAgencyRoleResolver {
+  return {
+    calls: [],
+    resolve(user_id: string, agency_id: string): Promise<string | null> {
+      this.calls.push({ user_id, agency_id });
+      return Promise.resolve(role);
+    },
+  } as FakeAgencyRoleResolver;
+}
+
+/**
+ * Resolver por defecto de los tests que NO ejercen la membresía: devuelve un rol
+ * activo. Los fixtures de esos tests no traen agency_id, así que ni se consulta
+ * — está aquí para que la firma del factory quede explícita en cada llamada.
+ */
+function resolver_activo(): FakeAgencyRoleResolver {
+  return resolver_role("agent");
+}
+
 // ── Constantes ────────────────────────────────────────────────────────────────
 
 const PROPERTY_ID = "00000000-0000-0000-0000-000000000002";
 const USER_ID = "00000000-0000-0000-0000-000000000001";
+const AGENCY_ID = "00000000-0000-0000-0000-000000000003";
 
 // deno-lint-ignore no-explicit-any
 function make_params(new_status: string, closed_reason: string | null = null): any {
@@ -90,7 +127,7 @@ Deno.test("updater_real_closed_a_active_devuelve_INVALID_TRANSITION", async () =
     { data: { id: PROPERTY_ID, status: "closed" }, error: null },
     // segunda query (update) nunca se llama — la transición se rechaza antes
   ]);
-  const updater = make_property_status_updater(client);
+  const updater = make_property_status_updater(client, resolver_activo());
   const result = await updater.update(make_params("active"));
 
   assertEquals(result.ok, false);
@@ -101,7 +138,7 @@ Deno.test("updater_real_draft_a_paused_devuelve_INVALID_TRANSITION", async () =>
   const { client } = make_fake_client([
     { data: { id: PROPERTY_ID, status: "draft" }, error: null },
   ]);
-  const updater = make_property_status_updater(client);
+  const updater = make_property_status_updater(client, resolver_activo());
   const result = await updater.update(make_params("paused"));
 
   assertEquals(result.ok, false);
@@ -112,7 +149,7 @@ Deno.test("updater_real_paused_a_draft_devuelve_INVALID_TRANSITION", async () =>
   const { client } = make_fake_client([
     { data: { id: PROPERTY_ID, status: "paused" }, error: null },
   ]);
-  const updater = make_property_status_updater(client);
+  const updater = make_property_status_updater(client, resolver_activo());
   const result = await updater.update(make_params("draft"));
 
   assertEquals(result.ok, false);
@@ -126,7 +163,7 @@ Deno.test("updater_real_invalid_transition_no_llama_segunda_query", async () => 
     { data: { id: PROPERTY_ID, status: "closed" }, error: null },
     { data: { id: PROPERTY_ID, status: "active" }, error: null }, // nunca debería usarse
   ]);
-  const updater = make_property_status_updater(client);
+  const updater = make_property_status_updater(client, resolver_activo());
   await updater.update(make_params("active"));
 
   assertEquals(
@@ -146,7 +183,7 @@ Deno.test("updater_real_propiedad_de_otro_owner_devuelve_UNAUTHORIZED_OWNER", as
     { data: null, error: null },                    // ownership query: no encontrada
     { data: { id: PROPERTY_ID }, error: null },    // any_prop query: sí existe
   ]);
-  const updater = make_property_status_updater(client);
+  const updater = make_property_status_updater(client, resolver_activo());
   const result = await updater.update(make_params("active"));
 
   assertEquals(result.ok, false);
@@ -159,7 +196,7 @@ Deno.test("updater_real_propiedad_inexistente_devuelve_PROPERTY_NOT_FOUND", asyn
     { data: null, error: null }, // ownership query
     { data: null, error: null }, // any_prop query
   ]);
-  const updater = make_property_status_updater(client);
+  const updater = make_property_status_updater(client, resolver_activo());
   const result = await updater.update(make_params("active"));
 
   assertEquals(result.ok, false);
@@ -174,7 +211,7 @@ Deno.test("updater_real_active_a_paused_update_payload_tiene_status_paused", asy
     { data: { id: PROPERTY_ID, status: "active" }, error: null },
     { data: { id: PROPERTY_ID, status: "paused", closed_reason: null }, error: null },
   ]);
-  const updater = make_property_status_updater(client);
+  const updater = make_property_status_updater(client, resolver_activo());
   const result = await updater.update(make_params("paused", null));
 
   assertEquals(result.ok, true);
@@ -191,7 +228,7 @@ Deno.test("updater_real_active_a_paused_update_payload_closed_reason_es_null", a
     { data: { id: PROPERTY_ID, status: "active" }, error: null },
     { data: { id: PROPERTY_ID, status: "paused", closed_reason: null }, error: null },
   ]);
-  const updater = make_property_status_updater(client);
+  const updater = make_property_status_updater(client, resolver_activo());
   await updater.update(make_params("paused", null));
 
   assertEquals(
@@ -206,7 +243,7 @@ Deno.test("updater_real_active_a_closed_update_payload_closed_reason_rented", as
     { data: { id: PROPERTY_ID, status: "active" }, error: null },
     { data: { id: PROPERTY_ID, status: "closed", closed_reason: "rented" }, error: null },
   ]);
-  const updater = make_property_status_updater(client);
+  const updater = make_property_status_updater(client, resolver_activo());
   const result = await updater.update(make_params("closed", "rented"));
 
   assertEquals(result.ok, true);
@@ -229,7 +266,7 @@ Deno.test("updater_real_active_a_paused_update_eq_filtra_por_id_y_owner", async 
     { data: { id: PROPERTY_ID, status: "active" }, error: null },
     { data: { id: PROPERTY_ID, status: "paused", closed_reason: null }, error: null },
   ]);
-  const updater = make_property_status_updater(client);
+  const updater = make_property_status_updater(client, resolver_activo());
   await updater.update(make_params("paused", null));
 
   const eq_calls = captured_calls[1].eq_calls;
@@ -262,7 +299,7 @@ Deno.test("updater_real_active_a_rented_ok_true", async () => {
     { data: { id: PROPERTY_ID, status: "active" }, error: null },
     { data: { id: PROPERTY_ID, status: "rented", closed_reason: null }, error: null },
   ]);
-  const updater = make_property_status_updater(client);
+  const updater = make_property_status_updater(client, resolver_activo());
   const result = await updater.update(make_params("rented"));
 
   assertEquals(result.ok, true);
@@ -273,7 +310,7 @@ Deno.test("updater_real_active_a_rented_update_payload_status_rented", async () 
     { data: { id: PROPERTY_ID, status: "active" }, error: null },
     { data: { id: PROPERTY_ID, status: "rented", closed_reason: null }, error: null },
   ]);
-  const updater = make_property_status_updater(client);
+  const updater = make_property_status_updater(client, resolver_activo());
   await updater.update(make_params("rented"));
 
   assertEquals(
@@ -289,7 +326,7 @@ Deno.test("updater_real_active_a_rented_update_payload_closed_reason_null", asyn
     { data: { id: PROPERTY_ID, status: "active" }, error: null },
     { data: { id: PROPERTY_ID, status: "rented", closed_reason: null }, error: null },
   ]);
-  const updater = make_property_status_updater(client);
+  const updater = make_property_status_updater(client, resolver_activo());
   await updater.update(make_params("rented", null));
 
   assertEquals(
@@ -304,7 +341,7 @@ Deno.test("updater_real_active_a_sold_ok_true", async () => {
     { data: { id: PROPERTY_ID, status: "active" }, error: null },
     { data: { id: PROPERTY_ID, status: "sold", closed_reason: null }, error: null },
   ]);
-  const updater = make_property_status_updater(client);
+  const updater = make_property_status_updater(client, resolver_activo());
   const result = await updater.update(make_params("sold"));
 
   assertEquals(result.ok, true);
@@ -315,7 +352,7 @@ Deno.test("updater_real_active_a_sold_update_payload_status_sold", async () => {
     { data: { id: PROPERTY_ID, status: "active" }, error: null },
     { data: { id: PROPERTY_ID, status: "sold", closed_reason: null }, error: null },
   ]);
-  const updater = make_property_status_updater(client);
+  const updater = make_property_status_updater(client, resolver_activo());
   await updater.update(make_params("sold"));
 
   assertEquals(
@@ -330,7 +367,7 @@ Deno.test("updater_real_paused_a_rented_ok_true", async () => {
     { data: { id: PROPERTY_ID, status: "paused" }, error: null },
     { data: { id: PROPERTY_ID, status: "rented", closed_reason: null }, error: null },
   ]);
-  const updater = make_property_status_updater(client);
+  const updater = make_property_status_updater(client, resolver_activo());
   const result = await updater.update(make_params("rented"));
 
   assertEquals(result.ok, true);
@@ -341,7 +378,7 @@ Deno.test("updater_real_paused_a_sold_ok_true", async () => {
     { data: { id: PROPERTY_ID, status: "paused" }, error: null },
     { data: { id: PROPERTY_ID, status: "sold", closed_reason: null }, error: null },
   ]);
-  const updater = make_property_status_updater(client);
+  const updater = make_property_status_updater(client, resolver_activo());
   const result = await updater.update(make_params("sold"));
 
   assertEquals(result.ok, true);
@@ -353,7 +390,7 @@ Deno.test("updater_real_approved_a_rented_ok_true", async () => {
     { data: { id: PROPERTY_ID, status: "approved" }, error: null },
     { data: { id: PROPERTY_ID, status: "rented", closed_reason: null }, error: null },
   ]);
-  const updater = make_property_status_updater(client);
+  const updater = make_property_status_updater(client, resolver_activo());
   const result = await updater.update(make_params("rented"));
 
   assertEquals(result.ok, true);
@@ -364,7 +401,7 @@ Deno.test("updater_real_approved_a_sold_ok_true", async () => {
     { data: { id: PROPERTY_ID, status: "approved" }, error: null },
     { data: { id: PROPERTY_ID, status: "sold", closed_reason: null }, error: null },
   ]);
-  const updater = make_property_status_updater(client);
+  const updater = make_property_status_updater(client, resolver_activo());
   const result = await updater.update(make_params("sold"));
 
   assertEquals(result.ok, true);
@@ -380,7 +417,7 @@ Deno.test("updater_real_pending_review_a_rented_devuelve_INVALID_TRANSITION", as
   const { client } = make_fake_client([
     { data: { id: PROPERTY_ID, status: "pending_review" }, error: null },
   ]);
-  const updater = make_property_status_updater(client);
+  const updater = make_property_status_updater(client, resolver_activo());
   const result = await updater.update(make_params("rented"));
 
   assertEquals(result.ok, false);
@@ -392,7 +429,7 @@ Deno.test("updater_real_draft_a_rented_devuelve_INVALID_TRANSITION", async () =>
   const { client } = make_fake_client([
     { data: { id: PROPERTY_ID, status: "draft" }, error: null },
   ]);
-  const updater = make_property_status_updater(client);
+  const updater = make_property_status_updater(client, resolver_activo());
   const result = await updater.update(make_params("rented"));
 
   assertEquals(result.ok, false);
@@ -403,7 +440,7 @@ Deno.test("updater_real_rented_a_active_devuelve_INVALID_TRANSITION_no_reapertur
   const { client } = make_fake_client([
     { data: { id: PROPERTY_ID, status: "rented" }, error: null },
   ]);
-  const updater = make_property_status_updater(client);
+  const updater = make_property_status_updater(client, resolver_activo());
   const result = await updater.update(make_params("active"));
 
   assertEquals(result.ok, false);
@@ -414,7 +451,7 @@ Deno.test("updater_real_rented_a_paused_devuelve_INVALID_TRANSITION_no_reapertur
   const { client } = make_fake_client([
     { data: { id: PROPERTY_ID, status: "rented" }, error: null },
   ]);
-  const updater = make_property_status_updater(client);
+  const updater = make_property_status_updater(client, resolver_activo());
   const result = await updater.update(make_params("paused"));
 
   assertEquals(result.ok, false);
@@ -425,7 +462,7 @@ Deno.test("updater_real_sold_a_active_devuelve_INVALID_TRANSITION_no_reapertura"
   const { client } = make_fake_client([
     { data: { id: PROPERTY_ID, status: "sold" }, error: null },
   ]);
-  const updater = make_property_status_updater(client);
+  const updater = make_property_status_updater(client, resolver_activo());
   const result = await updater.update(make_params("active"));
 
   assertEquals(result.ok, false);
@@ -524,7 +561,7 @@ Deno.test("matriz_17x6_contrato_completo_origen_x_destino", async () => {
         // segunda response solo se consume si la transición es válida (UPDATE)
         { data: { id: PROPERTY_ID, status: target, closed_reason: null }, error: null },
       ]);
-      const updater = make_property_status_updater(client);
+      const updater = make_property_status_updater(client, resolver_activo());
       const result = await updater.update(
         make_params(target, target === "closed" ? "withdrawn" : null),
       );
@@ -537,4 +574,164 @@ Deno.test("matriz_17x6_contrato_completo_origen_x_destino", async () => {
       if (!result.ok) assertEquals(result.error_code, "INVALID_TRANSITION");
     }
   }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// #202 — «suspender congela la capacidad de ACTUAR en nombre de la agencia».
+//
+// Esta EF autorizaba SOLO por owner_user_id (la query del paso 1 filtra por
+// .eq('owner_user_id')) y corre con service_role, o sea bypass de RLS: la
+// policy properties_update endurecida por 202.1 NO la cubre. El hueco se cierra
+// aquí o no se cierra.
+//
+// Y aquí duele más que en edit-property: pausar y cerrar son el camino para
+// VACIAR el inventario de la inmobiliaria. Un agente molesto por su suspensión
+// podía cerrar todas sus publicaciones en dos minutos; la des-escalada la
+// decide el owner, no el suspendido.
+//
+// EDGE CASES (RED) — 202.2 / update-property-status (updater real):
+// EC-10 dueño con agency_id y membresía no activa, active→paused →
+//       AGENCY_MEMBERSHIP_SUSPENDED (hoy: ok true)
+// EC-11 mismo caso, active→closed (withdrawn) → bloqueado (vaciar inventario)
+// EC-12 mismo caso, paused→active (reactivar) → bloqueado
+// EC-13 el UPDATE no se ejecuta: solo 1 llamada a .from() (la de existencia)
+// EC-14 el chequeo de membresía va ANTES de validar la transición: fila en
+//       'closed' + suspendido → AGENCY_MEMBERSHIP_SUSPENDED, no INVALID_TRANSITION
+// EC-15 el resolver se consulta con (user_id del caller, agency_id de la FILA)
+// EC-16 dueño con membresía ACTIVA → pausa normal (control positivo)
+// EC-17 dueño independiente (agency_id null en la fila) → resolver NO
+//       consultado, pausa normal 🔴 caso de control que no puede romperse
+// EC-18 la query de existencia trae agency_id (sin eso el chequeo es ciego)
+// EC-19 no-regresión: el que NO es dueño sigue recibiendo UNAUTHORIZED_OWNER
+//       (cubierto por updater_real_propiedad_de_otro_owner_…) y sin membresía
+//       que resolver — la fila ni siquiera se encontró
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Fila de una propiedad publicada BAJO una agencia (agency_id denormalizado). */
+function fila_con_agencia(status: string) {
+  return { id: PROPERTY_ID, status, agency_id: AGENCY_ID };
+}
+
+Deno.test("202_dueño_suspendido_no_puede_pausar_devuelve_AGENCY_MEMBERSHIP_SUSPENDED", async () => {
+  const { client } = make_fake_client([
+    { data: fila_con_agencia("active"), error: null },
+    { data: { id: PROPERTY_ID, status: "paused", closed_reason: null }, error: null },
+  ]);
+  const updater = make_property_status_updater(client, resolver_role(null));
+  const result = await updater.update(make_params("paused"));
+
+  assertEquals(result.ok, false, "ser dueño no basta si la fila está bajo la agencia");
+  if (!result.ok) assertEquals(result.error_code, "AGENCY_MEMBERSHIP_SUSPENDED");
+});
+
+Deno.test("202_dueño_suspendido_no_puede_cerrar_no_vacia_el_inventario", async () => {
+  const { client } = make_fake_client([
+    { data: fila_con_agencia("active"), error: null },
+    { data: { id: PROPERTY_ID, status: "closed", closed_reason: "withdrawn" }, error: null },
+  ]);
+  const updater = make_property_status_updater(client, resolver_role(null));
+  const result = await updater.update(make_params("closed", "withdrawn"));
+
+  assertEquals(result.ok, false);
+  if (!result.ok) assertEquals(result.error_code, "AGENCY_MEMBERSHIP_SUSPENDED");
+});
+
+Deno.test("202_dueño_suspendido_no_puede_reactivar_una_pausada", async () => {
+  const { client } = make_fake_client([
+    { data: fila_con_agencia("paused"), error: null },
+    { data: { id: PROPERTY_ID, status: "active", closed_reason: null }, error: null },
+  ]);
+  const updater = make_property_status_updater(client, resolver_role(null));
+  const result = await updater.update(make_params("active"));
+
+  assertEquals(result.ok, false);
+  if (!result.ok) assertEquals(result.error_code, "AGENCY_MEMBERSHIP_SUSPENDED");
+});
+
+Deno.test("202_dueño_suspendido_no_ejecuta_el_UPDATE", async () => {
+  const { client, captured_calls } = make_fake_client([
+    { data: fila_con_agencia("active"), error: null },
+    { data: { id: PROPERTY_ID, status: "paused", closed_reason: null }, error: null },
+  ]);
+  const updater = make_property_status_updater(client, resolver_role(null));
+  await updater.update(make_params("paused"));
+
+  assertEquals(
+    captured_calls.length,
+    1,
+    "solo la query de existencia: el UPDATE jamás debe salir",
+  );
+});
+
+Deno.test("202_membresia_se_verifica_antes_que_la_transicion", async () => {
+  // Fila en 'closed' (transición inválida) Y dueño suspendido: debe ganar el
+  // código de membresía — el cliente necesita el mensaje correcto (#200), no
+  // "transición no permitida", que mandaría al agente a buscar el bug donde no está.
+  const { client } = make_fake_client([
+    { data: fila_con_agencia("closed"), error: null },
+  ]);
+  const updater = make_property_status_updater(client, resolver_role(null));
+  const result = await updater.update(make_params("active"));
+
+  assertEquals(result.ok, false);
+  if (!result.ok) assertEquals(result.error_code, "AGENCY_MEMBERSHIP_SUSPENDED");
+});
+
+Deno.test("202_resuelve_la_membresia_con_el_caller_y_la_agencia_de_la_fila", async () => {
+  const { client } = make_fake_client([
+    { data: fila_con_agencia("active"), error: null },
+    { data: { id: PROPERTY_ID, status: "paused", closed_reason: null }, error: null },
+  ]);
+  const resolver = resolver_role(null);
+  const updater = make_property_status_updater(client, resolver);
+  await updater.update(make_params("paused"));
+
+  assertEquals(resolver.calls.length, 1);
+  assertEquals(resolver.calls[0].user_id, USER_ID);
+  assertEquals(resolver.calls[0].agency_id, AGENCY_ID);
+});
+
+Deno.test("202_dueño_con_membresia_activa_pausa_normalmente", async () => {
+  const { client } = make_fake_client([
+    { data: fila_con_agencia("active"), error: null },
+    { data: { id: PROPERTY_ID, status: "paused", closed_reason: null }, error: null },
+  ]);
+  const resolver = resolver_role("agent");
+  const updater = make_property_status_updater(client, resolver);
+  const result = await updater.update(make_params("paused"));
+
+  assertEquals(result.ok, true, "control positivo: el agente vigente sigue operando");
+  if (result.ok) assertEquals(result.property.status, "paused");
+  assertEquals(resolver.calls.length, 1);
+});
+
+Deno.test("202_dueño_independiente_no_consulta_la_membresia_y_pausa", async () => {
+  // 🔴 Caso de control: fila sin agency_id (agente independiente).
+  const { client } = make_fake_client([
+    { data: { id: PROPERTY_ID, status: "active", agency_id: null }, error: null },
+    { data: { id: PROPERTY_ID, status: "paused", closed_reason: null }, error: null },
+  ]);
+  const resolver = resolver_role(null);
+  const updater = make_property_status_updater(client, resolver);
+  const result = await updater.update(make_params("paused"));
+
+  assertEquals(result.ok, true, "el independiente NO puede quedar congelado por #202");
+  assertEquals(resolver.calls.length, 0, "sin agency_id no hay membresía que mirar");
+});
+
+Deno.test("202_la_query_de_existencia_trae_agency_id", async () => {
+  // Sin agency_id en el select, el chequeo de membresía sería ciego (undefined
+  // = "no tiene agencia") y el hueco seguiría abierto en producción con la
+  // suite en verde.
+  const { client, captured_calls } = make_fake_client([
+    { data: fila_con_agencia("active"), error: null },
+    { data: { id: PROPERTY_ID, status: "paused", closed_reason: null }, error: null },
+  ]);
+  const updater = make_property_status_updater(client, resolver_role("agent"));
+  await updater.update(make_params("paused"));
+
+  assert(
+    (captured_calls[0].select_cols ?? "").includes("agency_id"),
+    `la query de existencia debe traer agency_id; trajo: ${captured_calls[0].select_cols}`,
+  );
 });
