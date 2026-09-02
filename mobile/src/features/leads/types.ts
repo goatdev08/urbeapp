@@ -155,15 +155,22 @@ export interface LeadStatusHistoryEntry {
  * Agent — miembro agente de una agencia, para el selector del CRM del owner (#28.2).
  *
  * Fuentes de datos (schema migración 0003 + 0015):
- *   - `agency_members`: user_id, member_role='agent', status='active'.
+ *   - `agency_members`: user_id, member_role='agent', status ∈ {active,suspended}.
  *   - `user_preferences` (via users.id → user_preferences.user_id): full_name,
  *     profile_photo_url — columnas de migración 0015, ausentes en users.
  *
  * full_name / profile_photo_url son nullable: un agente sin onboarding puede no
  * tener fila en user_preferences.
+ *
+ * `status` (#203.2): un agente SUSPENDIDO sigue apareciendo en la lista — su
+ * cuenta congelada sigue recibiendo leads nuevos (ruteo #203.1) y su
+ * inventario necesita un lugar visible desde donde reasignarse. `removed` no
+ * aplica aquí: esa membresía ya salió del `.in('status', [...])` de
+ * useAgencyAgents.
  */
 export interface Agent {
   id: string;
   full_name: string | null;
   profile_photo_url: string | null;
+  status: 'active' | 'suspended';
 }
