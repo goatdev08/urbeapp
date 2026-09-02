@@ -11,6 +11,8 @@
 //   5. callerVerifier.verify_caller(authHeader) → 401 si falla
 //   6. propertyFetcher.fetch(property_id) → 404/500 si falla
 //   7. Ownership: owner_user_id del snapshot === caller, O caller es admin → 403 si no
+//   7.b Membresía vigente (#202): si el dueño edita una fila con agency_id y su
+//       membresía en ESA agencia no está activa → 403 AGENCY_MEMBERSHIP_SUSPENDED
 //   8. Diff campo-a-campo (§15.5) contra el snapshot actual:
 //      - AL MENOS un campo crítico cambió → revisionUpserter.upsert(...) con el
 //        payload COMPLETO como changed_fields; current_published NUNCA se toca.
@@ -294,6 +296,32 @@ export async function handler(
       "No autorizado: no eres el dueño de esta propiedad, ni administrador, ni owner/admin de su inmobiliaria",
       403,
     );
+  }
+
+  // 7.b #202 — «suspender congela la capacidad de ACTUAR en nombre de la
+  //      agencia». Ser dueño de la fila NO exime: la publicación sigue en el
+  //      escaparate bajo la marca de la inmobiliaria (agency_id denormalizado
+  //      por 20260805000011), y cambiar su precio o su dirección es el mismo
+  //      acto comercial que publicarla — que 100.4 ya bloquea. Sin este gate,
+  //      `is_owner` cortocircuitaba la autorización sin mirar la membresía.
+  //      Fuera del alcance: el dueño SIN agencia (independiente, nada que
+  //      congelar) y el admin de plataforma (su autorización no viene de la
+  //      agencia). Al no-dueño ya lo cubre la rama de arriba.
+  if (is_owner && !verifyResult.is_admin && current.agency_id) {
+    const owner_agency_role = await deps!.agencyRoleResolver.resolve(
+      verifyResult.user_id,
+      current.agency_id,
+    );
+    // ponytail: un solo código para suspendido y removido — el resolver
+    // devuelve null para ambos (y para un error de query: fail-closed).
+    // Techo: si producto quiere mensajes distintos, tendrá que devolver el status.
+    if (owner_agency_role === null) {
+      return error_response(
+        "AGENCY_MEMBERSHIP_SUSPENDED",
+        "Tu membresía en la inmobiliaria no está activa: no puedes editar publicaciones a su nombre",
+        403,
+      );
+    }
   }
 
   // 8. Diff §15.5 → ramifica a revisión (crítico) o aplicación directa
