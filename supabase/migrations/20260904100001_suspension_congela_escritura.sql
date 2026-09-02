@@ -46,8 +46,14 @@
 -- REGLA 1 — Toda ESCRITURA de properties se bloquea, sin la excepción «es mío».
 -- ────────────────────────────────────────────────────────────────────────────
 -- USING y WITH CHECK idénticos (misma forma que la policy que reemplaza): la
--- fila vieja y la nueva pasan por el mismo filtro, así el suspendido tampoco
--- puede sacar la propiedad de la agencia poniendo agency_id = null.
+-- fila vieja y la nueva pasan por el mismo filtro. Lo que el WITH CHECK
+-- defiende es MOVER la fila a una agencia AJENA (`set agency_id = <otra>`):
+-- USING solo mira la agencia VIEJA, así que sin él un dueño con membresía
+-- vigente en A podría reasignar su publicación a B sin ser miembro de B
+-- (42501 / insufficient_privilege con él puesto).
+-- ⚠️ NO es «poner agency_id = null» lo que bloquea: esa fila nueva la ADMITE
+-- la rama `agency_id is null` (es el caso legítimo del agente independiente).
+-- A quien lo intente estando suspendido lo para USING, no el WITH CHECK.
 drop policy if exists properties_update on public.properties;
 create policy properties_update on public.properties for update to authenticated
   using (
@@ -81,6 +87,35 @@ comment on policy properties_update on public.properties is
   'del escaparate. agency_id is null preserva al agente INDEPENDIENTE intacto '
   '(su eje es #204). La 1a capa (EFs edit-property / update-property-status, que '
   'corren con service_role y bypasean esta RLS) se mueve en 202.2.';
+
+-- properties_delete arrastraba el MISMO bypass desde 20260604000010:281
+-- (`owner_user_id = auth.uid() or is_admin()`, anterior a que existieran las
+-- agencias). No es teórico: `authenticated` tiene DELETE sobre la tabla
+-- (has_table_privilege = t), así que un suspendido podía llamar
+-- `DELETE /rest/v1/properties?id=eq.X` con el anon key y BORRAR la fila —
+-- peor que cerrarla, porque no deja ni el registro. Endurecer solo el UPDATE
+-- habría dejado la puerta de al lado abierta.
+-- Misma forma que properties_update PERO sin la rama owner/admin de agencia:
+-- hoy no la tiene y #202 no es el lugar para AMPLIAR quién borra (regla
+-- [[rls-seguridad]]: al dar visibilidad nueva se amplía SELECT, nunca la
+-- escritura). Que el owner pueda borrar lo de su agente es decisión de
+-- producto aparte.
+drop policy if exists properties_delete on public.properties;
+create policy properties_delete on public.properties for delete to authenticated
+  using (
+    (owner_user_id = (select auth.uid())
+     and (agency_id is null or private.agency_role_of(agency_id) is not null))
+    or private.is_admin()
+  );
+
+comment on policy properties_delete on public.properties is
+  '#202: la rama del DUEÑO exige membresía VIGENTE en la agencia de la fila, igual '
+  'que properties_update. Venía de 20260604000010 con `owner_user_id = auth.uid() or '
+  'is_admin()` a secas -- de antes de que existieran las agencias -- y authenticated '
+  'tiene DELETE sobre la tabla, asi que un suspendido podia borrar por PostgREST con '
+  'el anon key lo que ya no puede editar ni cerrar. NO gana la rama owner/admin de '
+  'agencia: #202 endurece, no amplia quien borra. agency_id is null preserva al '
+  'agente INDEPENDIENTE.';
 
 -- ────────────────────────────────────────────────────────────────────────────
 -- REGLA 2 — La LECTURA de lo suyo se conserva; el CONTACTO del buscador no.

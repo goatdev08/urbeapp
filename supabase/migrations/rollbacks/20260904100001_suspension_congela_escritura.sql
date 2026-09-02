@@ -1,10 +1,11 @@
 -- Rollback de 20260904100001 (#202) — restaura las definiciones EXACTAS
 -- previas: properties_update de 20260805000011 (fix #100, con el bypass
--- `owner_user_id = auth.uid()` a secas) y private.can_view_user_as_lead_searcher
--- de 20260807000006 (75.5-bis, con el atajo `l.agent_id = auth.uid()`).
+-- `owner_user_id = auth.uid()` a secas), properties_delete de 20260604000010:281
+-- (mismo bypass, sin comment) y private.can_view_user_as_lead_searcher de
+-- 20260807000006 (75.5-bis, con el atajo `l.agent_id = auth.uid()`).
 --
--- ⚠️ Al revertir, un agente SUSPENDIDO vuelve a poder editar/pausar/cerrar sus
--- propiedades publicadas bajo la marca de la agencia y a ver el teléfono del
+-- ⚠️ Al revertir, un agente SUSPENDIDO vuelve a poder editar/pausar/cerrar/BORRAR
+-- sus propiedades publicadas bajo la marca de la agencia y a ver el teléfono del
 -- buscador de sus leads. Solo para revertir #202 si algo truena.
 -- Idempotente y no destructivo (drop policy if exists + create or replace).
 
@@ -28,6 +29,15 @@ comment on policy properties_update on public.properties is
   'y simultáneamente bloqueaba al owner REAL de esas properties) por '
   'agency_role_of(agency_id) in (owner,admin) -- siempre escapada a la agencia '
   'real de la fila. private.is_agency_owner_of sigue vigente para leads (sin tocar).';
+
+-- properties_delete vuelve a 20260604000010:279-281 — que NO tenía comment,
+-- así que se retira el de #202 para no dejar documentación de una regla que ya
+-- no rige (comment on ... is null es la forma de borrarlo).
+drop policy if exists properties_delete on public.properties;
+create policy properties_delete on public.properties for delete to authenticated
+  using (owner_user_id = (select auth.uid()) or private.is_admin());
+
+comment on policy properties_delete on public.properties is null;
 
 create or replace function private.can_view_user_as_lead_searcher(p_user_id uuid)
 returns boolean language sql stable security definer set search_path = public as $$

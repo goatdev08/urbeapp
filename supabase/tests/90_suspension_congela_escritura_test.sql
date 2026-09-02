@@ -45,7 +45,7 @@
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(26);
+select plan(31);
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- Fixtures — UUIDs prefijo '...0000000202XX' (#202, sin colisión con 0226XX).
@@ -60,6 +60,8 @@ select plan(26);
 --   B1   buscador del lead de SUS                                    : ...020209
 --   B2   buscador del lead de ACT                                    : ...02020a
 --   B3   buscador del lead de IND                                    : ...02020b
+--   Agencia A (la de todos)                                          : ...0202e1
+--   Agencia B — existe, NADIE del fixture es miembro (ancla WITH CHECK): ...0202e2
 -- ════════════════════════════════════════════════════════════════════════════
 
 insert into auth.users (id, email) values
@@ -97,6 +99,10 @@ update public.users set first_name = 'Bea',  last_name = 'Tres', phone = '+52331
 
 insert into public.agencies (id, name, slug, status, created_by_user_id) values
   ('00000000-0000-0000-0000-0000000202e1', 'Inmobiliaria Suspension 202', 'inmo-suspension-202',
+   'active', '00000000-0000-0000-0000-000000020201'),
+  -- Agencia B sin NINGUNA membresía del fixture: destino ajeno para el ancla
+  -- del WITH CHECK. created_by_user_id no crea membresía (no hay trigger).
+  ('00000000-0000-0000-0000-0000000202e2', 'Inmobiliaria Ajena 202', 'inmo-ajena-202',
    'active', '00000000-0000-0000-0000-000000020201');
 
 -- agency_members_one_active_per_user (0003) admite a lo más 1 fila ACTIVA por
@@ -145,7 +151,7 @@ end $$;
 -- REGLA 1 — Toda ESCRITURA se bloquea, sin la excepción de «es mío».
 -- ════════════════════════════════════════════════════════════════════════════
 
--- 1) [DELTA] El dueño SUSPENDIDO no cambia el precio de su propia publicación.
+-- [DELTA] El dueño SUSPENDIDO no cambia el precio de su propia publicación.
 --    Editar el precio de algo que sigue en el escaparate bajo la marca de la
 --    agencia es el MISMO acto comercial que publicarlo.
 select pg_temp.act_as('00000000-0000-0000-0000-000000020203'); -- SUS
@@ -157,7 +163,7 @@ with u as (
 select is(count(*)::int, 0, 'D1_dueno_suspendido_no_cambia_el_precio_de_su_propiedad') from u;
 reset role;
 
--- 2) [DELTA] Tampoco la PAUSA. Sin esto, un agente molesto por su suspensión
+-- [DELTA] Tampoco la PAUSA. Sin esto, un agente molesto por su suspensión
 --    vacía el escaparate de la agencia en dos minutos.
 select pg_temp.act_as('00000000-0000-0000-0000-000000020203'); -- SUS
 with u as (
@@ -168,7 +174,7 @@ with u as (
 select is(count(*)::int, 0, 'D2_dueno_suspendido_no_pausa_su_propiedad') from u;
 reset role;
 
--- 3) [DELTA] Ni el CIERRE. La des-escalada la decide el owner, no el suspendido.
+-- [DELTA] Ni el CIERRE. La des-escalada la decide el owner, no el suspendido.
 select pg_temp.act_as('00000000-0000-0000-0000-000000020203'); -- SUS
 with u as (
   update public.properties set status = 'closed', closed_reason = 'withdrawn'
@@ -178,15 +184,30 @@ with u as (
 select is(count(*)::int, 0, 'D3_dueno_suspendido_no_cierra_su_propiedad') from u;
 reset role;
 
--- 4) [ANCLA] Ninguno de los 3 intentos anteriores dejó rastro en la fila.
+-- [DELTA] Ni BORRARLA. `authenticated` tiene DELETE sobre la tabla
+--    (has_table_privilege = t), así que sin esto el suspendido llamaba
+--    `DELETE /rest/v1/properties?id=eq.X` con el anon key y hacía desaparecer
+--    la fila — peor que cerrarla, porque no deja ni registro. Endurecer solo
+--    properties_update dejaba la puerta de al lado abierta.
+select pg_temp.act_as('00000000-0000-0000-0000-000000020203'); -- SUS
+with d as (
+  delete from public.properties
+   where id = '00000000-0000-0000-0000-0000000202f1'
+   returning id
+)
+select is(count(*)::int, 0, 'D7_dueno_suspendido_no_borra_su_propiedad') from d;
+reset role;
+
+-- [ANCLA] Ninguno de los 4 intentos anteriores dejó rastro: la fila sigue
+--    ahí y sin tocar (si el DELETE hubiera pasado, este assert también muere).
 select results_eq(
   $$ select price::numeric, status::text, closed_reason::text
        from public.properties where id = '00000000-0000-0000-0000-0000000202f1' $$,
   $$ values (15000::numeric, 'active'::text, null::text) $$,
-  'D4_la_propiedad_del_suspendido_sigue_intacta_tras_los_3_intentos'
+  'D4_la_propiedad_del_suspendido_sigue_intacta_tras_los_4_intentos'
 );
 
--- 5) [DELTA] Miembro REMOVED cuya propiedad quedó bajo agency_id: tampoco.
+-- [DELTA] Miembro REMOVED cuya propiedad quedó bajo agency_id: tampoco.
 --    DECISIÓN #202: la fila sigue bajo la marca de la agencia → la controla la
 --    agencia (regla 3 «lo que quedó vivo pasa al control de la agencia»). Que
 --    owner_user_id sea suyo no la saca del escaparate.
@@ -199,7 +220,7 @@ with u as (
 select is(count(*)::int, 0, 'D5_dueno_removido_con_propiedad_bajo_agency_id_no_escribe') from u;
 reset role;
 
--- 6) [INVARIANTE 🔴 CONTROL] El agente INDEPENDIENTE (propiedad con agency_id
+-- [INVARIANTE 🔴 CONTROL] El agente INDEPENDIENTE (propiedad con agency_id
 --    NULL, sin membresía alguna) sigue editando. No se puede castigar al que
 --    nunca tuvo inmobiliaria — su eje es #204, otra tarea.
 select pg_temp.act_as('00000000-0000-0000-0000-000000020205'); -- IND
@@ -211,7 +232,7 @@ with u as (
 select is(count(*)::int, 1, 'I1_agente_independiente_sigue_editando_su_propiedad_sin_agencia') from u;
 reset role;
 
--- 7) [INVARIANTE] Agente ACTIVO dueño: camino intacto.
+-- [INVARIANTE] Agente ACTIVO dueño: camino intacto.
 select pg_temp.act_as('00000000-0000-0000-0000-000000020204'); -- ACT
 with u as (
   update public.properties set price = 17000
@@ -221,7 +242,22 @@ with u as (
 select is(count(*)::int, 1, 'I2_agente_activo_dueno_sigue_editando_su_propiedad') from u;
 reset role;
 
--- 8) [INVARIANTE #142] El owner ACTIVO de la agencia edita la propiedad del
+-- [ANCLA DEL WITH CHECK] Un dueño con membresía VIGENTE en A no puede MOVER su
+-- publicación a la agencia B, donde no es miembro. USING solo mira la agencia
+-- VIEJA: sin WITH CHECK (mutante `with check (true)`) la reasignación pasaría y
+-- la propiedad quedaría bajo una marca ajena. La fila nueva viola la policy →
+-- 42501 insufficient_privilege, no «0 filas».
+select pg_temp.act_as('00000000-0000-0000-0000-000000020204'); -- ACT (activo en A)
+select throws_ok(
+  $$ update public.properties set agency_id = '00000000-0000-0000-0000-0000000202e2'
+      where id = '00000000-0000-0000-0000-0000000202f2' $$,
+  '42501',
+  null,
+  'M4_el_with_check_impide_mover_la_propiedad_a_una_agencia_donde_no_soy_miembro'
+);
+reset role;
+
+-- [INVARIANTE #142] El owner ACTIVO de la agencia edita la propiedad del
 --    suspendido — «lo que quedó vivo pasa al control de la agencia».
 select pg_temp.act_as('00000000-0000-0000-0000-000000020201'); -- OA
 with u as (
@@ -232,7 +268,7 @@ with u as (
 select is(count(*)::int, 1, 'I3_owner_activo_edita_la_propiedad_del_suspendido') from u;
 reset role;
 
--- 9) [INVARIANTE #142] Y el admin de INMOBILIARIA activo, igual.
+-- [INVARIANTE #142] Y el admin de INMOBILIARIA activo, igual.
 select pg_temp.act_as('00000000-0000-0000-0000-000000020202'); -- AA
 with u as (
   update public.properties set price = 15600
@@ -242,7 +278,7 @@ with u as (
 select is(count(*)::int, 1, 'I4_admin_de_inmobiliaria_activo_edita_la_propiedad_del_suspendido') from u;
 reset role;
 
--- 10) [INVARIANTE] El viewer ACTIVO (lee, no actúa) no escribe: la ampliación
+-- [INVARIANTE] El viewer ACTIVO (lee, no actúa) no escribe: la ampliación
 --     de #75.5 fue de SELECT, nunca de escritura.
 select pg_temp.act_as('00000000-0000-0000-0000-000000020207'); -- VIE
 with u as (
@@ -253,7 +289,7 @@ with u as (
 select is(count(*)::int, 0, 'I5_viewer_activo_no_dueno_no_escribe_propiedades') from u;
 reset role;
 
--- 11) [INVARIANTE] El admin de PLATAFORMA conserva la moderación.
+-- [INVARIANTE] El admin de PLATAFORMA conserva la moderación.
 select pg_temp.act_as('00000000-0000-0000-0000-000000020208'); -- PAD
 with u as (
   update public.properties set price = 15700
@@ -263,11 +299,32 @@ with u as (
 select is(count(*)::int, 1, 'I6_admin_de_plataforma_sigue_editando_cualquier_propiedad') from u;
 reset role;
 
+-- [INVARIANTE 🔴 CONTROL] El agente INDEPENDIENTE sigue BORRANDO lo suyo: la
+-- rama `agency_id is null` de properties_delete lo preserva igual que en update.
+select pg_temp.act_as('00000000-0000-0000-0000-000000020205'); -- IND
+with d as (
+  delete from public.properties
+   where id = '00000000-0000-0000-0000-0000000202f3'
+   returning id
+)
+select is(count(*)::int, 1, 'I12_agente_independiente_sigue_borrando_su_propiedad_sin_agencia') from d;
+reset role;
+
+-- [INVARIANTE] El admin de PLATAFORMA conserva el borrado (moderación).
+select pg_temp.act_as('00000000-0000-0000-0000-000000020208'); -- PAD
+with d as (
+  delete from public.properties
+   where id = '00000000-0000-0000-0000-0000000202f4'
+   returning id
+)
+select is(count(*)::int, 1, 'I13_admin_de_plataforma_sigue_borrando_cualquier_propiedad') from d;
+reset role;
+
 -- ════════════════════════════════════════════════════════════════════════════
 -- REGLA 2 — La LECTURA de lo suyo se conserva; el CONTACTO del buscador no.
 -- ════════════════════════════════════════════════════════════════════════════
 
--- 12) [DELTA] El suspendido YA NO lee la fila users del buscador de su lead →
+-- [DELTA] El suspendido YA NO lee la fila users del buscador de su lead →
 --     sin teléfono, sin WhatsApp. La máscara vive en la BD (RLS), no en la UI:
 --     el embed users!leads_user_id_fkey devuelve null y LeadExpandedView ya
 --     deshabilita WhatsApp con phone === null (fail-soft ya existente).
@@ -279,7 +336,7 @@ select is(
 );
 reset role;
 
--- 13) [INVARIANTE] Pero SÍ sigue viendo el lead. Congelar es una medida
+-- [INVARIANTE] Pero SÍ sigue viendo el lead. Congelar es una medida
 --     cautelar; una cautelar que borra el acceso a tu propio trabajo es una
 --     sanción disfrazada (y vuelve traumática la reactivación).
 select pg_temp.act_as('00000000-0000-0000-0000-000000020203'); -- SUS
@@ -290,7 +347,7 @@ select is(
 );
 reset role;
 
--- 14) [INVARIANTE] Y su histórico: lead_status_history_select cuelga de
+-- [INVARIANTE] Y su histórico: lead_status_history_select cuelga de
 --     private.can_view_lead, que NO usa can_view_user_as_lead_searcher —
 --     tocar el helper de identidad no debe arrastrar el historial.
 select pg_temp.act_as('00000000-0000-0000-0000-000000020203'); -- SUS
@@ -301,7 +358,7 @@ select is(
 );
 reset role;
 
--- 15) [INVARIANTE] El agente ACTIVO ve el teléfono de su buscador.
+-- [INVARIANTE] El agente ACTIVO ve el teléfono de su buscador.
 select pg_temp.act_as('00000000-0000-0000-0000-000000020204'); -- ACT
 select is(
   (select phone from public.users where id = '00000000-0000-0000-0000-00000002020a'),
@@ -310,7 +367,7 @@ select is(
 );
 reset role;
 
--- 16) [INVARIANTE #75.5-bis] El owner ACTIVO de la agencia donde NACIÓ el lead
+-- [INVARIANTE #75.5-bis] El owner ACTIVO de la agencia donde NACIÓ el lead
 --     ve el contacto del buscador del suspendido — el lead no se pierde,
 --     cambia de manos.
 select pg_temp.act_as('00000000-0000-0000-0000-000000020201'); -- OA
@@ -321,7 +378,7 @@ select is(
 );
 reset role;
 
--- 17) [INVARIANTE 🔴 CONTROL] El agente INDEPENDIENTE (lead con agency_id NULL)
+-- [INVARIANTE 🔴 CONTROL] El agente INDEPENDIENTE (lead con agency_id NULL)
 --     conserva el contacto de su buscador.
 select pg_temp.act_as('00000000-0000-0000-0000-000000020205'); -- IND
 select is(
@@ -340,7 +397,7 @@ reset role;
 update public.agency_members set status = 'active'
   where id = '00000000-0000-0000-0000-000000020253'; -- SUS reactivado
 
--- 18) [DELTA] Reactivado, el MISMO dueño vuelve a escribir.
+-- [DELTA] Reactivado, el MISMO dueño vuelve a escribir.
 select pg_temp.act_as('00000000-0000-0000-0000-000000020203'); -- SUS (ya activo)
 with u as (
   update public.properties set price = 18000
@@ -350,7 +407,7 @@ with u as (
 select is(count(*)::int, 1, 'C1_el_mismo_dueno_reactivado_vuelve_a_editar_su_propiedad') from u;
 reset role;
 
--- 19) [DELTA] Y vuelve a pausar/cerrar (la operación de estado no queda muerta).
+-- [DELTA] Y vuelve a pausar/cerrar (la operación de estado no queda muerta).
 select pg_temp.act_as('00000000-0000-0000-0000-000000020203'); -- SUS (ya activo)
 with u as (
   update public.properties set status = 'paused'
@@ -360,13 +417,24 @@ with u as (
 select is(count(*)::int, 1, 'C2_el_mismo_dueno_reactivado_vuelve_a_pausar_su_propiedad') from u;
 reset role;
 
--- 20) [DELTA] Y vuelve a ver el teléfono de su buscador.
+-- [DELTA] Y vuelve a ver el teléfono de su buscador.
 select pg_temp.act_as('00000000-0000-0000-0000-000000020203'); -- SUS (ya activo)
 select is(
   (select phone from public.users where id = '00000000-0000-0000-0000-000000020209'),
   '+523312020201',
   'C3_el_mismo_agente_reactivado_vuelve_a_ver_el_telefono_de_su_buscador'
 );
+reset role;
+
+-- [DELTA] Y vuelve a poder borrarla: properties_delete no quedó cerrada de más.
+-- Va AL FINAL porque destruye P_SUS, que los asserts anteriores necesitan.
+select pg_temp.act_as('00000000-0000-0000-0000-000000020203'); -- SUS (ya activo)
+with d as (
+  delete from public.properties
+   where id = '00000000-0000-0000-0000-0000000202f1'
+   returning id
+)
+select is(count(*)::int, 1, 'C4_el_mismo_dueno_reactivado_vuelve_a_borrar_su_propiedad') from d;
 reset role;
 
 -- ════════════════════════════════════════════════════════════════════════════
@@ -401,7 +469,7 @@ select ok(
   'A1d_can_view_user_as_lead_searcher_conserva_el_search_path_fijado'
 );
 
--- 25) El grant a authenticated sobrevive (sin él, users_select falla en
+-- El grant a authenticated sobrevive (sin él, users_select falla en
 --     ejecución para TODOS los clientes, no solo para el suspendido).
 select ok(
   (select p.proacl::text like '%authenticated=X%'
@@ -410,7 +478,7 @@ select ok(
   'A2_can_view_user_as_lead_searcher_conserva_el_execute_a_authenticated'
 );
 
--- 26) El comment de la policy documenta la decisión #202 SIN perder la
+-- El comment de la policy documenta la decisión #202 SIN perder la
 --     historia del fix #100 (que explica por qué la rama de agencia usa
 --     agency_role_of(agency_id) y no is_agency_owner_of).
 select ok(
