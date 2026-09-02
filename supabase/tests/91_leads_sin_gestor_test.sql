@@ -77,7 +77,7 @@
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(50);
+select plan(51);
 
 create or replace function pg_temp.act_as(p_uid uuid, p_role text default 'authenticated')
 returns void language plpgsql as $$
@@ -136,6 +136,8 @@ grant insert, select, update on res_91 to public;
 --   CX  agente ACTIVO de X, dueño de una propiedad ajena al caso  : ...020308
 --   SN  agente SUSPENDIDO de X, SIN nombre (fallback del body)    : ...020309
 --   DX  agente con DOS membresías suspendidas (X vieja, Y nueva)  : ...020311
+--   U   owner ACTIVO de X que ADEMÁS arrastra una fila suspended
+--       suya en la MISMA X (el unique es parcial por status='active') : ...020312
 --   OY  owner  ACTIVO de Y                                        : ...020321
 --   AY  agente ACTIVO de Y                                        : ...020322
 --   IND agente INDEPENDIENTE (nunca tuvo inmobiliaria)            : ...020331
@@ -153,6 +155,7 @@ insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-000000020308', 'cx.203@test.local'),
   ('00000000-0000-0000-0000-000000020309', 'sn.203@test.local'),
   ('00000000-0000-0000-0000-000000020311', 'dx.203@test.local'),
+  ('00000000-0000-0000-0000-000000020312', 'u.203@test.local'),
   ('00000000-0000-0000-0000-000000020321', 'oy.203@test.local'),
   ('00000000-0000-0000-0000-000000020322', 'ay.203@test.local'),
   ('00000000-0000-0000-0000-000000020331', 'ind.203@test.local'),
@@ -161,7 +164,8 @@ insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-000000020343', 'b3.203@test.local'),
   ('00000000-0000-0000-0000-000000020344', 'b4.203@test.local'),
   ('00000000-0000-0000-0000-000000020345', 'b5.203@test.local'),
-  ('00000000-0000-0000-0000-000000020346', 'b6.203@test.local');
+  ('00000000-0000-0000-0000-000000020346', 'b6.203@test.local'),
+  ('00000000-0000-0000-0000-000000020347', 'b7.203@test.local');
 
 update public.users set role = 'agent', is_verified_agent = true
   where id in (
@@ -171,6 +175,7 @@ update public.users set role = 'agent', is_verified_agent = true
     '00000000-0000-0000-0000-000000020308', -- CX
     '00000000-0000-0000-0000-000000020309', -- SN
     '00000000-0000-0000-0000-000000020311', -- DX
+    '00000000-0000-0000-0000-000000020312', -- U
     '00000000-0000-0000-0000-000000020322', -- AY
     '00000000-0000-0000-0000-000000020331'  -- IND
   );
@@ -201,6 +206,15 @@ insert into public.agency_members (id, agency_id, user_id, member_role, status, 
   -- así que un histórico como éste es posible en producción.
   ('00000000-0000-0000-0000-00000002037a', '00000000-0000-0000-0000-000000020310', '00000000-0000-0000-0000-000000020311', 'agent',  'suspended', now() - interval '400 days'),
   ('00000000-0000-0000-0000-00000002037b', '00000000-0000-0000-0000-000000020320', '00000000-0000-0000-0000-000000020311', 'agent',  'suspended', now() - interval '10 days'),
+  -- U: owner ACTIVO de X y, a la vez, una fila 'suspended' SUYA en la MISMA X.
+  -- No es un fixture rebuscado: agency_members_one_active_per_user y
+  -- agency_members_agency_user_active son índices PARCIALES por status='active',
+  -- así que un histórico de suspensión convive con la membresía vigente (a
+  -- quien suspendieron y luego reactivaron con otro rol le queda la fila vieja).
+  -- Es el ÚNICO escenario en el que el filtro member_role in ('owner','admin')
+  -- NO alcanza a excluir al propio agente del lead.
+  ('00000000-0000-0000-0000-00000002037e', '00000000-0000-0000-0000-000000020310', '00000000-0000-0000-0000-000000020312', 'owner',  'active',    now()),
+  ('00000000-0000-0000-0000-00000002037f', '00000000-0000-0000-0000-000000020310', '00000000-0000-0000-0000-000000020312', 'agent',  'suspended', now() - interval '30 days'),
   ('00000000-0000-0000-0000-00000002037c', '00000000-0000-0000-0000-000000020320', '00000000-0000-0000-0000-000000020321', 'owner',  'active',    now()),
   ('00000000-0000-0000-0000-00000002037d', '00000000-0000-0000-0000-000000020320', '00000000-0000-0000-0000-000000020322', 'agent',  'active',    now());
 
@@ -232,7 +246,8 @@ insert into public.leads (id, agent_id, user_id, status) values
   ('00000000-0000-0000-0000-000000020363', '00000000-0000-0000-0000-000000020306', '00000000-0000-0000-0000-000000020343', 'new'), -- L3 RX removed
   ('00000000-0000-0000-0000-000000020364', '00000000-0000-0000-0000-000000020331', '00000000-0000-0000-0000-000000020344', 'new'), -- L4 independiente
   ('00000000-0000-0000-0000-000000020365', '00000000-0000-0000-0000-000000020311', '00000000-0000-0000-0000-000000020345', 'new'), -- L5 DX 2 suspensiones
-  ('00000000-0000-0000-0000-000000020366', '00000000-0000-0000-0000-000000020309', '00000000-0000-0000-0000-000000020346', 'new'); -- L6 SN sin nombre
+  ('00000000-0000-0000-0000-000000020366', '00000000-0000-0000-0000-000000020309', '00000000-0000-0000-0000-000000020346', 'new'), -- L6 SN sin nombre
+  ('00000000-0000-0000-0000-000000020367', '00000000-0000-0000-0000-000000020312', '00000000-0000-0000-0000-000000020347', 'new'); -- L7 U owner activo CON fila suspended
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- 1) RUTEO — leads.agency_id tras el INSERT.
@@ -428,6 +443,28 @@ select is(
       and user_id = '00000000-0000-0000-0000-000000020301'),
   'Un buscador contactó a un agente suspendido, cuya cuenta está suspendida. Atiéndelo desde el CRM.',
   'N10_DELTA_sin_nombre_de_perfil_el_body_cae_al_texto_generico'
+);
+
+-- 🔒 El aviso es para que lo atienda ALGUIEN MÁS: el dueño del lead nunca se
+-- avisa a sí mismo. U es owner ACTIVO de X (así que pasa el filtro
+-- member_role in ('owner','admin')) y a la vez arrastra una fila 'suspended'
+-- suya en X (así que su propio lead SÍ dispara el fan-out). Sin la cláusula
+-- `am.user_id <> new.agent_id` U se auto-avisaría — que es el bug original con
+-- otro nombre. Este es el único fixture donde el filtro de rol NO tapa el
+-- agujero: por eso el conteo va emparejado con el de OX, para que el assert no
+-- pueda pasar apagando el aviso entero.
+select is(
+  (select (select count(*)::int from public.notifications
+             where type = 'lead_unmanaged'
+               and related_entity_id = '00000000-0000-0000-0000-000000020367'
+               and user_id = '00000000-0000-0000-0000-000000020312')::text  -- U, el propio agente
+      || '|' ||
+          (select count(*)::int from public.notifications
+             where type = 'lead_unmanaged'
+               and related_entity_id = '00000000-0000-0000-0000-000000020367'
+               and user_id = '00000000-0000-0000-0000-000000020301')::text), -- OX, el otro owner activo
+  '0|1',
+  'N11_DELTA_un_owner_ACTIVO_con_fila_suspended_propia_no_se_autoavisa_pero_el_otro_owner_SI_recibe'
 );
 
 -- ════════════════════════════════════════════════════════════════════════════
