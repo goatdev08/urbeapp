@@ -823,6 +823,8 @@ Deno.test("no_regresion_paused_a_closed_con_reason_expired_retorna_200", async (
 //       (cubierto por caller_no_es_owner_retorna_403_unauthorized_owner)
 // ═══════════════════════════════════════════════════════════════════════════
 
+const MENSAJE_MEMBRESIA = "Tu membresía en la inmobiliaria no está activa";
+
 function updater_membresia_suspendida(): FakePropertyStatusUpdater {
   return {
     calls: [],
@@ -831,7 +833,7 @@ function updater_membresia_suspendida(): FakePropertyStatusUpdater {
       return Promise.resolve({
         ok: false,
         error_code: "AGENCY_MEMBERSHIP_SUSPENDED",
-        message: "Tu membresía en la inmobiliaria no está activa",
+        message: MENSAJE_MEMBRESIA,
       });
     },
   } as FakePropertyStatusUpdater;
@@ -847,15 +849,20 @@ Deno.test("202_membresia_suspendida_retorna_403_con_su_propio_codigo", async () 
   assertEquals(body.error.code, "AGENCY_MEMBERSHIP_SUSPENDED");
 });
 
-Deno.test("202_403_de_membresia_tiene_mensaje_legible_no_el_generico_de_db_error", async () => {
+Deno.test("202_403_de_membresia_propaga_el_mensaje_del_updater_no_el_generico", async () => {
   const res = await handler(
     post_auth(PAYLOAD_A_PAUSED),
     deps(updater_membresia_suspendida()),
   );
+  assertEquals(res.status, 403, "el mensaje correcto no sirve de nada con el status equivocado");
   const body = await res.json();
-  assertEquals(typeof body.error.message, "string");
+  assertEquals(
+    body.error.message,
+    MENSAJE_MEMBRESIA,
+    "el handler propaga el motivo real; el agente debe leer por qué no puede actuar (#200)",
+  );
   assert(
-    body.error.message.length > 0 && body.error.message !== "Error de base de datos",
-    `el agente debe leer por qué no puede actuar (#200); recibió: ${body.error.message}`,
+    body.error.message !== "Error de base de datos",
+    "un 500 genérico de DB_ERROR sería el fail-closed mudo que arregló #200",
   );
 });
