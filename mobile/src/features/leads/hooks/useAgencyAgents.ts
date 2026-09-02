@@ -2,12 +2,18 @@
  * useAgencyAgents — lista de agentes de la agencia del owner (para el selector
  * del CRM, subtarea #28.2).
  *
- * Query: from('agency_members')
- *   .select('user_id, users(id, first_name, last_name, avatar_url)')
- *   .eq('agency_id', agencyId).eq('member_role', 'agent').eq('status', 'active')
+ * Query (#203.2 amplió el filtro de status): from('agency_members')
+ *   .select('user_id, status, users(id, first_name, last_name, avatar_url)')
+ *   .eq('agency_id', agencyId).eq('member_role', 'agent').in('status', ['active', 'suspended'])
  *   - Solo se ejecuta si enabled===true && agencyId!=null (enabled = isOwner,
  *     ver useAgencyRole de la subtarea 28.1). Si no, agents=[] sin llamar supabase.
  *   - El owner NO se incluye (filtro member_role='agent' lo excluye).
+ *
+ * ⭐ #203.2 — antes filtraba SOLO `status='active'`. Un agente suspendido
+ * sigue generando leads (ruteo #203.1: el lead nace bajo la agencia aunque el
+ * agente esté congelado) y el owner necesita verlo aquí — en el selector del
+ * CRM y en la tarjeta de members.tsx — para saber a quién reasignar su
+ * inventario. `removed` sigue excluido (ya no tiene membresía vigente).
  *
  * ⚠️ Nombre/foto desde `users`, NO desde `user_preferences`: el owner NO puede
  * leer el user_preferences de sus agentes (RLS `user_prefs_select` = fila propia),
@@ -18,6 +24,7 @@
  *   - id: users?.id ?? user_id (fallback si el embed de users viniera null)
  *   - full_name: [first_name, last_name] unidos con espacio (null si ambos vacíos)
  *   - profile_photo_url: users.avatar_url
+ *   - status: raw.status ('active' | 'suspended' — ya acotado por el filtro `.in`)
  *
  * Orden: client-side por full_name (localeCompare), nulls al final — la query
  * no puede ordenar por el nombre compuesto.
@@ -54,6 +61,7 @@ type RawUser = {
 
 type RawAgencyMemberRow = {
   user_id: string;
+  status: string;
   users: RawUser | null;
 };
 
@@ -68,6 +76,9 @@ function transform_raw_to_agent(raw: RawAgencyMemberRow): Agent {
     id: user?.id ?? raw.user_id,
     full_name: build_full_name(user?.first_name ?? null, user?.last_name ?? null),
     profile_photo_url: user?.avatar_url ?? null,
+    // ponytail: cast local — el filtro `.in('status', ['active','suspended'])`
+    // ya acota los valores posibles; no amerita un guard en runtime.
+    status: raw.status as Agent['status'],
   };
 }
 
@@ -120,10 +131,12 @@ export function useAgencyAgents(
         .from('agency_members')
         // ponytail: nombre/foto desde `users` (legible por el owner vía RLS
         // is_agency_owner_of); columnas en tipos generados → sin cast `as never`.
-        .select('user_id, users(id, first_name, last_name, avatar_url)')
+        .select('user_id, status, users(id, first_name, last_name, avatar_url)')
         .eq('agency_id', resolved_agency_id)
         .eq('member_role', 'agent')
-        .eq('status', 'active');
+        // #203.2: activos Y suspendidos (antes solo 'active') — un suspendido
+        // sigue generando leads y su inventario necesita reasignarse.
+        .in('status', ['active', 'suspended']);
 
       if (ignore) return;
 
