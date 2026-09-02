@@ -812,18 +812,22 @@ Deno.test("142_propiedad_independiente_no_consulta_resolver_y_403", async () => 
   assertEquals(resolver.calls.length, 0, "sin agency_id no hay lookup de agencia");
 });
 
-Deno.test("142_owner_directo_no_consulta_resolver_short_circuit", async () => {
+// ⚠️ #202 acotó este short-circuit: el dueño ya NO se salta el lookup cuando la
+// fila tiene agency_id (ver el bloque 202_* al final del archivo — dueño con
+// membresía suspendida = 403). El invariante que este test protege sigue vivo
+// donde la agencia no existe: propiedad independiente, sin membresía que mirar.
+Deno.test("142_owner_directo_de_propiedad_independiente_no_consulta_resolver_short_circuit", async () => {
   const resolver = resolver_role(null);
   const res = await handler(
     post_auth(BASE_INPUT),
     deps({
       callerVerifier: verifier_ok(OWNER_ID, false),
-      propertyFetcher: fetcher_ok(CURRENT_CON_AGENCIA),
+      propertyFetcher: fetcher_ok(CURRENT), // agency_id: null
       agencyRoleResolver: resolver,
     }),
   );
   assertEquals(res.status, 200);
-  assertEquals(resolver.calls.length, 0, "el dueño no necesita lookup de agencia");
+  assertEquals(resolver.calls.length, 0, "el dueño sin agencia no necesita lookup");
 });
 
 Deno.test("142_editor_de_agencia_con_cambio_critico_va_a_revision", async () => {
@@ -1025,4 +1029,181 @@ Deno.test("wizard_campos_nuevos_no_son_criticos_no_disparan_revision", async () 
   const body = await res.json();
   assertEquals(body.mode, "direct", "cambiar solo estos 3 campos no es crítico (§15.5)");
   assertEquals(ru.calls.length, 0);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// #202 — «suspender congela la capacidad de ACTUAR en nombre de la agencia».
+//
+// Hueco que cierra: `is_owner` cortocircuitaba la autorización sin mirar la
+// membresía (handler.ts:282-283, réplica fiel de la RLS properties_update de
+// 20260805000011). Un agente suspendido no podía PUBLICAR
+// (AGENCY_MEMBERSHIP_SUSPENDED, 100.4) pero sí podía seguir editando precio,
+// dirección y descripción de lo ya publicado — que sigue en el escaparate bajo
+// la marca de la inmobiliaria (properties.agency_id denormalizado). Editar el
+// precio de una publicación viva es el MISMO acto comercial que publicarla.
+//
+// Regla nueva: si la fila tiene agency_id, el dueño también necesita membresía
+// ACTIVA en ESA agencia. Sin agencia (agente independiente) nada cambia; admin
+// de plataforma tampoco (su autorización no viene de la agencia).
+//
+// EDGE CASES (RED) — 202.2 / edit-property:
+// EC-1  dueño con membresía suspendida en la agencia de la fila → 403
+//       AGENCY_MEMBERSHIP_SUSPENDED (hoy: 200)
+// EC-2  dueño suspendido, cambio NO crítico → directPropertyUpdater NUNCA llamado
+// EC-3  dueño suspendido, cambio CRÍTICO → revisionUpserter NUNCA llamado
+//       (no puede disparar re-revisión ni dejar rastro en property_revisions)
+// EC-4  dueño suspendido → el resolver se consulta con (user_id, agency_id de
+//       la fila), no con otra agencia
+// EC-5  dueño con membresía ACTIVA ('agent') en la agencia de la fila → 200
+//       (control positivo: la regla no congela al que sí está vigente)
+// EC-6  dueño de propiedad independiente (agency_id null) → resolver NO
+//       consultado, 200 🔴 caso de control que no puede romperse
+// EC-7  admin de plataforma que además es dueño con membresía suspendida → 200
+//       y resolver NO consultado (is_admin manda)
+// EC-8  fail-closed: el resolver devuelve null tanto por membresía suspendida
+//       como por membresía removida o error de la query → mismo 403
+// EC-9  no-regresión #142: owner/admin ACTIVO de la agencia que NO es dueño
+//       sigue editando (cubierto por 142_owner_de_agencia_edita_… y
+//       142_admin_de_agencia_edita_…) y member/viewer siguen recibiendo 403
+// ═══════════════════════════════════════════════════════════════════════════
+
+Deno.test("202_dueño_con_membresia_suspendida_no_puede_editar_403", async () => {
+  const res = await handler(
+    post_auth(BASE_INPUT),
+    deps({
+      callerVerifier: verifier_ok(OWNER_ID, false),
+      propertyFetcher: fetcher_ok(CURRENT_CON_AGENCIA),
+      agencyRoleResolver: resolver_role(null), // membresía no activa
+    }),
+  );
+  assertEquals(
+    res.status,
+    403,
+    "ser dueño de la fila no basta: la publicación sigue bajo la marca de la agencia",
+  );
+  const body = await res.json();
+  assertEquals(body.error.code, "AGENCY_MEMBERSHIP_SUSPENDED");
+  assertEquals(
+    typeof body.error.message,
+    "string",
+    "la UX exige un mensaje legible, no un fallo mudo (#200)",
+  );
+});
+
+Deno.test("202_dueño_suspendido_no_aplica_el_update_directo", async () => {
+  const du = direct_updater_ok();
+  const res = await handler(
+    post_auth({ ...BASE_INPUT, bedrooms: 5 }), // cambio NO crítico
+    deps({
+      callerVerifier: verifier_ok(OWNER_ID, false),
+      propertyFetcher: fetcher_ok(CURRENT_CON_AGENCIA),
+      agencyRoleResolver: resolver_role(null),
+      directPropertyUpdater: du,
+    }),
+  );
+  assertEquals(res.status, 403);
+  assertEquals(du.calls.length, 0, "current_published no se toca");
+});
+
+Deno.test("202_dueño_suspendido_no_dispara_re_revision", async () => {
+  const ru = revision_upserter_ok();
+  const res = await handler(
+    post_auth({ ...BASE_INPUT, price: 99999 }), // cambio CRÍTICO §15.5
+    deps({
+      callerVerifier: verifier_ok(OWNER_ID, false),
+      propertyFetcher: fetcher_ok(CURRENT_CON_AGENCIA),
+      agencyRoleResolver: resolver_role(null),
+      revisionUpserter: ru,
+    }),
+  );
+  assertEquals(res.status, 403);
+  assertEquals(
+    ru.calls.length,
+    0,
+    "un suspendido no puede meter trabajo a la cola de moderación",
+  );
+});
+
+Deno.test("202_dueño_con_agencia_resuelve_contra_la_agencia_de_la_fila", async () => {
+  const resolver = resolver_role(null);
+  await handler(
+    post_auth(BASE_INPUT),
+    deps({
+      callerVerifier: verifier_ok(OWNER_ID, false),
+      propertyFetcher: fetcher_ok(CURRENT_CON_AGENCIA),
+      agencyRoleResolver: resolver,
+    }),
+  );
+  assertEquals(resolver.calls.length, 1, "el dueño ya NO cortocircuita el lookup");
+  assertEquals(resolver.calls[0].user_id, OWNER_ID);
+  assertEquals(resolver.calls[0].agency_id, AGENCY_ID);
+});
+
+Deno.test("202_dueño_con_membresia_activa_sigue_editando_200", async () => {
+  const du = direct_updater_ok();
+  const resolver = resolver_role("agent"); // membresía vigente, rol llano
+  const res = await handler(
+    post_auth(BASE_INPUT),
+    deps({
+      callerVerifier: verifier_ok(OWNER_ID, false),
+      propertyFetcher: fetcher_ok(CURRENT_CON_AGENCIA),
+      agencyRoleResolver: resolver,
+      directPropertyUpdater: du,
+    }),
+  );
+  assertEquals(res.status, 200, "control positivo: el agente vigente edita lo suyo");
+  assertEquals(resolver.calls.length, 1);
+  assertEquals(du.calls.length, 1);
+});
+
+Deno.test("202_dueño_independiente_no_consulta_resolver_y_edita_200", async () => {
+  // 🔴 Caso de control: agente sin inmobiliaria. No hay membresía que mirar.
+  const resolver = resolver_role(null);
+  const du = direct_updater_ok();
+  const res = await handler(
+    post_auth(BASE_INPUT),
+    deps({
+      callerVerifier: verifier_ok(OWNER_ID, false),
+      propertyFetcher: fetcher_ok(CURRENT), // agency_id: null
+      agencyRoleResolver: resolver,
+      directPropertyUpdater: du,
+    }),
+  );
+  assertEquals(res.status, 200, "el independiente NO puede quedar congelado por #202");
+  assertEquals(resolver.calls.length, 0, "sin agency_id no hay lookup de membresía");
+  assertEquals(du.calls.length, 1);
+});
+
+Deno.test("202_admin_de_plataforma_dueño_con_membresia_suspendida_edita_200", async () => {
+  // El admin no actúa "en nombre de la agencia": su autorización es de plataforma.
+  const resolver = resolver_role(null);
+  const res = await handler(
+    post_auth(BASE_INPUT),
+    deps({
+      callerVerifier: verifier_ok(OWNER_ID, true), // dueño Y admin
+      propertyFetcher: fetcher_ok(CURRENT_CON_AGENCIA),
+      agencyRoleResolver: resolver,
+    }),
+  );
+  assertEquals(res.status, 200);
+  assertEquals(resolver.calls.length, 0, "is_admin manda: no se consulta la membresía");
+});
+
+Deno.test("202_dueño_removido_o_resolver_con_error_mismo_403_fail_closed", async () => {
+  // El resolver devuelve null en TODOS los casos de "no hay membresía vigente":
+  // suspendida, removida, inexistente o error de la query (fail-closed).
+  // ponytail: un solo código para todos — el resolver no distingue el status.
+  // Techo conocido: si producto pide un mensaje distinto para "removido",
+  // el resolver tendrá que devolver el status además del rol.
+  const res = await handler(
+    post_auth({ ...BASE_INPUT, price: 1 }),
+    deps({
+      callerVerifier: verifier_ok(OWNER_ID, false),
+      propertyFetcher: fetcher_ok(CURRENT_CON_AGENCIA),
+      agencyRoleResolver: resolver_role(null),
+    }),
+  );
+  assertEquals(res.status, 403);
+  const body = await res.json();
+  assertEquals(body.error.code, "AGENCY_MEMBERSHIP_SUSPENDED");
 });
