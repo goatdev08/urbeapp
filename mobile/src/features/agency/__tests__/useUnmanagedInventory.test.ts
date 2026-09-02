@@ -27,6 +27,14 @@
  * tras un reassign exitoso) se expone `refetch()` — mismo patrón que
  * useAdminRequestsQueues (refetch_tick).
  *
+ * PATRÓN DE MOCK (candado #233.3, cierre del guardian 203.2): `from()` es
+ * sensible al binding vía `make_binding_sensitive_supabase_mock` de
+ * `@/test-utils/supabaseMock` — un GREEN que desprendiera la llamada
+ * (`const { from } = supabase; from(...)`, precedente #205/170.4) ya no
+ * puede sobrevivir con la suite en verde. Mismo patrón que
+ * useReassignMemberProperties.test.ts, adaptado a una cadena `.from()`
+ * encadenada en vez de `.rpc()`.
+ *
  * EDGE CASES:
  * - (EC-1) agencyId_null_no_ejecuta_query_counts_vacio
  * - (EC-2) user_ids_vacio_no_ejecuta_query_counts_vacio
@@ -39,6 +47,8 @@
 
 import { act, renderHook } from '@testing-library/react-native';
 
+import { make_binding_sensitive_supabase_mock } from '@/test-utils/supabaseMock';
+
 // ---------------------------------------------------------------------------
 // Imports DESPUÉS de registrar mocks (jest.mock se hoistea igual — patrón
 // useAgencyAgents.test.ts)
@@ -46,13 +56,16 @@ import { act, renderHook } from '@testing-library/react-native';
 
 import { useUnmanagedInventory } from '../hooks/useUnmanagedInventory';
 
-const mock_supabase_holder: { client: ReturnType<typeof make_supabase_mock> } = {
-  client: null as never,
+const mock_supabase_holder: { bundle: ReturnType<typeof make_supabase_mock> } = {
+  bundle: null as never,
 };
 
 jest.mock('@/lib/supabase/client', () => ({
   get supabase() {
-    return mock_supabase_holder.client;
+    // Candado #233.3: el cliente que ve el SUT es el sensible al binding
+    // (make_binding_sensitive_supabase_mock) — `._mock_*` del bundle son
+    // solo los spies que usan las aserciones de este archivo.
+    return mock_supabase_holder.bundle?.client;
   },
 }));
 
@@ -74,11 +87,17 @@ function make_supabase_mock(
   const mock_in_owner = jest.fn().mockReturnValue({ is: mock_is_deleted });
   const mock_eq_agency = jest.fn().mockReturnValue({ in: mock_in_owner });
   const mock_select = jest.fn().mockReturnValue({ eq: mock_eq_agency });
-  const mock_from = jest.fn().mockReturnValue({ select: mock_select });
+  const mock_from_impl = jest.fn().mockReturnValue({ select: mock_select });
+
+  // Candado #233.3: `from` sensible al binding — el mutante
+  // `const { from } = client; from(...)` (#205) muere aquí.
+  const { client, _mock_from } = make_binding_sensitive_supabase_mock({
+    from: mock_from_impl,
+  });
 
   return {
-    from: mock_from,
-    _mock_from: mock_from,
+    client,
+    _mock_from,
     _mock_select: mock_select,
     _mock_eq_agency: mock_eq_agency,
     _mock_in_owner: mock_in_owner,
@@ -88,7 +107,7 @@ function make_supabase_mock(
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mock_supabase_holder.client = make_supabase_mock();
+  mock_supabase_holder.bundle = make_supabase_mock();
 });
 
 describe('useUnmanagedInventory', () => {
@@ -97,7 +116,7 @@ describe('useUnmanagedInventory', () => {
       useUnmanagedInventory(null, [SUSPENDED_A])
     );
 
-    expect(mock_supabase_holder.client._mock_from).not.toHaveBeenCalled();
+    expect(mock_supabase_holder.bundle._mock_from).not.toHaveBeenCalled();
     expect(result.current.counts).toEqual({});
     expect(result.current.loading).toBe(false);
   });
@@ -107,12 +126,12 @@ describe('useUnmanagedInventory', () => {
       useUnmanagedInventory(TEST_AGENCY_ID, [])
     );
 
-    expect(mock_supabase_holder.client._mock_from).not.toHaveBeenCalled();
+    expect(mock_supabase_holder.bundle._mock_from).not.toHaveBeenCalled();
     expect(result.current.counts).toEqual({});
   });
 
   it('(EC-3) camino_feliz_agrupa_conteos_por_owner_user_id', async () => {
-    mock_supabase_holder.client = make_supabase_mock({
+    mock_supabase_holder.bundle = make_supabase_mock({
       query_result: {
         data: [
           { owner_user_id: SUSPENDED_A },
@@ -136,7 +155,7 @@ describe('useUnmanagedInventory', () => {
   });
 
   it('(EC-4) error_de_query_counts_vacio_error_poblado_sin_crash', async () => {
-    mock_supabase_holder.client = make_supabase_mock({
+    mock_supabase_holder.bundle = make_supabase_mock({
       query_result: { data: null, error: { message: 'RLS policy violation' } },
     });
 
@@ -154,17 +173,17 @@ describe('useUnmanagedInventory', () => {
       useUnmanagedInventory(TEST_AGENCY_ID, [SUSPENDED_A, SUSPENDED_B])
     );
 
-    expect(mock_supabase_holder.client._mock_from).toHaveBeenCalledWith('properties');
-    expect(mock_supabase_holder.client._mock_select).toHaveBeenCalledWith('owner_user_id');
-    expect(mock_supabase_holder.client._mock_eq_agency).toHaveBeenCalledWith(
+    expect(mock_supabase_holder.bundle._mock_from).toHaveBeenCalledWith('properties');
+    expect(mock_supabase_holder.bundle._mock_select).toHaveBeenCalledWith('owner_user_id');
+    expect(mock_supabase_holder.bundle._mock_eq_agency).toHaveBeenCalledWith(
       'agency_id',
       TEST_AGENCY_ID
     );
-    expect(mock_supabase_holder.client._mock_in_owner).toHaveBeenCalledWith('owner_user_id', [
+    expect(mock_supabase_holder.bundle._mock_in_owner).toHaveBeenCalledWith('owner_user_id', [
       SUSPENDED_A,
       SUSPENDED_B,
     ]);
-    expect(mock_supabase_holder.client._mock_is_deleted).toHaveBeenCalledWith(
+    expect(mock_supabase_holder.bundle._mock_is_deleted).toHaveBeenCalledWith(
       'deleted_at',
       null
     );
@@ -176,14 +195,14 @@ describe('useUnmanagedInventory', () => {
       { initialProps: { ids: [SUSPENDED_A] } }
     );
 
-    expect(mock_supabase_holder.client._mock_from).toHaveBeenCalledTimes(1);
+    expect(mock_supabase_holder.bundle._mock_from).toHaveBeenCalledTimes(1);
 
     // Nueva referencia (arreglo distinto), MISMO contenido — un caller que
     // no memoiza (patrón común, p.ej. este mismo test) no debe disparar un
     // loop de refetch.
     await rerender({ ids: [SUSPENDED_A] });
 
-    expect(mock_supabase_holder.client._mock_from).toHaveBeenCalledTimes(1);
+    expect(mock_supabase_holder.bundle._mock_from).toHaveBeenCalledTimes(1);
   });
 
   it('(EC-7) refetch_fuerza_una_nueva_query_aunque_agencyId_y_user_ids_no_cambien', async () => {
@@ -191,12 +210,12 @@ describe('useUnmanagedInventory', () => {
       useUnmanagedInventory(TEST_AGENCY_ID, [SUSPENDED_A])
     );
 
-    expect(mock_supabase_holder.client._mock_from).toHaveBeenCalledTimes(1);
+    expect(mock_supabase_holder.bundle._mock_from).toHaveBeenCalledTimes(1);
 
     await act(async () => {
       result.current.refetch();
     });
 
-    expect(mock_supabase_holder.client._mock_from).toHaveBeenCalledTimes(2);
+    expect(mock_supabase_holder.bundle._mock_from).toHaveBeenCalledTimes(2);
   });
 });

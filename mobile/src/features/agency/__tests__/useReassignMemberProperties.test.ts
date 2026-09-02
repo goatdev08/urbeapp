@@ -117,7 +117,7 @@ describe('useReassignMemberProperties', () => {
     const { client } = make_client({ data: null, error: { message: 'NOT_AUTHORIZED' } });
     const { outcome } = await submit_default(client);
     expect(outcome?.ok).toBe(false);
-    expect(outcome?.error).toMatch(/no tienes permiso/i);
+    expect(outcome?.error).toBe('No tienes permiso para reasignar en esta inmobiliaria');
   });
 
   it('EC-5: TARGET_NOT_ACTIVE_MEMBER produce mensaje distinto', async () => {
@@ -126,19 +126,19 @@ describe('useReassignMemberProperties', () => {
       error: { message: 'TARGET_NOT_ACTIVE_MEMBER' },
     });
     const { outcome } = await submit_default(client);
-    expect(outcome?.error).toMatch(/no está activo/i);
+    expect(outcome?.error).toBe('Ese miembro no está activo en la inmobiliaria');
   });
 
   it('EC-6: SAME_USER produce mensaje distinto', async () => {
     const { client } = make_client({ data: null, error: { message: 'SAME_USER' } });
     const { outcome } = await submit_default(client);
-    expect(outcome?.error).toMatch(/elige un miembro distinto/i);
+    expect(outcome?.error).toBe('Elige un miembro distinto');
   });
 
   it('EC-7: código desconocido (NOT_AUTHENTICATED) cae a mensaje genérico', async () => {
     const { client } = make_client({ data: null, error: { message: 'NOT_AUTHENTICATED' } });
     const { outcome } = await submit_default(client);
-    expect(outcome?.error).toMatch(/no se pudo reasignar/i);
+    expect(outcome?.error).toBe('No se pudo reasignar');
   });
 
   it('EC-8: rechazo de la promesa no lanza, mensaje genérico', async () => {
