@@ -291,7 +291,18 @@ select col_not_null('public', 'ads', 'agency_id', 'COL22_ads_agency_id_es_not_nu
 
 select has_column('public', 'ads', 'creative_id', 'COL23_ads_creative_id_existe');
 select col_type_is('public', 'ads', 'creative_id', 'uuid', 'COL24_ads_creative_id_es_uuid');
-select col_not_null('public', 'ads', 'creative_id', 'COL25_ads_creative_id_es_not_null');
+-- 🔴 #213 (213.1): creative_id, cta_type y cta_value dejaron de ser NOT NULL.
+-- NO es una relajación de esta suite: es la expansión que habilita el segundo
+-- producto (la promoción de una propiedad, que no tiene creativo ni CTA
+-- propios). La garantía que daban los tres NOT NULL NO se perdió, se movió a
+-- dos CHECK que la expresan con precisión y viven cubiertos por
+-- supabase/tests/87_ads_property_id_test.sql:
+--   · ads_exactly_one_source        — exactamente una fuente de video.
+--   · ads_cta_required_for_display  — el CTA sigue siendo obligatorio para un
+--                                     anuncio display, que es donde importaba.
+-- Aquí se fija lo que esta suite puede fijar (la nullability declarada); el
+-- comportamiento lo fija la 87.
+select col_is_null('public', 'ads', 'creative_id', 'COL25_ads_creative_id_es_NULLABLE_desde_213_1_la_promo_no_tiene_creativo_ver_CHECK_ads_exactly_one_source');
 
 select has_column('public', 'ads', 'title', 'COL26_ads_title_existe');
 select col_type_is('public', 'ads', 'title', 'text', 'COL27_ads_title_es_text');
@@ -299,11 +310,11 @@ select col_not_null('public', 'ads', 'title', 'COL28_ads_title_es_not_null');
 
 select has_column('public', 'ads', 'cta_type', 'COL29_ads_cta_type_existe');
 select col_type_is('public', 'ads', 'cta_type', 'ad_cta_type', 'COL30_ads_cta_type_es_del_enum_ad_cta_type');
-select col_not_null('public', 'ads', 'cta_type', 'COL31_ads_cta_type_es_not_null');
+select col_is_null('public', 'ads', 'cta_type', 'COL31_ads_cta_type_es_NULLABLE_desde_213_1_la_obligatoriedad_para_display_vive_en_CHECK_ads_cta_required_for_display');
 
 select has_column('public', 'ads', 'cta_value', 'COL32_ads_cta_value_existe');
 select col_type_is('public', 'ads', 'cta_value', 'text', 'COL33_ads_cta_value_es_text');
-select col_not_null('public', 'ads', 'cta_value', 'COL34_ads_cta_value_es_not_null');
+select col_is_null('public', 'ads', 'cta_value', 'COL34_ads_cta_value_es_NULLABLE_desde_213_1_la_obligatoriedad_para_display_vive_en_CHECK_ads_cta_required_for_display');
 
 select has_column('public', 'ads', 'status', 'COL35_ads_status_existe');
 select col_type_is('public', 'ads', 'status', 'ad_status', 'COL36_ads_status_es_del_enum_ad_status');
