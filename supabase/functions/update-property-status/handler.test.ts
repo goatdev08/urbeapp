@@ -74,7 +74,7 @@
 // ### Forma del error
 // - Toda respuesta de error tiene la forma { error: { code: string, message: string } }
 
-import { assertEquals, assertExists } from "@std/assert";
+import { assert, assertEquals, assertExists } from "@std/assert";
 import { handler } from "./handler.ts";
 import type {
   CallerVerifier,
@@ -808,4 +808,61 @@ Deno.test("no_regresion_paused_a_closed_con_reason_expired_retorna_200", async (
     deps(updater_ok(cerrada)),
   );
   assertEquals(res.status, 200);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// #202 — mapeo HTTP del código nuevo del updater.
+//
+// EDGE CASES (RED) — 202.2 / update-property-status (handler):
+// EC-20 updater → AGENCY_MEMBERSHIP_SUSPENDED se mapea a 403 con ESE code
+//       (hoy cae al `default` del switch → 500 DB_ERROR, ilegible para el
+//       cliente: el mismo bug de fail-closed mudo que arregló #200)
+// EC-21 el 403 conserva la forma { error: { code, message } } y un mensaje
+//       legible propio, no el genérico de DB_ERROR
+// EC-22 no-regresión: UNAUTHORIZED_OWNER sigue siendo 403 con su propio código
+//       (cubierto por caller_no_es_owner_retorna_403_unauthorized_owner)
+// ═══════════════════════════════════════════════════════════════════════════
+
+const MENSAJE_MEMBRESIA = "Tu membresía en la inmobiliaria no está activa";
+
+function updater_membresia_suspendida(): FakePropertyStatusUpdater {
+  return {
+    calls: [],
+    update(params: UpdatePropertyStatusParams): Promise<UpdatePropertyStatusResult> {
+      this.calls.push(params);
+      return Promise.resolve({
+        ok: false,
+        error_code: "AGENCY_MEMBERSHIP_SUSPENDED",
+        message: MENSAJE_MEMBRESIA,
+      });
+    },
+  } as FakePropertyStatusUpdater;
+}
+
+Deno.test("202_membresia_suspendida_retorna_403_con_su_propio_codigo", async () => {
+  const res = await handler(
+    post_auth(PAYLOAD_A_PAUSED),
+    deps(updater_membresia_suspendida()),
+  );
+  assertEquals(res.status, 403, "es una autorización denegada, no un error de servidor");
+  const body = await res.json();
+  assertEquals(body.error.code, "AGENCY_MEMBERSHIP_SUSPENDED");
+});
+
+Deno.test("202_403_de_membresia_propaga_el_mensaje_del_updater_no_el_generico", async () => {
+  const res = await handler(
+    post_auth(PAYLOAD_A_PAUSED),
+    deps(updater_membresia_suspendida()),
+  );
+  assertEquals(res.status, 403, "el mensaje correcto no sirve de nada con el status equivocado");
+  const body = await res.json();
+  assertEquals(
+    body.error.message,
+    MENSAJE_MEMBRESIA,
+    "el handler propaga el motivo real; el agente debe leer por qué no puede actuar (#200)",
+  );
+  assert(
+    body.error.message !== "Error de base de datos",
+    "un 500 genérico de DB_ERROR sería el fail-closed mudo que arregló #200",
+  );
 });

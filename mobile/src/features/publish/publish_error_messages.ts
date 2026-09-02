@@ -15,11 +15,17 @@
  * DOS mapas, NO uno compartido: publish-property (creación) y edit-property
  * (edición) emiten catálogos de error_code DISTINTOS (verificado en
  * supabase/functions/publish-property/types.ts y
- * supabase/functions/edit-property/{handler,index}.ts) — edit-property NO
- * emite los códigos de agencia (AGENCY_MEMBERSHIP_SUSPENDED,
- * AGENCY_CANNOT_PUBLISH_PROPERTIES), esos son propios del RPC de creación.
- * Meterlos también en el mapa de edit sería una defensa contra un código que
- * esa EF nunca produce.
+ * supabase/functions/edit-property/{handler,index}.ts). Hasta la tarea #200,
+ * edit-property NO emitía ningún código de agencia — AGENCY_CANNOT_PUBLISH_PROPERTIES
+ * sigue siendo propio del RPC de creación. Pero desde #202 (suspensión =
+ * congela la ACTUACIÓN) edit-property SÍ emite AGENCY_MEMBERSHIP_SUSPENDED: un
+ * dueño con membresía de agencia no activa deja de poder editar sus propias
+ * publicaciones (edit-property/handler.ts, paso 7), y update-property-status
+ * (pause/unpause/close) reusa el MISMO mensaje del mapa de edit — no hay un
+ * tercer mapa para esa EF; `usePropertyActions.ts` importa
+ * `map_publish_edit_ef_error` directamente para el caso suspendido. El
+ * literal es NEUTRO respecto de la acción ("gestionar", no "editar") a
+ * propósito: el mismo mensaje se ve al editar, pausar o cerrar.
  *
  * Colabora con extract_error_code (mobile/src/lib/supabase/edge-errors.ts).
  */
@@ -78,6 +84,8 @@ export const PUBLISH_EDIT_EF_ERROR_MESSAGES: Record<string, string> = {
   UNAUTHENTICATED: 'Debes iniciar sesión de nuevo para continuar.',
   PROPERTY_NOT_FOUND: 'Esta propiedad ya no existe o fue eliminada.',
   UNAUTHORIZED_EDITOR: 'No tienes permiso para editar esta propiedad.',
+  AGENCY_MEMBERSHIP_SUSPENDED:
+    'Tu inmobiliaria pausó tu cuenta: no puedes gestionar publicaciones a su nombre. Habla con el administrador de tu inmobiliaria.',
   DB_ERROR: 'Error interno. Intenta de nuevo.',
 };
 

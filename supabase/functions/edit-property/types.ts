@@ -139,7 +139,7 @@ export interface RevisionUpserter {
   ): Promise<RevisionUpsertResult>;
 }
 
-// ── AgencyRoleResolver (#142) ─────────────────────────────────────────────────
+// ── AgencyRoleResolver (#142, movida a _shared en #202) ───────────────────────
 //
 // Replica la rama `private.agency_role_of(agency_id) in ('owner','admin')` de
 // la RLS properties_update (20260805000011, capacidad deliberada de #71) que
@@ -147,10 +147,13 @@ export interface RevisionUpserter {
 // puede editar las publicaciones de sus agentes. Devuelve el member_role
 // ACTIVO del usuario en ESA agencia, o null si no es miembro activo (o si la
 // query falla — fail-closed: sin rol no hay autorización extra).
+//
+// La interfaz vive ahora en _shared/agency_role.ts porque #202 la necesita
+// también en update-property-status; se re-exporta aquí para no romper a los
+// importadores existentes (index.ts, handler.test.ts).
 
-export interface AgencyRoleResolver {
-  resolve(user_id: string, agency_id: string): Promise<string | null>;
-}
+export type { AgencyRoleResolver } from "../_shared/agency_role.ts";
+import type { AgencyRoleResolver } from "../_shared/agency_role.ts";
 
 // ── Deps inyectables del handler ──────────────────────────────────────────────
 

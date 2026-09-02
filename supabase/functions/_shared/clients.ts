@@ -22,6 +22,7 @@ import type {
   VideoStatusCheckResult,
   VideoStatusChecker,
 } from "../publish-property/types.ts";
+import type { AgencyRoleResolver } from "./agency_role.ts";
 import type { InvitationDb, InvitationTokenRow } from "./invitation.ts";
 import type {
   AuthAdminClient,
@@ -2289,6 +2290,43 @@ export function make_agency_status_writer(client: SupabaseClient): AgencyStatusW
         return { ok: false as const, error_code: "AGENCY_NOT_FOUND" as const };
       }
       return { ok: true as const, status: params.next_status };
+    },
+  };
+}
+
+// ── Membresía de agencia (#142 → compartido en #202) ─────────────────────────
+
+/**
+ * Adaptador real de AgencyRoleResolver: réplica de private.agency_role_of pero
+ * parametrizada por user_id (aquí no hay auth.uid() — la EF corre con
+ * service_role, que además hace bypass de RLS).
+ *
+ * Estaba inline en edit-property/index.ts (#142); #202 lo necesita también en
+ * update-property-status, así que vive aquí — un solo punto donde se define
+ * qué cuenta como "membresía vigente" en las Edge Functions, igual que
+ * private.agency_role_of lo es en la base.
+ *
+ * Devuelve el member_role SOLO si status='active'; error o sin fila → null
+ * (fail-closed: sin rol no hay autorización, ni por la rama de agencia ni —
+ * desde #202 — por ser el dueño de la fila).
+ */
+export function make_agency_role_resolver(
+  client: SupabaseClient,
+): AgencyRoleResolver {
+  return {
+    async resolve(user_id: string, agency_id: string): Promise<string | null> {
+      const { data, error } = await client
+        .from("agency_members")
+        .select("member_role")
+        .eq("agency_id", agency_id)
+        .eq("user_id", user_id)
+        .eq("status", "active")
+        .maybeSingle();
+
+      if (error || !data) {
+        return null;
+      }
+      return data.member_role as string;
     },
   };
 }

@@ -3,6 +3,7 @@
 // La lógica de dominio (valid_transitions, ownership, UPDATE shape) vive aquí
 // y es ejercitada por property_status_updater.test.ts con un fake client.
 
+import type { AgencyRoleResolver } from "../_shared/agency_role.ts";
 import type {
   PropertyStatusEnum,
   PropertyStatusTarget,
@@ -50,20 +51,29 @@ export const VALID_TRANSITIONS: Record<PropertyStatusEnum, PropertyStatusTarget[
  * Responsabilidades (en una sola llamada .update()):
  *   1. Verificar existencia + ownership (query con owner_user_id filter).
  *   2. Distinguir not-found vs unauthorized (segunda query sin owner filter).
+ *   2.b Membresía vigente si la fila tiene agency_id (#202).
  *   3. Validar transición de estado contra VALID_TRANSITIONS.
  *   4. Aplicar UPDATE (status, closed_reason, updated_at).
  *   5. Retornar la propiedad actualizada.
  *
  * El parámetro `client` es duck-typed para facilitar el testing con fakes.
+ * `agency_role_resolver` es requerido a propósito (#202): no se puede construir
+ * este updater sin decidir cómo se comprueba la membresía — el mismo adaptador
+ * (_shared/clients.ts) que inyecta edit-property.
  */
-// deno-lint-ignore no-explicit-any
-export function make_property_status_updater(client: { from(table: string): any }): PropertyStatusUpdater {
+export function make_property_status_updater(
+  // deno-lint-ignore no-explicit-any
+  client: { from(table: string): any },
+  agency_role_resolver: AgencyRoleResolver,
+): PropertyStatusUpdater {
   return {
     async update(params: UpdatePropertyStatusParams): Promise<UpdatePropertyStatusResult> {
       // 1. Verificar existencia + ownership en una query
+      //    agency_id (#202): la fila puede estar publicada bajo una agencia,
+      //    y entonces pausarla/cerrarla es actuar en nombre de esa agencia.
       const { data: existing, error: find_error } = await client
         .from("properties")
-        .select("id, status")
+        .select("id, status, agency_id")
         .eq("id", params.property_id)
         .eq("owner_user_id", params.user_id)
         .is("deleted_at", null)
@@ -90,6 +100,32 @@ export function make_property_status_updater(client: { from(table: string): any 
           error_code: "UNAUTHORIZED_OWNER",
           message: "El caller no es el dueño de la propiedad",
         };
+      }
+
+      // 2.b #202 — «suspender congela la capacidad de ACTUAR en nombre de la
+      //     agencia». Aquí importa MÁS que en edit-property: pausar y cerrar
+      //     son el camino para VACIAR el inventario de la inmobiliaria, y esta
+      //     EF corre con service_role (bypass de RLS), así que la policy
+      //     properties_update endurecida por 202.1 no la cubre.
+      //     Va ANTES de validar la transición: el agente tiene que leer por qué
+      //     no puede actuar, no un "transición no permitida" que lo manda a
+      //     buscar el bug donde no está (#200).
+      //     El dueño independiente (agency_id null) no tiene membresía que mirar.
+      if (existing.agency_id) {
+        const member_role = await agency_role_resolver.resolve(
+          params.user_id,
+          existing.agency_id,
+        );
+        // ponytail: mismo código para suspendido y removido — el resolver
+        // devuelve null para ambos (y para un error de query: fail-closed).
+        if (member_role === null) {
+          return {
+            ok: false,
+            error_code: "AGENCY_MEMBERSHIP_SUSPENDED",
+            message:
+              "Tu membresía en la inmobiliaria no está activa: no puedes cambiar el estado de publicaciones a su nombre",
+          };
+        }
       }
 
       // 3. Validar transición de estado

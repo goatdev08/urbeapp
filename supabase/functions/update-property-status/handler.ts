@@ -194,6 +194,16 @@ export async function handler(
           updateResult.message ?? "No autorizado: el caller no es el dueño de la propiedad",
           403,
         );
+      // #202: es el dueño, pero su membresía en la agencia de la fila no está
+      // activa. Denegación de autorización (403), no error de servidor: sin
+      // este case caía al `default` → 500 DB_ERROR, ilegible para el cliente.
+      case "AGENCY_MEMBERSHIP_SUSPENDED":
+        return error_response(
+          "AGENCY_MEMBERSHIP_SUSPENDED",
+          updateResult.message ??
+            "Tu membresía en la inmobiliaria no está activa: no puedes cambiar el estado de publicaciones a su nombre",
+          403,
+        );
       case "PROPERTY_NOT_FOUND":
         return error_response(
           "PROPERTY_NOT_FOUND",

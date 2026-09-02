@@ -91,10 +91,13 @@ export interface CallerVerifier {
 //               sin reapertura en MVP (PRD §16.1)
 //
 // Error codes:
-//   PROPERTY_NOT_FOUND   → handler devuelve 404
-//   UNAUTHORIZED_OWNER   → handler devuelve 403 (el caller no es el dueño)
-//   INVALID_TRANSITION   → handler devuelve 400 (transición no permitida)
-//   DB_ERROR             → handler devuelve 500
+//   PROPERTY_NOT_FOUND          → handler devuelve 404
+//   UNAUTHORIZED_OWNER          → handler devuelve 403 (el caller no es el dueño)
+//   AGENCY_MEMBERSHIP_SUSPENDED → handler devuelve 403 (#202: es el dueño, pero
+//                                 la fila está bajo una agencia donde su
+//                                 membresía ya no está activa)
+//   INVALID_TRANSITION          → handler devuelve 400 (transición no permitida)
+//   DB_ERROR                    → handler devuelve 500
 
 export interface UpdatePropertyStatusParams {
   user_id: string;
@@ -116,6 +119,7 @@ export type UpdatePropertyStatusResult =
     error_code:
       | "PROPERTY_NOT_FOUND"
       | "UNAUTHORIZED_OWNER"
+      | "AGENCY_MEMBERSHIP_SUSPENDED"
       | "INVALID_TRANSITION"
       | "DB_ERROR";
     message?: string;
