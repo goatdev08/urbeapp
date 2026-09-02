@@ -2,6 +2,14 @@
 
 Append-only. Prefijo: `## [YYYY-MM-DD] tipo | título`.
 
+## [2026-09-02] fix | #237 — el motivo del rechazo por fin llega a la persona, en los cuatro espejos
+
+Salió de tocar la app, no de leer el código. En el recorrido, Abraham rechazó una promoción escribiendo «Prueba»; el motivo quedó guardado en la columna y en `data.rejection_reason`, y lo que le llegó al anunciante fue «Tu anuncio "…" fue rechazado.», a secas. `NotificationCard` pinta solo `title` y `body`, así que un motivo que vive únicamente en `data` es un motivo que nadie lee. #234 lo había arreglado para el espejo de inmobiliaria y dejó anotados los otros tres; ahora los cuatro comparten la misma forma.
+
+Lo durable no es la concatenación sino la asimetría que la acompaña: **el guard `~ '\S'` normaliza lo que se comunica y jamás lo que se persiste**. `ads.rejection_reason`, `property_revisions.rejection_reason` y `admin_actions.reason` siguen guardando lo que el admin escribió, porque son registro de lo ocurrido, no mensajes. El guardián lo señaló bien: sin un test que lo explique, el próximo que vea el guard en tres sitios y ausente en el UPDATE va a pensar que es un olvido, lo va a «arreglar» y va a borrar evidencia de auditoría con la suite en verde. De ahí PR7 y AA5.
+
+El guardián además falló la primera pasada sin encontrar un solo defecto en la implementación: los dieciséis mutantes de comportamiento morían, pero la suite no defendía tres cláusulas de su propio contrato. La más real era que aprobar una revisión mandando un motivo sí lo colaba en el mensaje — en anuncios es imposible por el CHECK que ata motivo y estado, pero `property_revisions` no lo tiene. Los cinco asserts que faltaban se añadieron sin mover una línea de producción. Desplegado con los tres md5 remotos coincidiendo byte por byte con los del local probado. Sin OTA.
+
 ## [2026-09-02] deploy | OTA a testers + #202 en producción — la suspensión ya congela la escritura por PostgREST
 
 OTA publicado desde `main` (014a60f) a los dos canales: Android `preview` runtime `374ba3dd…3589`, iOS `production` runtime `ca62b26a…44d6`. **No fue NO-OP**: los dos runtimes coinciden byte por byte con el fingerprint de los builds v1.0.6 instalados (`eas build:list`), que es la única verificación que distingue una entrega real de un update huérfano. El guard del bundle confirmó el backend horneado (`mvpvqmyhrrkwbnpctpuq`) en las dos plataformas antes de subir nada. Viajaron #213 (Promocionar), #202 cliente (traducción de `AGENCY_MEMBERSHIP_SUSPENDED`), #203 cliente (inventario sin gestor + reasignación) y #233.
