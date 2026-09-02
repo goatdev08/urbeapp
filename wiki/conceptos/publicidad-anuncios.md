@@ -224,3 +224,9 @@ Decisión de Abraham (exploración 040): la promoción **ES el video de la propi
 
 - **#235**: el `order by area asc, id asc` sobre el bbox de `mx_municipalities` (#194) vivía **triplicado** en `ads_for_zone`, `resolve_ad_zone` y `place_at_point` — tres copias que solo coincidían por disciplina. Ahora las tres delegan en `private.municipality_at_point(lat, lng)` (secdef, EXECUTE revocado a clientes) y la suite 86 ancla que ninguna vuelva a mencionar `mx_municipalities`: servir, cobrar y buscar resuelven el mismo municipio **por construcción**.
 - **#214**: `record-ad-impressions` ya no confía en el reloj del cliente: `normalize_shown_at` deja pasar hasta 5 min de adelanto (→ `now`), descarta más de 5 min de futuro y más de 90 días de pasado (la retención de `purge_ad_impressions`). Rechazar la fila, no la petición. Deuda derivada: **#236** (`Date.parse` acepta formas que `timestamptz` rechaza). ⚠️ EF **sin desplegar** todavía (comando en la bitácora de 214).
+
+
+## El rollup se vigila solo (#215/#216, 2026-09-02)
+
+- **#215**: `public.check_rollup_health()` diaria (pg_cron 0 10 UTC, tras el rollup 0 8 y la purga 0 9) avisa a los admins (`admin_rollup_unhealthy`) si el job lleva 3 corridas sin `succeeded` o si un mes con crudo ya salió de la ventana sin consolidar. La «tolerancia ~90−len(M) días desde el fin de M» de 201.1 es algebraicamente el corte `M < now()−90d`: se reusa la constante 90 (cuarto consumidor: purga, rollup, métricas, monitor), no una cifra nueva. Desplegada 2026-09-02; hoy no puede disparar (rollup en `succeeded`, `ad_impressions` vacía en producción).
+- **#216**: la suite 69 gana una segunda agencia con un **mes de frontera** real y rangos **interiores** a un mes congelado; las 3 mutaciones que sobrevivían al RED de 201.2 mueren. Regla: una mutación de frontera solo muere con un fixture que la CRUCE (mismo hallazgo que el guardian repitió en la 92 con la banda 60–90 días).
