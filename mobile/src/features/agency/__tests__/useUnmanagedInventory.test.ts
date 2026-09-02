@@ -7,7 +7,7 @@
  * miembro suspendido/removido) para decidir si reasignarlas.
  *
  * SUT: useUnmanagedInventory(agencyId: string | null, user_ids: string[])
- *        → { counts: Record<string, number>, loading: boolean, error: string | null }
+ *        → { counts: Record<string, number>, loading: boolean, error: string | null, refetch: () => void }
  *
  * Query (una sola, agrupada en cliente — contrato §2):
  *   from('properties').select('owner_user_id')
@@ -19,12 +19,13 @@
  * Guardas: no ejecuta la query si agencyId es null o user_ids está vacío
  * (evita un .in([]) inútil y una llamada de red sin filtros útiles).
  *
- * Contrato de dependencia (documentado en el hook): `user_ids` debe ser una
- * referencia EstABLE que el caller solo recrea cuando quiere forzar un
- * refetch (p.ej. tras un reassign exitoso, con useMemo sobre la lista de
- * miembros recién recargada) — el hook compara por referencia, no por
- * contenido, para no reinventar una comparación profunda innecesaria
- * (ponytail).
+ * 🔴 Contrato de dependencia: `user_ids` se compara por CONTENIDO
+ * (`.join('|')`), no por referencia — un caller que pase un literal `[...]`
+ * inline en cada render (como este mismo archivo de test) NO debe disparar
+ * un loop de refetch por simple cambio de identidad del arreglo. Para forzar
+ * un refresh real (el conteo cambió pero el conjunto de ids no, típicamente
+ * tras un reassign exitoso) se expone `refetch()` — mismo patrón que
+ * useAdminRequestsQueues (refetch_tick).
  *
  * EDGE CASES:
  * - (EC-1) agencyId_null_no_ejecuta_query_counts_vacio
@@ -32,11 +33,11 @@
  * - (EC-3) camino_feliz_agrupa_conteos_por_owner_user_id
  * - (EC-4) error_de_query_counts_vacio_error_poblado_sin_crash
  * - (EC-5) query_usa_los_filtros_exactos_agency_id_in_owner_user_id_deleted_at
- * - (EC-6) misma_referencia_de_user_ids_no_reejecuta_la_query
- * - (EC-7) nueva_referencia_de_user_ids_mismo_contenido_SI_reejecuta_la_query
+ * - (EC-6) nueva_referencia_mismo_contenido_de_user_ids_NO_reejecuta_la_query
+ * - (EC-7) refetch_fuerza_una_nueva_query_aunque_agencyId_y_user_ids_no_cambien
  */
 
-import { renderHook } from '@testing-library/react-native';
+import { act, renderHook } from '@testing-library/react-native';
 
 const mock_supabase_holder: { client: ReturnType<typeof make_supabase_mock> } = {
   client: null as never,
@@ -71,6 +72,7 @@ function make_supabase_mock(
   const mock_from = jest.fn().mockReturnValue({ select: mock_select });
 
   return {
+    from: mock_from,
     _mock_from: mock_from,
     _mock_select: mock_select,
     _mock_eq_agency: mock_eq_agency,
@@ -163,21 +165,7 @@ describe('useUnmanagedInventory', () => {
     );
   });
 
-  it('(EC-6) misma_referencia_de_user_ids_no_reejecuta_la_query', async () => {
-    const stable_ids = [SUSPENDED_A];
-    const { rerender } = await renderHook(
-      ({ ids }: { ids: string[] }) => useUnmanagedInventory(TEST_AGENCY_ID, ids),
-      { initialProps: { ids: stable_ids } }
-    );
-
-    expect(mock_supabase_holder.client._mock_from).toHaveBeenCalledTimes(1);
-
-    await rerender({ ids: stable_ids });
-
-    expect(mock_supabase_holder.client._mock_from).toHaveBeenCalledTimes(1);
-  });
-
-  it('(EC-7) nueva_referencia_de_user_ids_mismo_contenido_SI_reejecuta_la_query', async () => {
+  it('(EC-6) nueva_referencia_mismo_contenido_de_user_ids_NO_reejecuta_la_query', async () => {
     const { rerender } = await renderHook(
       ({ ids }: { ids: string[] }) => useUnmanagedInventory(TEST_AGENCY_ID, ids),
       { initialProps: { ids: [SUSPENDED_A] } }
@@ -185,10 +173,24 @@ describe('useUnmanagedInventory', () => {
 
     expect(mock_supabase_holder.client._mock_from).toHaveBeenCalledTimes(1);
 
-    // Nueva referencia, mismo contenido — el contrato dice: SÍ refetch
-    // (el caller la crea de nuevo justamente para forzar un refresh, p.ej.
-    // tras un reassign exitoso).
+    // Nueva referencia (arreglo distinto), MISMO contenido — un caller que
+    // no memoiza (patrón común, p.ej. este mismo test) no debe disparar un
+    // loop de refetch.
     await rerender({ ids: [SUSPENDED_A] });
+
+    expect(mock_supabase_holder.client._mock_from).toHaveBeenCalledTimes(1);
+  });
+
+  it('(EC-7) refetch_fuerza_una_nueva_query_aunque_agencyId_y_user_ids_no_cambien', async () => {
+    const { result } = await renderHook(() =>
+      useUnmanagedInventory(TEST_AGENCY_ID, [SUSPENDED_A])
+    );
+
+    expect(mock_supabase_holder.client._mock_from).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      result.current.refetch();
+    });
 
     expect(mock_supabase_holder.client._mock_from).toHaveBeenCalledTimes(2);
   });

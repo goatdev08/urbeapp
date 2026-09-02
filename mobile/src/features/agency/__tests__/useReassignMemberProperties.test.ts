@@ -102,16 +102,13 @@ describe('useReassignMemberProperties', () => {
   it('EC-3: count=0 sigue siendo ok:true — 0 NO es error', async () => {
     const { client } = make_client({ data: 0, error: null });
     const on_success = jest.fn();
-    const { outcome } = await (async () => {
-      const { result } = await renderHook(() =>
-        useReassignMemberProperties({ supabase: client, onSuccess: on_success })
-      );
-      let outcome: { ok: boolean; count: number | null; error: string | null } | undefined;
-      await act(async () => {
-        outcome = await result.current.submit(P_AGENCY_ID, P_FROM_USER_ID, P_TO_USER_ID);
-      });
-      return { outcome };
-    })();
+    const { result } = await renderHook(() =>
+      useReassignMemberProperties({ supabase: client, onSuccess: on_success })
+    );
+    let outcome: { ok: boolean; count: number | null; error: string | null } | undefined;
+    await act(async () => {
+      outcome = await result.current.submit(P_AGENCY_ID, P_FROM_USER_ID, P_TO_USER_ID);
+    });
     expect(outcome).toEqual({ ok: true, count: 0, error: null });
     expect(on_success).toHaveBeenCalledWith(0);
   });
