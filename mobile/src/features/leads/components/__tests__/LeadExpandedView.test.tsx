@@ -160,4 +160,25 @@ describe('LeadExpandedView — desplegable de estados (#117)', () => {
     // Sin abrir el desplegable: si el error viviera dentro, aquí sería invisible.
     expect(screen.getByText('No se pudo actualizar el estado.')).toBeTruthy();
   });
+
+  // ── Suspensión = congela la ACTUACIÓN (#202, regla 2) ────────────────────
+  // El contacto del buscador se OCULTA mientras la membresía del agente no
+  // esté activa. La máscara vive en la BD (RLS): el embed users!leads_user_id_fkey
+  // resuelve phone=null cuando private.can_view_user_as_lead_searcher deniega
+  // la fila. Esta vista YA deshabilitaba el botón con phone===null (fail-soft
+  // preexistente) — este test solo fija ese contrato para que no se pierda.
+
+  it('(#202) phone===null (membresía suspendida) deshabilita el botón de WhatsApp', async () => {
+    await renderView({ lead: { ...LEAD, phone: null } });
+
+    const wa_button = screen.getByLabelText('Contactar por WhatsApp');
+    expect(wa_button.props.accessibilityState?.disabled).toBe(true);
+  });
+
+  it('(#202) phone presente (membresía activa) mantiene el botón de WhatsApp habilitado [no-regresión]', async () => {
+    await renderView();
+
+    const wa_button = screen.getByLabelText('Contactar por WhatsApp');
+    expect(wa_button.props.accessibilityState?.disabled).toBeFalsy();
+  });
 });

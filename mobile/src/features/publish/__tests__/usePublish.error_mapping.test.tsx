@@ -59,6 +59,11 @@
  * ### Catálogo real — edit mode (edit-property)
  * - (EC-EM-7) edit_propiedad_no_encontrada_mensaje_propio
  * - (EC-EM-8) edit_no_autorizado_mensaje_propio
+ * - (EC-EM-19) edit_agencia_suspendida_mensaje_propio (#202: edit-property YA
+ *   emite AGENCY_MEMBERSHIP_SUSPENDED — deja de ser exclusivo de create mode)
+ * - (EC-EM-20) ancla_literal_exacto_agencia_suspendida_neutro (guardián 202.3:
+ *   el literal es NEUTRO — "gestionar", no "editar" — porque usePropertyActions.ts
+ *   reusa el MISMO mapa para pausar/cerrar, no solo para editar)
  *
  * ### Ramas no obvias — fail-soft de extract_error_code
  * - (EC-EM-9) create_codigo_desconocido_mensaje_generico_no_filtra_codigo_crudo (edge case 3)
@@ -78,6 +83,7 @@ import { FunctionsHttpError, FunctionsFetchError } from '@supabase/supabase-js';
 
 import { PublishFormProvider, usePublishForm } from '../store/PublishFormContext';
 import { usePublish } from '../hooks/usePublish';
+import { PUBLISH_EDIT_EF_ERROR_MESSAGES } from '../publish_error_messages';
 
 // ---------------------------------------------------------------------------
 // Constantes de test
@@ -344,6 +350,28 @@ describe('usePublish — traduce el error_code tipado (200.1, RED)', () => {
     expect(result.current.sut.error).not.toBe(not_found.result.current.sut.error);
   });
 
+  it('(EC-EM-19) edit_agencia_suspendida_mensaje_propio: AGENCY_MEMBERSHIP_SUSPENDED (#202) → mensaje habla de suspensión, no de infraestructura', async () => {
+    const { result } = await setup_edit({
+      data: null,
+      error: make_ef_http_error('AGENCY_MEMBERSHIP_SUSPENDED'),
+    });
+
+    await act(async () => {
+      await result.current.sut.publish();
+    });
+
+    expect(result.current.sut.status).toBe('error');
+    expect(result.current.sut.error).not.toBeNull();
+    expect(result.current.sut.error).toMatch(/suspend|pausó/i);
+    expect(result.current.sut.error).not.toBe(RAW_INFRA_MESSAGE);
+  });
+
+  it('(EC-EM-20) ancla_literal_exacto_agencia_suspendida_neutro: el literal del mapa de edit es EXACTAMENTE el aprobado (#202.3, guardián) — "gestionar", no "editar", porque también se ve al pausar/cerrar', () => {
+    expect(PUBLISH_EDIT_EF_ERROR_MESSAGES.AGENCY_MEMBERSHIP_SUSPENDED).toBe(
+      'Tu inmobiliaria pausó tu cuenta: no puedes gestionar publicaciones a su nombre. Habla con el administrador de tu inmobiliaria.',
+    );
+  });
+
   // ── Ramas no obvias — fail-soft de extract_error_code ──────────────────
 
   it('(EC-EM-9) create_codigo_desconocido_mensaje_generico_no_filtra_codigo_crudo: código fuera del catálogo → mensaje genérico, el código NUNCA aparece en pantalla', async () => {
@@ -481,6 +509,7 @@ describe('usePublish — traduce el error_code tipado (200.1, RED)', () => {
       'UNAUTHENTICATED',
       'PROPERTY_NOT_FOUND',
       'UNAUTHORIZED_EDITOR',
+      'AGENCY_MEMBERSHIP_SUSPENDED', // #202: edit-property ya lo emite (suspensión congela editar)
       'DB_ERROR',
     ];
 
