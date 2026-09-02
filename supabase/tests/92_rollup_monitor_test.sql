@@ -126,10 +126,19 @@
 -- STALE_NEG2: crudo de un mes AÚN ELEGIBLE sin fila consolidada → 0 avisos
 --   (el rollup todavía puede consolidarlo; alertar sería un falso positivo
 --   diario).
+-- STALE_NEG3 + ANCHOR2 (cierre del guardian): un mes en la BANDA 60-90 días
+--   (inicio DENTRO de los 90, FUERA de los 60) con crudo y sin consolidar → 0
+--   avisos. Ancla la CONSTANTE de retención en sí: con cualquier valor menor
+--   que 90 este mes se daría por congelado y alertaría de más.
+-- RUN1 / RUN_ALL (cierre del guardian): ninguna de las 11 corridas del
+--   monitor lanza una excepción — en particular las SEGUNDAS (fail_again,
+--   stale_again). Sin el `on conflict ... do nothing` el INSERT repetido
+--   viola el índice ancla y revienta, y DEDUPE1/DEDUPE2 NO lo notarían: la
+--   subtransacción revierte y el conteo sigue en 1.
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(35);
+select plan(40);
 
 create or replace function pg_temp.act_as(p_uid uuid, p_role text default 'authenticated')
 returns void language plpgsql as $$
@@ -223,7 +232,15 @@ select
   (date_trunc('month', now()) - interval '5 months')::date              as stale_month,
   date_trunc('month', now()) - interval '5 months' + interval '5 days'  as stale_ts,
   date_trunc('month', now())::date                                      as current_month,
-  date_trunc('month', now()) + interval '1 day'                         as current_ts;
+  date_trunc('month', now()) + interval '1 day'                         as current_ts,
+  -- Mes en la BANDA 60-90 días: su INICIO está DENTRO de los 90 (elegible, no
+  -- debe alertar) pero FUERA de los 60 (con la constante mutada a 60 sí
+  -- alertaría). date_trunc('month', now() - 60 días) siempre cae en esa banda:
+  -- por definición es <= now()-60d, y está a lo sumo 30 días antes (el mayor
+  -- desplazamiento posible dentro de un mes de 31 días), o sea >= now()-90d.
+  -- Robusto a cualquier día de hoy, sin depender de un offset fijo en días.
+  date_trunc('month', now() - interval '60 days')::date                 as band_month,
+  date_trunc('month', now() - interval '60 days') + interval '5 days'   as band_ts;
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- 1) Firma pública — catálogo EXACTO + privilegios estáticos.
@@ -465,6 +482,43 @@ insert into public.ad_impressions (id, ad_id, agency_id, user_id, session_id, mu
 select pg_temp.run_sut_92('stale_neg2');
 select is(pg_temp.count_alerts_92('00000000-0000-0000-0000-000000920001'), 0,
   'STALE_NEG2_crudo_de_un_mes_AUN_ELEGIBLE_sin_consolidar_no_alerta');
+
+-- STALE_NEG3: mes en la BANDA 60-90 días con crudo y sin consolidar -> 0
+-- avisos. Ancla la CONSTANTE de retención: con 90 este mes todavía es
+-- elegible (el rollup aún lo va a consolidar); con cualquier valor menor
+-- (p.ej. 60) el SUT lo daría por congelado y alertaría de más -- un falso
+-- positivo diario que enseñaría a los admins a ignorar la alerta.
+delete from public.notifications where type = 'admin_rollup_unhealthy';
+delete from public.ad_impressions where agency_id = '00000000-0000-0000-0000-000000920101';
+insert into public.ad_impressions (id, ad_id, agency_id, user_id, session_id, municipality_id, neighborhood_id, shown_at, watched_ms, viewed, completed, cta_tapped_at) values
+  (gen_random_uuid(), '00000000-0000-0000-0000-000000920301', '00000000-0000-0000-0000-000000920101', '00000000-0000-0000-0000-000000920973', gen_random_uuid(), '92003', null, (select band_ts from test_months_92), 4000, true, false, null);
+
+select is(
+  (select (band_month::timestamptz >= now() - interval '90 days')
+      and (band_month::timestamptz <  now() - interval '60 days')
+     from test_months_92),
+  true,
+  'ANCHOR2_el_mes_de_la_banda_esta_DENTRO_de_los_90_dias_y_FUERA_de_los_60'
+);
+
+select pg_temp.run_sut_92('stale_neg3');
+select is(pg_temp.count_alerts_92('00000000-0000-0000-0000-000000920001'), 0,
+  'STALE_NEG3_un_mes_a_mas_de_60_pero_menos_de_90_dias_sigue_siendo_elegible_y_no_alerta');
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 7) Ninguna de las corridas del monitor lanzó una excepción. Cubre los pasos
+--    que NO se asertan uno por uno -- en particular las SEGUNDAS corridas
+--    (fail_again / stale_again): sin el `on conflict ... do nothing`, el
+--    INSERT repetido viola el índice ancla y revienta, y los conteos de
+--    DEDUPE1/DEDUPE2 seguirían dando 1 porque la subtransacción revierte.
+-- ════════════════════════════════════════════════════════════════════════════
+
+select is((select ok from result_run_92 where step = 'fail_again'), true,
+  'RUN1_la_segunda_corrida_con_el_ancla_ya_ocupada_no_lanza_es_un_no_op_no_un_error');
+select is((select bool_and(ok) from result_run_92), true,
+  'RUN_ALL_ninguna_corrida_del_monitor_lanzo_excepcion');
+select is((select count(*)::int from result_run_92), 11,
+  'RUN_ALL_anchor_se_ejercitaron_las_11_corridas_esperadas_del_monitor');
 
 select * from finish();
 rollback;
