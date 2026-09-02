@@ -59,6 +59,8 @@
  * ### Catálogo real — edit mode (edit-property)
  * - (EC-EM-7) edit_propiedad_no_encontrada_mensaje_propio
  * - (EC-EM-8) edit_no_autorizado_mensaje_propio
+ * - (EC-EM-19) edit_agencia_suspendida_mensaje_propio (#202: edit-property YA
+ *   emite AGENCY_MEMBERSHIP_SUSPENDED — deja de ser exclusivo de create mode)
  *
  * ### Ramas no obvias — fail-soft de extract_error_code
  * - (EC-EM-9) create_codigo_desconocido_mensaje_generico_no_filtra_codigo_crudo (edge case 3)
@@ -344,6 +346,22 @@ describe('usePublish — traduce el error_code tipado (200.1, RED)', () => {
     expect(result.current.sut.error).not.toBe(not_found.result.current.sut.error);
   });
 
+  it('(EC-EM-19) edit_agencia_suspendida_mensaje_propio: AGENCY_MEMBERSHIP_SUSPENDED (#202) → mensaje habla de suspensión, no de infraestructura', async () => {
+    const { result } = await setup_edit({
+      data: null,
+      error: make_ef_http_error('AGENCY_MEMBERSHIP_SUSPENDED'),
+    });
+
+    await act(async () => {
+      await result.current.sut.publish();
+    });
+
+    expect(result.current.sut.status).toBe('error');
+    expect(result.current.sut.error).not.toBeNull();
+    expect(result.current.sut.error).toMatch(/suspend|pausó/i);
+    expect(result.current.sut.error).not.toBe(RAW_INFRA_MESSAGE);
+  });
+
   // ── Ramas no obvias — fail-soft de extract_error_code ──────────────────
 
   it('(EC-EM-9) create_codigo_desconocido_mensaje_generico_no_filtra_codigo_crudo: código fuera del catálogo → mensaje genérico, el código NUNCA aparece en pantalla', async () => {
@@ -481,6 +499,7 @@ describe('usePublish — traduce el error_code tipado (200.1, RED)', () => {
       'UNAUTHENTICATED',
       'PROPERTY_NOT_FOUND',
       'UNAUTHORIZED_EDITOR',
+      'AGENCY_MEMBERSHIP_SUSPENDED', // #202: edit-property ya lo emite (suspensión congela editar)
       'DB_ERROR',
     ];
 
