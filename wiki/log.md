@@ -2,6 +2,14 @@
 
 Append-only. Prefijo: `## [YYYY-MM-DD] tipo | título`.
 
+## [2026-09-02] fix | #240 — el motivo llegaba y aun así no se leía
+
+Media hora después de desplegar #237, Abraham probándolo en el teléfono: «aún no manda mensaje de la razón». La base lo escribía perfecto, lo verifiqué en producción. Lo que fallaba era la tarjeta: el motivo iba al final de una frase que abre con la dirección completa, con el cuerpo clampado a dos líneas, así que la elipsis se lo comía. Después vio el motivo y pidió lo que de verdad hacía falta: que se entienda de un vistazo.
+
+Ahora tiene bloque propio, con etiqueta, regla en arcilla y fondo tinte. Dos decisiones que se quedan: el texto se toma de `data.rejection_reason` y no del body, porque es el dato estructurado y porque así las notificaciones viejas también lo ganan; y el color es arcilla, no rojo, porque el título ya dio la mala noticia y el motivo es la parte que dice qué corregir.
+
+La lección es la que más se repite este mes: **«el dato llega» y «la persona lo lee» son afirmaciones distintas, y la segunda no se demuestra con pgTAP**. Dos tareas seguidas (#237 y #240) sobre el mismo motivo de rechazo, y las dos salieron de tocar la app, no de leer código.
+
 ## [2026-09-02] fix | #237 — el motivo del rechazo por fin llega a la persona, en los cuatro espejos
 
 Salió de tocar la app, no de leer el código. En el recorrido, Abraham rechazó una promoción escribiendo «Prueba»; el motivo quedó guardado en la columna y en `data.rejection_reason`, y lo que le llegó al anunciante fue «Tu anuncio "…" fue rechazado.», a secas. `NotificationCard` pinta solo `title` y `body`, así que un motivo que vive únicamente en `data` es un motivo que nadie lee. #234 lo había arreglado para el espejo de inmobiliaria y dejó anotados los otros tres; ahora los cuatro comparten la misma forma.
