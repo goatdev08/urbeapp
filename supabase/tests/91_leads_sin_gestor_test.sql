@@ -99,6 +99,26 @@ exception when others then
   return sqlstate || '|' || sqlerrm;
 end $$;
 
+-- 🔴 GOTCHA de plancache (descubierto en el GREEN de 203.1, 2026-09-04): el
+-- permiso EXECUTE de una función se comprueba al PLANIFICAR, no al ejecutar, y
+-- plpgsql cachea el plan de la llamada por sesión. Si el chequeo de `anon`
+-- reusara pg_temp.reassign() DESPUÉS de que un authenticated ya la llamó con
+-- éxito, el plan cacheado se reusa, el ACL no se vuelve a mirar y anon
+-- "consigue" ejecutar la RPC: el assert pasaría por accidente y daría por buena
+-- una RPC abierta al público. Por eso anon entra por su PROPIO helper, cuyo
+-- plan se construye por primera vez bajo el rol anon. NO lo fusiones con
+-- pg_temp.reassign ni muevas E1 debajo de otra llamada suya.
+-- (La suite 88 no lo nota solo porque su caso anon es la PRIMERA invocación.)
+create or replace function pg_temp.reassign_anon(p_agency_id uuid, p_from uuid, p_to uuid)
+returns text language plpgsql as $$
+declare v_n integer;
+begin
+  v_n := public.reassign_member_properties_atomic(p_agency_id, p_from, p_to);
+  return 'ok|' || v_n::text;
+exception when others then
+  return sqlstate || '|' || sqlerrm;
+end $$;
+
 create temp table res_91 (k text primary key, v text);
 grant insert, select, update on res_91 to public;
 
@@ -606,7 +626,7 @@ select is(
 -- ════════════════════════════════════════════════════════════════════════════
 
 select pg_temp.act_as('00000000-0000-0000-0000-000000020301', 'anon');
-insert into res_91 values ('E1', pg_temp.reassign(
+insert into res_91 values ('E1', pg_temp.reassign_anon(
   '00000000-0000-0000-0000-000000020310',
   '00000000-0000-0000-0000-000000020308',
   '00000000-0000-0000-0000-000000020305'));
