@@ -52,7 +52,7 @@
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(17);
+select plan(22);
 
 -- Fixtures — prefijo '00000000-0000-0000-0000-000000093XXX'.
 --   ADMIN(093001)   admin de plataforma (resuelve todo).
@@ -79,8 +79,8 @@ insert into public.agency_members (agency_id, user_id, member_role, status) valu
   ('00000000-0000-0000-0000-000000093201', '00000000-0000-0000-0000-000000093002', 'owner', 'active'),
   ('00000000-0000-0000-0000-000000093201', '00000000-0000-0000-0000-000000093003', 'agent', 'active');
 
--- Siete propiedades: tres sostienen anuncios (una promo por propiedad, por el
--- índice de una sola promo abierta) y cuatro sostienen revisiones.
+-- Ocho propiedades: tres sostienen anuncios (una promo por propiedad, por el
+-- índice de una sola promo abierta) y cinco sostienen revisiones.
 insert into public.properties
   (id, owner_user_id, agency_id, property_type, operation_type, address, location, price, status)
 select
@@ -91,7 +91,7 @@ select
   'Calle 93 número ' || i,
   extensions.ST_SetSRID(extensions.ST_Point(-103.35, 20.67), 4326)::extensions.geography,
   10000 + i, 'active'
-from generate_series(1, 7) as i;
+from generate_series(1, 8) as i;
 
 -- Tres anuncios de tipo PROMOCIÓN (creative_id null, sin CTA), en revisión.
 insert into public.ads
@@ -107,7 +107,7 @@ values
    '00000000-0000-0000-0000-000000093103', null, 'Depa 93 C', 'pending_review',
    now(), now() + interval '30 days', '00000000-0000-0000-0000-000000093003');
 
--- Cuatro revisiones pendientes, una por caso.
+-- Cinco revisiones pendientes, una por caso.
 insert into public.property_revisions (id, property_id, status, changed_fields, submitted_by) values
   ('00000000-0000-0000-0000-000000093401', '00000000-0000-0000-0000-000000093104', 'pending',
    '{"price": 11111}'::jsonb, '00000000-0000-0000-0000-000000093003'),
@@ -116,7 +116,9 @@ insert into public.property_revisions (id, property_id, status, changed_fields, 
   ('00000000-0000-0000-0000-000000093403', '00000000-0000-0000-0000-000000093106', 'pending',
    '{"price": 33333}'::jsonb, '00000000-0000-0000-0000-000000093003'),
   ('00000000-0000-0000-0000-000000093404', '00000000-0000-0000-0000-000000093107', 'pending',
-   '{"price": 44444}'::jsonb, '00000000-0000-0000-0000-000000093003');
+   '{"price": 44444}'::jsonb, '00000000-0000-0000-0000-000000093003'),
+  ('00000000-0000-0000-0000-000000093405', '00000000-0000-0000-0000-000000093108', 'pending',
+   '{"price": 55555}'::jsonb, '00000000-0000-0000-0000-000000093003');
 
 insert into public.agent_applications (id, user_id, application_type, agency_id, status) values
   ('00000000-0000-0000-0000-000000093501', '00000000-0000-0000-0000-000000093004', 'independent', null, 'pending'),
@@ -265,6 +267,22 @@ select is(
   'PR4_motivo_en_blanco_deja_el_body_byte_por_byte_como_hoy'
 );
 
+select is(
+  pg_temp.mirror_reason('property_revision_rejected', '00000000-0000-0000-0000-000000093106'),
+  null,
+  'PR4b_motivo_en_blanco_tampoco_se_guarda_como_dato'
+);
+
+-- D-CRUDO: el guard normaliza lo que se COMUNICA, nunca lo que se PERSISTE. La
+-- columna guarda lo que el admin escribió: es registro de lo ocurrido, no un
+-- mensaje, y normalizarlo ahí sería reescribir la evidencia.
+select is(
+  (select rejection_reason from public.property_revisions
+    where id = '00000000-0000-0000-0000-000000093403'),
+  E' \t ',
+  'PR7_la_revision_guarda_el_motivo_crudo_sin_normalizar'
+);
+
 select public.moderate_property_atomic(
   '00000000-0000-0000-0000-000000093001', '00000000-0000-0000-0000-000000093107',
   'approve', '{}'::jsonb, '{}'::jsonb, null, null, null,
@@ -274,6 +292,20 @@ select is(
   pg_temp.mirror_body('property_revision_approved', '00000000-0000-0000-0000-000000093107'),
   'Tu propiedad en "Calle 93 número 7" fue aprobada y ya está activa.',
   'PR5_aprobar_no_toca_el_body'
+);
+
+-- D-APROBAR dice «aunque el llamador mande uno», y aquí SÍ es alcanzable: a
+-- diferencia de ads (donde ads_rejection_reason_matches_status lo hace
+-- imposible), property_revisions no tiene CHECK que ate motivo y estado.
+select public.moderate_property_atomic(
+  '00000000-0000-0000-0000-000000093001', '00000000-0000-0000-0000-000000093108',
+  'approve', '{}'::jsonb, '{}'::jsonb, null, null, null,
+  '00000000-0000-0000-0000-000000093405', 'approved', 'motivo colado en una aprobación');
+
+select is(
+  pg_temp.mirror_body('property_revision_approved', '00000000-0000-0000-0000-000000093108'),
+  'Tu propiedad en "Calle 93 número 8" fue aprobada y ya está activa.',
+  'PR6_aprobar_con_motivo_en_la_mano_sigue_sin_llevarlo'
 );
 
 -- ════════════════════════════════════════════════════════════════════════════
@@ -311,6 +343,20 @@ select is(
   pg_temp.mirror_body('agent_application_rejected', '00000000-0000-0000-0000-000000093502'),
   'Tu solicitud de agente fue rechazada.',
   'AA3_motivo_en_blanco_deja_el_body_byte_por_byte_como_hoy'
+);
+
+select is(
+  pg_temp.mirror_reason('agent_application_rejected', '00000000-0000-0000-0000-000000093502'),
+  null,
+  'AA3b_motivo_en_blanco_tampoco_se_guarda_como_dato'
+);
+
+select is(
+  (select reason from public.admin_actions
+    where entity_id = '00000000-0000-0000-0000-000000093502'
+      and action_type = 'reject_agent_application'),
+  E'\n\t',
+  'AA5_la_auditoria_guarda_el_motivo_crudo_sin_normalizar'
 );
 
 select pg_temp.act_as('00000000-0000-0000-0000-000000093001'); -- ADMIN
