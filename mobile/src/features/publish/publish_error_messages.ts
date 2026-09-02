@@ -23,7 +23,9 @@
  * publicaciones (edit-property/handler.ts, paso 7), y update-property-status
  * (pause/unpause/close) reusa el MISMO mensaje del mapa de edit — no hay un
  * tercer mapa para esa EF; `usePropertyActions.ts` importa
- * `map_publish_edit_ef_error` directamente para el caso suspendido.
+ * `map_publish_edit_ef_error` directamente para el caso suspendido. El
+ * literal es NEUTRO respecto de la acción ("gestionar", no "editar") a
+ * propósito: el mismo mensaje se ve al editar, pausar o cerrar.
  *
  * Colabora con extract_error_code (mobile/src/lib/supabase/edge-errors.ts).
  */
@@ -83,7 +85,7 @@ export const PUBLISH_EDIT_EF_ERROR_MESSAGES: Record<string, string> = {
   PROPERTY_NOT_FOUND: 'Esta propiedad ya no existe o fue eliminada.',
   UNAUTHORIZED_EDITOR: 'No tienes permiso para editar esta propiedad.',
   AGENCY_MEMBERSHIP_SUSPENDED:
-    'Tu inmobiliaria pausó tu cuenta: no puedes editar publicaciones a su nombre. Habla con el administrador de tu inmobiliaria.',
+    'Tu inmobiliaria pausó tu cuenta: no puedes gestionar publicaciones a su nombre. Habla con el administrador de tu inmobiliaria.',
   DB_ERROR: 'Error interno. Intenta de nuevo.',
 };
 

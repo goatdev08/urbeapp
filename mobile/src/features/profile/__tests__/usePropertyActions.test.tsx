@@ -861,6 +861,11 @@ describe('usePropertyActions', () => {
     expect(action_result!.ok).toBe(false);
     expect(action_result!.error).not.toBeNull();
     expect(action_result!.error).not.toBe(map_publish_edit_ef_error('AGENCY_MEMBERSHIP_SUSPENDED'));
+    // Positivo (guardián 202.3): no basta con "no es el mensaje de suspensión" —
+    // el mutante que cambia `if (code)` sobrevive a esa aserción sola. Aquí se
+    // fija el valor exacto que SÍ debe salir para un código no traducido (el
+    // camino previo, no-regresión): error.message tal cual, sin traducir.
+    expect(action_result!.error).toBe(RAW_INFRA_MESSAGE);
   });
 
 });
