@@ -1,7 +1,11 @@
 ---
 tipo: estado
-actualizado: 2026-09-01
+actualizado: 2026-09-02
 ---
+
+## Hoy (2026-09-02, noche) — lote 2: «Promocionar propiedad» y cuatro hardenings, backend en producción, OTA y smoke pendientes
+
+Cinco tareas cerradas con 6 agentes en paralelo + guardianes (PRs #121–#125): **#213** promocionar una propiedad (la promo ES el video de la publicación, badge «Anuncio», sin CTA, municipio heredado + 30 días, moderación en `/admin/ads`; gate = permiso de publicar, NO `can_advertise`), **#235** `private.municipality_at_point` (el desempate por menor área vivía triplicado), **#234** motivo de rechazo de inmobiliaria en el body del espejo, **#214** clamp de `shown_at` en `record-ad-impressions`, **#233** candados de los guardianes (mock sensible al binding, error de polígono visible, guard doble-submit). **Producción**: migraciones de #234, #235 y #213 aplicadas y sondeadas. **Pendiente con Abraham**: (1) `supabase functions deploy record-ad-impressions --project-ref mvpvqmyhrrkwbnpctpuq --import-map supabase/functions/deno.json --use-api`; (2) `cd mobile && pnpm ota "feat(213/233): promocionar propiedad + candados"` desde main; (3) smoke de promocionar en dispositivo → #213 sigue en `review`. Siguiente lote: #202 → #203/#204 (suspensión), luego #215/#216, y #222 (M5) como cierre conjunto.
 
 ## Hoy (2026-09-02) — lote multi-agente: admin M4 + búsqueda por dirección, desplegado
 

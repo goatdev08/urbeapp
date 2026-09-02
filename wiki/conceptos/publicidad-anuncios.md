@@ -23,6 +23,15 @@ codigo:
   - supabase/migrations/20260822000001_notify_ads_expiring_soon.sql
   - mobile/src/features/ads/
   - mobile/app/(protected)/ads/
+  - supabase/migrations/20260903300001_ads_property_id.sql
+  - supabase/migrations/20260903300002_promote_property_atomic.sql
+  - supabase/migrations/20260903300003_ads_for_zone_promos.sql
+  - supabase/migrations/20260903200001_municipality_at_point.sql
+  - supabase/tests/87_ads_property_id_test.sql
+  - supabase/tests/88_promote_property_atomic_test.sql
+  - supabase/tests/89_ads_for_zone_promos_test.sql
+  - mobile/src/features/ads/hooks/usePromoteProperty.ts
+  - supabase/functions/record-ad-impressions/types.ts
 actualizado: 2026-08-21
 ---
 
@@ -199,3 +208,19 @@ Incidente real: cambio de wifi durante el poll → excepción única del checker
 ## La 4ª capa del rango + pre-aprobación (#230, 2026-09-01)
 
 El CHECK de columna `ad_creatives_duration_seconds_check` seguía en 6–30 tras #228 → `mark_ready` 23514 → webhook 500 → creativo `uploading` eterno. Fix: migración `20260901000002` (10–120) + pgTAP 78 que ancla el CHECK a las constantes del webhook. **El rango vive en CUATRO capas**: cliente (`ads/lib/validation.ts`), mint (`maxDurationSeconds`), webhook (`AD_MIN/AD_MAX`) y el CHECK. Pre-aprobación: step1 deja continuar al 100% del binario (`on_minted` + `creative_ready` en el form); step5 resuelve la verdad con `wait_for_creative_ready` (`features/ads/lib/waitForCreativeReady.ts`) antes de la RPC.
+
+
+## Promocionar una propiedad = el «boost» (#213, 2026-09-02) — dos productos, dos gates
+
+Decisión de Abraham (exploración 040): la promoción **ES el video de la propiedad**. Sin creativo nuevo, sin CTA, sin selector de alcance, sin pago: municipio heredado de la propiedad + 30 días fijos, UN paso (Promocionar → confirmar → `pending_review`) y la misma cola de moderación de `/admin/ads`. Modelo Meta: **boost** (esto) vs **Ads Manager** (el display de #169). Por eso el gate NO es `can_advertise` — es el permiso de **publicar** de la organización (el predicado literal de la policy `properties_insert`: rol agent/admin + miembro). Reusar `org_can_advertise` aquí habría dejado la feature muerta para casi todas las organizaciones, que solo publican (HAPPY11/12 de la suite 88 promocionan desde una org con `can_advertise=false`).
+
+- **Esquema**: `ads` gana una segunda fuente de video, excluyente: `property_id` XOR `creative_id` (`ads_exactly_one_source`). El CTA sigue obligatorio **solo** para display (`ads_cta_required_for_display`). Una sola promo ABIERTA por propiedad (`ads_one_open_promo_per_property`, parcial en `pending_review/active/paused`; `expired/rejected` liberan el cupo) — el candado del doble tap vive en el índice, no en un `select if not exists`.
+- **RPC** `promote_property_atomic(p_property_id)`: el actor sale de `auth.uid()` y la organización de la propiedad (nada de actor viaja como parámetro). Cuatro causas (no existe / borrada / sin `agency_id` / ajena) → un solo `PROPERTY_NOT_FOUND` (anti-enumeración). Fuera de cobertura → `ZONE_UNRESOLVED` y NO se crea el ad: una promo nunca degrada a inventario nacional. `title = properties.address` (`properties` no tiene `title`).
+- **Feed**: `ads_for_zone` devuelve las 9 columnas de siempre + `property_id` al final (drop+create con grants re-otorgados; los builds instalados leen por nombre). Una promo se sirve **solo** si la propiedad sigue `active` no borrada y tiene video `ready` no borrado — el MISMO criterio con el que `mint-video-url` firma; el estado de la publicación manda sobre el del anuncio (pausarla la saca del feed aunque el ad siga `active`). El cliente parte el lote: display → `mint-ad-urls`, promo → `mint_videos` (la función del feed), cada mitad falla suave por separado.
+- **Cliente**: «Promocionar» en el menú de «Mis publicaciones» solo con `active` + `agency_id`; `AdFeedItem` rama promo = badge «Anuncio», sin CTA, tap → detalle y `cta_tap` (`// ponytail:` el contacto real ocurre en el detalle, que no conoce el ad). Admin y paneles del anunciante etiquetan «Promoción · <título>».
+- **Deploy**: 3 migraciones a producción el 2026-09-02 (sondas verdes); **OTA y smoke en dispositivo pendientes** (sesión conjunta #222). Orden obligatorio: migraciones → OTA (los hooks seleccionan `property_id`; sin la columna caen a error neutro 42703, no crashean).
+
+## Un solo desempate municipal (#235) y el clamp de `shown_at` (#214)
+
+- **#235**: el `order by area asc, id asc` sobre el bbox de `mx_municipalities` (#194) vivía **triplicado** en `ads_for_zone`, `resolve_ad_zone` y `place_at_point` — tres copias que solo coincidían por disciplina. Ahora las tres delegan en `private.municipality_at_point(lat, lng)` (secdef, EXECUTE revocado a clientes) y la suite 86 ancla que ninguna vuelva a mencionar `mx_municipalities`: servir, cobrar y buscar resuelven el mismo municipio **por construcción**.
+- **#214**: `record-ad-impressions` ya no confía en el reloj del cliente: `normalize_shown_at` deja pasar hasta 5 min de adelanto (→ `now`), descarta más de 5 min de futuro y más de 90 días de pasado (la retención de `purge_ad_impressions`). Rechazar la fila, no la petición. Deuda derivada: **#236** (`Date.parse` acepta formas que `timestamptz` rechaza). ⚠️ EF **sin desplegar** todavía (comando en la bitácora de 214).
