@@ -121,10 +121,31 @@
 --   sigue recibiendo 0 filas, nunca una excepción, con datos reales
 --   sembrados en AMBAS fuentes — el anti-IDOR de 62_* no se rompe al leer
 --   una segunda tabla.
+--
+-- ── #216 (hardening, origen: guardian de 201.2) — 12 asserts añadidos ──────
+-- El fixture original (agencia 690101) NO tenía ningún mes de FRONTERA (el
+-- que contiene el corte de 90 días) ni ningún rango con extremos INTERIORES
+-- a un mes, así que 3 de 7 mutaciones del guardian SOBREVIVÍAN al RED aunque
+-- el GREEN fuera correcto. Estos casos viven en una SEGUNDA agencia (690102),
+-- con su propio fixture, para no alterar ni un solo assert de los 27
+-- originales (todos filtran por 690101 y su aritmética queda intacta).
+-- BND1-3 (mata "frontera por FILA en vez de por MES"): mes de frontera con
+--   crudo remanente cuyo shown_at cae DESPUÉS del corte (a mitad de camino
+--   entre el corte y el fin de mes) + fila monthly del MISMO mes. La regla
+--   correcta (mes) ignora ese crudo por completo y devuelve el valor
+--   monthly puro; una frontera por fila lo dejaría pasar y lo SUMARÍA a la
+--   fila monthly del mismo mes -- doble conteo.
+-- RNG_INNER1-4 (mata "year_month tratado como PUNTO" y "sin filtro p_to en
+--   monthly"): rango [mes congelado + 14 días, mes congelado + 20 días], con
+--   AMBOS extremos interiores al mes. La regla correcta (traslape del
+--   intervalo [M, M+1mes)) SÍ incluye ese mes pese a que p_from es posterior
+--   a su inicio -- una comparación de punto (year_month >= p_from) lo
+--   excluiría. Y el mes de frontera, POSTERIOR a p_to, debe quedar fuera --
+--   quitar el filtro p_to lo colaría.
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(27);
+select plan(39);
 
 create or replace function pg_temp.act_as(p_uid uuid, p_role text default 'authenticated')
 returns void language plpgsql as $$
@@ -153,12 +174,32 @@ select
   date_trunc('month', now())                                           as rng_current_from,
   date_trunc('month', now()) + interval '20 days'                      as rng_current_to,
   date_trunc('month', now()) - interval '10 months'                    as rng_frozen_from,
-  date_trunc('month', now()) - interval '10 months' + interval '5 days' as rng_frozen_to;
+  date_trunc('month', now()) - interval '10 months' + interval '5 days' as rng_frozen_to,
+  -- ── #216 — mes de FRONTERA real (el que le faltaba al fixture) ──────────
+  -- bnd_month es el mes que CONTIENE el corte de retención (now() - 90 días):
+  -- su INICIO está fuera de la ventana (mes NO elegible) pero parte de sus
+  -- DÍAS están dentro. Es el único mes donde "frontera por fila" y "frontera
+  -- por mes" difieren, y por eso el único que puede matar esa mutación.
+  date_trunc('month', now() - interval '90 days')::date                as bnd_month,
+  -- Punto medio entre el corte y el fin del mes de frontera: SIEMPRE
+  -- estrictamente > corte y estrictamente < fin de mes, sin importar en qué
+  -- día del mes caiga el corte (robusto a fin de mes, lección de 201.1).
+  (now() - interval '90 days')
+    + ((date_trunc('month', now() - interval '90 days') + interval '1 month')
+       - (now() - interval '90 days')) / 2                             as bnd_stray_ts,
+  -- Extremos INTERIORES al mes congelado (día 15 y día 21): ni p_from ni
+  -- p_to coinciden con el inicio del mes -- lo que el fixture original nunca
+  -- ejercitó (rng_frozen_from caía exacto en el inicio de mes).
+  date_trunc('month', now()) - interval '10 months' + interval '14 days' as rng_inner_from,
+  date_trunc('month', now()) - interval '10 months' + interval '20 days' as rng_inner_to;
 grant select on test_months_69 to authenticated;
 
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-000000690001', 'owner_69@urbea.mx'),
-  ('00000000-0000-0000-0000-000000690002', 'stranger_69@urbea.mx');
+  ('00000000-0000-0000-0000-000000690002', 'stranger_69@urbea.mx'),
+  -- Owner PROPIO de la agencia de frontera (#216): agency_members_one_active_per_user
+  -- impide que 690001 sea miembro activo de dos agencias a la vez.
+  ('00000000-0000-0000-0000-000000690003', 'owner_frontera_69@urbea.mx');
 
 insert into public.agencies (id, name, slug, status, can_advertise, advertiser_category, created_by_user_id) values
   ('00000000-0000-0000-0000-000000690101', 'Agencia Mezcla 69', 'agencia-mezcla-69',
@@ -448,6 +489,140 @@ reset role;
 select is((select ok from result_idor_69), true, 'IDOR1a_stranger_no_lanza_excepcion_anti_idor');
 select is((select count(*)::int from result_idor_69_rows), 0,
   'IDOR1b_stranger_recibe_0_filas_pese_a_datos_reales_en_ambas_fuentes');
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 7) #216 — mes de FRONTERA y rangos con extremos INTERIORES al mes.
+--    SEGUNDA agencia (690102) con fixture propio: los 27 asserts de arriba
+--    filtran todos por 690101 y no se ven afectados por una sola fila de
+--    esta sección.
+-- ════════════════════════════════════════════════════════════════════════════
+
+insert into public.agencies (id, name, slug, status, can_advertise, advertiser_category, created_by_user_id) values
+  ('00000000-0000-0000-0000-000000690102', 'Agencia Frontera 69', 'agencia-frontera-69',
+   'active', true, 'otro', '00000000-0000-0000-0000-000000690003');
+
+insert into public.agency_members (agency_id, user_id, member_role, status) values
+  ('00000000-0000-0000-0000-000000690102', '00000000-0000-0000-0000-000000690003', 'owner', 'active');
+
+insert into public.ad_creatives (id, agency_id, status) values
+  ('00000000-0000-0000-0000-000000690202', '00000000-0000-0000-0000-000000690102', 'ready');
+
+insert into public.ads (id, agency_id, creative_id, title, cta_type, cta_value, status, starts_at, ends_at) values
+  ('00000000-0000-0000-0000-000000690302', '00000000-0000-0000-0000-000000690102',
+   '00000000-0000-0000-0000-000000690202', 'Ad Frontera 69', 'phone', '+5213300006902',
+   'active', '2025-12-01'::timestamptz, '2026-12-01'::timestamptz);
+
+-- ── Z5 (69105) — el MES DE FRONTERA. Crudo remanente con shown_at DESPUÉS
+--    del corte de 90 días (pero dentro de un mes cuyo INICIO ya salió de la
+--    ventana) + fila monthly consolidada del MISMO mes. 5 usuarios distintos
+--    a propósito: si la frontera se evaluara por fila, este crudo pasaría el
+--    k>=5, tendría fila propia y se SUMARÍA a la porción monthly de la misma
+--    zona (105:63:27 en vez de 100:60:25) -- exactamente el doble conteo.
+insert into public.ad_impressions (id, ad_id, agency_id, user_id, session_id, municipality_id, neighborhood_id, shown_at, watched_ms, viewed, completed, cta_tapped_at) values
+  (gen_random_uuid(), '00000000-0000-0000-0000-000000690302', '00000000-0000-0000-0000-000000690102', '00000000-0000-0000-0000-000000690961', gen_random_uuid(), '69105', null, (select bnd_stray_ts from test_months_69), 4000, true,  false, (select bnd_stray_ts from test_months_69)),
+  (gen_random_uuid(), '00000000-0000-0000-0000-000000690302', '00000000-0000-0000-0000-000000690102', '00000000-0000-0000-0000-000000690962', gen_random_uuid(), '69105', null, (select bnd_stray_ts + interval '1 minute' from test_months_69), 4000, true,  false, (select bnd_stray_ts + interval '1 minute' from test_months_69)),
+  (gen_random_uuid(), '00000000-0000-0000-0000-000000690302', '00000000-0000-0000-0000-000000690102', '00000000-0000-0000-0000-000000690963', gen_random_uuid(), '69105', null, (select bnd_stray_ts + interval '2 minutes' from test_months_69), 4000, true,  false, null),
+  (gen_random_uuid(), '00000000-0000-0000-0000-000000690302', '00000000-0000-0000-0000-000000690102', '00000000-0000-0000-0000-000000690964', gen_random_uuid(), '69105', null, (select bnd_stray_ts + interval '3 minutes' from test_months_69),  800, false, false, null),
+  (gen_random_uuid(), '00000000-0000-0000-0000-000000690302', '00000000-0000-0000-0000-000000690102', '00000000-0000-0000-0000-000000690965', gen_random_uuid(), '69105', null, (select bnd_stray_ts + interval '4 minutes' from test_months_69),  800, false, false, null);
+
+insert into public.ad_impressions_monthly (agency_id, ad_id, municipality_id, neighborhood_id, year_month, impressions, views, completions, cta_taps) values
+  ('00000000-0000-0000-0000-000000690102', '00000000-0000-0000-0000-000000690302', '69105', null, (select bnd_month from test_months_69), 100, 60, 40, 25);
+
+-- ── Z6 (69106) — mes congelado clásico (10 meses atrás), SOLO monthly. Es el
+--    mes que el rango de extremos interiores (RNG_INNER) debe alcanzar.
+insert into public.ad_impressions_monthly (agency_id, ad_id, municipality_id, neighborhood_id, year_month, impressions, views, completions, cta_taps) values
+  ('00000000-0000-0000-0000-000000690102', '00000000-0000-0000-0000-000000690302', '69106', null, (select month_frozen1 from test_months_69), 70, 40, 30, 18);
+
+-- ANCHOR3 — el fixture de frontera REALMENTE cruza el corte: el mes empieza
+-- fuera de la ventana de 90 días y el crudo remanente cae dentro de la
+-- ventana pero antes del fin de ese mes. Sin esta ancla, BND1-3 podrían
+-- "pasar" por un fixture mal construido en vez de por el contrato.
+select is(
+  (select (bnd_month::timestamptz < now() - interval '90 days')
+      and (bnd_stray_ts > now() - interval '90 days')
+      and (bnd_stray_ts < bnd_month + interval '1 month')
+     from test_months_69),
+  true,
+  'ANCHOR3_el_mes_de_frontera_empieza_fuera_de_los_90_dias_y_su_crudo_remanente_cae_dentro_del_corte'
+);
+select is(
+  (select count(*)::int from public.ad_impressions where agency_id = '00000000-0000-0000-0000-000000690102'),
+  5,
+  'ANCHOR4_agencia_frontera_tiene_exactamente_5_impresiones_crudas_en_el_mes_de_frontera'
+);
+select is(
+  (select count(*)::int from public.ad_impressions_monthly where agency_id = '00000000-0000-0000-0000-000000690102'),
+  2,
+  'ANCHOR5_agencia_frontera_tiene_exactamente_2_filas_monthly_frontera_y_congelado'
+);
+
+-- 7a) BND — llamada SIN rango sobre la agencia de frontera.
+create temp table result_bnd_69 (ok boolean, err_sqlstate text);
+create temp table result_bnd_69_rows (municipality_id text, neighborhood_id bigint, impressions integer, views integer, cta_taps integer);
+grant all on result_bnd_69, result_bnd_69_rows to public;
+select pg_temp.act_as('00000000-0000-0000-0000-000000690003', 'authenticated');
+do $$
+begin
+  insert into result_bnd_69_rows
+  select * from public.ad_metrics_for_agency('00000000-0000-0000-0000-000000690102'::uuid, null, null);
+  insert into result_bnd_69 values (true, null);
+exception when others then
+  insert into result_bnd_69 values (false, sqlstate);
+end $$;
+reset role;
+
+select is((select ok from result_bnd_69), true, 'BND0_ok_la_llamada_sobre_la_agencia_de_frontera_no_lanza_excepcion');
+select is(
+  (select impressions::text || ':' || views::text || ':' || cta_taps::text
+     from result_bnd_69_rows where municipality_id = '69105'),
+  '100:60:25',
+  'BND1_mes_de_frontera_el_crudo_posterior_al_corte_se_IGNORA_por_MES_resultado_EXACTO_monthly_nunca_105_63_27'
+);
+select is((select count(*)::int from result_bnd_69_rows), 2,
+  'BND2_rowcount_2_solo_las_dos_zonas_monthly_el_crudo_de_frontera_no_crea_ni_zona_ni_bucket');
+select is(
+  (select sum(impressions)::text || ':' || sum(views)::text || ':' || sum(cta_taps)::text
+     from result_bnd_69_rows),
+  '170:100:43',
+  'BND3_grandtotal_170_100_43_igual_a_la_suma_monthly_pura_100_mas_70_sin_rastro_del_crudo_de_frontera'
+);
+
+-- 7b) RNG_INNER — rango con AMBOS extremos interiores al mes congelado.
+create temp table result_inner_69 (ok boolean, err_sqlstate text);
+create temp table result_inner_69_rows (municipality_id text, neighborhood_id bigint, impressions integer, views integer, cta_taps integer);
+grant all on result_inner_69, result_inner_69_rows to public;
+select pg_temp.act_as('00000000-0000-0000-0000-000000690003', 'authenticated');
+do $$
+begin
+  insert into result_inner_69_rows
+  select * from public.ad_metrics_for_agency(
+    '00000000-0000-0000-0000-000000690102'::uuid,
+    (select rng_inner_from from test_months_69),
+    (select rng_inner_to   from test_months_69)
+  );
+  insert into result_inner_69 values (true, null);
+exception when others then
+  insert into result_inner_69 values (false, sqlstate);
+end $$;
+reset role;
+
+select is((select ok from result_inner_69), true, 'RNG_INNER0_ok_el_rango_interior_no_lanza_excepcion');
+select is(
+  (select impressions::text || ':' || views::text || ':' || cta_taps::text
+     from result_inner_69_rows where municipality_id = '69106'),
+  '70:40:18',
+  'RNG_INNER1_p_from_al_dia_15_SIGUE_incluyendo_el_mes_congelado_traslape_de_intervalo_no_comparacion_de_punto'
+);
+select is((select count(*)::int from result_inner_69_rows where municipality_id = '69105'), 0,
+  'RNG_INNER2_el_mes_de_frontera_POSTERIOR_a_p_to_queda_fuera_el_filtro_p_to_de_monthly_sigue_vivo');
+select is((select count(*)::int from result_inner_69_rows), 1,
+  'RNG_INNER3_rowcount_1_solo_el_mes_congelado_alcanzado_por_el_rango_interior');
+select is(
+  (select sum(impressions)::text || ':' || sum(views)::text || ':' || sum(cta_taps)::text
+     from result_inner_69_rows),
+  '70:40:18',
+  'RNG_INNER4_grandtotal_70_40_18_ni_el_mes_de_frontera_ni_ningun_crudo_se_cuelan_en_el_rango_interior'
+);
 
 select * from finish();
 rollback;
