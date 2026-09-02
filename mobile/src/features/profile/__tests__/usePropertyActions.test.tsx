@@ -68,9 +68,20 @@
  * - (EC-28) close_con_reason_sold_no_incluye_closed_reason_en_body
  * - (EC-29) close_con_reason_withdrawn_sigue_new_status_closed [no-regresión]
  * - (EC-30) close_con_reason_expired_sigue_new_status_closed [no-regresión]
+ *
+ * ### Suspensión = congela la ACTUACIÓN (#202) — pausar/cerrar bloqueados
+ * la EF update-property-status ahora puede devolver AGENCY_MEMBERSHIP_SUSPENDED
+ * (202.2) cuando el dueño tiene membresía de agencia no activa. El cliente
+ * debe traducirlo reusando el mapa de EDIT de publish_error_messages.ts (el
+ * mismo texto que ve el agente al intentar editar) en vez de fabricar un
+ * string nuevo — nunca el mensaje crudo de infraestructura.
+ * - (EC-31) change_status_con_membresia_suspendida_traduce_mensaje_de_agencia
+ * - (EC-32) close_con_membresia_suspendida_traduce_mensaje_de_agencia
+ * - (EC-33) codigo_desconocido_no_se_traduce_al_mensaje_de_suspension_no_regresion
  */
 
 import { renderHook, act } from '@testing-library/react-native';
+import { FunctionsHttpError } from '@supabase/supabase-js';
 
 // ---------------------------------------------------------------------------
 // Imports DESPUÉS de registrar mocks
@@ -78,6 +89,7 @@ import { renderHook, act } from '@testing-library/react-native';
 
 import { useAuth } from '@/features/auth/context';
 import { emitPropertyDeleted } from '@/lib/propertyEvents';
+import { map_publish_edit_ef_error } from '@/features/publish/publish_error_messages';
 import { usePropertyActions } from '../hooks/usePropertyActions';
 import type { ClosedReason } from '../hooks/usePropertyActions';
 
@@ -106,6 +118,19 @@ jest.mock('@/lib/propertyEvents', () => ({
 const TEST_USER_ID = 'usuario-agente-uuid-17';
 const TEST_PROPERTY_ID = 'propiedad-uuid-abc-999';
 const TEST_CLOSED_REASON: ClosedReason = 'rented';
+
+// Literal EXACTO de @supabase/functions-js — fuente independiente del SUT
+// (mismo patrón que useUpdateLeadStatus.test.ts / usePublish.error_mapping.test.tsx).
+const RAW_INFRA_MESSAGE = 'Edge Function returned a non-2xx status code';
+
+/** FunctionsHttpError REAL con body {error:{code,message}} — la EF real (update-property-status). */
+function make_ef_http_error(code: string): FunctionsHttpError {
+  return new FunctionsHttpError(
+    new Response(JSON.stringify({ error: { code, message: `mensaje interno EF: ${code}` } }), {
+      status: 403,
+    }),
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Helpers — cast tipado de mock
@@ -777,6 +802,65 @@ describe('usePropertyActions', () => {
     const call_body = mock_supabase._mock_invoke.mock.calls[0]![1] as { body: Record<string, unknown> };
     expect(call_body.body.new_status).toBe('closed');
     expect(call_body.body.closed_reason).toBe('expired');
+  });
+
+  // ── Suspensión = congela la ACTUACIÓN (#202) ─────────────────────────────
+
+  it('(EC-31) change_status_con_membresia_suspendida_traduce_mensaje_de_agencia: la EF devuelve AGENCY_MEMBERSHIP_SUSPENDED → error = map_publish_edit_ef_error(code), no el texto crudo de infraestructura', async () => {
+    const mock_supabase = make_mock_supabase({
+      invoke_result: { data: null, error: make_ef_http_error('AGENCY_MEMBERSHIP_SUSPENDED') },
+    });
+    const { result } = await renderHook(() =>
+      usePropertyActions({ supabase: mock_supabase as never })
+    );
+
+    let action_result: { ok: boolean; error: string | null } | undefined;
+    await act(async () => {
+      action_result = await result.current.pauseProperty({ property_id: TEST_PROPERTY_ID });
+    });
+
+    expect(action_result!.ok).toBe(false);
+    expect(action_result!.error).toBe(map_publish_edit_ef_error('AGENCY_MEMBERSHIP_SUSPENDED'));
+    expect(action_result!.error).not.toBe(RAW_INFRA_MESSAGE);
+    expect(action_result!.error).toMatch(/suspend|pausó/i);
+  });
+
+  it('(EC-32) close_con_membresia_suspendida_traduce_mensaje_de_agencia: closeProperty también traduce AGENCY_MEMBERSHIP_SUSPENDED al mismo mensaje', async () => {
+    const mock_supabase = make_mock_supabase({
+      invoke_result: { data: null, error: make_ef_http_error('AGENCY_MEMBERSHIP_SUSPENDED') },
+    });
+    const { result } = await renderHook(() =>
+      usePropertyActions({ supabase: mock_supabase as never })
+    );
+
+    let action_result: { ok: boolean; error: string | null } | undefined;
+    await act(async () => {
+      action_result = await result.current.closeProperty({
+        property_id: TEST_PROPERTY_ID,
+        closed_reason: TEST_CLOSED_REASON,
+      });
+    });
+
+    expect(action_result!.ok).toBe(false);
+    expect(action_result!.error).toBe(map_publish_edit_ef_error('AGENCY_MEMBERSHIP_SUSPENDED'));
+  });
+
+  it('(EC-33) codigo_desconocido_no_se_traduce_al_mensaje_de_suspension_no_regresion: un código distinto (UNAUTHORIZED_OWNER) NO recibe el mensaje de suspensión', async () => {
+    const mock_supabase = make_mock_supabase({
+      invoke_result: { data: null, error: make_ef_http_error('UNAUTHORIZED_OWNER') },
+    });
+    const { result } = await renderHook(() =>
+      usePropertyActions({ supabase: mock_supabase as never })
+    );
+
+    let action_result: { ok: boolean; error: string | null } | undefined;
+    await act(async () => {
+      action_result = await result.current.pauseProperty({ property_id: TEST_PROPERTY_ID });
+    });
+
+    expect(action_result!.ok).toBe(false);
+    expect(action_result!.error).not.toBeNull();
+    expect(action_result!.error).not.toBe(map_publish_edit_ef_error('AGENCY_MEMBERSHIP_SUSPENDED'));
   });
 
 });
