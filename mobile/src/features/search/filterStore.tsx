@@ -9,6 +9,13 @@
  *     fail-safe → EMPTY_FILTERS) y persiste en cada cambio con debounce de 500ms
  *     (save_filters) tras completar la hidratación inicial.
  *
+ * Sección del feed (#241.1): Venta · Renta vive aquí como invariante —
+ *   `filters.operation_types` es SIEMPRE exactamente ['sale'] o ['rent'] (ver
+ *   lib/feedSection.ts). El estado inicial ya trae la default, `hydrate`
+ *   normaliza lo persistido (pre-#241 podía ser [] o ambas) y `clear_filters`
+ *   la CONSERVA: la sección es el "canal" que el usuario está viendo, no un
+ *   filtro que se limpia. Se expone `section` + `set_section`.
+ *
  * NO conecta el FilterSheet a este Context (eso es el wiring de FilterSheet.tsx).
  *
  * ponytail: React Context estándar — no Zustand (ya usado en el repo para stores
@@ -16,6 +23,12 @@
  */
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef } from 'react';
 
+import {
+  DEFAULT_FEED_SECTION,
+  section_from_filters,
+  with_section,
+  type FeedSection,
+} from './lib/feedSection';
 import { EMPTY_FILTERS, get_active_filter_count } from './lib/filterQuery';
 import { load_filters, save_filters } from './lib/filterStorage';
 import type { FilterState } from './types';
@@ -31,10 +44,14 @@ export interface FilterContextValue {
   filters: FilterState;
   /** Actualiza un solo campo del estado de filtros. */
   set_filter: <K extends keyof FilterState>(key: K, value: FilterState[K]) => void;
-  /** Resetea el estado completo a EMPTY_FILTERS. */
+  /** Resetea los filtros a EMPTY_FILTERS conservando la sección (#241.1). */
   clear_filters: () => void;
-  /** Conteo de grupos de filtro activos (badge del FilterSheet). */
+  /** Conteo de grupos de filtro activos (badge del FilterSheet). La sección no cuenta. */
   active_filter_count: number;
+  /** Sección del feed activa — derivada de filters.operation_types (#241.1). */
+  section: FeedSection;
+  /** Cambia de sección (escribe operation_types exacto). */
+  set_section: (section: FeedSection) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -51,9 +68,9 @@ function filter_reducer(state: FilterState, action: FilterAction): FilterState {
     case 'set_filter':
       return { ...state, [action.key]: action.value };
     case 'clear_filters':
-      return EMPTY_FILTERS;
+      return with_section(EMPTY_FILTERS, section_from_filters(state));
     case 'hydrate':
-      return action.filters;
+      return with_section(action.filters, section_from_filters(action.filters));
     default:
       return state;
   }
@@ -70,7 +87,10 @@ const FilterContext = createContext<FilterContextValue | undefined>(undefined);
 // ---------------------------------------------------------------------------
 
 export function FilterProvider({ children }: { children: React.ReactNode }) {
-  const [filters, dispatch] = useReducer(filter_reducer, EMPTY_FILTERS);
+  const [filters, dispatch] = useReducer(
+    filter_reducer,
+    with_section(EMPTY_FILTERS, DEFAULT_FEED_SECTION),
+  );
   // ponytail: refs (no state) — no necesitan disparar render propio.
   const is_hydrated = useRef(false);
   const debounce_timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -116,9 +136,21 @@ export function FilterProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: 'clear_filters' });
   }, []);
 
-  const active_filter_count = useMemo(() => get_active_filter_count(filters), [filters]);
+  const set_section = useCallback((section: FeedSection) => {
+    dispatch({ type: 'set_filter', key: 'operation_types', value: [section] });
+  }, []);
 
-  const value: FilterContextValue = { filters, set_filter, clear_filters, active_filter_count };
+  const active_filter_count = useMemo(() => get_active_filter_count(filters), [filters]);
+  const section = section_from_filters(filters);
+
+  const value: FilterContextValue = {
+    filters,
+    set_filter,
+    clear_filters,
+    active_filter_count,
+    section,
+    set_section,
+  };
 
   return <FilterContext.Provider value={value}>{children}</FilterContext.Provider>;
 }

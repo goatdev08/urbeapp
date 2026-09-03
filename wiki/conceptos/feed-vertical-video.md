@@ -3,8 +3,8 @@ tipo: concepto
 dominio: producto
 estado: vivo
 fuentes: [docs/PRD.md §9, docs/PRD-MVP-demo.md, .taskmaster (tarea #9)]
-codigo: [supabase/migrations/20260604000006_engagement_crm.sql, supabase/migrations/20260701000001_engagement_count_triggers.sql, supabase/functions/mint-video-url/, mobile/src/features/feed/, mobile/src/features/saved/, mobile/src/components/LikeButton.tsx, mobile/src/components/SaveButton.tsx]
-actualizado: 2026-07-10
+codigo: [supabase/migrations/20260604000006_engagement_crm.sql, supabase/migrations/20260701000001_engagement_count_triggers.sql, supabase/functions/mint-video-url/, mobile/src/features/feed/, mobile/src/features/saved/, mobile/src/components/LikeButton.tsx, mobile/src/components/SaveButton.tsx, mobile/src/features/feed/components/FeedSectionTabs.tsx, mobile/src/features/search/lib/feedSection.ts]
+actualizado: 2026-09-03
 ---
 
 # Feed vertical de video
@@ -29,6 +29,11 @@ actualizado: 2026-07-10
   - `GREATEST(0, count-1)` en el decremento respeta el `CHECK (count >= 0)`. Los triggers se disparan también en borrados por CASCADE (video/usuario). TDD pgTAP `supabase/tests/07_engagement_counts_test.sql` (14 asserts) verde contra remoto en tx revertida. Rollback en `supabase/migrations/rollbacks/`.
 - **Botones animados (13.1/13.3):** `LikeButton`/`SaveButton` (globales, Reanimated bounce) reemplazan el Pressable+Ionicons inline de `ActionButtons` (detalle). Presentacionales puros; el estado/toggle lo maneja el consumidor. Ver [[mapa-codebase]].
 - **Pantalla "Guardados" (13.6/13.7):** tab `🔖 Guardados` (orden `Inicio·Guardados·Mapa·Perfil`, per mockup p12). `useSavedProperties` (hook **crítico**, TDD): query `from('saves')` con embed `properties(+property_videos)`, RLS filtra al usuario, orden `created_at` DESC, transform → `GridProperty` (reusa `PropertyGridCard` en grilla 2-col). ⚠️ **`saves` es DELETE duro (sin `deleted_at`)** — el spec original decía `deleted_at IS NULL`, era un bug. **Quitar** = long-press en la card → `Alert` confirmar → unsave reusando `useSaveProperty` (quitado optimista con `hidden_ids` + rollback si el DELETE falla). Una propiedad guardada que pase a `paused`/`closed` desaparece de la lista (la RLS `properties_select` la filtra) — comportamiento aceptado para la demo.
+
+## Secciones Venta · Renta y refresh (#241, 2026-09-03)
+- **Dos secciones con tabs de texto sobre el video** (`FeedSectionTabs`, centradas en `insets.top + s_12`, el botón de filtros a la derecha y el chip de zona colgando debajo). La sección vive en el `FilterState` compartido — detalle y decisiones en [[busqueda-y-filtros]].
+- **Cambiar de sección = feed limpio:** `useFeedProperties` vacía `data`/`nextCursor` cuando cambia la identidad de `filters` (ignora la primera) → `FeedScreen` cae al skeleton y el FlashList se remonta desde el primer ítem. El pull-to-refresh (misma identidad) conserva la lista y muestra el spinner.
+- 🔴 **`RefreshControl` en iOS necesita `bounces`.** Desde 9.8 el FlashList llevaba `bounces={false}` para no rebotar en los extremos — y eso dejaba el pull-to-refresh **muerto en iOS** (el gesto se dispara con el rebote del borde superior; Android usa SwipeRefreshLayout y no lo necesita). Ahora `bounces={Platform.OS === 'ios'}`; el snap por intervalo sigue mandando. Regla: en cualquier lista con `refreshControl`, nunca `bounces={false}` en iOS.
 
 ## Datos / técnico
 - `likes` (`user_id`, `property_video_id`, único). Videos de [[propiedades-y-video]] (`status='ready'`).

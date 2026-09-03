@@ -25,6 +25,7 @@
  */
 import React, { useCallback, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { BackButton } from '@/components/BackButton';
 import {
   ActivityIndicator,
   FlatList,
@@ -257,13 +258,16 @@ export default function AdminReportsScreen(): React.ReactElement {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Reportes</Text>
-        {list.length > 0 && (
-          <Text style={styles.subtitle}>
-            {list.length === 1 ? '1 propiedad reportada' : `${list.length} propiedades reportadas`}
-          </Text>
-        )}
+      <View style={[styles.header, styles.header_row]}>
+        <BackButton />
+        <View>
+          <Text style={styles.title}>Reportes</Text>
+          {list.length > 0 && (
+            <Text style={styles.subtitle}>
+              {list.length === 1 ? '1 propiedad reportada' : `${list.length} propiedades reportadas`}
+            </Text>
+          )}
+        </View>
       </View>
 
       {resolve_error !== null && (
@@ -299,6 +303,8 @@ export default function AdminReportsScreen(): React.ReactElement {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.paper },
   header: { paddingHorizontal: spacing.s_20, paddingTop: spacing.s_16, paddingBottom: spacing.s_12 },
+  // #241.3: back visible — antes solo se salía con el gesto/hardware back.
+  header_row: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   title: { ...type_scale.h1, color: colors.ink },
   subtitle: { fontSize: 14, color: colors.gray_2, marginTop: spacing.s_4 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.s_32 },

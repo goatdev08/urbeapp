@@ -50,16 +50,6 @@ import { ZoneAutocomplete } from './ZoneAutocomplete';
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Operación: solo Renta y Venta como opciones de usuario.
- * 'both' (enum DB) indica que una propiedad soporta ambas modalidades y se
- * resuelve en la capa de query de 12.6 — no es una elección de UI.
- */
-const OPERATION_OPTIONS: { value: string; label: string }[] = [
-  { value: 'rent', label: 'Renta' },
-  { value: 'sale', label: 'Venta' },
-];
-
-/**
  * Tipo de propiedad: los 5 valores del enum `property_type` del DB
  * (migración 0005). Labels en español capitalizado tal como se presentan
  * al usuario en el resto de la app (fichas, tarjetas, publicación).
@@ -125,8 +115,9 @@ export function FilterSheet({ visible, onClose }: FilterSheetProps): React.JSX.E
   // ── Estado — FilterContext (#12.7) ──────────────────────────────────────────
   // Todos los campos de filtro viven en el Context, compartido con feed/mapa.
   const { filters, set_filter, clear_filters } = useFilters();
+  // #241: operation_types NO se destructura — es la sección del feed (Venta ·
+  // Renta, FeedSectionTabs) y ya no se edita desde el sheet.
   const {
-    operation_types,
     property_types,
     price_min,
     price_max,
@@ -245,24 +236,10 @@ export function FilterSheet({ visible, onClose }: FilterSheetProps): React.JSX.E
 
           <View style={styles.section_sep} />
 
-          {/* ── 12.2 — Operación ─────────────────────────────────────────── */}
-          {/*
-           * Selección múltiple: el usuario puede elegir Renta, Venta, ambas o
-           * ninguna (ninguna = sin filtro, equivale a mostrar todo).
-           * 'both' es un valor de dato (una propiedad que acepta ambas modalidades)
-           * y matchea automáticamente en la capa de query (build_filter_query) —
-           * no se expone como opción de UI.
-           */}
-          <View style={styles.section}>
-            <Text style={styles.section_title}>Operación</Text>
-            <FilterChipGroup
-              options={OPERATION_OPTIONS}
-              selected={operation_types}
-              onChange={(v) => set_filter('operation_types', v)}
-            />
-          </View>
-
-          <View style={styles.section_sep} />
+          {/* «Operación» (12.2) salió del sheet en #241: la operación es la
+              SECCIÓN del feed (tabs Venta · Renta sobre el video) y feed/mapa
+              la comparten vía FilterState. 'both' sigue resolviéndose en
+              build_filter_query. */}
 
           {/* ── 12.2 — Tipo de propiedad ─────────────────────────────────── */}
           {/*

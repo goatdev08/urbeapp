@@ -84,10 +84,11 @@ export function build_filter_query<Q extends FilterableQueryBuilder>(
  * ponytail: radius_m NO cuenta — es un parámetro de alcance ("qué tan lejos
  * buscar"), no un filtro de contenido ("qué tipo de propiedad buscar"). El
  * badge refleja solo filtros de contenido. (Decisión #58, subtarea 58.5)
+ * operation_types TAMPOCO cuenta desde #241: es la SECCIÓN del feed (Venta ·
+ * Renta, siempre activa una), no un filtro que el usuario pueda limpiar.
  */
 export function get_active_filter_count(filters: FilterState): number {
   let count = 0;
-  if (filters.operation_types.length > 0) count += 1;
   if (filters.property_types.length > 0) count += 1;
   if (filters.price_min !== null || filters.price_max !== null) count += 1;
   if (filters.zone !== null) count += 1;

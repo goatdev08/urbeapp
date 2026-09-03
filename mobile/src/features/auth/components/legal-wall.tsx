@@ -13,7 +13,10 @@
  * pasa. La única salida es cerrar sesión.
  */
 import React, { useEffect, useState } from 'react';
-import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+// #241.3: la SafeAreaView de react-native es iOS-only — en Android el muro
+// quedaba bajo el status bar. Siempre la de safe-area-context (regla de #231).
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { supabase } from '@/lib/supabase/client';
 import { useAuth } from '@/features/auth/context';

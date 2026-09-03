@@ -375,6 +375,24 @@ export function useFeedProperties(filters?: FilterState): UseFeedPropertiesState
     }
   }, [nextCursor, isLoading, coords, resolve_ad_zone_coords, filters, build_deps]);
 
+  // #241.2: al cambiar la identidad de `filters` (sección Venta/Renta, sheet,
+  // zona) se VACÍA la lista antes de que llegue la página nueva. Sin esto el
+  // feed seguía mostrando —y reproduciendo— videos de la sección anterior con
+  // un spinner arriba hasta que resolvía el fetch; ahora FeedScreen cae al
+  // skeleton (isLoading && data.length === 0) y el FlashList se remonta desde
+  // el primer ítem. El pull-to-refresh NO pasa por aquí (misma identidad).
+  // ponytail: sin flag de "razón del reload" — la identidad de filters ya es la
+  // señal; loadInitial la sigue en el mismo flush de efectos (FeedScreen).
+  const is_first_filters = useRef(true);
+  useEffect(() => {
+    if (is_first_filters.current) {
+      is_first_filters.current = false;
+      return;
+    }
+    set_data([]);
+    set_next_cursor(null);
+  }, [filters]);
+
   useEffect(
     () =>
       onPropertyDeleted((id) =>

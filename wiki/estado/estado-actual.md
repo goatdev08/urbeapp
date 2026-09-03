@@ -1,7 +1,11 @@
 ---
 tipo: estado
-actualizado: 2026-09-02
+actualizado: 2026-09-03
 ---
+
+## Hoy (2026-09-03) — #241: feed con secciones Venta · Renta, refresh vivo en iOS, back y safe-area en toda la app
+
+**#241 (PR pendiente de merge, en `review` hasta el smoke).** Pedido directo de Abraham. (1) **Secciones**: tabs de texto «Venta · Renta» sobre el feed (default Venta); la sección ES `filters.operation_types` con un solo valor en el FilterState compartido → el mapa la sigue, «Operación» salió del sheet, el badge no la cuenta; `lib/feedSection.ts` + normalización en el `FilterProvider` (TDD, 18 tests nuevos + store con su primer test). (2) **Refresh**: `bounces={false}` (9.8) tenía muerto el pull-to-refresh en iOS — ahora `bounces` solo en iOS; cambiar de sección vacía la lista (skeleton) en vez de dejar videos viejos bajo un spinner. (3) **Back visible** en `/admin` y sus 4 colas. (4) **Safe-area**: `CRMScreen` y `legal-wall` usaban la `SafeAreaView` de react-native (iOS-only) — a safe-area-context; el resto de la app ya estaba bien. Suites 161/161 · 2044 tests · tsc/lint 0. **Pendiente con Abraham:** smoke en dispositivo (cambiar sección, pull-to-refresh iOS, back en admin, CRM/muro legal en Android) → OTA desde main (solo cliente, sin migraciones ni EFs). Sigue en pie la lista de deploy del lote 3 (abajo).
 
 ## Hoy (2026-09-02, mañana) — lote 3: suspensión que congela, leads sin gestor y monitor del rollup; #203/#215 en producción, #202 espera el OTA
 

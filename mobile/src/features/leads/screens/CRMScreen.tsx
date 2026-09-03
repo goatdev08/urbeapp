@@ -56,14 +56,16 @@ import {
   LayoutAnimation,
   Pressable,
   RefreshControl,
-  SafeAreaView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
 import { BookmarkSimple, MagnifyingGlass, Tray } from 'phosphor-react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+// #241.3: SafeAreaView de safe-area-context, NO la de react-native — esa es
+// iOS-only y con edge-to-edge (SDK 56) el header del CRM quedaba bajo la hora/
+// wifi en Android (misma regla que #231 para el panel admin).
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { FilterTabs } from '@/components/FilterTabs';
 import { useAuth } from '@/features/auth/context';

@@ -18,6 +18,11 @@ import { supabase } from '@/lib/supabase/client';
 import { mint_videos } from '@/features/feed/lib/feedProperties';
 import AdminAdsQueueScreen from '../index';
 
+// #241.3: BackButton (header) importa expo-router — mismo mock que requests/__tests__.
+jest.mock('expo-router', () => ({
+  useRouter: () => ({ back: jest.fn(), push: jest.fn() }),
+}));
+
 jest.mock('@/features/ads/hooks/usePendingAds', () => ({ usePendingAds: jest.fn() }));
 jest.mock('@/features/ads/hooks/useActiveAds', () => ({ useActiveAds: jest.fn() }));
 jest.mock('@/features/ads/hooks/useModerateAd', () => ({ useModerateAd: jest.fn() }));
