@@ -29,6 +29,7 @@ import { useSaveProperty } from '../hooks/useSaveProperty';
 import { useVideoEngagementEvents } from '../hooks/useVideoEngagementEvents';
 import { create_video_engagement_store } from '../lib/videoEngagementDedupe';
 import { get_app_session_id } from '../lib/appSession';
+import { fit_for_video, type MediaSize } from '../lib/videoFit';
 import { useContactAgent } from '@/hooks/useContactAgent';
 import { share_property } from '@/lib/shareProperty';
 
@@ -60,6 +61,24 @@ function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedIte
   const { width, height } = useWindowDimensions();
   // 68.15: prefiere el poster firmado de Stream; cae al thumbnail_url legacy.
   const poster_uri = property.posterUrl ?? property.video.thumbnail_url;
+
+  // #242.2 — presentación híbrida (decisión Abraham 2026-09-03): vertical →
+  // cover (inmersivo); horizontal/cuadrado → contain sobre la portada
+  // desenfocada. El tamaño llega primero por la portada de Stream (misma
+  // relación que el video, cacheada en disco → sin salto visible) y luego lo
+  // confirma el track del player. Se guarda junto al id de la propiedad para
+  // que el reciclaje de FlashList no arrastre el tamaño del video anterior
+  // (derivación pura, sin efecto de reset).
+  const [media, set_media] = useState<{ id: string; size: MediaSize } | null>(null);
+  const media_size = media?.id === property.id ? media.size : null;
+  const fit = fit_for_video(media_size, { width, height });
+  const is_contain = fit === 'contain';
+  const remember_media_size = useCallback(
+    (size: MediaSize | undefined) => {
+      if (size && size.width > 0 && size.height > 0) set_media({ id: property.id, size });
+    },
+    [property.id],
+  );
   const [has_error, set_has_error] = useState(false);
   // ponytail: player_status para mostrar spinner mientras carga el ítem activo.
   const [player_status, set_player_status] = useState<VideoPlayerStatus>('loading');
@@ -247,6 +266,14 @@ function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedIte
     return () => sub.remove();
   }, [player]);
 
+  // #242.2: el track real del video confirma (o corrige) el tamaño de la portada.
+  useEffect(() => {
+    const sub = player.addListener('videoTrackChange', ({ videoTrack }) => {
+      remember_media_size(videoTrack?.size);
+    });
+    return () => sub.remove();
+  }, [player, remember_media_size]);
+
   // Notificar fin de reproducción (no dispara cuando loop=true, pero se
   // mantiene para futuros modos sin loop).
   useEffect(() => {
@@ -326,12 +353,29 @@ function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedIte
             su primer frame. expo-image la cachea en disco, así que el swipe de
             regreso es instantáneo. Sin poster → fondo oscuro sólido (fallback). */}
         {poster_uri && (
-          <Image source={{ uri: poster_uri }} style={styles.poster} contentFit="cover" />
+          <Image
+            source={{ uri: poster_uri }}
+            style={styles.poster}
+            contentFit="cover"
+            // #242.2: en contain la portada a cover es el FONDO desenfocado.
+            blurRadius={is_contain ? 40 : 0}
+            onLoad={(e) => remember_media_size(e.source)}
+          />
+        )}
+        {is_contain && (
+          <>
+            {/* Tinta sobre el fondo desenfocado: el overlay de texto sigue legible. */}
+            <View style={[styles.poster, styles.contain_tint]} pointerEvents="none" />
+            {/* Portada nítida en el mismo encuadre que tendrá el video (contain). */}
+            {poster_uri && (
+              <Image source={{ uri: poster_uri }} style={styles.poster} contentFit="contain" />
+            )}
+          </>
         )}
         <VideoView
           player={player}
           style={styles.video}
-          contentFit="cover"
+          contentFit={fit}
           nativeControls={false}
         />
 
@@ -398,6 +442,9 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+  },
+  contain_tint: {
+    backgroundColor: 'rgba(23,20,15,0.35)', // colors.ink_feed @ 0.35
   },
   error_text: {
     ...type_scale.body,

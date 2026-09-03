@@ -3,6 +3,9 @@ tipo: estado
 actualizado: 2026-09-03
 ---
 
+## Hoy (2026-09-03, tarde) — #242: polish del feed tras el smoke de #241
+Abraham vio los tabs en dispositivo: poco visibles y muy separados del borde; además los videos que no son 9:16 se recortaban. #242 (rama `tarea/242-tabs-visibles-video-fondo`, PR abierto): tabs 17/bold blanco puro, inactivo blanco 72 %, scrim superior, fila en `insets.top + 4`; video **híbrido** (`lib/videoFit.ts`, TDD 16/16): vertical → cover, horizontal/cuadrado → contain sobre portada desenfocada. tsc/lint verdes, feed 266/266. **Pendiente: smoke conjunto en la rama (iOS Dynamic Island + Android) → merge → OTA → `set-status 242 done`.** #241 sigue en `review` hasta ese mismo smoke.
+
 ## Hoy (2026-09-03) — #241: feed con secciones Venta · Renta, refresh vivo en iOS, back y safe-area en toda la app
 
 **#241 (PR pendiente de merge, en `review` hasta el smoke).** Pedido directo de Abraham. (1) **Secciones**: tabs de texto «Venta · Renta» sobre el feed (default Venta); la sección ES `filters.operation_types` con un solo valor en el FilterState compartido → el mapa la sigue, «Operación» salió del sheet, el badge no la cuenta; `lib/feedSection.ts` + normalización en el `FilterProvider` (TDD, 18 tests nuevos + store con su primer test). (2) **Refresh**: `bounces={false}` (9.8) tenía muerto el pull-to-refresh en iOS — ahora `bounces` solo en iOS; cambiar de sección vacía la lista (skeleton) en vez de dejar videos viejos bajo un spinner. (3) **Back visible** en `/admin` y sus 4 colas. (4) **Safe-area**: `CRMScreen` y `legal-wall` usaban la `SafeAreaView` de react-native (iOS-only) — a safe-area-context; el resto de la app ya estaba bien. Suites 161/161 · 2044 tests · tsc/lint 0. **Pendiente con Abraham:** smoke en dispositivo (cambiar sección, pull-to-refresh iOS, back en admin, CRM/muro legal en Android) → OTA desde main (solo cliente, sin migraciones ni EFs). Sigue en pie la lista de deploy del lote 3 (abajo).
