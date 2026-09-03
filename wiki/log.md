@@ -2,6 +2,9 @@
 
 Append-only. Prefijo: `## [YYYY-MM-DD] tipo | título`.
 
+## [2026-09-03] polish | #242 — los tabs del feed se leen y el video horizontal ya no se recorta
+Del smoke de #241 con Abraham (referencia: TikTok): tabs Venta · Renta más visibles (blanco puro / 72 %, sombra, scrim) y pegados al safe area (`insets.top + 4`); presentación **híbrida** del video — vertical a pantalla completa, horizontal/cuadrado completo sobre su portada desenfocada (`lib/videoFit.ts`, umbral 25 % de recorte, 16 tests). Solo cliente → OTA tras el smoke conjunto. Ver [[feed-vertical-video]].
+
 ## [2026-09-03] producto | #241 — el feed se parte en Venta y Renta, y de paso el refresh de iOS y los bordes de la app
 
 Abraham pidió tres cosas en una: dos secciones en el feed con el filtro de operación fijo, que el refresh funcione, y que ninguna pantalla se quede sin back ni choque con la hora/wifi en ninguna de las dos plataformas. Lo primero salió casi sin código nuevo: `operation_types` ya existía en el `FilterState` compartido con el mapa, así que la sección es ese campo con exactamente un valor (`lib/feedSection.ts`, 12 tests) y el `FilterProvider` la sostiene como invariante — normaliza lo persistido, la conserva al limpiar filtros, y el sheet perdió el grupo «Operación». Decisiones suyas: default Venta, una sola verdad (el mapa sigue la sección), tabs de texto y no píldora.

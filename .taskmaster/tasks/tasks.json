@@ -10864,7 +10864,7 @@
         "id": "241",
         "title": "producto(9): feed con secciones Venta · Renta + refresh vivo en iOS + back y safe-area en toda la app",
         "description": "Origen: pedido de Abraham (2026-09-02, sesión de producto) · Detectado por: usuario. Cuatro frentes: (1) el feed se divide en dos secciones, «Venta» y «Renta», cada una con el filtro de operación fijo (tabs de texto sobre el feed oscuro, default Venta, la elección persiste con los filtros; las secciones reemplazan al grupo «Operación» del FilterSheet y como feed y mapa comparten FilterState, el mapa sigue la sección); (2) el pull-to-refresh del feed funciona en iOS y Android (hoy `bounces={false}` mata el RefreshControl en iOS) y cambiar de sección deja el feed limpio (skeleton, no videos de la sección anterior); (3) todas las pantallas empujadas tienen un back visible (faltaba en /admin y sus 4 colas); (4) ninguna pantalla colisiona con la hora/wifi en iOS ni Android (CRMScreen y legal-wall usaban el SafeAreaView de react-native, que en Android no aplica el inset).",
-        "details": "Decisiones (AskUserQuestion 2026-09-02): default Venta · una sola verdad (sección = operation_types en el FilterState compartido; se quita «Operación» del sheet) · tabs de texto estilo TikTok (activa blanca semibold con subrayado, inactiva gray_1).\n\nFootprint: mobile/src/features/search/lib/feedSection.ts (NUEVO, CRÍTICA → TDD) · filterStore.tsx (section/set_section, normalización en hydrate/clear) · lib/filterQuery.ts (operation_types deja de contar en el badge) · components/FilterSheet.tsx (retirar Operación) · feed/components/FeedSectionTabs.tsx (NUEVO) · feed/FeedScreen.tsx (tabs, bounces, chip de zona debajo) · feed/hooks/useFeedProperties.ts (reset de data al cambiar filtros) · app/admin/{index,requests,reports,revisions,ads} (BackButton) · leads/screens/CRMScreen.tsx y auth/components/legal-wall.tsx (SafeAreaView de safe-area-context).\n\nSolo cliente → REQUIERE OTA. Sin migraciones ni EFs. Compatibilidad: el FilterState persistido con operation_types=[] o ['rent','sale'] se normaliza a la sección default al hidratar.",
+        "details": "Decisiones (AskUserQuestion 2026-09-02): default Venta · una sola verdad (sección = operation_types en el FilterState compartido; se quita «Operación» del sheet) · tabs de texto estilo TikTok (activa blanca semibold con subrayado, inactiva gray_1).\n\nFootprint: mobile/src/features/search/lib/feedSection.ts (NUEVO, CRÍTICA → TDD) · filterStore.tsx (section/set_section, normalización en hydrate/clear) · lib/filterQuery.ts (operation_types deja de contar en el badge) · components/FilterSheet.tsx (retirar Operación) · feed/components/FeedSectionTabs.tsx (NUEVO) · feed/FeedScreen.tsx (tabs, bounces, chip de zona debajo) · feed/hooks/useFeedProperties.ts (reset de data al cambiar filtros) · app/admin/{index,requests,reports,revisions,ads} (BackButton) · leads/screens/CRMScreen.tsx y auth/components/legal-wall.tsx (SafeAreaView de safe-area-context).\n\nSolo cliente → REQUIERE OTA. Sin migraciones ni EFs. Compatibilidad: el FilterState persistido con operation_types=[] o ['rent','sale'] se normaliza a la sección default al hidratar.\n\nDERIVADAS: #242 (usuario, smoke 2026-09-03: tabs poco visibles y muy separados del borde; presentación del video estilo TikTok)",
         "testStrategy": "feedSection: Jest RED→GREEN (section_from_filters / with_section, casos [], ['rent'], ['sale'], ['rent','sale'], ['both'], legacy). filterStore: renderHook (hydrate normaliza, clear conserva la sección). filterQuery: EC de conteo actualizados (operation_types no cuenta). Suites verdes + tsc + lint. Smoke en dispositivo con Abraham (§0.5): cambiar de sección, pull-to-refresh en iOS, back en /admin, CRM y muro legal en Android sin colisión con el status bar.",
         "status": "review",
         "dependencies": [
@@ -10910,13 +10910,52 @@
             "parentId": "undefined"
           }
         ],
-        "updatedAt": "2026-09-03T03:43:45.903Z"
+        "updatedAt": "2026-09-03T16:18:41.419Z"
+      },
+      {
+        "id": "242",
+        "title": "polish(241.2): tabs del feed más visibles y pegados al safe area + presentación del video con fondo (estilo TikTok)",
+        "description": "Origen: subtarea 241.2 · Detectado por: usuario (smoke en dispositivo 2026-09-03, screenshot de TikTok como referencia). Los tabs Venta · Renta se leen poco sobre el video y quedan muy separados del borde superior; además los videos que no son 9:16 se recortan con contentFit=cover. Se pide: tabs más visibles y más pegados arriba sin colisionar con la status bar / Dynamic Island en iOS ni Android, y una presentación del video con fondo (letterbox) como TikTok.",
+        "details": "Footprint: mobile/src/features/feed/components/FeedSectionTabs.tsx (tipografía 17/bold, blanco puro activo, blanco 72% inactivo, sombra más fuerte, subrayado 3px), mobile/src/features/feed/FeedScreen.tsx (top_row_y = insets.top + s_4, scrim superior con expo-linear-gradient ya instalado), mobile/src/features/feed/components/VideoFeedItem.tsx (contentFit según la opción elegida por Abraham; fondo = poster desenfocado con expo-image blurRadius o ink_feed sólido). Sin tokens nuevos, sin dependencias nuevas. Solo cliente → REQUIERE OTA. Sin migraciones ni EFs.",
+        "testStrategy": "242.1 no crítica: tsc + lint + suite feed + smoke en dispositivo con Abraham (iOS con Dynamic Island y Android). 242.2 crítica si nace lógica pura (lib/videoFit.ts → TDD con casos 9:16, 16:9, 1:1, 4:5 y tamaño desconocido); la vista se verifica en smoke conjunto. Ver video = verificar que reproduce y PARAR (cuota Stream).",
+        "status": "review",
+        "dependencies": [
+          "241"
+        ],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Tabs Venta · Renta más visibles y pegados al safe area (ambas plataformas) + scrim superior",
+            "description": "FeedSectionTabs: fontSize 17, activo blanco puro sans_bold, inactivo blanco 72% sans_semibold, sombra 0.6/r4, subrayado 3px. FeedScreen: top_row_y = insets.top + s_4; scrim LinearGradient sin toque detrás de la fila. Ajustar FEED_SECTION_TABS_HEIGHT y el offset del ZoneActiveChip.",
+            "details": "\n<info added on 2026-09-03T16:21:09.167Z>\nHECHO 242.1 — tabs más visibles y pegados al safe area + scrim superior (rama tarea/242-tabs-visibles-video-fondo, desde origin/main 788e10a).\n\nArchivos:\n- mobile/src/features/feed/components/FeedSectionTabs.tsx — fontSize 16→17; activo blanco puro (on_primary) sans_bold; inactivo gray_1 → rgba(255,255,255,0.72) (el gris cálido se ensuciaba sobre el video); textShadow 0.45/r3 → 0.6/r4; subrayado 2px×20 → 3px×24 (primary_soft); paddingVertical s_8 → 6 (ponytail: sin token s_6); FEED_SECTION_TABS_HEIGHT 42 → 40 (= alto del botón de filtros, misma fila centrada).\n- mobile/src/features/feed/FeedScreen.tsx — top_row_y = insets.top + s_12 → insets.top + s_4 (pegado a la status bar / Dynamic Island sin invadirla; insets.top ya cubre la hora/wifi en iOS y en Android edge-to-edge). Scrim LinearGradient (expo-linear-gradient ya instalado) rgba(0,0,0,0.55) → transparente, alto = top_row_y + TABS_HEIGHT + s_24, pointerEvents none, pintado antes que tabs/filter_btn (sin zIndex) para quedar debajo. El ZoneActiveChip sigue colgando de top_row_y + FEED_SECTION_TABS_HEIGHT + s_8 (se ajusta solo).\n\nSin tokens nuevos, sin dependencias nuevas. Solo cliente → OTA al cerrar la tarea.\n\nVerificación (salida real):\n$ pnpm tsc --noEmit → sin salida (exit 0)\n$ pnpm lint → ✖ 116 problems (0 errors, 116 warnings)  [las 116 son preexistentes]\n$ pnpm jest src/features/feed →\nTest Suites: 22 passed, 22 total\nTests:       250 passed, 250 total\n\nPendiente: smoke en dispositivo CON Abraham (iOS Dynamic Island + Android) — no se corre solo.\n</info added on 2026-09-03T16:21:09.167Z>\n<info added on 2026-09-03T16:44:08.052Z>\nAJUSTE 242.1 tras smoke conjunto en iPhone 17 (iOS 26.4, sim, Metro desde la rama) — feedback Abraham: \"los tabs se ven bastante despegados del borde superior; el indicador debe ser una pill verde Urbea\".\n- FeedSectionTabs.tsx: subrayado → PILL colors.primary (#1A5E44, verde del logo) detrás de la sección activa, texto on_primary bold sin sombra; inactivo blanco 72 % sin fondo; gap s_8; paddingHorizontal s_16; FEED_SECTION_TABS_HEIGHT 40 → 34.\n- FeedScreen.tsx: top_row_y = insets.top > 40 ? insets.top - 6 : insets.top + s_4 (iOS con notch/isla trae ~10 pt de aire bajo el hardware; status bar clásica y Android no lo traen). filter_btn_y = top_row_y - 3 (botón de 40 centrado con la pill de 34).\n- Captura del sim (scratchpad ios17-3.png): pill \"Venta\" a ~5 pt de la Dynamic Island, sin tocarla; botón de filtros alineado.\nVerificación (salida real): pnpm tsc --noEmit → sin salida (exit 0); eslint archivos tocados → 0 errores; pnpm jest src/features/feed → ver bloque siguiente.\nTest Suites: 23 passed, 23 total\nTests:       266 passed, 266 total\n</info added on 2026-09-03T16:44:08.052Z>",
+            "status": "done",
+            "dependencies": [],
+            "testStrategy": "tsc + lint + jest feed; smoke conjunto iOS/Android",
+            "updatedAt": "2026-09-03T16:44:08.052Z",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Presentación del video: fondo estilo TikTok según la opción elegida (pendiente decisión de Abraham)",
+            "description": "Opciones presentadas: (A) contain sobre ink_feed, (B) contain sobre poster desenfocado, (C) híbrido: cover si el video es vertical, contain+blur si es horizontal/cuadrado usando player.videoTrack.size. Se implementa la que elija Abraham.",
+            "details": "\n<info added on 2026-09-03T16:26:15.968Z>\nHECHO 242.2 — presentación híbrida del video (opción \"Híbrido\" elegida por Abraham vía AskUserQuestion, 2026-09-03).\n\nRED → GREEN (crítica: lib/**):\n- mobile/src/features/feed/__tests__/videoFit.test.ts — 16 casos EC-FIT-1..16 (desconocido/inválido → cover; 9:16 iPhone y Pixel, misma relación, 9:21, frontera exacta 25 % → cover; 16:9, 1:1, 4:5, 3:4, justo arriba del umbral, 9:32 → contain).\n- RED con stub (salida real): Tests: 7 failed, 9 passed, 16 total (fallan EC-FIT-1, 11..16 por aserción).\n- mobile/src/features/feed/lib/videoFit.ts — MAX_CROP_FRACTION = 0.25; fit_for_video(media, screen): crop = 1 - min(r)/max(r); crop <= 0.25 → 'cover', si no 'contain'; tamaños inválidos → 'cover'.\n- GREEN (salida real): Tests: 16 passed, 16 total\n\nVista:\n- mobile/src/features/feed/components/VideoFeedItem.tsx — estado {id, size} (derivación pura por property.id para el reciclaje de FlashList); tamaño desde la portada (expo-image onLoad e.source) y desde player.addListener('videoTrackChange'); VideoView contentFit={fit}; en contain: portada cover con blurRadius 40 + tinta rgba(23,20,15,0.35) + portada nítida en contain. AdFeedItem sigue en cover (techo conocido).\n\nVerificación (salida real):\n$ pnpm tsc --noEmit → sin salida (exit 0)\n$ pnpm eslint src/features/feed → ✖ 29 problems (0 errors, 29 warnings) [preexistentes]\n$ pnpm jest src/features/feed →\nTest Suites: 23 passed, 23 total\nTests:       266 passed, 266 total\n\nVault: mapa-codebase (bullet #242), feed-vertical-video.md (sección \"Presentación híbrida\" + codigo), log.md, estado-actual.md.\nPendiente: smoke conjunto en la rama; luego merge + OTA + set-status 242 done.\n</info added on 2026-09-03T16:26:15.968Z>",
+            "status": "review",
+            "dependencies": [
+              1
+            ],
+            "testStrategy": "Si hay lógica pura (lib/videoFit.ts) → TDD; vista en smoke conjunto",
+            "updatedAt": "2026-09-03T16:26:19.927Z",
+            "parentId": "undefined"
+          }
+        ],
+        "updatedAt": "2026-09-03T16:44:08.052Z"
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-09-03T03:43:45.903Z",
-      "taskCount": 241,
+      "lastModified": "2026-09-03T16:26:21.559Z",
+      "taskCount": 242,
       "completedCount": 159,
       "tags": [
         "master"

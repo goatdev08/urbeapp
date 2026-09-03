@@ -22,6 +22,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import { FlashList, type ListRenderItemInfo } from '@shopify/flash-list';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { MagnifyingGlass, MapPinSimple, SlidersHorizontal, VideoCamera } from 'phosphor-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -53,7 +54,15 @@ export function FeedScreen() {
   // #241: label de la sección activa para el copy del vacío ("en venta"/"en renta").
   const section_label = (FEED_SECTIONS.find((s) => s.value === section)?.label ?? 'Venta').toLowerCase();
   // Coordenada superior compartida por tabs (centro) y botón de filtros (derecha).
-  const top_row_y = insets.top + spacing.s_12;
+  // #242.1: pegado al borde superior. En iOS con notch/Dynamic Island el inset
+  // (44–62) trae ~10 pt de aire extra debajo del hardware → restamos 6 y la
+  // pill queda a ~5 pt de la isla sin tocarla (smoke iPhone 17, 2026-09-03).
+  // Con status bar clásica (iOS sin notch = 20, Android edge-to-edge = alto
+  // exacto de la barra) NO hay aire: la hora/wifi viven dentro del inset, así
+  // que ahí sumamos s_4.
+  const top_row_y = insets.top > 40 ? insets.top - 6 : insets.top + spacing.s_4;
+  // El botón de filtros (40) se centra con la pill (34).
+  const filter_btn_y = top_row_y - (40 - FEED_SECTION_TABS_HEIGHT) / 2;
   const { data, isLoading, error, loadInitial, refetch, loadMore } = useFeedProperties(filters);
   const [filter_visible, set_filter_visible] = useState(false);
 
@@ -233,20 +242,29 @@ export function FeedScreen() {
        * Botón de filtros — top-right flotante sobre el feed oscuro.
        * Estética: fondo semi-translúcido oscuro (ink_feed) + ícono gris claro,
        * para no romper la inmersión del feed de video.
-       * Posición: safe-area top + s_12 de holgura, alineado a la derecha.
+       * Posición: safe-area top + s_4 de holgura (#242.1), alineado a la derecha.
        * El FilterSheet (panel claro) se abre encima del feed vía Modal nativo.
        * Se renderiza una sola vez (feed principal + empty state) — oculto
        * en skeleton y error (ver show_filters).
        */}
       {show_filters && (
         <>
+          {/* Scrim superior (#242.1): degradado oscuro → transparente detrás de
+              la fila de tabs/filtros para que se lean sobre cielo o pared clara.
+              pointerEvents none: no roba el tap ni el scroll del feed. */}
+          <LinearGradient
+            colors={['rgba(0,0,0,0.55)', 'rgba(0,0,0,0)']}
+            style={[styles.top_scrim, { height: top_row_y + FEED_SECTION_TABS_HEIGHT + spacing.s_24 }]}
+            pointerEvents="none"
+          />
+
           {/* Secciones Venta · Renta (#241) — centradas en la misma fila que el
               botón de filtros. set_section cambia la identidad de `filters` →
               useFeedProperties vacía la lista y loadInitial recarga (skeleton). */}
           <FeedSectionTabs section={section} on_change={set_section} style={{ top: top_row_y }} />
 
           <TouchableOpacity
-            style={[styles.filter_btn, { top: top_row_y }]}
+            style={[styles.filter_btn, { top: filter_btn_y }]}
             onPress={() => set_filter_visible(true)}
             accessibilityLabel="Abrir filtros"
             accessibilityRole="button"
@@ -324,6 +342,13 @@ const styles = StyleSheet.create({
    * estética inmersiva del feed sin opacar el video de fondo.
    * `top` es dinámico (safe area + s_12) — se inyecta via inline style.
    */
+  top_scrim: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    // Sin zIndex: se pinta antes que tabs y filter_btn en el árbol → queda debajo.
+  },
   filter_btn: {
     position: 'absolute',
     right: spacing.s_16,

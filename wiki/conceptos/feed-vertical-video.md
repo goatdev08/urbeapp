@@ -3,7 +3,7 @@ tipo: concepto
 dominio: producto
 estado: vivo
 fuentes: [docs/PRD.md §9, docs/PRD-MVP-demo.md, .taskmaster (tarea #9)]
-codigo: [supabase/migrations/20260604000006_engagement_crm.sql, supabase/migrations/20260701000001_engagement_count_triggers.sql, supabase/functions/mint-video-url/, mobile/src/features/feed/, mobile/src/features/saved/, mobile/src/components/LikeButton.tsx, mobile/src/components/SaveButton.tsx, mobile/src/features/feed/components/FeedSectionTabs.tsx, mobile/src/features/search/lib/feedSection.ts]
+codigo: [supabase/migrations/20260604000006_engagement_crm.sql, supabase/migrations/20260701000001_engagement_count_triggers.sql, supabase/functions/mint-video-url/, mobile/src/features/feed/, mobile/src/features/saved/, mobile/src/components/LikeButton.tsx, mobile/src/components/SaveButton.tsx, mobile/src/features/feed/components/FeedSectionTabs.tsx, mobile/src/features/search/lib/feedSection.ts, mobile/src/features/feed/lib/videoFit.ts, mobile/src/features/feed/components/FeedSectionTabs.tsx]
 actualizado: 2026-09-03
 ---
 
@@ -34,6 +34,11 @@ actualizado: 2026-09-03
 - **Dos secciones con tabs de texto sobre el video** (`FeedSectionTabs`, centradas en `insets.top + s_12`, el botón de filtros a la derecha y el chip de zona colgando debajo). La sección vive en el `FilterState` compartido — detalle y decisiones en [[busqueda-y-filtros]].
 - **Cambiar de sección = feed limpio:** `useFeedProperties` vacía `data`/`nextCursor` cuando cambia la identidad de `filters` (ignora la primera) → `FeedScreen` cae al skeleton y el FlashList se remonta desde el primer ítem. El pull-to-refresh (misma identidad) conserva la lista y muestra el spinner.
 - 🔴 **`RefreshControl` en iOS necesita `bounces`.** Desde 9.8 el FlashList llevaba `bounces={false}` para no rebotar en los extremos — y eso dejaba el pull-to-refresh **muerto en iOS** (el gesto se dispara con el rebote del borde superior; Android usa SwipeRefreshLayout y no lo necesita). Ahora `bounces={Platform.OS === 'ios'}`; el snap por intervalo sigue mandando. Regla: en cualquier lista con `refreshControl`, nunca `bounces={false}` en iOS.
+
+## Presentación híbrida del video (#242.2, 2026-09-03)
+Decisión Abraham (smoke con referencia de TikTok): un video **vertical** se ve a pantalla completa (`cover`, inmersivo); uno **horizontal o cuadrado** se ve completo (`contain`) sobre su propia portada desenfocada + tinta oscura, como TikTok/Reels. La frontera no es portrait/landscape sino **cuánto recortaría cover**: si pierde > 25 % del cuadro (`MAX_CROP_FRACTION`) → contain. Un 9:16 en iPhone 19.5:9 sigue en cover (~18 %); 4:5 (~42 %), 1:1 (~54 %) y 16:9 (~74 %) pasan a contain. Tamaño desconocido → cover (sin salto "por si acaso"). El tamaño llega **primero por la portada de Stream** (misma relación que el video, cacheada → sin salto visible) y lo confirma `videoTrackChange`; se guarda junto al `property.id` para que el reciclaje de FlashList no arrastre el tamaño del ítem anterior. Los anuncios (`AdFeedItem`) siguen en cover (techo conocido). Lógica pura en `lib/videoFit.ts` (TDD).
+
+También #242.1: los tabs Venta · Renta se leen mejor (blanco puro/72 %, sombra fuerte, scrim superior) y bajan a `insets.top + 4` en ambas plataformas.
 
 ## Datos / técnico
 - `likes` (`user_id`, `property_video_id`, único). Videos de [[propiedades-y-video]] (`status='ready'`).
