@@ -3,7 +3,7 @@ tipo: concepto
 dominio: producto
 estado: vivo
 fuentes: [docs/PRD.md §9, docs/PRD-MVP-demo.md, .taskmaster (tarea #9)]
-codigo: [supabase/migrations/20260604000006_engagement_crm.sql, supabase/migrations/20260701000001_engagement_count_triggers.sql, supabase/functions/mint-video-url/, mobile/src/features/feed/, mobile/src/features/saved/, mobile/src/components/LikeButton.tsx, mobile/src/components/SaveButton.tsx, mobile/src/features/feed/components/FeedSectionTabs.tsx, mobile/src/features/search/lib/feedSection.ts]
+codigo: [supabase/migrations/20260604000006_engagement_crm.sql, supabase/migrations/20260701000001_engagement_count_triggers.sql, supabase/functions/mint-video-url/, mobile/src/features/feed/, mobile/src/features/saved/, mobile/src/components/LikeButton.tsx, mobile/src/components/SaveButton.tsx, mobile/src/features/feed/components/FeedSectionTabs.tsx, mobile/src/features/search/lib/feedSection.ts, mobile/src/features/feed/lib/videoFit.ts, mobile/src/features/feed/components/FeedSectionTabs.tsx]
 actualizado: 2026-09-03
 ---
 
