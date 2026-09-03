@@ -45,6 +45,17 @@
  * antes de entrar a su propio loop (fase constante, sin deriva). Largos de los
  * paths calculados a mano del viewBox 48×48 (casa ≈100.5, puerta 26).
  *
+ * #244.3 (smoke Android, reporte «un loader en la esquina superior izquierda
+ * encima de la hora»): el contenedor NO lleva width/height fijos. Varias
+ * pantallas le pasan un estilo de "llenar el contenedor"
+ * (`StyleSheet.absoluteFill`, o top/left/right/bottom en 0) porque el
+ * ActivityIndicator que este componente reemplazó se estiraba y CENTRABA su
+ * spinner dentro. Con width/height fijos + left:0/top:0 el loader se colapsaba
+ * a la esquina superior izquierda — en el feed, justo debajo del reloj. Ahora
+ * el tamaño lo lleva el <Svg> y el contenedor solo centra, igual que el
+ * ActivityIndicator: en flujo mide lo que el ícono, y con un estilo de llenado
+ * ocupa el espacio y centra el trazo.
+ *
  * ponytail: sin Lottie, sin prop `animating` (nunca se usó en la app), sin
  * `hidesWhenStopped`. Si se quiere un loader estático, no se renderiza.
  */
@@ -154,7 +165,9 @@ export function UrbeaLoader({
 
   return (
     <View
-      style={[styles.box, { width: px, height: px }, style]}
+      // Sin width/height fijos: el <Svg> lleva el tamaño y el contenedor centra
+      // (#244.3). Así un estilo de llenado del padre sigue centrando el trazo.
+      style={[styles.box, style]}
       testID={testID}
       accessibilityRole="progressbar"
       accessibilityLabel={accessibilityLabel}
