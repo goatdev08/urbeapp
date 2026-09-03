@@ -54,9 +54,15 @@ export function FeedScreen() {
   // #241: label de la sección activa para el copy del vacío ("en venta"/"en renta").
   const section_label = (FEED_SECTIONS.find((s) => s.value === section)?.label ?? 'Venta').toLowerCase();
   // Coordenada superior compartida por tabs (centro) y botón de filtros (derecha).
-  // #242.1: s_4 de holgura — pegado a la status bar / Dynamic Island sin
-  // invadirla (insets.top ya cubre la hora/wifi en iOS y Android edge-to-edge).
-  const top_row_y = insets.top + spacing.s_4;
+  // #242.1: pegado al borde superior. En iOS con notch/Dynamic Island el inset
+  // (44–62) trae ~10 pt de aire extra debajo del hardware → restamos 6 y la
+  // pill queda a ~5 pt de la isla sin tocarla (smoke iPhone 17, 2026-09-03).
+  // Con status bar clásica (iOS sin notch = 20, Android edge-to-edge = alto
+  // exacto de la barra) NO hay aire: la hora/wifi viven dentro del inset, así
+  // que ahí sumamos s_4.
+  const top_row_y = insets.top > 40 ? insets.top - 6 : insets.top + spacing.s_4;
+  // El botón de filtros (40) se centra con la pill (34).
+  const filter_btn_y = top_row_y - (40 - FEED_SECTION_TABS_HEIGHT) / 2;
   const { data, isLoading, error, loadInitial, refetch, loadMore } = useFeedProperties(filters);
   const [filter_visible, set_filter_visible] = useState(false);
 
@@ -258,7 +264,7 @@ export function FeedScreen() {
           <FeedSectionTabs section={section} on_change={set_section} style={{ top: top_row_y }} />
 
           <TouchableOpacity
-            style={[styles.filter_btn, { top: top_row_y }]}
+            style={[styles.filter_btn, { top: filter_btn_y }]}
             onPress={() => set_filter_visible(true)}
             accessibilityLabel="Abrir filtros"
             accessibilityRole="button"

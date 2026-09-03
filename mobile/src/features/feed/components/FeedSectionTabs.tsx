@@ -9,14 +9,13 @@
  *     padre inyecta `top` (insets.top + s_4 — pegado a la status bar / Dynamic
  *     Island sin invadirla; misma coordenada que el botón de filtros, que
  *     queda a la derecha — no se estorban).
- *   - Activa: blanco puro con fonts.sans_bold + subrayado de 3px (primary_soft,
- *     el Salvia claro del feed). Inactiva: blanco al 72 % (como TikTok — el
- *     gray_1 cálido se ensuciaba sobre el video), sans_semibold. Sombra de
- *     texto fuerte + scrim del padre para leerse sobre cielo/pared clara
- *     (#242.1, feedback del smoke 2026-09-03).
- *   - Área táctil: paddingVertical 6 / paddingHorizontal s_12 + hitSlop;
- *     gap s_24 entre tabs. Altura total 40 = la del botón de filtros, así los
- *     dos quedan centrados en la misma fila.
+ *   - Activa: PILL Salvia (colors.primary, el verde Urbea) con texto on_primary
+ *     sans_bold — pedido de Abraham en el smoke iOS 2026-09-03 (el subrayado
+ *     de 3px no se distinguía). Inactiva: blanco al 72 % (como TikTok — el
+ *     gray_1 cálido se ensuciaba sobre el video), sans_semibold, sin fondo.
+ *     Sombra de texto + scrim del padre para leerse sobre cielo/pared clara.
+ *   - Área táctil: la pill (paddingVertical 6 / paddingHorizontal s_16) +
+ *     hitSlop; gap s_8 entre tabs. Altura total 34 (FEED_SECTION_TABS_HEIGHT).
  *   - Altura total conocida (FEED_SECTION_TABS_HEIGHT) para que el chip de
  *     zona pueda colgarse debajo sin medir.
  *
@@ -32,8 +31,8 @@ import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } fro
 import { FEED_SECTIONS, type FeedSection } from '@/features/search/lib/feedSection';
 import { colors, fonts, spacing } from '@/theme/theme';
 
-/** Alto del bloque (padding 6+6 + línea 22 + margen 3 + subrayado 3) — para posicionar lo que cuelga debajo. */
-export const FEED_SECTION_TABS_HEIGHT = 40;
+/** Alto de la pill (padding 6+6 + línea 22) — para posicionar lo que cuelga debajo y centrar el botón de filtros. */
+export const FEED_SECTION_TABS_HEIGHT = 34;
 
 interface FeedSectionTabsProps {
   section: FeedSection;
@@ -52,7 +51,7 @@ export function FeedSectionTabs({ section, on_change, style }: FeedSectionTabsPr
             key={tab.value}
             onPress={() => on_change(tab.value)}
             hitSlop={8}
-            style={styles.tab}
+            style={[styles.tab, is_active && styles.tab_active]}
             accessibilityRole="tab"
             accessibilityState={{ selected: is_active }}
             accessibilityLabel={`Sección ${tab.label}`}
@@ -61,7 +60,6 @@ export function FeedSectionTabs({ section, on_change, style }: FeedSectionTabsPr
             <Text style={[styles.label, is_active ? styles.label_active : styles.label_inactive]}>
               {tab.label}
             </Text>
-            <View style={[styles.underline, is_active && styles.underline_active]} />
           </Pressable>
         );
       })}
@@ -74,14 +72,19 @@ const styles = StyleSheet.create({
     position: 'absolute',
     alignSelf: 'center',
     flexDirection: 'row',
-    gap: spacing.s_24,
+    gap: spacing.s_8,
     height: FEED_SECTION_TABS_HEIGHT,
     zIndex: 10,
   },
   tab: {
-    paddingVertical: 6, // ponytail: 40 de alto total; no hay token s_6 y no vale crearlo por un solo uso
-    paddingHorizontal: spacing.s_12,
+    paddingVertical: 6, // ponytail: 34 de alto total; no hay token s_6 y no vale crearlo por un solo uso
+    paddingHorizontal: spacing.s_16,
+    borderRadius: FEED_SECTION_TABS_HEIGHT / 2,
     alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tab_active: {
+    backgroundColor: colors.primary,
   },
   label: {
     fontSize: 17,
@@ -95,19 +98,10 @@ const styles = StyleSheet.create({
   label_active: {
     color: colors.on_primary,
     fontFamily: fonts.sans_bold,
+    textShadowColor: 'transparent', // sobre la pill sólida no hace falta sombra
   },
   label_inactive: {
     color: 'rgba(255,255,255,0.72)',
     fontFamily: fonts.sans_semibold,
-  },
-  underline: {
-    marginTop: 3,
-    height: 3,
-    width: 24,
-    borderRadius: 1.5,
-    backgroundColor: 'transparent',
-  },
-  underline_active: {
-    backgroundColor: colors.primary_soft,
   },
 });
