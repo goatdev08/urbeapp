@@ -30,16 +30,20 @@
  * arbitrarias de un componente nativo como strokeDashoffset). Corre en el
  * hilo de JS; para un ícono de 20–48 px es imperceptible.
  *
+ * ARRANCA DIBUJADO (seguro de #244): el valor inicial del offset es 0 = trazo
+ * completo visible, y el ciclo es sostiene → borra → vuelve a dibujar. Así, si
+ * la animación no corriera en algún build, se ve una casa ESTÁTICA en vez de un
+ * hueco — que es exactamente el síntoma que reportó el smoke en Android físico.
+ * Nunca dejar el estado en reposo de un indicador en "invisible".
+ *
  * Implementación: react-native-svg (ya instalado, ver IsotipoMark) + Animated
- * clásico. Dos `Animated.Value` en `Animated.loop`: dibuja (45 % del ciclo,
- * 990 ms) → sostiene (15 %, 330 ms) → borra (40 %, 880 ms) = 2200 ms. offset
- * len↔0 (dasharray=[len,len]: offset 0 = trazo completo visible, offset ±len =
+ * clásico. Dos `Animated.Value` en `Animated.loop`: sostiene (15 % del ciclo,
+ * 330 ms) → borra (40 %, 880 ms) → dibuja (45 %, 990 ms) = 2200 ms. offset
+ * 0↔±len (dasharray=[len,len]: offset 0 = trazo completo visible, offset ±len =
  * invisible — la fase se repite cada 2·len, así que -len y +len son el mismo
- * estado; `Animated.loop` sencillamente sigue rebotando entre -len y 0 sin
- * necesitar un reset manual). La puerta corre el mismo ciclo con un retraso
- * único de DOOR_LAG antes de entrar a su propio loop (fase constante, sin
- * deriva). Largos de los paths calculados a mano del viewBox 48×48 (casa
- * ≈100.5, puerta 26).
+ * estado). La puerta corre el mismo ciclo con un retraso único de DOOR_LAG
+ * antes de entrar a su propio loop (fase constante, sin deriva). Largos de los
+ * paths calculados a mano del viewBox 48×48 (casa ≈100.5, puerta 26).
  *
  * ponytail: sin Lottie, sin prop `animating` (nunca se usó en la app), sin
  * `hidesWhenStopped`. Si se quiere un loader estático, no se renderiza.
@@ -98,12 +102,16 @@ export function stroke_width_for(px: number): number {
   return 4;
 }
 
-/** Un ciclo dibuja→sostiene→borra para un Animated.Value ya en `len` (invisible). */
+/**
+ * Un ciclo sostiene→borra→dibuja para un Animated.Value que arranca en 0
+ * (trazo completo). Empezar por el estado VISIBLE es el seguro: sin animación
+ * se ve la casa estática, no un hueco.
+ */
 function draw_cycle(value: Animated.Value, len: number): Animated.CompositeAnimation {
   return Animated.sequence([
-    Animated.timing(value, { toValue: 0, duration: DRAW_MS, easing: EASING, useNativeDriver: false }),
     Animated.delay(HOLD_MS),
     Animated.timing(value, { toValue: -len, duration: ERASE_MS, easing: EASING, useNativeDriver: false }),
+    Animated.timing(value, { toValue: 0, duration: DRAW_MS, easing: EASING, useNativeDriver: false }),
   ]);
 }
 
@@ -122,15 +130,16 @@ export function UrbeaLoader({
   // useState (no useRef().current): leer .current de un ref en el cuerpo del
   // render dispara el lint react-hooks/refs; el mismo patrón de
   // UploadProgressBar.tsx.
-  const [house_offset] = useState(() => new Animated.Value(HOUSE_LEN));
-  const [door_offset] = useState(() => new Animated.Value(DOOR_LEN));
+  // Valor inicial 0 = trazo completo dibujado (ver "ARRANCA DIBUJADO" arriba).
+  const [house_offset] = useState(() => new Animated.Value(0));
+  const [door_offset] = useState(() => new Animated.Value(0));
 
   useEffect(() => {
-    house_offset.setValue(HOUSE_LEN);
+    house_offset.setValue(0);
     const house_loop = Animated.loop(draw_cycle(house_offset, HOUSE_LEN));
     house_loop.start();
 
-    door_offset.setValue(DOOR_LEN);
+    door_offset.setValue(0);
     const door_delay = Animated.sequence([
       Animated.delay(DOOR_LAG_MS),
       Animated.loop(draw_cycle(door_offset, DOOR_LEN)),
