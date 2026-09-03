@@ -3,6 +3,9 @@ tipo: estado
 actualizado: 2026-09-03
 ---
 
+## Hoy (2026-09-03) — #70: graphify medido y acotado
+Abraham preguntó si la tarea 70 (grafo AST) aportaba frente a la wiki. Se construyó el grafo real antes de decidir: 88 % de ruido por `mobile/ios`, SQL invisible sin `tree-sitter-sql`, y ninguna arista móvil → EF → RPC (son strings). La wiki sigue siendo la única fuente del flujo entre capas y del porqué; el grafo queda como herramienta de **footprint por símbolo** (`graphify affected`) para el analista y el skill `urbea-context`. Se descartaron los hooks anti-grep, versionar `graph.json` y el paso de cierre. Rama `tarea/70-graphify`. Ver [[0007-workflow-multiagente]] §graphify.
+
 ## Hoy (2026-09-03) — cerrado: feed con secciones, video híbrido y loader propio, TODO en producción
 Cadena #241 → #245 mergeada a `main` (`4a99be8`) y **publicada por OTA a los dos canales**, verificada por Abraham en simulador iOS, emulador Android y **Android físico**:
 - **#241** secciones Venta · Renta (la sección ES `filters.operation_types`, feed y mapa la comparten), refresh vivo en iOS (`bounces`), back en /admin y safe-area en CRM y muro legal.

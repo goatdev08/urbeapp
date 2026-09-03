@@ -4951,15 +4951,49 @@
       },
       {
         "id": "70",
-        "title": "Integrar graphify al workflow (grafo AST como 2ª fuente de contexto)",
-        "description": "Integrar graphify (grafo AST del código) como segunda fuente de contexto junto al vault. graphify YA está instalado (~/.local/bin/graphify).",
-        "details": "## Contexto\nPromueve la exploración 037 (`.taskmaster/docs/exploraciones/037-integracion-graphify-workflow.md`, sección Resolución 2026-07-12). Umbral de tamaño cumplido (321 archivos, ~38.7k LOC TS/TSX + ~6k SQL).\n\n## Subtareas candidatas (a expandir con /tm-plan)\n- (a) `graphify claude install` (**install completo**: edita CLAUDE.md + 2 hooks PreToolUse anti-grep, replica AJN — revisar el diff antes de commitear) + `graphify update .` y medir/comentar el conteo de nodos.\n- (b) cablear el skill `urbea-context` para consultar `graphify explain/path/query` ANTES del mapa-codebase.md manual.\n- (c) añadir `graphify update .` al cierre/ingest de `/tm-tarea`.\n- (d) **VERSIONAR** graphify-out/graph.json en git con el `merge-driver` union (NO gitignore — viaja entre worktrees para la futura fase 2).\n- (e) ingest al vault: ADR 0007 de 'Futuro' a 'vivo', mapa-codebase, log.\n\n## Notas\ngraphify **complementa** el mapa manual (no lo borra en el MVP). Extracción **AST-only** (gratis). La **fase 2** (scheduler de olas paralelas con worktrees) es una tarea L futura aparte, NO incluida aquí — estudiar antes los comandos `tm-paralelo-*` archivados de AJN (`/Users/fru/Dev/AJN`).\n\n## Footprint\n.claude/ (skill + hooks), CLAUDE.md, wiki/. NO crítica-TDD (tooling, no toca functions/migrations/lógica pura).",
-        "testStrategy": "Verificación ligera: `graphify explain`/`path` devuelven resultados coherentes sobre el codebase; el skill urbea-context los usa; `pnpm tsc --noEmit`/`pnpm lint` intactos (no toca código de app). Revisar el diff que `claude install` hace a CLAUDE.md.",
-        "status": "pending",
+        "title": "Integrar graphify al workflow, acotado: footprint por símbolo (affected/explain), sin hooks ni grafo versionado",
+        "description": "graphify como complemento mecánico del vault para \"quién importa/llama a este símbolo\". Alcance recortado el 2026-09-03 tras medirlo sobre el repo (ver details). grep y el vault siguen siendo la vía para strings, RPC y flujo entre capas.",
+        "details": "Contexto\n\nPromueve la exploración 037. ALCANCE REVISADO 2026-09-03 (medición real, ver subtarea 70.1 y wiki/decisiones/0007 §graphify): la config por defecto indexaba mobile/ios (107k nodos, 120 MB); el parser SQL no estaba instalado (0 nodos de migraciones); el grafo no cruza móvil→EF→RPC (strings) y `query` en lenguaje natural no sirve sin extracción de pago. Lo único donde gana a grep: `affected`/`explain` sobre un símbolo TS/SQL.\n\nAlcance final\n\n* `.graphifyignore` versionado + `graphify-out/` en .gitignore (NO se versiona el grafo; se regenera con `graphify update . --no-cluster`, 7 s incremental).\n* `tree-sitter-sql` instalado en el entorno uv de graphify (paso manual por máquina, documentado en el skill).\n* `urbea-context` §graphify (cuándo sí / cuándo no) + paso 3b en `analista-subtareas` (footprint mecánico).\n* Ingest: ADR 0007 §graphify vivo/acotado, exploración 037 §Revisión, mapa-codebase, log, estado-actual.\n\nDescartado (era el plan original): `graphify claude install` + hooks anti-grep, versionar graph.json con merge-driver, `graphify update .` en el cierre de /tm-tarea, fase 2 de olas paralelas (sin base mientras el grafo no vea aristas SQL/RPC).\n\nFootprint\n\n.graphifyignore, .gitignore, .claude/skills/urbea-context, .claude/agents/analista-subtareas.md, wiki/, .taskmaster/docs/exploraciones/037. NO crítica-TDD.",
+        "testStrategy": "Verificación ligera: `graphify explain \"is_admin\"` y `graphify affected \"fetchFeedProperties\"` devuelven nodos coherentes (salida pegada en 70.1/70.2); pnpm tsc --noEmit / pnpm lint intactos (no toca código de app).",
+        "status": "done",
         "dependencies": [],
         "priority": "medium",
-        "subtasks": [],
-        "updatedAt": "2026-07-12T04:36:03.143167-06:00"
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Parser SQL + .graphifyignore + graphify-out ignorado: grafo limpio y medido",
+            "description": "",
+            "details": "\n<info added on 2026-09-03T21:24:11.435Z>\n## Hecho (70.1) — parser SQL + grafo limpio, medido\n- `uv pip install --python ~/.local/share/uv/tools/graphifyy/bin/python tree-sitter-sql` → `tree-sitter-sql==0.3.11` (el extractor de graphify fallaba en silencio: \"tree_sitter_sql not installed\" → migraciones = 0 nodos).\n- `.graphifyignore` (raíz, versionado): excluye mobile/ios, android, dist-test, assets, .maestro, .agents, .claude, .taskmaster, urbea-plan, wiki, docs, scripts, demo-assets, *.md, *.json.\n- `.gitignore`: `graphify-out/` (no se versiona; se regenera con `graphify update . --no-cluster`).\n\n### Medición (salida real)\nConfig por defecto (antes del ignore): `[graphify watch] Rebuilt (no clustering): 107218 nodes, 139996 edges` · graph.json 120,548,747 bytes · 4:53.97 total · 94,788 nodos de mobile/ios.\nCon .graphifyignore + parser SQL: `[graphify watch] Rebuilt (no clustering): 4951 nodes, 18231 edges` · graph.json 7,201,693 bytes.\nNodos por dir: mobile/src 2294 · supabase/functions 1494 · supabase/migrations 560 · mobile/app 348 · supabase/tests 232.\nAristas SQL→SQL: contains 302 · triggers 23 · references 20 · reads_from 18. Aristas EF→SQL: 0.\n`graphify explain \"is_admin\"` → `Node: public.is_admin()  Source: supabase/migrations/20260604000008_rls_helpers_and_policies.sql L17`.\n`graphify affected \"ads_for_zone\"` → `No unique node match` (drop+create la redefine; matching SQL irregular).\nRebuild incremental: `8.06s user 1.55s system 138% cpu 6.925 total`.\n</info added on 2026-09-03T21:24:11.435Z>",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 70,
+            "updatedAt": "2026-09-03T21:24:41.663Z",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Cablear urbea-context y analista-subtareas: graphify affected/explain para footprint de símbolos (grep sigue para strings/RPC)",
+            "description": "",
+            "details": "\n<info added on 2026-09-03T21:24:11.512Z>\n## Hecho (70.2) — cableado acotado (sin hooks, sin versionar, sin paso de cierre)\n- `.claude/skills/urbea-context/SKILL.md`: la sección \"Futuro: graphify (no instalado aún)\" pasa a \"graphify — grafo AST del código (2ª fuente, acotada)\": cuándo SÍ (`affected`/`explain`/`path` sobre símbolos), cuándo NO (strings: `.rpc('…')`, `functions.invoke('…')`, columnas, policies; `query` en lenguaje natural descartado), cómo regenerar bajo demanda.\n- `.claude/agents/analista-subtareas.md`: paso 3b \"Footprint mecánico de símbolos existentes\" — `graphify affected \"<símbolo>\"` cuando la subtarea modifica una función/hook/EF existente y hay grafo; advierte que solo resuelve símbolos.\n- Descartado a propósito (evidencia en 70.1 y ADR 0007): `graphify claude install` + hooks PreToolUse anti-grep (forzarían la herramienta que no ve strings ni cruza capas), versionar graph.json con merge-driver (7 MB de diffs opacos), `graphify update .` en el cierre de /tm-tarea (se regenera en 7 s bajo demanda).\n### Verificación\nPrueba de uso real: `graphify affected \"fetchFeedProperties\"` → 12 nodos (useFeedProperties.ts, FeedScreen.tsx, 9 tests) con archivo:línea, 0.95 s.\n</info added on 2026-09-03T21:24:11.512Z>",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 70,
+            "updatedAt": "2026-09-03T21:24:43.373Z",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Ingest: ADR 0007 a vivo, exploración 037 resolución revisada, mapa-codebase, log, estado-actual",
+            "description": "",
+            "details": "\n<info added on 2026-09-03T21:24:39.986Z>\n## Hecho (70.3) — ingest\n- wiki/decisiones/0007-workflow-multiagente.md: \"Futuro: graphify\" → \"graphify — vivo, acotado\" con la medición y la decisión (sin hooks, sin versionar, sin paso de cierre).\n- .taskmaster/docs/exploraciones/037: sección \"Revisión de la resolución — 2026-09-03\" (qué cambió respecto a lo aprobado el 2026-07-12 y por qué).\n- wiki/codebase/mapa-codebase.md: nota de complemento mecánico (el mapa sigue siendo la fuente del flujo entre capas). wiki/log.md y wiki/estado/estado-actual.md: entradas del 2026-09-03.\n- tasks.json: título/description/details/testStrategy de #70 reescritos al alcance final.\n### Verificación (salida real)\ntsc exit: 0 · lint exit: 0 (0 errors and 75 warnings) — no se tocó código de app.\n</info added on 2026-09-03T21:24:39.986Z>",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 70,
+            "updatedAt": "2026-09-03T21:24:45.095Z",
+            "parentId": "undefined"
+          }
+        ],
+        "updatedAt": "2026-09-03T21:24:45.095Z"
       },
       {
         "id": "71",
@@ -11069,9 +11103,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-09-03T19:46:02.067Z",
+      "lastModified": "2026-09-03T21:24:45.095Z",
       "taskCount": 245,
-      "completedCount": 164,
+      "completedCount": 165,
       "tags": [
         "master"
       ]

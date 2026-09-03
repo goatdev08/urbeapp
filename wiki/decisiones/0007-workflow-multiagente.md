@@ -31,8 +31,14 @@ Los 4 agentes de ejecución (`guardian`, `test-author`, `mobile`, `supabase`) se
 - **mobile/supabase**: verificar DURANTE el GREEN (no solo al cierre), GREEN un test a la vez en los seams, **auto-check de conformidad Spec/PRD** antes de reportar (campo `Conformidad spec` en el output — cierra el hueco de las subtareas no críticas, donde el guardian no corre) y checklist de 4 smells curados (Speculative Generality, Duplicated Code, Mysterious Name, Primitive Obsession) condicional a diff no trivial.
 - **Traducción deliberada, no copia**: el "vertical slicing" de mattpocock choca con nuestro RED-batch (el guardian exige enumeración exhaustiva) → el RED sigue siendo completo; "un test a la vez" vive en el GREEN. De los 12 smells de Fowler solo se injertaron 4 (ponytail). Detalle completo: `.taskmaster/docs/exploraciones/034-enriquecer-agentes-tdd-mattpocock.md`.
 
-## Futuro: graphify
-Sumar `graphify` (grafo automático del código, AST) como segunda fuente de contexto junto al vault: `urbea-context` consultaría `graphify query/explain/path` antes del mapa manual; `/tm-tarea` lo actualizaría en el cierre; habilitaría **olas paralelas** con git worktrees (hoy serie). No instalado aún.
+## graphify — vivo, acotado (tarea #70, 2026-09-03)
+La exploración 037 lo aprobó en grande (versionar `graph.json` con merge-driver, `claude install` con hooks anti-grep, `graphify update .` en cada cierre, olas paralelas después). **Se recortó tras medirlo sobre el repo real**:
+- Con la config por defecto indexó `mobile/ios` (Pods): 107k nodos, 120 MB, 5 min. Con `.graphifyignore` (solo `mobile/src`, `mobile/app`, `supabase/`): **4,951 nodos, 7 MB**. Por eso `graphify-out/` va en `.gitignore` y se regenera bajo demanda; no se versiona.
+- El parser SQL (`tree-sitter-sql`) no venía instalado: migraciones = 0 nodos hasta instalarlo en el entorno `uv` de graphify. Con él, funciones y policies de Postgres existen como nodos (`public.is_admin`), con aristas `triggers`/`references`/`reads_from` entre objetos SQL, pero **sin** llamadas función→función ni EF→RPC (son strings, no aristas). La búsqueda de nombres SQL es irregular (`public.is_admin` sí; `ads_for_zone`, redefinida por drop+create, no resuelve).
+- **No cruza capas**: móvil → Edge Function → RPC son strings (`functions.invoke('…')`, `.rpc('…')`). `graphify query` en lenguaje natural devolvió bitácoras de otras tareas. Ese "por qué" y ese flujo entre capas siguen viviendo SOLO en el vault.
+- **Donde sí gana a `grep`:** `graphify affected "<símbolo>"` / `explain` sobre una función TS: quién la importa o llama, con archivo:línea, en <1 s y sin falsos positivos de texto.
+
+**Decisión:** el grafo es una herramienta de **footprint por símbolo** para `analista-subtareas` y el skill `urbea-context`; `grep` sigue siendo la vía para strings y el vault la fuente del flujo entre capas. **Sin hooks anti-grep, sin versionar el grafo, sin paso de cierre.** La fase 2 (olas paralelas) queda sin base mientras el grafo no vea las aristas SQL/RPC donde chocan las subtareas.
 
 ## Consecuencias
 - Coherente con [[0003-vault-obsidian-como-memoria]], [[0004-taskmaster-motor-de-ejecucion]] y [[0006-workflow-ejecucion-tareas]].

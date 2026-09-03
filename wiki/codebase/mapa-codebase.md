@@ -1,11 +1,13 @@
 ---
 tipo: codebase
-actualizado: 2026-08-16
+actualizado: 2026-09-03
 ---
 
 # Mapa del codebase
 
 **Pieza clave del vault:** dominio/concepto → archivos exactos. Consultar ANTES de escribir código (¿ya existe algo reutilizable?). Reemplaza `grep`.
+
+> **Complemento mecánico (tarea #70):** para "quién importa/llama a este símbolo" usa `graphify affected "<símbolo>"` (grafo AST local en `graphify-out/`, ignorado en git; se regenera con `graphify update . --no-cluster`). Este mapa sigue siendo la fuente del **flujo entre capas** (móvil → EF → RPC → tabla), que el grafo no ve porque esas aristas son strings. Ver `wiki/decisiones/0007-workflow-multiagente.md` §graphify.
 
 ## Backend — Supabase (existe)
 Detalle de tablas/migraciones en [[db-schema-map]].

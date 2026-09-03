@@ -31,5 +31,14 @@ El proyecto guarda su memoria en el vault Obsidian `wiki/`. Es tu **primera fuen
 2. La página de `wiki/conceptos/` → `estado: vivo`, `codigo:` con rutas reales.
 3. Una línea en `wiki/log.md` (`## [YYYY-MM-DD] tipo | título`).
 
-## Futuro: graphify (no instalado aún)
-Cuando Urbea tenga bastante código, se podrá sumar `graphify` (grafo automático del código, AST) como **segunda** fuente: `graphify query/explain/path`. Encaje previsto: consultar el grafo *antes* del mapa manual para ubicar el SUT y sus vecinos; actualizarlo en el cierre (`graphify update .`). Ver `wiki/decisiones/0007-workflow-multiagente.md`.
+## graphify — grafo AST del código (2ª fuente, acotada; tarea #70)
+`graphify` (instalado en `~/.local/bin`) construye un grafo de símbolos de `mobile/` y `supabase/` (TS/TSX + SQL con `tree-sitter-sql`). Es **local y regenerable** (`graphify-out/` está en `.gitignore`; el filtro vive en `.graphifyignore`). Medido 2026-09-03: cada consulta tarda <1 s.
+
+**Cuándo SÍ (donde gana a `grep`):** preguntas de **símbolo**, no de texto.
+- Footprint de un cambio: `graphify affected "<símbolo>"` → quién importa/llama a esa función (archivo:línea), sin falsos positivos por coincidencia de texto. Úsalo al estimar el footprint de una subtarea que toca una función/hook/EF existente.
+- Vecinos de un símbolo: `graphify explain "<símbolo>"` (qué llama y quién lo llama).
+- Camino dentro de una capa: `graphify path "<A>" "<B>"`.
+
+**Cuándo NO (sigue siendo `grep`/vault):** todo lo que es **string**, no símbolo — nombres de RPC y de Edge Function entre comillas (`.rpc('ads_for_zone')`, `functions.invoke('mint-video-url')`), columnas, claves de `app_config`, mensajes, flujos de Maestro, texto de policies. El grafo **no cruza** móvil → EF → SQL (esas aristas son strings); esa cadena vive en `wiki/conceptos/` y en el `mapa-codebase`. `graphify query "<pregunta>"` en lenguaje natural NO sirve sin extracción semántica (de pago): no lo uses.
+
+**Mantener:** si `graphify-out/` no existe o el símbolo no aparece, regenera con `graphify update . --no-cluster` (AST puro, sin LLM, ~1 min; `--force` si borraste código). No hay hook ni paso de cierre obligatorio: se regenera bajo demanda. Decisión y medición: `wiki/decisiones/0007-workflow-multiagente.md` §graphify.
