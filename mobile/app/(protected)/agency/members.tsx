@@ -35,7 +35,6 @@
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   Image,
   Pressable,
@@ -47,6 +46,7 @@ import {
 import { Redirect, Stack } from 'expo-router';
 import { UserCircle } from 'phosphor-react-native';
 
+import { UrbeaLoader } from '@/components/UrbeaLoader';
 import { colors, radii, spacing, type_scale } from '@/theme/theme';
 import { useAuth } from '@/features/auth/context';
 import {
@@ -196,7 +196,7 @@ export default function AgencyMembersScreen() {
   if (role_loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color={colors.primary} />
+        <UrbeaLoader size="large" color={colors.primary} />
       </View>
     );
   }
@@ -315,7 +315,7 @@ export default function AgencyMembersScreen() {
 
         {list_loading && (
           <View style={styles.center_inline}>
-            <ActivityIndicator size="large" color={colors.primary} />
+            <UrbeaLoader size="large" color={colors.primary} />
           </View>
         )}
 
@@ -401,7 +401,7 @@ function MemberCard({
 
       {busy && (
         <View style={styles.actions}>
-          <ActivityIndicator size="small" color={colors.primary} />
+          <UrbeaLoader size="small" color={colors.primary} />
         </View>
       )}
 

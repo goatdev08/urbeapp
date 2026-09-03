@@ -25,7 +25,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
-  ActivityIndicator,
   Alert,
   FlatList,
   Pressable,
@@ -36,6 +35,7 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 
+import { UrbeaLoader } from '@/components/UrbeaLoader';
 import { supabase } from '@/lib/supabase/client';
 import type { Database } from '@/types/database';
 import { PrimaryButton } from '@/components/PrimaryButton';
@@ -305,7 +305,7 @@ export default function AgencyDetailScreen(): React.ReactElement {
 
       {is_loading ? (
         <View style={styles.center}>
-          <ActivityIndicator size="large" color={COLOR_SALVIA} />
+          <UrbeaLoader size="large" color={COLOR_SALVIA} />
         </View>
       ) : error !== null ? (
         <View style={styles.center}>

@@ -24,7 +24,6 @@
  */
 import React, { useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -36,6 +35,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Link, Redirect, useRouter } from 'expo-router';
 
+import { UrbeaLoader } from '@/components/UrbeaLoader';
 import { useAuth } from '@/features/auth/context';
 import { MSG_PHONE_TAKEN } from '@/features/auth/auth-errors';
 import { register_user, send_verification_email } from '@/features/auth/api';
@@ -517,7 +517,7 @@ export default function RegisterScreen() {
               >
                 {is_submitting ? (
                   <View style={styles.submit_loading_row}>
-                    <ActivityIndicator testID="signup-spinner" size="small" color="#9CA3AF" />
+                    <UrbeaLoader testID="signup-spinner" size="small" color="#9CA3AF" />
                     <Text style={[styles.submit_text, styles.submit_text_disabled, styles.submit_loading_label]}>
                       Creando cuenta…
                     </Text>
@@ -567,7 +567,7 @@ export default function RegisterScreen() {
                 >
                   {is_validating ? (
                     <View style={styles.submit_loading_row}>
-                      <ActivityIndicator testID="validate-spinner" size="small" color="#9CA3AF" />
+                      <UrbeaLoader testID="validate-spinner" size="small" color="#9CA3AF" />
                       <Text style={[styles.submit_text, styles.submit_text_disabled, styles.submit_loading_label]}>
                         Validando…
                       </Text>
@@ -665,7 +665,7 @@ export default function RegisterScreen() {
                 >
                   {is_submitting ? (
                     <View style={styles.submit_loading_row}>
-                      <ActivityIndicator testID="submit-spinner" size="small" color="#9CA3AF" />
+                      <UrbeaLoader testID="submit-spinner" size="small" color="#9CA3AF" />
                       <Text style={[styles.submit_text, styles.submit_text_disabled, styles.submit_loading_label]}>
                         Creando cuenta…
                       </Text>

@@ -15,11 +15,12 @@
  *   solo recalcula cuando data o region cambian.
  */
 import React, { Component, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Keyboard, StyleSheet, Text, View } from 'react-native';
+import { Keyboard, StyleSheet, Text, View } from 'react-native';
 import MapView, { Polygon, Region } from 'react-native-maps';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { UrbeaLoader } from '@/components/UrbeaLoader';
 import { colors, spacing } from '@/theme/theme';
 import { useLocation } from '@/features/location/LocationProvider';
 import { useFilters } from '../search/filterStore';
@@ -445,7 +446,7 @@ function MapContent(): React.JSX.Element {
       {/* ── Overlay de carga — ActivityIndicator discreto arriba ─────────── */}
       {loading && (
         <View style={styles.loading_overlay} pointerEvents="none">
-          <ActivityIndicator size="small" color={colors.primary} />
+          <UrbeaLoader size="small" color={colors.primary} />
         </View>
       )}
 

@@ -29,9 +29,10 @@
  *     que ya deja ads=[]) → <Redirect> fuera de ads/.
  */
 import React from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { Redirect, Slot } from 'expo-router';
 
+import { UrbeaLoader } from '@/components/UrbeaLoader';
 import { useCanAdvertise } from '@/features/ads/hooks/useCanAdvertise';
 import { useMyAds } from '@/features/ads/hooks/useMyAds';
 import { colors } from '@/theme/theme';
@@ -45,7 +46,7 @@ export default function AdsLayout(): React.ReactElement {
   if (capability_loading) {
     return (
       <View style={styles.center} testID="ads-gate-loading">
-        <ActivityIndicator size="large" color={colors.primary} />
+        <UrbeaLoader size="large" color={colors.primary} />
       </View>
     );
   }
@@ -57,7 +58,7 @@ export default function AdsLayout(): React.ReactElement {
   if (my_ads.loading) {
     return (
       <View style={styles.center} testID="ads-gate-loading">
-        <ActivityIndicator size="large" color={colors.primary} />
+        <UrbeaLoader size="large" color={colors.primary} />
       </View>
     );
   }

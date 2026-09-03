@@ -40,6 +40,9 @@ Decisión Abraham (smoke con referencia de TikTok): un video **vertical** se ve 
 
 También #242.1: los tabs Venta · Renta se leen mejor (blanco puro/72 %, sombra fuerte, scrim superior) y bajan a `insets.top + 4` en ambas plataformas.
 
+## Indicador de refresco propio (#243.2, 2026-09-03)
+El spinner nativo del pull-to-refresh (gray_1) quedaba invisible bajo el scrim y los tabs. Ahora el `RefreshControl` es transparente (solo gesto) y mientras `isLoading && data.length > 0` aparece `RefreshingChip` («Actualizando» + `UrbeaLoader` «Trazo») centrado debajo de los tabs; el chip de zona activa baja mientras refresca. Ver [[design-system]].
+
 ## Datos / técnico
 - `likes` (`user_id`, `property_video_id`, único). Videos de [[propiedades-y-video]] (`status='ready'`).
 - 🔑 **URLs de reproducción (desde #68: Cloudflare Stream, HLS firmado):** el feed NO lee el video directo. Tras su query de propiedades llama la EF **`mint-video-url`** con el batch de `property_ids` → recibe `{property_id,video_id,signed_url}`. Desde #68 esa `signed_url` es un **manifiesto HLS de Cloudflare Stream** (`https://videodelivery.net/<JWT>/manifest/video.m3u8`), no un objeto de Supabase Storage. Solo propiedades `active` con video `ready`. ⚠️ Las URLs expiran → si la sesión es larga, re-mintar. Ver [[propiedades-y-video]] · [[storage-hibrido]].

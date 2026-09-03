@@ -2,6 +2,9 @@
 
 Append-only. Prefijo: `## [YYYY-MM-DD] tipo | título`.
 
+## [2026-09-03] producto | #243 — Urbea tiene loader propio: la casa a trazo
+El pull-to-refresh del feed refrescaba sin indicador visible. Abraham revisó cinco loaders de marca en un preview HTML y eligió «Trazo» para toda la app: `UrbeaLoader` (svg + Reanimated) reemplaza los 33 archivos con `ActivityIndicator`, y `RefreshingChip` muestra «Actualizando» en feed, Guardados y CRM. Suite completa 163/2066 verde. Solo cliente → OTA tras smoke conjunto. Ver [[design-system]].
+
 ## [2026-09-03] polish | #242 — los tabs del feed se leen y el video horizontal ya no se recorta
 Del smoke de #241 con Abraham (referencia: TikTok): tabs Venta · Renta más visibles (blanco puro / 72 %, sombra, scrim) y pegados al safe area (`insets.top + 4`); presentación **híbrida** del video — vertical a pantalla completa, horizontal/cuadrado completo sobre su portada desenfocada (`lib/videoFit.ts`, umbral 25 % de recorte, 16 tests). Solo cliente → OTA tras el smoke conjunto. Ver [[feed-vertical-video]].
 

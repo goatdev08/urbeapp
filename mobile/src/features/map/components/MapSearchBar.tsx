@@ -15,11 +15,12 @@
  */
 
 import React from 'react';
-import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { MagnifyingGlass, SlidersHorizontal } from 'phosphor-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { UrbeaLoader } from '@/components/UrbeaLoader';
 import { colors, fonts, radii, shadows, spacing } from '@/theme/theme';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -86,7 +87,7 @@ export function MapSearchBar({
 
         {/* Spinner discreto (#161) — búsqueda de lugares en vuelo. */}
         {loading && (
-          <ActivityIndicator size="small" color={colors.gray_2} style={styles.loading_spinner} />
+          <UrbeaLoader size="small" color={colors.gray_2} style={styles.loading_spinner} />
         )}
 
         {/*

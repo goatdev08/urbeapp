@@ -10866,7 +10866,7 @@
         "description": "Origen: pedido de Abraham (2026-09-02, sesión de producto) · Detectado por: usuario. Cuatro frentes: (1) el feed se divide en dos secciones, «Venta» y «Renta», cada una con el filtro de operación fijo (tabs de texto sobre el feed oscuro, default Venta, la elección persiste con los filtros; las secciones reemplazan al grupo «Operación» del FilterSheet y como feed y mapa comparten FilterState, el mapa sigue la sección); (2) el pull-to-refresh del feed funciona en iOS y Android (hoy `bounces={false}` mata el RefreshControl en iOS) y cambiar de sección deja el feed limpio (skeleton, no videos de la sección anterior); (3) todas las pantallas empujadas tienen un back visible (faltaba en /admin y sus 4 colas); (4) ninguna pantalla colisiona con la hora/wifi en iOS ni Android (CRMScreen y legal-wall usaban el SafeAreaView de react-native, que en Android no aplica el inset).",
         "details": "Decisiones (AskUserQuestion 2026-09-02): default Venta · una sola verdad (sección = operation_types en el FilterState compartido; se quita «Operación» del sheet) · tabs de texto estilo TikTok (activa blanca semibold con subrayado, inactiva gray_1).\n\nFootprint: mobile/src/features/search/lib/feedSection.ts (NUEVO, CRÍTICA → TDD) · filterStore.tsx (section/set_section, normalización en hydrate/clear) · lib/filterQuery.ts (operation_types deja de contar en el badge) · components/FilterSheet.tsx (retirar Operación) · feed/components/FeedSectionTabs.tsx (NUEVO) · feed/FeedScreen.tsx (tabs, bounces, chip de zona debajo) · feed/hooks/useFeedProperties.ts (reset de data al cambiar filtros) · app/admin/{index,requests,reports,revisions,ads} (BackButton) · leads/screens/CRMScreen.tsx y auth/components/legal-wall.tsx (SafeAreaView de safe-area-context).\n\nSolo cliente → REQUIERE OTA. Sin migraciones ni EFs. Compatibilidad: el FilterState persistido con operation_types=[] o ['rent','sale'] se normaliza a la sección default al hidratar.\n\nDERIVADAS: #242 (usuario, smoke 2026-09-03: tabs poco visibles y muy separados del borde; presentación del video estilo TikTok)",
         "testStrategy": "feedSection: Jest RED→GREEN (section_from_filters / with_section, casos [], ['rent'], ['sale'], ['rent','sale'], ['both'], legacy). filterStore: renderHook (hydrate normaliza, clear conserva la sección). filterQuery: EC de conteo actualizados (operation_types no cuenta). Suites verdes + tsc + lint. Smoke en dispositivo con Abraham (§0.5): cambiar de sección, pull-to-refresh en iOS, back en /admin, CRM y muro legal en Android sin colisión con el status bar.",
-        "status": "review",
+        "status": "done",
         "dependencies": [
           "9",
           "12"
@@ -10910,15 +10910,15 @@
             "parentId": "undefined"
           }
         ],
-        "updatedAt": "2026-09-03T16:18:41.419Z"
+        "updatedAt": "2026-09-03T17:09:47.626Z"
       },
       {
         "id": "242",
         "title": "polish(241.2): tabs del feed más visibles y pegados al safe area + presentación del video con fondo (estilo TikTok)",
         "description": "Origen: subtarea 241.2 · Detectado por: usuario (smoke en dispositivo 2026-09-03, screenshot de TikTok como referencia). Los tabs Venta · Renta se leen poco sobre el video y quedan muy separados del borde superior; además los videos que no son 9:16 se recortan con contentFit=cover. Se pide: tabs más visibles y más pegados arriba sin colisionar con la status bar / Dynamic Island en iOS ni Android, y una presentación del video con fondo (letterbox) como TikTok.",
-        "details": "Footprint: mobile/src/features/feed/components/FeedSectionTabs.tsx (tipografía 17/bold, blanco puro activo, blanco 72% inactivo, sombra más fuerte, subrayado 3px), mobile/src/features/feed/FeedScreen.tsx (top_row_y = insets.top + s_4, scrim superior con expo-linear-gradient ya instalado), mobile/src/features/feed/components/VideoFeedItem.tsx (contentFit según la opción elegida por Abraham; fondo = poster desenfocado con expo-image blurRadius o ink_feed sólido). Sin tokens nuevos, sin dependencias nuevas. Solo cliente → REQUIERE OTA. Sin migraciones ni EFs.",
+        "details": "Footprint: mobile/src/features/feed/components/FeedSectionTabs.tsx (tipografía 17/bold, blanco puro activo, blanco 72% inactivo, sombra más fuerte, subrayado 3px), mobile/src/features/feed/FeedScreen.tsx (top_row_y = insets.top + s_4, scrim superior con expo-linear-gradient ya instalado), mobile/src/features/feed/components/VideoFeedItem.tsx (contentFit según la opción elegida por Abraham; fondo = poster desenfocado con expo-image blurRadius o ink_feed sólido). Sin tokens nuevos, sin dependencias nuevas. Solo cliente → REQUIERE OTA. Sin migraciones ni EFs.\n\nDERIVADAS: #243 (usuario, smoke iOS 2026-09-03: el pull-to-refresh refresca pero no se ve indicador; eligió el loader «Trazo» para toda la app)",
         "testStrategy": "242.1 no crítica: tsc + lint + suite feed + smoke en dispositivo con Abraham (iOS con Dynamic Island y Android). 242.2 crítica si nace lógica pura (lib/videoFit.ts → TDD con casos 9:16, 16:9, 1:1, 4:5 y tamaño desconocido); la vista se verifica en smoke conjunto. Ver video = verificar que reproduce y PARAR (cuota Stream).",
-        "status": "review",
+        "status": "done",
         "dependencies": [
           "241"
         ],
@@ -10940,23 +10940,75 @@
             "title": "Presentación del video: fondo estilo TikTok según la opción elegida (pendiente decisión de Abraham)",
             "description": "Opciones presentadas: (A) contain sobre ink_feed, (B) contain sobre poster desenfocado, (C) híbrido: cover si el video es vertical, contain+blur si es horizontal/cuadrado usando player.videoTrack.size. Se implementa la que elija Abraham.",
             "details": "\n<info added on 2026-09-03T16:26:15.968Z>\nHECHO 242.2 — presentación híbrida del video (opción \"Híbrido\" elegida por Abraham vía AskUserQuestion, 2026-09-03).\n\nRED → GREEN (crítica: lib/**):\n- mobile/src/features/feed/__tests__/videoFit.test.ts — 16 casos EC-FIT-1..16 (desconocido/inválido → cover; 9:16 iPhone y Pixel, misma relación, 9:21, frontera exacta 25 % → cover; 16:9, 1:1, 4:5, 3:4, justo arriba del umbral, 9:32 → contain).\n- RED con stub (salida real): Tests: 7 failed, 9 passed, 16 total (fallan EC-FIT-1, 11..16 por aserción).\n- mobile/src/features/feed/lib/videoFit.ts — MAX_CROP_FRACTION = 0.25; fit_for_video(media, screen): crop = 1 - min(r)/max(r); crop <= 0.25 → 'cover', si no 'contain'; tamaños inválidos → 'cover'.\n- GREEN (salida real): Tests: 16 passed, 16 total\n\nVista:\n- mobile/src/features/feed/components/VideoFeedItem.tsx — estado {id, size} (derivación pura por property.id para el reciclaje de FlashList); tamaño desde la portada (expo-image onLoad e.source) y desde player.addListener('videoTrackChange'); VideoView contentFit={fit}; en contain: portada cover con blurRadius 40 + tinta rgba(23,20,15,0.35) + portada nítida en contain. AdFeedItem sigue en cover (techo conocido).\n\nVerificación (salida real):\n$ pnpm tsc --noEmit → sin salida (exit 0)\n$ pnpm eslint src/features/feed → ✖ 29 problems (0 errors, 29 warnings) [preexistentes]\n$ pnpm jest src/features/feed →\nTest Suites: 23 passed, 23 total\nTests:       266 passed, 266 total\n\nVault: mapa-codebase (bullet #242), feed-vertical-video.md (sección \"Presentación híbrida\" + codigo), log.md, estado-actual.md.\nPendiente: smoke conjunto en la rama; luego merge + OTA + set-status 242 done.\n</info added on 2026-09-03T16:26:15.968Z>",
-            "status": "review",
+            "status": "done",
             "dependencies": [
               1
             ],
             "testStrategy": "Si hay lógica pura (lib/videoFit.ts) → TDD; vista en smoke conjunto",
-            "updatedAt": "2026-09-03T16:26:19.927Z",
+            "updatedAt": "2026-09-03T17:09:44.315Z",
             "parentId": "undefined"
           }
         ],
-        "updatedAt": "2026-09-03T16:44:08.052Z"
+        "updatedAt": "2026-09-03T17:11:47.378Z"
+      },
+      {
+        "id": "243",
+        "title": "producto(242): UrbeaLoader «Trazo» en toda la app — chip propio de pull-to-refresh y reemplazo de ActivityIndicator",
+        "description": "Origen: subtarea 242.1 · Detectado por: usuario (smoke iOS 2026-09-03). El pull-to-refresh del feed refresca pero el spinner nativo (gray_1) queda invisible bajo el scrim y los tabs. Abraham revisó cinco loaders propios en un preview HTML (artefacto \"Loaders Urbea\") y eligió la opción C «Trazo»: la silueta de una casa se dibuja de un solo trazo (techo y muros en el color del contexto) y la puerta aparece en arcilla; se borra y vuelve a empezar. Decisión: usarlo en TODA la app.",
+        "details": "Footprint: mobile/src/components/UrbeaLoader.tsx (react-native-svg + Reanimated useAnimatedProps sobre strokeDashoffset; API drop-in de ActivityIndicator: size small|large|number, color, style, testID; trazo más grueso en tamaños chicos y sin puerta a <20 px — techo conocido que Abraham aceptó), mobile/src/components/RefreshingChip.tsx (chip «Actualizando» con el loader, absoluto, tono oscuro/claro), FeedScreen/SavedScreen/CRMScreen (RefreshControl transparente + chip mientras refreshing), y los ~55 usos de ActivityIndicator en src/ y app/ (reemplazo mecánico import+tag, testIDs intactos). Sin dependencias nuevas (svg y reanimated ya instalados). Solo cliente → REQUIERE OTA. Sin migraciones ni EFs.",
+        "testStrategy": "No crítica (components/pantallas): tsc + lint + suite COMPLETA de Jest (los testIDs de los spinners viven en muchos tests) + test de render del loader bajo los mocks de reanimated/svg + smoke conjunto en iOS y Android (feed, Guardados, CRM, login, admin).",
+        "status": "review",
+        "dependencies": [
+          "242"
+        ],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "UrbeaLoader «Trazo» (svg + Reanimated) con API drop-in de ActivityIndicator + test de render",
+            "description": "",
+            "details": "\n<info added on 2026-09-03T17:30:58.517Z>\nHECHO 243.1 — UrbeaLoader «Trazo» (rama tarea/243-urbea-loader-trazo desde origin/main 1b69701).\n- mobile/src/components/UrbeaLoader.tsx: react-native-svg Path animado con Reanimated useAnimatedProps sobre strokeDashoffset (dasharray = largo del trazo: casa 100.5, puerta 26; viewBox 48). Un progress 0→1 en loop de 2.2 s: 0–45 % dibuja, 45–60 % sostiene, 60–100 % borra; la puerta (arcilla) va desfasada 16 %. API drop-in de ActivityIndicator: size small(20)|large(36)|number, color, style, testID, accessibilityLabel. Trazo más grueso al achicarse (2.4 / 3.2 / 4) y sin puerta por debajo de 20 px (techo aceptado por Abraham al reafirmar «en toda la app»).\n- mobile/src/components/RefreshingChip.tsx: chip «Actualizando» con el loader a 18 px; modo absoluto (top) o en flujo; tono dark/light; pointerEvents none; testID refreshing-chip.\n- mobile/src/components/__tests__/UrbeaLoader.test.tsx: 6 casos (render+testID+rol, tamaños, grosor, puerta ≥20 px, chip visible/oculto). Gotcha RNTL 14: await render; UNSAFE_getAllByType ya no existe → testID en la puerta.\nVerificación (salida real): pnpm jest src/components/__tests__/UrbeaLoader.test.tsx → Tests: 6 passed, 6 total · pnpm tsc --noEmit → sin salida (exit 0) · eslint archivos nuevos → sin errores.\n</info added on 2026-09-03T17:30:58.517Z>",
+            "status": "done",
+            "dependencies": [],
+            "testStrategy": "jest components + tsc",
+            "updatedAt": "2026-09-03T17:31:00.957Z",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Chip «Actualizando» propio en el pull-to-refresh de feed, Guardados y CRM (RefreshControl transparente)",
+            "description": "",
+            "details": "\n<info added on 2026-09-03T17:30:58.588Z>\nHECHO 243.2 — chip propio de pull-to-refresh.\n- FeedScreen.tsx: is_refreshing = isLoading && data.length > 0; RefreshControl transparente (tintColor/colors/progressBackgroundColor) → solo gesto; <RefreshingChip tone=\"dark\" top={top_row_y + TABS_HEIGHT + s_8}/>; el ZoneActiveChip baja REFRESHING_CHIP_HEIGHT + s_8 mientras refresca.\n- SavedScreen.tsx y CRMScreen.tsx: RefreshControl transparente; RefreshingChip EN FLUJO dentro del ListHeaderComponent (sin medir headers; Guardados bajo el título, CRM sobre la sección de seguimiento).\nVerificación: cubierto por la suite completa de 243.3 (feed 23 suites, saved, leads) — ver 243.3. Smoke conjunto pendiente (iOS + Android).\n</info added on 2026-09-03T17:30:58.588Z>",
+            "status": "done",
+            "dependencies": [
+              1
+            ],
+            "testStrategy": "tsc + suites feed/saved/leads + smoke conjunto",
+            "updatedAt": "2026-09-03T17:31:02.737Z",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Reemplazo de todos los ActivityIndicator por UrbeaLoader (src/ y app/) + suite completa verde",
+            "description": "",
+            "details": "\n<info added on 2026-09-03T17:30:58.662Z>\nHECHO 243.3 — reemplazo masivo ActivityIndicator → UrbeaLoader.\n- Script Python: en 33 archivos (src/ y app/, sin tests) `<ActivityIndicator` → `<UrbeaLoader`, quitado del import de react-native (una línea o multilínea), añadido `import { UrbeaLoader } from '@/components/UrbeaLoader'`. testIDs y props intactos (drop-in). Solo queda la palabra en comentarios (MapScreen, docs de archivo).\nVerificación (salida real):\n$ pnpm tsc --noEmit → sin salida (exit 0)\n$ pnpm lint → ✖ 116 problems (0 errors, 116 warnings) [preexistentes]\n$ pnpm jest →\nTest Suites: 163 passed, 163 total\nTests:       2066 passed, 2066 total\n</info added on 2026-09-03T17:30:58.662Z>",
+            "status": "done",
+            "dependencies": [
+              1
+            ],
+            "testStrategy": "pnpm jest completo + tsc + lint",
+            "updatedAt": "2026-09-03T17:31:04.513Z",
+            "parentId": "undefined"
+          }
+        ],
+        "updatedAt": "2026-09-03T17:31:06.248Z"
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-09-03T16:26:21.559Z",
-      "taskCount": 242,
-      "completedCount": 159,
+      "lastModified": "2026-09-03T17:31:06.248Z",
+      "taskCount": 243,
+      "completedCount": 161,
       "tags": [
         "master"
       ]

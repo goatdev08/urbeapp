@@ -22,7 +22,6 @@
  */
 import React from 'react';
 import {
-  ActivityIndicator,
   Pressable,
   StyleSheet,
   Text,
@@ -30,6 +29,7 @@ import {
   type PressableProps,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
+import { UrbeaLoader } from '@/components/UrbeaLoader';
 
 // ---------------------------------------------------------------------------
 // Tokens de diseño alineados con el personality kit de Urbea
@@ -161,7 +161,7 @@ export function PrimaryButton({
       <View style={styles.content_row}>
         {icon !== undefined && <View style={styles.icon_wrap}>{icon}</View>}
         {loading ? (
-          <ActivityIndicator size="small" color="#FFFFFF" />
+          <UrbeaLoader size="small" color="#FFFFFF" />
         ) : (
           <Text
             style={[

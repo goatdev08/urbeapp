@@ -13,10 +13,11 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import { useVideoPlayer, VideoView, type VideoPlayerStatus } from 'expo-video';
 
+import { UrbeaLoader } from '@/components/UrbeaLoader';
 import { colors, radii, spacing, type_scale } from '@/theme/theme';
 import type { PropertyVideoDetail } from '../types';
 
@@ -119,7 +120,7 @@ export function PropertyVideoPlayer({ videos }: PropertyVideoPlayerProps) {
 
       {/* Spinner mientras el video carga / hace buffer */}
       {player_status === 'loading' && (
-        <ActivityIndicator
+        <UrbeaLoader
           style={StyleSheet.absoluteFill}
           size="large"
           color="rgba(255,255,255,0.7)"

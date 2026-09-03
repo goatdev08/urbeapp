@@ -3,6 +3,9 @@ tipo: estado
 actualizado: 2026-09-03
 ---
 
+## Hoy (2026-09-03, noche) — #243: loader «Trazo» en toda la app
+#242 mergeado (1b69701) tras smoke iOS con Abraham (pill verde, fila pegada a la isla); **smoke Android de #241/#242 pendiente antes del OTA**. #243 (rama `tarea/243-urbea-loader-trazo`, PR abierto): `UrbeaLoader` drop-in de ActivityIndicator (33 archivos), `RefreshingChip` en feed/Guardados/CRM. tsc/lint verdes, Jest 163 suites / 2066 tests. **Pendiente: smoke conjunto (que el trazo anime en dispositivo: Reanimated + svg animatedProps) → merge → OTA único con #241+#242+#243 → `set-status 243 done`.**
+
 ## Hoy (2026-09-03, tarde) — #242: polish del feed tras el smoke de #241
 Abraham vio los tabs en dispositivo: poco visibles y muy separados del borde; además los videos que no son 9:16 se recortaban. #242 (rama `tarea/242-tabs-visibles-video-fondo`, PR abierto): tabs 17/bold blanco puro, inactivo blanco 72 %, scrim superior, fila en `insets.top + 4`; video **híbrido** (`lib/videoFit.ts`, TDD 16/16): vertical → cover, horizontal/cuadrado → contain sobre portada desenfocada. tsc/lint verdes, feed 266/266. **Pendiente: smoke conjunto en la rama (iOS Dynamic Island + Android) → merge → OTA → `set-status 242 done`.** #241 sigue en `review` hasta ese mismo smoke.
 

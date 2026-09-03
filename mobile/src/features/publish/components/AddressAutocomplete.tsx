@@ -15,8 +15,8 @@
  *   Max 5 sugerencias, sin place details (lat/lng lo refina 8.5).
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { UrbeaLoader } from '@/components/UrbeaLoader';
 import {
-  ActivityIndicator,
   StyleSheet,
   Text,
   TextInput,
@@ -300,7 +300,7 @@ export function AddressAutocomplete({
           accessibilityLabel="Dirección de la propiedad"
         />
         {loading && (
-          <ActivityIndicator
+          <UrbeaLoader
             size="small"
             color={COLOR_BORDER_FOCUS}
             style={styles.spinner}

@@ -19,7 +19,6 @@
  */
 import React, { useState } from 'react';
 import {
-  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -31,6 +30,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Link } from 'expo-router';
 
+import { UrbeaLoader } from '@/components/UrbeaLoader';
 import { useAuth } from '@/features/auth/context';
 import { FormField } from '@/features/auth/components/form-field';
 import { validate_email } from '@/features/auth/validation';
@@ -132,7 +132,7 @@ export default function ForgotPasswordScreen() {
               >
                 {is_submitting ? (
                   <View style={styles.submit_loading_row}>
-                    <ActivityIndicator testID="submit-spinner" size="small" color="#9CA3AF" />
+                    <UrbeaLoader testID="submit-spinner" size="small" color="#9CA3AF" />
                     <Text
                       style={[styles.submit_text, styles.submit_text_disabled, styles.submit_loading_label]}
                     >

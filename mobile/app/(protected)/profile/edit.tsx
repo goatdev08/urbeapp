@@ -21,7 +21,6 @@
  */
 import React, { useState, useEffect } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
@@ -33,6 +32,7 @@ import {
 } from 'react-native';
 import { Stack , useRouter } from 'expo-router';
 
+import { UrbeaLoader } from '@/components/UrbeaLoader';
 import { supabase } from '@/lib/supabase/client';
 import { useAuth } from '@/features/auth/context';
 import { useEditProfile } from '@/features/profile/hooks/useEditProfile';
@@ -228,7 +228,7 @@ export default function EditProfileScreen() {
       {/* Spinner mientras cargan los datos del perfil */}
       {loading ? (
         <View style={styles.loading_wrap}>
-          <ActivityIndicator size="large" color={colors.primary} />
+          <UrbeaLoader size="large" color={colors.primary} />
         </View>
       ) : null}
 

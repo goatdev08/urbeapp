@@ -14,7 +14,7 @@
  */
 
 import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, StyleSheet, View, Text, useWindowDimensions } from 'react-native';
+import { StyleSheet, View, Text, useWindowDimensions } from 'react-native';
 import { Image } from 'expo-image';
 import { useVideoPlayer, VideoView, type VideoPlayerStatus } from 'expo-video';
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
@@ -30,6 +30,7 @@ import { useVideoEngagementEvents } from '../hooks/useVideoEngagementEvents';
 import { create_video_engagement_store } from '../lib/videoEngagementDedupe';
 import { get_app_session_id } from '../lib/appSession';
 import { fit_for_video, type MediaSize } from '../lib/videoFit';
+import { UrbeaLoader } from '@/components/UrbeaLoader';
 import { useContactAgent } from '@/hooks/useContactAgent';
 import { share_property } from '@/lib/shareProperty';
 
@@ -381,7 +382,7 @@ function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedIte
 
         {/* Spinner mientras el ítem activo carga. */}
         {isActive && player_status === 'loading' && (
-          <ActivityIndicator
+          <UrbeaLoader
             style={styles.loading_spinner}
             size="large"
             color="rgba(255,255,255,0.7)"

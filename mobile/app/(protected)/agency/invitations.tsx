@@ -15,7 +15,6 @@
  */
 import React, { useState } from 'react';
 import {
-  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -25,6 +24,7 @@ import {
 } from 'react-native';
 import { Redirect, Stack } from 'expo-router';
 
+import { UrbeaLoader } from '@/components/UrbeaLoader';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { FormField } from '@/features/auth/components/form-field';
 import { CopyCard } from '@/features/agency/components/CopyCard';
@@ -57,7 +57,7 @@ export default function AgencyInvitationsScreen() {
   if (role_loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color={colors.primary} />
+        <UrbeaLoader size="large" color={colors.primary} />
       </View>
     );
   }

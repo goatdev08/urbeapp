@@ -41,7 +41,6 @@
 
 import React, { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
   KeyboardAvoidingView,
   LayoutAnimation,
   Modal,
@@ -61,6 +60,7 @@ import { BookmarkSimple, CaretDown, Info } from 'phosphor-react-native';
 
 import { router } from 'expo-router';
 
+import { UrbeaLoader } from '@/components/UrbeaLoader';
 import { colors, fonts, radii, spacing } from '@/theme/theme';
 import { open_whatsapp } from '../../property-detail/utils/whatsapp';
 
@@ -418,7 +418,7 @@ export function LeadExpandedView({
 
               {!readOnly && (
                 is_updating ? (
-                  <ActivityIndicator size="small" color={colors.primary} />
+                  <UrbeaLoader size="small" color={colors.primary} />
                 ) : (
                   <CaretDown
                     size={16}
@@ -467,7 +467,7 @@ export function LeadExpandedView({
 
                   {/* Indicador de estado actual o spinner */}
                   {is_updating && is_current ? (
-                    <ActivityIndicator size="small" color={colors.primary} style={styles.status_indicator} />
+                    <UrbeaLoader size="small" color={colors.primary} style={styles.status_indicator} />
                   ) : is_current ? (
                     <Text style={styles.status_check}>✓</Text>
                   ) : null}
@@ -484,7 +484,7 @@ export function LeadExpandedView({
               justo cuando importan (mientras guarda, y si la EF falla). */}
           {!readOnly && is_updating && (
             <View style={styles.updating_row}>
-              <ActivityIndicator size="small" color={colors.primary} />
+              <UrbeaLoader size="small" color={colors.primary} />
               <Text style={styles.updating_text}>Actualizando estado…</Text>
             </View>
           )}
@@ -544,7 +544,7 @@ export function LeadExpandedView({
           <View style={styles.divider_bottom} />
           <Text style={styles.section_title}>Historial</Text>
           {history_loading && history.length === 0 ? (
-            <ActivityIndicator size="small" color={colors.primary} style={styles.history_loading} />
+            <UrbeaLoader size="small" color={colors.primary} style={styles.history_loading} />
           ) : history_error !== null ? (
             <Text style={[styles.error_text, styles.history_error]}>{history_error}</Text>
           ) : history.length === 0 ? (

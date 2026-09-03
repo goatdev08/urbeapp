@@ -12,7 +12,6 @@
  */
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
   FlatList,
   Pressable,
   StyleSheet,
@@ -22,6 +21,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 
+import { UrbeaLoader } from '@/components/UrbeaLoader';
 import { supabase } from '@/lib/supabase/client';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { BackButton } from '@/components/BackButton';
@@ -270,7 +270,7 @@ export default function AdminAgencyListScreen(): React.ReactElement {
           <Text style={styles.title}>Inmobiliarias</Text>
         </View>
         <View style={styles.center}>
-          <ActivityIndicator
+          <UrbeaLoader
             testID="loading-indicator"
             size="large"
             color="#5A8A5E"

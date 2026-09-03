@@ -3,7 +3,7 @@
  * Subtarea 7.1 — Create admin layout with role guard.
  *
  * Contrato:
- *   - isLoading=true                             → <ActivityIndicator testID="loading-indicator" />
+ *   - isLoading=true                             → <UrbeaLoader testID="loading-indicator" />
  *   - isLoading=false, session=null              → <Redirect href="/login" />
  *   - isLoading=false, session≠null, role≠admin  → <Redirect href="/(protected)" />
  *   - isLoading=false, session≠null, role=admin  → <Slot /> tras el gate legal (#72.6)
@@ -16,9 +16,10 @@
  * con sesión activa), role=undefined ≠ 'admin' → redirige a (protected).
  */
 import React from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { Redirect, Slot } from 'expo-router';
 
+import { UrbeaLoader } from '@/components/UrbeaLoader';
 import { useAuth } from '@/features/auth/context';
 import { LegalGateBoundary } from '@/features/auth/components/legal-gate-boundary';
 
@@ -29,7 +30,7 @@ export default function AdminLayout(): React.ReactElement {
   if (isLoading) {
     return (
       <View style={styles.loading_container}>
-        <ActivityIndicator testID="loading-indicator" size="large" />
+        <UrbeaLoader testID="loading-indicator" size="large" />
       </View>
     );
   }

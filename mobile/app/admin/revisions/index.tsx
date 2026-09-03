@@ -24,9 +24,9 @@
  */
 import React, { useCallback, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { UrbeaLoader } from '@/components/UrbeaLoader';
 import { BackButton } from '@/components/BackButton';
 import {
-  ActivityIndicator,
   FlatList,
   Pressable,
   StyleSheet,
@@ -276,7 +276,7 @@ export default function AdminRevisionsScreen(): React.ReactElement {
           <Text style={styles.title}>Revisiones de ediciones</Text>
         </View>
         <View style={styles.center}>
-          <ActivityIndicator testID="loading-indicator" size="large" color="#5A8A5E" />
+          <UrbeaLoader testID="loading-indicator" size="large" color="#5A8A5E" />
         </View>
       </SafeAreaView>
     );

@@ -15,9 +15,10 @@
  */
 import React, { useCallback } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 
+import { UrbeaLoader } from '@/components/UrbeaLoader';
 import { colors, spacing, type_scale } from '@/theme/theme';
 import { BackButton } from '@/components/BackButton';
 import { useNotifications } from '@/features/notifications/hooks/useNotifications';
@@ -46,7 +47,7 @@ export default function NotificationsScreen(): React.ReactElement {
       <SafeAreaView style={styles.container}>
         <ScreenHeader unread_count={0} on_mark_all_read={handle_mark_all_read} />
         <View style={styles.center}>
-          <ActivityIndicator testID="loading-indicator" size="large" color={colors.primary} />
+          <UrbeaLoader testID="loading-indicator" size="large" color={colors.primary} />
         </View>
       </SafeAreaView>
     );
