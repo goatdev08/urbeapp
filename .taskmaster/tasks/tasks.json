@@ -10957,7 +10957,7 @@
         "description": "Origen: subtarea 242.1 · Detectado por: usuario (smoke iOS 2026-09-03). El pull-to-refresh del feed refresca pero el spinner nativo (gray_1) queda invisible bajo el scrim y los tabs. Abraham revisó cinco loaders propios en un preview HTML (artefacto \"Loaders Urbea\") y eligió la opción C «Trazo»: la silueta de una casa se dibuja de un solo trazo (techo y muros en el color del contexto) y la puerta aparece en arcilla; se borra y vuelve a empezar. Decisión: usarlo en TODA la app.",
         "details": "Footprint: mobile/src/components/UrbeaLoader.tsx (react-native-svg + Reanimated useAnimatedProps sobre strokeDashoffset; API drop-in de ActivityIndicator: size small|large|number, color, style, testID; trazo más grueso en tamaños chicos y sin puerta a <20 px — techo conocido que Abraham aceptó), mobile/src/components/RefreshingChip.tsx (chip «Actualizando» con el loader, absoluto, tono oscuro/claro), FeedScreen/SavedScreen/CRMScreen (RefreshControl transparente + chip mientras refreshing), y los ~55 usos de ActivityIndicator en src/ y app/ (reemplazo mecánico import+tag, testIDs intactos). Sin dependencias nuevas (svg y reanimated ya instalados). Solo cliente → REQUIERE OTA. Sin migraciones ni EFs.",
         "testStrategy": "No crítica (components/pantallas): tsc + lint + suite COMPLETA de Jest (los testIDs de los spinners viven en muchos tests) + test de render del loader bajo los mocks de reanimated/svg + smoke conjunto en iOS y Android (feed, Guardados, CRM, login, admin).",
-        "status": "review",
+        "status": "done",
         "dependencies": [
           "242"
         ],
@@ -11001,14 +11001,14 @@
             "parentId": "undefined"
           }
         ],
-        "updatedAt": "2026-09-03T17:31:06.248Z"
+        "updatedAt": "2026-09-03T17:55:42.564Z"
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-09-03T17:31:06.248Z",
+      "lastModified": "2026-09-03T17:55:42.564Z",
       "taskCount": 243,
-      "completedCount": 161,
+      "completedCount": 162,
       "tags": [
         "master"
       ]
