@@ -11009,7 +11009,7 @@
         "description": "Origen: subtarea 243.2/243.1 · Detectado por: usuario (smoke en Android físico tras el OTA de #241/#242/#243, 2026-09-03). Dos bugs solo visibles en el teléfono real (no en los emuladores/dev client): (1) UrbeaLoader no animaba — el strokeDashoffset se quedaba en su valor inicial (invisible) y solo se veía el texto «Actualizando»; (2) en el feed, al hacer pull-to-refresh, aparecían el círculo nativo de Android (SwipeRefreshLayout) Y el RefreshingChip custom al mismo tiempo.",
         "details": "Causa raíz (1): Reanimated useAnimatedProps sobre strokeDashoffset de react-native-svg (props nativas de un host component de terceros vía JSI/worklet) es la combinación menos probada entre las dos formas de animar en RN — funcionó en ambos simuladores/emuladores (dev client + Metro) pero no en el build de producción del teléfono real. Fix: UrbeaLoader.tsx reescrito con Animated clásico de react-native (useNativeDriver:false, obligatorio para props de SVG) — mismo patrón que UploadProgressBar.tsx, ya probado en producción. Causa raíz (2): tintColor/colors/progressBackgroundColor transparentes no bastan en Android — SwipeRefreshLayout sigue pintando su círculo. Fix: progressViewOffset={-100} en Android (Platform.OS check) en FeedScreen, SavedScreen y CRMScreen — empuja el indicador nativo fuera de la pantalla, deja el gesto intacto.\n\nDERIVADAS: #245 (usuario, smoke Android 2026-09-03: el spinner de carga del video quedó en la esquina superior izquierda encima del reloj)",
         "testStrategy": "No crítica (componente + pantallas): tsc + lint + suite completa de Jest (loader, feed, saved, leads) + smoke conjunto en Android FÍSICO (no solo emulador — ahí es donde fallaba) confirmando que la casa se dibuja y que solo aparece un loader en el pull-to-refresh del feed.",
-        "status": "review",
+        "status": "done",
         "dependencies": [
           "243"
         ],
@@ -11038,7 +11038,7 @@
             "parentId": "undefined"
           }
         ],
-        "updatedAt": "2026-09-03T18:56:23.877Z"
+        "updatedAt": "2026-09-03T19:46:02.060Z"
       },
       {
         "id": "245",
@@ -11069,9 +11069,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-09-03T18:57:14.932Z",
+      "lastModified": "2026-09-03T19:46:02.067Z",
       "taskCount": 245,
-      "completedCount": 163,
+      "completedCount": 164,
       "tags": [
         "master"
       ]

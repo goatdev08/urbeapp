@@ -3,6 +3,18 @@ tipo: estado
 actualizado: 2026-09-03
 ---
 
+## Hoy (2026-09-03) — cerrado: feed con secciones, video híbrido y loader propio, TODO en producción
+Cadena #241 → #245 mergeada a `main` (`4a99be8`) y **publicada por OTA a los dos canales**, verificada por Abraham en simulador iOS, emulador Android y **Android físico**:
+- **#241** secciones Venta · Renta (la sección ES `filters.operation_types`, feed y mapa la comparten), refresh vivo en iOS (`bounces`), back en /admin y safe-area en CRM y muro legal.
+- **#242** pill verde Urbea como indicador de sección + fila a `insets.top - 6` con notch/isla; presentación **híbrida** del video (`lib/videoFit.ts`, umbral 25 % de recorte).
+- **#243** `UrbeaLoader` «Trazo» reemplaza `ActivityIndicator` en 33 archivos + `RefreshingChip` en feed/Guardados/CRM.
+- **#244** el loader no animaba en el Android real (Reanimated sobre props de SVG) → `Animated` clásico; `progressViewOffset` para matar el doble spinner de Android.
+- **#245** el loader se colapsaba a la esquina superior izquierda (fijaba width/height; el `ActivityIndicator` que sustituyó se estira y centra).
+
+**Las tres correcciones seguidas tuvieron el mismo punto ciego:** un componente nuevo se valida en **build de producción sobre dispositivo físico**, no en emulador — #244 y #245 eran invisibles en ambos emuladores. Ver [[design-system]] y `wiki/log.md`.
+
+Suites al cierre: 163 suites / 2067 tests, tsc y lint limpios.
+
 ## Hoy (2026-09-03) — #245: el loader se iba a la esquina
 Tras el OTA de #244 (que sí arregló la animación y el doble spinner), el smoke en Android encontró el spinner del video pegado a la esquina superior izquierda, sobre el reloj: el contenedor del UrbeaLoader fijaba width/height y los llamadores con estilo de llenado lo colapsaban. #245 lo corrige (el <Svg> lleva el tamaño, el contenedor centra) + test de regresión. tsc/lint/jest verdes (163/2067).
 
