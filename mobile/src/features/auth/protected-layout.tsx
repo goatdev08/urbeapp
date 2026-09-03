@@ -3,7 +3,7 @@
  * Subtarea 2.5 — fase GREEN.
  *
  * Contrato:
- *   - isLoading=true                  → <ActivityIndicator testID="loading-indicator" />
+ *   - isLoading=true                  → <UrbeaLoader testID="loading-indicator" />
  *   - isLoading=false, session=null   → <Redirect href="/login" />
  *   - isLoading=false, session=<obj>  → <Stack /> (contenido protegido)
  *
@@ -20,9 +20,10 @@
  * cada pantalla trae su propio header con identidad Urbea (BackButton).
  */
 import React from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Redirect, Stack } from 'expo-router';
 
+import { UrbeaLoader } from '@/components/UrbeaLoader';
 import { useAuth } from '@/features/auth/context';
 import { LegalGateBoundary } from '@/features/auth/components/legal-gate-boundary';
 import { should_redirect_to_verify_email } from '@/features/auth/deep-link-session';
@@ -34,7 +35,7 @@ export default function ProtectedLayout(): React.ReactElement {
   if (isLoading) {
     return (
       <View style={styles.loading_container}>
-        <ActivityIndicator testID="loading-indicator" size="large" />
+        <UrbeaLoader testID="loading-indicator" size="large" />
       </View>
     );
   }

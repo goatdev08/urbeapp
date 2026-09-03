@@ -16,7 +16,6 @@
  */
 import React, { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   Pressable,
   ScrollView,
@@ -39,6 +38,7 @@ import {
 } from 'phosphor-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { UrbeaLoader } from '@/components/UrbeaLoader';
 import { colors, spacing, type_scale } from '@/theme/theme';
 import { BackButton } from '@/components/BackButton';
 import { useAuth } from '@/features/auth/context';
@@ -261,7 +261,7 @@ export function ProfileScreen({
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color={colors.primary} />
+        <UrbeaLoader size="large" color={colors.primary} />
       </View>
     );
   }

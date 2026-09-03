@@ -22,7 +22,6 @@
  */
 import React, { useCallback, useState } from 'react';
 import {
-  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -32,6 +31,7 @@ import {
 } from 'react-native';
 import { Redirect, Stack } from 'expo-router';
 
+import { UrbeaLoader } from '@/components/UrbeaLoader';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import {
   ADVERTISER_CATEGORY_LABELS,
@@ -71,7 +71,7 @@ export default function AgencyAdvertisingScreen() {
   if (role_loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color={colors.primary} />
+        <UrbeaLoader size="large" color={colors.primary} />
       </View>
     );
   }
@@ -110,7 +110,7 @@ export default function AgencyAdvertisingScreen() {
         >
           {request_loading ? (
             <View style={styles.center}>
-              <ActivityIndicator size="large" color={colors.primary} testID="loading-indicator" />
+              <UrbeaLoader size="large" color={colors.primary} testID="loading-indicator" />
             </View>
           ) : error_message !== null ? (
             <View style={styles.error_box}>

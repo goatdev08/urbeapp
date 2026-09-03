@@ -48,6 +48,7 @@ import {
   spacing,
   type_scale,
 } from '@/theme/theme';
+import { RefreshingChip } from '@/components/RefreshingChip';
 import { GridSkeleton } from '@/components/GridSkeleton';
 import { EmptyState } from '@/features/profile/components/EmptyState';
 import type { GridProperty } from '@/features/profile/types';
@@ -193,13 +194,17 @@ export function SavedScreen({
       // header con ese título). Sin esto el tab arrancaba con un simple
       // espaciador y ningún título visible arriba.
       ListHeaderComponent={
-        has_header ? (
-          <View style={{ height: spacing.s_8 }} />
-        ) : (
-          <View style={[styles.header, { paddingTop: insets.top + spacing.s_16 }]}>
-            <Text style={styles.title}>Guardados</Text>
-          </View>
-        )
+        <>
+          {has_header ? (
+            <View style={{ height: spacing.s_8 }} />
+          ) : (
+            <View style={[styles.header, { paddingTop: insets.top + spacing.s_16 }]}>
+              <Text style={styles.title}>Guardados</Text>
+            </View>
+          )}
+          {/* #243.2: indicador propio del pull-to-refresh (en flujo, bajo el título). */}
+          <RefreshingChip visible={is_refreshing} />
+        </>
       }
       ListEmptyComponent={
         <View style={styles.empty_wrapper}>
@@ -211,10 +216,13 @@ export function SavedScreen({
         </View>
       }
       refreshControl={
+        // #243.2: el gesto nativo queda transparente; se ve el RefreshingChip del header.
         <RefreshControl
           refreshing={is_refreshing}
           onRefresh={handle_refresh}
-          tintColor={colors.primary}
+          tintColor="transparent"
+          colors={['transparent']}
+          progressBackgroundColor="transparent"
         />
       }
       renderItem={({ item }) => (

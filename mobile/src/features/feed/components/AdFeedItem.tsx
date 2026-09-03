@@ -40,7 +40,6 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Linking,
   Pressable,
   StyleSheet,
@@ -55,6 +54,7 @@ import { useVideoPlayer, VideoView } from 'expo-video';
 import * as Clipboard from 'expo-clipboard';
 import { Megaphone, Phone, WhatsappLogo, ArrowSquareOut, type Icon } from 'phosphor-react-native';
 
+import { UrbeaLoader } from '@/components/UrbeaLoader';
 import { colors, radii, spacing, type_scale } from '@/theme/theme';
 import { useLocation } from '@/features/location/LocationProvider';
 import { build_cta_target, linkify_description } from '@/features/ads/lib/adCtaLink';
@@ -254,7 +254,7 @@ export function AdFeedItem({ ad, isActive }: AdFeedItemProps) {
         <VideoView player={player} style={styles.video} contentFit="cover" nativeControls={false} />
       ) : (
         <View style={styles.video_placeholder}>
-          <ActivityIndicator color={colors.gray_1} />
+          <UrbeaLoader color={colors.gray_1} />
         </View>
       )}
 

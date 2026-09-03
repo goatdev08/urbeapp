@@ -24,9 +24,9 @@
  */
 import React, { useCallback, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { UrbeaLoader } from '@/components/UrbeaLoader';
 import { BackButton } from '@/components/BackButton';
 import {
-  ActivityIndicator,
   Modal,
   Pressable,
   ScrollView,
@@ -135,7 +135,7 @@ function RejectionReasonModal({
               <Text style={styles.danger_text}>Rechazar</Text>
             </Pressable>
           </View>
-          {is_submitting && <ActivityIndicator color={colors.primary} style={styles.modal_spinner} />}
+          {is_submitting && <UrbeaLoader color={colors.primary} style={styles.modal_spinner} />}
         </View>
       </View>
     </Modal>
@@ -172,7 +172,7 @@ function AgentApplicationsSection(): React.ReactElement {
       <Text style={styles.section_title}>Solicitudes de agente</Text>
 
       {is_loading ? (
-        <ActivityIndicator testID="agent-applications-loading" color={colors.primary} style={styles.section_center} />
+        <UrbeaLoader testID="agent-applications-loading" color={colors.primary} style={styles.section_center} />
       ) : error_message !== null ? (
         <SectionError message={error_message} on_retry={refetch} testID="agent-applications-error" />
       ) : items !== null && items.length === 0 ? (
@@ -266,7 +266,7 @@ function PendingAgenciesSection(): React.ReactElement {
       <Text style={styles.section_title}>Inmobiliarias por aprobar</Text>
 
       {is_loading ? (
-        <ActivityIndicator testID="pending-agencies-loading" color={colors.primary} style={styles.section_center} />
+        <UrbeaLoader testID="pending-agencies-loading" color={colors.primary} style={styles.section_center} />
       ) : error_message !== null ? (
         <SectionError message={error_message} on_retry={refetch} testID="pending-agencies-error" />
       ) : items !== null && items.length === 0 ? (
@@ -362,7 +362,7 @@ function AdvertisingRequestsSection(): React.ReactElement {
       <Text style={styles.section_title}>Solicitudes de cuenta comercial</Text>
 
       {is_loading ? (
-        <ActivityIndicator testID="advertising-requests-loading" color={colors.primary} style={styles.section_center} />
+        <UrbeaLoader testID="advertising-requests-loading" color={colors.primary} style={styles.section_center} />
       ) : error_message !== null ? (
         <SectionError message={error_message} on_retry={refetch} testID="advertising-requests-error" />
       ) : items !== null && items.length === 0 ? (

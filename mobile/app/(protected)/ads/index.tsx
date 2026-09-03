@@ -40,10 +40,11 @@
  * igual con el texto de reserva ("Zona sin nombre").
  */
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { Megaphone, Play, Plus } from 'phosphor-react-native';
 
+import { UrbeaLoader } from '@/components/UrbeaLoader';
 import { supabase } from '@/lib/supabase/client';
 import { EmptyState } from '@/features/profile/components/EmptyState';
 import { useCanAdvertise } from '@/features/ads/hooks/useCanAdvertise';
@@ -286,7 +287,7 @@ function MetricsSummary({
   if (metrics.loading || metrics.totals === null) {
     return (
       <View style={[styles.metrics_block, styles.metrics_loading]}>
-        <ActivityIndicator size="small" color={colors.primary} />
+        <UrbeaLoader size="small" color={colors.primary} />
       </View>
     );
   }
@@ -417,7 +418,7 @@ export default function AdsScreen() {
         ListEmptyComponent={
           my_ads.loading ? (
             <View style={styles.center_inline}>
-              <ActivityIndicator size="large" color={colors.primary} />
+              <UrbeaLoader size="large" color={colors.primary} />
             </View>
           ) : my_ads.error ? (
             <View style={styles.center_inline}>

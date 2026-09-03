@@ -34,9 +34,10 @@
  * (mapa, con `top` inyectado por el padre).
  */
 import React, { useCallback } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Buildings, MapPin, MapPinSimple } from 'phosphor-react-native';
 
+import { UrbeaLoader } from '@/components/UrbeaLoader';
 import { colors, fonts, radii, shadows, spacing } from '@/theme/theme';
 import type { AddressPlacesDeps, AddressPrediction } from '../lib/addressPlaces';
 import type { PlaceSearchDeps, PlaceSuggestion } from '../lib/placeSearch';
@@ -212,7 +213,7 @@ function StatusRow({
 }): React.JSX.Element {
   return (
     <View style={[styles.row, styles.row_border, styles.status_row]}>
-      {spinner && <ActivityIndicator size="small" color={colors.primary} />}
+      {spinner && <UrbeaLoader size="small" color={colors.primary} />}
       <Text
         style={[styles.status_text, variant === 'error' && styles.status_text_error]}
         numberOfLines={2}

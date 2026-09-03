@@ -25,9 +25,9 @@
  */
 import React, { useCallback, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { UrbeaLoader } from '@/components/UrbeaLoader';
 import { BackButton } from '@/components/BackButton';
 import {
-  ActivityIndicator,
   FlatList,
   Pressable,
   StyleSheet,
@@ -225,7 +225,7 @@ export default function AdminReportsScreen(): React.ReactElement {
           <Text style={styles.title}>Reportes</Text>
         </View>
         <View style={styles.center}>
-          <ActivityIndicator testID="loading-indicator" size="large" color={colors.primary} />
+          <UrbeaLoader testID="loading-indicator" size="large" color={colors.primary} />
         </View>
       </SafeAreaView>
     );

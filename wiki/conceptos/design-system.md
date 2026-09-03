@@ -106,3 +106,6 @@ Fuente única de tokens, **plana** (sin theming engine). 6 grupos, todos snake_c
 
 ## Relacionados
 [[perfil-agente]] · [[feed-vertical-video]] · [[propiedades-y-video]]
+
+## Loader de marca «Trazo» (#243, 2026-09-03)
+El spinner de toda la app es `UrbeaLoader` (`mobile/src/components/UrbeaLoader.tsx`): la silueta de una casa se dibuja de un solo trazo en el color del contexto, la puerta aparece en arcilla, se borra y vuelve a empezar (ciclo 2.2 s). Sustituye al `ActivityIndicator` nativo con la misma API (small 20 / large 36). Regla: por debajo de 20 px no lleva puerta y el trazo engorda. Decisión Abraham entre cinco propuestas (Ventanas, Cimientos, Trazo, Radar, Amanecer) en el artefacto «Loaders Urbea». El pull-to-refresh muestra `RefreshingChip` («Actualizando» + loader) en vez del spinner nativo, igual en iOS y Android.

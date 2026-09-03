@@ -21,7 +21,6 @@
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   Image,
   type LayoutChangeEvent,
   PanResponder,
@@ -31,6 +30,7 @@ import {
   View,
 } from 'react-native';
 
+import { UrbeaLoader } from '@/components/UrbeaLoader';
 import { colors, fonts, radii, spacing } from '@/theme/theme';
 
 import { useThumbnail, type ThumbnailSource } from '../hooks/useThumbnail';
@@ -204,7 +204,7 @@ export function ThumbnailPicker({ cloudflareUid, videoStatus, initialPct }: Thum
           )}
 
           {saving && (
-            <ActivityIndicator size="small" color={colors.primary} style={styles.saving_spinner} />
+            <UrbeaLoader size="small" color={colors.primary} style={styles.saving_spinner} />
           )}
           {save_error && <Text style={styles.error_text}>{save_error}</Text>}
         </>

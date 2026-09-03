@@ -28,6 +28,7 @@ import { MagnifyingGlass, MapPinSimple, SlidersHorizontal, VideoCamera } from 'p
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, spacing } from '@/theme/theme';
+import { REFRESHING_CHIP_HEIGHT, RefreshingChip } from '@/components/RefreshingChip';
 import { EmptyState } from '@/features/profile/components/EmptyState';
 import { useFilters } from '../search/filterStore';
 import { FilterSheet } from '../search/components/FilterSheet';
@@ -64,6 +65,8 @@ export function FeedScreen() {
   // El botón de filtros (40) se centra con la pill (34).
   const filter_btn_y = top_row_y - (40 - FEED_SECTION_TABS_HEIGHT) / 2;
   const { data, isLoading, error, loadInitial, refetch, loadMore } = useFeedProperties(filters);
+  // #243.2: refrescando = cargando con datos ya en pantalla (el arranque usa skeleton).
+  const is_refreshing = isLoading && data.length > 0;
   const [filter_visible, set_filter_visible] = useState(false);
 
   // Carga la primera página al montar la pantalla.
@@ -220,10 +223,15 @@ export function FeedScreen() {
             // Pull-to-refresh: resetea cursor y recarga desde el inicio.
             // refreshing solo true durante un refresh (ya hay datos en pantalla).
             refreshControl={
+              // #243.2: el RefreshControl nativo queda solo como GESTO
+              // (transparente en ambas plataformas); lo que se ve es el
+              // RefreshingChip con el UrbeaLoader debajo de los tabs.
               <RefreshControl
-                refreshing={isLoading && data.length > 0}
+                refreshing={is_refreshing}
                 onRefresh={refetch}
-                tintColor={colors.gray_1}
+                tintColor="transparent"
+                colors={['transparent']}
+                progressBackgroundColor="transparent"
               />
             }
             // Scroll infinito: dispara al estar a ~30% del final de la lista.
@@ -294,12 +302,25 @@ export function FeedScreen() {
        * Mismo `top` que filter_btn; sin overlap porque el chip queda centrado
        * y el botón de filtros a la derecha (ver ZoneActiveChip.tsx).
        */}
+      {/* #243.2: chip «Actualizando» (UrbeaLoader) debajo de los tabs mientras
+          el pull-to-refresh recarga. Si además hay zona activa, esta cuelga debajo. */}
+      <RefreshingChip
+        visible={is_refreshing}
+        tone="dark"
+        top={top_row_y + FEED_SECTION_TABS_HEIGHT + spacing.s_8}
+      />
       {filters.area != null && (
         <ZoneActiveChip
           dark
           on_press={() => set_filter('area', null)}
           // #241: cuelga DEBAJO de los tabs de sección (que ocupan el centro).
-          style={{ top: top_row_y + FEED_SECTION_TABS_HEIGHT + spacing.s_8 }}
+          style={{
+            top:
+              top_row_y +
+              FEED_SECTION_TABS_HEIGHT +
+              spacing.s_8 +
+              (is_refreshing ? REFRESHING_CHIP_HEIGHT + spacing.s_8 : 0),
+          }}
         />
       )}
     </View>

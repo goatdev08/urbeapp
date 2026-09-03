@@ -51,7 +51,6 @@
  */
 import React, { useCallback, useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   FlatList,
   LayoutAnimation,
   Pressable,
@@ -67,6 +66,8 @@ import { BookmarkSimple, MagnifyingGlass, Tray } from 'phosphor-react-native';
 // wifi en Android (misma regla que #231 para el panel admin).
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { UrbeaLoader } from '@/components/UrbeaLoader';
+import { RefreshingChip } from '@/components/RefreshingChip';
 import { FilterTabs } from '@/components/FilterTabs';
 import { useAuth } from '@/features/auth/context';
 import { EmptyState } from '@/features/profile/components/EmptyState';
@@ -225,7 +226,7 @@ export function CRMScreen(): React.ReactElement {
     return (
       <SafeAreaView style={styles.safe}>
         <View style={styles.center}>
-          <ActivityIndicator size="large" color={colors.primary} />
+          <UrbeaLoader size="large" color={colors.primary} />
         </View>
       </SafeAreaView>
     );
@@ -344,7 +345,10 @@ export function CRMScreen(): React.ReactElement {
           )}
           ItemSeparatorComponent={() => <View style={styles.separator} />}
           ListHeaderComponent={
-            // Sección fija "En seguimiento" (75.6, §19.9; FIX4) — respeta el
+            <>
+              {/* #243.2: indicador propio del pull-to-refresh (en flujo, sobre la lista). */}
+              <RefreshingChip visible={loading} />
+              {// Sección fija "En seguimiento" (75.6, §19.9; FIX4) — respeta el
             // tab de estado activo, capada a FOLLOW_UP_SECTION_CAP tarjetas.
             follow_up_leads.length > 0 ? (
               <View style={styles.follow_up_section}>
@@ -363,7 +367,8 @@ export function CRMScreen(): React.ReactElement {
                   </Text>
                 )}
               </View>
-            ) : null
+            ) : null}
+            </>
           }
           ListEmptyComponent={
             // ponytail: tres casos — agente sin leads / sin resultados con nada
@@ -383,10 +388,13 @@ export function CRMScreen(): React.ReactElement {
                   />
           }
           refreshControl={
+            // #243.2: el gesto nativo queda transparente; se ve el RefreshingChip del header.
             <RefreshControl
               refreshing={loading}
               onRefresh={refetch}
-              tintColor={colors.primary}
+              tintColor="transparent"
+              colors={['transparent']}
+              progressBackgroundColor="transparent"
             />
           }
           showsVerticalScrollIndicator={false}

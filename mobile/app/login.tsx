@@ -14,9 +14,9 @@
  * independientemente del ciclo de render.
  */
 import React, { useEffect, useRef, useState } from 'react';
+import { UrbeaLoader } from '@/components/UrbeaLoader';
 import { release_splash } from '@/lib/splash-gate';
 import {
-  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -271,7 +271,7 @@ export default function LoginScreen() {
             >
               {is_submitting ? (
                 <View style={styles.submit_loading_row}>
-                  <ActivityIndicator
+                  <UrbeaLoader
                     testID="submit-spinner"
                     size="small"
                     color="#9CA3AF"

@@ -46,9 +46,9 @@
  */
 import React, { useCallback, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { UrbeaLoader } from '@/components/UrbeaLoader';
 import { BackButton } from '@/components/BackButton';
 import {
-  ActivityIndicator,
   Alert,
   FlatList,
   Modal,
@@ -201,7 +201,7 @@ function RejectionReasonModal({
           </View>
 
           {is_moderating && (
-            <ActivityIndicator
+            <UrbeaLoader
               testID="rejection-reason-modal-spinner"
               color="#5A8A5E"
               style={styles.moderating_spinner}
@@ -349,7 +349,7 @@ function ModerationSheet({
           {video_url === null ? (
             <View style={styles.video_placeholder}>
               {is_minting ? (
-                <ActivityIndicator testID="minting-indicator" color="#5A8A5E" />
+                <UrbeaLoader testID="minting-indicator" color="#5A8A5E" />
               ) : (
                 <>
                   <Text style={styles.placeholder_text}>
@@ -425,7 +425,7 @@ function ModerationSheet({
           </View>
 
           {is_moderating && (
-            <ActivityIndicator
+            <UrbeaLoader
               testID="moderating-indicator"
               color="#5A8A5E"
               style={styles.moderating_spinner}
@@ -459,7 +459,7 @@ function PendingQueueSection(): React.ReactElement {
 
       {loading ? (
         <View style={styles.center}>
-          <ActivityIndicator testID="loading-indicator" size="large" color="#5A8A5E" />
+          <UrbeaLoader testID="loading-indicator" size="large" color="#5A8A5E" />
         </View>
       ) : error !== null ? (
         <View style={styles.center}>
@@ -659,7 +659,7 @@ function ActiveAdsSection(): React.ReactElement {
 
       {loading ? (
         <View style={styles.center}>
-          <ActivityIndicator testID="active-loading-indicator" size="large" color="#5A8A5E" />
+          <UrbeaLoader testID="active-loading-indicator" size="large" color="#5A8A5E" />
         </View>
       ) : error !== null ? (
         <View style={styles.center}>

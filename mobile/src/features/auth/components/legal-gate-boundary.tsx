@@ -17,8 +17,9 @@
  * después este.
  */
 import React from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { UrbeaLoader } from '@/components/UrbeaLoader';
 import { useAuth } from '@/features/auth/context';
 import { useLegalGate } from '@/features/auth/hooks/useLegalGate';
 import { LegalWall } from '@/features/auth/components/legal-wall';
@@ -32,7 +33,7 @@ export function LegalGateBoundary({ children }: { children: React.ReactNode }): 
   if (legal.is_loading) {
     return (
       <View style={styles.container}>
-        <ActivityIndicator testID="legal-gate-loading" size="large" />
+        <UrbeaLoader testID="legal-gate-loading" size="large" />
       </View>
     );
   }

@@ -13,7 +13,6 @@
  */
 import React, { useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   FlatList,
   Modal,
   Pressable,
@@ -25,6 +24,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CaretDown, MagnifyingGlass, X } from 'phosphor-react-native';
+import { UrbeaLoader } from '@/components/UrbeaLoader';
 
 // ---------------------------------------------------------------------------
 // Tipos
@@ -168,7 +168,7 @@ export function SelectField({
           </View>
 
           {loading ? (
-            <ActivityIndicator style={styles.loading} size="small" color="#6B7280" />
+            <UrbeaLoader style={styles.loading} size="small" color="#6B7280" />
           ) : (
             <FlatList
               data={filtered}
