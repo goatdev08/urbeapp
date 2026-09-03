@@ -6,12 +6,17 @@
  * 2026-09-02: tabs de texto estilo TikTok, NO píldora segmentada — no tapan el
  * video y se leen sobre cualquier fotograma gracias a la sombra de texto.
  *   - Layout: fila centrada (alignSelf 'center'), position 'absolute'; el
- *     padre inyecta `top` (insets.top + s_12, misma coordenada que el botón de
- *     filtros, que queda a la derecha — no se estorban).
- *   - Activa: on_primary (blanco) con fonts.sans_bold + subrayado de 2px
- *     (primary_soft, el Salvia claro del feed). Inactiva: gray_1, sans_semibold.
- *   - Área táctil: paddingVertical s_8 / paddingHorizontal s_12 + hitSlop;
- *     gap s_24 entre tabs.
+ *     padre inyecta `top` (insets.top + s_4 — pegado a la status bar / Dynamic
+ *     Island sin invadirla; misma coordenada que el botón de filtros, que
+ *     queda a la derecha — no se estorban).
+ *   - Activa: blanco puro con fonts.sans_bold + subrayado de 3px (primary_soft,
+ *     el Salvia claro del feed). Inactiva: blanco al 72 % (como TikTok — el
+ *     gray_1 cálido se ensuciaba sobre el video), sans_semibold. Sombra de
+ *     texto fuerte + scrim del padre para leerse sobre cielo/pared clara
+ *     (#242.1, feedback del smoke 2026-09-03).
+ *   - Área táctil: paddingVertical 6 / paddingHorizontal s_12 + hitSlop;
+ *     gap s_24 entre tabs. Altura total 40 = la del botón de filtros, así los
+ *     dos quedan centrados en la misma fila.
  *   - Altura total conocida (FEED_SECTION_TABS_HEIGHT) para que el chip de
  *     zona pueda colgarse debajo sin medir.
  *
@@ -27,8 +32,8 @@ import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } fro
 import { FEED_SECTIONS, type FeedSection } from '@/features/search/lib/feedSection';
 import { colors, fonts, spacing } from '@/theme/theme';
 
-/** Alto del bloque (padding 8+8 + línea 22 + subrayado 2 + margen 2) — para posicionar lo que cuelga debajo. */
-export const FEED_SECTION_TABS_HEIGHT = 42;
+/** Alto del bloque (padding 6+6 + línea 22 + margen 3 + subrayado 3) — para posicionar lo que cuelga debajo. */
+export const FEED_SECTION_TABS_HEIGHT = 40;
 
 interface FeedSectionTabsProps {
   section: FeedSection;
@@ -74,32 +79,32 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   tab: {
-    paddingVertical: spacing.s_8,
+    paddingVertical: 6, // ponytail: 40 de alto total; no hay token s_6 y no vale crearlo por un solo uso
     paddingHorizontal: spacing.s_12,
     alignItems: 'center',
   },
   label: {
-    fontSize: 16,
+    fontSize: 17,
     lineHeight: 22,
     letterSpacing: 0.2,
     // Legible sobre cualquier fotograma (cielo claro, pared blanca).
-    textShadowColor: 'rgba(0,0,0,0.45)',
+    textShadowColor: 'rgba(0,0,0,0.6)',
     textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
+    textShadowRadius: 4,
   },
   label_active: {
     color: colors.on_primary,
     fontFamily: fonts.sans_bold,
   },
   label_inactive: {
-    color: colors.gray_1,
+    color: 'rgba(255,255,255,0.72)',
     fontFamily: fonts.sans_semibold,
   },
   underline: {
-    marginTop: 2,
-    height: 2,
-    width: 20,
-    borderRadius: 1,
+    marginTop: 3,
+    height: 3,
+    width: 24,
+    borderRadius: 1.5,
     backgroundColor: 'transparent',
   },
   underline_active: {
