@@ -53,6 +53,7 @@ import React, { useCallback, useMemo, useState } from 'react';
 import {
   FlatList,
   LayoutAnimation,
+  Platform,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -388,13 +389,16 @@ export function CRMScreen(): React.ReactElement {
                   />
           }
           refreshControl={
-            // #243.2: el gesto nativo queda transparente; se ve el RefreshingChip del header.
+            // #243.2/#243.4: el gesto nativo queda transparente; se ve el
+            // RefreshingChip del header. En Android el color transparente no
+            // basta — el círculo nativo sigue visible — hay que sacarlo con offset.
             <RefreshControl
               refreshing={loading}
               onRefresh={refetch}
               tintColor="transparent"
               colors={['transparent']}
               progressBackgroundColor="transparent"
+              progressViewOffset={Platform.OS === 'android' ? -100 : undefined}
             />
           }
           showsVerticalScrollIndicator={false}

@@ -30,6 +30,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   FlatList,
   LayoutAnimation,
+  Platform,
   RefreshControl,
   StyleSheet,
   Text,
@@ -217,12 +218,15 @@ export function SavedScreen({
       }
       refreshControl={
         // #243.2: el gesto nativo queda transparente; se ve el RefreshingChip del header.
+        // #243.4: en Android el color transparente no basta — SwipeRefreshLayout
+        // sigue pintando su círculo encima del RefreshingChip del header.
         <RefreshControl
           refreshing={is_refreshing}
           onRefresh={handle_refresh}
           tintColor="transparent"
           colors={['transparent']}
           progressBackgroundColor="transparent"
+          progressViewOffset={Platform.OS === 'android' ? -100 : undefined}
         />
       }
       renderItem={({ item }) => (

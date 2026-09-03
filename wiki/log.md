@@ -2,6 +2,9 @@
 
 Append-only. Prefijo: `## [YYYY-MM-DD] tipo | título`.
 
+## [2026-09-03] fix | #244 — el loader Trazo no animaba en Android físico (solo en emuladores)
+Del smoke en Android real tras el OTA: el UrbeaLoader nunca dibujaba la casa (Reanimated useAnimatedProps sobre SVG se quedaba clavado fuera de los emuladores) y el pull-to-refresh mostraba dos loaders a la vez (el color transparente no oculta el círculo nativo de Android). Fix: Animated clásico de RN para el loader (mismo patrón que UploadProgressBar) y progressViewOffset para sacar el círculo nativo en Android. Lección: un loader nuevo se prueba en Android FÍSICO, no solo en emulador, antes del OTA. Ver [[design-system]].
+
 ## [2026-09-03] producto | #243 — Urbea tiene loader propio: la casa a trazo
 El pull-to-refresh del feed refrescaba sin indicador visible. Abraham revisó cinco loaders de marca en un preview HTML y eligió «Trazo» para toda la app: `UrbeaLoader` (svg + Reanimated) reemplaza los 33 archivos con `ActivityIndicator`, y `RefreshingChip` muestra «Actualizando» en feed, Guardados y CRM. Suite completa 163/2066 verde. Solo cliente → OTA tras smoke conjunto. Ver [[design-system]].
 

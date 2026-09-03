@@ -10955,7 +10955,7 @@
         "id": "243",
         "title": "producto(242): UrbeaLoader «Trazo» en toda la app — chip propio de pull-to-refresh y reemplazo de ActivityIndicator",
         "description": "Origen: subtarea 242.1 · Detectado por: usuario (smoke iOS 2026-09-03). El pull-to-refresh del feed refresca pero el spinner nativo (gray_1) queda invisible bajo el scrim y los tabs. Abraham revisó cinco loaders propios en un preview HTML (artefacto \"Loaders Urbea\") y eligió la opción C «Trazo»: la silueta de una casa se dibuja de un solo trazo (techo y muros en el color del contexto) y la puerta aparece en arcilla; se borra y vuelve a empezar. Decisión: usarlo en TODA la app.",
-        "details": "Footprint: mobile/src/components/UrbeaLoader.tsx (react-native-svg + Reanimated useAnimatedProps sobre strokeDashoffset; API drop-in de ActivityIndicator: size small|large|number, color, style, testID; trazo más grueso en tamaños chicos y sin puerta a <20 px — techo conocido que Abraham aceptó), mobile/src/components/RefreshingChip.tsx (chip «Actualizando» con el loader, absoluto, tono oscuro/claro), FeedScreen/SavedScreen/CRMScreen (RefreshControl transparente + chip mientras refreshing), y los ~55 usos de ActivityIndicator en src/ y app/ (reemplazo mecánico import+tag, testIDs intactos). Sin dependencias nuevas (svg y reanimated ya instalados). Solo cliente → REQUIERE OTA. Sin migraciones ni EFs.",
+        "details": "Footprint: mobile/src/components/UrbeaLoader.tsx (react-native-svg + Reanimated useAnimatedProps sobre strokeDashoffset; API drop-in de ActivityIndicator: size small|large|number, color, style, testID; trazo más grueso en tamaños chicos y sin puerta a <20 px — techo conocido que Abraham aceptó), mobile/src/components/RefreshingChip.tsx (chip «Actualizando» con el loader, absoluto, tono oscuro/claro), FeedScreen/SavedScreen/CRMScreen (RefreshControl transparente + chip mientras refreshing), y los ~55 usos de ActivityIndicator en src/ y app/ (reemplazo mecánico import+tag, testIDs intactos). Sin dependencias nuevas (svg y reanimated ya instalados). Solo cliente → REQUIERE OTA. Sin migraciones ni EFs.\n\nDERIVADAS: #244 (usuario, smoke Android físico post-OTA 2026-09-03: el loader no anima en el dispositivo real — solo el texto «Actualizando» — y en el feed aparecen el spinner nativo y el custom a la vez)",
         "testStrategy": "No crítica (components/pantallas): tsc + lint + suite COMPLETA de Jest (los testIDs de los spinners viven en muchos tests) + test de render del loader bajo los mocks de reanimated/svg + smoke conjunto en iOS y Android (feed, Guardados, CRM, login, admin).",
         "status": "done",
         "dependencies": [
@@ -11001,13 +11001,50 @@
             "parentId": "undefined"
           }
         ],
-        "updatedAt": "2026-09-03T17:55:42.564Z"
+        "updatedAt": "2026-09-03T18:34:19.998Z"
+      },
+      {
+        "id": "244",
+        "title": "fix(243): el loader Trazo no animaba en Android físico + doble spinner en el pull-to-refresh del feed",
+        "description": "Origen: subtarea 243.2/243.1 · Detectado por: usuario (smoke en Android físico tras el OTA de #241/#242/#243, 2026-09-03). Dos bugs solo visibles en el teléfono real (no en los emuladores/dev client): (1) UrbeaLoader no animaba — el strokeDashoffset se quedaba en su valor inicial (invisible) y solo se veía el texto «Actualizando»; (2) en el feed, al hacer pull-to-refresh, aparecían el círculo nativo de Android (SwipeRefreshLayout) Y el RefreshingChip custom al mismo tiempo.",
+        "details": "Causa raíz (1): Reanimated useAnimatedProps sobre strokeDashoffset de react-native-svg (props nativas de un host component de terceros vía JSI/worklet) es la combinación menos probada entre las dos formas de animar en RN — funcionó en ambos simuladores/emuladores (dev client + Metro) pero no en el build de producción del teléfono real. Fix: UrbeaLoader.tsx reescrito con Animated clásico de react-native (useNativeDriver:false, obligatorio para props de SVG) — mismo patrón que UploadProgressBar.tsx, ya probado en producción. Causa raíz (2): tintColor/colors/progressBackgroundColor transparentes no bastan en Android — SwipeRefreshLayout sigue pintando su círculo. Fix: progressViewOffset={-100} en Android (Platform.OS check) en FeedScreen, SavedScreen y CRMScreen — empuja el indicador nativo fuera de la pantalla, deja el gesto intacto.",
+        "testStrategy": "No crítica (componente + pantallas): tsc + lint + suite completa de Jest (loader, feed, saved, leads) + smoke conjunto en Android FÍSICO (no solo emulador — ahí es donde fallaba) confirmando que la casa se dibuja y que solo aparece un loader en el pull-to-refresh del feed.",
+        "status": "review",
+        "dependencies": [
+          "243"
+        ],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "UrbeaLoader: Reanimated+SVG → Animated clásico de react-native (fix de la animación muerta en Android físico)",
+            "description": "",
+            "details": "\n<info added on 2026-09-03T18:34:20.072Z>\nHECHO 244.1 — UrbeaLoader deja de usar Reanimated+SVG, pasa a Animated clásico de RN (rama tarea/244-loader-animado-refresh-android desde origin/main 0e00eb3).\nReporte del usuario: en Android físico tras el OTA, el loader no animaba — solo se veía el texto «Actualizando», la casa nunca se dibujaba. Funcionaba en ambos emuladores/simuladores (dev client + Metro).\nCausa raíz: Reanimated useAnimatedProps sobre strokeDashoffset de un Path de react-native-svg (prop nativa de un host component de terceros, vía JSI/worklet) es una combinación con menos garantías cross-build que animar opacity/transform de un View. Funcionó en dev (Metro) pero se quedó clavada en el valor inicial en el build de producción del teléfono real.\nFix: mobile/src/components/UrbeaLoader.tsx reescrito con Animated clásico (useNativeDriver: false, obligatorio para props de SVG — el driver nativo solo soporta opacity/transform) — mismo patrón que mobile/src/features/publish/components/UploadProgressBar.tsx, ya probado en producción. Animated.loop + Animated.sequence(timing→delay→timing) por cada trazo (casa y puerta), la puerta con un Animated.delay único antes de su propio loop (fase constante sin deriva). useState en vez de useRef().current (lint react-hooks/refs).\nVerificación (salida real): pnpm jest src/components/__tests__/UrbeaLoader.test.tsx → Tests: 6 passed, 6 total · pnpm tsc --noEmit → sin salida (exit 0) · pnpm eslint src/components/UrbeaLoader.tsx → sin errores.\n</info added on 2026-09-03T18:34:20.072Z>",
+            "status": "done",
+            "dependencies": [],
+            "testStrategy": "jest components + tsc + lint",
+            "updatedAt": "2026-09-03T18:34:20.072Z",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "progressViewOffset en Android para feed/saved/CRM (fix del doble spinner del pull-to-refresh)",
+            "description": "",
+            "details": "\n<info added on 2026-09-03T18:34:20.150Z>\nHECHO 244.2 — progressViewOffset en Android: un solo loader visible en el pull-to-refresh.\nReporte del usuario: en Android, al refrescar el feed, aparecían el círculo nativo (SwipeRefreshLayout) y el RefreshingChip custom a la vez.\nCausa raíz: tintColor=\"transparent\" + colors={['transparent']} + progressBackgroundColor=\"transparent\" no bastan en Android — el círculo del SwipeRefreshLayout sigue pintándose (RN no soporta ocultarlo por color en todas las versiones/dispositivos de Android).\nFix: progressViewOffset={Platform.OS === 'android' ? -100 : undefined} en el RefreshControl de mobile/src/features/feed/FeedScreen.tsx, mobile/src/features/saved/SavedScreen.tsx y mobile/src/features/leads/screens/CRMScreen.tsx — saca el indicador nativo de la pantalla; el gesto de pull-to-refresh sigue intacto. iOS no se toca (progressViewOffset se ignora ahí; sigue usando tintColor).\nVerificación (salida real):\n$ pnpm tsc --noEmit → sin salida (exit 0)\n$ pnpm lint → ✖ 116 problems (0 errors, 116 warnings) [preexistentes]\n$ pnpm jest → Test Suites: 163 passed, 163 total · Tests: 2066 passed, 2066 total\nPendiente: smoke conjunto en Android FÍSICO (no solo emulador, que es donde fallaba antes) antes del próximo OTA.\n</info added on 2026-09-03T18:34:20.150Z>",
+            "status": "done",
+            "dependencies": [],
+            "testStrategy": "jest feed/saved/leads + smoke conjunto en Android físico",
+            "updatedAt": "2026-09-03T18:34:20.150Z",
+            "parentId": "undefined"
+          }
+        ],
+        "updatedAt": "2026-09-03T18:34:22.641Z"
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-09-03T17:55:42.564Z",
-      "taskCount": 243,
+      "lastModified": "2026-09-03T18:34:22.641Z",
+      "taskCount": 244,
       "completedCount": 162,
       "tags": [
         "master"
