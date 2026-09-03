@@ -89,3 +89,6 @@ supabase/scripts/video-backups/
 
 # 157: datasets DCAH descargados por import-neighborhoods.sh (cache local, no van al repo)
 supabase/scripts/.data/
+
+# graphify (grafo AST local, se regenera con `graphify update .`)
+graphify-out/

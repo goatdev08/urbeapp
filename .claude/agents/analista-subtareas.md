@@ -57,6 +57,7 @@ Para cada subtarea pendiente:
    | branding, diseño, componentes, tokens, theme, figma | `mobile/src/theme/`, `mobile/src/components/` | design |
 
 3. **Cross-check contra el árbol real** (`ls`/Glob): marca `(nuevo)` lo que no existe y `(existe)` lo que sí.
+3b. **Footprint mecánico de símbolos existentes** (tarea #70): si la subtarea modifica una función/hook/EF que ya existe y `graphify-out/graph.json` está presente, corre `graphify affected "<símbolo>"` (y `graphify explain` si hace falta) para sumar al footprint los archivos que la importan o llaman, con línea. Si no hay grafo: `graphify update . --no-cluster` (~1 min, sin LLM) o sáltalo. ⚠️ Solo resuelve **símbolos**: nombres de RPC/EF entre comillas, columnas y textos siguen saliendo del vault y de Grep (ver skill `urbea-context` §graphify).
 4. **Hotspots compartidos** (casi cualquier subtarea podría tocar): `mobile/package.json`, `mobile/app.json`, `mobile/src/lib/supabase/client.ts`, `mobile/src/theme/`, `supabase/migrations/` (numeración secuencial), `mobile/app/_layout.tsx` (Expo Router).
 
 ### Paso 4 — Agente de dominio + skills por subtarea

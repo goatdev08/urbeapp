@@ -266,3 +266,13 @@ Comando siguiente sugerido tras aprobar: `/tm-plan <id>`.
 - **6. Extracción AST-only** (`update`, gratis) para el MVP.
 
 **Promoción:** se crea 1 tarea **M** "Integrar graphify al workflow" (subtareas a–e del plan). La tarea L de fase 2 NO se crea aún. ID de tarea: ver `wiki/log.md` [2026-07-12].
+
+## 🔁 Revisión de la resolución — 2026-09-03 (tarea #70, medido sobre el repo)
+Antes de implementar se construyó el grafo y se le hicieron las preguntas que la tarea prometía. Resultado y decisiones revisadas:
+- **Ruido:** por defecto indexó `mobile/ios` → 107,218 nodos / 120 MB / 4 min 54 s; el 88 % eran Pods. Con `.graphifyignore` → 4,951 nodos / 7.2 MB.
+- **SQL:** 0 nodos de migraciones hasta instalar `tree-sitter-sql` en el entorno `uv` de graphify (el extractor fallaba en silencio). Instalado → 560 nodos de `supabase/migrations`, con aristas `triggers` (23) / `references` (20) / `reads_from` (18), pero sin llamadas función→función ni EF→RPC (0 aristas EF→SQL). Rebuild incremental: 7 s.
+- **Cruce de capas:** el `path` móvil → EF dio 7 saltos por `react_native`/`supabase_js` (basura); `query` en lenguaje natural devolvió bitácoras RED de #217/#218. Las aristas que importan para trazabilidad son strings (`.rpc('…')`, `functions.invoke('…')`) y el AST no las ve.
+- **Lo que sí funcionó:** `explain`/`affected` sobre `fetchFeedProperties` → hook, pantalla y 9 tests con archivo:línea, <1 s.
+- **Drift del mapa manual:** 4 de 62 referencias rancias + 1 EF sin entrada. La premisa "el mapa se desincroniza mucho" no se sostuvo.
+
+**Decisiones que cambian respecto a la resolución de 2026-07-12:** (1) `graph.json` NO se versiona (`.gitignore`), se regenera bajo demanda; (4) NO se corre `claude install` ni hooks anti-grep — grep sigue siendo la vía para strings/RPC; se descarta el paso de cierre `graphify update .` en `/tm-tarea`. Se mantiene (3) complementa al mapa y (6) AST-only. Alcance final de #70: `.graphifyignore` + gitignore + parser SQL + `urbea-context` §graphify + paso 3b en `analista-subtareas` + ingest. Detalle en `wiki/decisiones/0007-workflow-multiagente.md` §graphify.

@@ -2,6 +2,9 @@
 
 Append-only. Prefijo: `## [YYYY-MM-DD] tipo | título`.
 
+## [2026-09-03] chore | #70 — graphify entra al workflow, pero recortado a lo que sí gana a grep
+Antes de implementar la exploración 037 (grafo versionado, hooks anti-grep, update en cada cierre) se midió el grafo sobre el repo: por defecto indexaba los Pods de iOS (107k nodos, 120 MB), el parser SQL no venía instalado (0 nodos de migraciones) y el AST no ve las aristas que importan para trazabilidad (móvil → EF → RPC son strings). Lo que sí funciona: `graphify affected/explain "<símbolo>"` en <1 s con archivo:línea. Alcance final: `.graphifyignore`, `graphify-out/` ignorado, `tree-sitter-sql` instalado, skill `urbea-context` §graphify y paso 3b del analista. Sin hooks, sin versionar el grafo, sin paso de cierre; la fase 2 de olas paralelas queda sin base. Ver [[0007-workflow-multiagente]].
+
 ## [2026-09-03] fix | #245 — el spinner del video se había ido a la esquina, encima del reloj
 El reemplazo masivo de #243 fijó width/height en el loader; el ActivityIndicator que sustituyó no los tiene (se estira y centra), así que los dos llamadores con estilo de llenado (feed y detalle de propiedad) mandaron el trazo a la esquina superior izquierda, bajo el reloj en Android. Fix: el tamaño lo lleva el <Svg>, el contenedor solo centra. Lección: al sustituir un componente de RN hay que copiar su comportamiento de LAYOUT, no solo su API de props. Ver [[design-system]].
 

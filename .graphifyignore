@@ -1,0 +1,17 @@
+# graphify: solo código de la app. Sin Pods/gradle, vault, docs ni tooling de agentes.
+mobile/ios/
+mobile/android/
+mobile/dist-test/
+mobile/assets/
+mobile/.maestro/
+.agents/
+.claude/
+.taskmaster/
+urbea-plan/
+wiki/
+docs/
+scripts/
+supabase/demo-assets/
+supabase/scripts/
+*.md
+*.json
