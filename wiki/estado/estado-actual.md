@@ -3,6 +3,9 @@ tipo: estado
 actualizado: 2026-09-03
 ---
 
+## Hoy (2026-09-03) — #245: el loader se iba a la esquina
+Tras el OTA de #244 (que sí arregló la animación y el doble spinner), el smoke en Android encontró el spinner del video pegado a la esquina superior izquierda, sobre el reloj: el contenedor del UrbeaLoader fijaba width/height y los llamadores con estilo de llenado lo colapsaban. #245 lo corrige (el <Svg> lleva el tamaño, el contenedor centra) + test de regresión. tsc/lint/jest verdes (163/2067).
+
 ## Hoy (2026-09-03, madrugada) — #244: el loader no animaba en Android real
 Tras el OTA de #241-243, el smoke en Android FÍSICO (no emulador) encontró dos bugs invisibles en los emuladores: el UrbeaLoader no dibujaba nada (Reanimated+SVG no sobrevivió el build de producción) y el pull-to-refresh mostraba dos loaders a la vez. #244 (rama `tarea/244-loader-animado-refresh-android`, PR abierto) los corrige: loader reescrito con Animated clásico de RN, progressViewOffset en Android para feed/saved/CRM. tsc/lint/jest completo verdes (163/2066). **Pendiente: smoke conjunto en Android FÍSICO → merge → OTA → `set-status 244 done`. Esta vez el smoke en dispositivo real es obligatorio antes de cerrar, no solo emulador.**
 

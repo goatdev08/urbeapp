@@ -2,6 +2,9 @@
 
 Append-only. Prefijo: `## [YYYY-MM-DD] tipo | título`.
 
+## [2026-09-03] fix | #245 — el spinner del video se había ido a la esquina, encima del reloj
+El reemplazo masivo de #243 fijó width/height en el loader; el ActivityIndicator que sustituyó no los tiene (se estira y centra), así que los dos llamadores con estilo de llenado (feed y detalle de propiedad) mandaron el trazo a la esquina superior izquierda, bajo el reloj en Android. Fix: el tamaño lo lleva el <Svg>, el contenedor solo centra. Lección: al sustituir un componente de RN hay que copiar su comportamiento de LAYOUT, no solo su API de props. Ver [[design-system]].
+
 ## [2026-09-03] fix | #244 — el loader Trazo no animaba en Android físico (solo en emuladores)
 Del smoke en Android real tras el OTA: el UrbeaLoader nunca dibujaba la casa (Reanimated useAnimatedProps sobre SVG se quedaba clavado fuera de los emuladores) y el pull-to-refresh mostraba dos loaders a la vez (el color transparente no oculta el círculo nativo de Android). Fix: Animated clásico de RN para el loader (mismo patrón que UploadProgressBar) y progressViewOffset para sacar el círculo nativo en Android. Lección: un loader nuevo se prueba en Android FÍSICO, no solo en emulador, antes del OTA. Ver [[design-system]].
 

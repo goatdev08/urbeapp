@@ -11007,7 +11007,7 @@
         "id": "244",
         "title": "fix(243): el loader Trazo no animaba en Android físico + doble spinner en el pull-to-refresh del feed",
         "description": "Origen: subtarea 243.2/243.1 · Detectado por: usuario (smoke en Android físico tras el OTA de #241/#242/#243, 2026-09-03). Dos bugs solo visibles en el teléfono real (no en los emuladores/dev client): (1) UrbeaLoader no animaba — el strokeDashoffset se quedaba en su valor inicial (invisible) y solo se veía el texto «Actualizando»; (2) en el feed, al hacer pull-to-refresh, aparecían el círculo nativo de Android (SwipeRefreshLayout) Y el RefreshingChip custom al mismo tiempo.",
-        "details": "Causa raíz (1): Reanimated useAnimatedProps sobre strokeDashoffset de react-native-svg (props nativas de un host component de terceros vía JSI/worklet) es la combinación menos probada entre las dos formas de animar en RN — funcionó en ambos simuladores/emuladores (dev client + Metro) pero no en el build de producción del teléfono real. Fix: UrbeaLoader.tsx reescrito con Animated clásico de react-native (useNativeDriver:false, obligatorio para props de SVG) — mismo patrón que UploadProgressBar.tsx, ya probado en producción. Causa raíz (2): tintColor/colors/progressBackgroundColor transparentes no bastan en Android — SwipeRefreshLayout sigue pintando su círculo. Fix: progressViewOffset={-100} en Android (Platform.OS check) en FeedScreen, SavedScreen y CRMScreen — empuja el indicador nativo fuera de la pantalla, deja el gesto intacto.",
+        "details": "Causa raíz (1): Reanimated useAnimatedProps sobre strokeDashoffset de react-native-svg (props nativas de un host component de terceros vía JSI/worklet) es la combinación menos probada entre las dos formas de animar en RN — funcionó en ambos simuladores/emuladores (dev client + Metro) pero no en el build de producción del teléfono real. Fix: UrbeaLoader.tsx reescrito con Animated clásico de react-native (useNativeDriver:false, obligatorio para props de SVG) — mismo patrón que UploadProgressBar.tsx, ya probado en producción. Causa raíz (2): tintColor/colors/progressBackgroundColor transparentes no bastan en Android — SwipeRefreshLayout sigue pintando su círculo. Fix: progressViewOffset={-100} en Android (Platform.OS check) en FeedScreen, SavedScreen y CRMScreen — empuja el indicador nativo fuera de la pantalla, deja el gesto intacto.\n\nDERIVADAS: #245 (usuario, smoke Android 2026-09-03: el spinner de carga del video quedó en la esquina superior izquierda encima del reloj)",
         "testStrategy": "No crítica (componente + pantallas): tsc + lint + suite completa de Jest (loader, feed, saved, leads) + smoke conjunto en Android FÍSICO (no solo emulador — ahí es donde fallaba) confirmando que la casa se dibuja y que solo aparece un loader en el pull-to-refresh del feed.",
         "status": "review",
         "dependencies": [
@@ -11038,13 +11038,39 @@
             "parentId": "undefined"
           }
         ],
-        "updatedAt": "2026-09-03T18:46:31.083Z"
+        "updatedAt": "2026-09-03T18:56:23.877Z"
+      },
+      {
+        "id": "245",
+        "title": "fix(243.3): el spinner de carga del video quedaba en la esquina superior izquierda, encima del reloj",
+        "description": "Origen: subtarea 243.3 (reemplazo masivo ActivityIndicator → UrbeaLoader) · Detectado por: usuario (smoke Android 2026-09-03, tras el OTA de #244). Aparecía un loader pegado a la esquina superior izquierda, encima de la hora del status bar. Es el spinner de buffering del video del feed: debía estar CENTRADO sobre el video.",
+        "details": "Causa raíz: UrbeaLoader ponía width/height fijos en su contenedor (style={[box, {width:px,height:px}, style]}). El ActivityIndicator que reemplazó NO los tiene: se estira con el estilo que le pasan y CENTRA su spinner dentro. Dos pantallas dependen de eso — VideoFeedItem (loading_spinner: position absolute + top/left/right/bottom 0) y PropertyVideoPlayer (StyleSheet.absoluteFill) — y con width/height fijos + left:0/top:0 el loader se colapsaba a la esquina superior izquierda; en el feed (video a pantalla completa, Android edge-to-edge) eso cae justo bajo el reloj. Fix: el tamaño lo lleva el <Svg> y el contenedor solo centra (alignItems/justifyContent), igual que ActivityIndicator. Los demás estilos que se le pasan al loader son solo márgenes/padding y no cambian. Test de regresión que asserta que el contenedor no fija width/height y que el estilo del llamador sobrevive.",
+        "testStrategy": "No crítica: tsc + lint + suite completa + smoke en Android confirmando que el spinner del video se ve centrado y que nada queda bajo el reloj.",
+        "status": "review",
+        "dependencies": [
+          "244"
+        ],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "El contenedor del UrbeaLoader deja de fijar width/height (el <Svg> lleva el tamaño) + test de regresión",
+            "description": "",
+            "details": "\n<info added on 2026-09-03T18:56:23.942Z>\nHECHO 245.1 — el loader deja de colapsarse a la esquina superior izquierda (rama tarea/245-loader-esquina-superior desde origin/main 744f270).\nReporte del usuario: «noto otro loader que aparece en la esquina superior izquierda y se sobrepone con la hora en Android». Es el spinner de buffering del video del feed; su intención es estar CENTRADO sobre el video.\nCausa raíz: UrbeaLoader ponía width/height fijos en el contenedor: style={[styles.box, {width:px,height:px}, style]}. El ActivityIndicator que reemplazó NO fija dimensiones — se estira con el estilo recibido y centra su spinner dentro. Dos llamadores dependen de eso:\n - mobile/src/features/feed/components/VideoFeedItem.tsx → styles.loading_spinner = {position:'absolute', top:0, left:0, right:0, bottom:0}\n - mobile/src/features/property-detail/components/PropertyVideoPlayer.tsx → StyleSheet.absoluteFill\nCon width/height fijos + left:0/top:0, el loader se colapsaba a la esquina superior izquierda; en el feed (video a pantalla completa + edge-to-edge en Android) eso cae justo bajo el reloj.\nFix: mobile/src/components/UrbeaLoader.tsx — el tamaño lo lleva el <Svg width={px} height={px}> y el contenedor solo centra (alignItems/justifyContent + el estilo del llamador). En flujo mide lo que el ícono; con un estilo de llenado ocupa el espacio y centra el trazo, igual que ActivityIndicator.\nAuditados los demás estilos que recibe el loader (select-field, LeadExpandedView ×2, ThumbnailPicker, MapSearchBar, AddressAutocomplete, admin/ads): todos son márgenes/padding — sin cambio de comportamiento.\nTest de regresión en mobile/src/components/__tests__/UrbeaLoader.test.tsx: con StyleSheet.absoluteFill, el contenedor no trae width/height, conserva alignItems/justifyContent center y el position/left del llamador.\nVerificación (salida real):\n$ pnpm tsc --noEmit → sin salida (exit 0)\n$ pnpm lint → ✖ 116 problems (0 errors, 116 warnings) [preexistentes]\n$ pnpm jest → Test Suites: 163 passed, 163 total · Tests: 2067 passed, 2067 total\n</info added on 2026-09-03T18:56:23.942Z>",
+            "status": "done",
+            "dependencies": [],
+            "testStrategy": "jest components + tsc + lint",
+            "updatedAt": "2026-09-03T18:56:23.942Z",
+            "parentId": "undefined"
+          }
+        ],
+        "updatedAt": "2026-09-03T18:56:28.382Z"
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-09-03T18:34:22.641Z",
-      "taskCount": 244,
+      "lastModified": "2026-09-03T18:56:28.382Z",
+      "taskCount": 245,
       "completedCount": 162,
       "tags": [
         "master"
