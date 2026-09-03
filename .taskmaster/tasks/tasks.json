@@ -11046,7 +11046,7 @@
         "description": "Origen: subtarea 243.3 (reemplazo masivo ActivityIndicator → UrbeaLoader) · Detectado por: usuario (smoke Android 2026-09-03, tras el OTA de #244). Aparecía un loader pegado a la esquina superior izquierda, encima de la hora del status bar. Es el spinner de buffering del video del feed: debía estar CENTRADO sobre el video.",
         "details": "Causa raíz: UrbeaLoader ponía width/height fijos en su contenedor (style={[box, {width:px,height:px}, style]}). El ActivityIndicator que reemplazó NO los tiene: se estira con el estilo que le pasan y CENTRA su spinner dentro. Dos pantallas dependen de eso — VideoFeedItem (loading_spinner: position absolute + top/left/right/bottom 0) y PropertyVideoPlayer (StyleSheet.absoluteFill) — y con width/height fijos + left:0/top:0 el loader se colapsaba a la esquina superior izquierda; en el feed (video a pantalla completa, Android edge-to-edge) eso cae justo bajo el reloj. Fix: el tamaño lo lleva el <Svg> y el contenedor solo centra (alignItems/justifyContent), igual que ActivityIndicator. Los demás estilos que se le pasan al loader son solo márgenes/padding y no cambian. Test de regresión que asserta que el contenedor no fija width/height y que el estilo del llamador sobrevive.",
         "testStrategy": "No crítica: tsc + lint + suite completa + smoke en Android confirmando que el spinner del video se ve centrado y que nada queda bajo el reloj.",
-        "status": "review",
+        "status": "done",
         "dependencies": [
           "244"
         ],
@@ -11064,14 +11064,14 @@
             "parentId": "undefined"
           }
         ],
-        "updatedAt": "2026-09-03T18:56:28.382Z"
+        "updatedAt": "2026-09-03T18:57:14.932Z"
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-09-03T18:56:28.382Z",
+      "lastModified": "2026-09-03T18:57:14.932Z",
       "taskCount": 245,
-      "completedCount": 162,
+      "completedCount": 163,
       "tags": [
         "master"
       ]
