@@ -16,26 +16,40 @@
  * tamaño y la puerta desaparece por debajo de 20 px (la casa sola se lee; la
  * puerta compite). Techo conocido y aceptado.
  *
- * Implementación: react-native-svg (ya instalado, ver IsotipoMark) + Reanimated
- * `useAnimatedProps` sobre `strokeDashoffset` de un Path con `strokeDasharray`
- * = largo del trazo. Un solo `progress` 0→1 en loop (2.2 s): 0–45 % dibuja,
- * 45–60 % sostiene, 60–100 % borra; la puerta corre la misma curva desfasada.
- * El largo de los paths está calculado a mano del viewBox 48×48 (segmentos
- * rectos: 2×√(16²+14²) + 17 + 24 + 17 ≈ 100.5; puerta 10 + 6 + 10 = 26).
+ * #243.4 (2026-09-03, smoke Android físico post-OTA): la primera versión usaba
+ * Reanimated `useAnimatedProps` sobre `strokeDashoffset` de react-native-svg —
+ * animó bien en AMBOS simuladores/emuladores (dev client + Metro) pero en el
+ * teléfono Android real (build de producción, JS por OTA) el offset se quedaba
+ * clavado en su valor inicial: la casa nunca se dibujaba, solo el texto del
+ * chip. Combinar Reanimated (props via JSI/worklet) con props NATIVAS de un
+ * host component de una librería de terceros (react-native-svg) es la
+ * combinación menos probada de las dos formas de animar en RN. Se cambió al
+ * `Animated` clásico de react-native — el mismo patrón que ya usa
+ * `UploadProgressBar.tsx` en producción — con `useNativeDriver: false`
+ * (obligatorio: el driver nativo solo soporta opacity/transform, no props
+ * arbitrarias de un componente nativo como strokeDashoffset). Corre en el
+ * hilo de JS; para un ícono de 20–48 px es imperceptible.
+ *
+ * ARRANCA DIBUJADO (seguro de #244): el valor inicial del offset es 0 = trazo
+ * completo visible, y el ciclo es sostiene → borra → vuelve a dibujar. Así, si
+ * la animación no corriera en algún build, se ve una casa ESTÁTICA en vez de un
+ * hueco — que es exactamente el síntoma que reportó el smoke en Android físico.
+ * Nunca dejar el estado en reposo de un indicador en "invisible".
+ *
+ * Implementación: react-native-svg (ya instalado, ver IsotipoMark) + Animated
+ * clásico. Dos `Animated.Value` en `Animated.loop`: sostiene (15 % del ciclo,
+ * 330 ms) → borra (40 %, 880 ms) → dibuja (45 %, 990 ms) = 2200 ms. offset
+ * 0↔±len (dasharray=[len,len]: offset 0 = trazo completo visible, offset ±len =
+ * invisible — la fase se repite cada 2·len, así que -len y +len son el mismo
+ * estado). La puerta corre el mismo ciclo con un retraso único de DOOR_LAG
+ * antes de entrar a su propio loop (fase constante, sin deriva). Largos de los
+ * paths calculados a mano del viewBox 48×48 (casa ≈100.5, puerta 26).
  *
  * ponytail: sin Lottie, sin prop `animating` (nunca se usó en la app), sin
  * `hidesWhenStopped`. Si se quiere un loader estático, no se renderiza.
  */
-import React, { useEffect } from 'react';
-import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
-import Animated, {
-  cancelAnimation,
-  Easing,
-  useAnimatedProps,
-  useSharedValue,
-  withRepeat,
-  withTiming,
-} from 'react-native-reanimated';
+import React, { useEffect, useState } from 'react';
+import { Animated, Easing, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
 import { colors } from '@/theme/theme';
@@ -48,9 +62,15 @@ const HOUSE_LEN = 100.5;
 /** Puerta: arranca en el piso, sube, cruza y baja. */
 const DOOR_D = 'M21 38 V28 H27 V38';
 const DOOR_LEN = 26;
-/** Desfase del ciclo con el que la puerta va detrás de la casa. */
-const DOOR_LAG = 0.16;
+
 const CYCLE_MS = 2200;
+const DRAW_MS = Math.round(CYCLE_MS * 0.45);
+const HOLD_MS = Math.round(CYCLE_MS * 0.15);
+const ERASE_MS = CYCLE_MS - DRAW_MS - HOLD_MS;
+/** Retraso único (no por ciclo) con el que la puerta va detrás de la casa. */
+const DOOR_LAG_MS = Math.round(CYCLE_MS * 0.16);
+
+const EASING = Easing.inOut(Easing.ease);
 
 /** Por debajo de este tamaño la puerta compite con el trazo; se omite. */
 const MIN_SIZE_WITH_DOOR = 20;
@@ -83,14 +103,16 @@ export function stroke_width_for(px: number): number {
 }
 
 /**
- * Desplazamiento del dash para un instante `p` del ciclo (0..1): de `len`
- * (invisible) a 0 (dibujado), pausa, y de 0 a -len (borrado por la cola).
+ * Un ciclo sostiene→borra→dibuja para un Animated.Value que arranca en 0
+ * (trazo completo). Empezar por el estado VISIBLE es el seguro: sin animación
+ * se ve la casa estática, no un hueco.
  */
-function dash_offset_at(p: number, len: number): number {
-  'worklet';
-  if (p < 0.45) return len * (1 - Easing.inOut(Easing.ease)(p / 0.45));
-  if (p < 0.6) return 0;
-  return -len * Easing.inOut(Easing.ease)((p - 0.6) / 0.4);
+function draw_cycle(value: Animated.Value, len: number): Animated.CompositeAnimation {
+  return Animated.sequence([
+    Animated.delay(HOLD_MS),
+    Animated.timing(value, { toValue: -len, duration: ERASE_MS, easing: EASING, useNativeDriver: false }),
+    Animated.timing(value, { toValue: 0, duration: DRAW_MS, easing: EASING, useNativeDriver: false }),
+  ]);
 }
 
 export function UrbeaLoader({
@@ -105,24 +127,30 @@ export function UrbeaLoader({
   const stroke_width = stroke_width_for(px);
   const show_door = px >= MIN_SIZE_WITH_DOOR;
 
-  const progress = useSharedValue(0);
+  // useState (no useRef().current): leer .current de un ref en el cuerpo del
+  // render dispara el lint react-hooks/refs; el mismo patrón de
+  // UploadProgressBar.tsx.
+  // Valor inicial 0 = trazo completo dibujado (ver "ARRANCA DIBUJADO" arriba).
+  const [house_offset] = useState(() => new Animated.Value(0));
+  const [door_offset] = useState(() => new Animated.Value(0));
 
   useEffect(() => {
-    progress.value = 0;
-    progress.value = withRepeat(
-      withTiming(1, { duration: CYCLE_MS, easing: Easing.linear }),
-      -1,
-      false,
-    );
-    return () => cancelAnimation(progress);
-  }, [progress]);
+    house_offset.setValue(0);
+    const house_loop = Animated.loop(draw_cycle(house_offset, HOUSE_LEN));
+    house_loop.start();
 
-  const house_props = useAnimatedProps(() => ({
-    strokeDashoffset: dash_offset_at(progress.value, HOUSE_LEN),
-  }));
-  const door_props = useAnimatedProps(() => ({
-    strokeDashoffset: dash_offset_at((progress.value + 1 - DOOR_LAG) % 1, DOOR_LEN),
-  }));
+    door_offset.setValue(0);
+    const door_delay = Animated.sequence([
+      Animated.delay(DOOR_LAG_MS),
+      Animated.loop(draw_cycle(door_offset, DOOR_LEN)),
+    ]);
+    door_delay.start();
+
+    return () => {
+      house_loop.stop();
+      door_delay.stop();
+    };
+  }, [house_offset, door_offset]);
 
   return (
     <View
@@ -140,7 +168,7 @@ export function UrbeaLoader({
           strokeLinejoin="round"
           fill="none"
           strokeDasharray={[HOUSE_LEN, HOUSE_LEN]}
-          animatedProps={house_props}
+          strokeDashoffset={house_offset}
         />
         {show_door && (
           <AnimatedPath
@@ -151,7 +179,7 @@ export function UrbeaLoader({
             strokeLinejoin="round"
             fill="none"
             strokeDasharray={[DOOR_LEN, DOOR_LEN]}
-            animatedProps={door_props}
+            strokeDashoffset={door_offset}
             testID="urbea-loader-door"
           />
         )}

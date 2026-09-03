@@ -3,6 +3,9 @@ tipo: estado
 actualizado: 2026-09-03
 ---
 
+## Hoy (2026-09-03, madrugada) — #244: el loader no animaba en Android real
+Tras el OTA de #241-243, el smoke en Android FÍSICO (no emulador) encontró dos bugs invisibles en los emuladores: el UrbeaLoader no dibujaba nada (Reanimated+SVG no sobrevivió el build de producción) y el pull-to-refresh mostraba dos loaders a la vez. #244 (rama `tarea/244-loader-animado-refresh-android`, PR abierto) los corrige: loader reescrito con Animated clásico de RN, progressViewOffset en Android para feed/saved/CRM. tsc/lint/jest completo verdes (163/2066). **Pendiente: smoke conjunto en Android FÍSICO → merge → OTA → `set-status 244 done`. Esta vez el smoke en dispositivo real es obligatorio antes de cerrar, no solo emulador.**
+
 ## Hoy (2026-09-03, noche) — #243: loader «Trazo» en toda la app
 #242 mergeado (1b69701) tras smoke iOS con Abraham (pill verde, fila pegada a la isla); **smoke Android de #241/#242 pendiente antes del OTA**. #243 (rama `tarea/243-urbea-loader-trazo`, PR abierto): `UrbeaLoader` drop-in de ActivityIndicator (33 archivos), `RefreshingChip` en feed/Guardados/CRM. tsc/lint verdes, Jest 163 suites / 2066 tests. **Pendiente: smoke conjunto (que el trazo anime en dispositivo: Reanimated + svg animatedProps) → merge → OTA único con #241+#242+#243 → `set-status 243 done`.**
 

@@ -223,15 +223,20 @@ export function FeedScreen() {
             // Pull-to-refresh: resetea cursor y recarga desde el inicio.
             // refreshing solo true durante un refresh (ya hay datos en pantalla).
             refreshControl={
-              // #243.2: el RefreshControl nativo queda solo como GESTO
-              // (transparente en ambas plataformas); lo que se ve es el
-              // RefreshingChip con el UrbeaLoader debajo de los tabs.
+              // #243.2/#243.4: el RefreshControl nativo queda solo como GESTO;
+              // lo que se ve es el RefreshingChip con el UrbeaLoader debajo de
+              // los tabs. En iOS basta con tintColor transparente. En Android
+              // el color transparente NO basta — SwipeRefreshLayout sigue
+              // pintando su círculo (reporte del smoke físico: "aparecen
+              // ambos loaders a la vez") — hay que sacarlo de la pantalla con
+              // progressViewOffset (Android ignora `tintColor`/`bounces`).
               <RefreshControl
                 refreshing={is_refreshing}
                 onRefresh={refetch}
                 tintColor="transparent"
                 colors={['transparent']}
                 progressBackgroundColor="transparent"
+                progressViewOffset={Platform.OS === 'android' ? -100 : undefined}
               />
             }
             // Scroll infinito: dispara al estar a ~30% del final de la lista.
