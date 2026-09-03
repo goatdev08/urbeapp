@@ -3,8 +3,8 @@ tipo: concepto
 dominio: producto
 estado: vivo
 fuentes: [docs/PRD.md §9-12, docs/PRD-MVP-demo.md]
-codigo: [supabase/migrations/0005_properties_and_videos.sql, mobile/src/features/search/lib/filterQuery.ts, mobile/src/features/search/lib/zones.ts, mobile/src/features/search/lib/filterStorage.ts, mobile/src/features/search/filterStore.tsx, mobile/src/features/search/components/FilterSheet.tsx, mobile/src/features/search/components/RadiusSelector.tsx, mobile/src/features/search/types.ts]
-actualizado: 2026-07-10
+codigo: [supabase/migrations/0005_properties_and_videos.sql, mobile/src/features/search/lib/filterQuery.ts, mobile/src/features/search/lib/zones.ts, mobile/src/features/search/lib/filterStorage.ts, mobile/src/features/search/filterStore.tsx, mobile/src/features/search/components/FilterSheet.tsx, mobile/src/features/search/components/RadiusSelector.tsx, mobile/src/features/search/types.ts, mobile/src/features/search/lib/feedSection.ts, mobile/src/features/feed/components/FeedSectionTabs.tsx]
+actualizado: 2026-09-03
 ---
 
 # Búsqueda y filtros
@@ -23,6 +23,12 @@ actualizado: 2026-07-10
 - Decisión de alcance: se implementaron recámaras + los 3 toggles (antes "diferidos"), a pedido del usuario; las columnas ya existían en `0005` (con índices parciales para los booleanos).
 
 - **Búsqueda de lugares en el mapa (#157, vivo)**: el "autocomplete server-side" dejó de estar diferido — RPC `search_places` (colonias del catálogo DCAH `mx_neighborhoods` + municipios, GIN trgm sobre `name_normalized`, prefijo>similarity, guard <2 chars) consumida por `usePlaceSearch` (debounce 300ms + anti-stale). Seleccionar colonia → perímetro (`get_neighborhood_geojson`) + filtro espacial `properties_within_neighborhood` (ST_Intersects, A1 flaco) vía 3er parámetro `neighborhood_id` de `fetchMapProperties` — estado LOCAL del mapa, NO entra a `FilterState` ni al badge (D6); colonia y `area` mutuamente excluyentes (D9). Municipio → bbox precalculado → reusa `filters.area` (D5). ⚠️ Esto NO toca el gotcha 🔒 de `properties.zone` (sigue sin índice y sin ILIKE — el trgm vive en el CATÁLOGO, no en properties). Ver [[mapa-y-ubicacion]].
+
+## Secciones Venta · Renta (#241, 2026-09-03)
+- **El feed tiene dos secciones y cada una lleva fijo su filtro de operación.** Tabs de texto sobre el video (`FeedSectionTabs`, estilo TikTok; decisión de Abraham 2026-09-02, no píldora); **default Venta**; la elección persiste con los filtros.
+- **No hay estado nuevo — una sola verdad:** la sección ES `filters.operation_types` con exactamente un valor (`'sale' | 'rent'`), en el `FilterState` que feed y mapa comparten → **el mapa sigue la sección**. `lib/feedSection.ts` (`section_from_filters` / `with_section`) es el único que sabe la forma canónica; el `FilterProvider` la sostiene como invariante: arranca con la default, **normaliza al hidratar** (un `urbea_filters` persistido antes de #241 podía traer `[]` o `['rent','sale']` → default) y `clear_filters` **conserva** la sección (es el canal que ves, no un filtro que se limpia).
+- Consecuencias: el grupo «Operación» **salió del FilterSheet**; `get_active_filter_count` **no cuenta** `operation_types` (como `radius_m` y `area`); `'both'` sigue siendo valor de dato — `build_filter_query` lo agrega solo, así una propiedad `both` aparece en las dos secciones.
+- Al cambiar de sección `useFeedProperties` vacía la lista (skeleton) en lugar de dejar los videos de la otra sección reproduciéndose bajo un spinner. Ver [[feed-vertical-video]].
 
 ## Diferido (PRD completo)
 Baños, m², amueblado, búsqueda fuzzy por texto libre (pg_trgm sobre `zone`/`address`), sliders de precio. (~~autocomplete server-side~~ → vivo con #157, ver arriba.)

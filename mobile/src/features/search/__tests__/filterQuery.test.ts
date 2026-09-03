@@ -398,7 +398,7 @@ describe('get_active_filter_count', () => {
     expect(get_active_filter_count(EMPTY_FILTERS)).toBe(0);
   });
 
-  it('(EC-24) conteo_multiple_precio_cuenta_uno_aunque_min_y_max_esten_set: operation_types + property_types + precio(min y max) + zone + bedrooms_min + 2 booleanos true → cuenta 6 (precio cuenta 1 aunque ambos estén set)', () => {
+  it('(EC-24) conteo_multiple_precio_cuenta_uno_aunque_min_y_max_esten_set: operation_types + property_types + precio(min y max) + zone + bedrooms_min + 2 booleanos true → cuenta 5 (precio cuenta 1 aunque ambos estén set; operation_types no cuenta desde #241)', () => {
     const filters = make_filters({
       operation_types: ['rent'],
       property_types: ['house'],
@@ -411,8 +411,14 @@ describe('get_active_filter_count', () => {
       student_friendly: false,
     });
 
-    // operation_types(1) + property_types(1) + precio(1) + zone(1) + pet_friendly(1) + allows_no_guarantor(1) = 6
-    expect(get_active_filter_count(filters)).toBe(6);
+    // property_types(1) + precio(1) + zone(1) + pet_friendly(1) + allows_no_guarantor(1) = 5
+    // (#241: operation_types es la SECCIÓN del feed, no un filtro — no cuenta)
+    expect(get_active_filter_count(filters)).toBe(5);
+  });
+
+  it('(EC-24d) operation_types_no_cuenta_es_la_seccion: solo operation_types=["rent"], resto EMPTY → cuenta 0 (#241)', () => {
+    expect(get_active_filter_count(make_filters({ operation_types: ['rent'] }))).toBe(0);
+    expect(get_active_filter_count(make_filters({ operation_types: ['rent', 'sale'] }))).toBe(0);
   });
 
   it('(EC-24b) conteo_solo_un_booleano_true_cuenta_uno: solo student_friendly=true, resto EMPTY → cuenta 1', () => {
@@ -427,7 +433,7 @@ describe('get_active_filter_count', () => {
     expect(get_active_filter_count(filters)).toBe(1);
   });
 
-  it('(24d) conteo_todos_los_filtros_activos_cuenta_ocho: operation_types + property_types + precio + zone + bedrooms_min + 3 booleanos true → cuenta 8 (todos los grupos activos)', () => {
+  it('(24d) conteo_todos_los_filtros_activos_cuenta_siete: operation_types + property_types + precio + zone + bedrooms_min + 3 booleanos true → cuenta 8 (todos los grupos activos)', () => {
     const filters: FilterState = {
       operation_types: ['rent', 'sale'],
       property_types: ['house', 'apartment'],
@@ -442,7 +448,8 @@ describe('get_active_filter_count', () => {
       area: null,
     };
 
-    expect(get_active_filter_count(filters)).toBe(8);
+    // #241: operation_types es la sección del feed y ya no cuenta → 7
+    expect(get_active_filter_count(filters)).toBe(7);
   });
 });
 

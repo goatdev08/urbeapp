@@ -13,6 +13,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import {
+  Platform,
   StyleSheet,
   TouchableOpacity,
   Text,
@@ -34,6 +35,8 @@ import { ZoneActiveChip } from '../search/components/ZoneActiveChip';
 import { VideoFeedItem } from './components/VideoFeedItem';
 import { AdFeedItem } from './components/AdFeedItem';
 import { FeedSkeleton } from './components/FeedSkeleton';
+import { FEED_SECTION_TABS_HEIGHT, FeedSectionTabs } from './components/FeedSectionTabs';
+import { FEED_SECTIONS } from '@/features/search/lib/feedSection';
 import { release_splash } from '@/lib/splash-gate';
 import { useFeedActiveIndex } from './hooks/useFeedActiveIndex';
 import { useFeedProperties } from './hooks/useFeedProperties';
@@ -45,7 +48,12 @@ export function FeedScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { viewabilityConfigCallbackPairs, isItemActive } = useFeedActiveIndex();
-  const { filters, active_filter_count, clear_filters, set_filter } = useFilters();
+  const { filters, active_filter_count, clear_filters, set_filter, section, set_section } =
+    useFilters();
+  // #241: label de la sección activa para el copy del vacío ("en venta"/"en renta").
+  const section_label = (FEED_SECTIONS.find((s) => s.value === section)?.label ?? 'Venta').toLowerCase();
+  // Coordenada superior compartida por tabs (centro) y botón de filtros (derecha).
+  const top_row_y = insets.top + spacing.s_12;
   const { data, isLoading, error, loadInitial, refetch, loadMore } = useFeedProperties(filters);
   const [filter_visible, set_filter_visible] = useState(false);
 
@@ -153,8 +161,8 @@ export function FeedScreen() {
             <EmptyState
               dark
               icon={VideoCamera}
-              message="Aún no hay propiedades"
-              subtitle="Sé el primero en publicar un video."
+              message={`Aún no hay propiedades en ${section_label}`}
+              subtitle="Cambia de sección o sé el primero en publicar un video."
               cta_label="Publicar propiedad"
               onPressCta={() => router.push('/publish/step1')}
             />
@@ -178,7 +186,7 @@ export function FeedScreen() {
               detiene ahí sin importar la velocidad (no se salta videos con el momentum).
               NO usamos pagingEnabled: RN ignora snapToInterval cuando está activo y
               deja pasar la inercia. decelerationRate="fast" → deceleración de snap limpio.
-              bounces={false} → sin rebote en los extremos (iOS); Android ya no rebota.
+              bounces: ver el comentario en la prop (#241.2 — iOS necesita el rebote para el pull-to-refresh).
               Todas estas props son ScrollViewProps, que FlashList v2 re-exporta
               directamente (extiende Omit<ScrollViewProps, 'maintainVisibleContentPosition'>). */}
           <FlashList
@@ -190,7 +198,11 @@ export function FeedScreen() {
             disableIntervalMomentum
             decelerationRate="fast"
             showsVerticalScrollIndicator={false}
-            bounces={false}
+            // #241.2: en iOS el RefreshControl SOLO se activa si el ScrollView
+            // rebota en el borde superior — con bounces={false} (9.8) el
+            // pull-to-refresh estaba muerto en iOS. El snap por intervalo sigue
+            // mandando en el resto del recorrido. Android ignora `bounces`.
+            bounces={Platform.OS === 'ios'}
             // 1 pantalla de colchón (fix #57, anti-OOM Android): menos players
             // ExoPlayer vivos. Trade-off aceptado: en swipes muy rápidos el póster
             // puede verse un instante más mientras el video entrante bufferea.
@@ -228,8 +240,13 @@ export function FeedScreen() {
        */}
       {show_filters && (
         <>
+          {/* Secciones Venta · Renta (#241) — centradas en la misma fila que el
+              botón de filtros. set_section cambia la identidad de `filters` →
+              useFeedProperties vacía la lista y loadInitial recarga (skeleton). */}
+          <FeedSectionTabs section={section} on_change={set_section} style={{ top: top_row_y }} />
+
           <TouchableOpacity
-            style={[styles.filter_btn, { top: insets.top + spacing.s_12 }]}
+            style={[styles.filter_btn, { top: top_row_y }]}
             onPress={() => set_filter_visible(true)}
             accessibilityLabel="Abrir filtros"
             accessibilityRole="button"
@@ -263,7 +280,8 @@ export function FeedScreen() {
         <ZoneActiveChip
           dark
           on_press={() => set_filter('area', null)}
-          style={{ top: insets.top + spacing.s_12 }}
+          // #241: cuelga DEBAJO de los tabs de sección (que ocupan el centro).
+          style={{ top: top_row_y + FEED_SECTION_TABS_HEIGHT + spacing.s_8 }}
         />
       )}
     </View>

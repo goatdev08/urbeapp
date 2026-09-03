@@ -69,6 +69,11 @@ import AdminReportsScreen from '../index';
 // (por eso los imports pueden ir arriba y no disparan import/first).
 // ---------------------------------------------------------------------------
 
+// #241.3: BackButton (header) importa expo-router — mismo mock que requests/__tests__.
+jest.mock('expo-router', () => ({
+  useRouter: () => ({ back: jest.fn(), push: jest.fn() }),
+}));
+
 jest.mock('@/features/admin/hooks/useAdminReports', () => ({
   useAdminReports: jest.fn(),
 }));

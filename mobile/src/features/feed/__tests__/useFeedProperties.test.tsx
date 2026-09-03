@@ -288,3 +288,60 @@ describe('useFeedProperties — coords gating (#59)', () => {
     expect(mock_fetch_feed_properties).not.toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// #241.2 — reset de data/cursor al cambiar la identidad de `filters`
+// ---------------------------------------------------------------------------
+import { EMPTY_FILTERS } from '@/features/search/lib/filterQuery';
+import type { FilterState } from '@/features/search/types';
+
+describe('useFeedProperties — reset al cambiar filters (#241.2)', () => {
+  it('(EC-RST-1) cambiar_de_seccion_vacia_la_lista: data cargada → rerender con filters nuevo → data=[] y nextCursor=null antes del fetch', async () => {
+    mock_fetch_feed_properties.mockResolvedValue({ data: [PROP_A, PROP_B, PROP_C], nextCursor: 'cursor-1' });
+    const venta: FilterState = { ...EMPTY_FILTERS, operation_types: ['sale'] };
+    const rendered = await renderHook((props: FilterState) => useFeedProperties(props), {
+      initialProps: venta,
+    });
+    await act(async () => {
+      await rendered.result.current.loadInitial();
+    });
+    expect(rendered.result.current.data).toHaveLength(3);
+    expect(rendered.result.current.nextCursor).toBe('cursor-1');
+
+    const renta: FilterState = { ...EMPTY_FILTERS, operation_types: ['rent'] };
+    await act(async () => {
+      rendered.rerender(renta);
+    });
+
+    expect(rendered.result.current.data).toEqual([]);
+    expect(rendered.result.current.nextCursor).toBeNull();
+  });
+
+  it('(EC-RST-2) misma_identidad_no_resetea: rerender con el MISMO objeto filters conserva data (pull-to-refresh no pasa por aquí)', async () => {
+    const venta: FilterState = { ...EMPTY_FILTERS, operation_types: ['sale'] };
+    const rendered = await renderHook((props: FilterState) => useFeedProperties(props), {
+      initialProps: venta,
+    });
+    await act(async () => {
+      await rendered.result.current.loadInitial();
+    });
+    expect(rendered.result.current.data).toHaveLength(3);
+
+    await act(async () => {
+      rendered.rerender(venta);
+    });
+
+    expect(rendered.result.current.data).toHaveLength(3);
+  });
+
+  it('(EC-RST-3) el_montaje_no_resetea_lo_que_loadInitial_carga: primer render + loadInitial → data llena (el efecto ignora la primera identidad)', async () => {
+    const venta: FilterState = { ...EMPTY_FILTERS, operation_types: ['sale'] };
+    const rendered = await renderHook((props: FilterState) => useFeedProperties(props), {
+      initialProps: venta,
+    });
+    await act(async () => {
+      await rendered.result.current.loadInitial();
+    });
+    expect(rendered.result.current.data).toHaveLength(3);
+  });
+});

@@ -24,6 +24,7 @@ import { useRouter } from 'expo-router';
 
 import { supabase } from '@/lib/supabase/client';
 import { PrimaryButton } from '@/components/PrimaryButton';
+import { BackButton } from '@/components/BackButton';
 import type { Database } from '@/types/database';
 import { agency_status_color, format_agency_status } from '@/features/admin/agency_status_labels';
 import {
@@ -304,7 +305,8 @@ export default function AdminAgencyListScreen(): React.ReactElement {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
+      <View style={[styles.header, styles.header_row]}>
+        <BackButton />
         <Text style={styles.title}>Inmobiliarias</Text>
       </View>
 
@@ -463,6 +465,8 @@ const styles = StyleSheet.create({
   },
 
   // ── Header ───────────────────────────────────────────────────────────────
+  // #241.3: back visible — antes solo se salía con el gesto/hardware back.
+  header_row: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   header: {
     paddingHorizontal: 20,
     paddingTop: 16,

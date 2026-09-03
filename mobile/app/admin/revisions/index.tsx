@@ -24,6 +24,7 @@
  */
 import React, { useCallback, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { BackButton } from '@/components/BackButton';
 import {
   ActivityIndicator,
   FlatList,
@@ -308,13 +309,16 @@ export default function AdminRevisionsScreen(): React.ReactElement {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Revisiones de ediciones</Text>
-        {list.length > 0 && (
-          <Text style={styles.subtitle}>
-            {list.length === 1 ? '1 pendiente' : `${list.length} pendientes`}
-          </Text>
-        )}
+      <View style={[styles.header, styles.header_row]}>
+        <BackButton />
+        <View style={styles.header_text}>
+          <Text style={styles.title}>Revisiones de ediciones</Text>
+          {list.length > 0 && (
+            <Text style={styles.subtitle}>
+              {list.length === 1 ? '1 pendiente' : `${list.length} pendientes`}
+            </Text>
+          )}
+        </View>
       </View>
 
       {moderate_error !== null && (
@@ -350,6 +354,9 @@ export default function AdminRevisionsScreen(): React.ReactElement {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FAFAF8' },
   header: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12 },
+  // #241.3: back visible — antes solo se salía con el gesto/hardware back.
+  header_row: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  header_text: { flexShrink: 1 },
   title: { fontSize: 28, fontWeight: '700', color: '#17140F' },
   subtitle: { fontSize: 14, color: '#6B7280', marginTop: 4 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },

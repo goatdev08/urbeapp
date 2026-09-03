@@ -2,6 +2,14 @@
 
 Append-only. Prefijo: `## [YYYY-MM-DD] tipo | título`.
 
+## [2026-09-03] producto | #241 — el feed se parte en Venta y Renta, y de paso el refresh de iOS y los bordes de la app
+
+Abraham pidió tres cosas en una: dos secciones en el feed con el filtro de operación fijo, que el refresh funcione, y que ninguna pantalla se quede sin back ni choque con la hora/wifi en ninguna de las dos plataformas. Lo primero salió casi sin código nuevo: `operation_types` ya existía en el `FilterState` compartido con el mapa, así que la sección es ese campo con exactamente un valor (`lib/feedSection.ts`, 12 tests) y el `FilterProvider` la sostiene como invariante — normaliza lo persistido, la conserva al limpiar filtros, y el sheet perdió el grupo «Operación». Decisiones suyas: default Venta, una sola verdad (el mapa sigue la sección), tabs de texto y no píldora.
+
+El refresh era un bug de meses que nadie había reportado con nombre: desde 9.8 el FlashList tenía `bounces={false}` y en iOS el `RefreshControl` solo se dispara con el rebote del borde superior — el pull-to-refresh estaba muerto en iOS y vivo en Android. Y al cambiar de sección el hook ahora vacía la lista antes del fetch, porque si no seguías viendo (y oyendo) videos de la otra sección bajo un spinner.
+
+La auditoría de safe-area encontró dos `SafeAreaView` de react-native que el grep por línea se saltaba (imports multilínea): `CRMScreen` y el muro legal — en Android quedaban bajo el status bar. Y `/admin` con sus cuatro colas no tenía back visible. Suites: 161/161, 2044 tests; tsc y lint limpios. En `review` hasta el smoke en dispositivo con Abraham; luego OTA.
+
 ## [2026-09-02] fix | #240 — el motivo llegaba y aun así no se leía
 
 Media hora después de desplegar #237, Abraham probándolo en el teléfono: «aún no manda mensaje de la razón». La base lo escribía perfecto, lo verifiqué en producción. Lo que fallaba era la tarjeta: el motivo iba al final de una frase que abre con la dirección completa, con el cuerpo clampado a dos líneas, así que la elipsis se lo comía. Después vio el motivo y pidió lo que de verdad hacía falta: que se entienda de un vistazo.

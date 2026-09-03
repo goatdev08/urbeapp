@@ -24,6 +24,7 @@
  */
 import React, { useCallback, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { BackButton } from '@/components/BackButton';
 import {
   ActivityIndicator,
   Modal,
@@ -451,7 +452,8 @@ function SectionError({
 export default function AdminRequestsScreen(): React.ReactElement {
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
+      <View style={[styles.header, styles.header_row]}>
+        <BackButton />
         <Text style={styles.title}>Solicitudes</Text>
       </View>
       <ScrollView contentContainerStyle={styles.scroll_content}>
@@ -470,6 +472,8 @@ export default function AdminRequestsScreen(): React.ReactElement {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.paper },
   header: { paddingHorizontal: spacing.s_20, paddingTop: spacing.s_16, paddingBottom: spacing.s_12 },
+  // #241.3: back visible — antes solo se salía con el gesto/hardware back.
+  header_row: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   title: { ...type_scale.h1, color: colors.ink },
   scroll_content: { paddingHorizontal: spacing.s_20, paddingBottom: spacing.s_40 },
 

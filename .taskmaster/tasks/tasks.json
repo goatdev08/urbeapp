@@ -10859,12 +10859,64 @@
         "priority": "high",
         "subtasks": [],
         "updatedAt": "2026-09-02T22:59:13.045Z"
+      },
+      {
+        "id": "241",
+        "title": "producto(9): feed con secciones Venta · Renta + refresh vivo en iOS + back y safe-area en toda la app",
+        "description": "Origen: pedido de Abraham (2026-09-02, sesión de producto) · Detectado por: usuario. Cuatro frentes: (1) el feed se divide en dos secciones, «Venta» y «Renta», cada una con el filtro de operación fijo (tabs de texto sobre el feed oscuro, default Venta, la elección persiste con los filtros; las secciones reemplazan al grupo «Operación» del FilterSheet y como feed y mapa comparten FilterState, el mapa sigue la sección); (2) el pull-to-refresh del feed funciona en iOS y Android (hoy `bounces={false}` mata el RefreshControl en iOS) y cambiar de sección deja el feed limpio (skeleton, no videos de la sección anterior); (3) todas las pantallas empujadas tienen un back visible (faltaba en /admin y sus 4 colas); (4) ninguna pantalla colisiona con la hora/wifi en iOS ni Android (CRMScreen y legal-wall usaban el SafeAreaView de react-native, que en Android no aplica el inset).",
+        "details": "Decisiones (AskUserQuestion 2026-09-02): default Venta · una sola verdad (sección = operation_types en el FilterState compartido; se quita «Operación» del sheet) · tabs de texto estilo TikTok (activa blanca semibold con subrayado, inactiva gray_1).\n\nFootprint: mobile/src/features/search/lib/feedSection.ts (NUEVO, CRÍTICA → TDD) · filterStore.tsx (section/set_section, normalización en hydrate/clear) · lib/filterQuery.ts (operation_types deja de contar en el badge) · components/FilterSheet.tsx (retirar Operación) · feed/components/FeedSectionTabs.tsx (NUEVO) · feed/FeedScreen.tsx (tabs, bounces, chip de zona debajo) · feed/hooks/useFeedProperties.ts (reset de data al cambiar filtros) · app/admin/{index,requests,reports,revisions,ads} (BackButton) · leads/screens/CRMScreen.tsx y auth/components/legal-wall.tsx (SafeAreaView de safe-area-context).\n\nSolo cliente → REQUIERE OTA. Sin migraciones ni EFs. Compatibilidad: el FilterState persistido con operation_types=[] o ['rent','sale'] se normaliza a la sección default al hidratar.",
+        "testStrategy": "feedSection: Jest RED→GREEN (section_from_filters / with_section, casos [], ['rent'], ['sale'], ['rent','sale'], ['both'], legacy). filterStore: renderHook (hydrate normaliza, clear conserva la sección). filterQuery: EC de conteo actualizados (operation_types no cuenta). Suites verdes + tsc + lint. Smoke en dispositivo con Abraham (§0.5): cambiar de sección, pull-to-refresh en iOS, back en /admin, CRM y muro legal en Android sin colisión con el status bar.",
+        "status": "review",
+        "dependencies": [
+          "9",
+          "12"
+        ],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Sección del feed como invariante del FilterState (TDD): lib feedSection + store + badge",
+            "description": "section_from_filters/with_section puros; FilterProvider expone section/set_section, normaliza al hidratar y conserva la sección al limpiar; operation_types deja de contar en active_filter_count.",
+            "details": "CRÍTICA por path (lib/**). RED en src/features/search/__tests__/feedSection.test.ts y filterStore.test.tsx; ajustar EC-20/EC-24 de filterQuery.test.ts.\n<info added on 2026-09-03T03:36:05.807Z>\n## Plan 241.1 (CRÍTICA por path: search/lib/**)\nDecisiones cerradas con Abraham (AskUserQuestion): default Venta · una sola verdad (sección = operation_types del FilterState compartido feed+mapa; «Operación» sale del sheet) · tabs de texto.\n\nRED:\n- src/features/search/__tests__/feedSection.test.ts (12 EC: constantes, section_from_filters con [], rent, sale, ambas-legacy, both, basura; with_section puro/round-trip)\n- src/features/search/__tests__/filterStore.test.tsx (6 EC: arranque en frío ya trae sección, hidratar normaliza pre-#241, set_section, clear conserva sección, sección no cuenta en badge)\n- filterQuery.test.ts EC-24 pasa de 6 a 5 + EC-24d (operation_types no cuenta)\n- .maestro/botonera.yaml: assert «Tipo de propiedad» en vez de «Operación»\n- stub src/features/search/lib/feedSection.ts (lanza not_implemented)\n\nGREEN: feedSection.ts real · filterStore.tsx (estado inicial with_section(EMPTY, default), hydrate normaliza, clear conserva, expone section/set_section) · filterQuery.get_active_filter_count sin operation_types.\n</info added on 2026-09-03T03:36:05.807Z>\n<info added on 2026-09-03T03:42:27.860Z>\n## Hecho 241.1 — sección del feed como invariante del FilterState (TDD)\nArchivos:\n- mobile/src/features/search/lib/feedSection.ts (NUEVO): FeedSection='sale'|'rent', DEFAULT_FEED_SECTION='sale', FEED_SECTIONS [Venta, Renta], section_from_filters (solo ['sale']/['rent'] exactos son sección; [], ambas, 'both', basura → default), with_section (puro).\n- mobile/src/features/search/filterStore.tsx: estado inicial with_section(EMPTY_FILTERS, default); `hydrate` normaliza lo persistido; `clear_filters` CONSERVA la sección; expone `section` + `set_section`.\n- mobile/src/features/search/lib/filterQuery.ts: get_active_filter_count ya NO cuenta operation_types (es la sección, no un filtro).\n- Tests: __tests__/feedSection.test.ts (12 EC), __tests__/filterStore.test.tsx (6 EC, nuevo — el store no tenía test), filterQuery.test.ts EC-24 6→5, 24d 8→7, +EC-24e.\n- .maestro/botonera.yaml: assert «Tipo de propiedad» en vez de «Operación».\n\nRED (salida real):\n  Tests:       20 failed, 36 passed, 56 total\nGREEN (salida real, pnpm jest src/features/search):\n  Test Suites: 8 passed, 8 total\n  Tests:       138 passed, 138 total\n</info added on 2026-09-03T03:42:27.860Z>",
+            "testStrategy": "",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": "241",
+            "updatedAt": "2026-09-03T03:43:40.932Z",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "FeedSectionTabs sobre el feed + retirar «Operación» del FilterSheet + refresh (iOS bounces, reset al cambiar sección)",
+            "description": "Tabs de texto centrados en insets.top+s_12; el botón de filtros sigue a la derecha; ZoneActiveChip baja debajo de los tabs. bounces vuelve a true para que RefreshControl viva en iOS. useFeedProperties limpia data/cursor al cambiar la identidad de filters → skeleton.",
+            "details": "NO crítica (components/pantalla) salvo el hook (hooks/** → test del reset en useFeedProperties.test.tsx).\n<info added on 2026-09-03T03:42:27.931Z>\n## Hecho 241.2 — FeedSectionTabs + refresh\nArchivos:\n- mobile/src/features/feed/components/FeedSectionTabs.tsx (NUEVO, mini-spec en el docblock): tabs de texto centrados, activa on_primary bold + subrayado primary_soft, inactiva gray_1; text-shadow para leer sobre cualquier fotograma; FEED_SECTION_TABS_HEIGHT=42 exportado.\n- mobile/src/features/feed/FeedScreen.tsx: tabs en `top_row_y = insets.top + s_12` (misma fila que el botón de filtros, a la derecha); ZoneActiveChip cuelga debajo (top_row_y + 42 + s_8); empty state BD-vacía dice «Aún no hay propiedades en venta/renta»; `bounces={Platform.OS === 'ios'}` — con bounces={false} (9.8) el RefreshControl NUNCA se disparaba en iOS (necesita el rebote del borde superior).\n- mobile/src/features/feed/hooks/useFeedProperties.ts: efecto que vacía data/nextCursor al cambiar la IDENTIDAD de `filters` (ignora la primera) → skeleton limpio al cambiar de sección en vez de videos viejos reproduciéndose con spinner; el pull-to-refresh (misma identidad) no pasa por ahí.\n- mobile/src/features/search/components/FilterSheet.tsx: grupo «Operación» retirado (OPERATION_OPTIONS fuera).\n- Test: useFeedProperties.test.tsx +3 EC (EC-RST-1..3).\n\nRED del hook (git stash del hook + jest, salida real):\n  ✕ (EC-RST-1) cambiar_de_seccion_vacia_la_lista: data cargada → rerender con filters nuevo → data=[] y nextCursor=null antes del fetch (3 ms)\n  Tests:       1 failed, 12 passed, 13 total\nGREEN:\n  Tests:       13 passed, 13 total\n</info added on 2026-09-03T03:42:27.931Z>",
+            "testStrategy": "",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": "241",
+            "updatedAt": "2026-09-03T03:43:42.580Z",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Back visible en /admin y sus colas + SafeAreaView de safe-area-context en CRM y muro legal",
+            "description": "BackButton en el header de admin/index, requests, reports, revisions y ads. CRMScreen y legal-wall importan SafeAreaView de react-native-safe-area-context (la de RN es iOS-only, edge-to-edge en Android la ignora — regla de #231).",
+            "details": "NO crítica: tsc + lint + suites de esos componentes + smoke con Abraham.\n<info added on 2026-09-03T03:42:27.998Z>\n## Hecho 241.3 — back visible en admin + SafeAreaView correcta\nArchivos:\n- mobile/app/admin/index.tsx, requests/index.tsx, reports/index.tsx, revisions/index.tsx, ads/index.tsx: `<BackButton />` en el header (fila `header_row`; en ads se agregó header «Anuncios» arriba de los segmentos; en revisions `header_text{flexShrink:1}` para el título largo).\n- mobile/src/features/leads/screens/CRMScreen.tsx y src/features/auth/components/legal-wall.tsx: SafeAreaView de react-native-safe-area-context (la de react-native es iOS-only; en Android edge-to-edge quedaban bajo la hora/wifi). Eran los ÚNICOS dos usos restantes (auditoría con regex sobre el bloque `import {...} from 'react-native'` — el grep por línea se los saltaba porque el import es multilínea).\n- Tests: app/admin/ads y reports/__tests__ ganan el mock de expo-router (BackButton lo importa); antes: «Test suite failed to run … standard-navigation … Cannot use import statement outside a module».\n\nVerificación (salida real, pnpm jest app/admin src/features/search/__tests__/filterStore.test.tsx):\n  Test Suites: 4 passed, 4 total\n  Tests:       24 passed, 24 total\n\nGlobal de la tarea:\n  tsc exit=0 · lint exit=0 (0 errors, 116 warnings preexistentes)\n  Test Suites: 161 passed, 161 total\n  Tests:       2044 passed, 2044 total\nPendiente: smoke en dispositivo con Abraham (§0.5): cambiar de sección, pull-to-refresh iOS, back en /admin, CRM y muro legal en Android. Luego OTA desde main.\n</info added on 2026-09-03T03:42:27.998Z>",
+            "testStrategy": "",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": "241",
+            "updatedAt": "2026-09-03T03:43:44.265Z",
+            "parentId": "undefined"
+          }
+        ],
+        "updatedAt": "2026-09-03T03:43:45.903Z"
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-09-02T22:59:13.045Z",
-      "taskCount": 240,
+      "lastModified": "2026-09-03T03:43:45.903Z",
+      "taskCount": 241,
       "completedCount": 159,
       "tags": [
         "master"

@@ -46,6 +46,7 @@
  */
 import React, { useCallback, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { BackButton } from '@/components/BackButton';
 import {
   ActivityIndicator,
   Alert,
@@ -725,6 +726,10 @@ export default function AdminAdsQueueScreen(): React.ReactElement {
 
   return (
     <SafeAreaView style={styles.container}>
+      <View style={[styles.header, styles.header_row]}>
+        <BackButton />
+        <Text style={styles.title}>Anuncios</Text>
+      </View>
       <View style={styles.segment_row}>
         <Pressable
           style={[styles.segment_button, segment === 'review' && styles.segment_button_active]}
@@ -762,6 +767,8 @@ export default function AdminAdsQueueScreen(): React.ReactElement {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FAFAF8' },
   header: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12 },
+  // #241.3: back visible — antes solo se salía con el gesto/hardware back.
+  header_row: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   title: { fontSize: 28, fontWeight: '700', color: '#17140F' },
   subtitle: { fontSize: 14, color: '#6B7280', marginTop: 4 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },
