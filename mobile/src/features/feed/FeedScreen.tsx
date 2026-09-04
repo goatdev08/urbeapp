@@ -289,14 +289,17 @@ export function FeedScreen() {
               </View>
             )}
           </TouchableOpacity>
-
-          {/* FilterSheet — abierto desde el botón de filtros del feed */}
-          <FilterSheet
-            visible={filter_visible}
-            onClose={() => set_filter_visible(false)}
-          />
         </>
       )}
+
+      {/* FilterSheet — abierto desde el botón de filtros del feed.
+       * 🔴 #249: va FUERA del gate `show_filters`. Estaba dentro, y como
+       * aplicar un filtro vacía `data` (#241.2) el feed cae un instante en
+       * skeleton → `show_filters` se apagaba → el Modal se DESMONTABA en plena
+       * interacción y volvía a aparecer al llegar la página. El botón sí sigue
+       * gated (requisito de #157: invisible durante la carga inicial); el sheet
+       * no lo necesita porque con `visible={false}` el Modal no pinta nada. */}
+      <FilterSheet visible={filter_visible} onClose={() => set_filter_visible(false)} />
 
       {/*
        * Chip "Zona activa · Quitar" (#56.5) — persistente mientras haya una

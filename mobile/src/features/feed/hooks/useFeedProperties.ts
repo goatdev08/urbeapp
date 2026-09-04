@@ -35,8 +35,13 @@
  *     durante la vida del hook (nunca se resetea) para sostener el cap de
  *     sesión (`ad_max_per_session`) entre páginas.
  *
- * ponytail: sin estado extra — loading único para initial y loadMore;
- * techo conocido: sin abort controller (el feed es efímero, sin race visible).
+ * ponytail: sin estado extra — loading único para initial y loadMore.
+ *
+ * Concurrencia (#249): la race SÍ era visible. Al aplicar un filtro, la carga
+ * anterior sigue en vuelo y, si resolvía tarde, pisaba la página filtrada — el
+ * feed se quedaba mostrando lo de antes hasta el pull-to-refresh. Se resuelve
+ * con `request_seq_ref` (ver abajo): solo la carga vigente escribe estado.
+ * Techo conocido: la petición desechada igual viaja por red (no hay abort).
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -309,6 +314,18 @@ export function useFeedProperties(filters?: FilterState): UseFeedPropertiesState
   // loadInitial/loadMore/refetch, nunca se resetea (170.4, decisión 5).
   const already_shown_ref = useRef(0);
 
+  // #249 — SOLO LA PETICIÓN VIGENTE ESCRIBE ESTADO.
+  // Al aplicar un filtro, la petición del filtro ANTERIOR sigue en vuelo (no se
+  // cancela). Si resolvía DESPUÉS de la nueva, su set_data pisaba la página ya
+  // filtrada y el feed se quedaba mostrando lo de antes; el pull-to-refresh,
+  // que es una sola petición sin solapamiento, sí aplicaba los filtros — el
+  // síntoma exacto del smoke #222. Cada carga toma un número de turno y solo
+  // escribe si sigue siendo el último al volver del await.
+  // ponytail: un contador en un ref, no AbortController ni librería de fetching
+  // — la respuesta tardía se descarta, que es todo lo que el feed necesita.
+  // Techo conocido: la petición desechada igual viaja por red (no se aborta).
+  const request_seq_ref = useRef(0);
+
   // #195 — LA ZONA VISTA GANA SOBRE EL GPS, del lado cliente.
   // `filters.area` es "buscar en esta zona" (#56): su centro sale del viewport
   // del mapa, o sea que es literalmente el punto que la persona está mirando.
@@ -343,35 +360,48 @@ export function useFeedProperties(filters?: FilterState): UseFeedPropertiesState
     // (fallback del lib) y luego saltaba al orden por proximidad al llegar la
     // coord real → "flash".
     if (!coords) return;
+    const seq = ++request_seq_ref.current;
     set_is_loading(true);
     set_error(null);
     try {
       const deps = build_deps();
       const result = await fetchFeedProperties(undefined, deps, filters);
+      // Se corta ANTES de componer: una página que ya no se va a pintar no
+      // debe firmar anuncios ni sumar a `already_shown_ref` (el cap de sesión
+      // contaría impresiones que nadie llegó a ver).
+      if (seq !== request_seq_ref.current) return;
       const items = await compose_feed_items(deps?.supabase, resolve_ad_zone_coords(coords), result.data, already_shown_ref, true);
+      if (seq !== request_seq_ref.current) return; // llegó tarde: ya hay otra carga
       set_data(items);
       set_next_cursor(result.nextCursor);
     } catch (e) {
+      if (seq !== request_seq_ref.current) return;
       set_error(e instanceof Error ? e.message : 'Error al cargar el feed');
     } finally {
-      set_is_loading(false);
+      if (seq === request_seq_ref.current) set_is_loading(false);
     }
   }, [coords, resolve_ad_zone_coords, filters, build_deps]);
 
   const load_more = useCallback(async () => {
     if (!nextCursor || isLoading || !coords) return;
+    const seq = ++request_seq_ref.current;
     set_is_loading(true);
     set_error(null);
     try {
       const deps = build_deps();
       const result = await fetchFeedProperties(nextCursor, deps, filters);
+      if (seq !== request_seq_ref.current) return; // mismo corte previo a componer
       const items = await compose_feed_items(deps?.supabase, resolve_ad_zone_coords(coords), result.data, already_shown_ref, false);
+      // Una página pedida ANTES de aplicar el filtro no se apende al feed ya
+      // refiltrado: sería contenido de la búsqueda anterior colado al final.
+      if (seq !== request_seq_ref.current) return;
       set_data((prev) => [...prev, ...items]);
       set_next_cursor(result.nextCursor);
     } catch (e) {
+      if (seq !== request_seq_ref.current) return;
       set_error(e instanceof Error ? e.message : 'Error al cargar más');
     } finally {
-      set_is_loading(false);
+      if (seq === request_seq_ref.current) set_is_loading(false);
     }
   }, [nextCursor, isLoading, coords, resolve_ad_zone_coords, filters, build_deps]);
 
