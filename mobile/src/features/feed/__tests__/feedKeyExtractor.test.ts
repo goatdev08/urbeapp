@@ -29,7 +29,7 @@ function make_property(id: string): FeedPropertyWithUrl {
     owner_user_id: 'owner-uuid-key-test',
     agency_id: null,
     created_at: '2026-01-01T00:00:00Z',
-    agent_phone: null,
+    agent_has_phone: false,
     agent_name: null,
     agent_photo_url: null,
     video: {

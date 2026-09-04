@@ -27,7 +27,12 @@ export type AgentInfo = {
    * presigned GET vía useR2Urls antes de mostrarla (ver AgentCard).
    */
   profile_photo_url: string | null;
-  phone: string | null;
+  /**
+   * ¿El publicador tiene teléfono? (#250) Booleano DERIVADO de la vista
+   * agent_public_profiles: decide si se muestra el CTA de WhatsApp. El número
+   * NO viaja al cliente — lo resuelve la EF contact-agent al pulsar el botón.
+   */
+  has_phone: boolean;
 };
 
 export type AgencyInfo = {

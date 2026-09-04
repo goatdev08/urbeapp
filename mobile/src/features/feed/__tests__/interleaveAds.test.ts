@@ -70,7 +70,7 @@ function make_property(id: string): FeedPropertyWithUrl {
     owner_user_id: 'user-owner-uuid',
     agency_id: null,
     created_at: '2026-08-01T00:00:00.000Z',
-    agent_phone: '3312345678',
+    agent_has_phone: true,
     agent_name: 'Agente de Prueba',
     agent_photo_url: null,
     video: {

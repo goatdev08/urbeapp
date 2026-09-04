@@ -128,7 +128,7 @@ function make_property_detail(): PropertyDetail {
       id: AGENT_ID,
       full_name: 'Agente de Prueba',
       profile_photo_url: null,
-      phone: null,
+      has_phone: false,
     },
     agency: null,
     videos: [],

@@ -38,8 +38,9 @@ export type FeedProperty = {
   owner_user_id: string;
   agency_id: string | null;
   created_at: string;
-  /** Teléfono del agente (users.phone) para el botón WhatsApp del feed. null si no hay. */
-  agent_phone: string | null;
+  /** ¿El publicador tiene teléfono? (vista agent_public_profiles.has_phone, #250).
+   *  El NÚMERO no viaja al cliente: lo resuelve la EF contact-agent. */
+  agent_has_phone: boolean;
   /** Nombre público del agente (vista agent_public_profiles, #145). null si no hay fila. */
   agent_name: string | null;
   /**

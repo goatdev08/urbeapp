@@ -144,12 +144,13 @@ function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedIte
     router.push(`/property/${property.id}`);
   }, [property.id]);
 
-  // WhatsApp desde el feed — solo si el agente tiene teléfono.
+  // WhatsApp desde el feed — solo si el publicador tiene teléfono (#250: booleano
+  // derivado de la vista; el número lo resuelve la EF, nunca viaja al cliente).
   // 75.4: antes llamaba a open_whatsapp() directo y NO registraba lead. Era el
   // hueco grande: el feed es donde más se contacta, así que el CRM se estaba
   // perdiendo justo los contactos más frecuentes (y con ellos el acceso a datos
   // que §19.2 concede al agente y los +10 de scoring). Ahora pasa por la EF.
-  const handle_whatsapp = property.agent_phone
+  const handle_whatsapp = property.agent_has_phone
     ? () => { void contact_agent(property.id); }
     : null;
 

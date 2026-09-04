@@ -146,7 +146,9 @@ export function ProfileHeader({
           </View>
         )}
 
-        <Text style={styles.member_since}>{format_member_since(member_since)}</Text>
+        {member_since != null && (
+          <Text style={styles.member_since}>{format_member_since(member_since)}</Text>
+        )}
 
         {/* Bio COMPLETA: sin numberOfLines — el alto crece con el contenido y
             respeta los saltos de línea que escribió la persona (máx. 280

@@ -85,7 +85,7 @@ export function useAgentProfile(agent_id: string): UseAgentProfileState {
           .from('users')
           .select('bio, phone, created_at, agencies!users_agency_id_fkey(name)')
           .eq('id', agent_id)
-          .single();
+          .maybeSingle();
 
         // Query 2 (#145.3): identidad pública vía la VISTA agent_public_profiles.
         // Antes leía user_preferences directo y la RLS ("solo tu fila o admin")
@@ -105,24 +105,32 @@ export function useAgentProfile(agent_id: string): UseAgentProfileState {
         const { data: user_data, error: user_error } = user_result;
         const { data: raw_prefs, error: prefs_error } = prefs_result;
 
-        if (user_error) {
-          set_state({ loading: false, error: user_error.message, data: null });
-          return;
-        }
         if (prefs_error) {
           set_state({ loading: false, error: prefs_error.message, data: null });
-          return;
-        }
-        if (!user_data) {
-          set_state({ loading: false, error: 'Agente no encontrado', data: null });
           return;
         }
 
         // Cast seguro: PostgREST garantiza la forma; el cast es solo para TypeScript.
         const prefs = raw_prefs as PrefsRow | null;
 
+        // #250: `users` es FAIL-SOFT. La fila de un publicador admin es
+        // invisible para cualquier no-admin (users_select solo abre la rama
+        // pública a role='agent' verificado) y antes eso tumbaba TODA la
+        // pantalla: el perfil público de Vladimir salía vacío aunque su
+        // identidad estuviera disponible en la vista. Sin fila, los campos que
+        // solo viven en users quedan null y la identidad igual se muestra.
+        // Solo si NI users NI la vista traen nada, el perfil no existe.
+        if (!user_data && !prefs) {
+          set_state({ loading: false, error: 'Agente no encontrado', data: null });
+          return;
+        }
+        if (user_error && !prefs) {
+          set_state({ loading: false, error: user_error.message, data: null });
+          return;
+        }
+
         // `agencies` viene como objeto (many-to-one via FK nullable) o null.
-        const raw_agency = user_data.agencies as { name: string } | null;
+        const raw_agency = (user_data?.agencies ?? null) as { name: string } | null;
 
         set_state({
           loading: false,
@@ -130,9 +138,9 @@ export function useAgentProfile(agent_id: string): UseAgentProfileState {
           data: {
             full_name: prefs?.full_name ?? null,
             profile_photo_url: prefs?.profile_photo_url ?? null,
-            bio: user_data.bio,
-            phone: user_data.phone,
-            member_since: user_data.created_at,
+            bio: user_data?.bio ?? null,
+            phone: user_data?.phone ?? null,
+            member_since: user_data?.created_at ?? null,
             agency_name: raw_agency?.name ?? null,
           },
         });

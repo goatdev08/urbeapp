@@ -75,14 +75,12 @@ export type MintedVideo = {
 /** Fila cruda que devuelve la RPC properties_within_radius (#42.2). */
 type RpcRow = { id: string; distance_m: number };
 
-/** Identidad pública del agente (vista agent_public_profiles, #145.2). */
-type ProfileEmbed = { full_name: string | null; profile_photo_url: string | null };
-
-type UsersEmbed = {
-  phone: string | null;
-  // Embed anidado de la VISTA agent_public_profiles (una fila por user_id).
-  // Puede faltar (agente sin preferencias / fixture viejo) → identidad null.
-  agent_public_profiles?: ProfileEmbed | ProfileEmbed[] | null;
+/** Fila de la vista agent_public_profiles — identidad pública del publicador (#250). */
+type ProfileRow = {
+  user_id: string;
+  full_name: string | null;
+  profile_photo_url: string | null;
+  has_phone: boolean;
 };
 
 type QueryRow = {
@@ -100,19 +98,19 @@ type QueryRow = {
   owner_user_id: string;
   agency_id: string | null;
   created_at: string;
-  // Embed to-one del dueño para el teléfono. PostgREST puede devolver objeto o
-  // array de un elemento según la relación; se normaliza al leer.
-  users?: UsersEmbed | UsersEmbed[] | null;
   property_videos: { id: string; storage_path: string; position: number; thumbnail_url: string | null }[];
 };
 
-// #145.2: la vista agent_public_profiles se embebe ANIDADA en users — PostgREST
-// la resuelve por los FKs de su tabla base (user_preferences.user_id → users.id;
-// smoke remoto 2026-08-10 verificado). Un solo viaje: la identidad del agente
-// llega en la MISMA query del feed, sin RTT extra.
+// #250: el select ya NO embebe `users`. La identidad viajaba ANIDADA bajo ese
+// embed y la RLS de users la tumbaba entera para cualquier no-admin cuando el
+// publicador es admin (users_select solo abre la rama pública a role='agent'
+// verificado) — las 8 propiedades activas de producción salían anónimas y sin
+// WhatsApp. De paso el teléfono CRUDO deja de viajar al cliente (#116).
 const FEED_SELECT = `id, price, operation_type, property_type, currency, price_visible, address, bedrooms, bathrooms, owner_user_id, agency_id, created_at,
-       users!properties_owner_user_id_fkey(phone, agent_public_profiles(full_name, profile_photo_url)),
        property_videos(id, storage_path, position, thumbnail_url)`;
+
+/** Columnas de identidad pública que el feed necesita de la vista. */
+const PROFILE_SELECT = 'user_id, full_name, profile_photo_url, has_phone';
 
 /**
  * Invoca mint-video-url para una lista de property_ids → MintedVideo[].
@@ -129,11 +127,47 @@ export async function mint_videos(client: any, property_ids: string[]): Promise<
 }
 
 /**
+ * Identidad pública de los publicadores de una página → Map por user_id (#250).
+ *
+ * Un solo viaje por página: `.in('user_id', ids únicos)` sobre la vista
+ * agent_public_profiles. No es un embed porque PostgREST NO resuelve
+ * properties→vista (no hay FK directa; probado en local: PGRST200) y el embed
+ * anidado bajo `users` — el contrato anterior — muere con la RLS de users.
+ *
+ * ponytail: fail-open. Si la query falla, el feed sigue mostrando propiedades
+ * sin identidad en vez de romperse; la identidad es decoración.
+ */
+async function fetch_agent_profiles(
+  client: any,
+  owner_user_ids: string[],
+): Promise<Map<string, ProfileRow>> {
+  const ids = [...new Set(owner_user_ids)];
+  const profiles = new Map<string, ProfileRow>();
+  if (ids.length === 0) return profiles;
+
+  const { data, error } = (await client
+    .from('agent_public_profiles')
+    .select(PROFILE_SELECT)
+    .in('user_id', ids)) as { data: ProfileRow[] | null; error: { message: string } | null };
+
+  if (error) return profiles;
+
+  for (const row of data ?? []) {
+    profiles.set(row.user_id, row);
+  }
+  return profiles;
+}
+
+/**
  * Merge fail-closed fila↔signed_url. Compartido por el path plano
  * (radius_m=null) y el path de proximidad — ambos necesitan exactamente la
  * misma resolución de URLs (#58.3, ponytail: reusa en vez de duplicar).
  */
-function build_feed_data(rows: QueryRow[], videos: MintedVideo[]): FeedPropertyWithUrl[] {
+function build_feed_data(
+  rows: QueryRow[],
+  videos: MintedVideo[],
+  profiles: Map<string, ProfileRow>,
+): FeedPropertyWithUrl[] {
   // Índice por property_id para merge O(1)
   const videos_map = new Map<string, MintedVideo>();
   for (const v of videos) {
@@ -152,17 +186,13 @@ function build_feed_data(rows: QueryRow[], videos: MintedVideo[]): FeedPropertyW
     // ponytail: fail-closed — si el video_id de la EF no matchea ningún embebido, omitir
     if (!video_entry) continue;
 
-    // Normaliza el embed to-one (objeto o array de 1) → teléfono del agente o null.
-    const owner = Array.isArray(row.users) ? row.users[0] : row.users;
-    const agent_phone = owner?.phone ?? null;
-
-    // #145.2: identidad pública del agente — mismo trato de normalización.
-    // Fail-open: sin fila en la vista → nulls; la propiedad SIGUE en el feed
-    // (la identidad es decoración, no requisito).
-    const profile_raw = owner?.agent_public_profiles;
-    const profile = Array.isArray(profile_raw) ? profile_raw[0] : profile_raw;
+    // #250: identidad pública del publicador desde la vista (query batch).
+    // Fail-open: sin fila en la vista → nulls y sin botón de WhatsApp; la
+    // propiedad SIGUE en el feed (la identidad es decoración, no requisito).
+    const profile = profiles.get(row.owner_user_id);
     const agent_name = profile?.full_name ?? null;
     const agent_photo_url = profile?.profile_photo_url ?? null;
+    const agent_has_phone = profile?.has_phone ?? false;
 
     data.push({
       id: row.id,
@@ -177,7 +207,7 @@ function build_feed_data(rows: QueryRow[], videos: MintedVideo[]): FeedPropertyW
       owner_user_id: row.owner_user_id,
       agency_id: row.agency_id,
       created_at: row.created_at,
-      agent_phone,
+      agent_has_phone,
       agent_name,
       agent_photo_url,
       video: {
@@ -300,7 +330,9 @@ export async function fetchFeedProperties(
     return { data: [], nextCursor: null };
   }
 
-  const data = build_feed_data(rows, minted_videos);
+  const profiles = await fetch_agent_profiles(client, rows.map((r) => r.owner_user_id));
+
+  const data = build_feed_data(rows, minted_videos, profiles);
 
   // Re-sort cliente por distancia ASC (de la RPC) — PostgREST no garantiza
   // el orden de .in(); Infinity para cualquier id sin distancia conocida.

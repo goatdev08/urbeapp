@@ -194,7 +194,7 @@ export function PropertyDetailScreen(): React.JSX.Element {
            Gate temprano: si la EF devuelve AGENT_PHONE_MISSING lo
            manejará el componente inline; esta guarda evita mostrarlo
            cuando ya sabemos que no hay teléfono. ────────────────────── */}
-      {data.agent.phone !== null && (
+      {data.agent.has_phone && (
         <View style={[styles.sticky_cta, { paddingBottom: spacing.s_16 + insets.bottom }]}>
           {/* 75.4: la apertura de WhatsApp se movió dentro del botón (useContactAgent),
               para que el feed y la tarjeta de agente compartan exactamente el mismo

@@ -5,13 +5,19 @@
  *
  * Estrategia de fetch en dos pasos:
  *   1. Query principal: properties (active, deleted_at null) + property_videos
- *      (client-side filter deleted_at null + sort by position) + users (phone) +
+ *      (client-side filter deleted_at null + sort by position) +
  *      agencies (name, logo_url) — todo en un select con joins embebidos.
- *   2. En paralelo: user_preferences (full_name, profile_photo_url — migración 0015
- *      sin regenerar tipos; mismo cast que useAgentProfile) + mint-video-url EF.
+ *   2. En paralelo: agent_public_profiles (full_name, profile_photo_url,
+ *      has_phone) + mint-video-url EF.
  *
- * Desambiguación de FKs PostgREST (igual que useAgentProfile):
- *   - users!properties_owner_user_id_fkey — FK properties.owner_user_id → users.id
+ * #250: el embed de `users` desapareció. La fila de users de un publicador
+ * admin es invisible para cualquier no-admin (users_select solo abre la rama
+ * pública a role='agent' verificado), así que el teléfono que alimentaba el CTA
+ * de WhatsApp llegaba null en TODO el inventario activo de producción. Ahora el
+ * CTA se decide con has_phone (columna derivada de la vista) y el número lo
+ * resuelve la EF contact-agent server-side: el crudo ya no viaja al cliente.
+ *
+ * Desambiguación de FKs PostgREST:
  *   - agencies!properties_agency_id_fkey — FK properties.agency_id → agencies.id
  *
  * ponytail: si mint-video-url falla, la pantalla sigue mostrando info de la
@@ -51,12 +57,14 @@ type MintedVideo = {
 };
 
 /**
- * Columnas de user_preferences que necesitamos (migración 0015).
- * No están en los tipos generados — mismo cast que useAgentProfile y profileService.
+ * Columnas de la vista agent_public_profiles que necesitamos.
+ * No están en los tipos generados — mismo cast que useAgentProfile.
  */
 type PrefsRow = {
   full_name: string | null;
   profile_photo_url: string | null;
+  /** Derivado de users.phone en la vista (#250) — el número no viaja al cliente. */
+  has_phone: boolean;
 };
 
 /** Forma de la fila que devuelve el query principal (cast explícito). */
@@ -85,7 +93,6 @@ type QueryRow = {
   owner_user_id: string;
   agency_id: string | null;
   /** Embed via properties_owner_user_id_fkey. */
-  users: { id: string; phone: string | null } | null;
   /** Embed via properties_agency_id_fkey (nullable FK → puede ser null). */
   agencies: { id: string; name: string; logo_url: string | null } | null;
   property_videos: {
@@ -121,7 +128,6 @@ export function usePropertyDetail(id: string): UsePropertyDetailResult {
            bedrooms, bathrooms, half_bathrooms, square_meters, built_square_meters, description,
            pet_friendly, allows_no_guarantor, student_friendly,
            amenities, location, owner_user_id, agency_id,
-           users!properties_owner_user_id_fkey(id, phone),
            agencies!properties_agency_id_fkey(id, name, logo_url),
            property_videos(id, storage_path, position, deleted_at, thumbnail_url)`,
         )
@@ -142,7 +148,7 @@ export function usePropertyDetail(id: string): UsePropertyDetailResult {
       // cayera al fallback EN SILENCIO para cualquier visitante no-admin.
       const prefs_query = supabase
         .from('agent_public_profiles')
-        .select('full_name, profile_photo_url')
+        .select('full_name, profile_photo_url, has_phone')
         .eq('user_id', row.owner_user_id)
         .maybeSingle();
 
@@ -191,7 +197,6 @@ export function usePropertyDetail(id: string): UsePropertyDetailResult {
         return video;
       });
 
-      const agent_user = row.users;
       const raw_agency = row.agencies;
 
       set_data({
@@ -216,11 +221,12 @@ export function usePropertyDetail(id: string): UsePropertyDetailResult {
         // null si no está georreferenciada.
         location: typeof row.location === 'string' ? row.location : null,
         agent: {
-          // Fallback a owner_user_id si el embed llega null (no debería en prod)
-          id: agent_user?.id ?? row.owner_user_id,
+          id: row.owner_user_id,
           full_name: prefs?.full_name ?? null,
           profile_photo_url: prefs?.profile_photo_url ?? null,
-          phone: agent_user?.phone ?? null,
+          // Fail-open: sin fila en la vista no hay CTA de WhatsApp, pero el
+          // detalle sigue mostrándose (la identidad es decoración).
+          has_phone: prefs?.has_phone ?? false,
         },
         agency:
           raw_agency !== null

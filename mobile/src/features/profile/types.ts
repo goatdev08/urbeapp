@@ -113,8 +113,12 @@ export interface AgentProfile {
    * WhatsApp" del perfil AJENO (180.2). null → el botón no se pinta.
    */
   phone: UserRow['phone'];
-  /** Fecha de alta del usuario — usada como "member since". */
-  member_since: UserRow['created_at'];
+  /**
+   * Fecha de alta del usuario — usada como "member since". null cuando la fila
+   * de `users` no es visible para quien mira el perfil (#250): la identidad
+   * pública sigue saliendo de la vista, pero el alta no.
+   */
+  member_since: UserRow['created_at'] | null;
   /** Nombre de la agencia (null si el agente es independiente). */
   agency_name: AgencyRow['name'] | null;
 }
