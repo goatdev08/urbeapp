@@ -153,12 +153,13 @@ function QueueRow({
 /** Las 4 colas del home admin (#217, #221). `ads_pending` (/admin/ads,
  * 208.3), `revisions_pending` (/admin/revisions, 218.2) y `reports_new`
  * (/admin/reports, 220.4) navegan cada una a su propia pantalla.
- * `agent_applications_pending` y `agencies_pending` (221.4) se FUNDEN en una
- * sola fila "Solicitudes" navegable a /admin/requests — esa pantalla ya
- * cubre las dos colas (+ el canal nuevo de cuenta comercial, sin contador
- * propio aquí: costaría una 6ª query en useAdminQueueCounts contra una tabla
- * que este worktree puede no tener desplegada todavía, rompiendo el
- * todo-o-nada de las OTRAS 5 colas — ver bitácora 221.4). */
+ * `agent_applications_pending`, `agencies_pending` (221.4) y
+ * `advertising_requests_pending` (#246) se FUNDEN en una sola fila
+ * "Solicitudes" navegable a /admin/requests — esa pantalla ya cubre las tres
+ * colas. La tercera faltaba: 221.4 la dejó fuera porque su tabla podía no
+ * estar desplegada en aquel worktree y habría roto el todo-o-nada de las
+ * otras 5; hoy advertising_requests ya está en producción y el smoke #222
+ * destapó que el owner mandaba «Quiero anunciar» sin que el globo se moviera. */
 const QUEUE_ROW_DEFS: readonly {
   key: keyof AdminQueueCounts;
   label: string;
@@ -253,12 +254,16 @@ export default function AdminAgencyListScreen(): React.ReactElement {
     reports_new: handle_reports_press,
   };
 
-  // 221.4: "Solicitudes" funde agent_applications_pending + agencies_pending
-  // en un solo contador — undefined mientras cualquiera de las dos falte
-  // (mismo criterio is_unresolved que las demás filas).
+  // 221.4 + #246: "Solicitudes" funde agent_applications_pending +
+  // agencies_pending + advertising_requests_pending en un solo contador —
+  // undefined mientras cualquiera de las tres falte (mismo criterio
+  // is_unresolved que las demás filas; el hook ya es todo-o-nada, así que
+  // `queue_counts !== null` implica que las tres son números reales).
   const requests_count =
     queue_counts !== null
-      ? queue_counts.agent_applications_pending + queue_counts.agencies_pending
+      ? queue_counts.agent_applications_pending +
+        queue_counts.agencies_pending +
+        queue_counts.advertising_requests_pending
       : undefined;
 
   // ------ Estados de la pantalla ------
