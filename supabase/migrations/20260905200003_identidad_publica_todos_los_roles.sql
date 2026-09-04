@@ -30,8 +30,8 @@
 --
 -- Idempotente: create or replace + upsert condicional (nunca pisa un nombre
 -- elegido por el usuario) + backfill re-ejecutable.
--- Rollback: supabase/migrations/rollbacks/20260905200001_identidad_publica_todos_los_roles.sql
--- Tests: supabase/tests/94_identidad_publica_test.sql (+ 41_agent_public_profiles_view_test.sql)
+-- Rollback: supabase/migrations/rollbacks/20260905200003_identidad_publica_todos_los_roles.sql
+-- Tests: supabase/tests/96_identidad_publica_test.sql (+ 41_agent_public_profiles_view_test.sql)
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- (1) Helper de siembra del nombre público
