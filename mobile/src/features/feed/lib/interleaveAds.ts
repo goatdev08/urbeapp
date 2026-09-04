@@ -6,10 +6,10 @@
  * contrato de esta función vive aparte de ambos: recibe `properties` y `ads`
  * YA resueltos y solo decide EL ORDEN de intercalado).
  *
- * FASE RED — STUB. Sin lógica de negocio: lanza siempre para que
- * mobile/src/features/feed/__tests__/interleaveAds.test.ts falle por
- * ASERCIÓN/EXCEPCIÓN, nunca por import roto. La implementación GREEN va en
- * una sesión aparte.
+ * (El encabezado describía la fase RED de 170.3; la implementación lleva
+ * verde desde entonces y los tests viven en
+ * mobile/src/features/feed/__tests__/interleaveAds.test.ts +
+ * interleaveAds.trailing-ad.test.ts.)
  *
  * POR QUÉ VIVE AQUÍ Y NO EN EL HOOK (arquitectura, doc de exploración 039,
  * opción c): la lógica que decide QUÉ VE EL USUARIO y QUÉ SE FACTURA
@@ -113,6 +113,13 @@ export interface InterleaveAdsOptions {
  *   busca el primer anuncio del pool (round-robin determinista) cuya última
  *   aparición esté a >= `min_gap_between_repeats` posiciones; si ninguno
  *   califica se difiere el intercalado (nunca se rompe el invariante 5).
+ * - #247: el recorrido da UNA pasada extra al terminar las propiedades, que
+ *   solo evalúa la colocación. Así una página que ya cumplió el hueco cierra
+ *   con un anuncio en vez de perderlo — el push vivía únicamente dentro del
+ *   bucle, de modo que hacían falta `every_n + 1` propiedades para servir el
+ *   primero. Los invariantes NO cambian: el de cierre pasa por las mismas
+ *   condiciones (hueco, presupuesto, min_gap, cursor), y una página con menos
+ *   de `every_n` propiedades sigue sin anuncios.
  */
 export function interleave_ads(
   properties: FeedPropertyWithUrl[],
@@ -133,7 +140,15 @@ export function interleave_ads(
   let ads_used = 0;
   let pool_cursor = 0;
 
-  for (const property of properties) {
+  // Se recorre UNA posición más que propiedades (#247). Esa pasada extra no
+  // emite ninguna propiedad: solo le da su turno al anuncio de CIERRE, con las
+  // mismas condiciones que cualquier otro (hueco cumplido, presupuesto,
+  // min_gap, pool_cursor). Antes el push vivía solo dentro del recorrido, así
+  // que hacían falta every_n + 1 propiedades para servir el primer anuncio y
+  // una página de exactamente every_n no servía ninguno — con
+  // ad_frequency_n=8 y 8 propiedades en Venta, jamás se sirvió uno
+  // (ad_impressions=0 en producción, smoke #222).
+  for (let i = 0; i <= properties.length; i++) {
     if (ads_used < budget && since_last_ad >= every_n) {
       const current_pos = result.length;
       for (let k = 0; k < ads.length; k++) {
@@ -151,6 +166,8 @@ export function interleave_ads(
       }
     }
 
+    const property = properties[i];
+    if (property === undefined) break; // pasada de cierre: ya no queda propiedad que emitir
     result.push({ kind: 'property', property });
     since_last_ad++;
   }
