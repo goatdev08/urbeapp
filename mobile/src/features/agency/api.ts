@@ -19,11 +19,21 @@
  * sus miembros. La EF (types.ts/handler.ts, backend ya en GREEN) valida
  * autorización server-side — el cliente NUNCA decide si la acción es válida,
  * solo la propone y mapea el error_code devuelto. El listado de miembros NO
- * pasa por una EF: RLS `members_select` (migración 20260805000003) ya resuelve
- * la visibilidad (owner/admin/is_admin ven TODOS los miembros de su agencia,
- * viewer también solo-lectura, agent solo se ve a sí mismo) — se consulta la
- * tabla directo, sin filtrar por agency_id (RLS lo hace por fila, igual que
- * useAgencyRole). Nombre/foto: mismo gotcha que useAgencyAgents (leads/hooks)
+ * pasa por una EF: se consulta la tabla directo con RLS `members_select`
+ * (migración 20260805000003) como 2ª capa.
+ *
+ * 🔴 #253 — el filtro `.eq('agency_id', …)` lo pone el CLIENTE, no RLS. El
+ * docblock anterior afirmaba que bastaba con RLS ("lo hace por fila, igual que
+ * useAgencyRole") y era falso: la policy `members_select` incluye
+ * `OR private.is_admin()`, así que para un admin de plataforma que además es
+ * owner de una agencia (swacg08 en «Desarrolladora») devolvía los miembros de
+ * TODAS las agencias — detectado en el smoke de producción #222 paso 7. Regla
+ * de producto: Perfil → Miembros = SOLO mi inmobiliaria; lo cross-agencia vive
+ * en Panel de administrador → Inmobiliarias → agencia (app/admin/agencies/[id],
+ * que sí lista sin filtrar a propósito). Patrón general del repo: una vista de
+ * "mis X" filtra SIEMPRE por el id propio aunque RLS "ya filtre".
+ *
+ * Nombre/foto: mismo gotcha que useAgencyAgents (leads/hooks)
  * — user_preferences es de lectura propia SOLO, así que se lee desde `users`
  * (RLS users_select vía is_agency_owner_of para el owner; agentes verificados
  * son públicos igual); si RLS no deja ver el embed, el nombre queda null — no
@@ -200,13 +210,18 @@ type RawMemberRow = {
 };
 
 /**
- * Miembros visibles para el caller (RLS `members_select` decide el alcance —
- * ver header del archivo). null solo ante un error real de red/query.
+ * Miembros de UNA agencia — la del caller, resuelta por fetch_own_membership /
+ * useAgencyRole. El `.eq('agency_id', …)` es obligatorio: RLS `members_select`
+ * NO acota por agencia a un admin de plataforma (#253, ver header). null solo
+ * ante un error real de red/query.
  */
-export async function fetch_agency_members(): Promise<AgencyMemberRow[] | null> {
+export async function fetch_agency_members(
+  agency_id: string,
+): Promise<AgencyMemberRow[] | null> {
   const { data, error } = await supabase
     .from('agency_members')
-    .select('id, user_id, member_role, status, users(id, first_name, last_name, avatar_url)');
+    .select('id, user_id, member_role, status, users(id, first_name, last_name, avatar_url)')
+    .eq('agency_id', agency_id);
 
   if (error !== null) return null;
 
