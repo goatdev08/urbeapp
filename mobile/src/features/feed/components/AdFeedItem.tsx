@@ -23,7 +23,13 @@
  * ════════════════════════════════════════════════════════════════════════════
  *
  * #192 — identidad del anunciante (logo + nombre, mismo tratamiento que la
- * identidad del agente en una propiedad) y descripción AUTOLINKIFICADA. La
+ * identidad del agente en una propiedad) y descripción AUTOLINKIFICADA.
+ * #248 cierra ese "mismo tratamiento", que había quedado a medias: el nombre
+ * iba en gray_1 sin sombra (ilegible sobre un fotograma claro) y el logo
+ * ausente era un disco gris al 40 % sin inicial. Ahora ambos calcan
+ * PropertyOverlay (#145.4): marfil + textShadow para el nombre, círculo con
+ * borde salvia e inicial del anunciante para el logo — y un logo que falla al
+ * cargar cae al mismo placeholder en vez de dejar el círculo vacío. La
  * descripción es texto plano con URLs detectadas, NUNCA markdown: el texto
  * visible ES el destino (ver lib/adCtaLink.ts para el porqué y el invariante).
  *
@@ -55,7 +61,7 @@ import * as Clipboard from 'expo-clipboard';
 import { Megaphone, Phone, WhatsappLogo, ArrowSquareOut, type Icon } from 'phosphor-react-native';
 
 import { UrbeaLoader } from '@/components/UrbeaLoader';
-import { colors, radii, spacing, type_scale } from '@/theme/theme';
+import { colors, fonts, radii, spacing, type_scale } from '@/theme/theme';
 import { useLocation } from '@/features/location/LocationProvider';
 import { build_cta_target, linkify_description } from '@/features/ads/lib/adCtaLink';
 
@@ -96,6 +102,14 @@ export function AdFeedItem({ ad, isActive }: AdFeedItemProps) {
 
   const [fallback_message, set_fallback_message] = useState<string | null>(null);
   const [copied, set_copied] = useState(false);
+  // #248: un logo que 404ea dejaba el círculo vacío igual que la ausencia de
+  // logo — mismo fallback que PropertyOverlay para el avatar del agente.
+  const [logo_error, set_logo_error] = useState(false);
+
+  const show_logo = Boolean(ad.agency_logo_url) && !logo_error;
+  // Inicial del anunciante — mismo criterio que `agent_initial` de
+  // PropertyOverlay (primera letra del nombre público).
+  const agency_initial = ad.agency_name.trim().charAt(0).toUpperCase() || 'A';
 
   // 213: una PROMO es una propiedad publicada mostrada como anuncio (badge
   // "Anuncio", sin CTA propio — el video ES el de la propiedad y tocarlo
@@ -271,12 +285,25 @@ export function AdFeedItem({ ad, isActive }: AdFeedItemProps) {
       </View>
 
       <View style={[styles.content, { bottom: insets.bottom + INFO_BOTTOM }]}>
+        {/* #248 — identidad del anunciante con el MISMO tratamiento que la del
+            agente en PropertyOverlay (#145.4): círculo con borde salvia e
+            inicial cuando no hay logo (nunca un disco gris mudo), y el nombre
+            en blanco marfil con sombra para leerse sobre un fotograma claro. */}
         <View style={styles.identity}>
-          {ad.agency_logo_url ? (
-            <Image source={{ uri: ad.agency_logo_url }} style={styles.logo} contentFit="cover" />
-          ) : (
-            <View style={[styles.logo, styles.logo_empty]} />
-          )}
+          <View style={styles.logo}>
+            {show_logo ? (
+              <Image
+                source={{ uri: ad.agency_logo_url! }}
+                style={styles.logo_photo}
+                contentFit="cover"
+                onError={() => set_logo_error(true)}
+              />
+            ) : (
+              <Text style={styles.logo_initial} numberOfLines={1} testID="ad-agency-initial">
+                {agency_initial}
+              </Text>
+            )}
+          </View>
           <Text style={styles.agency} numberOfLines={1}>
             {ad.agency_name}
           </Text>
@@ -392,9 +419,32 @@ const styles = StyleSheet.create({
     gap: spacing.s_8,
   },
   identity: { flexDirection: 'row', alignItems: 'center', gap: spacing.s_8 },
-  logo: { width: 28, height: 28, borderRadius: 14 },
-  logo_empty: { backgroundColor: colors.gray_1, opacity: 0.4 },
-  agency: { color: colors.gray_1, fontSize: type_scale.caption.fontSize, flexShrink: 1 },
+  // Gemelo de `agent_avatar` de PropertyOverlay (mismo fondo, borde y overflow);
+  // conserva el 28 que ya tenía esta fila para no mover el bloque de contenido.
+  logo: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#6f5742',
+    borderWidth: 2,
+    borderColor: colors.primary_soft,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  logo_photo: { width: '100%', height: '100%', borderRadius: 12 },
+  logo_initial: { fontFamily: fonts.sans_bold, fontSize: 12, color: '#F6F2EB' },
+  // Mismo tratamiento que `agent_name` de PropertyOverlay: marfil + sombra, no
+  // gris — sobre un fotograma claro el gray_1 se perdía (#248).
+  agency: {
+    color: colors.paper,
+    fontFamily: fonts.sans_bold,
+    fontSize: 13,
+    flexShrink: 1,
+    textShadowColor: 'rgba(23,20,15,0.55)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
   title: { color: colors.on_primary, fontSize: type_scale.h1.fontSize, fontWeight: '700' },
   description: { color: colors.gray_1, fontSize: type_scale.body.fontSize },
   link: { color: colors.accent_soft, textDecorationLine: 'underline' },

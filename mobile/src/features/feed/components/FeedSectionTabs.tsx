@@ -14,8 +14,14 @@
  *     de 3px no se distinguía). Inactiva: blanco al 72 % (como TikTok — el
  *     gray_1 cálido se ensuciaba sobre el video), sans_semibold, sin fondo.
  *     Sombra de texto + scrim del padre para leerse sobre cielo/pared clara.
- *   - Área táctil: la pill (paddingVertical 6 / paddingHorizontal s_16) +
- *     hitSlop; gap s_8 entre tabs. Altura total 34 (FEED_SECTION_TABS_HEIGHT).
+ *   - Área táctil: la pill (paddingVertical 5 / paddingHorizontal s_12) +
+ *     hitSlop 8 → 46 pt de alto tocable. Gap s_8 entre tabs. Altura total 30
+ *     (FEED_SECTION_TABS_HEIGHT).
+ *   - #248: la pill se encogió un punto de escala (17/22 → 15/20, padding
+ *     horizontal s_16 → s_12) porque el badge legal «Patrocinado» de
+ *     AdFeedItem, anclado arriba-izquierda, rozaba la tab de la izquierda en
+ *     un anuncio. Se conserva el contraste (misma pill salvia, mismo blanco
+ *     al 72 %, misma sombra) y el área táctil ≥ 44 pt.
  *   - Altura total conocida (FEED_SECTION_TABS_HEIGHT) para que el chip de
  *     zona pueda colgarse debajo sin medir.
  *
@@ -31,8 +37,14 @@ import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } fro
 import { FEED_SECTIONS, type FeedSection } from '@/features/search/lib/feedSection';
 import { colors, fonts, spacing } from '@/theme/theme';
 
-/** Alto de la pill (padding 6+6 + línea 22) — para posicionar lo que cuelga debajo y centrar el botón de filtros. */
-export const FEED_SECTION_TABS_HEIGHT = 34;
+/** Alto de la pill (padding 5+5 + línea 20) — para posicionar lo que cuelga debajo y centrar el botón de filtros. */
+export const FEED_SECTION_TABS_HEIGHT = 30;
+
+/**
+ * hitSlop de cada tab. Con la pill de 30, 8 pt arriba y abajo dan 46 pt de área
+ * táctil — por encima del mínimo de 44 pt aunque la pill encoja (#248).
+ */
+const TAB_HIT_SLOP = 8;
 
 interface FeedSectionTabsProps {
   section: FeedSection;
@@ -50,7 +62,7 @@ export function FeedSectionTabs({ section, on_change, style }: FeedSectionTabsPr
           <Pressable
             key={tab.value}
             onPress={() => on_change(tab.value)}
-            hitSlop={8}
+            hitSlop={TAB_HIT_SLOP}
             style={[styles.tab, is_active && styles.tab_active]}
             accessibilityRole="tab"
             accessibilityState={{ selected: is_active }}
@@ -77,8 +89,8 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   tab: {
-    paddingVertical: 6, // ponytail: 34 de alto total; no hay token s_6 y no vale crearlo por un solo uso
-    paddingHorizontal: spacing.s_16,
+    paddingVertical: 5, // ponytail: 30 de alto total; no hay token s_5 y no vale crearlo por un solo uso
+    paddingHorizontal: spacing.s_12,
     borderRadius: FEED_SECTION_TABS_HEIGHT / 2,
     alignItems: 'center',
     justifyContent: 'center',
@@ -87,8 +99,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
   },
   label: {
-    fontSize: 17,
-    lineHeight: 22,
+    fontSize: 15,
+    lineHeight: 20,
     letterSpacing: 0.2,
     // Legible sobre cualquier fotograma (cielo claro, pared blanca).
     textShadowColor: 'rgba(0,0,0,0.6)',

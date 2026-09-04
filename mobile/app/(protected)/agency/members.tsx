@@ -167,12 +167,17 @@ export default function AgencyMembersScreen() {
     async function load(): Promise<void> {
       const own = await fetch_own_membership(resolved_user_id);
       if (ignore) return;
+      const own_agency_id = own?.agency_id ?? null;
       set_can_manage(own?.member_role === 'owner' || own?.member_role === 'admin');
-      set_agency_id(own?.agency_id ?? null);
+      set_agency_id(own_agency_id);
       set_role_loading(false);
 
       set_list_loading(true);
-      const rows = await fetch_agency_members();
+      // #253: la lista se acota SIEMPRE a la agencia propia — RLS no lo hace
+      // para un admin de plataforma (ver header de features/agency/api.ts).
+      // ponytail: sin agencia no hay nada que listar y el guard !can_manage ya
+      // redirige, así que se evita la query en vez de tipar un caso nuevo.
+      const rows = own_agency_id === null ? [] : await fetch_agency_members(own_agency_id);
       if (ignore) return;
 
       if (rows === null) {

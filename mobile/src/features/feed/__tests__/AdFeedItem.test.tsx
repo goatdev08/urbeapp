@@ -54,8 +54,10 @@ jest.mock('../lib/adImpressionQueue', () => ({
   },
 }));
 
-import { Linking } from 'react-native';
+import { Linking, StyleSheet } from 'react-native';
 import { useVideoPlayer } from 'expo-video';
+
+import { colors, fonts } from '@/theme/theme';
 
 import { AdFeedItem } from '../components/AdFeedItem';
 import type { FeedAd } from '../lib/interleaveAds';
@@ -181,6 +183,49 @@ describe('AdFeedItem — identidad y descripción (#192)', () => {
   it('(EC-5) sin descripción, el componente sigue renderizando', async () => {
     const r = await render(<AdFeedItem ad={make_ad({ description: '' })} isActive />);
     expect(r.getByText('Créditos hipotecarios sin aval')).toBeTruthy();
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// #248 — legibilidad de la identidad del anunciante sobre el video.
+//
+// El smoke #222 (iPhone, 2026-09-03) mostró el nombre del anunciante casi
+// ilegible sobre un fotograma claro y el logo ausente como un disco gris mudo.
+// Ambos defectos vivían SOLO en el StyleSheet: la suite entera pasaba con
+// ellos, así que estos casos asertan el estilo efectivo, no la presencia.
+// ───────────────────────────────────────────────────────────────────────────
+describe('AdFeedItem — #248: identidad del anunciante legible sobre el video', () => {
+  it('(EC-17) 🔴 el nombre lleva sombra de texto y va en marfil — no en gris, que se perdía sobre un fotograma claro', async () => {
+    const r = await render(<AdFeedItem ad={make_ad()} isActive />);
+    const name_style = StyleSheet.flatten(r.getByText('Financiera Ejemplo').props.style) ?? {};
+
+    expect(name_style.color).toBe(colors.paper);
+    expect(name_style.color).not.toBe(colors.gray_1);
+    expect(name_style.textShadowColor).toBe('rgba(23,20,15,0.55)');
+    expect(name_style.textShadowRadius).toBe(3);
+    expect(name_style.fontFamily).toBe(fonts.sans_bold);
+  });
+
+  it('(EC-18) 🔴 sin logo se pinta la INICIAL del anunciante — el placeholder de PropertyOverlay, no un círculo vacío', async () => {
+    const r = await render(<AdFeedItem ad={make_ad({ agency_logo_url: null })} isActive />);
+    const initial = r.getByTestId('ad-agency-initial');
+
+    expect(initial.props.children).toBe('F'); // "Financiera Ejemplo"
+    const avatar_style = StyleSheet.flatten(initial.parent?.props.style) ?? {};
+    expect(avatar_style.borderColor).toBe(colors.primary_soft);
+    expect(avatar_style.borderWidth).toBe(2);
+  });
+
+  it('(EC-19) con logo NO se pinta la inicial — el placeholder es el fallback, no un adorno permanente', async () => {
+    const r = await render(
+      <AdFeedItem ad={make_ad({ agency_logo_url: 'https://cdn.ejemplo.mx/logo.png' })} isActive />,
+    );
+    expect(r.queryByTestId('ad-agency-initial')).toBeNull();
+  });
+
+  it('(EC-20) una promo sin logo también recibe el placeholder — la identidad es la misma en ambas ramas', async () => {
+    const r = await render(<AdFeedItem ad={make_promo_ad()} isActive />);
+    expect(r.getByTestId('ad-agency-initial').props.children).toBe('I'); // "Inmobiliaria Ejemplo"
   });
 });
 

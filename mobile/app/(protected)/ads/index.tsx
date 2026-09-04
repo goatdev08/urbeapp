@@ -42,7 +42,7 @@
 import React, { useEffect, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
-import { Megaphone, Play, Plus } from 'phosphor-react-native';
+import { CaretLeft, Megaphone, Play, Plus } from 'phosphor-react-native';
 
 import { UrbeaLoader } from '@/components/UrbeaLoader';
 import { supabase } from '@/lib/supabase/client';
@@ -382,6 +382,20 @@ export default function AdsScreen() {
             color: colors.ink,
             fontSize: 17,
           },
+          // #251: esta pantalla es la RAÍZ del Stack de ads/ (ads/_layout.tsx),
+          // así que el back nativo no aparece solo — pero se llega aquí
+          // empujada desde el perfil. Gemelo del botón "+" de la derecha.
+          headerLeft: () => (
+            <Pressable
+              onPress={() => router.back()}
+              style={({ pressed }) => [styles.header_icon_btn, pressed && styles.header_icon_btn_pressed]}
+              accessibilityRole="button"
+              accessibilityLabel="Volver atrás"
+              hitSlop={8}
+            >
+              <CaretLeft size={22} color={colors.primary} weight="bold" />
+            </Pressable>
+          ),
           // #227: entrada persistente al wizard de alta (mismo patrón de
           // headerRight que profile/edit.tsx). Spread condicional — con
           // exactOptionalPropertyTypes no se puede pasar undefined explícito.
@@ -389,7 +403,7 @@ export default function AdsScreen() {
             headerRight: () => (
               <Pressable
                 onPress={() => router.push('/ads/new/step1')}
-                style={({ pressed }) => [styles.header_add_btn, pressed && styles.header_add_btn_pressed]}
+                style={({ pressed }) => [styles.header_icon_btn, pressed && styles.header_icon_btn_pressed]}
                 accessibilityRole="button"
                 accessibilityLabel="Crear anuncio"
                 hitSlop={8}
@@ -472,10 +486,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  header_add_btn: {
+  // Botones de icono del header nativo (back a la izquierda, "+" a la derecha).
+  header_icon_btn: {
     padding: spacing.s_4,
   },
-  header_add_btn_pressed: {
+  header_icon_btn_pressed: {
     opacity: 0.6,
   },
 
