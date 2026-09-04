@@ -17,25 +17,52 @@
  * basta leer `.ads.length` aquí, sin duplicar su lógica de RLS/membresía.
  *
  * Contrato:
- *   - can_advertise loading=true → indicador de carga; el Slot NUNCA se
+ *   - can_advertise loading=true → indicador de carga; el Stack NUNCA se
  *     monta (mismo criterio que antes de 212.5 — useMyAds() SIEMPRE se
  *     invoca porque los hooks no pueden ser condicionales, pero su
  *     resultado se ignora mientras la capacidad no resuelve).
- *   - can_advertise=true (ya resuelto) → <Slot/> DE INMEDIATO, sin esperar
+ *   - can_advertise=true (ya resuelto) → <AdsStack/> DE INMEDIATO, sin esperar
  *     a useMyAds() — la capacidad sola ya autoriza; bloquear aquí solo
  *     agregaría latencia a la ruta más común (anunciante activo).
  *   - can_advertise=false (ya resuelto) → SOLO entonces se espera a
- *     useMyAds(): con ≥1 anuncio propio → <Slot/>; con 0 (o su propio error,
- *     que ya deja ads=[]) → <Redirect> fuera de ads/.
+ *     useMyAds(): con ≥1 anuncio propio → <AdsStack/>; con 0 (o su propio
+ *     error, que ya deja ads=[]) → <Redirect> fuera de ads/.
+ *
+ * 🔴 #251 — el contenido autorizado es un <Stack/>, NO un <Slot/>. Un <Slot/>
+ * es un navigator SIN chrome: las pantallas hijas que declaran
+ * `<Stack.Screen options={{ headerShown: true }}>` (index.tsx, [id].tsx) le
+ * hablan a ESTE navigator, y con Slot su setOptions no pintaba nada — el
+ * ScrollView del detalle arrancaba en y=0 y el selector Hoy/30 días/Máximo
+ * quedaba bajo el reloj y los íconos de estado (smoke #222, iPhone 17). Las
+ * demás pantallas de gestión con header nativo (agency/*, profile/*) no
+ * tienen _layout propio y cuelgan directo del <Stack> de protected-layout,
+ * por eso a ellas sí se les pinta. screenOptions calca ese Stack ambiental
+ * (headerShown:false por defecto — el wizard ads/new/ trae su propio
+ * WizardHeader; cada pantalla enciende el suyo si lo quiere).
  */
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
-import { Redirect, Slot } from 'expo-router';
+import { Redirect, Stack } from 'expo-router';
 
 import { UrbeaLoader } from '@/components/UrbeaLoader';
 import { useCanAdvertise } from '@/features/ads/hooks/useCanAdvertise';
 import { useMyAds } from '@/features/ads/hooks/useMyAds';
 import { colors } from '@/theme/theme';
+
+// ponytail: un componente de una línea en vez de repetir el <Stack> en los
+// tres puntos de retorno del gate.
+function AdsStack(): React.ReactElement {
+  return (
+    <Stack
+      screenOptions={{
+        headerShown: false,
+        gestureEnabled: true,
+        fullScreenGestureEnabled: true,
+        animation: 'slide_from_right',
+      }}
+    />
+  );
+}
 
 export default function AdsLayout(): React.ReactElement {
   const { can_advertise, loading: capability_loading } = useCanAdvertise();
@@ -52,7 +79,7 @@ export default function AdsLayout(): React.ReactElement {
   }
 
   if (can_advertise) {
-    return <Slot />;
+    return <AdsStack />;
   }
 
   if (my_ads.loading) {
@@ -64,7 +91,7 @@ export default function AdsLayout(): React.ReactElement {
   }
 
   if (my_ads.ads.length > 0) {
-    return <Slot />;
+    return <AdsStack />;
   }
 
   return <Redirect href="/(protected)/(tabs)/profile" />;
