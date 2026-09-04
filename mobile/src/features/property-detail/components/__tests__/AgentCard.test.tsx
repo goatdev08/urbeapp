@@ -78,7 +78,7 @@ const AGENT: AgentInfo = {
   id: 'agente-uuid-220-6',
   full_name: 'Vladimir Ramos',
   profile_photo_url: null,
-  phone: '5215500000000',
+  has_phone: true,
 };
 
 const mock_use_r2_urls = useR2Urls as jest.MockedFunction<typeof useR2Urls>;

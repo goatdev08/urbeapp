@@ -60,10 +60,13 @@ select results_eq(
 
 -- ── 2) La vista NO expone columnas de comportamiento (solo identidad) ────────
 reset role;
+-- #250: se suma has_phone (booleano DERIVADO de users.phone) para que el botón
+-- de WhatsApp no dependa de leer users.phone en el cliente. El número crudo
+-- sigue fuera de la vista.
 select columns_are(
   'public', 'agent_public_profiles',
-  array['user_id', 'full_name', 'profile_photo_url'],
-  '2) la vista expone EXACTAMENTE user_id/full_name/profile_photo_url — sin presupuesto, ubicación ni filtros'
+  array['user_id', 'full_name', 'profile_photo_url', 'has_phone'],
+  '2) la vista expone EXACTAMENTE user_id/full_name/profile_photo_url/has_phone — sin presupuesto, ubicación ni filtros'
 );
 
 -- ── 3) user_preferences directo sigue bloqueado por RLS (fila ajena) ─────────
@@ -75,12 +78,16 @@ select is(
   '3) la tabla user_preferences ajena sigue devolviendo 0 filas — la vista no abre la tabla'
 );
 
--- ── 4) La fila del buscador (role=user) NO aparece en la vista ───────────────
+-- ── 4) La fila del buscador (role=user) TAMBIÉN aparece en la vista ──────────
+-- REVERSIÓN DELIBERADA (#254, decisión de producto de Abraham 2026-09-03): el
+-- nombre público es el que el usuario pone en «Editar perfil» y debe verse para
+-- TODOS los niveles de cuenta. Lo que sigue privado es el COMPORTAMIENTO del
+-- buscador (presupuesto, ubicación, filtros) — assert 2 lo fija.
 select is(
-  (select count(*) from public.agent_public_profiles
-    where user_id = '00000000-0000-0000-0009-000000000002')::int,
-  0,
-  '4) la identidad de un buscador (role=user) NO se expone en la vista'
+  (select full_name from public.agent_public_profiles
+    where user_id = '00000000-0000-0000-0009-000000000002'),
+  'Buscador Privado',
+  '4) la identidad pública (nombre) de un role=user SÍ se expone en la vista (#254)'
 );
 
 -- ── 5) El propio agente también la lee (sin regresión para el perfil propio) ─

@@ -136,7 +136,7 @@ function make_property(id: string, overrides: Partial<FeedPropertyWithUrl> = {})
     agent_photo_url: null,
     agency_id: null,
     created_at: '2026-01-01T00:00:00Z',
-    agent_phone: null,
+    agent_has_phone: false,
     video: {
       id: `video-${id}`,
       storage_path: `properties/${id}/video.mp4`,

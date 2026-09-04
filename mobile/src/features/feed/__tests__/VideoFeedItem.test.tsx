@@ -183,7 +183,7 @@ function make_property(overrides: Partial<FeedPropertyWithUrl> = {}): FeedProper
     owner_user_id: 'agente-uuid-1',
     agency_id: null,
     created_at: '2026-01-01T00:00:00Z',
-    agent_phone: null,
+    agent_has_phone: false,
     agent_name: null,
     agent_photo_url: null,
     video: { id: 'video-uuid-A', storage_path: 'x/y.mp4', position: 0, thumbnail_url: null },

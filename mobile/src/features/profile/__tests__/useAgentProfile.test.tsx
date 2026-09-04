@@ -34,8 +34,18 @@
  * - EC-4: agency_null_no_rompe (agente independiente)
  *
  * ### Boundary / error
- * - EC-5: error_en_user_query_expone_error_y_data_null
- * - EC-6: agente_no_encontrado_expone_mensaje
+ * - EC-5: users_invisible_por_rls_no_tumba_la_pantalla  (#250)
+ * - EC-6: ni_users_ni_vista_expone_agente_no_encontrado
+ *
+ * ── #250 (smoke de producción #222, 2026-09-03) ────────────────────────────
+ * La query de `users` DEJA DE SER BLOQUEANTE. Antes usaba `.single()`, así que
+ * un perfil cuya fila de users es invisible por RLS (el caso de TODO publicador
+ * admin para cualquier no-admin) devolvía error PGRST116 y tumbaba la pantalla
+ * entera — por eso el perfil público de Vladimir salía vacío pese a que su
+ * identidad SÍ estaba disponible en la vista. Ahora users es fail-soft
+ * (`maybeSingle`): sin fila, bio/phone/member_since/agency quedan en null y el
+ * nombre y la foto siguen saliendo de agent_public_profiles. Solo cuando NI
+ * users NI la vista traen nada se declara «Agente no encontrado».
  */
 
 import { renderHook, act } from '@testing-library/react-native';
@@ -139,9 +149,9 @@ function make_supabase_mock(opts: {
     prefs_result = { data: TEST_PREFS_DATA, error: null },
   } = opts;
 
-  // Cadena users → single()
+  // Cadena users → maybeSingle() (#250: fail-soft, ya no bloquea la pantalla)
   const mock_single = jest.fn().mockResolvedValue(user_result);
-  const mock_eq_users = jest.fn().mockReturnValue({ single: mock_single });
+  const mock_eq_users = jest.fn().mockReturnValue({ maybeSingle: mock_single });
   const mock_select_users = jest.fn().mockReturnValue({ eq: mock_eq_users });
 
   // Cadena agent_public_profiles (vista #145.3) → maybeSingle()
@@ -269,28 +279,33 @@ describe('useAgentProfile', () => {
     expect(result.current.data?.agency_name).toBeNull();
   });
 
-  // ── EC-5: error en user query ─────────────────────────────────────────────
+  // ── EC-5: users invisible por RLS no tumba la pantalla (#250) ─────────────
 
-  it('(EC-5) error_en_user_query_expone_error_y_data_null: si la query de users retorna error, state.error != null y state.data === null', async () => {
+  it('(EC-5) users_invisible_por_rls_no_tumba_la_pantalla: sin fila de users (publicador admin visto por un no-admin), el perfil muestra nombre y foto de la vista y bio/phone/agencia en null', async () => {
     mock_supabase_holder.client = make_supabase_mock({
-      user_result: {
-        data: null,
-        error: { message: 'RLS denied: no tienes acceso a este perfil' },
-      },
+      user_result: { data: null, error: null },
     });
 
     const { result } = await renderHook(() => useAgentProfile(TEST_AGENT_ID));
 
     expect(result.current.loading).toBe(false);
-    expect(result.current.error).toBe('RLS denied: no tienes acceso a este perfil');
-    expect(result.current.data).toBeNull();
+    expect(result.current.error).toBeNull();
+    expect(result.current.data).not.toBeNull();
+    expect(result.current.data?.full_name).toBe('Carlos Mendoza Reyes');
+    expect(result.current.data?.profile_photo_url).toBe(
+      'https://storage.supabase.co/profile-photos/carlos.jpg'
+    );
+    expect(result.current.data?.bio).toBeNull();
+    expect(result.current.data?.phone).toBeNull();
+    expect(result.current.data?.agency_name).toBeNull();
   });
 
   // ── EC-6: agente no encontrado ────────────────────────────────────────────
 
-  it('(EC-6) agente_no_encontrado_expone_mensaje: si user_data es null (agente inexistente), error = "Agente no encontrado" y data === null', async () => {
+  it('(EC-6) ni_users_ni_vista_expone_agente_no_encontrado: sin fila de users Y sin fila en la vista, error = "Agente no encontrado" y data === null', async () => {
     mock_supabase_holder.client = make_supabase_mock({
       user_result: { data: null, error: null },
+      prefs_result: { data: null, error: null },
     });
 
     const { result } = await renderHook(() => useAgentProfile(TEST_AGENT_ID));

@@ -81,7 +81,6 @@ export function AgentCard({ agent, agency, property_id, is_self = false }: Agent
   const show_photo = Boolean(avatar_url) && !img_error;
   const initials = get_initials(agent.full_name);
   const display_name = agent.full_name ?? 'Agente';
-  const has_phone = agent.phone !== null && agent.phone.length > 0;
 
   function handle_whatsapp_press() {
     void contact_agent(property_id);
@@ -120,7 +119,7 @@ export function AgentCard({ agent, agency, property_id, is_self = false }: Agent
       </View>
 
       {/* ── Botón WhatsApp (oculto si no hay teléfono) ─────────────── */}
-      {has_phone && (
+      {agent.has_phone && (
         <Pressable
           style={({ pressed }) => [
             styles.wa_button,
