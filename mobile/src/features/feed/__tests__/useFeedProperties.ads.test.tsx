@@ -933,21 +933,32 @@ describe('useFeedProperties — cap de sesión se sostiene entre loadInitial y l
   // every_n=1, 1>=1 es verdadero) — por eso el anuncio nuevo cae EXACTO en
   // el primer ítem de la página 2, no en el segundo.
   //
+  // #247 — CONFIG REAJUSTADA (every_n 1→2, max_per_session 3→2). La config
+  // vieja (every_n=1) dejaba la página 1 "due" al terminar, así que con el
+  // anuncio de cierre de #247 se llevaba los 3 lugares del cupo y la página 2
+  // se quedaba sin presupuesto — lo que borraba justo lo que este test mide
+  // (que skip_first_position=false pone el anuncio en el PRIMER ítem de la
+  // página de continuación). Con every_n=2 la página 1 termina con since=1 (no
+  // "due", sin anuncio de cierre) y la página 2 conserva su lugar de cupo: el
+  // aserto sigue siendo el array exacto completo, sin debilitarse.
+  //
   // Traza a mano de la página 1 — interleave_ads([P0,P1,P2], [AD_A],
-  // {every_n:1, max_per_session:3, min_gap:2, already_shown_count:0, skip_first:true}):
-  //   P0: since(0)>=1? NO → push P0 sin ad. since=1.
-  //   P1: since(1)>=1, ads_used(0)<budget(3), AD_A nunca mostrado → inserta AD ANTES de P1 → push AD,P1. since=0→1.
-  //   P2: since(1)>=1, ads_used(1)<budget(3), AD_A last_pos=1, pos_actual=3, gap=3-1=2>=2 → inserta AD ANTES de P2 → push AD,P2. since=0→1.
-  //   Resultado página 1: [P0,AD,P1,AD,P2] → 2 ads. already_shown_ref acumula a 2.
+  // {every_n:2, max_per_session:2, min_gap:4, already_shown_count:0, skip_first:true}):
+  //   P0: since(0)>=2? NO → push P0 sin ad. since=1.
+  //   P1: since(1)>=2? NO → push P1 sin ad. since=2.
+  //   P2: since(2)>=2, ads_used(0)<budget(2), AD_A nunca mostrado → inserta AD ANTES de P2 → push AD,P2. since=0→1.
+  //   Pasada de cierre (#247): since(1)>=2? NO → sin anuncio final.
+  //   Resultado página 1: [P0,P1,AD,P2] → 1 ad. already_shown_ref acumula a 1.
   //
   // Traza a mano de la página 2 (loadMore, skip_first_position=false,
-  // already_shown_count=2 acumulado) — interleave_ads([Q0,Q1], [AD_A],
-  // {every_n:1, max_per_session:3, min_gap:2, already_shown_count:2, skip_first:false}):
-  //   budget = max_per_session(3) - already_shown_count(2) = 1.
-  //   since arranca en every_n(1) (skip_first_position=false).
-  //   Q0: since(1)>=1, ads_used(0)<budget(1), AD_A nunca mostrado EN ESTA LLAMADA
+  // already_shown_count=1 acumulado) — interleave_ads([Q0,Q1], [AD_A],
+  // {every_n:2, max_per_session:2, min_gap:4, already_shown_count:1, skip_first:false}):
+  //   budget = max_per_session(2) - already_shown_count(1) = 1.
+  //   since arranca en every_n(2) (skip_first_position=false).
+  //   Q0: since(2)>=2, ads_used(0)<budget(1), AD_A nunca mostrado EN ESTA LLAMADA
   //       (last_shown_at es local a cada llamada de interleave_ads) → inserta AD ANTES de Q0 → push AD,Q0. since=0→1.
-  //   Q1: since(1)>=1, ads_used(1)<budget(1)? NO (cupo de la llamada agotado) → push Q1 sin ad.
+  //   Q1: since(1)>=2? NO → push Q1 sin ad. since=2.
+  //   Pasada de cierre: ads_used(1)<budget(1)? NO (cupo de la llamada agotado) → sin anuncio final.
   //   Resultado página 2: [AD,Q0,Q1] → 1 ad nuevo, EXACTO en el primer ítem de la página.
   it('(EC-CAP-2) loadMore_con_cupo_holgado_compone_un_anuncio_nuevo_y_lo_ubica_segun_skip_first_position_false: con 1 lugar de cupo restante, la página 2 trae exactamente 1 anuncio nuevo y cae en el primer ítem de esa página (since arranca en every_n, no en 0)', async () => {
     const P0 = make_property('cap2-p0');
@@ -963,18 +974,17 @@ describe('useFeedProperties — cap de sesión se sostiene entre loadInitial y l
 
     mock_supabase.rpc!.mockImplementation((fn: string) => {
       if (fn === 'ads_feed_config')
-        return Promise.resolve({ data: [make_config({ ads_enabled: true, ad_frequency_n: 1, ad_max_per_session: 3 })], error: null });
+        return Promise.resolve({ data: [make_config({ ads_enabled: true, ad_frequency_n: 2, ad_max_per_session: 2 })], error: null });
       if (fn === 'ads_for_zone') return Promise.resolve({ data: [AD_A], error: null });
       throw new Error(`llamada inesperada a ${fn}`);
     });
 
     const { result } = await render_loaded_hook();
 
-    // Presencia (no vacua): la página 1 ya trajo 2 anuncios — ancla previa
+    // Presencia (no vacua): la página 1 ya trajo su anuncio — ancla previa
     // antes de medir el efecto de loadMore.
     expect(result.current.data).toEqual([
       { kind: 'property', property: P0 },
-      { kind: 'ad', ad: minted(AD_A) },
       { kind: 'property', property: P1 },
       { kind: 'ad', ad: minted(AD_A) },
       { kind: 'property', property: P2 },
@@ -984,11 +994,10 @@ describe('useFeedProperties — cap de sesión se sostiene entre loadInitial y l
       await result.current.loadMore();
     });
 
-    // Traza exacta completa: 2 ads de la página 1 + 1 ad NUEVO de la página 2,
+    // Traza exacta completa: el ad de la página 1 + 1 ad NUEVO de la página 2,
     // ubicado en el primer ítem de la página (skip_first_position=false).
     expect(result.current.data).toEqual([
       { kind: 'property', property: P0 },
-      { kind: 'ad', ad: minted(AD_A) },
       { kind: 'property', property: P1 },
       { kind: 'ad', ad: minted(AD_A) },
       { kind: 'property', property: P2 },
