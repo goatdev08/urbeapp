@@ -20,7 +20,7 @@
  * DI opcional de supabase para facilitar tests de integración.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 import { useLocation } from '@/features/location/LocationProvider';
 import type { FilterState } from '@/features/search/types';
@@ -53,6 +53,13 @@ export function useMapProperties(
   const [loading, set_loading] = useState(true);
   const [error, set_error] = useState<string | null>(null);
 
+  // #249 — solo la búsqueda VIGENTE escribe estado. Filtros, colonia y
+  // municipio cambian `fetch_data` sin cancelar la petición anterior; si esa
+  // resolvía tarde, sus pines pisaban los del filtro nuevo. Misma guarda que
+  // useFeedProperties (feed y mapa comparten el FilterState, #56): dos líneas
+  // por hook se leen mejor aquí que un hook compartido entre features.
+  const request_seq_ref = useRef(0);
+
   // ponytail: deps solo se arma cuando hay `supabase` inyectado (tests) o ya
   // hay coords reales; sin ninguno de los dos se pasa undefined y
   // fetchMapProperties usa su propio lazy-require del singleton + fallback GDL.
@@ -63,15 +70,18 @@ export function useMapProperties(
   }, [supabase, coords]);
 
   const fetch_data = useCallback(async () => {
+    const seq = ++request_seq_ref.current;
     set_loading(true);
     set_error(null);
     try {
       const result = await fetchMapProperties(build_deps(), filters, neighborhood_id, municipality);
+      if (seq !== request_seq_ref.current) return; // llegó tarde: ya hay otra búsqueda
       set_data(result);
     } catch (e) {
+      if (seq !== request_seq_ref.current) return;
       set_error(e instanceof Error ? e.message : 'Error al cargar propiedades del mapa');
     } finally {
-      set_loading(false);
+      if (seq === request_seq_ref.current) set_loading(false);
     }
   }, [filters, build_deps, neighborhood_id, municipality]);
 
