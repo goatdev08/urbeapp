@@ -1,6 +1,6 @@
 /**
  * Tests fase RED — useAdminQueueCounts hook (counts vivos del home del panel
- * admin, tarea #217)
+ * admin, tarea #217; 6ª cola advertising_requests añadida por #246)
  * Archivo SUT: mobile/src/features/admin/hooks/useAdminQueueCounts.ts
  * Subtarea Taskmaster: 217.2
  *
@@ -20,9 +20,10 @@
  *     reports_new: number;
  *     agent_applications_pending: number;
  *     agencies_pending: number;
+ *     advertising_requests_pending: number;   // #246
  *   }
  *
- * 5 queries EN PARALELO, cada una `supabase.from(<tabla>).select('*', {
+ * 6 queries EN PARALELO, cada una `supabase.from(<tabla>).select('*', {
  * count: 'exact', head: true }).eq('status', <valor>)` (patrón calcado de
  * useAgentStats/usePendingAds — sin RPC nueva, las policies RLS con
  * `private.is_admin()` ya permiten el SELECT al admin):
@@ -31,8 +32,9 @@
  *   - property_reports   .eq('status', 'new')
  *   - agent_applications .eq('status', 'pending')
  *   - agencies           .eq('status', 'pending_approval')
+ *   - advertising_requests .eq('status', 'pending')          // #246
  *
- * Los 5 valores de `status` están VERIFICADOS contra las migraciones (no
+ * Los 6 valores de `status` están VERIFICADOS contra las migraciones (no
  * inventados ni copiados a ciegas del prompt):
  *   - ads.status default            → supabase/migrations/20260816000005_ads_schema.sql:45,98
  *     (enum ad_status incluye 'pending_review'; ya usado por usePendingAds.ts:89)
@@ -46,16 +48,20 @@
  *     (`status agent_application_status not null default 'pending'`)
  *   - agencies.status                → supabase/migrations/20260604000003_agencies_and_agents.sql:18
  *     (`status agency_status not null default 'pending_approval'`)
+ *   - advertising_requests.status → supabase/migrations/20260902100001_advertising_requests.sql:52
+ *     (`status text not null default 'pending'` + CHECK in
+ *     ('pending','approved','rejected')) — la 6ª cola, añadida por #246: el
+ *     canal «Quiero anunciar» (#221.1) existía sin contador en el home.
  * Los 5 valores propuestos por el prompt del orquestador coincidieron
  * exactamente con la migración real — no hubo que corregir ninguno.
  *
  * INVARIANTES QUE ESTE ARCHIVO DEBE CLAVAR:
- *   1. Todo-o-nada: si UNA de las 5 queries falla (error o count null sin
+ *   1. Todo-o-nada: si UNA de las 6 queries falla (error o count null sin
  *      error, o la promesa RECHAZA), `counts` es `null` y `error_message` se
  *      llena — NUNCA un objeto con 4 números reales y una mentira (EC-6,
  *      EC-8, EC-10).
- *   2. `is_loading` no se apaga hasta que las 5 queries se asienten, aunque
- *      solo falte una (EC-7) — un spinner apagado con 4/5 muestra un
+ *   2. `is_loading` no se apaga hasta que las 6 queries se asienten, aunque
+ *      solo falte una (EC-7) — un spinner apagado con 5/6 muestra un
  *      dashboard incompleto como si fuera completo.
  *   3. Cero filas es un resultado LEGÍTIMO — `counts` con puros ceros, NUNCA
  *      `null` ni error (EC-2). Confundir "cola vacía" con "no pude leer la
@@ -66,7 +72,7 @@
  *      miente al admin sobre el tamaño real de la cola.
  *   5. Respuesta tardía tras `unmount()` no debe hacer `setState` ni lanzar
  *      (EC-9 — cobertura parcial, ver su comentario in situ).
- *   6. `refetch()` vuelve a disparar las 5 queries y refleja un count que
+ *   6. `refetch()` vuelve a disparar las 6 queries y refleja un count que
  *      cambió entre la carga inicial y el refetch (EC-5).
  *   7. El flag `ignore` también descarta la respuesta tardía de una
  *      generación VIEJA cuando el hook sigue MONTADO y ya hay una generación
@@ -80,7 +86,7 @@
  * useAgentStats.test.ts/usePendingAds — nombre con prefijo "mock" requerido
  * por Jest para referenciar dentro del factory). El mock distingue las 5
  * tablas por el argumento de `.from(<tabla>)`, NO por las columnas del
- * `.select()` (las 5 usan `'*'`).
+ * `.select()` (las 6 usan `'*'`).
  *
  * GOTCHAS RNTL ya pagados: `renderHook` con `await` + `act`; sin `await` el
  * `result` es `undefined` (rntl14_renderhook_async). `unmount()` SIEMPRE
@@ -89,22 +95,25 @@
  * EDGE CASES CUBIERTOS:
  *
  * ### Happy path
- * - (EC-1) camino_feliz_las_5_queries_resuelven_counts_poblado_con_los_5_valores_reales
- * - (EC-2) cero_filas_en_las_5_tablas_counts_todo_en_cero_no_null_no_error
+ * - (EC-1) camino_feliz_las_6_queries_resuelven_counts_poblado_con_los_6_valores_reales
+ * - (EC-2) cero_filas_en_las_6_tablas_counts_todo_en_cero_no_null_no_error
  *
  * ### Ramas de reglas no obvias
  * - (EC-3) cada_tabla_se_filtra_por_el_status_real_verificado_en_las_migraciones
- * - (EC-4) las_5_queries_se_disparan_en_paralelo_no_secuencial
- * - (EC-5) refetch_vuelve_a_pedir_las_5_queries_y_refleja_un_count_que_cambio
+ * - (EC-4) las_6_queries_se_disparan_en_paralelo_no_secuencial
+ * - (EC-5) refetch_vuelve_a_pedir_las_6_queries_y_refleja_un_count_que_cambio
  *
  * ### Boundary / error
  * - (EC-6) error_en_una_sola_de_las_5_queries_error_message_poblado_y_counts_null_todo_o_nada
- * - (EC-7) is_loading_permanece_true_con_4_de_5_resueltas_y_1_pendiente
+ * - (EC-7) is_loading_permanece_true_con_5_de_6_resueltas_y_1_pendiente
  * - (EC-8) count_null_sin_error_se_trata_como_error_nunca_como_cero_fabricado
  * - (EC-9) respuesta_tardia_tras_unmount_no_hace_setstate_ni_lanza
  * - (EC-10) rechazo_de_promesa_en_una_query_tambien_cae_en_mensaje_neutro_sin_lanzar
  * - (EC-11) respuesta_tardia_de_una_generacion_vieja_estando_montado_no_pisa_la_generacion_nueva
  *   (hardening post-guardian, mutante M5 — ver comentario en el test)
+ * - (EC-12) error_en_la_cola_nueva_advertising_requests_tambien_invalida_las_otras_cinco
+ *   (#246: la 6ª cola entra al MISMO todo-o-nada, no como un contador aparte
+ *   que pueda mentir por su cuenta)
  */
 
 import { renderHook, act } from '@testing-library/react-native';
@@ -127,6 +136,7 @@ const QUEUE_TABLES = [
   'property_reports',
   'agent_applications',
   'agencies',
+  'advertising_requests',
 ] as const;
 type QueueTable = (typeof QUEUE_TABLES)[number];
 
@@ -137,6 +147,7 @@ const STATUS_BY_TABLE: Record<QueueTable, string> = {
   property_reports: 'new',
   agent_applications: 'pending',
   agencies: 'pending_approval',
+  advertising_requests: 'pending',
 };
 
 /** counts por defecto — todos distintos entre sí para detectar un mapeo cruzado. */
@@ -146,6 +157,7 @@ const DEFAULT_COUNTS: Record<QueueTable, CountResult> = {
   property_reports: { count: 2, error: null },
   agent_applications: { count: 0, error: null },
   agencies: { count: 4, error: null },
+  advertising_requests: { count: 5, error: null },
 };
 
 const EXPECTED_DEFAULT_COUNTS = {
@@ -154,6 +166,7 @@ const EXPECTED_DEFAULT_COUNTS = {
   reports_new: 2,
   agent_applications_pending: 0,
   agencies_pending: 4,
+  advertising_requests_pending: 5,
 };
 
 const NEUTRAL_ERROR_MESSAGE = 'No se pudieron cargar los contadores del panel. Intenta de nuevo.';
@@ -237,7 +250,7 @@ beforeEach(() => {
 describe('useAdminQueueCounts', () => {
   // ── EC-1: Camino feliz ──────────────────────────────────────────────────
 
-  it('(EC-1) camino_feliz_las_5_queries_resuelven_counts_poblado_con_los_5_valores_reales: counts refleja los 5 números, is_loading false, error null', async () => {
+  it('(EC-1) camino_feliz_las_6_queries_resuelven_counts_poblado_con_los_6_valores_reales: counts refleja los 6 números, is_loading false, error null', async () => {
     const { result } = await renderHook(() => useAdminQueueCounts());
 
     expect(result.current.is_loading).toBe(false);
@@ -247,13 +260,14 @@ describe('useAdminQueueCounts', () => {
 
   // ── EC-2: Cero filas en todas ────────────────────────────────────────────
 
-  it('(EC-2) cero_filas_en_las_5_tablas_counts_todo_en_cero_no_null_no_error: cola vacía en las 5 tablas es un resultado legítimo, no un error', async () => {
+  it('(EC-2) cero_filas_en_las_6_tablas_counts_todo_en_cero_no_null_no_error: cola vacía en las 6 tablas es un resultado legítimo, no un error', async () => {
     mock_supabase_holder.client = make_supabase_mock({
       ads: { count: 0, error: null },
       property_revisions: { count: 0, error: null },
       property_reports: { count: 0, error: null },
       agent_applications: { count: 0, error: null },
       agencies: { count: 0, error: null },
+      advertising_requests: { count: 0, error: null },
     });
 
     const { result } = await renderHook(() => useAdminQueueCounts());
@@ -265,6 +279,7 @@ describe('useAdminQueueCounts', () => {
       reports_new: 0,
       agent_applications_pending: 0,
       agencies_pending: 0,
+      advertising_requests_pending: 0,
     });
   });
 
@@ -292,7 +307,7 @@ describe('useAdminQueueCounts', () => {
 
   // ── EC-4: paralelo, no secuencial ────────────────────────────────────────
 
-  it('(EC-4) las_5_queries_se_disparan_en_paralelo_no_secuencial: las 5 tablas se consultan aunque NINGUNA promesa haya resuelto todavía', async () => {
+  it('(EC-4) las_6_queries_se_disparan_en_paralelo_no_secuencial: las 6 tablas se consultan aunque NINGUNA promesa haya resuelto todavía', async () => {
     mock_supabase_holder.client = make_pending_client() as unknown as ReturnType<
       typeof make_supabase_mock
     >;
@@ -306,7 +321,7 @@ describe('useAdminQueueCounts', () => {
 
   // ── EC-5: refetch ─────────────────────────────────────────────────────────
 
-  it('(EC-5) refetch_vuelve_a_pedir_las_5_queries_y_refleja_un_count_que_cambio: tras refetch, un count que cambió en el backend se refleja en el estado', async () => {
+  it('(EC-5) refetch_vuelve_a_pedir_las_6_queries_y_refleja_un_count_que_cambio: tras refetch, un count que cambió en el backend se refleja en el estado', async () => {
     const { result } = await renderHook(() => useAdminQueueCounts());
     expect(result.current.counts?.reports_new).toBe(2);
 
@@ -327,7 +342,7 @@ describe('useAdminQueueCounts', () => {
 
   // ── EC-6: error en una sola query → todo-o-nada ──────────────────────────
 
-  it('(EC-6) error_en_una_sola_de_las_5_queries_error_message_poblado_y_counts_null_todo_o_nada: un error en property_reports invalida los 5 counts, no solo el suyo', async () => {
+  it('(EC-6) error_en_una_sola_de_las_5_queries_error_message_poblado_y_counts_null_todo_o_nada: un error en property_reports invalida los 6 counts, no solo el suyo', async () => {
     mock_supabase_holder.client = make_supabase_mock({
       property_reports: { count: null, error: { message: 'RLS denied' } },
     });
@@ -341,7 +356,7 @@ describe('useAdminQueueCounts', () => {
 
   // ── EC-7: is_loading no se apaga con 4/5 ─────────────────────────────────
 
-  it('(EC-7) is_loading_permanece_true_con_4_de_5_resueltas_y_1_pendiente: con agencies pendiente para siempre, is_loading sigue true y counts sigue null', async () => {
+  it('(EC-7) is_loading_permanece_true_con_5_de_6_resueltas_y_1_pendiente: con agencies pendiente para siempre, is_loading sigue true y counts sigue null', async () => {
     const never_resolves = new Promise<CountResult>(() => {});
     mock_supabase_holder.client = make_supabase_mock({
       agencies: never_resolves,
@@ -349,7 +364,7 @@ describe('useAdminQueueCounts', () => {
 
     const { result } = await renderHook(() => useAdminQueueCounts());
 
-    // Deja correr microtasks para que las 4 que SÍ resuelven se asienten.
+    // Deja correr microtasks para que las 5 que SÍ resuelven se asienten.
     await act(async () => {
       await Promise.resolve();
       await Promise.resolve();
@@ -439,7 +454,7 @@ describe('useAdminQueueCounts', () => {
   // ── EC-11: carrera entre generaciones, hook MONTADO ──────────────────────
 
   it('(EC-11) respuesta_tardia_de_una_generacion_vieja_estando_montado_no_pisa_la_generacion_nueva: la generación vieja no puede sobrescribir el estado ya asentado de la generación nueva', async () => {
-    // gen1: 4 de 5 resuelven, agencies queda pendiente (guardamos el resolve).
+    // gen1: 5 de 6 resuelven, agencies queda pendiente (guardamos el resolve).
     let resolve_agencies_gen1!: (v: CountResult) => void;
     const pending_gen1 = new Promise<CountResult>((resolve) => {
       resolve_agencies_gen1 = resolve;
@@ -456,7 +471,7 @@ describe('useAdminQueueCounts', () => {
     expect(result.current.counts).toBeNull();
 
     // gen2: swap del cliente ANTES del refetch — la nueva generación resuelve
-    // las 5 de inmediato, agencies = 99.
+    // las 6 de inmediato, agencies = 99.
     mock_supabase_holder.client = make_supabase_mock({ agencies: { count: 99, error: null } });
 
     await act(async () => {
@@ -480,5 +495,19 @@ describe('useAdminQueueCounts', () => {
     expect(result.current.counts?.agencies_pending).toBe(99);
     expect(result.current.is_loading).toBe(false);
     expect(result.current.error_message).toBeNull();
+  });
+
+  // ── EC-12: la 6ª cola entra al MISMO todo-o-nada (#246) ──────────────────
+
+  it('(EC-12) error_en_la_cola_nueva_advertising_requests_tambien_invalida_las_otras_cinco: la cola de solicitudes comerciales no es un contador aparte que pueda fallar solo', async () => {
+    mock_supabase_holder.client = make_supabase_mock({
+      advertising_requests: { count: null, error: { message: 'relation does not exist' } },
+    });
+
+    const { result } = await renderHook(() => useAdminQueueCounts());
+
+    expect(result.current.is_loading).toBe(false);
+    expect(result.current.error_message).toBe(NEUTRAL_ERROR_MESSAGE);
+    expect(result.current.counts).toBeNull();
   });
 });

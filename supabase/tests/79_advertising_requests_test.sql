@@ -579,9 +579,17 @@ select is(
     where entity_id = current_setting('t79.req_ag7')::uuid),
   0, 'ATOM3_sin_auditoria_de_una_resolucion_que_no_ocurrio'
 );
+-- 🔴 #246: acotado a los DOS types de la RESOLUCIÓN. Desde que existe el
+-- escritor admin_advertising_request_pending (AFTER INSERT en
+-- advertising_requests, 20260905200002), CREAR la solicitud de ATOM0 deja
+-- legítimamente una fila por admin vivo con este mismo related_entity_id —
+-- ese aviso es de la ENTRADA a la cola, no de la resolución que aquí
+-- reventó. Mismo criterio literal que AD4/AD_0MIEMBROS2 de la suite 72
+-- cuando #219.6 metió el admin_ad_pending en sus fixtures.
 select is(
   (select count(*)::int from public.notifications
-    where related_entity_id = current_setting('t79.req_ag7')::uuid),
+    where related_entity_id = current_setting('t79.req_ag7')::uuid
+      and type in ('advertising_request_approved', 'advertising_request_rejected')),
   0, 'ATOM4_sin_notificacion_de_una_resolucion_que_no_ocurrio'
 );
 
