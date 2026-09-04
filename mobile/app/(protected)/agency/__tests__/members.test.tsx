@@ -123,6 +123,38 @@ afterEach(() => {
   cleanup();
 });
 
+describe('AgencyMembersScreen — alcance por agencia (#253)', () => {
+  it('pide los miembros de LA agencia propia: fetch_agency_members recibe el agency_id de fetch_own_membership', async () => {
+    mock_use_unmanaged_inventory.mockReturnValue({
+      counts: {},
+      loading: false,
+      error: null,
+      refetch: jest.fn(),
+    });
+
+    await render_screen();
+
+    // La regresión de #222 paso 7: la pantalla llamaba sin argumentos y RLS
+    // (policy con OR private.is_admin()) devolvía a los miembros de TODAS las
+    // agencias a un admin de plataforma que además es owner de una.
+    expect(mock_fetch_agency_members).toHaveBeenCalledWith(AGENCY_ID);
+  });
+
+  it('sin membresía propia no consulta la lista (nada que listar, la pantalla redirige)', async () => {
+    mock_fetch_own_membership.mockResolvedValue(null);
+    mock_use_unmanaged_inventory.mockReturnValue({
+      counts: {},
+      loading: false,
+      error: null,
+      refetch: jest.fn(),
+    });
+
+    await render_screen();
+
+    expect(mock_fetch_agency_members).not.toHaveBeenCalled();
+  });
+});
+
 describe('AgencyMembersScreen — inventario sin gestor (#203.2)', () => {
   it('miembro suspendido con N>0 → muestra el conteo y el botón Reasignar', async () => {
     mock_use_unmanaged_inventory.mockReturnValue({
