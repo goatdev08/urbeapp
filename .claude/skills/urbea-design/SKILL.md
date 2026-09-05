@@ -5,7 +5,7 @@ description: Sistema de diseño de Urbea — branding, design tokens, componente
 
 # urbea-design — sistema de diseño
 
-⚠️ **Branding en pausa** hasta luz verde del cliente (`CLAUDE.md` §8). No definir identidad sin aprobación.
+⚠️ **Gate global LEVANTADO** (2026-06-26). Lo vivo es la **aprobación por pantalla**: componente de **firma** → preview HTML aprobable por el cliente antes de portar a RN (`CLAUDE.md` §8).
 
 ## Estética (decidida)
 - **Híbrida**: feed de video **oscuro** e inmersivo (tipo TikTok/Reels); pantallas de gestión (publicar, CRM, perfil, admin) **claras**.

@@ -17,7 +17,7 @@ Es la capa de **diseño/planeación**; una tarea aprobada aquí alimenta a `/tm-
 ## Pasos
 
 1. **Investiga + redacta el borrador con el subagente `tm-explore`.** Lánzalo con la idea (y, en pasadas siguientes, con las respuestas ya recolectadas):
-   - Devuelve: **nivel** (XS…XL), **tipo**, ruta del **doc borrador**, **lluvia de ideas** (si la idea era abstracta), **preguntas abiertas** agrupadas con opciones, reglas no obvias tocadas, gate de branding, riesgos y si está `LISTO_PARA_PROMOVER`.
+   - Devuelve: **nivel** (XS…XL), **tipo**, ruta del **doc borrador**, **lluvia de ideas** (si la idea era abstracta), **preguntas abiertas** agrupadas con opciones, reglas no obvias tocadas, aprobación de diseño, riesgos y si está `LISTO_PARA_PROMOVER`.
    - El subagente **no pregunta nada** — solo investiga y propone (vault `wiki/` vía skill `urbea-context`, sin `grep` a ciegas). Tú (agente principal) eres quien habla con el usuario en los pasos siguientes.
 
 2. **Converge la lluvia de ideas (solo si la idea era abstracta).** Si el subagente devolvió direcciones/enfoques, preséntalos con `AskUserQuestion` (la opción recomendada primero, con "(Recomendado)") para elegir la dirección antes de afinar el detalle. La elección se anota en el doc (sección "Lluvia de ideas" + "Decisiones del intake").
@@ -30,7 +30,7 @@ Es la capa de **diseño/planeación**; una tarea aprobada aquí alimenta a `/tm-
    **Reglas de la desambiguación (extensiva hasta cubrir todo):**
    - Pregunta **solo lo que la investigación no resolvió**. Para cada pregunta ofrece la opción recomendada primero ("(Recomendado)").
    - Si una respuesta abre nuevas ambigüedades o áreas técnicas, **re-invoca al subagente `tm-explore`** con las respuestas para que re-investigue y actualice el borrador + la lista de preguntas. Itera hasta `LISTO_PARA_PROMOVER: sí`.
-   - **Gate de branding (#19):** si el subagente marcó `GATE_BRANDING: sí`, NO promuevas el alcance de diseño visual sin confirmar el visto bueno del cliente (CLAUDE.md §8). Pregúntalo explícitamente.
+   - **Aprobación de diseño (CLAUDE.md §8):** si el subagente marcó `APROBACION_DISENO: sí`, la pantalla toca un **componente de firma** → el alcance incluye un **preview HTML aprobable** antes de portar a RN. Pregúntalo explícitamente. (El gate global de branding está LEVANTADO desde 2026-06-26: no bloquea nada.)
    - **No avances al PASO 4 sin criterios de aceptación completos y verificables.** Si dudas, hay otra ronda.
 
 4. **Finaliza el doc y decide su destino.** Actualiza el doc a `estado: en-revision`, llena toda sección con respuesta (o "n/a" explícito) y registra cada decisión en "Decisiones del intake". Muéstralo y pregunta con `AskUserQuestion`:
@@ -80,5 +80,5 @@ Es la capa de **diseño/planeación**; una tarea aprobada aquí alimenta a `/tm-
 - **Las preguntas las hace el agente principal** con `AskUserQuestion`; el subagente `tm-explore` solo investiga, hace lluvia de ideas y redacta (no puede preguntar).
 - **No llegues al PASO 4 sin criterios de aceptación completos.** Si dudas, otra ronda.
 - **No crees tarea si se descarta.** El doc descartado se conserva como registro de decisión.
-- **Branding en pausa (#19):** no promuevas alcance de diseño visual sin visto bueno del cliente.
+- **Aprobación por pantalla (§8):** un componente de **firma** se promueve con su **preview HTML aprobable** dentro del alcance, no después.
 - El doc de exploración es el entregable de planeación; el log paso-a-paso por subtarea lo escriben después `/tm-plan` y `/tm-tarea` en Taskmaster.

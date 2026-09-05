@@ -47,7 +47,8 @@ Identificadores propios en **snake_case**. n/a si no toca BD.}
 ## Impacto en UI
 {Pantallas (Expo Router), feed vertical de video (`expo-video`), wizard de publicación,
 mapa con clustering, filtros, CRM de leads, copy. n/a si no toca UI.
-⚠️ Si toca **branding/diseño visual** → gate de la tarea #19 (cliente debe dar el visto bueno; CLAUDE.md §8).}
+⚠️ Si toca un **componente de firma** → aprobación **por pantalla**: preview HTML aprobable por el
+cliente antes de portar a RN (CLAUDE.md §8). El gate global de branding está LEVANTADO.}
 
 ## Reglas no obvias aplicables
 - {Regla del dominio que se toca} — `wiki/conceptos/{página}` · fuente §/línea vía `wiki/_index/MOC-fuentes.md`
