@@ -400,66 +400,78 @@ export default function AdsScreen() {
           // headerRight que profile/edit.tsx). Spread condicional — con
           // exactOptionalPropertyTypes no se puede pasar undefined explícito.
           ...(can_advertise && {
+            // 259.2: recuadro de esquinas redondeadas alrededor del ícono —
+            // misma FIGURA que el recuadro del item activo de GlassTabBar
+            // (container_style borderRadius: glass.pill_radius, GlassTabBar.tsx:478
+            // = mitad de la altura real de esa pill, theme.ts:97) reproporcionada
+            // al tamaño de este botón (radio = mitad del lado, ver
+            // header_plus_btn abajo). Sin componente nuevo en el design system.
             headerRight: () => (
               <Pressable
                 onPress={() => router.push('/ads/new/step1')}
-                style={({ pressed }) => [styles.header_icon_btn, pressed && styles.header_icon_btn_pressed]}
+                style={({ pressed }) => [styles.header_plus_btn, pressed && styles.header_icon_btn_pressed]}
                 accessibilityRole="button"
                 accessibilityLabel="Crear anuncio"
                 hitSlop={8}
               >
-                <Plus size={22} color={colors.primary} weight="bold" />
+                <Plus size={20} color={colors.primary} weight="bold" />
               </Pressable>
             ),
           }),
         }}
       />
 
-      <FlatList<MyAd>
-        style={styles.list}
-        contentContainerStyle={styles.list_content}
-        data={my_ads.ads}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => <AdListItem ad={item} />}
-        ItemSeparatorComponent={() => <View style={styles.separator} />}
-        ListHeaderComponent={
-          <MetricsSummary
-            metrics={metrics}
-            municipality_names={municipality_names}
-            neighborhood_names={neighborhood_names}
-          />
-        }
-        ListEmptyComponent={
-          my_ads.loading ? (
-            <View style={styles.center_inline}>
-              <UrbeaLoader size="large" color={colors.primary} />
-            </View>
-          ) : my_ads.error ? (
-            <View style={styles.center_inline}>
-              <Text style={styles.metrics_error}>{my_ads.error}</Text>
-            </View>
-          ) : (
-            <EmptyState
-              message="Aún no tienes anuncios"
-              // #227: voz ACTIVA + CTA — el usuario sin anuncios es justo el
-              // que quiere crear el primero. Sin capacidad vigente no hay
-              // acción que ofrecer (solo dashboard histórico) y se conserva
-              // el copy descriptivo.
-              subtitle={
-                can_advertise
-                  ? 'Crea tu primera campaña de video y llega a más personas.'
-                  : 'Cuando tengas una campaña activa aparecerá aquí.'
-              }
-              icon={Megaphone}
-              {...(can_advertise && {
-                cta_label: 'Crear anuncio',
-                onPressCta: () => router.push('/ads/new/step1'),
-              })}
+      {/* 259.1 — un solo UrbeaLoader centrado mientras CUALQUIERA de los dos
+          hooks (lista o métricas) sigue cargando; antes el ListHeaderComponent
+          (métricas) y el ListEmptyComponent (lista) pintaban cada uno el
+          suyo — dos loaders de distinto tamaño apilados. */}
+      {my_ads.loading || metrics.loading ? (
+        <View style={styles.screen_loader}>
+          <UrbeaLoader size="large" color={colors.primary} />
+        </View>
+      ) : (
+        <FlatList<MyAd>
+          style={styles.list}
+          contentContainerStyle={styles.list_content}
+          data={my_ads.ads}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => <AdListItem ad={item} />}
+          ItemSeparatorComponent={() => <View style={styles.separator} />}
+          ListHeaderComponent={
+            <MetricsSummary
+              metrics={metrics}
+              municipality_names={municipality_names}
+              neighborhood_names={neighborhood_names}
             />
-          )
-        }
-        showsVerticalScrollIndicator={false}
-      />
+          }
+          ListEmptyComponent={
+            my_ads.error ? (
+              <View style={styles.center_inline}>
+                <Text style={styles.metrics_error}>{my_ads.error}</Text>
+              </View>
+            ) : (
+              <EmptyState
+                message="Aún no tienes anuncios"
+                // #227: voz ACTIVA + CTA — el usuario sin anuncios es justo el
+                // que quiere crear el primero. Sin capacidad vigente no hay
+                // acción que ofrecer (solo dashboard histórico) y se conserva
+                // el copy descriptivo.
+                subtitle={
+                  can_advertise
+                    ? 'Crea tu primera campaña de video y llega a más personas.'
+                    : 'Cuando tengas una campaña activa aparecerá aquí.'
+                }
+                icon={Megaphone}
+                {...(can_advertise && {
+                  cta_label: 'Crear anuncio',
+                  onPressCta: () => router.push('/ads/new/step1'),
+                })}
+              />
+            )
+          }
+          showsVerticalScrollIndicator={false}
+        />
+      )}
     </>
   );
 }
@@ -486,12 +498,33 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // Botones de icono del header nativo (back a la izquierda, "+" a la derecha).
+  // 259.1 — único loader de pantalla (reemplaza el ListEmptyComponent con
+  // loader propio; ver el condicional que envuelve el FlatList arriba).
+  screen_loader: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.paper,
+  },
+  // Botón de icono del header nativo (back a la izquierda) — sin recuadro.
   header_icon_btn: {
     padding: spacing.s_4,
   },
   header_icon_btn_pressed: {
     opacity: 0.6,
+  },
+  // 259.2 — botón "+" (headerRight): recuadro de esquinas redondeadas,
+  // misma figura que GlassTabBar (radio = mitad del lado, ver docblock del
+  // headerRight arriba), reproporcionado a ~36pt de lado.
+  header_plus_btn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary_tint,
+    borderWidth: 1,
+    borderColor: colors.primary,
   },
 
   // ── Bloque de métricas ────────────────────────────────────────────────────

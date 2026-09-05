@@ -53,7 +53,13 @@ import { ChartLineUp } from 'phosphor-react-native';
 
 import { supabase } from '@/lib/supabase/client';
 import { EmptyState } from '@/features/profile/components/EmptyState';
-import { useAdStats, type AdStatsPeriod } from '@/features/ads/hooks/useAdStats';
+import {
+  useAdStats,
+  type AdStatsPeriod,
+  type AdStatsTotals,
+  type AdStatsDailyPoint,
+  type AdStatsZoneRow,
+} from '@/features/ads/hooks/useAdStats';
 import type { MyAd } from '@/features/ads/hooks/useMyAds';
 import {
   AdDailyLineChart,
@@ -80,6 +86,9 @@ const PERIOD_OPTIONS: { key: AdStatsPeriod; label: string }[] = [
 ];
 
 const METRIC_KEYS: AdStatsMetricKey[] = ['impressions', 'views', 'cta_taps'];
+
+/** padding interno de `.segmented` — reusado para calcular el track del indicador deslizante. */
+const SEGMENTED_PADDING = 3;
 
 // ---------------------------------------------------------------------------
 // Skeleton — Animated.View + loop de opacity (nota de diseño del preview:
@@ -120,6 +129,81 @@ function AdDashboardSkeleton() {
       <View style={[styles.skel_line, { width: '40%' }]} />
       <View style={styles.skel_chart} />
     </Animated.View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Cuerpo de estadísticas — factorizado (259.3) para poder pintar el MISMO
+// layout con datos frescos O con el último `stats` no-nulo mientras un
+// cambio de periodo está en vuelo (evita el "brinco" del remount +
+// skeleton completo). Nunca lee `useAdStats` directo — recibe totals/daily/
+// zones ya resueltos por el caller (frescos o conservados).
+// ---------------------------------------------------------------------------
+
+function AdStatsBody({
+  ad,
+  metric,
+  set_metric,
+  totals,
+  daily,
+  zones,
+  municipality_names,
+  neighborhood_names,
+}: {
+  ad: MyAd;
+  metric: AdStatsMetricKey;
+  set_metric: (m: AdStatsMetricKey) => void;
+  totals: AdStatsTotals;
+  daily: AdStatsDailyPoint[];
+  zones: AdStatsZoneRow[];
+  municipality_names: Record<string, string>;
+  neighborhood_names: Record<number, string>;
+}) {
+  return (
+    <>
+      {/* 3 tiles grandes — también seleccionan la métrica del gráfico */}
+      <View style={styles.kpi_row}>
+        {METRIC_KEYS.map((key) => (
+          <Pressable
+            key={key}
+            onPress={() => set_metric(key)}
+            style={[styles.kpi_tile, metric === key && styles.kpi_tile_selected]}
+            accessibilityRole="button"
+            accessibilityLabel={AD_STATS_METRIC_LABELS[key]}
+            accessibilityState={{ selected: metric === key }}
+          >
+            <Text style={[styles.kpi_value, metric === key && styles.kpi_value_selected]}>
+              {totals[key].toLocaleString('es-MX')}
+            </Text>
+            <Text style={styles.kpi_label}>{AD_STATS_METRIC_LABELS[key]}</Text>
+          </Pressable>
+        ))}
+      </View>
+
+      <Text style={styles.section_title}>Rendimiento por día</Text>
+      <View style={styles.chart_card}>
+        <Text style={styles.chart_hint}>
+          {AD_STATS_METRIC_LABELS[metric]} · toca un tile arriba para cambiar la métrica
+        </Text>
+        <AdDailyLineChart daily={daily} metric={metric} />
+      </View>
+
+      <Text style={styles.section_title}>Por zona</Text>
+      <View style={styles.chart_card}>
+        <AdZoneBarsChart
+          zones={zones}
+          municipality_names={municipality_names}
+          neighborhood_names={neighborhood_names}
+          metric={metric}
+        />
+      </View>
+
+      <View style={styles.vigencia_note}>
+        <Text style={styles.vigencia_text}>
+          Vigencia: {format_date_short(ad.starts_at)} – {format_date_short(ad.ends_at)}
+        </Text>
+      </View>
+    </>
   );
 }
 
@@ -183,6 +267,77 @@ export default function AdDetailScreen() {
   const [metric, set_metric] = useState<AdStatsMetricKey>('impressions');
   const stats = useAdStats(ad_id, period);
 
+  // 259.3 — "tabs sin brinco": conserva el ÚLTIMO `stats` exitoso (por
+  // ad_id) para seguir pintando el mismo layout mientras un cambio de
+  // periodo está en vuelo, en vez de desmontar todo hacia el skeleton.
+  // ⚠️ NO toca useAdStats.ts (guardia anti-carrera EC-18/EC-19) — todo el
+  // "recordar" vive aquí, en la pantalla.
+  const [last_good, set_last_good] = useState<{
+    ad_id: string;
+    totals: AdStatsTotals;
+    daily: AdStatsDailyPoint[];
+    zones: AdStatsZoneRow[];
+  } | null>(null);
+
+  useEffect(() => {
+    // Envuelto en una función nombrada (invocada síncronamente abajo) en
+    // vez de setState directo en el cuerpo del efecto — mismo patrón que
+    // useAdMetrics/fetch_metrics y el load_ad/load_zone_names de este mismo
+    // archivo, evita el lint react-hooks/set-state-in-effect.
+    function capture_last_good(): void {
+      if (stats.is_loading || stats.totals === null || !ad_id) return;
+      set_last_good({ ad_id, totals: stats.totals, daily: stats.daily, zones: stats.zones });
+    }
+    capture_last_good();
+  }, [stats.is_loading, stats.totals, stats.daily, stats.zones, ad_id]);
+
+  // Solo cuenta como "datos previos" si son del MISMO ad_id (una entrada
+  // vieja de otro anuncio, si el screen se reusara, se ignora).
+  const has_prior_stats = last_good !== null && last_good.ad_id === ad_id;
+  // Cargando Y con algo previo que enseñar = cambio de periodo en vuelo
+  // (nunca la primera carga del anuncio — ahí has_prior_stats es false).
+  const pending_period_switch = stats.is_loading && has_prior_stats;
+  const view_totals = pending_period_switch ? last_good!.totals : stats.totals;
+  const view_daily = pending_period_switch ? last_good!.daily : stats.daily;
+  const view_zones = pending_period_switch ? last_good!.zones : stats.zones;
+
+  // Señal sutil (opacidad) + fade/slide corto al asentar — nunca sobre el
+  // skeleton (ese sigue con su propio Animated.loop de pulso), Animated
+  // clásico con useNativeDriver:true sobre transform/opacity de Views (NO
+  // Reanimated sobre SVG, precedente #244).
+  const [content_opacity] = useState(() => new Animated.Value(1));
+  const [content_translate] = useState(() => new Animated.Value(0));
+
+  useEffect(() => {
+    if (pending_period_switch) {
+      Animated.timing(content_opacity, { toValue: 0.6, duration: 120, useNativeDriver: true }).start();
+      return;
+    }
+    content_translate.setValue(6);
+    Animated.parallel([
+      Animated.timing(content_opacity, { toValue: 1, duration: 200, useNativeDriver: true }),
+      Animated.timing(content_translate, { toValue: 0, duration: 200, useNativeDriver: true }),
+    ]).start();
+  }, [pending_period_switch, content_opacity, content_translate]);
+
+  // Indicador deslizante del tab activo (transform/opacity, Animated
+  // clásico) — se mide el ancho real del segmentado (onLayout) para
+  // calcular el track; nunca Reanimated ni SVG animado.
+  const [segmented_width, set_segmented_width] = useState(0);
+  const [indicator_x] = useState(() => new Animated.Value(0));
+
+  useEffect(() => {
+    if (segmented_width <= 0) return;
+    const index = PERIOD_OPTIONS.findIndex((opt) => opt.key === period);
+    const track_width = segmented_width - SEGMENTED_PADDING * 2;
+    const indicator_width = track_width / PERIOD_OPTIONS.length;
+    Animated.timing(indicator_x, {
+      toValue: Math.max(index, 0) * indicator_width,
+      duration: 220,
+      useNativeDriver: true,
+    }).start();
+  }, [period, segmented_width, indicator_x]);
+
   // Nombres de zona — mismo patrón que index.tsx (resolución en el screen,
   // los NÚMEROS nunca esperan a las ETIQUETAS).
   const [municipality_names, set_municipality_names] = useState<Record<string, string>>({});
@@ -223,7 +378,9 @@ export default function AdDetailScreen() {
   }, [stats.zones]);
 
   const badge = ad ? get_ad_badge(ad.status) : null;
-  const stats_pending = stats.is_loading;
+  // Skeleton SOLO en la primera carga del anuncio (sin datos previos) —
+  // un cambio de periodo con `has_prior_stats` nunca vuelve a mostrarlo.
+  const show_stats_skeleton = stats.is_loading && !has_prior_stats;
 
   return (
     <>
@@ -261,13 +418,27 @@ export default function AdDetailScreen() {
           </View>
         ) : (
           <>
-            {/* Selector segmentado Hoy / 30 días / Máximo */}
-            <View style={styles.segmented}>
+            {/* Selector segmentado Hoy / 30 días / Máximo — indicador
+                deslizante (Animated clásico, transform sobre una View,
+                useNativeDriver:true) en vez del fondo estático por botón. */}
+            <View style={styles.segmented} onLayout={(e) => set_segmented_width(e.nativeEvent.layout.width)}>
+              {segmented_width > 0 && (
+                <Animated.View
+                  pointerEvents="none"
+                  style={[
+                    styles.segment_indicator,
+                    {
+                      width: (segmented_width - SEGMENTED_PADDING * 2) / PERIOD_OPTIONS.length,
+                      transform: [{ translateX: indicator_x }],
+                    },
+                  ]}
+                />
+              )}
               {PERIOD_OPTIONS.map((opt) => (
                 <Pressable
                   key={opt.key}
                   onPress={() => set_period(opt.key)}
-                  style={[styles.seg_btn, period === opt.key && styles.seg_btn_active]}
+                  style={styles.seg_btn}
                   accessibilityRole="button"
                   accessibilityLabel={opt.label}
                   accessibilityState={{ selected: period === opt.key }}
@@ -279,63 +450,35 @@ export default function AdDetailScreen() {
               ))}
             </View>
 
-            {stats_pending ? (
+            {show_stats_skeleton ? (
               <AdDashboardSkeleton />
-            ) : stats.error_message ? (
+            ) : !stats.is_loading && stats.error_message ? (
               <View style={styles.center_inline}>
                 <Text style={styles.error_text}>{stats.error_message}</Text>
               </View>
-            ) : stats.totals === null ? (
+            ) : !stats.is_loading && stats.totals === null ? (
               <EmptyState
                 icon={ChartLineUp}
                 message="Aún no hay datos"
                 subtitle="Cuando tu anuncio reciba impresiones aparecerán aquí sus estadísticas."
               />
             ) : (
-              <>
-                {/* 3 tiles grandes — también seleccionan la métrica del gráfico */}
-                <View style={styles.kpi_row}>
-                  {METRIC_KEYS.map((key) => (
-                    <Pressable
-                      key={key}
-                      onPress={() => set_metric(key)}
-                      style={[styles.kpi_tile, metric === key && styles.kpi_tile_selected]}
-                      accessibilityRole="button"
-                      accessibilityLabel={AD_STATS_METRIC_LABELS[key]}
-                      accessibilityState={{ selected: metric === key }}
-                    >
-                      <Text style={[styles.kpi_value, metric === key && styles.kpi_value_selected]}>
-                        {stats.totals![key].toLocaleString('es-MX')}
-                      </Text>
-                      <Text style={styles.kpi_label}>{AD_STATS_METRIC_LABELS[key]}</Text>
-                    </Pressable>
-                  ))}
-                </View>
-
-                <Text style={styles.section_title}>Rendimiento por día</Text>
-                <View style={styles.chart_card}>
-                  <Text style={styles.chart_hint}>
-                    {AD_STATS_METRIC_LABELS[metric]} · toca un tile arriba para cambiar la métrica
-                  </Text>
-                  <AdDailyLineChart daily={stats.daily} metric={metric} />
-                </View>
-
-                <Text style={styles.section_title}>Por zona</Text>
-                <View style={styles.chart_card}>
-                  <AdZoneBarsChart
-                    zones={stats.zones}
-                    municipality_names={municipality_names}
-                    neighborhood_names={neighborhood_names}
-                    metric={metric}
-                  />
-                </View>
-
-                <View style={styles.vigencia_note}>
-                  <Text style={styles.vigencia_text}>
-                    Vigencia: {format_date_short(ad.starts_at)} – {format_date_short(ad.ends_at)}
-                  </Text>
-                </View>
-              </>
+              // Datos frescos, O el último `stats` no-nulo mientras el
+              // nuevo periodo está en vuelo (pending_period_switch) — MISMO
+              // layout en ambos casos, solo cambia la opacidad (señal sutil,
+              // nunca un segundo skeleton).
+              <Animated.View style={{ opacity: content_opacity, transform: [{ translateY: content_translate }] }}>
+                <AdStatsBody
+                  ad={ad}
+                  metric={metric}
+                  set_metric={set_metric}
+                  totals={view_totals!}
+                  daily={view_daily}
+                  zones={view_zones}
+                  municipality_names={municipality_names}
+                  neighborhood_names={neighborhood_names}
+                />
+              </Animated.View>
             )}
           </>
         )}
@@ -396,22 +539,30 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     backgroundColor: colors.paper_2,
     borderRadius: radii.r_pill,
-    padding: 3,
+    padding: SEGMENTED_PADDING,
     marginBottom: spacing.s_16,
   },
-  seg_btn: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: spacing.s_8,
+  // Indicador deslizante (absoluto, detrás de los 3 Pressable) — mismo
+  // fondo/sombra que antes tenía el botón activo, ahora animado con
+  // transform: translateX en vez de alternar backgroundColor por botón.
+  segment_indicator: {
+    position: 'absolute',
+    top: SEGMENTED_PADDING,
+    bottom: SEGMENTED_PADDING,
+    left: SEGMENTED_PADDING,
     borderRadius: radii.r_pill,
-  },
-  seg_btn_active: {
     backgroundColor: colors.surface,
     shadowColor: '#1E160C',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.08,
     shadowRadius: 3,
     elevation: 1,
+  },
+  seg_btn: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: spacing.s_8,
+    borderRadius: radii.r_pill,
   },
   seg_label: {
     fontFamily: fonts.sans_semibold,
