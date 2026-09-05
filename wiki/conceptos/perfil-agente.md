@@ -3,7 +3,7 @@ tipo: concepto
 dominio: producto
 estado: vivo
 fuentes: [docs/PRD.md, .taskmaster (tareas #16, #22, #23)]
-codigo: [mobile/src/features/profile/, mobile/src/features/profile/components/ProfileActions.tsx, mobile/src/features/profile/hooks/useAgentStats.ts, mobile/src/features/profile/components/ProfessionalStats.tsx, mobile/src/components/IsotipoMark.tsx, mobile/app/(protected)/(tabs)/profile.tsx, mobile/app/(protected)/profile/[id].tsx, mobile/app/(protected)/profile/edit.tsx, mobile/src/components/PropertyGridCard.tsx]
+codigo: [supabase/migrations/20260905300002_whatsapp_phone_for_profile.sql, supabase/tests/99_whatsapp_phone_for_profile_test.sql, mobile/src/features/profile/, mobile/src/features/profile/components/ProfileActions.tsx, mobile/src/features/profile/hooks/useAgentStats.ts, mobile/src/features/profile/components/ProfessionalStats.tsx, mobile/src/components/IsotipoMark.tsx, mobile/app/(protected)/(tabs)/profile.tsx, mobile/app/(protected)/profile/[id].tsx, mobile/app/(protected)/profile/edit.tsx, mobile/src/components/PropertyGridCard.tsx]
 actualizado: 2026-08-16
 ---
 
@@ -38,7 +38,7 @@ Abraham comparó el perfil con uno de Instagram y pidió tres cosas: 3 columnas,
 
 ### Ajuste #180 (mismo día, tras verlo en el dispositivo)
 - **Las acciones salen del menú "⋯":** `components/ProfileActions.tsx` (nuevo) pinta una fila entre la bio y la grilla — perfil propio: **Editar perfil · Guardados**; perfil **ajeno**: **Contactar por WhatsApp** del mismo alto y forma, y se **omite** si el agente no tiene teléfono. Texto a la izquierda e ícono Phosphor a la derecha (`PencilSimple`, `BookmarkSimple` — el mismo de `SaveButton` y de la pantalla Guardados —, `WhatsappLogo`). Las dos entradas movidas se quitaron del `ProfileMenu`: dos caminos al mismo destino no aportan.
-- **WhatsApp del perfil NO pasa por el CRM.** Se extrajo `open_whatsapp_text(phone, texto)` de `open_whatsapp` (que ahora la llama) en `features/property-detail/utils/whatsapp.ts`. No se usa `open_whatsapp_ef` porque su Alert "✓ Contacto enviado" mentiría: contactar a un agente **desde su perfil** no nace de una propiedad y el lead exige `property_id`. `useAgentProfile` trae `users.phone`.
+- **WhatsApp del perfil NO pasa por el CRM.** Se extrajo `open_whatsapp_text(phone, texto)` de `open_whatsapp` (que ahora la llama) en `features/property-detail/utils/whatsapp.ts`. No se usa `open_whatsapp_ef` porque su Alert "✓ Contacto enviado" mentiría: contactar a un agente **desde su perfil** no nace de una propiedad y el lead exige `property_id`. **#255 (2026-09-05):** `useAgentProfile` ya NO trae `users.phone` (RLS lo ocultaba para un publicador admin → sin botón). Expone `has_phone` (vista `agent_public_profiles`) y el número se resuelve al pulsar con la RPC `whatsapp_phone_for_profile` (`security definer`, solo `authenticated`, solo publicadores vivos con teléfono; migración `20260905300002`). El crudo sale por una sola puerta y solo cuando alguien pulsa.
 - **"Leads" salió del header por completo** (ver stats abajo) y el perfil ajeno tampoco muestra "Guardados": hacia afuera la señal pública es cuánto gusta el catálogo.
 - ⚠️ **La cabecera reserva la banda de los botones flotantes.** `container.paddingTop` = `s_8 + 40 + s_8` (margen + alto del botón "⋯"/atrás), no un `s_40` estético: en Android, con el inset superior chico, el "⋯" caía justo encima de la tercera columna de estadísticas.
 

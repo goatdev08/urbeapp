@@ -1,7 +1,18 @@
 ---
 tipo: estado
-actualizado: 2026-09-03
+actualizado: 2026-09-05
 ---
+
+## Hoy (2026-09-05) — lote 2 del smoke #222: las cinco derivadas están en `main`, falta producción
+Abraham pidió atacar TODOS los fixes derivados del testing antes de seguir con el smoke. Cinco tareas, cuatro PRs (#145 #146 #147 #148), todas con guardian PASS:
+- **#259** (done) pantalla de anuncios: un solo `UrbeaLoader` centrado, botón + como cuadrado de esquinas redondeadas (el agente lo dejó círculo; corregido a `radii.r_12`), tabs de periodo que conservan los datos y deslizan sin skeleton. `useAdStats` intacto. Solo se verá en el **Android físico** tras el OTA.
+- **#256** (done) el feed ya no pone dos anuncios seguidos en la costura entre páginas (`since_last_ad` viaja entre llamadas). El guardian encontró un mutante vivo (el reset en `load_initial`) → EC-CAP-5.
+- **#257/#258** (review) migración `20260905300001`: la notificación de auto-suspensión trae los motivos legibles y el aviso de solicitud de agente trae nombre público + motivo. El cliente ya los pinta (#240): no necesita OTA.
+- **#255** (review) migración `20260905300002`: RPC `whatsapp_phone_for_profile`; el perfil deja de leer `users.phone`. Orden: migración primero, OTA después.
+
+**Lo que falta y requiere OK de Abraham (producción viva):** `apply_migration` de las dos migraciones al remoto + sonda por impersonación; después `pnpm ota` desde `main`; después repetir los pasos 10 y 11 del smoke y el visual de #259 en el teléfono. Luego retomar el smoke #222 donde quedó (pasos 12 y 13 restantes) y la limpieza de datos de prueba. Sigue sin trackear `.taskmaster/docs/exploraciones/043-ponytail-por-fase-y-techo-con-propuesta.md` (borrador de `/tm-explore`, decisión pendiente).
+
+**Fricción del lote que ya quedó en memoria:** `pnpm` sobre un `node_modules` enlazado por symlink en un worktree intenta reinstalar y, si lo logra, deja `virtualStoreDir` apuntando al worktree y rompe `main` (fix: `.pnpm`); los agentes deben usar `node_modules/.bin/*` y no tocar `tasks.json` (uno lo hizo igual: dos bloques duplicados en #255, limpiados).
 
 ## Hoy (2026-09-03) — #70: graphify medido y acotado
 Abraham preguntó si la tarea 70 (grafo AST) aportaba frente a la wiki. Se construyó el grafo real antes de decidir: 88 % de ruido por `mobile/ios`, SQL invisible sin `tree-sitter-sql`, y ninguna arista móvil → EF → RPC (son strings). La wiki sigue siendo la única fuente del flujo entre capas y del porqué; el grafo queda como herramienta de **footprint por símbolo** (`graphify affected`) para el analista y el skill `urbea-context`. Se descartaron los hooks anti-grep, versionar `graph.json` y el paso de cierre. Rama `tarea/70-graphify`. Ver [[0007-workflow-multiagente]] §graphify.

@@ -9,6 +9,9 @@ codigo:
   - supabase/migrations/20260827000001_fix_moderation_mirror_semantics.sql
   - supabase/migrations/20260827000002_fix_admin_notify_recipients.sql
   - supabase/migrations/20260828000002_property_reports_autosuspend.sql
+  - supabase/migrations/20260905300001_notificaciones_moderacion_con_motivo.sql
+  - supabase/tests/97_autosuspension_con_motivo_test.sql
+  - supabase/tests/98_solicitud_agente_con_solicitante_test.sql
   - supabase/migrations/20260828000004_resolve_property_reports_atomic.sql
   - supabase/tests/71_notify_admin_events_test.sql
   - supabase/tests/72_notify_moderation_mirrors_test.sql
@@ -32,7 +35,7 @@ actualizado: 2026-08-28
 - `admin_agent_application` (applications nace `pending`) → `/admin` ⏳ *mismo interino*
 - `admin_revision_pending` (revisión nace `pending` **y cada re-envío** `needs_changes→pending` — nunca deduplicado, a propósito) → `/admin/revisions`
 - `admin_report_new` (**1er y 2º** reportante distinto de una propiedad en la ventana de 24h) → `/admin/reports`
-- `admin_report_autosuspend` (el **3er** reportante distinto: la propiedad pasa a `suspended` en la misma transacción) → `/admin/reports`
+- `admin_report_autosuspend` (el **3er** reportante distinto: la propiedad pasa a `suspended` en la misma transacción) → `/admin/reports` · **#257 (2026-09-05):** este aviso y `property_suspended_by_reports` (al dueño) llevan `data.rejection_reason` con los MOTIVOS legibles en español (catálogo del enum, deduplicados, orden cronológico de 1ª aparición) — nunca `reason_text` ni quién reportó ([[privacidad-datos]]); `reason: 'multiple_reports'` se conserva. Era el ÚNICO tipo con motivo que usaba la clave `reason` en vez de `rejection_reason`, así que el card no lo pintaba.
 - `admin_rollup_unhealthy` (**#215**, 2026-09-02, DESPLEGADO) → `/admin`. Lo escribe `public.check_rollup_health()` (pg_cron `check_rollup_health_daily`, 0 10 UTC): (A) las últimas 3 corridas del rollup sin ninguna `succeeded`, o (B) un mes con crudo fuera de la ventana de 90 d sin fila en `ad_impressions_monthly`. Dedupe por `(user_id, type, data->>'anchor')` (índice propio: `related_entity_id` va NULL y NULL nunca colisiona) — un aviso por día mientras el job siga caído, uno por mes congelado para siempre. Gotcha: `cron.job_run_details` tiene RLS por `username` y `postgres` no es superusuario → solo lo ve por ser security definer con owner postgres.
 
   Los dos últimos (220.2) nacen del mismo trigger `AFTER INSERT` en `property_reports`, comparten el guard «nunca el actor» (un admin que reporta no recibe el aviso de SU reporte, sí los ajenos) y **no escriben `admin_actions`**: no hay actor humano, y `admin_actions.admin_id` es NOT NULL. Un 4º reporte sobre una propiedad ya `suspended` es no-op total: se persiste como auditoría y no re-notifica.
@@ -42,6 +45,7 @@ actualizado: 2026-08-28
 - `ad_{approved,rejected,paused}` → miembros ACTIVOS owner/admin de la agencia → `/ads`. ⚠️ `ad_approved` **solo desde `pending_review`**: un resume administrativo (`paused→active`) NO se espeja — un resume no es una resolución (223.1). Un type `ad_resumed` es la opción de fase 2 si algún día se quiere avisar.
 - `agency_{approved,rejected}` → solicitante (`created_by_user_id`; `active↔suspended` NO es resolución, no espeja) → `/profile` · **#234**: `agency_rejected` lleva el motivo en `data.rejection_reason` **y en el body** (« Motivo: …», guard `~ '\S'`) porque `NotificationCard` solo pinta title/body; `agencies.rejection_reason` lo persiste (aprobar lo limpia). **#237** alineó los otros tres espejos (`ad_rejected`, `property_revision_rejected`, `agent_application_rejected`) con esa misma forma.
 - `agent_application_{approved,rejected}` → solicitante, `rejection_reason` en rejected → `/profile` · **#237**: el motivo va en el body además de en `data`
+- `admin_agent_application` → admins · **#258 (2026-09-05):** body «<nombre público> solicitó volverse agente independiente | bajo inmobiliaria» (antes exponía el literal inglés del enum y no decía quién) + `data.rejection_reason = new.reason` para que el card pinte el motivo del solicitante; `application_type` se conserva; nombre de `agent_public_profiles`, nunca el email.
 - `lead_unmanaged` (**#203**, 2026-09-02) → owner/admin ACTIVOS de la agencia donde el agente del lead está `suspended` (nunca el propio agente — excluido por `user_id`, no por rol: un owner activo puede arrastrar filas `suspended` propias) → `/crm`. Trigger AFTER INSERT en `leads` con `WHEN (new.agency_id is not null)`; ancla `(user_id, related_entity_id, type)`.
 - `properties_reassigned` (**#203**) → el miembro que recibe el inventario de `reassign_member_properties_atomic` → `/profile/my-listings`; SIN ancla a propósito (cada reasignación es un hecho distinto con su conteo).
 - `property_suspended_by_reports` → `owner_user_id` de la propiedad auto-suspendida, `data.reason='multiple_reports'` → `/profile/my-listings` (220.2; llega aunque no exista ni un admin vivo — la suspensión y su espejo no dependen del fan-out)
