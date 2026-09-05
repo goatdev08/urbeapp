@@ -43,7 +43,7 @@
  * admin para cualquier no-admin) devolvía error PGRST116 y tumbaba la pantalla
  * entera — por eso el perfil público de Vladimir salía vacío pese a que su
  * identidad SÍ estaba disponible en la vista. Ahora users es fail-soft
- * (`maybeSingle`): sin fila, bio/phone/member_since/agency quedan en null y el
+ * (`maybeSingle`): sin fila, bio/member_since/agency quedan en null y el
  * nombre y la foto siguen saliendo de agent_public_profiles. Solo cuando NI
  * users NI la vista traen nada se declara «Agente no encontrado».
  */
@@ -281,7 +281,7 @@ describe('useAgentProfile', () => {
 
   // ── EC-5: users invisible por RLS no tumba la pantalla (#250) ─────────────
 
-  it('(EC-5) users_invisible_por_rls_no_tumba_la_pantalla: sin fila de users (publicador admin visto por un no-admin), el perfil muestra nombre y foto de la vista y bio/phone/agencia en null', async () => {
+  it('(EC-5) users_invisible_por_rls_no_tumba_la_pantalla: sin fila de users (publicador admin visto por un no-admin), el perfil muestra nombre y foto de la vista y bio/agencia en null', async () => {
     mock_supabase_holder.client = make_supabase_mock({
       user_result: { data: null, error: null },
     });
@@ -296,7 +296,10 @@ describe('useAgentProfile', () => {
       'https://storage.supabase.co/profile-photos/carlos.jpg'
     );
     expect(result.current.data?.bio).toBeNull();
-    expect(result.current.data?.phone).toBeNull();
+    // #255: `phone` salió de AgentProfile (menos exposición — users.phone ya
+    // no se lee en este hook). `has_phone` vive en la vista, no en `users`,
+    // así que esta fila (users invisible) es ortogonal a él; se cubre en
+    // useAgentProfile.has_phone.test.ts (EC-HP1/EC-HP2), no aquí.
     expect(result.current.data?.agency_name).toBeNull();
   });
 

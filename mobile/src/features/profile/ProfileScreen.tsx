@@ -319,6 +319,7 @@ export function ProfileScreen({
           is_own_profile={is_own_profile}
           on_edit_profile={handle_edit_profile}
           on_saved={handle_saved}
+          agent_user_id={agent_id}
         />
 
         {/* Grilla de propiedades */}

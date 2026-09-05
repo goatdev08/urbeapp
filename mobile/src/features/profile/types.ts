@@ -109,10 +109,16 @@ export interface AgentProfile {
   /** Biografía corta — de users.bio (null hasta que se implemente edición). */
   bio: UserRow['bio'];
   /**
-   * Teléfono del agente (users.phone) — alimenta el botón "Contactar por
-   * WhatsApp" del perfil AJENO (180.2). null → el botón no se pinta.
+   * Derivado (vista `agent_public_profiles`, migración 20260905200003) —
+   * true si el publicador tiene teléfono capturado. Alimenta el botón
+   * "Contactar por WhatsApp" del perfil AJENO (180.2, 255): decide SIN
+   * necesitar `users.phone` crudo, así que sobrevive a que RLS oculte la
+   * fila de `users` (#250, caso Vladimir). El número real se resuelve
+   * server-side, al pulsar, vía `whatsapp_phone_for_profile` (RPC, #255) —
+   * ver ProfileActions.tsx. `users.phone` ya NO se lee aquí (menos
+   * exposición: el crudo nunca sale del backend salvo por esa RPC).
    */
-  phone: UserRow['phone'];
+  has_phone: boolean;
   /**
    * Fecha de alta del usuario — usada como "member since". null cuando la fila
    * de `users` no es visible para quien mira el perfil (#250): la identidad

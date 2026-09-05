@@ -76,6 +76,15 @@ interface ProfileHeaderProps {
   on_edit_profile?: () => void;
   /** Perfil propio → botón "Guardados" de la fila de acciones. */
   on_saved?: () => void;
+  /**
+   * user_id del agente que se muestra (el mismo `agent_id` con el que
+   * ProfileScreen ya llamó a useAgentProfile). REQUERIDO — se reenvía tal
+   * cual a ProfileActions para resolver el teléfono vía RPC al pulsar
+   * "Contactar por WhatsApp" (#255); un default silencioso (`''`) mandaría
+   * un uuid inválido a la RPC en el flujo de perfil ajeno. No requiere una
+   * query nueva.
+   */
+  agent_user_id: string;
 }
 
 export function ProfileHeader({
@@ -85,8 +94,9 @@ export function ProfileHeader({
   is_own_profile = false,
   on_edit_profile,
   on_saved,
+  agent_user_id,
 }: ProfileHeaderProps) {
-  const { full_name, profile_photo_url, bio, phone, member_since, agency_name } = profile;
+  const { full_name, profile_photo_url, bio, has_phone, member_since, agency_name } = profile;
 
   const [img_error, set_img_error] = useState(false);
 
@@ -161,7 +171,8 @@ export function ProfileHeader({
         is_own_profile={is_own_profile}
         on_edit_profile={on_edit_profile ?? (() => {})}
         on_saved={on_saved ?? (() => {})}
-        phone={phone}
+        has_phone={has_phone}
+        agent_user_id={agent_user_id}
         agent_name={full_name}
       />
     </View>

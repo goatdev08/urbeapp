@@ -2134,6 +2134,10 @@ export type Database = {
           agency_member_id: string
         }[]
       }
+      whatsapp_phone_for_profile: {
+        Args: { p_user_id: string }
+        Returns: string
+      }
     }
     Enums: {
       ad_creative_status: "uploading" | "processing" | "ready" | "failed"

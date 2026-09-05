@@ -34,12 +34,20 @@ jest.mock('../ProfileActions', () => ({
   ProfileActions: () => null,
 }));
 
+// `agent_user_id` es requerido en ProfileHeaderProps (post-guardian, #255) —
+// ProfileActions está mockeado aquí y no le importa el valor, solo hace
+// falta satisfacer el tipo.
+const FIXTURE_AGENT_USER_ID = 'agente-uuid-fixture-254';
+
 function make_profile(overrides: Partial<AgentProfile> = {}): AgentProfile {
   return {
     full_name: 'Andrea Landeros',
     profile_photo_url: null,
     bio: null,
-    phone: null,
+    // #255: `phone` salió de AgentProfile (reemplazado por `has_phone`,
+    // derivado). ProfileActions está mockeado en esta suite (no le importa
+    // el valor), así que false es un fixture neutro.
+    has_phone: false,
     member_since: '2026-08-01T10:00:00Z',
     agency_name: null,
     ...overrides,
@@ -48,7 +56,9 @@ function make_profile(overrides: Partial<AgentProfile> = {}): AgentProfile {
 
 describe('ProfileHeader — nombre público (#254)', () => {
   it('(PH-1) nombre_presente_se_muestra_tal_cual: el nombre de «Editar perfil» gana, sea cual sea el rol', async () => {
-    const { getByText, queryByText } = await render(<ProfileHeader profile={make_profile()} />);
+    const { getByText, queryByText } = await render(
+      <ProfileHeader profile={make_profile()} agent_user_id={FIXTURE_AGENT_USER_ID} />,
+    );
 
     expect(getByText('Andrea Landeros')).toBeTruthy();
     expect(queryByText('Agente Urbea')).toBeNull();
@@ -56,7 +66,7 @@ describe('ProfileHeader — nombre público (#254)', () => {
 
   it('(PH-2) fallback_agente_urbea_solo_con_nombre_null: sin nombre (y solo entonces) cae al genérico', async () => {
     const { getByText } = await render(
-      <ProfileHeader profile={make_profile({ full_name: null })} />,
+      <ProfileHeader profile={make_profile({ full_name: null })} agent_user_id={FIXTURE_AGENT_USER_ID} />,
     );
 
     expect(getByText('Agente Urbea')).toBeTruthy();
@@ -64,7 +74,7 @@ describe('ProfileHeader — nombre público (#254)', () => {
 
   it('(PH-3) sin_fila_de_users_el_perfil_igual_pinta_el_nombre: member_since null (users invisible por RLS, #250) no rompe la cabecera', async () => {
     const { getByText, queryByText } = await render(
-      <ProfileHeader profile={make_profile({ member_since: null })} />,
+      <ProfileHeader profile={make_profile({ member_since: null })} agent_user_id={FIXTURE_AGENT_USER_ID} />,
     );
 
     expect(getByText('Andrea Landeros')).toBeTruthy();
