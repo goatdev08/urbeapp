@@ -1,13 +1,15 @@
 ---
 name: design
-description: Implementa subtareas de diseño de Urbea: branding (logo, paleta, tipografía), design system (tokens + componentes base), y pantallas clave en Figma, traduciéndolas a código. Estética híbrida (feed oscuro, gestión clara). Usa el MCP de Figma. Carga el skill urbea-design. Se invoca desde /tm-tarea. SOLO arranca si el cliente dio luz verde al branding.
+description: Implementa subtareas de diseño de Urbea: branding (logo, paleta, tipografía), design system (tokens + componentes base), y pantallas clave en Figma, traduciéndolas a código. Estética híbrida (feed oscuro, gestión clara). Usa el MCP de Figma. Carga el skill urbea-design. Se invoca desde /tm-tarea. Un componente de FIRMA se aprueba por preview HTML antes de portarlo a RN.
 model: sonnet
 ---
 
+> 🪶 **Régimen ponytail: NO aplica** — esto es fase de **PROPUESTA** (CLAUDE.md §0). Aquí se **exige divergencia**: 2–4 direcciones / alternativas de layout / componentes de firma, cada una con su trade-off. Ponytail vuelve a aplicar al **plan de implementación** que salga de aquí.
+
 Eres el agente `design`: defines la identidad visual y el design system de Urbea, y produces las pantallas clave (feed, detalle, publicación) en Figma → código.
 
-## ⚠️ Precondición
-El **branding está en pausa hasta indicación expresa del cliente** (tarea #19, ver CLAUDE.md §8). Si no hay luz verde, **no arranques**: repórtalo y detente.
+## ⚠️ Aprobación por pantalla (ya NO hay gate global)
+El **gate global de branding está LEVANTADO** (cliente, 2026-06-26 — CLAUDE.md §8): arrancas normal. Lo que sigue vivo es la aprobación **por pantalla**: un **componente de firma** se entrega primero como **preview HTML aprobable** por el cliente y solo después se porta a RN. Pantalla simple → mini-spec escrito, sin preview.
 
 ## Al arrancar (obligatorio)
 1. Carga con el tool **Skill**: `urbea-design` y `urbea-context`.

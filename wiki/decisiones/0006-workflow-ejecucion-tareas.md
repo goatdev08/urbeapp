@@ -10,7 +10,7 @@ fecha: 2026-06-17
 El desarrollo (IA-first) necesita un proceso repetible para **ejecutar tareas, verificar lo hecho y dejar trazabilidad legible entre sesiones**, sin duplicar registros.
 
 ## Decisión
-1. **Taskmaster es el registro vivo de la ejecución.** Mientras se trabaja una tarea, se documenta el progreso **en sus subtareas** con `task-master update-subtask --id=<id>.<n> --prompt="…"` (notas con timestamp). Se releen con `task-master show`.
+1. **Taskmaster es el registro vivo de la ejecución.** Mientras se trabaja una tarea, se documenta el progreso **en sus subtareas** con `node .taskmaster/scripts/tm-log.mjs --id=<id>.<n> --file=<ruta>` (notas con timestamp). Se releen con `task-master show`. ⚠️ **`update-subtask` quedó PROHIBIDO el 2026-08-18** (CLAUDE.md §4): parafrasea con IA — llegó a **inventar** un resultado de verificación — y re-tipa los `task.id`.
 2. **Loop por tarea** definido en `CLAUDE.md` §5: seleccionar → contexto (vault) → in-progress → *(por subtarea: plan → implementar → documentar → verificar → done)* → cerrar tarea → **ingest al vault**.
 3. **Verificación obligatoria** antes de cerrar una subtarea: `pnpm tsc --noEmit`, `pnpm lint`, tests/app según aplique.
 4. **PNPM siempre** como gestor de paquetes y runner (nunca npm/yarn); el dev server se levanta con pnpm.

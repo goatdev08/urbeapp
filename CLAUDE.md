@@ -5,10 +5,31 @@ Decisiones de fondo: `wiki/decisiones/0003` (vault), `0004` (Taskmaster), `0006`
 
 ## 0. Principios y Fundamentos
 **Perfeccionamos el flujo de trabajo; NO acumulamos código.**
-- Antes de escribir código nuevo, consulta `wiki/codebase/mapa-codebase.md` — ¿ya existe algo reutilizable? **Reusar > reescribir.**
+- Antes de escribir código nuevo, consulta `wiki/codebase/mapa-codebase.md` — ¿ya existe algo reutilizable? **Reusar > reescribir** — *con reserva*: si lo que existe es deuda, se señala (regla abajo).
 - Cada tarea cierra con una mini-retro: ¿se puede hacer el flujo más eficiente? Si sí, mejora *este archivo*, el vault o un skill — **no** agregues código de app.
 - Métrica de éxito: tareas cerradas con **mínimo código nuevo** y máxima claridad. No LOC.
-- 🪶 **Skill `ponytail` (modo `full` por defecto) está activo al escribir código.** Es el reflejo que hace cumplir este principio: la escalera YAGNI → ¿ya existe? → stdlib/Expo/Supabase nativo → dependencia ya instalada → una línea → mínimo que funciona. Marca simplificaciones deliberadas con un comentario `// ponytail:` (intención + techo conocido). Companions: `/ponytail-review` (revisar un diff por sobre-ingeniería), `/ponytail-audit` (escanear el repo), `/ponytail-debt` (cosechar los `ponytail:` pendientes). No aplica a validación en fronteras de confianza, manejo de errores, RLS/seguridad ni a lo que el usuario pida explícito.
+- 🪶 **Skill `ponytail` — su régimen depende de la FASE (tabla abajo).** Es el reflejo que hace cumplir este principio: la escalera YAGNI → ¿ya existe? → stdlib/Expo/Supabase nativo → dependencia ya instalada → una línea → mínimo que funciona. Marca simplificaciones deliberadas con un comentario `// ponytail:` (intención + techo conocido). Companions: `/ponytail-review` (revisar un diff por sobre-ingeniería), `/ponytail-audit` (escanear el repo), `/ponytail-debt` (cosechar los `ponytail:` pendientes). No aplica a validación en fronteras de confianza, manejo de errores, RLS/seguridad ni a lo que el usuario pida explícito.
+
+### ⭐ Régimen de ponytail POR FASE (regla determinista; el porqué en [[0011-ponytail-y-fases-del-workflow]])
+| Fase | Quién la corre | Régimen |
+|---|---|---|
+| **Propuesta** — explorar, diseñar, lluvia de ideas, previews | `/tm-explore`, agentes `tm-explore` y `design`, skill `urbea-design` | **NO aplica.** Se **exige divergencia**: **2–4 direcciones** / alternativas de layout / componentes de firma, cada una con su trade-off. Ponytail vuelve a aplicar al **plan de implementación** que sale de la fase. |
+| **Ejecución** — planear subtareas, codear, verificar | `/tm-plan`, `/tm-tarea`, agentes `mobile` y `supabase` | **`full`** — la escalera enforced, el diff más corto que funcione. |
+| **Override** | cualquiera | **El prompt explícito de Abraham gana siempre** (ya es regla del skill: lo pedido explícito no se simplifica). |
+
+⚠️ El régimen se **declara en el archivo de cada fase**: un `/ponytail lite` tecleado en el chat **NO llega a un subagente** — arranca en contexto limpio con solo su `.claude/agents/<x>.md` + este archivo.
+
+### ⭐ Explicar el trade-off (excepción al tope de salida de ponytail)
+Ponytail acota la explicación a `[código] → skipped: X, add when Y`. Ese tope **se levanta** cuando la simplificación cae en uno de estos **4 disparadores** (enumerados a propósito: lo que se juzga, deriva):
+**(a)** toca un **contrato publicado** (§0.5.2 — EF, RPC, vista o columna que los builds instalados ya llaman) · **(b)** cae en **ruta crítica por path** (§5) · **(c)** tiene un **techo alcanzable con los datos reales** de producción (§0.5.1) · **(d)** **descarta una alternativa que Abraham nombró**.
+**Destino:** la explicación **completa** va a la bitácora de la subtarea (`tm-log.mjs` — es lo que se relee en sesiones futuras) y un **resumen de 2–3 líneas** a la respuesta. Fuera de los 4 disparadores sigue el patrón corto.
+
+### ⭐ Reuso con reserva (excepción al rung 2 de la escalera)
+El rung 2 dice "¿ya existe? reúsalo" — y cuando lo que existe es **deuda** (peor que lo que escribirías hoy), reusarlo a ciegas la congela. Umbral **derivable**, no juicio:
+- **Cabe en el footprint de la subtarea y NO toca contrato publicado ni migraciones** → **propón** el refactor; decide Abraham. Formato: `REUSO_CON_RESERVA: {patrón reusado} · {por qué es peor que lo que se escribiría hoy} · {cabe|no cabe}`.
+- **No cabe** → reusa igual, marca `// ponytail: deuda — <por qué>, refactor en #<id>` y abre **derivada `hardening(<origen>)`** con las 4 marcas del §5.
+- **Cupo: máx 2 propuestas por tarea** (de la 3ª en adelante solo se **nombran** en la bitácora) · **el agente propone, NUNCA decide**.
+El umbral excluye contrato publicado y migraciones por §0.5.2/§0.5.3: refactorizar a media tarea código que ya sirve a los builds instalados es justo lo que producción viva frena.
 
 ## 0.5 🔴 PRODUCCIÓN VIVA (desde 2026-08-10) — aplica a TODOS los agentes
 **Hay personas reales conectadas probando la app y la base se puebla poco a poco. Todo cambio se piensa PARA PRODUCCIÓN — ya no existe el "es solo la demo".** Decisión: `wiki/decisiones/0009-produccion-viva.md`. Reglas derivadas (checklist en cada plan y cada cierre):
@@ -111,7 +132,11 @@ La criticidad **no se juzga**: se **deriva** del footprint de la subtarea. El an
 - El vault es **síntesis densa**, no espejo de los docs ni índice escueto.
 
 ## 8. Branding
-**Gate LEVANTADO** (cliente, 2026-06-26). ⭐ **Referencia visual canónica: `urbea-identidad-visual.html` (raíz del repo)** — tokens + componentes de firma + mockups de las ~13 pantallas de la demo; **cada pantalla del mockup = techo de alcance de su tarea** (no agregues UI ausente del mockup; lo que falte = trabajo nuevo vía `add-task`). Ábrelo antes de diseñar cualquier pantalla. Método: **bajo demanda por pantalla**, diseñar antes de implementar escalado por complejidad — simple → mini-spec escrito; componente de **firma** → preview HTML aprobable → portar a RN (ReactBits/galerías web = referencia, NO import; recrear con primitivas RN). El design system (`mobile/src/theme/theme.ts`) **crece orgánicamente**: lo sembró la tarea #16. Identidad: Salvia `#5A8A5E` / Arcilla `#9A7150` / gestión claro `#F6F2EB` / feed oscuro `#17140F`; **Space Grotesk** (display) + **Hanken Grotesk** (UI) — la del kit `003-kit`, NO Fraunces. Ver [[design-system]].
+**Gate LEVANTADO** (cliente, 2026-06-26). ⭐ **Referencia visual canónica: `urbea-identidad-visual.html` (raíz del repo)** — tokens + componentes de firma + mockups de las ~13 pantallas de la demo; **cada pantalla del mockup = techo de alcance de su tarea**: no *implementes* UI ausente del mockup — pero **tampoco la recortes en silencio, propónla** (regla abajo). Ábrelo antes de diseñar cualquier pantalla. Método: **bajo demanda por pantalla**, diseñar antes de implementar escalado por complejidad — simple → mini-spec escrito; componente de **firma** → preview HTML aprobable → portar a RN (ReactBits/galerías web = referencia, NO import; recrear con primitivas RN). El design system (`mobile/src/theme/theme.ts`) **crece orgánicamente**: lo sembró la tarea #16. Identidad: Salvia `#5A8A5E` / Arcilla `#9A7150` / gestión claro `#F6F2EB` / feed oscuro `#17140F`; **Space Grotesk** (display) + **Hanken Grotesk** (UI) — la del kit `003-kit`, NO Fraunces. Ver [[design-system]].
+
+⭐ **Techo CON PROPUESTA, no techo mudo.** Si al explorar, planear o implementar una pantalla aparece UI o una interacción que el mockup **no dibuja** y la pantalla necesita, **se propone**; nunca se implementa de más ni se recorta en silencio:
+`UI_FUERA_DEL_MOCKUP: {qué falta} · {por qué la pantalla lo necesita} · {costo XS|S|M}` y **siempre las 2 opciones** → **(1) en conjunto:** incluirlo en esta tarea, diciendo qué implicaría · **(2) default:** derivada `producto(<origen>)` con título y descripción **ya redactados** (se escribe directo en `tasks.json`; `add-task` está roto, §4), con las 4 marcas del §5.
+Invariantes: **el agente propone, NUNCA decide** · **default conservador = derivada** (§0.5.3: todo lo mergeado es candidato a release por OTA a testers reales) · **cupo máx 2 propuestas por tarea, compartido con `REUSO_CON_RESERVA` (§0)**; de la 3ª en adelante solo se **nombran** en la bitácora.
 
 ⭐ **Dos referencias canónicas, roles distintos (tarea #26):**
 - `urbea-identidad-visual.html` = techo del **lenguaje visual** → color, tipografía, componentes de firma, mockups de pantalla.

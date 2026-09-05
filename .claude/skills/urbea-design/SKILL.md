@@ -3,9 +3,11 @@ name: urbea-design
 description: Sistema de diseño de Urbea — branding, design tokens, componentes base y pantallas clave en Figma → código. Estética híbrida (feed oscuro inmersivo, gestión clara). Usar al definir identidad visual, tokens, componentes o pantallas. Cubre el flujo con el MCP de Figma y el naming. Disparar ante "branding", "diseño", "design system", "tokens", "componente", "figma", "tema", "paleta".
 ---
 
+> 🪶 **Régimen ponytail: NO aplica** — esto es fase de **PROPUESTA** (CLAUDE.md §0). Aquí se **exige divergencia**: 2–4 direcciones / alternativas de layout / componentes de firma, cada una con su trade-off. Ponytail vuelve a aplicar al **plan de implementación** que salga de aquí.
+
 # urbea-design — sistema de diseño
 
-⚠️ **Branding en pausa** hasta luz verde del cliente (`CLAUDE.md` §8). No definir identidad sin aprobación.
+⚠️ **Gate global LEVANTADO** (2026-06-26). Lo vivo es la **aprobación por pantalla**: componente de **firma** → preview HTML aprobable por el cliente antes de portar a RN (`CLAUDE.md` §8).
 
 ## Estética (decidida)
 - **Híbrida**: feed de video **oscuro** e inmersivo (tipo TikTok/Reels); pantallas de gestión (publicar, CRM, perfil, admin) **claras**.
