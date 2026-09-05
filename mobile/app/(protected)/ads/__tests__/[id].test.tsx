@@ -12,7 +12,7 @@
  * propios tests y son componentes puros, montarlos de verdad aquí es lo que
  * prueba la integración real de props.
  *
- * COMPACTO — 6 casos:
+ * COMPACTO — 7 casos:
  *
  * - (EC-D1) ad_id ausente/cargando el detalle → skeleton (testID), sin
  *   contenido de estadísticas.
@@ -27,6 +27,10 @@
  * - (EC-D6) éxito: los 3 tiles formatean totals con toLocaleString, el
  *   segmentado ofrece Hoy/30 días/Máximo, y tocar un tile cambia la métrica
  *   resaltada (el hint del gráfico refleja la métrica activa).
+ * - (EC-D7, 259.3) 🔴 cambio de periodo CON datos previos en pantalla → el
+ *   skeleton de estadísticas (testID) NUNCA reaparece; el contenido sigue
+ *   pintando el último `stats` no-nulo mientras el nuevo periodo carga (el
+ *   componente lo conserva — useAdStats sigue mockeado, no sabe de "antes").
  *
  * GOTCHA RNTL v14: `render`/`act` con `await` (sin eso el resultado queda
  * `undefined` — ver memoria rntl14_renderhook_async).
@@ -258,5 +262,34 @@ describe('EC-D6: exito_pinta_tiles_formateados_y_el_tap_cambia_la_metrica_resalt
     });
 
     expect(screen.getByText(/Vistas completas · toca un tile/)).toBeTruthy();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// (EC-D7, 259.3) Cambio de periodo con datos previos → SIN skeleton
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('EC-D7: cambio_de_periodo_con_datos_previos_no_vuelve_a_pintar_el_skeleton', () => {
+  it('30 días exitoso, luego tap en "Máximo" (mock vuelve a is_loading=true) → el skeleton de estadísticas NUNCA reaparece y el dato viejo sigue en pantalla', async () => {
+    const STATS_BY_PERIOD: Record<string, UseAdStatsState> = {
+      last30: ad_stats({ totals: { impressions: 500, views: 120, cta_taps: 9 } }),
+      max: ad_stats({ is_loading: true }),
+    };
+    mock_use_ad_stats.mockImplementation((_ad_id, period) => STATS_BY_PERIOD[period] ?? ad_stats({}));
+
+    await render_screen();
+
+    expect(screen.getByText('500')).toBeTruthy();
+    expect(screen.queryByTestId('ad-detail-skeleton')).toBeNull();
+
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText('Máximo'));
+    });
+
+    // El cambio de periodo dispara is_loading=true de nuevo (mock), pero
+    // como YA había datos del periodo anterior, el screen los conserva:
+    // ni el skeleton reaparece, ni el tile queda vacío/en blanco.
+    expect(screen.queryByTestId('ad-detail-skeleton')).toBeNull();
+    expect(screen.getByText('500')).toBeTruthy();
   });
 });
