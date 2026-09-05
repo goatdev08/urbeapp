@@ -402,10 +402,9 @@ export default function AdsScreen() {
           ...(can_advertise && {
             // 259.2: recuadro de esquinas redondeadas alrededor del ícono —
             // misma FIGURA que el recuadro del item activo de GlassTabBar
-            // (container_style borderRadius: glass.pill_radius, GlassTabBar.tsx:478
-            // = mitad de la altura real de esa pill, theme.ts:97) reproporcionada
-            // al tamaño de este botón (radio = mitad del lado, ver
-            // header_plus_btn abajo). Sin componente nuevo en el design system.
+            // (GlassTabBar.tsx:478, theme.ts:97) pero en versión CUADRADA:
+            // esquinas suaves (radii.r_12) sobre un lado de 36pt, ver
+            // header_plus_btn abajo. Sin componente nuevo en el design system.
             headerRight: () => (
               <Pressable
                 onPress={() => router.push('/ads/new/step1')}
@@ -513,13 +512,14 @@ const styles = StyleSheet.create({
   header_icon_btn_pressed: {
     opacity: 0.6,
   },
-  // 259.2 — botón "+" (headerRight): recuadro de esquinas redondeadas,
-  // misma figura que GlassTabBar (radio = mitad del lado, ver docblock del
-  // headerRight arriba), reproporcionado a ~36pt de lado.
+  // 259.2 — botón "+" (headerRight): CUADRADO de esquinas redondeadas
+  // (petición literal de Abraham, smoke paso 13). Con radio = mitad del lado
+  // saldría un círculo, no un cuadrado; r_12 sobre 36pt da la esquina suave
+  // de la pill del tab bar sin perder la figura cuadrada.
   header_plus_btn: {
     width: 36,
     height: 36,
-    borderRadius: 18,
+    borderRadius: radii.r_12,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.primary_tint,
