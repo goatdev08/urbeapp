@@ -68,10 +68,15 @@
 -- Boundary / error:
 --   g) sin JWT (anon, sin grant) -> permiso denegado (42501) antes de
 --      ejecutar el cuerpo — nunca obtiene el número.
+--   h) role=authenticated (SÍ tiene EXECUTE) pero SIN request.jwt.claims
+--      (auth.uid() is null) -> NULL. Cubre la rama defensiva
+--      `if auth.uid() is null then return null` del cuerpo — g solo prueba
+--      el bloqueo a nivel ACL de `anon`; un `authenticated` sin sesión
+--      válida nunca pasa por ahí (post-guardian, #255).
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(9);
+select plan(10);
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- GREEN (tarea #255): el stub transaccional de la fase RED ya se quitó de
@@ -79,7 +84,8 @@ select plan(9);
 -- supabase/migrations/20260905300002_whatsapp_phone_for_profile.sql (mismos
 -- grants que fijaba el stub, ahora declarados ahí) y ya está aplicada al
 -- momento de correr este archivo (las migraciones corren antes que los
--- tests). Los 9 asserts de abajo corren contra esa función real.
+-- tests). Los 10 asserts de abajo corren contra esa función real (el h,
+-- post-guardian, se sumó tras el PASS inicial).
 -- ════════════════════════════════════════════════════════════════════════════
 
 -- ── Impersonación (mismo patrón que 02/08/41/96_*) ──────────────────────────
@@ -287,6 +293,37 @@ select throws_ok(
   '42501',
   null,
   'g_anon_sin_grant_recibe_permiso_denegado_nunca_obtiene_el_numero'
+);
+reset role;
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- h) role=authenticated (SÍ tiene EXECUTE), pero SIN request.jwt.claims —
+--    auth.uid() resuelve NULL -> la rama defensiva del cuerpo debe devolver
+--    NULL (no truena, no cae a ninguna otra rama). A diferencia de g (anon,
+--    bloqueado por el REVOKE antes de ejecutar el cuerpo), aquí el rol SÍ
+--    puede ejecutar la función — lo que se prueba es que el CUERPO se
+--    defiende solo, sin depender del ACL, cuando el caller no trae una
+--    sesión válida. `reset request.jwt.claims` limpia cualquier residuo de
+--    los `pg_temp.act_as(...)` anteriores (nunca confiar en que quedó vacío).
+-- ════════════════════════════════════════════════════════════════════════════
+set local role authenticated;
+reset request.jwt.claims;
+select lives_ok(
+  $$
+  do $do$
+  declare
+    v_phone text;
+  begin
+    select public.whatsapp_phone_for_profile('00000000-0000-0000-0255-000000000002'::uuid)
+      into v_phone;
+    if v_phone is not null then
+      raise exception 'un caller authenticated SIN request.jwt.claims (auth.uid() '
+        'is null) debía obtener NULL; obtuvo %', v_phone;
+    end if;
+  end
+  $do$;
+  $$,
+  'h_authenticated_sin_jwt_claims_devuelve_null'
 );
 reset role;
 

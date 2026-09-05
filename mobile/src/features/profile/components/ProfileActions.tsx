@@ -117,17 +117,28 @@ export function ProfileActions({
     try {
       // El número crudo se resuelve AQUÍ, server-side — la RPC vuelve a
       // decidir (agent/admin, vivo, con teléfono) sin confiar en `has_phone`
-      // como autorización. `data: null` (destino ya no califica, o error) →
-      // fail-soft: no abre nada, no truena.
-      const { data: resolved_phone } = await supabase.rpc('whatsapp_phone_for_profile', {
-        p_user_id: agent_user_id,
-      });
+      // como autorización.
+      const { data: resolved_phone, error } = await supabase.rpc(
+        'whatsapp_phone_for_profile',
+        { p_user_id: agent_user_id }
+      );
+      if (error) {
+        // Fail-soft: no abre nada, no truena. Sin PII en el log — nunca
+        // agent_user_id ni el teléfono, solo el código del error.
+        console.warn('[ProfileActions] whatsapp_phone_for_profile falló', error.code ?? 'rejected');
+        return;
+      }
       if (resolved_phone) {
         open_whatsapp_text(
           resolved_phone,
           `${greeting}, vi tu perfil en Urbea y quiero contactarte.`
         );
       }
+    } catch (err) {
+      // La RPC rechazó (red caída, etc.) en vez de resolver con {error} —
+      // mismo trato: sin PII, no truena, no abre nada.
+      const code = (err as { code?: string } | null)?.code ?? 'rejected';
+      console.warn('[ProfileActions] whatsapp_phone_for_profile falló', code);
     } finally {
       set_resolving(false);
     }

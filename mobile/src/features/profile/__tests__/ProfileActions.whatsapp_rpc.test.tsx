@@ -32,7 +32,7 @@
  * (reemplazado por `has_phone` + `agent_user_id` — ver ProfileActions.tsx).
  * `build_props` ya no lo incluye; el resto de los asserts (a-d) no cambió.
  *
- * EDGE CASES CUBIERTOS (4 casos, del briefing de la tarea 255):
+ * EDGE CASES CUBIERTOS (6 casos, del briefing de la tarea 255 + 2 post-guardian):
  *
  * ### Happy path
  * - (a) has_phone_true_pese_a_phone_prop_null_pinta_el_boton
@@ -40,6 +40,11 @@
  *
  * ### Ramas de reglas no obvias (contrato de la RPC — fail-soft)
  * - (c) rpc_devuelve_data_null_no_abre_whatsapp
+ * - (e) rpc_devuelve_error_no_abre_whatsapp (post-guardian): { data: null, error }
+ *   -> no abre, no truena.
+ * - (f) rpc_rechaza_no_truena_ni_abre_whatsapp (post-guardian): la promesa de
+ *   rpc() rechaza (network/etc.) -> capturado por try/catch, sin unhandled
+ *   rejection, no abre nada.
  *
  * ### Boundary
  * - (d) has_phone_false_no_pinta_el_boton
@@ -161,5 +166,44 @@ describe('ProfileActions — WhatsApp por RPC (has_phone, #255)', () => {
     );
 
     expect(queryByLabelText('Contactar por WhatsApp')).toBeNull();
+  });
+
+  it('(e) rpc_devuelve_error_no_abre_whatsapp: si la RPC responde { data: null, error }, NO se llama open_whatsapp_text (y no truena)', async () => {
+    const warn_spy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    set_supabase_rpc_result({ data: null, error: { code: 'PGRST301', message: 'boom' } });
+
+    const { queryByLabelText } = await render(
+      <ProfileActions {...build_props({ has_phone: true })} />
+    );
+
+    const button = queryByLabelText('Contactar por WhatsApp');
+    expect(button).not.toBeNull();
+    await fireEvent.press(button!);
+
+    expect(mock_open_whatsapp_text).not.toHaveBeenCalled();
+
+    warn_spy.mockRestore();
+  });
+
+  it('(f) rpc_rechaza_no_truena_ni_abre_whatsapp: si la promesa de rpc() rechaza (red caída/etc.), no truena (sin unhandled rejection) y no abre nada', async () => {
+    const warn_spy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    // Doble sensible al binding (candado #233.3) igual que set_supabase_rpc_result,
+    // pero con rpc() rechazando en vez de resolviendo.
+    const { client } = make_binding_sensitive_supabase_mock({
+      rpc: () => Promise.reject(new Error('network down')),
+    });
+    mock_supabase_holder.client = client;
+
+    const { queryByLabelText } = await render(
+      <ProfileActions {...build_props({ has_phone: true })} />
+    );
+
+    const button = queryByLabelText('Contactar por WhatsApp');
+    expect(button).not.toBeNull();
+    await fireEvent.press(button!);
+
+    expect(mock_open_whatsapp_text).not.toHaveBeenCalled();
+
+    warn_spy.mockRestore();
   });
 });
