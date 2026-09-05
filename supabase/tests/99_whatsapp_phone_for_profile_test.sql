@@ -74,29 +74,13 @@ begin;
 select plan(9);
 
 -- ════════════════════════════════════════════════════════════════════════════
--- 0) STUB TRANSACCIONAL — solo para esta fase RED (ver nota arriba). Firma y
---    grants ya fijados por el SEAM; el CUERPO (la decisión de qué teléfono
---    devolver) es lo que está bajo prueba y HOY siempre lanza.
+-- GREEN (tarea #255): el stub transaccional de la fase RED ya se quitó de
+-- aquí. La función real vive en
+-- supabase/migrations/20260905300002_whatsapp_phone_for_profile.sql (mismos
+-- grants que fijaba el stub, ahora declarados ahí) y ya está aplicada al
+-- momento de correr este archivo (las migraciones corren antes que los
+-- tests). Los 9 asserts de abajo corren contra esa función real.
 -- ════════════════════════════════════════════════════════════════════════════
-create function public.whatsapp_phone_for_profile(p_user_id uuid)
-returns text
-language plpgsql
-security definer
-set search_path = ''
-as $stub$
-begin
-  raise exception 'not_implemented';
-end;
-$stub$;
-
-comment on function public.whatsapp_phone_for_profile(uuid) is
-  'STUB TRANSACCIONAL de fase RED (tarea #255) — NUNCA migrar. Placeholder solo '
-  'para que las llamadas de este archivo fallen por excepción diagnóstica en vez '
-  'de "function does not exist". La migración GREEN real reemplaza esta función '
-  'por completo en supabase/migrations/.';
-
-revoke all on function public.whatsapp_phone_for_profile(uuid) from anon, public;
-grant execute on function public.whatsapp_phone_for_profile(uuid) to authenticated;
 
 -- ── Impersonación (mismo patrón que 02/08/41/96_*) ──────────────────────────
 create or replace function pg_temp.act_as(p_uid uuid, p_role text default 'authenticated')

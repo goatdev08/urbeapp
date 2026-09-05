@@ -28,8 +28,9 @@
  * el helper de deep-link (`@/features/property-detail/utils/whatsapp`).
  * NUNCA se mockea el propio ProfileActions ni su lógica de decisión.
  *
- * NO se toca ProfileActions.tsx ni types.ts (GREEN los agrega): los props
- * nuevos se pasan casteados localmente para no bloquear tsc en esta fase RED.
+ * NOTA GREEN (#255): `ProfileActionsProps.phone` se quitó del componente real
+ * (reemplazado por `has_phone` + `agent_user_id` — ver ProfileActions.tsx).
+ * `build_props` ya no lo incluye; el resto de los asserts (a-d) no cambió.
  *
  * EDGE CASES CUBIERTOS (4 casos, del briefing de la tarea 255):
  *
@@ -75,29 +76,17 @@ jest.mock('@/features/property-detail/utils/whatsapp', () => ({
 
 const AGENT_USER_ID = 'publicador-uuid-255-admin';
 
-/**
- * Props del contrato NUEVO (GREEN, tarea #255) — `has_phone`/`agent_user_id`
- * no existen todavía en `ProfileActionsProps` (types.ts sin tocar en esta
- * fase RED). Cast local para no bloquear tsc; en runtime React pasa
- * exactamente estos valores sin importar el tipo declarado.
- */
-type ProfileActionsPropsWithRpc = ProfileActionsProps & {
-  has_phone: boolean;
-  agent_user_id: string;
-};
-
-function build_props(overrides: Partial<ProfileActionsPropsWithRpc> = {}): ProfileActionsProps {
-  const props: ProfileActionsPropsWithRpc = {
+/** Props del contrato NUEVO (GREEN, tarea #255) — ya declaradas en ProfileActionsProps. */
+function build_props(overrides: Partial<ProfileActionsProps> = {}): ProfileActionsProps {
+  return {
     is_own_profile: false,
     on_edit_profile: jest.fn(),
     on_saved: jest.fn(),
-    phone: null,
     agent_name: 'Vladimir YEH',
     has_phone: true,
     agent_user_id: AGENT_USER_ID,
     ...overrides,
   };
-  return props as unknown as ProfileActionsProps;
 }
 
 /** Instala el cliente mock (doble sensible al binding) con la resolución de rpc dada. */
@@ -122,7 +111,7 @@ beforeEach(() => {
 describe('ProfileActions — WhatsApp por RPC (has_phone, #255)', () => {
   it('(a) has_phone_true_pese_a_phone_prop_null_pinta_el_boton: con has_phone=true y phone=null (caso Vladimir, #250) el botón "Contactar por WhatsApp" SÍ se renderiza', async () => {
     const { queryByLabelText } = await render(
-      <ProfileActions {...build_props({ has_phone: true, phone: null })} />
+      <ProfileActions {...build_props({ has_phone: true })} />
     );
 
     expect(queryByLabelText('Contactar por WhatsApp')).not.toBeNull();
@@ -132,7 +121,7 @@ describe('ProfileActions — WhatsApp por RPC (has_phone, #255)', () => {
     const rpc = set_supabase_rpc_result({ data: '+523312345678', error: null });
 
     const { queryByLabelText } = await render(
-      <ProfileActions {...build_props({ has_phone: true, phone: null })} />
+      <ProfileActions {...build_props({ has_phone: true })} />
     );
 
     // Assert previo explícito (en vez de `fireEvent.press(null!)`, que
@@ -156,7 +145,7 @@ describe('ProfileActions — WhatsApp por RPC (has_phone, #255)', () => {
     set_supabase_rpc_result({ data: null, error: null });
 
     const { queryByLabelText } = await render(
-      <ProfileActions {...build_props({ has_phone: true, phone: null })} />
+      <ProfileActions {...build_props({ has_phone: true })} />
     );
 
     const button = queryByLabelText('Contactar por WhatsApp');
@@ -168,7 +157,7 @@ describe('ProfileActions — WhatsApp por RPC (has_phone, #255)', () => {
 
   it('(d) has_phone_false_no_pinta_el_boton: con has_phone=false el botón NO se renderiza, aunque agent_user_id venga presente', async () => {
     const { queryByLabelText } = await render(
-      <ProfileActions {...build_props({ has_phone: false, phone: null })} />
+      <ProfileActions {...build_props({ has_phone: false })} />
     );
 
     expect(queryByLabelText('Contactar por WhatsApp')).toBeNull();

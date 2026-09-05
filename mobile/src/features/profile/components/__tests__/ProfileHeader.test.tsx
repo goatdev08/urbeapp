@@ -39,7 +39,10 @@ function make_profile(overrides: Partial<AgentProfile> = {}): AgentProfile {
     full_name: 'Andrea Landeros',
     profile_photo_url: null,
     bio: null,
-    phone: null,
+    // #255: `phone` salió de AgentProfile (reemplazado por `has_phone`,
+    // derivado). ProfileActions está mockeado en esta suite (no le importa
+    // el valor), así que false es un fixture neutro.
+    has_phone: false,
     member_since: '2026-08-01T10:00:00Z',
     agency_name: null,
     ...overrides,

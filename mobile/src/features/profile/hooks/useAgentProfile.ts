@@ -43,10 +43,15 @@ export interface UseAgentProfileState {
 // Tipos locales para los casts de columnas no generadas (migración 0015)
 // ---------------------------------------------------------------------------
 
-/** Forma de la fila de user_preferences relevante para el perfil. */
+/**
+ * Forma de la fila de agent_public_profiles relevante para el perfil.
+ * `has_phone` (migración 20260905200003, #255): derivado, no requiere leer
+ * users.phone crudo.
+ */
 type PrefsRow = {
   full_name: string | null;
   profile_photo_url: string | null;
+  has_phone: boolean;
 };
 
 // ---------------------------------------------------------------------------
@@ -81,9 +86,14 @@ export function useAgentProfile(agent_id: string): UseAgentProfileState {
         // (users.agency_id → agencies, y agencies.owner_user_id → users), así que
         // PostgREST exige nombrar la constraint del embed o falla con
         // "more than one relationship was found".
+        // #255: `phone` YA NO se pide aquí — el crudo de users.phone dejaba
+        // de servir para decidir el botón de WhatsApp en cuanto RLS oculta la
+        // fila (#250), y el perfil público ya no lo necesita para nada más.
+        // Menos exposición: ese teléfono ahora solo sale por
+        // whatsapp_phone_for_profile (RPC, server-side, al pulsar).
         const user_query = supabase
           .from('users')
-          .select('bio, phone, created_at, agencies!users_agency_id_fkey(name)')
+          .select('bio, created_at, agencies!users_agency_id_fkey(name)')
           .eq('id', agent_id)
           .maybeSingle();
 
@@ -91,10 +101,11 @@ export function useAgentProfile(agent_id: string): UseAgentProfileState {
         // Antes leía user_preferences directo y la RLS ("solo tu fila o admin")
         // devolvía 0 filas EN SILENCIO para perfiles ajenos — el nombre y la
         // foto de otros agentes jamás se mostraban. La vista brinca la RLS solo
-        // en estas 2 columnas (migración 20260810000001).
+        // en estas columnas (migración 20260810000001; has_phone sumado en
+        // 20260905200003, #255).
         const prefs_query = supabase
           .from('agent_public_profiles')
-          .select('full_name, profile_photo_url')
+          .select('full_name, profile_photo_url, has_phone')
           .eq('user_id', agent_id)
           .maybeSingle();
 
@@ -139,7 +150,9 @@ export function useAgentProfile(agent_id: string): UseAgentProfileState {
             full_name: prefs?.full_name ?? null,
             profile_photo_url: prefs?.profile_photo_url ?? null,
             bio: user_data?.bio ?? null,
-            phone: user_data?.phone ?? null,
+            // Fail-closed: sin fila de la vista (agente sin onboarding), no
+            // hay teléfono que ofrecer — mismo trato que full_name/foto null.
+            has_phone: prefs?.has_phone ?? false,
             member_since: user_data?.created_at ?? null,
             agency_name: raw_agency?.name ?? null,
           },
