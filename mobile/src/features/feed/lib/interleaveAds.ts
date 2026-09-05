@@ -96,19 +96,57 @@ export interface InterleaveAdsOptions {
    * índice 0 de esta llamada si ya está due.
    */
   skip_first_position: boolean;
+  /**
+   * 256: propiedades ya emitidas desde el último anuncio AL CERRAR la página
+   * ANTERIOR (el `since_last_ad` final que devuelve `interleave_ads_with_state`
+   * para esa página previa). Cuando viene presente, SUSTITUYE el arranque por
+   * defecto del contador interno (`skip_first_position ? 0 : every_n`) — SIN
+   * IMPORTAR `skip_first_position`. Es lo que hace que el invariante "nunca
+   * dos anuncios seguidos" se sostenga en la COSTURA entre páginas, no solo
+   * dentro de cada llamada: sin esto, una página que cierra con un anuncio
+   * (pasada de cierre, #247) y una continuación que arranca "due"
+   * (`skip_first_position:false`) podían servir dos anuncios consecutivos.
+   * `undefined` (el caso de siempre, primera página o caller que no rastrea
+   * estado) deja el comportamiento previo intacto.
+   */
+  since_last_ad?: number;
 }
 
 /**
  * Intercala `ads` dentro de `properties` respetando los 8 invariantes de la
  * subtarea 170.3 (ver bitácora de la subtarea para el detalle completo).
+ * Wrapper de `interleave_ads_with_state` (256) que descarta el `since_last_ad`
+ * final — se conserva por compatibilidad: ningún test/caller preexistente
+ * cambia de forma.
+ */
+export function interleave_ads(
+  properties: FeedPropertyWithUrl[],
+  ads: FeedAd[],
+  opts: InterleaveAdsOptions
+): FeedItem[] {
+  return interleave_ads_with_state(properties, ads, opts).items;
+}
+
+/**
+ * 256: MISMA lógica que `interleave_ads`, pero también devuelve el valor
+ * FINAL del contador `since_last_ad` al cerrar la página (propiedades
+ * emitidas desde el último anuncio; 0 si la página cerró con un anuncio en
+ * la pasada de cierre de #247). El caller (`useFeedProperties.ts`) acumula
+ * este valor entre páginas y lo pasa como `opts.since_last_ad` en la
+ * siguiente llamada, para que la costura entre páginas respete el mismo
+ * invariante que dentro de una sola llamada. No es una reescritura paralela:
+ * `interleave_ads` es un wrapper de esta función que descarta `since_last_ad`.
+ *
  * Pura y determinista: misma entrada → misma salida, sin fecha/hora ni
  * aleatoriedad, sin mutar `properties` ni `ads`.
  *
  * Algoritmo (recorrido único + contador, ponytail: nada de motor de reglas):
  * - `since_last_ad` cuenta propiedades emitidas desde el último anuncio.
- *   Arranca en 0 si `skip_first_position` (exige `every_n` propiedades antes
- *   del primer anuncio) o en `every_n` si no (el primer anuncio puede caer
- *   en la posición 0 si ya está "due").
+ *   Arranca en `opts.since_last_ad` si viene presente (256 — costura entre
+ *   páginas, manda SIN IMPORTAR `skip_first_position`); si no, en 0 si
+ *   `skip_first_position` (exige `every_n` propiedades antes del primer
+ *   anuncio) o en `every_n` si no (el primer anuncio puede caer en la
+ *   posición 0 si ya está "due").
  * - Cuando `since_last_ad >= every_n` y queda presupuesto de sesión, se
  *   busca el primer anuncio del pool (round-robin determinista) cuya última
  *   aparición esté a >= `min_gap_between_repeats` posiciones; si ninguno
@@ -121,22 +159,26 @@ export interface InterleaveAdsOptions {
  *   condiciones (hueco, presupuesto, min_gap, cursor), y una página con menos
  *   de `every_n` propiedades sigue sin anuncios.
  */
-export function interleave_ads(
+export function interleave_ads_with_state(
   properties: FeedPropertyWithUrl[],
   ads: FeedAd[],
   opts: InterleaveAdsOptions
-): FeedItem[] {
+): { items: FeedItem[]; since_last_ad: number } {
   const { every_n, max_per_session, min_gap_between_repeats, already_shown_count, skip_first_position } = opts;
   const budget = max_per_session - already_shown_count;
+  const initial_since_last_ad = opts.since_last_ad !== undefined ? opts.since_last_ad : (skip_first_position ? 0 : every_n);
 
-  if (properties.length === 0) return [];
+  if (properties.length === 0) return { items: [], since_last_ad: initial_since_last_ad };
   if (ads.length === 0 || budget <= 0) {
-    return properties.map((property) => ({ kind: 'property', property }));
+    return {
+      items: properties.map((property) => ({ kind: 'property', property })),
+      since_last_ad: initial_since_last_ad + properties.length,
+    };
   }
 
   const result: FeedItem[] = [];
   const last_shown_at = new Map<string, number>(); // ad.id -> índice en `result`
-  let since_last_ad = skip_first_position ? 0 : every_n;
+  let since_last_ad = initial_since_last_ad;
   let ads_used = 0;
   let pool_cursor = 0;
 
@@ -172,5 +214,5 @@ export function interleave_ads(
     since_last_ad++;
   }
 
-  return result;
+  return { items: result, since_last_ad };
 }
