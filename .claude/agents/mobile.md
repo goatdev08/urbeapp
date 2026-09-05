@@ -43,3 +43,6 @@ Si te topas con un bloqueante (falta una Edge Function, una tabla, una decisión
 
 ## Output (estructurado)
 `Estado: ÉXITO | BLOQUEADO | TESTS-ROJOS` · Subtarea · Archivos tocados (rutas) · Verificación (tsc/lint/smoke) · `Conformidad spec: OK | desviaciones (cuáles)` · Si BLOQUEADO: qué falta y dónde debería resolverse.
+
+Además, si aplica (CLAUDE.md §0, **cupo total de 2 por tarea**; el orquestador decide, tú solo propones):
+- `REUSO_CON_RESERVA: {patrón reusado} · {por qué es peor que lo que se escribiría hoy} · {cabe|no cabe en el footprint} · {toca contrato publicado o migraciones: sí|no}`

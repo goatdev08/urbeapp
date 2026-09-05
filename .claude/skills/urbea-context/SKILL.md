@@ -20,7 +20,7 @@ El proyecto guarda su memoria en el vault Obsidian `wiki/`. Es tu **primera fuen
 
 ## Cuándo usarlo
 - Al arrancar una subtarea: identifica el concepto y el *footprint* (archivos) vía `mapa-codebase`.
-- Antes de escribir código nuevo: ¿ya existe algo reutilizable? (reusar > reescribir).
+- Antes de escribir código nuevo: ¿ya existe algo reutilizable? (reusar > reescribir — *con reserva*: si lo que existe es deuda, márcalo; CLAUDE.md §0).
 - Para entender una decisión: `wiki/decisiones/` (ADRs).
 
 ## Regla

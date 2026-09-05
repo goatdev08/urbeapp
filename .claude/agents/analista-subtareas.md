@@ -58,6 +58,7 @@ Para cada subtarea pendiente:
 
 3. **Cross-check contra el árbol real** (`ls`/Glob): marca `(nuevo)` lo que no existe y `(existe)` lo que sí.
 3b. **Footprint mecánico de símbolos existentes** (tarea #70): si la subtarea modifica una función/hook/EF que ya existe y `graphify-out/graph.json` está presente, corre `graphify affected "<símbolo>"` (y `graphify explain` si hace falta) para sumar al footprint los archivos que la importan o llaman, con línea. Si no hay grafo: `graphify update . --no-cluster` (~1 min, sin LLM) o sáltalo. ⚠️ Solo resuelve **símbolos**: nombres de RPC/EF entre comillas, columnas y textos siguen saliendo del vault y de Grep (ver skill `urbea-context` §graphify).
+3c. **Reuso con reserva** (CLAUDE.md §0): si el footprint **reusa** un patrón que hoy escribirías distinto (duplicado, nombre que miente, abstracción que no paga), márcalo `REUSO_CON_RESERVA: {patrón} · {por qué es peor} · {cabe|no cabe en el footprint}` e indica si toca **contrato publicado o migraciones**. Tú solo lo **señalas**: proponer el refactor o abrir la derivada `hardening()` es del orquestador. Cupo: máx 2 por tarea.
 4. **Hotspots compartidos** (casi cualquier subtarea podría tocar): `mobile/package.json`, `mobile/app.json`, `mobile/src/lib/supabase/client.ts`, `mobile/src/theme/`, `supabase/migrations/` (numeración secuencial), `mobile/app/_layout.tsx` (Expo Router).
 
 ### Paso 4 — Agente de dominio + skills por subtarea
