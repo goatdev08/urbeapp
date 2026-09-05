@@ -57,7 +57,8 @@ Por cada subtarea pendiente:
 1. `node .taskmaster/scripts/tm-log.mjs --id=<id>.<n> --file=<bloqueante.md>` (el texto abre con `BLOQUEANTE:`).
 2. Clasifica (con `task-master list`):
    - **Cubierto por otra tarea/subtarea** → `task-master add-dependency --id=<id>.<n> --depends-on=<esa>`; `task-master set-status --id=<id>.<n> --status=blocked`; sigue con la siguiente subtarea desbloqueada.
-   - **Trabajo nuevo** → `task-master add-task --prompt="<desc>"` o `task-master add-subtask --parent=<id> --title="<desc>"`; documenta; `add-dependency`.
+   - **Trabajo nuevo** → escríbelo directo en `.taskmaster/tasks/tasks.json` (`.bak` + `validate-dependencies`; `add-task`/`add-subtask --prompt` están **rotos**, CLAUDE.md §4); documenta; `add-dependency`.
+   - **PROPUESTA, no bloqueante** (`UI_FUERA_DEL_MOCKUP:` o `REUSO_CON_RESERVA:` en el output del agente) → **no detiene la subtarea**. Regístrala en la bitácora y ofrece **las 2 opciones** a Abraham (en conjunto vs derivada). **Default = derivada** (`producto(<origen>)` / `hardening(<origen>)`) con las 4 marcas del §5; en `auto`, aplica el default y sigue. **Cupo: máx 2 por tarea**; de la 3ª en adelante solo se nombran en la bitácora.
 3. Decisión: **normal** → `AskUserQuestion` (resolver ahora / agendar). **`auto`** → si es pequeño y desbloquea, resuélvelo; si requiere decisión humana, detente y pregunta.
 4. Conocimiento durable → ingest al vault.
 

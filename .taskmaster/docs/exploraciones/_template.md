@@ -50,6 +50,14 @@ mapa con clustering, filtros, CRM de leads, copy. n/a si no toca UI.
 ⚠️ Si toca un **componente de firma** → aprobación **por pantalla**: preview HTML aprobable por el
 cliente antes de portar a RN (CLAUDE.md §8). El gate global de branding está LEVANTADO.}
 
+## UI/interacción fuera del mockup
+{**OBLIGATORIO** — no pongas "n/a" sin haber abierto `urbea-identidad-visual.html` primero.
+Si la pantalla necesita UI o una interacción que el mockup **NO dibuja** (CLAUDE.md §8):
+`UI_FUERA_DEL_MOCKUP: {qué falta} · {por qué la pantalla lo necesita} · {costo XS|S|M}`
+  → opción 1 (en conjunto): incluirlo en esta tarea — {qué implicaría}
+  → opción 2 (**DEFAULT**): derivada `producto(<origen>)` — {título y descripción ya redactados}
+Se proponen SIEMPRE las 2; decide Abraham. "n/a" explícito solo si de verdad no falta nada.}
+
 ## Reglas no obvias aplicables
 - {Regla del dominio que se toca} — `wiki/conceptos/{página}` · fuente §/línea vía `wiki/_index/MOC-fuentes.md`
 

@@ -46,3 +46,4 @@ Si te topas con un bloqueante (falta una Edge Function, una tabla, una decisión
 
 Además, si aplica (CLAUDE.md §0, **cupo total de 2 por tarea**; el orquestador decide, tú solo propones):
 - `REUSO_CON_RESERVA: {patrón reusado} · {por qué es peor que lo que se escribiría hoy} · {cabe|no cabe en el footprint} · {toca contrato publicado o migraciones: sí|no}`
+- `UI_FUERA_DEL_MOCKUP: {qué falta} · {por qué la pantalla lo necesita} · {costo XS|S|M}` + **las 2 opciones** (1 en conjunto / 2 **default**: derivada `producto(<origen>)` ya redactada). CLAUDE.md §8. ⚠️ Esto **no levanta** el auto-check de scope creep: sigue prohibido *implementar* UI no pedida — aquí solo se **propone**.

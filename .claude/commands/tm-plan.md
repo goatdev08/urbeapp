@@ -15,6 +15,7 @@ Ubicación en el workflow: **`/tm-explore` (idea → tarea) → `/tm-plan <id>` 
 2. **Contexto**: carga el skill `urbea-context` y ubica los conceptos del dominio en el vault.
 3. **Análisis**: invoca el subagente `analista-subtareas` con el `task_id`. Imprime su reporte (footprint · agente · skills · criticidad · orden · bloqueantes).
 4. **Preguntas de diseño**: si el análisis o los conceptos marcan decisiones (UX, approach, alcance), usa `AskUserQuestion` (una sola llamada, máx 4). Aplica las respuestas.
+   - 🔴 **OBLIGATORIA si el analista marcó `UI_FUERA_DEL_MOCKUP:`** (CLAUDE.md §8): pregúntalo con **las 2 opciones** — *en conjunto* (entra a esta tarea) vs *derivada `producto(<origen>)`* (**default**) — y con la propuesta ya redactada. No lo recortes en silencio ni lo mandes a derivada sin ofrecerlo.
 5. **Registra el plan** en cada subtarea:
    ```bash
    # 🔴 tm-log, NUNCA update-subtask (parafrasea con IA y re-tipa los task.id)

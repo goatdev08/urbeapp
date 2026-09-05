@@ -77,6 +77,7 @@ PREGUNTAS_ABIERTAS:  (agrupadas; para AskUserQuestion del orquestador)
 
 REGLAS_NO_OBVIAS_TOCADAS: {lista corta con concepto del vault · §/línea de la fuente}
 APROBACION_DISENO: {sí — toca un componente de FIRMA: preview HTML aprobable antes de portar a RN (§8) | no}
+UI_FUERA_DEL_MOCKUP: {qué falta · por qué la pantalla lo necesita · costo XS|S|M, con las 2 opciones: en conjunto | derivada producto(<origen>) (default) | no — nada falta}
 RIESGOS: {los 2–3 mayores}
 LISTO_PARA_PROMOVER: {no — faltan respuestas | sí — sin huecos}
 ```
