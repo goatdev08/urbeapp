@@ -19,6 +19,11 @@ Decisiones de fondo: `wiki/decisiones/0003` (vault), `0004` (Taskmaster), `0006`
 
 ⚠️ El régimen se **declara en el archivo de cada fase**: un `/ponytail lite` tecleado en el chat **NO llega a un subagente** — arranca en contexto limpio con solo su `.claude/agents/<x>.md` + este archivo.
 
+### ⭐ Explicar el trade-off (excepción al tope de salida de ponytail)
+Ponytail acota la explicación a `[código] → skipped: X, add when Y`. Ese tope **se levanta** cuando la simplificación cae en uno de estos **4 disparadores** (enumerados a propósito: lo que se juzga, deriva):
+**(a)** toca un **contrato publicado** (§0.5.2 — EF, RPC, vista o columna que los builds instalados ya llaman) · **(b)** cae en **ruta crítica por path** (§5) · **(c)** tiene un **techo alcanzable con los datos reales** de producción (§0.5.1) · **(d)** **descarta una alternativa que Abraham nombró**.
+**Destino:** la explicación **completa** va a la bitácora de la subtarea (`tm-log.mjs` — es lo que se relee en sesiones futuras) y un **resumen de 2–3 líneas** a la respuesta. Fuera de los 4 disparadores sigue el patrón corto.
+
 ## 0.5 🔴 PRODUCCIÓN VIVA (desde 2026-08-10) — aplica a TODOS los agentes
 **Hay personas reales conectadas probando la app y la base se puebla poco a poco. Todo cambio se piensa PARA PRODUCCIÓN — ya no existe el "es solo la demo".** Decisión: `wiki/decisiones/0009-produccion-viva.md`. Reglas derivadas (checklist en cada plan y cada cierre):
 1. **La DB remota tiene datos reales.** Migraciones aditivas/idempotentes + rollback probado; **NUNCA** resets, TRUNCATE ni seeds al remoto. Un cambio destructivo (DROP, ALTER que pierde datos, revocar un grant que clientes vivos usan) exige patrón **expand → migrate → contract** y aprobación explícita de Abraham.
