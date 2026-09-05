@@ -8,7 +8,16 @@ Decisiones de fondo: `wiki/decisiones/0003` (vault), `0004` (Taskmaster), `0006`
 - Antes de escribir código nuevo, consulta `wiki/codebase/mapa-codebase.md` — ¿ya existe algo reutilizable? **Reusar > reescribir.**
 - Cada tarea cierra con una mini-retro: ¿se puede hacer el flujo más eficiente? Si sí, mejora *este archivo*, el vault o un skill — **no** agregues código de app.
 - Métrica de éxito: tareas cerradas con **mínimo código nuevo** y máxima claridad. No LOC.
-- 🪶 **Skill `ponytail` (modo `full` por defecto) está activo al escribir código.** Es el reflejo que hace cumplir este principio: la escalera YAGNI → ¿ya existe? → stdlib/Expo/Supabase nativo → dependencia ya instalada → una línea → mínimo que funciona. Marca simplificaciones deliberadas con un comentario `// ponytail:` (intención + techo conocido). Companions: `/ponytail-review` (revisar un diff por sobre-ingeniería), `/ponytail-audit` (escanear el repo), `/ponytail-debt` (cosechar los `ponytail:` pendientes). No aplica a validación en fronteras de confianza, manejo de errores, RLS/seguridad ni a lo que el usuario pida explícito.
+- 🪶 **Skill `ponytail` — su régimen depende de la FASE (tabla abajo).** Es el reflejo que hace cumplir este principio: la escalera YAGNI → ¿ya existe? → stdlib/Expo/Supabase nativo → dependencia ya instalada → una línea → mínimo que funciona. Marca simplificaciones deliberadas con un comentario `// ponytail:` (intención + techo conocido). Companions: `/ponytail-review` (revisar un diff por sobre-ingeniería), `/ponytail-audit` (escanear el repo), `/ponytail-debt` (cosechar los `ponytail:` pendientes). No aplica a validación en fronteras de confianza, manejo de errores, RLS/seguridad ni a lo que el usuario pida explícito.
+
+### ⭐ Régimen de ponytail POR FASE (regla determinista; el porqué en [[0011-ponytail-y-fases-del-workflow]])
+| Fase | Quién la corre | Régimen |
+|---|---|---|
+| **Propuesta** — explorar, diseñar, lluvia de ideas, previews | `/tm-explore`, agentes `tm-explore` y `design`, skill `urbea-design` | **NO aplica.** Se **exige divergencia**: **2–4 direcciones** / alternativas de layout / componentes de firma, cada una con su trade-off. Ponytail vuelve a aplicar al **plan de implementación** que sale de la fase. |
+| **Ejecución** — planear subtareas, codear, verificar | `/tm-plan`, `/tm-tarea`, agentes `mobile` y `supabase` | **`full`** — la escalera enforced, el diff más corto que funcione. |
+| **Override** | cualquiera | **El prompt explícito de Abraham gana siempre** (ya es regla del skill: lo pedido explícito no se simplifica). |
+
+⚠️ El régimen se **declara en el archivo de cada fase**: un `/ponytail lite` tecleado en el chat **NO llega a un subagente** — arranca en contexto limpio con solo su `.claude/agents/<x>.md` + este archivo.
 
 ## 0.5 🔴 PRODUCCIÓN VIVA (desde 2026-08-10) — aplica a TODOS los agentes
 **Hay personas reales conectadas probando la app y la base se puebla poco a poco. Todo cambio se piensa PARA PRODUCCIÓN — ya no existe el "es solo la demo".** Decisión: `wiki/decisiones/0009-produccion-viva.md`. Reglas derivadas (checklist en cada plan y cada cierre):

@@ -4,6 +4,8 @@ description: Implementa subtareas del dominio móvil de Urbea (React Native + Ex
 model: sonnet
 ---
 
+> 🪶 **Régimen ponytail: `full`** — esto es fase de **EJECUCIÓN** (CLAUDE.md §0): la escalera enforced, el diff más corto que funcione. El prompt explícito de Abraham gana siempre.
+
 Eres el agente `mobile`: implementas subtareas del cliente Expo / React Native de Urbea con contexto fresco. Este prompt es tu briefing.
 
 ## Al arrancar (obligatorio)

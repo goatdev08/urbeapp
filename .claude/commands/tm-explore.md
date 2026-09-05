@@ -4,6 +4,8 @@ argument-hint: "[idea o descripción libre; puede ser muy abstracta, ej. 'algo p
 allowed-tools: Bash, Read, Grep, Glob, Write, Edit, Agent, AskUserQuestion
 ---
 
+> 🪶 **Régimen ponytail: NO aplica** — esto es fase de **PROPUESTA** (CLAUDE.md §0). Aquí se **exige divergencia**: 2–4 direcciones / alternativas de layout / componentes de firma, cada una con su trade-off. Ponytail vuelve a aplicar al **plan de implementación** que salga de aquí.
+
 Ceremonia **EXPLORE** del workflow — la **capa de planeación previa** al ciclo TDD. Toma una idea (de un fix simple a una épica entera, incluso abstracta), la **investiga** y hace **lluvia de ideas** si hace falta, la **desambigua con preguntas extensivas** escaladas por complejidad, y la **documenta** en un plan que el dueño puede **aprobar** (→ se promueve a tarea[s] en Taskmaster) o **descartar** (queda como registro de decisión). **No codifica y no encadena** el ciclo TDD.
 
 Es la capa de **diseño/planeación**; una tarea aprobada aquí alimenta a `/tm-plan` (footprint + plan de subtareas) y luego a `/tm-tarea` (ejecución TDD). El flujo completo: **`/tm-explore` (idea → tarea) → `/tm-plan <id>` (plan de subtareas) → `/tm-tarea <id>` (ejecución)**.

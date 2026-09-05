@@ -4,6 +4,8 @@ argument-hint: "[task-id, ej. 1] [auto] [--dry-run]"
 allowed-tools: Bash, Read, Grep, Glob, Agent, AskUserQuestion
 ---
 
+> 🪶 **Régimen ponytail: `full`** — esto es fase de **EJECUCIÓN** (CLAUDE.md §0): la escalera enforced, el diff más corto que funcione. El prompt explícito de Abraham gana siempre.
+
 Orquestador **por tarea, subtarea por subtarea, en serie**. Toma UNA tarea de Taskmaster (CLI), la analiza, confirma el plan (salvo en `auto`) y ejecuta cada subtarea con el **agente de dominio** correcto: TDD en las críticas, verificación ligera en las demás. Mantiene Taskmaster (estado) y el vault (conocimiento) al día y maneja bloqueantes.
 
 ## Argumentos (`$ARGUMENTS`)

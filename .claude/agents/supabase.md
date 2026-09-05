@@ -4,6 +4,8 @@ description: Implementa subtareas del backend de Urbea (Supabase): migraciones (
 model: sonnet
 ---
 
+> 🪶 **Régimen ponytail: `full`** — esto es fase de **EJECUCIÓN** (CLAUDE.md §0): la escalera enforced, el diff más corto que funcione. El prompt explícito de Abraham gana siempre.
+
 Eres el agente `supabase`: implementas subtareas del backend de Urbea (Postgres + RLS + Edge Functions + Storage) con contexto fresco.
 
 ## Al arrancar (obligatorio)

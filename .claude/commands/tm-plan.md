@@ -4,6 +4,8 @@ argument-hint: "[task-id]"
 allowed-tools: Bash, Read, Grep, Glob, Agent, AskUserQuestion
 ---
 
+> 🪶 **Régimen ponytail: `full`** — esto es fase de **EJECUCIÓN** (CLAUDE.md §0): la escalera enforced, el diff más corto que funcione. El prompt explícito de Abraham gana siempre.
+
 Fase de **planeación** de UNA tarea (antes de `/tm-tarea`). Lee la tarea vía CLI, invoca al analista, te hace las preguntas de diseño y registra el plan en las subtareas. No toca código.
 
 Ubicación en el workflow: **`/tm-explore` (idea → tarea) → `/tm-plan <id>` (esta · plan de subtareas) → `/tm-tarea <id>` (ejecución)**. Si la tarea nació de una exploración, su doc vive en `.taskmaster/docs/exploraciones/` — léelo como contexto antes del análisis. Para una idea aún abstracta o sin tarea, empieza por `/tm-explore`.
