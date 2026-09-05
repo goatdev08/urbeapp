@@ -46,9 +46,23 @@
 --   GREEN): DIFF2 (compat `reason: 'multiple_reports'`, columna que el GREEN
 --   NO toca — aditivo puro), OTHER2 (el texto libre nunca aparece — hoy es
 --   trivialmente cierto porque no hay NINGUNA clave nueva; tras el GREEN debe
---   seguir sin aparecer, ahora por diseño), ALREADY1/ALREADY2/ALREADY3/ALREADY4
+--   seguir sin aparecer, ahora por diseño), ALREADY1/ALREADY2/ALREADY3
 --   (el guard `status <> 'suspended'` es AJENO a este delta, ya funciona
 --   desde 220.2).
+--
+-- ── AJUSTES POST-GUARDIAN (2026-09-05) ──────────────────────────────────────
+-- (1) DIFF y OTHER fijan `created_at` EXPLÍCITO y distinto por reporte
+--     (mismo patrón que WINOLD/WINSPREAD de
+--     74_property_reports_autosuspend_test.sql) — el guardian detectó que
+--     `created_at` es `transaction_timestamp()` (congelado durante TODA la
+--     transacción del test), así que sin timestamps explícitos los 3
+--     reportes de un caso quedan con el MISMO created_at y el orden de
+--     "1a aparición" dejaba de estar garantizado por el fixture.
+-- (2) INAPPDUP1 (sección 5, nueva) cubre las 2 etiquetas del catálogo que
+--     ningún otro caso ejercía (`inappropriate`, `duplicate`) + un repetido
+--     para confirmar que el dedupe por ENUM también aplica ahí. Ya pasa HOY
+--     (el catálogo completo ya estaba en el GREEN) — se agrega como
+--     cobertura, no como delta.
 --
 -- ── Edge cases enumerados (paso 1 del protocolo test-author) ───────────────
 -- DIFF    — 3 reportes de 3 usuarios distintos, 3 motivos distintos → el
@@ -63,10 +77,11 @@
 -- ALREADY — propiedad ya suspendida (por una ronda previa de 3 reportes) →
 --   un 4o reporte con un motivo nuevo NO genera notificación nueva (ni al
 --   owner ni a los admins) — early return ya vigente en 220.2.
+-- INAPPDUP — catálogo completo: 'inappropriate' + 'duplicate' + un repetido.
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(12);
+select plan(13);
 
 -- Fixtures — prefijo '00000000-0000-0000-0000-000000097XXX'.
 --   ADMIN1(097011), ADMIN2(097012) admins de plataforma.
@@ -90,7 +105,8 @@ insert into auth.users (id, email) values
 update public.users set role = 'admin'
  where id in ('00000000-0000-0000-0000-000000097011', '00000000-0000-0000-0000-000000097012');
 
--- 4 propiedades del owner compartido, una por sección (DIFF/SAME/OTHER/ALREADY).
+-- 5 propiedades del owner compartido, una por sección (DIFF/SAME/OTHER/
+-- ALREADY/INAPPDUP).
 insert into public.properties (id, owner_user_id, property_type, operation_type, address, location, price, status)
 select
   ('00000000-0000-0000-0000-0000000971' || lpad(n::text, 2, '0'))::uuid,
@@ -98,19 +114,19 @@ select
   'departamento', 'rent', 'Depa Motivo 97 #' || n,
   extensions.ST_SetSRID(extensions.ST_MakePoint(-99.16, 19.41), 4326)::extensions.geography,
   9700, 'active'
-from generate_series(1, 4) as n;
--- 097101=DIFF, 097102=SAME, 097103=OTHER, 097104=ALREADY.
+from generate_series(1, 5) as n;
+-- 097101=DIFF, 097102=SAME, 097103=OTHER, 097104=ALREADY, 097105=INAPPDUP.
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- 1) DIFF — 00000000-...-097101: 3 reportes, 3 motivos distintos.
 -- ════════════════════════════════════════════════════════════════════════════
 
-insert into public.property_reports (property_id, reported_by_user_id, reason, reason_text) values
-  ('00000000-0000-0000-0000-000000097101', '00000000-0000-0000-0000-000000097021', 'not_exist_fraud', null);
-insert into public.property_reports (property_id, reported_by_user_id, reason, reason_text) values
-  ('00000000-0000-0000-0000-000000097101', '00000000-0000-0000-0000-000000097022', 'wrong_address', null);
-insert into public.property_reports (property_id, reported_by_user_id, reason, reason_text) values
-  ('00000000-0000-0000-0000-000000097101', '00000000-0000-0000-0000-000000097023', 'false_price', null);
+insert into public.property_reports (property_id, reported_by_user_id, reason, reason_text, created_at) values
+  ('00000000-0000-0000-0000-000000097101', '00000000-0000-0000-0000-000000097021', 'not_exist_fraud', null, now() - interval '3 minutes');
+insert into public.property_reports (property_id, reported_by_user_id, reason, reason_text, created_at) values
+  ('00000000-0000-0000-0000-000000097101', '00000000-0000-0000-0000-000000097022', 'wrong_address', null, now() - interval '2 minutes');
+insert into public.property_reports (property_id, reported_by_user_id, reason, reason_text, created_at) values
+  ('00000000-0000-0000-0000-000000097101', '00000000-0000-0000-0000-000000097023', 'false_price', null, now() - interval '1 minute');
 
 select is(
   (select status::text from public.properties where id = '00000000-0000-0000-0000-000000097101'),
@@ -173,14 +189,14 @@ select is(
 --    DISTINTOS (dedupe por el ENUM, no por el texto) + 1 reporte 'misleading'.
 -- ════════════════════════════════════════════════════════════════════════════
 
-insert into public.property_reports (property_id, reported_by_user_id, reason, reason_text) values
+insert into public.property_reports (property_id, reported_by_user_id, reason, reason_text, created_at) values
   ('00000000-0000-0000-0000-000000097103', '00000000-0000-0000-0000-000000097027', 'other',
-   'Esta persona es un estafador conocido, texto libre A');
-insert into public.property_reports (property_id, reported_by_user_id, reason, reason_text) values
+   'Esta persona es un estafador conocido, texto libre A', now() - interval '3 minutes');
+insert into public.property_reports (property_id, reported_by_user_id, reason, reason_text, created_at) values
   ('00000000-0000-0000-0000-000000097103', '00000000-0000-0000-0000-000000097028', 'other',
-   'Otro texto libre completamente distinto B');
-insert into public.property_reports (property_id, reported_by_user_id, reason, reason_text) values
-  ('00000000-0000-0000-0000-000000097103', '00000000-0000-0000-0000-000000097029', 'misleading', null);
+   'Otro texto libre completamente distinto B', now() - interval '2 minutes');
+insert into public.property_reports (property_id, reported_by_user_id, reason, reason_text, created_at) values
+  ('00000000-0000-0000-0000-000000097103', '00000000-0000-0000-0000-000000097029', 'misleading', null, now() - interval '1 minute');
 
 select is(
   (select data ->> 'rejection_reason' from public.notifications
@@ -240,6 +256,29 @@ select is(
     where related_entity_id = '00000000-0000-0000-0000-000000097104'
       and type = 'admin_report_autosuspend'),
   2, 'ALREADY3_el_4o_reporte_tampoco_agrega_avisos_a_admins_sigue_en_2'
+);
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 5) INAPPDUP — 00000000-...-097105: catálogo completo — cubre 'inappropriate'
+--    y 'duplicate' (los 2 motivos que ningún otro caso de este archivo
+--    ejercía), + 1 repetido (inappropriate otra vez) para confirmar que el
+--    3er reporte no agrega una 3a etiqueta.
+-- ════════════════════════════════════════════════════════════════════════════
+
+insert into public.property_reports (property_id, reported_by_user_id, reason, reason_text, created_at) values
+  ('00000000-0000-0000-0000-000000097105', '00000000-0000-0000-0000-000000097021', 'inappropriate', null, now() - interval '3 minutes');
+insert into public.property_reports (property_id, reported_by_user_id, reason, reason_text, created_at) values
+  ('00000000-0000-0000-0000-000000097105', '00000000-0000-0000-0000-000000097022', 'duplicate', null, now() - interval '2 minutes');
+insert into public.property_reports (property_id, reported_by_user_id, reason, reason_text, created_at) values
+  ('00000000-0000-0000-0000-000000097105', '00000000-0000-0000-0000-000000097023', 'inappropriate', null, now() - interval '1 minute');
+
+select is(
+  (select data ->> 'rejection_reason' from public.notifications
+    where related_entity_id = '00000000-0000-0000-0000-000000097105'
+      and type = 'property_suspended_by_reports'
+      and user_id = '00000000-0000-0000-0000-000000097013'),
+  'Contenido inapropiado · Publicación duplicada',
+  'INAPPDUP1_catalogo_completo_inappropriate_y_duplicate_sin_repetir_la_etiqueta'
 );
 
 select * from finish();

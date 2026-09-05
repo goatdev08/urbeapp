@@ -28,14 +28,20 @@
 -- (el aviso de 1o/2o reporte, ANTES de suspender) NO se toca — fuera del
 -- alcance de #257.
 --
--- Desempate de "1a aparición" con `min(ctid)`: `created_at` es
--- `transaction_timestamp()` (congelado durante TODA la transacción que
--- disparó el INSERT) — en producción cada reporte es su propia transacción y
--- created_at ya distingue el orden, pero un fixture de test que inserta varios
--- reportes en la MISMA transacción (pgTAP corre con begin/rollback) los ve con
--- el MISMO created_at. `ctid` (orden físico de inserción en el heap, sin
--- deletes/vacuum de por medio en este flujo) desempata de forma determinista
--- sin cambiar el criterio real de producción.
+-- "1a aparición" se ordena por `min(created_at)` de cada motivo dentro de la
+-- ventana (el criterio real: cada reporte HTTP es su propia transacción, así
+-- que created_at ya distingue el orden). El fixture de test fija created_at
+-- EXPLÍCITOS y distintos por reporte (mismo patrón que WINOLD/WINSPREAD de
+-- 74_property_reports_autosuspend_test.sql) para que ese orden cronológico no
+-- dependa de que dos INSERTs corran en transacciones separadas. Como
+-- desempate determinista para un empate exacto de created_at (dos motivos con
+-- el MISMO instante, caso de borde que no cambia el resultado observable en
+-- ningún fixture real), se usa el orden natural del enum
+-- (`property_report_reason`, declarado not_exist_fraud..other) — sin
+-- significado de negocio, solo para que el resultado sea reproducible.
+-- 🔴 NO usar `ctid` para esto: cambia con cualquier UPDATE de la fila (esta
+-- misma tabla no tiene UPDATEs sobre property_reports, pero no es un
+-- invariante en el que apoyarse) y no es una técnica correcta de desempate.
 --
 -- Compat §0.5: `data->>'reason' = 'multiple_reports'` (columna vieja) se
 -- conserva byte por byte; el early-return `status = 'suspended'` (guard
@@ -102,12 +108,14 @@ begin
   if v_count >= 3 then
     -- #257: etiquetas en español de los motivos agregados de la ventana,
     -- deduplicadas por el ENUM (nunca por reason_text -- privacidad), en
-    -- orden de 1a aparición (min(created_at), min(ctid) como desempate --
-    -- ver nota de cabecera).
-    select string_agg(t.label, ' · ' order by t.first_seen, t.first_ctid)
+    -- orden de 1a aparición (min(created_at); t.reason -- orden natural del
+    -- enum -- como desempate determinista de un empate exacto, ver nota de
+    -- cabecera).
+    select string_agg(t.label, ' · ' order by t.first_seen, t.reason)
       into v_reason_label
       from (
         select
+          reason,
           case reason
             when 'not_exist_fraud' then 'No existe / es un fraude'
             when 'misleading'      then 'Información engañosa'
@@ -117,8 +125,7 @@ begin
             when 'duplicate'       then 'Publicación duplicada'
             when 'other'           then 'Otro'
           end as label,
-          min(created_at) as first_seen,
-          min(ctid) as first_ctid
+          min(created_at) as first_seen
         from public.property_reports
         where property_id = new.property_id
           and created_at >= now() - interval '24 hours'

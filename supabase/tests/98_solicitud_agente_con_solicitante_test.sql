@@ -41,6 +41,12 @@
 --   notifications_admin_agent_application_anchor_idx de 20260825000001 ya
 --   respalda el ON CONFLICT -- AJENO a este delta, no lo toca el GREEN).
 --
+-- ── AJUSTE POST-GUARDIAN (2026-09-05) ───────────────────────────────────────
+-- IDEM1/IDEM2 (nuevos): ya pasan HOY (el ON CONFLICT DO NOTHING del GREEN no
+--   cambió), pero antes de este ajuste NINGÚN test ejercía esa cláusula desde
+--   el camino real del trigger (DUP1 solo prueba el índice desde un INSERT
+--   manual a notifications) -- se agregan como cobertura, no como delta.
+--
 -- ── Edge cases enumerados (paso 1 del protocolo test-author) ───────────────
 -- INDEP   — application_type='independent': body dice "independiente" y
 --   NUNCA el literal entre comillas `"independent"` (ojo: "independiente"
@@ -56,10 +62,19 @@
 --   rechazado por el índice único que respalda el ON CONFLICT DO NOTHING del
 --   escritor (invariante de esquema, mismo patrón que ADV11 de
 --   95_notify_admin_advertising_request_test.sql).
+-- IDEM    — repetir el INSERT de la MISMA solicitud (vía DELETE+INSERT con
+--   el mismo id -- el único camino real para que el trigger AFTER INSERT
+--   dispare dos veces con el mismo new.id, ya que id es la PK de
+--   agent_applications) no debe duplicar notificaciones ni levantar 23505.
+--   A diferencia de DUP (que prueba el índice único desde un INSERT manual
+--   directo a notifications, bypaseando el trigger), IDEM ejerce el ON
+--   CONFLICT DO NOTHING que vive DENTRO del propio escritor -- el guardian
+--   comprobó que quitar esa cláusula deja el resto de la suite en verde
+--   igual, así que hoy nadie más la protege.
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(10);
+select plan(12);
 
 -- Fixtures — prefijo '00000000-0000-0000-0000-000000098XXX'.
 --   ADMIN1(098011), ADMIN2(098012) admins de plataforma.
@@ -148,6 +163,27 @@ select is(
       and type = 'admin_agent_application'
       and user_id = '00000000-0000-0000-0000-000000098011'),
   'independent', 'INDEP6_data_application_type_se_conserva'
+);
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 1b) IDEM — repetir el INSERT de la MISMA solicitud (mismo id, vía
+--     DELETE+INSERT) no debe duplicar notificaciones ni levantar 23505.
+-- ════════════════════════════════════════════════════════════════════════════
+
+delete from public.agent_applications where id = '00000000-0000-0000-0000-000000098101';
+
+select lives_ok(
+  $$ insert into public.agent_applications (id, user_id, application_type, agency_id, reason) values
+       ('00000000-0000-0000-0000-000000098101', '00000000-0000-0000-0000-000000098021', 'independent', null,
+        'Prueba interna: quiero publicar mis propiedades') $$,
+  'IDEM1_reinsertar_la_misma_solicitud_no_levanta_23505'
+);
+
+select is(
+  (select count(*)::int from public.notifications
+    where related_entity_id = '00000000-0000-0000-0000-000000098101'
+      and type = 'admin_agent_application'),
+  2, 'IDEM2_sigue_habiendo_exactamente_1_notificacion_por_admin'
 );
 
 -- ════════════════════════════════════════════════════════════════════════════
