@@ -16,7 +16,7 @@ Flujo **por tarea, subtarea por subtarea, en serie**, orquestado por `/tm-tarea`
 - **Comandos** (`.claude/commands/`): `/tm-plan` (planeación con preguntas), `/tm-tarea` (ejecución), `/tm-status` (estado).
 - **TDD pragmático por criticidad**: estricto (RED → GREEN → guardian + hook `tdd-guard.sh`) en Edge Functions / RLS / migraciones; verificación ligera (tsc/lint/smoke) en UI.
 - **Manejo de bloqueantes**: documentar en la subtarea → clasificar (¿lo cubre otra tarea/subtarea o es trabajo nuevo?) → vincular (`add-dependency`) o crear (`add-task`/`add-subtask`) → resolver o agendar.
-- **Persistencia**: estado en Taskmaster; bitácora en subtareas (`update-subtask`); conocimiento durable en el vault (ingest al cerrar). Sentinel `.taskmaster/.current-red` para subtareas críticas.
+- **Persistencia**: estado en Taskmaster; bitácora en subtareas (`tm-log.mjs` — `update-subtask` quedó prohibido el 2026-08-18, CLAUDE.md §4); conocimiento durable en el vault (ingest al cerrar). Sentinel `.taskmaster/.current-red` para subtareas críticas.
 - **Modo auto**: minimiza checkpoints, **no** la calidad (TDD/guardian siguen corriendo).
 
 ## Convención de nombres (instrucción del cliente)
