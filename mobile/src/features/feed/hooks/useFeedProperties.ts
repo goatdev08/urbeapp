@@ -58,7 +58,7 @@ import {
   type AdsFailureStage,
 } from '../lib/adsFailureSignal';
 import { fetchFeedProperties, mint_videos, type FeedPropertiesDeps } from '../lib/feedProperties';
-import { interleave_ads, type FeedAd, type FeedItem } from '../lib/interleaveAds';
+import { interleave_ads_with_state, type FeedAd, type FeedItem } from '../lib/interleaveAds';
 import type { FeedPropertyWithUrl } from '../types';
 
 export interface UseFeedPropertiesState {
@@ -188,6 +188,16 @@ async function compose_feed_items(
   properties: FeedPropertyWithUrl[],
   already_shown_ref: { current: number },
   skip_first_position: boolean,
+  /**
+   * 256: `since_last_ad` final que dejó la página ANTERIOR (undefined en
+   * loadInitial/refetch — una carga nueva no tiene página previa que
+   * heredar). Se pasa como `opts.since_last_ad` SOLO en páginas de
+   * continuación (loadMore), y ahí manda sobre `skip_first_position` (ver
+   * docblock de `InterleaveAdsOptions.since_last_ad`) — así se cierra la
+   * costura que #247 dejó abierta: un cierre-con-anuncio de la página 1 ya
+   * no puede toparse con otro anuncio en el índice 0 de la página 2.
+   */
+  since_last_ad_ref: { current: number | undefined },
 ): Promise<FeedItem[]> {
   // 🔴 #205: mismo motivo que en mint_ad_urls, pero aquí el fallo es más
   // ruidoso y por eso fue el que dejó rastro: el `rpc` real hace
@@ -289,17 +299,21 @@ async function compose_feed_items(
 
   ads = signed_ads;
 
-  const items = interleave_ads(properties, ads, {
+  // `exactOptionalPropertyTypes`: solo se agrega la clave si hay un valor real
+  // (undefined explícito no es lo mismo que ausente bajo este flag).
+  const result = interleave_ads_with_state(properties, ads, {
     every_n: config.ad_frequency_n,
     max_per_session: config.ad_max_per_session,
     min_gap_between_repeats: config.ad_frequency_n * 2,
     already_shown_count: already_shown_ref.current,
     skip_first_position,
+    ...(since_last_ad_ref.current !== undefined ? { since_last_ad: since_last_ad_ref.current } : {}),
   });
 
-  already_shown_ref.current += items.filter((item) => item.kind === 'ad').length;
+  already_shown_ref.current += result.items.filter((item) => item.kind === 'ad').length;
+  since_last_ad_ref.current = result.since_last_ad;
 
-  return items;
+  return result.items;
 }
 
 export function useFeedProperties(filters?: FilterState): UseFeedPropertiesState {
@@ -313,6 +327,11 @@ export function useFeedProperties(filters?: FilterState): UseFeedPropertiesState
   // Anuncios mostrados en ESTA sesión (vida del hook): acumula entre
   // loadInitial/loadMore/refetch, nunca se resetea (170.4, decisión 5).
   const already_shown_ref = useRef(0);
+  // 256: `since_last_ad` final que dejó la ÚLTIMA página compuesta — cruza la
+  // costura entre loadMore consecutivos. `undefined` = "sin página anterior":
+  // loadInitial/refetch lo reinicia ANTES de componer (una carga nueva no
+  // hereda el cierre de una sesión de scroll distinta).
+  const since_last_ad_ref = useRef<number | undefined>(undefined);
 
   // #249 — SOLO LA PETICIÓN VIGENTE ESCRIBE ESTADO.
   // Al aplicar un filtro, la petición del filtro ANTERIOR sigue en vuelo (no se
@@ -370,7 +389,8 @@ export function useFeedProperties(filters?: FilterState): UseFeedPropertiesState
       // debe firmar anuncios ni sumar a `already_shown_ref` (el cap de sesión
       // contaría impresiones que nadie llegó a ver).
       if (seq !== request_seq_ref.current) return;
-      const items = await compose_feed_items(deps?.supabase, resolve_ad_zone_coords(coords), result.data, already_shown_ref, true);
+      since_last_ad_ref.current = undefined; // 256: carga nueva, sin página anterior que heredar
+      const items = await compose_feed_items(deps?.supabase, resolve_ad_zone_coords(coords), result.data, already_shown_ref, true, since_last_ad_ref);
       if (seq !== request_seq_ref.current) return; // llegó tarde: ya hay otra carga
       set_data(items);
       set_next_cursor(result.nextCursor);
@@ -391,7 +411,7 @@ export function useFeedProperties(filters?: FilterState): UseFeedPropertiesState
       const deps = build_deps();
       const result = await fetchFeedProperties(nextCursor, deps, filters);
       if (seq !== request_seq_ref.current) return; // mismo corte previo a componer
-      const items = await compose_feed_items(deps?.supabase, resolve_ad_zone_coords(coords), result.data, already_shown_ref, false);
+      const items = await compose_feed_items(deps?.supabase, resolve_ad_zone_coords(coords), result.data, already_shown_ref, false, since_last_ad_ref);
       // Una página pedida ANTES de aplicar el filtro no se apende al feed ya
       // refiltrado: sería contenido de la búsqueda anterior colado al final.
       if (seq !== request_seq_ref.current) return;

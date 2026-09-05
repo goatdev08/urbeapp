@@ -926,41 +926,43 @@ describe('useFeedProperties — cap de sesión se sostiene entre loadInitial y l
 
   // Config con cupo HOLGADO (2 de 3 gastados en la página 1, queda 1 para la
   // página 2) — a diferencia de EC-CAP-1, aquí SÍ debe aparecer un anuncio
-  // nuevo en loadMore. Este mismo test ancla `skip_first_position` EXACTO:
-  // con every_n=1, `skip_first_position=true` bloquea el anuncio en el
-  // primer ítem de la llamada (since arranca en 0, 0>=1 es falso) mientras
-  // que `skip_first_position=false` (loadMore) lo permite (since arranca en
-  // every_n=1, 1>=1 es verdadero) — por eso el anuncio nuevo cae EXACTO en
-  // el primer ítem de la página 2, no en el segundo.
+  // nuevo en loadMore.
   //
   // #247 — CONFIG REAJUSTADA (every_n 1→2, max_per_session 3→2). La config
   // vieja (every_n=1) dejaba la página 1 "due" al terminar, así que con el
   // anuncio de cierre de #247 se llevaba los 3 lugares del cupo y la página 2
-  // se quedaba sin presupuesto — lo que borraba justo lo que este test mide
-  // (que skip_first_position=false pone el anuncio en el PRIMER ítem de la
-  // página de continuación). Con every_n=2 la página 1 termina con since=1 (no
-  // "due", sin anuncio de cierre) y la página 2 conserva su lugar de cupo: el
-  // aserto sigue siendo el array exacto completo, sin debilitarse.
+  // se quedaba sin presupuesto.
   //
-  // Traza a mano de la página 1 — interleave_ads([P0,P1,P2], [AD_A],
+  // #256 — LA COSTURA YA NO ARRANCA "due" A CIEGAS. Antes de esta subtarea,
+  // `skip_first_position:false` (loadMore) siempre hacía arrancar `since` en
+  // `every_n` sin importar cuántas propiedades llevaba REALMENTE la página
+  // anterior desde su último anuncio — eso es exactamente el bug que #256
+  // corrige (ver interleaveAds.page-seam.test.ts). Ahora el hook pasa
+  // `since_last_ad` (el final que dejó la página 1) y la página 2 arranca
+  // desde ahí, sin importar `skip_first_position`.
+  //
+  // Traza a mano de la página 1 — interleave_ads_with_state([P0,P1,P2], [AD_A],
   // {every_n:2, max_per_session:2, min_gap:4, already_shown_count:0, skip_first:true}):
   //   P0: since(0)>=2? NO → push P0 sin ad. since=1.
   //   P1: since(1)>=2? NO → push P1 sin ad. since=2.
   //   P2: since(2)>=2, ads_used(0)<budget(2), AD_A nunca mostrado → inserta AD ANTES de P2 → push AD,P2. since=0→1.
   //   Pasada de cierre (#247): since(1)>=2? NO → sin anuncio final.
-  //   Resultado página 1: [P0,P1,AD,P2] → 1 ad. already_shown_ref acumula a 1.
+  //   Resultado página 1: [P0,P1,AD,P2] → 1 ad, since_last_ad final = 1. already_shown_ref acumula a 1.
   //
-  // Traza a mano de la página 2 (loadMore, skip_first_position=false,
-  // already_shown_count=1 acumulado) — interleave_ads([Q0,Q1], [AD_A],
-  // {every_n:2, max_per_session:2, min_gap:4, already_shown_count:1, skip_first:false}):
+  // Traza a mano de la página 2 (loadMore, skip_first_position=false pero
+  // 256 lo ignora porque `since_last_ad:1` viene presente,
+  // already_shown_count=1 acumulado) — interleave_ads_with_state([Q0,Q1], [AD_A],
+  // {every_n:2, max_per_session:2, min_gap:4, already_shown_count:1, skip_first:false, since_last_ad:1}):
   //   budget = max_per_session(2) - already_shown_count(1) = 1.
-  //   since arranca en every_n(2) (skip_first_position=false).
-  //   Q0: since(2)>=2, ads_used(0)<budget(1), AD_A nunca mostrado EN ESTA LLAMADA
-  //       (last_shown_at es local a cada llamada de interleave_ads) → inserta AD ANTES de Q0 → push AD,Q0. since=0→1.
-  //   Q1: since(1)>=2? NO → push Q1 sin ad. since=2.
+  //   since arranca en 1 (el since_last_ad heredado de la página 1, NO en every_n=2).
+  //   Q0: since(1)>=2? NO → push Q0 sin ad. since=2.
+  //   Q1: since(2)>=2, ads_used(0)<budget(1), AD_A nunca mostrado EN ESTA LLAMADA
+  //       (last_shown_at es local a cada llamada) → inserta AD ANTES de Q1 → push AD,Q1. since=0→1.
   //   Pasada de cierre: ads_used(1)<budget(1)? NO (cupo de la llamada agotado) → sin anuncio final.
-  //   Resultado página 2: [AD,Q0,Q1] → 1 ad nuevo, EXACTO en el primer ítem de la página.
-  it('(EC-CAP-2) loadMore_con_cupo_holgado_compone_un_anuncio_nuevo_y_lo_ubica_segun_skip_first_position_false: con 1 lugar de cupo restante, la página 2 trae exactamente 1 anuncio nuevo y cae en el primer ítem de esa página (since arranca en every_n, no en 0)', async () => {
+  //   Resultado página 2: [Q0,AD,Q1] → 1 ad nuevo, en el SEGUNDO ítem de la página
+  //   (antes de #256 caía en el primero — dos anuncios a solo 1 propiedad de
+  //   distancia across la costura, el bug exacto que corrige esta subtarea).
+  it('(EC-CAP-2) loadMore_con_cupo_holgado_compone_un_anuncio_nuevo_y_respeta_since_last_ad_heredado_de_la_pagina_1: con 1 lugar de cupo restante, la página 2 trae exactamente 1 anuncio nuevo, colocado según el since_last_ad que dejó la página 1 (256) y no según skip_first_position', async () => {
     const P0 = make_property('cap2-p0');
     const P1 = make_property('cap2-p1');
     const P2 = make_property('cap2-p2');
@@ -995,15 +997,80 @@ describe('useFeedProperties — cap de sesión se sostiene entre loadInitial y l
     });
 
     // Traza exacta completa: el ad de la página 1 + 1 ad NUEVO de la página 2,
-    // ubicado en el primer ítem de la página (skip_first_position=false).
+    // ubicado en el SEGUNDO ítem de la página (256: since_last_ad:1 heredado
+    // de la página 1 manda sobre skip_first_position:false).
     expect(result.current.data).toEqual([
       { kind: 'property', property: P0 },
       { kind: 'property', property: P1 },
       { kind: 'ad', ad: minted(AD_A) },
       { kind: 'property', property: P2 },
-      { kind: 'ad', ad: minted(AD_A) },
       { kind: 'property', property: Q0 },
+      { kind: 'ad', ad: minted(AD_A) },
       { kind: 'property', property: Q1 },
+    ]);
+  });
+
+  // 256 — LA COSTURA CUANDO LA PÁGINA 1 CIERRA CON UN ANUNCIO (#247, pasada
+  // de cierre). Es el caso que originó la subtarea: antes de este fix, un
+  // cierre-con-anuncio dejaba `already_shown_ref` correcto pero el hook NO
+  // sabía que since_last_ad ya estaba en 0 — loadMore (skip_first_position
+  // false) arrancaba "due" en every_n y podía servir un SEGUNDO anuncio
+  // pegado al primero, en el índice 0 de la página 2.
+  //
+  // Traza a mano de la página 1 — interleave_ads_with_state([P0..P7], [AD_A],
+  // {every_n:8, max_per_session:5, min_gap:16, already_shown_count:0, skip_first:true}):
+  //   P0..P7: since nunca llega a 8 dentro del recorrido (sube de 0 a 8 recién
+  //   al terminar P7) → las 8 se emiten sin anuncio.
+  //   Pasada de cierre (#247): since(8)>=8, ads_used(0)<budget(5) → inserta AD.
+  //   Resultado página 1: [P0..P7,AD] → 1 ad, since_last_ad final = 0.
+  //   already_shown_ref acumula a 1.
+  //
+  // Traza a mano de la página 2 (loadMore, 10 propiedades Q0..Q9,
+  // already_shown_count=1, since_last_ad:0 heredado) — interleave_ads_with_state(
+  // [Q0..Q9], [AD_A], {every_n:8, max_per_session:5, min_gap:16,
+  // already_shown_count:1, skip_first:false, since_last_ad:0}):
+  //   budget = 5 - 1 = 4. since arranca en 0 (el since_last_ad heredado, NO en
+  //   every_n=8 que exigiría skip_first_position:false).
+  //   Q0..Q7: since sube de 0 a 8 sin alcanzar el hueco dentro del recorrido.
+  //   Q8 (i=8): since(8)>=8, ads_used(0)<budget(4) → inserta AD ANTES de Q8 →
+  //     push AD,Q8. since=0→1.
+  //   Q9: since(1)>=8? NO → push Q9 sin ad.
+  //   Resultado página 2: [Q0..Q7,AD,Q8,Q9] → el anuncio cae en el índice 8,
+  //   NUNCA en el índice 0 (el bug que #256 corrige).
+  it('(EC-CAP-4) pagina_1_cierra_con_anuncio_y_la_pagina_2_no_repite_uno_en_el_indice_0: since_last_ad:0 heredado del cierre-con-anuncio de la página 1 hace que el primer ítem de loadMore sea propiedad, y el siguiente anuncio cae tras every_n propiedades, no en el índice 0', async () => {
+    const page1 = Array.from({ length: 8 }, (_, i) => make_property(`cap4-p${i}`));
+    const page2 = Array.from({ length: 10 }, (_, i) => make_property(`cap4-q${i}`));
+    const AD_A = make_ad('cap4-ad-a');
+
+    mock_fetch_feed_properties
+      .mockResolvedValueOnce({ data: page1, nextCursor: 'cursor-cap4-page-2' })
+      .mockResolvedValueOnce({ data: page2, nextCursor: null });
+
+    mock_supabase.rpc!.mockImplementation((fn: string) => {
+      if (fn === 'ads_feed_config')
+        return Promise.resolve({ data: [make_config({ ads_enabled: true, ad_frequency_n: 8, ad_max_per_session: 5 })], error: null });
+      if (fn === 'ads_for_zone') return Promise.resolve({ data: [AD_A], error: null });
+      throw new Error(`llamada inesperada a ${fn}`);
+    });
+
+    const { result } = await render_loaded_hook();
+
+    // Presencia (no vacua): la página 1 SÍ cerró con un anuncio (pasada de
+    // cierre de #247) — si esto fuera 0, el resto del test no probaría nada.
+    expect(result.current.data).toEqual([...props_only(page1), { kind: 'ad', ad: minted(AD_A) }]);
+
+    await act(async () => {
+      await result.current.loadMore();
+    });
+
+    const page2_items = as_feed_items(result.current.data).slice(page1.length + 1);
+    // El fix: el primer ítem de la página 2 es propiedad, no un segundo
+    // anuncio consecutivo con el de cierre de la página 1.
+    expect(page2_items[0]!.kind).toBe('property');
+    expect(page2_items).toEqual([
+      ...props_only(page2.slice(0, 8)),
+      { kind: 'ad', ad: minted(AD_A) },
+      ...props_only(page2.slice(8)),
     ]);
   });
 
@@ -1063,6 +1130,127 @@ describe('useFeedProperties — cap de sesión se sostiene entre loadInitial y l
     // 4 propiedades nuevas SIN anuncios — si el hook reseteara el cupo, esta
     // igualdad fallaría porque volverían a aparecer anuncios intercalados.
     expect(result.current.data).toEqual(props_only([S0, S1, S2, S3]));
+  });
+
+  // 256 — MUTANTE ENCONTRADO POR GUARDIAN: `since_last_ad_ref.current =
+  // undefined` en `load_initial` (useFeedProperties.ts ~L392) es la línea que
+  // hace que una carga NUEVA no herede el `since_last_ad` de una página de
+  // scroll anterior. Sin ese reset, un loadMore que deja el contador "due"
+  // (since_last_ad final >= every_n, SIN llegar a colocar un anuncio en su
+  // propia pasada de cierre) contamina el refetch/loadInitial siguiente: la
+  // opción `since_last_ad` manda SIN IMPORTAR `skip_first_position` (ver
+  // docblock de `InterleaveAdsOptions.since_last_ad`), así que
+  // `skip_first_position:true` (el invariante "nunca posición 0" de una
+  // carga inicial) queda sin efecto y el primer ítem del feed recargado
+  // puede ser un anuncio.
+  //
+  // Para dejar el contador "due" SIN colocar un anuncio en la pasada de
+  // cierre (y así distinguirlo del caso ya cubierto por EC-CAP-4, que sí
+  // cierra CON anuncio) se agota el `min_gap_between_repeats` con un solo
+  // anuncio en el pool — el presupuesto de sesión NO se agota (a propósito:
+  // si se agotara, `interleave_ads_with_state` cae en el early-return de
+  // "budget<=0" que SIEMPRE emite solo-propiedades sin mirar since_last_ad,
+  // y el mutante pasaría el test igual — ver interleaveAds.ts).
+  // `min_gap_between_repeats` NO es un parámetro libre: el hook lo deriva
+  // como `ad_frequency_n * 2` (ver compose_feed_items) — con every_n=3,
+  // min_gap=6.
+  //
+  // Traza a mano — página 1 (loadInitial, skip_first:true, already_shown:0,
+  // budget=10, every_n=3, min_gap=6, ads=[AD_A]), properties=[P0,P1,P2]:
+  //   P0: since(0)>=3? NO → push. since=1.
+  //   P1: since(1)>=3? NO → push. since=2.
+  //   P2: since(2)>=3? NO → push. since=3.
+  //   Cierre (#247): since(3)>=3, ads_used(0)<budget(10), AD_A sin historial
+  //     (mapa fresco) → coloca AD. since=0, ads_used=1.
+  //   Resultado: [P0,P1,P2,AD]. since_last_ad final=0. already_shown_ref=1.
+  //
+  // Traza a mano — página 2 (loadMore, already_shown:1, budget=10-1=9,
+  // since_last_ad:0 heredado), properties=[Q0..Q6] (7):
+  //   Q0: since(0)>=3? NO → push. since=1.
+  //   Q1: since(1)>=3? NO → push. since=2.
+  //   Q2: since(2)>=3? NO → push. since=3.
+  //   Q3 (i=3): since(3)>=3, ads_used(0)<9, AD_A sin historial (mapa fresco
+  //     de ESTA llamada) → coloca AD @pos 3. since=0, ads_used=1. push Q3, since=1.
+  //   Q4: since(1)>=3? NO → push. since=2.
+  //   Q5: since(2)>=3? NO → push. since=3.
+  //   Q6 (i=6): since(3)>=3, ads_used(1)<9, AD_A last_pos=3, pos_actual=7
+  //     (Q0,Q1,Q2,AD,Q3,Q4,Q5 ya en el resultado), gap=7-3=4 < min_gap(6) →
+  //     NO califica (único anuncio del pool) → sin ad. push Q6, since=4.
+  //   Cierre (i=7): since(4)>=3, ads_used(1)<9, AD_A last_pos=3, pos_actual=8
+  //     (+Q6), gap=8-3=5 < 6 → NO califica → sin ad de cierre.
+  //   Resultado: [Q0,Q1,Q2,AD,Q3,Q4,Q5,Q6] → 1 ad nuevo. since_last_ad final=4
+  //   (>= every_n=3: el contador queda "due" SIN haber colocado el anuncio de
+  //   cierre — justo el estado que un reset perdido deja filtrarse).
+  //   already_shown_ref = 1+1 = 2.
+  //
+  // Traza a mano — refetch (=load_initial, already_shown:2, budget=10-2=8,
+  // skip_first_position:true SIEMPRE), properties=[R0,R1,R2]:
+  //   CON el reset (fix): since_last_ad ausente en opts → arranca en 0
+  //     (skip_first_position:true). R0,R1,R2 se emiten sin ad (since sube
+  //     0→1→2→3); cierre: since(3)>=3 → coloca AD @pos 3.
+  //     Resultado: [R0,R1,R2,AD] → ÍNDICE 0 ES PROPIEDAD.
+  //   SIN el reset (mutante): since_last_ad_ref.current sigue en 4 (el
+  //     leftover de la página 2) → se pasa como opts.since_last_ad:4, que
+  //     MANDA sobre skip_first_position:true. since arranca en 4 (>=3) →
+  //     en R0 (i=0, mapa fresco de esta llamada) el anuncio califica de
+  //     inmediato @pos 0 → push AD ANTES de R0.
+  //     Resultado: [AD,R0,R1,R2] → ÍNDICE 0 ES ANUNCIO (el bug).
+  it('(EC-CAP-5) refetch_tras_un_loadmore_que_deja_el_contador_due_no_hereda_ese_estado_el_indice_0_sigue_siendo_propiedad: un loadMore que cierra "due" (since_last_ad>=every_n, sin colocar anuncio de cierre por min_gap) no debe contaminar el refetch siguiente — skip_first_position:true vuelve a mandar porque una carga inicial NO tiene página anterior que heredar', async () => {
+    const P0 = make_property('cap5-p0');
+    const P1 = make_property('cap5-p1');
+    const P2 = make_property('cap5-p2');
+    const Q0 = make_property('cap5-q0');
+    const Q1 = make_property('cap5-q1');
+    const Q2 = make_property('cap5-q2');
+    const Q3 = make_property('cap5-q3');
+    const Q4 = make_property('cap5-q4');
+    const Q5 = make_property('cap5-q5');
+    const Q6 = make_property('cap5-q6');
+    const R0 = make_property('cap5-r0');
+    const R1 = make_property('cap5-r1');
+    const R2 = make_property('cap5-r2');
+    const AD_A = make_ad('cap5-ad-a');
+
+    mock_fetch_feed_properties
+      .mockResolvedValueOnce({ data: [P0, P1, P2], nextCursor: 'cursor-cap5-page-2' })
+      .mockResolvedValueOnce({ data: [Q0, Q1, Q2, Q3, Q4, Q5, Q6], nextCursor: null })
+      .mockResolvedValueOnce({ data: [R0, R1, R2], nextCursor: null });
+
+    mock_supabase.rpc!.mockImplementation((fn: string) => {
+      if (fn === 'ads_feed_config')
+        return Promise.resolve({ data: [make_config({ ads_enabled: true, ad_frequency_n: 3, ad_max_per_session: 10 })], error: null });
+      if (fn === 'ads_for_zone') return Promise.resolve({ data: [AD_A], error: null });
+      throw new Error(`llamada inesperada a ${fn}`);
+    });
+
+    const { result } = await render_loaded_hook();
+
+    // Presencia (no vacua): la página 1 SÍ colocó su anuncio de cierre.
+    expect(result.current.data).toEqual([...props_only([P0, P1, P2]), { kind: 'ad', ad: minted(AD_A) }]);
+
+    await act(async () => {
+      await result.current.loadMore();
+    });
+
+    // Presencia (no vacua): la página 2 SÍ colocó un anuncio nuevo — deja el
+    // contador "due" (since_last_ad final=4) SIN anuncio de cierre.
+    expect(result.current.data).toEqual([
+      ...props_only([P0, P1, P2]),
+      { kind: 'ad', ad: minted(AD_A) },
+      ...props_only([Q0, Q1, Q2]),
+      { kind: 'ad', ad: minted(AD_A) },
+      ...props_only([Q3, Q4, Q5, Q6]),
+    ]);
+
+    await act(async () => {
+      await result.current.refetch();
+    });
+
+    // El fix: refetch() reinicia since_last_ad_ref antes de componer, así que
+    // skip_first_position:true vuelve a mandar — el índice 0 es PROPIEDAD, no
+    // el anuncio "due" heredado de la página 2. Este es el assert que MUERE
+    // si se borra `since_last_ad_ref.current = undefined` en load_initial.
+    expect(result.current.data).toEqual([...props_only([R0, R1, R2]), { kind: 'ad', ad: minted(AD_A) }]);
   });
 });
 
