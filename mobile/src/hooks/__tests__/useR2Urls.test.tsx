@@ -40,6 +40,7 @@
 import { renderHook, act } from '@testing-library/react-native';
 
 import { useR2Urls } from '../useR2Urls';
+import { clear_r2_url_cache } from '../../lib/r2Resolver';
 
 const mock_invoke = jest.fn();
 
@@ -54,6 +55,11 @@ const TEST_URL_2 = 'https://abc.r2.cloudflarestorage.com/urbea-assets/avatars/us
 
 beforeEach(() => {
   jest.clearAllMocks();
+  // 263: la caché de resolve_r2_urls (que este hook delega) es a nivel de
+  // MÓDULO — sin esta limpieza, TEST_KEY_1 quedaría cacheado desde un test
+  // anterior (p.ej. (b)) y tests como (e)/(f) dejarían de invocar la EF,
+  // rompiendo sus asserts. NO se tocan los asserts existentes.
+  clear_r2_url_cache();
 });
 
 describe('useR2Urls — hook fino sobre resolve_r2_urls', () => {

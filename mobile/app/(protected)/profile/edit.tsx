@@ -90,6 +90,14 @@ export default function EditProfileScreen() {
   // El picker muestra la foto recién elegida (preview local inmediata) o,
   // si no hay cambio, la foto guardada ya resuelta a URL.
   const avatar_preview_uri = picked_image_uri ?? saved_avatar_url ?? undefined;
+  // #263: cacheKey estable en expo-image = la KEY de R2 guardada (no la URL
+  // firmada). Solo aplica cuando se muestra la foto YA guardada (sin cambio
+  // pendiente) y es un key R2 real — una foto recién elegida (uri local) o
+  // una URL legacy http(s) ya son estables por sí mismas.
+  const avatar_cache_key =
+    !picked_image_uri && saved_avatar_key && !saved_avatar_key.startsWith('http')
+      ? saved_avatar_key
+      : undefined;
   const [full_name, set_full_name] = useState('');
   const [bio, set_bio] = useState('');
 
@@ -249,6 +257,7 @@ export default function EditProfileScreen() {
               uri={avatar_preview_uri}
               onChange={set_picked_image_uri}
               uploading={false}
+              cacheKey={avatar_cache_key}
             />
           </View>
 
