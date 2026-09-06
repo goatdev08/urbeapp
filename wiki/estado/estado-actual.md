@@ -1,7 +1,18 @@
 ---
 tipo: estado
-actualizado: 2026-09-05
+actualizado: 2026-09-06
 ---
+
+## Hoy (2026-09-06) — #266: la capa de datos del CRM rediseñado ya está en producción, sin UI todavía
+Con `/goal terminar tarea 266 completa` se cerraron en serie 266.3 → 266.8. Cada pieza crítica pasó RED → GREEN → guardian con **mutación real** (aplicar el mutante, ver qué assert lo mata, restaurar re-aplicando el archivo), y el patrón que se repitió cinco veces: el guardian PASA la implementación pero encuentra **un hueco de cobertura justo debajo del invariante que la subtarea existe para proteger** — el RED se endurece antes de commitear, nunca se debilita. Huecos reales cerrados: frontera inferior de `signals` (266.3), agente par de la misma agencia y membresía suspendida leyendo el pipeline ajeno (266.4), `p_limit` degenerado abriendo el timeline completo (266.5), **k-anonimato contado sobre el tráfico total en vez del conjunto sin lead** y la frontera Δ=0 (266.6), fixture del radar que no podía demostrar la ausencia de identidad y paginación probada solo a 2 páginas (266.7).
+
+Dos bugs de verdad encontrados en GREEN, ninguno por el test sino por mutación/sonda: `false OR NULL = NULL` + `IF NOT NULL` en plpgsql deja pasar al no autorizado (fix `coalesce(...,false)` en helper y RPC), y `row_number()` es `bigint` contra un `int` declarado, que el wrapper anti-excepción del RED disfrazaba de "0 filas por autorización".
+
+**Deploy:** 5 `apply_migration` en orden, censo pre/post, sonda DO+RAISE en producción (`SONDA_OK`, 24 combinaciones admin/ajeno a 0, `get_lead_stats` idéntico), backfill de 42 filas. La primera purga de `events_raw` no borra nada hasta noviembre (el crudo más viejo es del 8 de agosto). **No hubo OTA**: los hooks no tienen consumidor hasta #267.
+
+**Para Abraham:** (1) el radar de Vlad da 0 filas hoy — es el k-anonimato con datos reales, no un fallo; (2) riesgo aceptado del radar: se puede *seguir* a la misma persona anónima entre llamadas por su tupla de temperatura/delta/última actividad, no *saber quién es*; (3) el anonimato del radar depende de que `likes_select`/`saves_select`/`events_raw_select` sigan sin dar identidad al dueño de la propiedad — quedó escrito en [[privacidad-datos]].
+
+**Pendiente de decisión humana:** PR y merge de `tarea/266-crm-capa-datos` a `main` (16 commits locales; `main` no se toca sin que Abraham lo pida). Siguiente: `/tm-plan 267` (UI del CRM + OTA).
 
 ## Hoy (2026-09-05, noche) — #260: el sistema de trabajo deja de correr en un solo modo, y el agente `design` llevaba dos meses instruido para abortar
 Abraham preguntó cuánto le modifica el comportamiento el skill `ponytail` y si quitarlo lo haría más creativo. La respuesta honesta fue que no: ponytail no reduce las ideas, reduce el **tamaño** de lo construido, y el freno real a proponer estaba en el §8. De ahí salió la exploración **043** → tarea **#260**, mergeada a `main` (`6ebc7bc`, PR #149). Cuatro reglas, todas con la forma que sí ha sobrevivido en este repo (determinista y derivada de una entrada objetiva, como la criticidad TDD del §5):
