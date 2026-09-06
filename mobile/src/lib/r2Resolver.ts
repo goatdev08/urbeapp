@@ -20,9 +20,13 @@
  * segundos, viene de la propia respuesta de la EF); solo las keys sin caché
  * válida entran al batch. Un `Map<key, Promise>` de "en vuelo" deduplica
  * consumidores concurrentes de la misma key (p.ej. 8 items del feed del
- * mismo publicador) en UN solo invoke. Fail-soft intacto: un fallo no
- * cachea nada. `peek_r2_urls`/`clear_r2_url_cache` — lectura síncrona y
- * reset para tests/siembra inicial de hooks.
+ * mismo publicador) en UN solo invoke. Fail-soft REAL (guardian #263,
+ * violación 2): una entrada rancia (menos de `R2_URL_SAFETY_MS` de vida)
+ * nunca se sirve tal cual — `get_fresh_cached_url` la purga en cuanto la ve
+ * vencer el margen; si el refetch que la reemplaza falla, la lectura da
+ * `null` (no la firma vieja, que puede devolver 403 en R2). `peek_r2_urls`/
+ * `clear_r2_url_cache` — lectura síncrona y reset para tests/siembra
+ * inicial de hooks.
  *
  * Ver mobile/src/lib/__tests__/r2Resolver.test.ts (contrato base) y
  * r2Resolver.cache.test.ts (caché) para el contrato completo.
@@ -80,9 +84,23 @@ const url_cache = new Map<string, CachedUrl>();
  * MISMA key (p.ej. 8 items del feed del mismo publicador) en UN invoke. */
 const in_flight = new Map<string, Promise<Map<string, string>>>();
 
-function is_cache_fresh(key: string, now: number): boolean {
+/**
+ * Devuelve la URL cacheada SOLO si sigue fresca (le quedan más de
+ * `R2_URL_SAFETY_MS` de vida). Si la entrada existe pero está rancia, la
+ * purga inmediatamente y devuelve `null` — nunca debe servirse una firma
+ * vieja: si el refetch que la reemplazaría llega a fallar, el resultado
+ * final es `null` (fail-soft real), no la URL vencida (guardian #263,
+ * violación 2 — antes `url_cache.get(key)?.url ?? null` podía devolver una
+ * firma que R2 ya rechaza con 403).
+ */
+function get_fresh_cached_url(key: string, now: number): string | null {
   const cached = url_cache.get(key);
-  return !!cached && cached.expires_at_ms - now > R2_URL_SAFETY_MS;
+  if (!cached) return null;
+  if (cached.expires_at_ms - now > R2_URL_SAFETY_MS) {
+    return cached.url;
+  }
+  url_cache.delete(key);
+  return null;
 }
 
 /** Invoca la EF para un lote de keys nuevas y puebla la caché con lo que
@@ -152,7 +170,7 @@ export async function resolve_r2_urls(
   const keys_needing_fetch: string[] = [];
   const seen = new Set<string>();
   valid_keys.forEach((key) => {
-    if (seen.has(key) || is_cache_fresh(key, now)) return;
+    if (seen.has(key) || get_fresh_cached_url(key, now) !== null) return;
     seen.add(key);
     keys_needing_fetch.push(key);
   });
@@ -182,8 +200,9 @@ export async function resolve_r2_urls(
     await Promise.all(pending);
   }
 
+  const finalize_now = Date.now();
   valid_indices.forEach((index, i) => {
-    result[index] = url_cache.get(valid_keys[i]!)?.url ?? null;
+    result[index] = get_fresh_cached_url(valid_keys[i]!, finalize_now);
   });
 
   return result;
@@ -199,7 +218,7 @@ export function peek_r2_urls(keys: (string | null | undefined)[]): (string | nul
   return keys.map((key) => {
     if (!key) return null;
     if (key.startsWith('http://') || key.startsWith('https://')) return key;
-    return is_cache_fresh(key, now) ? url_cache.get(key)!.url : null;
+    return get_fresh_cached_url(key, now);
   });
 }
 

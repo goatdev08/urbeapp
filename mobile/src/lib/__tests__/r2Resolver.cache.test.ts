@@ -47,6 +47,11 @@
  * - EC-R5a la EF responde error → nada entra a la caché, la siguiente
  *   llamada de la misma key vuelve a invocar.
  * - EC-R5b invoke RECHAZA (excepción) → nada entra a la caché, ídem.
+ * - EC-R5c (guardian #263, violación 2 — post-GREEN) entrada YA cacheada
+ *   que vence el margen de seguridad (reloj avanzado a < 5 min de vida) y
+ *   cuyo refetch FALLA → el resultado es `null`, NUNCA la URL vieja (podía
+ *   devolver 403 en R2); la entrada rancia queda purgada (peek_r2_urls
+ *   tampoco la sirve).
  *
  * NOTA DE VERIFICACIÓN (RED): `peek_r2_urls`, `clear_r2_url_cache` y
  * `R2_URL_SAFETY_MS` NO EXISTEN todavía en r2Resolver.ts — este archivo
@@ -229,6 +234,33 @@ describe('resolve_r2_urls — caché de módulo (263)', () => {
 
     expect(second).toEqual([TEST_URL_1]);
     expect(mock_invoke).toHaveBeenCalledTimes(2);
+  });
+
+  it('EC_R5c_entrada_rancia_y_refetch_falla_no_sirve_la_url_vieja_guardian_263', async () => {
+    const base_time = 1_700_000_000_000;
+    jest.spyOn(Date, 'now').mockReturnValue(base_time);
+
+    mock_invoke.mockResolvedValueOnce({
+      data: { urls: [{ key: TEST_KEY_1, url: TEST_URL_1, expires: 3600 }] },
+      error: null,
+    });
+    await resolve_r2_urls([TEST_KEY_1], { supabase: mock_supabase });
+    expect(mock_invoke).toHaveBeenCalledTimes(1);
+
+    // Avanza el reloj: quedan 3600 - 3400 = 200s de vida (< R2_URL_SAFETY_MS)
+    // → se intenta refetch, y esta vez la EF falla.
+    jest.spyOn(Date, 'now').mockReturnValue(base_time + 3400 * 1000);
+    mock_invoke.mockResolvedValueOnce({ data: null, error: { message: 'internal error' } });
+
+    const result = await resolve_r2_urls([TEST_KEY_1], { supabase: mock_supabase });
+
+    // Guardian #263 violación 2: NUNCA la URL vieja (podría dar 403 en R2)
+    // — fail-soft real es `null`, no la firma rancia.
+    expect(result).toEqual([null]);
+    expect(mock_invoke).toHaveBeenCalledTimes(2);
+
+    // La entrada rancia quedó purgada — peek_r2_urls tampoco la sirve.
+    expect(peek_r2_urls([TEST_KEY_1])).toEqual([null]);
   });
 
   it('EC_R6_peek_r2_urls_devuelve_cacheada_null_o_passthrough_sin_invocar', async () => {
