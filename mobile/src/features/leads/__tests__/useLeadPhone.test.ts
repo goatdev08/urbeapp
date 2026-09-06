@@ -251,6 +251,71 @@ describe('useLeadPhone', () => {
     expect(result.current.phone).toBe(OTRO_TELEFONO);
   });
 
+  it('(EC-8b) cambiar_a_un_lead_sin_fila_visible_reinicia_phone_a_null_D_SINFILA', async () => {
+    // Guardian 267.6: sin este caso, un hook que conservara el teléfono
+    // anterior cuando no hay fila (RLS / deleted_at / lead ajeno) pasaría la
+    // suite — y el botón de WhatsApp marcaría al contacto EQUIVOCADO (PII
+    // cruzada entre leads). EC-4 arranca desde null y no puede verlo.
+    const maybe_single = jest
+      .fn()
+      .mockResolvedValueOnce({ data: { users: { phone: TELEFONO } }, error: null })
+      .mockResolvedValueOnce({ data: null, error: null });
+    mock_supabase_holder.client = make_supabase_mock(maybe_single);
+
+    const { result, rerender } = await renderHook(({ leadId }: { leadId: string }) => useLeadPhone(leadId), {
+      initialProps: { leadId: LEAD_ID },
+    });
+    expect(result.current.phone).toBe(TELEFONO);
+
+    await rerender({ leadId: 'lead-uuid-267-6-sin-fila' });
+
+    expect(maybe_single).toHaveBeenCalledTimes(2);
+    expect(result.current.phone).toBeNull();
+    expect(result.current.error).toBeNull();
+    expect(result.current.loading).toBe(false);
+  });
+
+  it('(EC-8c) respuesta_tardia_de_un_leadId_anterior_no_pisa_el_telefono_actual_D_SEQ', async () => {
+    // Guardian 267.6 (obs. 1): LEAD-A lento, LEAD-B rápido. Resuelve B, luego
+    // llega A tardío — el hook ya representa a B y NO debe volver a TEL-A.
+    const TEL_A = '+525511111111';
+    const TEL_B = '+525522222222';
+    let resolve_a!: (value: QueryResult) => void;
+    const pending_a = new Promise<QueryResult>((resolve) => {
+      resolve_a = resolve;
+    });
+    const maybe_single = jest
+      .fn()
+      .mockReturnValueOnce(pending_a)
+      .mockResolvedValueOnce({ data: { users: { phone: TEL_B } }, error: null });
+    mock_supabase_holder.client = make_supabase_mock(maybe_single);
+
+    const { result, rerender } = await renderHook(({ leadId }: { leadId: string }) => useLeadPhone(leadId), {
+      initialProps: { leadId: 'lead-a' },
+    });
+    await rerender({ leadId: 'lead-b' });
+    expect(result.current.phone).toBe(TEL_B);
+
+    await act(async () => {
+      resolve_a({ data: { users: { phone: TEL_A } }, error: null });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(result.current.phone).toBe(TEL_B);
+    expect(result.current.loading).toBe(false);
+  });
+
+  it('(EC-6b) rechazo_real_de_red_termina_con_error_neutro_y_loading_false', async () => {
+    mock_supabase_holder.client = make_supabase_mock(jest.fn().mockRejectedValue(new TypeError('Network request failed')));
+
+    const { result } = await renderHook(() => useLeadPhone(LEAD_ID));
+
+    expect(result.current.error).toBe('No se pudo cargar el teléfono del lead.');
+    expect(result.current.phone).toBeNull();
+    expect(result.current.loading).toBe(false);
+  });
+
   it('(EC-9) leadId_null_o_undefined_no_llama_supabase_phone_null_sin_error_loading_false', async () => {
     const { result: result_null } = await renderHook(() => useLeadPhone(null));
     expect(mock_supabase_holder.client._mock_from).not.toHaveBeenCalled();

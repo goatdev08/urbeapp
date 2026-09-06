@@ -1,10 +1,27 @@
 /**
- * useLeadPhone — STUB fase RED (subtarea 267.6, tarea #267 "CRM UI agente").
+ * useLeadPhone — teléfono de contacto de un lead del CRM (subtarea 267.6,
+ * tarea #267 "CRM UI agente", GREEN).
  *
- * Contrato completo (SEAMS, query exacta, decisiones D-XXX, edge cases) en
+ * Las RPC del CRM (crm_lead_detail, lead_activity, crm_suggested_message) no
+ * exponen `phone` — es un dato sensible que solo se necesita para el botón
+ * de WhatsApp. Se lee con un embed puntual ya probado bajo RLS en
+ * useAgentLeads.ts (el flujo viejo, se borra en 267.7):
+ *   supabase.from('leads')
+ *     .select('users!leads_user_id_fkey(phone)')
+ *     .eq('id', leadId)
+ *     .is('deleted_at', null)
+ *     .maybeSingle()
+ * El hint `users!leads_user_id_fkey` es obligatorio: `leads` tiene dos FKs a
+ * `users` (agent_id y user_id) y sin el hint PostgREST no sabe cuál usar.
+ * Molde de estado/ciclo de vida: useCrmSuggestedMessage.ts. Contrato
+ * completo (SEAMS, decisiones D-XXX, edge cases) en
  * mobile/src/features/leads/__tests__/useLeadPhone.test.ts — no se repite
- * aquí. La fase GREEN implementa la lógica real.
+ * aquí.
  */
+
+import { useCallback, useEffect, useRef, useState } from 'react';
+
+import { supabase } from '@/lib/supabase/client';
 
 export interface UseLeadPhoneState {
   phone: string | null;
@@ -13,6 +30,77 @@ export interface UseLeadPhoneState {
   refetch: () => Promise<void>;
 }
 
-export function useLeadPhone(_leadId: string | null | undefined): UseLeadPhoneState {
-  throw new Error('not_implemented');
+const ERROR_MESSAGE = 'No se pudo cargar el teléfono del lead.';
+
+export function useLeadPhone(leadId: string | null | undefined): UseLeadPhoneState {
+  const [phone, set_phone] = useState<string | null>(null);
+  const [loading, set_loading] = useState(Boolean(leadId));
+  const [error, set_error] = useState<string | null>(null);
+
+  const mounted_ref = useRef(true);
+  // D-SEQ (guardian 267.6): token de petición — una respuesta tardía de un
+  // leadId ANTERIOR nunca pisa el teléfono del lead actual (PII cruzada: el
+  // botón de WhatsApp marcaría al contacto equivocado). Seguridad, fuera de
+  // ponytail.
+  const seq_ref = useRef(0);
+  useEffect(() => {
+    mounted_ref.current = true;
+    return () => {
+      mounted_ref.current = false;
+    };
+  }, []);
+
+  const fetch_phone = useCallback(async (): Promise<void> => {
+    if (!leadId) {
+      set_phone(null);
+      set_loading(false);
+      set_error(null);
+      return;
+    }
+
+    set_loading(true);
+    const seq = ++seq_ref.current;
+
+    let query_result: {
+      data: { users: { phone: string | null } | null } | null;
+      error: { message: string } | null;
+    };
+    try {
+      query_result = (await supabase
+        .from('leads')
+        .select('users!leads_user_id_fkey(phone)')
+        .eq('id', leadId)
+        .is('deleted_at', null)
+        .maybeSingle()) as typeof query_result;
+    } catch {
+      // Rechazo real de red (offline): misma salida neutra que un error de
+      // PostgREST — sin esto `loading` quedaría en true para siempre.
+      query_result = { data: null, error: { message: 'network' } };
+    }
+
+    if (!mounted_ref.current || seq !== seq_ref.current) return;
+
+    if (query_result.error) {
+      set_error(ERROR_MESSAGE);
+      set_phone(null);
+      set_loading(false);
+      return;
+    }
+
+    // D-MAP: el embed many-to-one puede llegar sin fila (D-SINFILA, RLS o
+    // deleted_at) o con `users` null (usuario borrado) — nunca se asume la
+    // forma, siempre se resuelve a phone null sin error.
+    set_phone(query_result.data?.users?.phone ?? null);
+    set_error(null);
+    set_loading(false);
+  }, [leadId]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch_phone hace setState tras el await de la query (o sincrónico solo en el guard sin leadId); molde useCrmSuggestedMessage.ts.
+    void fetch_phone();
+  }, [fetch_phone]);
+
+  const refetch = useCallback(() => fetch_phone(), [fetch_phone]);
+
+  return { phone, loading, error, refetch };
 }
