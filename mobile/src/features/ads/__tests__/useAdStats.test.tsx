@@ -315,12 +315,13 @@ describe('useAdStats', () => {
     expect(result.current.error_message).toBeNull();
   });
 
-  it("(EC-6) llama_las_tres_rpcs_en_paralelo_con_p_ad_id_y_rango_correcto: exactamente 3 llamadas -- ad_stats_totals/ad_stats_daily/ad_stats_zones -- cada una con {p_ad_id, p_from, p_to} ('max' => ambos null)", async () => {
+  it("(EC-6) llama_las_tres_rpcs_en_paralelo_con_p_ad_id_y_rango_correcto: exactamente 3 llamadas para el period visible 'max' -- ad_stats_totals/ad_stats_daily/ad_stats_zones -- cada una con {p_ad_id, p_from, p_to} ('max' => ambos null), MÁS 6 de prefetch en segundo plano de 'today'/'last30' (#262: el prefetch es un invariante nuevo -- la 1ª carga de CUALQUIER period siempre prefetchea los otros dos que no tengan caché fresca; ver useAdStats.cache.test.tsx EC-C1, que fija el contrato completo del prefetch). Traza: mount sin caché → 3 del visible + 6 del prefetch (ninguno de los otros dos tenía entrada) = 9.", async () => {
     const client = make_client();
 
     await render_stats(AD_ID, 'max', client);
 
-    expect(client.rpc).toHaveBeenCalledTimes(3);
+    // 3 del period visible ('max') + 6 del prefetch de 'today'+'last30' (#262).
+    expect(client.rpc).toHaveBeenCalledTimes(9);
     expect(client.rpc).toHaveBeenCalledWith('ad_stats_totals', {
       p_ad_id: AD_ID,
       p_from: null,
@@ -570,7 +571,7 @@ describe('useAdStats', () => {
     expect(result.current.totals).toEqual(NEW_PERIOD_TOTALS);
   });
 
-  it('(EC-20) rerender_con_mismo_ad_id_y_period_no_redispara_las_rpcs: un re-render con los MISMOS ad_id/period (nueva evaluación, mismo valor) no debe generar una segunda tanda de llamadas', async () => {
+  it('(EC-20) rerender_con_mismo_ad_id_y_period_no_redispara_las_rpcs: un re-render con los MISMOS ad_id/period (nueva evaluación, mismo valor) no debe generar una segunda tanda de llamadas ni un prefetch adicional (#262: el prefetch es un invariante nuevo -- el mount ya prefetcheó "today"/"last30", y un re-render con las MISMAS deps del efecto [ad_id, period, client, refetch_tick] no lo vuelve a correr). Traza: mount → 3 del visible + 6 de prefetch = 9; rerender sin cambios → el efecto no reevalúa → sigue en 9.', async () => {
     const client = make_client();
 
     const { rerender } = await renderHook(
@@ -578,13 +579,14 @@ describe('useAdStats', () => {
       { initialProps: { id: AD_ID, p: 'max' as AdStatsPeriod } },
     );
 
-    expect(client.rpc).toHaveBeenCalledTimes(3);
+    // 3 del period visible + 6 de prefetch ('today'/'last30', #262).
+    expect(client.rpc).toHaveBeenCalledTimes(9);
 
     await act(async () => {
       rerender({ id: AD_ID, p: 'max' });
     });
 
-    expect(client.rpc).toHaveBeenCalledTimes(3);
+    expect(client.rpc).toHaveBeenCalledTimes(9);
   });
 
   // ── Unmount ──────────────────────────────────────────────────────────────
@@ -610,18 +612,21 @@ describe('useAdStats', () => {
 
   // ── Refetch ──────────────────────────────────────────────────────────────
 
-  it('(EC-22) refetch_vuelve_a_llamar_las_tres_rpcs_con_el_mismo_ad_id_y_period: refetch() dispara OTRA tanda de 3 llamadas, mismos p_ad_id/p_from/p_to', async () => {
+  it('(EC-22) refetch_vuelve_a_llamar_las_tres_rpcs_con_el_mismo_ad_id_y_period: refetch() dispara OTRA tanda de 3 llamadas, mismos p_ad_id/p_from/p_to, SIN volver a prefetchear (#262: el prefetch es un invariante nuevo -- el mount ya dejó "today"/"last30" con entrada FRESCA en caché, así que el settle del refetch de "max" los salta por la regla "solo prefetchea periodos sin caché fresca"). Traza: mount → 3 del visible + 6 de prefetch = 9; refetch → invalida solo la entrada de "max" → +3 del refetch, 0 de prefetch (today/last30 siguen frescos) = 12.', async () => {
     const client = make_client();
 
     const { result } = await render_stats(AD_ID, 'max', client);
 
-    expect(client.rpc).toHaveBeenCalledTimes(3);
+    // 3 del period visible + 6 de prefetch ('today'/'last30', #262).
+    expect(client.rpc).toHaveBeenCalledTimes(9);
 
     await act(async () => {
       result.current.refetch();
     });
 
-    expect(client.rpc).toHaveBeenCalledTimes(6);
+    // +3 del refetch de 'max' -- 'today'/'last30' siguen frescos en caché,
+    // no se re-prefetchean (regla del orquestador, #262).
+    expect(client.rpc).toHaveBeenCalledTimes(12);
   });
 
   it('(EC-23) error_previo_se_limpia_tras_un_refetch_exitoso: 1ª tanda falla, refetch() con datos buenos limpia error_message y puebla totals/daily/zones', async () => {
@@ -654,7 +659,7 @@ describe('useAdStats', () => {
 
   // ── DI / gotcha #205 ─────────────────────────────────────────────────────
 
-  it('(EC-24) deps_client_rpc_se_llama_directo_sin_desprender_preserva_this: un cliente con método de PROTOTIPO real (no jest.fn de objeto plano) SOLO funciona si el hook llama `deps.client.rpc(...)` directo -- desestructurar (`const {rpc} = deps.client`) pierde `this` y este mock lo detecta', async () => {
+  it('(EC-24) deps_client_rpc_se_llama_directo_sin_desprender_preserva_this: un cliente con método de PROTOTIPO real (no jest.fn de objeto plano) SOLO funciona si el hook llama `deps.client.rpc(...)` directo -- desestructurar (`const {rpc} = deps.client`) pierde `this` y este mock lo detecta. El prefetch de #262 llama al MISMO `client.rpc` para "today"/"last30" (misma invocación directa, mismo `this`), así que las 9 llamadas totales (3 del visible + 6 de prefetch) deben preservarlo igual. Traza: sin caché para ninguno de los 3 periods → 3 del visible + 3 de "today" + 3 de "last30" = 9, 3 por cada uno de los 3 nombres de RPC.', async () => {
     class TrackingClient {
       calls: RpcName[] = [];
       // Método normal (no arrow): `this` depende de CÓMO se invoque.
@@ -674,8 +679,19 @@ describe('useAdStats', () => {
 
     // Si el hook desprendiera `rpc` de `client`, `this` sería undefined y
     // `this.calls.push` lanzaría un TypeError -- nunca llegaríamos aquí con
-    // las 3 llamadas registradas.
-    expect(client.calls.sort()).toEqual(['ad_stats_daily', 'ad_stats_totals', 'ad_stats_zones']);
+    // las 9 llamadas registradas (3 del period visible + 6 del prefetch de
+    // 'today'/'last30', #262: el prefetch es un invariante nuevo).
+    expect(client.calls.sort()).toEqual([
+      'ad_stats_daily',
+      'ad_stats_daily',
+      'ad_stats_daily',
+      'ad_stats_totals',
+      'ad_stats_totals',
+      'ad_stats_totals',
+      'ad_stats_zones',
+      'ad_stats_zones',
+      'ad_stats_zones',
+    ]);
     expect(result.current.totals).toEqual(TOTALS_ROW);
   });
 
