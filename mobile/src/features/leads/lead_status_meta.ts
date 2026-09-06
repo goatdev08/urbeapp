@@ -2,7 +2,7 @@
  * lead_status_meta.ts — metadatos visuales de los estados de lead.
  *
  * Única fuente de verdad para etiquetas en español y colores de badge.
- * Usado por LeadCard y LeadExpandedView.
+ * Usado por StatusPicker y LeadInlineDetail (#267.6/267.7).
  *
  * ponytail: módulo plano de datos — sin lógica de negocio.
  */
@@ -65,12 +65,3 @@ export const ALL_LEAD_STATUSES: LeadStatus[] = [
 export function get_status_meta(status: LeadStatus): StatusMeta {
   return STATUS_META[status] ?? { label: status, bg: colors.paper_3, text: colors.gray_3 };
 }
-
-// ---------------------------------------------------------------------------
-// Nivel de actividad (frío/tibio/caliente) — RETIRADO en tarea #112 (decisión
-// del dueño: el puntaje/temperatura salen de la UI, reemplazados por la barra
-// de acciones tangible — ver ActionStatsBar.tsx). `leads.score`/`leads.level`
-// siguen vivos en DB/tipos (AgentLead.score/level, apps v1.0.3 + el OTA del
-// mismo día allá afuera leyéndolas) — solo este mapeo visual (LEVEL_META/
-// get_level_meta), sin consumidores tras el retiro de LeadCard, se elimina.
-// ---------------------------------------------------------------------------
