@@ -1,0 +1,307 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`TemperatureRing (EC-0) temperatura=0 → stroke del progreso = temperature_color(t), snapshot 1`] = `
+<View
+  style={
+    {
+      "height": 46,
+      "width": 46,
+    }
+  }
+>
+  <RNSVGSvgView
+    bbHeight={46}
+    bbWidth={46}
+    focusable={false}
+    height={46}
+    style={
+      [
+        {
+          "backgroundColor": "transparent",
+          "borderWidth": 0,
+        },
+        {
+          "flex": 0,
+          "height": 46,
+          "width": 46,
+        },
+      ]
+    }
+    width={46}
+  >
+    <RNSVGGroup
+      fill={
+        {
+          "payload": 4278190080,
+          "type": 0,
+        }
+      }
+    >
+      <RNSVGCircle
+        cx={23}
+        cy={23}
+        fill={null}
+        propList={
+          [
+            "fill",
+            "stroke",
+            "strokeWidth",
+          ]
+        }
+        r={21.5}
+        stroke={
+          {
+            "payload": 4293123279,
+            "type": 0,
+          }
+        }
+        strokeWidth={3}
+      />
+      <RNSVGCircle
+        cx={23}
+        cy={23}
+        fill={null}
+        matrix={
+          [
+            6.123233995736766e-17,
+            -1,
+            1,
+            6.123233995736766e-17,
+            0,
+            46,
+          ]
+        }
+        propList={
+          [
+            "fill",
+            "stroke",
+            "strokeWidth",
+            "strokeDasharray",
+            "strokeDashoffset",
+          ]
+        }
+        r={21.5}
+        stroke={
+          {
+            "payload": 4284444007,
+            "type": 0,
+          }
+        }
+        strokeDasharray={
+          [
+            "135.0884841043611",
+            "135.0884841043611",
+          ]
+        }
+        strokeDashoffset={135.0884841043611}
+        strokeWidth={3}
+        testID="ring-progress"
+      />
+    </RNSVGGroup>
+  </RNSVGSvgView>
+</View>
+`;
+
+exports[`TemperatureRing (EC-1) temperatura=50 → stroke del progreso = temperature_color(t), snapshot 1`] = `
+<View
+  style={
+    {
+      "height": 46,
+      "width": 46,
+    }
+  }
+>
+  <RNSVGSvgView
+    bbHeight={46}
+    bbWidth={46}
+    focusable={false}
+    height={46}
+    style={
+      [
+        {
+          "backgroundColor": "transparent",
+          "borderWidth": 0,
+        },
+        {
+          "flex": 0,
+          "height": 46,
+          "width": 46,
+        },
+      ]
+    }
+    width={46}
+  >
+    <RNSVGGroup
+      fill={
+        {
+          "payload": 4278190080,
+          "type": 0,
+        }
+      }
+    >
+      <RNSVGCircle
+        cx={23}
+        cy={23}
+        fill={null}
+        propList={
+          [
+            "fill",
+            "stroke",
+            "strokeWidth",
+          ]
+        }
+        r={21.5}
+        stroke={
+          {
+            "payload": 4293123279,
+            "type": 0,
+          }
+        }
+        strokeWidth={3}
+      />
+      <RNSVGCircle
+        cx={23}
+        cy={23}
+        fill={null}
+        matrix={
+          [
+            6.123233995736766e-17,
+            -1,
+            1,
+            6.123233995736766e-17,
+            0,
+            46,
+          ]
+        }
+        propList={
+          [
+            "fill",
+            "stroke",
+            "strokeWidth",
+            "strokeDasharray",
+            "strokeDashoffset",
+          ]
+        }
+        r={21.5}
+        stroke={
+          {
+            "payload": 4279918148,
+            "type": 0,
+          }
+        }
+        strokeDasharray={
+          [
+            "135.0884841043611",
+            "135.0884841043611",
+          ]
+        }
+        strokeDashoffset={67.54424205218055}
+        strokeWidth={3}
+        testID="ring-progress"
+      />
+    </RNSVGGroup>
+  </RNSVGSvgView>
+</View>
+`;
+
+exports[`TemperatureRing (EC-2) temperatura=100 → stroke del progreso = temperature_color(t), snapshot 1`] = `
+<View
+  style={
+    {
+      "height": 46,
+      "width": 46,
+    }
+  }
+>
+  <RNSVGSvgView
+    bbHeight={46}
+    bbWidth={46}
+    focusable={false}
+    height={46}
+    style={
+      [
+        {
+          "backgroundColor": "transparent",
+          "borderWidth": 0,
+        },
+        {
+          "flex": 0,
+          "height": 46,
+          "width": 46,
+        },
+      ]
+    }
+    width={46}
+  >
+    <RNSVGGroup
+      fill={
+        {
+          "payload": 4278190080,
+          "type": 0,
+        }
+      }
+    >
+      <RNSVGCircle
+        cx={23}
+        cy={23}
+        fill={null}
+        propList={
+          [
+            "fill",
+            "stroke",
+            "strokeWidth",
+          ]
+        }
+        r={21.5}
+        stroke={
+          {
+            "payload": 4293123279,
+            "type": 0,
+          }
+        }
+        strokeWidth={3}
+      />
+      <RNSVGCircle
+        cx={23}
+        cy={23}
+        fill={null}
+        matrix={
+          [
+            6.123233995736766e-17,
+            -1,
+            1,
+            6.123233995736766e-17,
+            0,
+            46,
+          ]
+        }
+        propList={
+          [
+            "fill",
+            "stroke",
+            "strokeWidth",
+            "strokeDasharray",
+            "strokeDashoffset",
+          ]
+        }
+        r={21.5}
+        stroke={
+          {
+            "payload": 4289216538,
+            "type": 0,
+          }
+        }
+        strokeDasharray={
+          [
+            "135.0884841043611",
+            "135.0884841043611",
+          ]
+        }
+        strokeDashoffset={null}
+        strokeWidth={3}
+        testID="ring-progress"
+      />
+    </RNSVGGroup>
+  </RNSVGSvgView>
+</View>
+`;

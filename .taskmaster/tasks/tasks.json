@@ -11670,13 +11670,13 @@
             "description": "mobile/src/features/leads/components/: TemperatureRing.tsx (react-native-svg, arco por strokeDasharray — RN no tiene conic-gradient; animación con Animated clásico useNativeDriver:false, NUNCA Reanimated sobre props de SVG, #244) · Sparkline.tsx (14 barras, NULL = hueco) · SignalIcons.tsx (5 iconos phosphor, opacity 1/.26, contador en el 1º) · CrmLeadRow.tsx (grid riel 3px · avatar 46 · texto · grados+delta) · FunnelCard.tsx (SVG 5 tramos + 5 KPIs DM Mono + 4 caídas) · NarrativeHeader.tsx · BandHeader.tsx · RadarAnonRow.tsx.",
             "details": "Portar SOLO lo aprobado en 267.1. Layout: usar flexShrink/alturas explícitas (los tests RNTL no ven layout, bug #113 de este sheet). Tokens/fuentes de 267.2, lógica de 267.3. Reuso: format_relative_time, full_name (iniciales), EmptyState. Ponytail full: sin props que ninguna pantalla use.\n<info added on 2026-09-06T16:15:36.276Z>\nPLAN: portar SOLO lo aprobado en 267.1 a 8 componentes en mobile/src/features/leads/components/: TemperatureRing (react-native-svg, arco por strokeDasharray — RN no tiene conic-gradient; Animated clásico useNativeDriver:false, NUNCA Reanimated sobre props de SVG #244) · Sparkline (14 barras, NULL=hueco) · SignalIcons (phosphor, opacity 1/.26, contador en el 1º) · CrmLeadRow (riel 3px · avatar 46 · texto · grados+delta de 267.3) · FunnelCard (SVG 5 tramos + 5 KPIs DM Mono + 4 caídas) · NarrativeHeader · BandHeader (con estado colapsado para silent) · RadarAnonRow · agente=mobile · skills=urbea-expo, urbea-testing · criticidad=no (components/**) pero Jest OBLIGATORIO del invariante 🔒 RadarAnonRow sin nombre/avatar/acción de contacto + snapshot del anillo 0/50/100 · layout con flexShrink/alturas explícitas (RNTL no ve layout, #113) · impacto-prod=sin riesgo; validar animación en teléfono físico en 267.8 · footprint=mobile/src/features/leads/components/{TemperatureRing,Sparkline,SignalIcons,CrmLeadRow,FunnelCard,NarrativeHeader,BandHeader,RadarAnonRow}.tsx + __tests__\n</info added on 2026-09-06T16:15:36.276Z>",
             "testStrategy": "Verificación ligera (pnpm tsc --noEmit + pnpm lint + smoke en emulador por CLI). Jest de render OBLIGATORIO para el invariante 🔒: RadarAnonRow no renderiza nombre, avatar, ni ningún botón/acción de contacto (queryBy* en null) — recibe CrmRadarRow, que no porta identidad por tipo. Snapshot del anillo en 0/50/100.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               3
             ],
             "priority": "high",
             "subtasks": [],
-            "updatedAt": "2026-09-06T16:15:36.276Z",
+            "updatedAt": "2026-09-06T18:59:49.597Z",
             "parentId": "undefined"
           },
           {
@@ -11726,7 +11726,7 @@
             "parentId": "undefined"
           }
         ],
-        "updatedAt": "2026-09-06T18:42:56.947Z"
+        "updatedAt": "2026-09-06T18:59:49.597Z"
       },
       {
         "id": "268",
@@ -11830,7 +11830,7 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-09-06T18:42:56.947Z",
+      "lastModified": "2026-09-06T18:59:49.597Z",
       "taskCount": 274,
       "completedCount": 192,
       "tags": [
