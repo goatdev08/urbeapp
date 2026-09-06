@@ -85,7 +85,7 @@
  *   tal cual (urls) o null.
  */
 
-import { resolve_r2_urls } from '../r2Resolver';
+import { resolve_r2_urls, clear_r2_url_cache } from '../r2Resolver';
 
 const mock_invoke = jest.fn();
 
@@ -108,6 +108,11 @@ const TEST_LEGACY_URL_HTTP = 'http://legacy.internal.example/avatar.jpg';
 
 beforeEach(() => {
   jest.clearAllMocks();
+  // 263: la caché de resolve_r2_urls es a nivel de MÓDULO — sin esta
+  // limpieza, tests posteriores que reusan TEST_KEY_1/2/3 servirían desde
+  // caché en vez de invocar la EF, rompiendo sus asserts de "invoke called".
+  // NO se tocan los asserts existentes, solo se agrega esta línea.
+  clear_r2_url_cache();
 });
 
 describe('resolve_r2_urls — resolver de lectura en lote (mint-r2-url op:get)', () => {
