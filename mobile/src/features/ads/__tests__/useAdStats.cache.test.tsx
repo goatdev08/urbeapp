@@ -39,13 +39,9 @@
  *   frescura de la caché -- sin necesidad de que el SUT programe ningún
  *   `setTimeout`.
  *
- * `AD_STATS_STALE_MS` HOY no existe en el módulo (fase RED, GREEN aún no
- * escrito): el import se resuelve a `undefined` en runtime (Babel no
- * type-checa) y `tsc --noEmit` SÍ debe fallar por el export faltante -- es un
- * modo de fallo aceptado explícitamente por el briefing. Para que la suite
- * corra igual (y falle por ASERCIÓN, no por un throw de
- * `jest.advanceTimersByTime(NaN)`), se usa `AD_STATS_STALE_MS ?? 60_000`
- * como respaldo local.
+ * `AD_STATS_STALE_MS` (post-GREEN, #262): la constante YA se exporta desde
+ * `useAdStats.ts` -- se importa directo (sin `@ts-expect-error` ni respaldo
+ * local; esos existieron solo durante la fase RED, antes del GREEN).
  *
  * EDGE CASES (RED):
  * - (EC-C1) primera_carga_dispara_las_3_del_period_visible_y_al_asentar_prefetchea_los_otros_dos_periods_con_los_params_correctos
@@ -54,11 +50,21 @@
  * - (EC-C4) entrada_stale_revalida_en_segundo_plano_manteniendo_los_datos_de_cache_visibles_hasta_que_llega_lo_nuevo
  * - (EC-C5) error_en_una_rpc_de_prefetch_no_toca_los_datos_visibles_ni_fabrica_error_y_el_period_fallido_no_queda_cacheado
  * - (EC-C6) cambio_de_ad_id_con_prefetch_en_vuelo_ignora_las_respuestas_tardias_del_ad_id_viejo
+ * - (EC-C6b) cambio_de_period_con_prefetch_en_vuelo_ignora_las_respuestas_tardias_del_prefetch_viejo
+ *   (hallazgo del guardian, #262 -- mismo `ad_id`, MISMO guard `ignore` pero
+ *   disparado por un cambio de PERIOD en vez de un cambio de ad_id; mutante
+ *   que quita el `if (ignore) return` del `.then` de `prefetch_other_periods`
+ *   sobrevivía sin este caso)
  * - (EC-C7) refetch_con_cache_fresca_igual_vuelve_a_pedir_las_3_del_period_actual
  * - (EC-C8) NO es un test de este archivo: `useAdStats.test.tsx` (27 EC) debe
  *   seguir en verde corriendo junto a este archivo
- *   (`jest src/features/ads/__tests__/useAdStats`) -- el prefetch no debe
- *   alterar los conteos de llamadas que esos tests ya fijan.
+ *   (`jest src/features/ads/__tests__/useAdStats`). El prefetch ES un
+ *   invariante NUEVO (decisión del orquestador post-GREEN, #262): cambia los
+ *   conteos de llamadas que EC-6/EC-20/EC-22/EC-24 fijaban antes de esta
+ *   tarea (mount de un period sin caché = 3 del visible + 6 de prefetch; un
+ *   rerender sin cambio de deps no agrega ninguna; un refetch agrega 3 más si
+ *   los otros dos periods ya están frescos en caché). Esos 4 tests se
+ *   actualizaron con traza en su propio docblock -- ver `useAdStats.test.tsx`.
  */
 
 import { renderHook, act } from '@testing-library/react-native';
@@ -236,6 +242,13 @@ describe('useAdStats — caché por period + prefetch (#262)', () => {
   });
 
   it('(EC-C2) cambio_a_period_prefetcheado_y_fresco_publica_datos_en_el_mismo_tick_sin_rpc_nuevas', async () => {
+    // 🔴 Hallazgo del guardian (#262): sin fijar el reloj, `new Date()` real
+    // dentro del hook solo matchea el `NOW` fijo del mock mientras el día
+    // real de la corrida sea el mismo (verde "por accidente" el 2026-09-05,
+    // rojo con TZ=UTC o cualquier otro día) -- mismo defecto que EC-C1/EC-C3.
+    jest.useFakeTimers();
+    jest.setSystemTime(NOW);
+
     const { rpc } = make_multi_period_client(NOW);
     // 🔴 `client` se estabiliza FUERA del render -- pasar `{ client: { rpc } }`
     // inline recrearía el objeto `client` en cada render y, como el efecto
@@ -370,6 +383,12 @@ describe('useAdStats — caché por period + prefetch (#262)', () => {
   });
 
   it('(EC-C5) error_en_una_rpc_de_prefetch_no_toca_los_datos_visibles_ni_fabrica_error_y_el_period_fallido_no_queda_cacheado', async () => {
+    // 🔴 Hallazgo del guardian (#262): mismo defecto que EC-C1/EC-C3/EC-C2 --
+    // sin fijar el reloj, el mock nunca reconoce 'today' fuera del día real
+    // en que se escribió el test.
+    jest.useFakeTimers();
+    jest.setSystemTime(NOW);
+
     let today_totals_call_count = 0;
 
     const { rpc } = make_multi_period_client(NOW, {
@@ -409,6 +428,14 @@ describe('useAdStats — caché por period + prefetch (#262)', () => {
   });
 
   it('(EC-C6) cambio_de_ad_id_con_prefetch_en_vuelo_ignora_las_respuestas_tardias_del_ad_id_viejo', async () => {
+    // 🔴 Hallazgo del guardian (#262): mismo defecto que EC-C1/EC-C2/EC-C3/EC-C5
+    // -- el cliente de este test identifica 'today' comparando p_from/p_to
+    // contra `today_range` (calculado con `NOW` fijo abajo); sin fijar el
+    // reloj del hook, esa comparación solo coincide mientras el día real de
+    // la corrida sea el mismo que `NOW`.
+    jest.useFakeTimers();
+    jest.setSystemTime(NOW);
+
     const today_range = period_to_range('today', NOW);
 
     const STALE_PREFETCH_TOTALS: TotalsRow = { impressions: 999, views: 999, cta_taps: 999 };
@@ -466,7 +493,96 @@ describe('useAdStats — caché por period + prefetch (#262)', () => {
     expect(result.current.error_message).toBeNull();
   });
 
+  it('(EC-C6b) cambio_de_period_con_prefetch_en_vuelo_ignora_las_respuestas_tardias_del_prefetch_viejo: MISMO ad_id, cambia el period ANTES de que su propio prefetch anterior resuelva -- la respuesta tardía de ese prefetch no debe pisar ni el estado visible ni la entrada de caché', async () => {
+    // 🔴 Caso nuevo del guardian (#262, hallazgo de mutation testing): EC-C6
+    // ejercita el guard `ignore` de `prefetch_other_periods` disparado por un
+    // cambio de AD_ID; este caso lo ejercita disparado por un cambio de
+    // PERIOD con el MISMO ad_id -- un mutante que quitara `if (ignore)
+    // return` sobrevivía porque ningún test existente distinguía "la caché
+    // de 'today' tiene los datos del fetch VISIBLE (D2)" de "tiene los del
+    // prefetch viejo que llegó tarde (D1)".
+    jest.useFakeTimers();
+    jest.setSystemTime(NOW);
+
+    const TOTALS_TODAY_D2: TotalsRow = { impressions: 55, views: 33, cta_taps: 4 };
+    const STALE_PREFETCH_TOTALS_D1: TotalsRow = { impressions: 1, views: 1, cta_taps: 1 };
+    let today_totals_call_count = 0;
+    let resolve_stale_prefetch: ((v: RpcResult<TotalsRow>) => void) | undefined;
+
+    const { rpc } = make_multi_period_client(NOW, {
+      today: {
+        totals: () => {
+          today_totals_call_count += 1;
+          if (today_totals_call_count === 1) {
+            // El prefetch de 'today' disparado mientras 'max' era el period
+            // VISIBLE se queda pendiente a propósito -- se resuelve tarde,
+            // DESPUÉS de que el usuario ya cambió a 'today' y vio datos
+            // frescos (D2) de SU PROPIO fetch visible.
+            return new Promise<RpcResult<TotalsRow>>((resolve) => {
+              resolve_stale_prefetch = resolve;
+            });
+          }
+          // 2ª llamada: la del fetch VISIBLE de 'today' tras el cambio de
+          // period -- resuelve YA, con datos DISTINTOS (D2) a los del
+          // prefetch viejo (D1, que nunca debe verse si el guard funciona).
+          return Promise.resolve({ data: [TOTALS_TODAY_D2], error: null });
+        },
+      },
+    });
+    const client = { rpc }; // estable -- ver nota EC-C2 (loop infinito si no)
+
+    const { result, rerender } = await renderHook(
+      ({ p }: { p: AdStatsPeriod }) => useAdStats(AD_ID, p, { client }),
+      { initialProps: { p: 'max' as AdStatsPeriod } },
+    );
+    await flush_microtasks(); // asienta 'max'; el prefetch de 'today' (1ª llamada a su totals) queda pendiente
+
+    // Precondición: el prefetch de 'today' SÍ se disparó -- si no, esta
+    // prueba sería vacua (pasaría igual sin prefetch, porque nunca habría
+    // nada "tardío" que llegara).
+    expect(resolve_stale_prefetch).toBeDefined();
+
+    await act(async () => {
+      rerender({ p: 'today' });
+    });
+    await flush_microtasks(); // asienta el fetch VISIBLE de 'today' (D2)
+
+    expect(result.current.totals).toEqual(TOTALS_TODAY_D2);
+
+    // La respuesta tardía del prefetch VIEJO (lanzado cuando 'max' era
+    // visible) llega DESPUÉS -- debe descartarse sin pisar el estado visible
+    // ni la entrada de caché de 'today' (D2).
+    await act(async () => {
+      resolve_stale_prefetch?.({ data: [STALE_PREFETCH_TOTALS_D1], error: null });
+    });
+
+    expect(result.current.totals).toEqual(TOTALS_TODAY_D2);
+
+    // La mordida real: no basta con mirar el estado visible en este instante
+    // (el prefetch NUNCA lo toca directo, con o sin el guard) -- hay que leer
+    // la CACHÉ. Cambiar a 'max' (fresco) y volver a 'today' (fresco, < 60s)
+    // debe seguir mostrando D2; si el mutante quitó el guard, la caché de
+    // 'today' quedó pisada con D1 y este switch lo revela.
+    await act(async () => {
+      rerender({ p: 'max' });
+    });
+    await act(async () => {
+      rerender({ p: 'today' });
+    });
+
+    expect(result.current.totals).toEqual(TOTALS_TODAY_D2);
+    expect(today_totals_call_count).toBe(2); // nunca se re-pidió 'today' -- seguía fresco en caché
+  });
+
   it('(EC-C7) refetch_con_cache_fresca_igual_vuelve_a_pedir_las_3_del_period_actual: refetch() ignora la frescura -- fuerza la revalidación del period visible aunque no haya pasado AD_STATS_STALE_MS', async () => {
+    // 🔴 Hallazgo del guardian (#262): por simetría con EC-C1/EC-C2/EC-C3/
+    // EC-C5/EC-C6 -- este test en particular no dependía del reloj real para
+    // pasar ('max' es {p_from:null,p_to:null} sin importar `now`), pero fijar
+    // el reloj igual documenta la intención y blinda contra un cambio futuro
+    // que agregue una aserción sobre 'today'/'last30' aquí.
+    jest.useFakeTimers();
+    jest.setSystemTime(NOW);
+
     const { rpc } = make_multi_period_client(NOW);
 
     const { result } = await render_stats(AD_ID, 'max', { rpc });
