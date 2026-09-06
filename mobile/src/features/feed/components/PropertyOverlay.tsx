@@ -98,6 +98,15 @@ export function PropertyOverlay({
   const [avatar_error, set_avatar_error] = useState(false);
   const show_photo = Boolean(avatar_url) && !avatar_error;
 
+  // #263: cacheKey estable en expo-image = la KEY de R2 (no la URL firmada,
+  // que cambia por invoke) — evita que cada item del feed re-descargue la
+  // misma foto del publicador. Solo aplica a keys R2 reales; una URL legacy
+  // http(s) ya es estable por sí misma.
+  const avatar_cache_key =
+    property.agent_photo_url && !property.agent_photo_url.startsWith('http')
+      ? property.agent_photo_url
+      : undefined;
+
   // Fallback: inicial del nombre público; sin nombre, la del owner_user_id
   // (comportamiento previo a #145).
   const agent_initial = (property.agent_name ?? property.owner_user_id).charAt(0).toUpperCase();
@@ -186,7 +195,7 @@ export function PropertyOverlay({
           <View style={styles.agent_avatar}>
             {show_photo ? (
               <Image
-                source={{ uri: avatar_url! }}
+                source={{ uri: avatar_url!, ...(avatar_cache_key ? { cacheKey: avatar_cache_key } : {}) }}
                 style={styles.agent_photo}
                 contentFit="cover"
                 onError={() => set_avatar_error(true)}

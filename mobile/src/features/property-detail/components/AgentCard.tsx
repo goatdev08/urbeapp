@@ -82,6 +82,14 @@ export function AgentCard({ agent, agency, property_id, is_self = false }: Agent
   const initials = get_initials(agent.full_name);
   const display_name = agent.full_name ?? 'Agente';
 
+  // #263: cacheKey estable en expo-image = la KEY de R2 (no la URL firmada,
+  // que cambia por invoke). Solo aplica a keys R2 reales; una URL legacy
+  // http(s) ya es estable por sí misma, no necesita cacheKey.
+  const avatar_cache_key =
+    agent.profile_photo_url && !agent.profile_photo_url.startsWith('http')
+      ? agent.profile_photo_url
+      : undefined;
+
   function handle_whatsapp_press() {
     void contact_agent(property_id);
   }
@@ -93,7 +101,7 @@ export function AgentCard({ agent, agency, property_id, is_self = false }: Agent
       <View style={styles.avatar_ring}>
         {show_photo ? (
           <Image
-            source={{ uri: avatar_url! }}
+            source={{ uri: avatar_url!, ...(avatar_cache_key ? { cacheKey: avatar_cache_key } : {}) }}
             style={styles.avatar_img}
             transition={150}
             onError={() => set_img_error(true)}

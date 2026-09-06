@@ -40,6 +40,13 @@ interface AvatarPickerProps {
   onChange?: (uri: string) => void;
   /** Muestra estado de carga (e.g. durante upload en 6.5). */
   uploading?: boolean;
+  /**
+   * cacheKey estable para expo-image (#263) — la KEY de R2 de la foto YA
+   * guardada (no la URL firmada, que cambia por invoke). El llamador la
+   * omite cuando `uri` es una foto recién elegida (uri local de archivo) o
+   * una URL legacy http(s), que ya son estables por sí mismas.
+   */
+  cacheKey?: string | undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -54,7 +61,7 @@ const BG_PAPER = '#F6F2EB';
 // Componente
 // ---------------------------------------------------------------------------
 
-export function AvatarPicker({ uri, onChange, uploading = false }: AvatarPickerProps) {
+export function AvatarPicker({ uri, onChange, uploading = false, cacheKey }: AvatarPickerProps) {
   const { pick_from_gallery, pick_from_camera } = useImagePicker();
 
   /**
@@ -111,7 +118,7 @@ export function AvatarPicker({ uri, onChange, uploading = false }: AvatarPickerP
         {has_image ? (
           /* Preview de la imagen seleccionada */
           <Image
-            source={{ uri: uri as string }}
+            source={{ uri: uri as string, ...(cacheKey ? { cacheKey } : {}) }}
             style={styles.avatar_image}
             accessibilityLabel="Foto de perfil seleccionada"
           />

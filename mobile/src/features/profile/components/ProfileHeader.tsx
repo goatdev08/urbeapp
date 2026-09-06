@@ -109,6 +109,12 @@ export function ProfileHeader({
   const initials = get_initials(full_name);
   const display_name = full_name ?? 'Agente Urbea';
 
+  // #263: cacheKey estable en expo-image = la KEY de R2 (no la URL firmada,
+  // que cambia por invoke). Solo aplica a keys R2 reales; una URL legacy
+  // http(s) ya es estable por sí misma, no necesita cacheKey.
+  const avatar_cache_key =
+    profile_photo_url && !profile_photo_url.startsWith('http') ? profile_photo_url : undefined;
+
   return (
     <View style={styles.container}>
       {/* ── Fila 1: avatar + estadísticas ───────────────────────────── */}
@@ -119,7 +125,7 @@ export function ProfileHeader({
           <View style={styles.avatar_ring}>
             {show_photo ? (
               <Image
-                source={{ uri: avatar_url! }}
+                source={{ uri: avatar_url!, ...(avatar_cache_key ? { cacheKey: avatar_cache_key } : {}) }}
                 style={styles.avatar_img}
                 transition={150}
                 onError={() => set_img_error(true)}
