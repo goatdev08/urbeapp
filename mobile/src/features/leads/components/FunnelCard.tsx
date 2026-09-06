@@ -1,9 +1,13 @@
 /**
- * FunnelCard — embudo de 30 días del CRM (#267.5).
+ * FunnelCard — actividad por etapa de los últimos 30 días (#267.5).
  *
  * Preview: mobile/design-previews/267-crm-santiago.html (sección 2 — SVG de
- * 5 tramos gris→verde→arena→terracota + 5 KPIs en DM Mono + 4 caídas
- * porcentuales). Fuente de datos: `CrmFunnel` (public.crm_funnel, #266.4).
+ * 5 tramos gris→verde→arena→terracota + 5 KPIs en DM Mono). Fuente de datos:
+ * `CrmFunnel` (public.crm_funnel, #266.4). Las 5 etapas se calculan CADA UNA
+ * sobre la ventana (no son una cohorte anidada: "Agendaron" puede superar a
+ * "Te contactaron"), por eso el título dice ACTIVIDAD y no EMBUDO, y por eso
+ * NO se pintan variaciones porcentuales entre etapas (decisión de Abraham,
+ * 2026-09-06, smoke de 267.8; el embudo anidado real sería cambio en la RPC).
  *
  * Geometría del embudo (derivada del path literal del preview, no inventada
  * aquí): 5 puntos igualmente espaciados en X (viewBox 317×92); la altura en
@@ -28,7 +32,6 @@ const VIEWBOX_W = 317;
 const VIEWBOX_H = 92;
 const CENTER_Y = 38;
 const MAX_H = 76;
-const MINUS_SIGN = '−';
 const GRADIENT_ID = 'crmFunnelGradient';
 
 const STAGES: { key: keyof CrmFunnel; label: string; highlight?: boolean }[] = [
@@ -45,15 +48,6 @@ function format_agenda_pct(agendaron: number, vieron: number): string {
   return `${((agendaron / vieron) * 100).toFixed(1)}% agenda`;
 }
 
-/** "−69%" (U+2212) — '—' si la etapa anterior es 0 (no hay base). */
-function format_drop(prev: number, cur: number): string {
-  if (prev === 0) return '—';
-  const pct = Math.round(((cur - prev) / prev) * 100);
-  if (pct === 0) return '0%';
-  const sign = pct < 0 ? MINUS_SIGN : '+';
-  return `${sign}${Math.abs(pct)}%`;
-}
-
 export interface FunnelCardProps {
   funnel: CrmFunnel;
 }
@@ -62,9 +56,16 @@ export function FunnelCard({ funnel }: FunnelCardProps): React.JSX.Element {
   const values = STAGES.map((s) => funnel[s.key]);
   const base = values[0] ?? 0;
 
-  const points = values.map((v, i) => {
-    const x = (i * VIEWBOX_W) / (STAGES.length - 1);
-    const h = base > 0 ? MAX_H * Math.sqrt(Math.max(0, v) / base) : 0;
+  // Decisión de Abraham (2026-09-06, smoke de 267.8): 5 TRAMOS, uno por KPI,
+  // alineados con las 5 columnas de abajo — el tramo i arranca con la altura
+  // de su KPI y se estrecha hacia la del siguiente; el último queda plano.
+  // Antes se dibujaban las 4 transiciones entre 5 alturas y "4 tramos con 5
+  // números" era ilegible.
+  const heights = [...values, values[values.length - 1] ?? 0].map((v) =>
+    base > 0 ? MAX_H * Math.sqrt(Math.max(0, v) / base) : 0,
+  );
+  const points = heights.map((h, i) => {
+    const x = (i * VIEWBOX_W) / STAGES.length;
     return { x, top: CENTER_Y - h / 2, bottom: CENTER_Y + h / 2 };
   });
 
@@ -78,7 +79,7 @@ export function FunnelCard({ funnel }: FunnelCardProps): React.JSX.Element {
   return (
     <View style={styles.card}>
       <View style={styles.head}>
-        <Text style={styles.eyebrow}>TU EMBUDO · 30 DÍAS</Text>
+        <Text style={styles.eyebrow}>ACTIVIDAD · 30 DÍAS</Text>
         <Text style={styles.meta}>{format_agenda_pct(funnel.agendaron, funnel.vieron)}</Text>
       </View>
 
@@ -92,7 +93,7 @@ export function FunnelCard({ funnel }: FunnelCardProps): React.JSX.Element {
           </LinearGradient>
         </Defs>
         <Path d={path_d} fill={`url(#${GRADIENT_ID})`} />
-        {points.slice(1).map((p) => (
+        {points.slice(1, -1).map((p) => (
           <SvgLine key={p.x} x1={p.x} y1={p.top} x2={p.x} y2={p.bottom} stroke="#FFFFFF" strokeWidth={2} />
         ))}
       </Svg>
@@ -105,14 +106,6 @@ export function FunnelCard({ funnel }: FunnelCardProps): React.JSX.Element {
               {s.label}
             </Text>
           </View>
-        ))}
-      </View>
-
-      <View style={styles.drops_row}>
-        {values.slice(1).map((v, i) => (
-          <Text key={i} style={styles.drop}>
-            {format_drop(values[i]!, v)}
-          </Text>
         ))}
       </View>
     </View>
@@ -169,16 +162,5 @@ const styles = StyleSheet.create({
   kpi_label_highlight: {
     color: colors.temp_warming,
     fontFamily: fonts.sans_semibold,
-  },
-  drops_row: {
-    flexDirection: 'row',
-    marginTop: 2,
-  },
-  drop: {
-    flex: 1,
-    fontFamily: fonts.mono,
-    fontSize: 9,
-    textAlign: 'center',
-    color: colors.temp_hot,
   },
 });
