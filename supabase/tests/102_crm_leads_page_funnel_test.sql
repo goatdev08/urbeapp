@@ -113,7 +113,7 @@
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(67);
+select plan(72);
 
 -- ── Helper de impersonación (mismo patrón que 02/08/.../35/62/100/101_*) ────────────────────
 create or replace function pg_temp.act_as(p_uid uuid, p_role text default 'authenticated')
@@ -149,11 +149,26 @@ end $$;
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- Fixtures — UUIDs prefijo '00000000-0000-0000-0000-000000266XXX' (subtarea 266.4).
---   USERS   001-027 (roles fijos) + 101-125 (PAG, paginación) + 201-211 (STA, status_projected)
---   AGENCIES 301-302 · AGENCY_MEMBERS 311-315 · PROPERTIES 401-402
---   LEADS   501 (L1) + 600-624 (LPAG) + 650-660 (LSTA) + 571-577 (ASOF/BAND/QUERY/SPARK) +
---           581-585 (funnel: contactaron/agendaron)
---   LEAD_ORIGIN_PROPERTIES 701-785 (una por lead)
+--   USERS   001-030 (roles fijos, incluye AGP=028, AGSUSP=029, USUSP=030) + 101-125 (PAG,
+--           paginación) + 201-211 (STA, status_projected)
+--   AGENCIES 301-302 · AGENCY_MEMBERS 311-316 (316=AGSUSP, suspended) · PROPERTIES 401-402
+--   LEADS   501 (L1) + 600-624 (LPAG, agente AGP) + 650-660 (LSTA) +
+--           571-577 (ASOF/BAND/QUERY/SPARK) + 581-585 (funnel: contactaron/agendaron) +
+--           591 (LSUSP, agente AGSUSP)
+--   LEAD_ORIGIN_PROPERTIES 701-785 (una por lead) + 791 (LSUSP)
+--
+-- 🟡 D-FIXTURE-AISLAMIENTO (corrección post-GREEN, árbitro): la sección §6 (cursor keyset)
+-- necesita que el universo SIN FILTRO (p_band=null, p_query=null) de su agente sean
+-- EXACTAMENTE los 25 LPAG. Reusar AG1 para eso rompía la aislación: AG1 acumula, en OTRAS
+-- secciones de este MISMO archivo, más leads activos (L1, LSTA01-11, LASOF/LBANDHOT/
+-- LBANDSIL/LQ_*/LSPARK) cuyas temperaturas (vía private.crm_temperature, ya validada por
+-- 100_crm_temperature_test.sql) caen LEGÍTIMAMENTE dentro del mismo rango [0,31] que las 25
+-- LPAG — confirmado con un dump propio `ORDER BY temperature DESC, lead_id ASC` contra el
+-- GREEN aplicado: 44 filas para AG1 sin filtro, no 25 (p.ej. LSTA01-11 y LPAG i=2 empatan en
+-- 25). Por eso §6 usa un agente AISLADO, AGP (...266028, SIN otros leads en el archivo), y
+-- LPAG01-25 pasan a ser SUYOS (agent_id=AGP) — la propiedad de origen (P1, de AG1) no cambia:
+-- el CTE de "contacts" de private.crm_temperature no filtra por dueño de la propiedad, solo
+-- por el lead ACTIVO, así que las 25 temperaturas literales (D-ASOF) quedan IDÉNTICAS.
 -- ════════════════════════════════════════════════════════════════════════════
 
 insert into auth.users (id, email) values
@@ -183,7 +198,8 @@ insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-000000266024', 'funcb.266p4@test.local'), -- FUNCONTACT_BOUNDARY_U
   ('00000000-0000-0000-0000-000000266025', 'funco.266p4@test.local'), -- FUNCONTACT_OUT_U
   ('00000000-0000-0000-0000-000000266026', 'funain.266p4@test.local'),-- FUNAGENDA_IN_U
-  ('00000000-0000-0000-0000-000000266027', 'funao.266p4@test.local'); -- FUNAGENDA_OUT_U
+  ('00000000-0000-0000-0000-000000266027', 'funao.266p4@test.local'), -- FUNAGENDA_OUT_U
+  ('00000000-0000-0000-0000-000000266028', 'agp.266p4@test.local');   -- AGP (agente AISLADO, solo paginación)
 
 -- PAG01..PAG25 (paginación) y STA01..STA11 (status_projected), generados.
 insert into auth.users (id, email)
@@ -196,7 +212,7 @@ from generate_series(201, 211) as i;
 
 update public.users set role = 'agent', is_verified_agent = true
   where id in ('00000000-0000-0000-0000-000000266001', '00000000-0000-0000-0000-000000266003',
-               '00000000-0000-0000-0000-000000266015');
+               '00000000-0000-0000-0000-000000266015', '00000000-0000-0000-0000-000000266028');
 update public.users set role = 'admin'
   where id = '00000000-0000-0000-0000-000000266006'; -- PADMIN
 
@@ -236,12 +252,13 @@ insert into public.leads (id, agent_id, user_id, status) values
 insert into public.lead_origin_properties (id, lead_id, property_id, contacted_at) values
   ('00000000-0000-0000-0000-000000266701', '00000000-0000-0000-0000-000000266501', '00000000-0000-0000-0000-000000266401', now() - interval '3 days');
 
--- ── LPAG01..LPAG25 (cursor keyset) — contacted_at = now() - i días (i=0..24), un signal
---    "piso de entrada" cada uno; temperaturas literales (Decimal, independiente de la SQL):
+-- ── LPAG01..LPAG25 (cursor keyset) — agente AISLADO AGP (D-FIXTURE-AISLAMIENTO, cabecera de
+--    Fixtures), contacted_at = now() - i días (i=0..24), un signal "piso de entrada" cada
+--    uno; temperaturas literales (Decimal, independiente de la SQL):
 --    [30,28,25,23,21,20,18,17,15,14,13,12,11,10,9,9,8,7,7,6,6,5,5,4,4] (ver cabecera D-ASOF).
 insert into public.leads (id, agent_id, user_id, status)
 select ('00000000-0000-0000-0000-000000266' || (600 + (u - 101)))::uuid,
-       '00000000-0000-0000-0000-000000266001',
+       '00000000-0000-0000-0000-000000266028',
        ('00000000-0000-0000-0000-000000266' || u)::uuid,
        'new'
 from generate_series(101, 125) as u;
@@ -343,15 +360,49 @@ insert into public.lead_origin_properties (id, lead_id, property_id, contacted_a
 -- hace 40 días (fuera). Se inserta DIRECTO en lead_status_history (fixture, no vía trigger)
 -- para controlar changed_at con precisión — el trigger de creación del lead deja además su
 -- propia fila new_status='new' (irrelevante para este KPI, se ignora por el filtro).
-insert into public.leads (id, agent_id, user_id, status) values
-  ('00000000-0000-0000-0000-000000266584', '00000000-0000-0000-0000-000000266015', '00000000-0000-0000-0000-000000266026', 'new'),
-  ('00000000-0000-0000-0000-000000266585', '00000000-0000-0000-0000-000000266015', '00000000-0000-0000-0000-000000266027', 'new');
+-- 🟡 created_at EXPLÍCITO en 40 días (corrección post-GREEN, árbitro): sin esto, el default
+-- now() cae DENTRO de la ventana de 30 días de "contactaron" (D-FUNNEL-WINDOW usa
+-- leads.created_at, no lead_origin_properties.contacted_at) y ambos leads se sumarían
+-- también a contactaron (4 en vez de 2) — confirmado con un dump propio de
+-- public.leads/lead_status_history contra el GREEN aplicado. contacted_at (independiente,
+-- en lead_origin_properties abajo) NO cambia.
+insert into public.leads (id, agent_id, user_id, status, created_at) values
+  ('00000000-0000-0000-0000-000000266584', '00000000-0000-0000-0000-000000266015', '00000000-0000-0000-0000-000000266026', 'new', now() - interval '40 days'),
+  ('00000000-0000-0000-0000-000000266585', '00000000-0000-0000-0000-000000266015', '00000000-0000-0000-0000-000000266027', 'new', now() - interval '40 days');
 insert into public.lead_origin_properties (id, lead_id, property_id, contacted_at) values
   ('00000000-0000-0000-0000-000000266784', '00000000-0000-0000-0000-000000266584', '00000000-0000-0000-0000-000000266402', now() - interval '5 days'),
   ('00000000-0000-0000-0000-000000266785', '00000000-0000-0000-0000-000000266585', '00000000-0000-0000-0000-000000266402', now() - interval '5 days');
 insert into public.lead_status_history (lead_id, old_status, new_status, changed_by, changed_at) values
   ('00000000-0000-0000-0000-000000266584', 'new', 'visit_scheduled', '00000000-0000-0000-0000-000000266015', now() - interval '2 days'),
   ('00000000-0000-0000-0000-000000266585', 'new', 'visit_scheduled', '00000000-0000-0000-0000-000000266015', now() - interval '40 days');
+
+-- 🟡 M10 (endurecimiento post-guardian, mutante `count(distinct lead_id)`→`count(*)`
+-- superviviente): SEGUNDA fila `visit_scheduled` para el MISMO lead (584, ya cuenta arriba
+-- dentro de la ventana), simulando "se reprogramó 2 veces la misma cita" — D-AGENDARON dice
+-- explícito que esto NO debe inflar el KPI. Con `count(distinct lead_id)` agendaron sigue en
+-- 1 (FUN5/FUN6 abajo); con el mutante `count(*)` subiría a 2.
+insert into public.lead_status_history (lead_id, old_status, new_status, changed_by, changed_at) values
+  ('00000000-0000-0000-0000-000000266584', 'visit_scheduled', 'visit_scheduled', '00000000-0000-0000-0000-000000266015', now() - interval '1 days');
+
+-- 🟡 M22 (endurecimiento post-guardian, mutante que quita `am.status = 'active'` del helper
+-- `private.can_manage_agent_pipeline` superviviente — gotcha 203.1, fallback a membresía
+-- SUSPENDIDA vía leads.agency_id de #203.1/20260904200001 NO aplica aquí: esta RPC resuelve
+-- la agencia del AGENTE OBJETIVO por agency_members, nunca por leads.agency_id). AGSUSP es
+-- agente en AGENCY1 (misma agencia de OWN) pero su ÚNICA fila de membresía está
+-- `suspended` — sin fila `active`. Con el helper CORRECTO, `agency_role_of(NULL)` (la
+-- subquery no matchea nada) da NULL → coalesce a false → OWN NO ve el pipeline de AGSUSP.
+-- Con el mutante (sin el filtro de status), la subquery SÍ devolvería AGENCY1 aunque la fila
+-- sea `suspended`, y OWN (owner ACTIVO real de AGENCY1) quedaría autorizado por error.
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-000000266029', 'agsusp.266p4@test.local'), -- AGSUSP (agente, membresía SUSPENDIDA)
+  ('00000000-0000-0000-0000-000000266030', 'ususp.266p4@test.local');  -- USUSP (buscador de LSUSP)
+update public.users set role = 'agent' where id = '00000000-0000-0000-0000-000000266029';
+insert into public.agency_members (id, agency_id, user_id, member_role, status) values
+  ('00000000-0000-0000-0000-000000266316', '00000000-0000-0000-0000-000000266301', '00000000-0000-0000-0000-000000266029', 'agent', 'suspended');
+insert into public.leads (id, agent_id, user_id, status) values
+  ('00000000-0000-0000-0000-000000266591', '00000000-0000-0000-0000-000000266029', '00000000-0000-0000-0000-000000266030', 'new');
+insert into public.lead_origin_properties (id, lead_id, property_id, contacted_at) values
+  ('00000000-0000-0000-0000-000000266791', '00000000-0000-0000-0000-000000266591', '00000000-0000-0000-0000-000000266401', now() - interval '3 days');
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- 1) CATÁLOGO — public.crm_leads_page (firma, atributos, ACL). Seguro aunque no exista:
@@ -503,6 +554,29 @@ select is(
 );
 reset role;
 
+-- 🟡 M23 (endurecimiento post-guardian): AGF y AG1 son ambos 'agent' ACTIVOS de la MISMA
+-- agencia (AGENCY1) — un PAR, no un owner/admin. `private.can_manage_agent_pipeline` exige
+-- IN ('owner','admin'); un mutante que aceptara también 'agent' dejaría a cualquier
+-- compañero de equipo ver el pipeline de otro agente raso.
+select pg_temp.act_as('00000000-0000-0000-0000-000000266015'); -- AGF, agente PAR de AG1 en AGENCY1
+select is(
+  jsonb_array_length(pg_temp.leads_page_json('00000000-0000-0000-0000-000000266001', null, null, 50, 'Ana Martinez')),
+  0, 'AUTZ7_agente_PAR_de_la_misma_agencia_0_filas_no_hereda_de_un_companero'
+);
+reset role;
+
+-- 🟡 M22 (endurecimiento post-guardian): AGSUSP es agente de AGENCY1 pero su ÚNICA membresía
+-- ahí está `suspended` (sin fila `active`) — ver fixture arriba. OWN es owner ACTIVO REAL de
+-- AGENCY1: si el helper resolviera la agencia del agente objetivo SIN el filtro
+-- `status='active'`, OWN quedaría autorizado por error sobre un agente que ya no está
+-- activo en su equipo.
+select pg_temp.act_as('00000000-0000-0000-0000-000000266004'); -- OWN, owner ACTIVO de AGENCY1
+select is(
+  jsonb_array_length(pg_temp.leads_page_json('00000000-0000-0000-0000-000000266029', null, null, 50, null)),
+  0, 'AUTZ8_membresia_del_agente_objetivo_suspendida_0_filas_no_active_status_203_1'
+);
+reset role;
+
 -- ════════════════════════════════════════════════════════════════════════════
 -- 5) BOUNDARY — p_agent_id que NO EXISTE (ni como users ni como agency_members): 0 filas /
 --    0 conteos, NUNCA una excepción (anti-IDOR, mismo criterio que el resto de la sección).
@@ -525,10 +599,10 @@ reset role;
 --    decreciente (D-REMAINING); next_cursor NULL solo en la última página (D-NEXTCURSOR).
 -- ════════════════════════════════════════════════════════════════════════════
 
-select pg_temp.act_as('00000000-0000-0000-0000-000000266001'); -- AG1
+select pg_temp.act_as('00000000-0000-0000-0000-000000266028'); -- AGP (aislado)
 
 create temp table pag_page1 (v jsonb);
-insert into pag_page1 select pg_temp.leads_page_json('00000000-0000-0000-0000-000000266001', null, null, 10, null);
+insert into pag_page1 select pg_temp.leads_page_json('00000000-0000-0000-0000-000000266028', null, null, 10, null);
 
 -- Página 1 esperada: i=0..9 (días 0..9) -> LPAG suffix 600+i para i=0..9 -> 600-609.
 select is(
@@ -546,7 +620,7 @@ select ok(
 );
 
 create temp table pag_page2 (v jsonb);
-insert into pag_page2 select pg_temp.leads_page_json('00000000-0000-0000-0000-000000266001', null,
+insert into pag_page2 select pg_temp.leads_page_json('00000000-0000-0000-0000-000000266028', null,
   (select v from pag_page1) -> 0 -> 'next_cursor', 10, null);
 
 -- Página 2 esperada: i=10..19 -> suffix 610-619.
@@ -565,7 +639,7 @@ select ok(
 );
 
 create temp table pag_page3 (v jsonb);
-insert into pag_page3 select pg_temp.leads_page_json('00000000-0000-0000-0000-000000266001', null,
+insert into pag_page3 select pg_temp.leads_page_json('00000000-0000-0000-0000-000000266028', null,
   (select v from pag_page2) -> 0 -> 'next_cursor', 10, null);
 
 -- Página 3 esperada: i=20..24 -> suffix 620-624 (5 filas, última página).
@@ -803,6 +877,12 @@ select is(((select v from fun_self) -> 0 ->> 'contactaron')::int, 2,
   'FUN4_contactaron_2_incluye_la_frontera_de_30_dias_INCLUSIVA_out_40d_excluido');
 select is(((select v from fun_self) -> 0 ->> 'agendaron')::int, 1,
   'FUN5_agendaron_1_distinct_lead_id_la_reprogramacion_de_hace_40d_no_cuenta');
+-- 🟡 M10 (endurecimiento post-guardian): fixture arriba agrega una SEGUNDA fila
+-- visit_scheduled para el MISMO lead 584, dentro de la ventana (ver D-AGENDARON, "reprogramar
+-- 2 veces el MISMO lead no infla el KPI"). agendaron sigue en 1 (count(distinct lead_id));
+-- un mutante count(*) lo subiría a 2.
+select is(((select v from fun_self) -> 0 ->> 'agendaron')::int, 1,
+  'FUN6_agendaron_reprogramar_2_veces_el_MISMO_lead_no_infla_count_distinct_lead_id');
 
 reset role;
 
@@ -831,6 +911,27 @@ select pg_temp.act_as('00000000-0000-0000-0000-000000266007'); -- OWN2, owner de
 select is(
   pg_temp.funnel_json('00000000-0000-0000-0000-000000266015', 30),
   '[]'::jsonb, 'FUNAUTZ4_owner_de_otra_agencia_0_conteos'
+);
+reset role;
+
+-- 🟡 M23 (endurecimiento post-guardian) — misma pareja AGF/AG1 de AUTZ7, ahora contra
+-- crm_funnel: AGF (agente PAR de AG1 en AGENCY1) no puede ver el embudo de AG1.
+select pg_temp.act_as('00000000-0000-0000-0000-000000266015'); -- AGF, agente PAR de AG1
+select is(
+  pg_temp.funnel_json('00000000-0000-0000-0000-000000266001', 30),
+  '[]'::jsonb, 'FUNAUTZ5_agente_PAR_de_la_misma_agencia_0_conteos_no_hereda_de_un_companero'
+);
+reset role;
+
+-- 🟡 M22 (endurecimiento post-guardian) — misma pareja OWN/AGSUSP de AUTZ8, ahora contra
+-- crm_funnel: OWN (owner ACTIVO de AGENCY1) no ve el embudo de AGSUSP, cuya ÚNICA membresía
+-- ahí está `suspended`. AGSUSP no posee properties, pero SÍ tiene un lead reciente
+-- (LSUSP, creado "hoy") — si el helper autorizara por error, `contactaron` saldría 1 (no
+-- vacío): el assert distingue "autorizado por error" de "0 conteos legítimos".
+select pg_temp.act_as('00000000-0000-0000-0000-000000266004'); -- OWN, owner ACTIVO de AGENCY1
+select is(
+  pg_temp.funnel_json('00000000-0000-0000-0000-000000266029', 30),
+  '[]'::jsonb, 'FUNAUTZ6_membresia_del_agente_objetivo_suspendida_0_conteos_203_1'
 );
 reset role;
 
