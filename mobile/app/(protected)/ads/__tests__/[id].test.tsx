@@ -292,4 +292,26 @@ describe('EC-D7: cambio_de_periodo_con_datos_previos_no_vuelve_a_pintar_el_skele
     expect(screen.queryByTestId('ad-detail-skeleton')).toBeNull();
     expect(screen.getByText('500')).toBeTruthy();
   });
+
+  // (#261) La señal de "periodo en vuelo" es el RefreshingChip, no una
+  // opacidad sobre el grupo (el fade oscurecía los bordes de las cards en
+  // Android físico). El chip aparece SIN que el skeleton reaparezca.
+  it('30 días exitoso, luego tap en "Máximo" → el RefreshingChip aparece y el skeleton sigue sin pintarse', async () => {
+    const STATS_BY_PERIOD: Record<string, UseAdStatsState> = {
+      last30: ad_stats({ totals: { impressions: 500, views: 120, cta_taps: 9 } }),
+      max: ad_stats({ is_loading: true }),
+    };
+    mock_use_ad_stats.mockImplementation((_ad_id, period) => STATS_BY_PERIOD[period] ?? ad_stats({}));
+
+    await render_screen();
+
+    expect(screen.queryByTestId('refreshing-chip')).toBeNull();
+
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText('Máximo'));
+    });
+
+    expect(screen.getByTestId('refreshing-chip')).toBeTruthy();
+    expect(screen.queryByTestId('ad-detail-skeleton')).toBeNull();
+  });
 });

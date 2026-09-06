@@ -67,6 +67,7 @@ import {
   type AdStatsMetricKey,
 } from '@/features/ads/components/AdDailyLineChart';
 import { AdZoneBarsChart } from '@/features/ads/components/AdZoneBarsChart';
+import { RefreshingChip, REFRESHING_CHIP_HEIGHT } from '@/components/RefreshingChip';
 import { get_ad_badge, format_date_short } from './index';
 import { colors, fonts, radii, spacing, type_scale } from '@/theme/theme';
 
@@ -301,24 +302,23 @@ export default function AdDetailScreen() {
   const view_daily = pending_period_switch ? last_good!.daily : stats.daily;
   const view_zones = pending_period_switch ? last_good!.zones : stats.zones;
 
-  // Señal sutil (opacidad) + fade/slide corto al asentar — nunca sobre el
-  // skeleton (ese sigue con su propio Animated.loop de pulso), Animated
-  // clásico con useNativeDriver:true sobre transform/opacity de Views (NO
-  // Reanimated sobre SVG, precedente #244).
-  const [content_opacity] = useState(() => new Animated.Value(1));
+  // Slide corto al asentar (transform, NO opacidad) — Animated clásico con
+  // useNativeDriver:true sobre transform de una View (NO Reanimated sobre
+  // SVG, precedente #244). 🔴 #261: la opacidad del CONTENEDOR se quitó
+  // aquí porque con useNativeDriver:true + opacity<1 el grupo entero se
+  // compone en una capa offscreen — cada card deja de atenuarse por su
+  // cuenta y los bordes/sombras se mezclan de golpe, leyéndose como bordes
+  // que se OSCURECEN sobre el fondo claro de gestión. transform no toca el
+  // compositing alfa del grupo, así que los bordes no cambian de tono. La
+  // señal de "periodo en vuelo" ahora es el RefreshingChip de abajo, no la
+  // opacidad del contenido.
   const [content_translate] = useState(() => new Animated.Value(0));
 
   useEffect(() => {
-    if (pending_period_switch) {
-      Animated.timing(content_opacity, { toValue: 0.6, duration: 120, useNativeDriver: true }).start();
-      return;
-    }
+    if (pending_period_switch) return;
     content_translate.setValue(6);
-    Animated.parallel([
-      Animated.timing(content_opacity, { toValue: 1, duration: 200, useNativeDriver: true }),
-      Animated.timing(content_translate, { toValue: 0, duration: 200, useNativeDriver: true }),
-    ]).start();
-  }, [pending_period_switch, content_opacity, content_translate]);
+    Animated.timing(content_translate, { toValue: 0, duration: 200, useNativeDriver: true }).start();
+  }, [pending_period_switch, content_translate]);
 
   // Indicador deslizante del tab activo (transform/opacity, Animated
   // clásico) — se mide el ancho real del segmentado (onLayout) para
@@ -450,6 +450,14 @@ export default function AdDetailScreen() {
               ))}
             </View>
 
+            {/* Señal de "periodo en vuelo" (#261) — reserva su alto SIEMPRE
+                (visible={false} de RefreshingChip renderiza null) para que
+                aparecer/desaparecer no empuje el contenido de abajo: eso
+                sería el mismo brinco que #259 ya resolvió. */}
+            <View style={styles.refreshing_chip_slot}>
+              <RefreshingChip visible={pending_period_switch} tone="light" />
+            </View>
+
             {show_stats_skeleton ? (
               <AdDashboardSkeleton />
             ) : !stats.is_loading && stats.error_message ? (
@@ -465,9 +473,10 @@ export default function AdDetailScreen() {
             ) : (
               // Datos frescos, O el último `stats` no-nulo mientras el
               // nuevo periodo está en vuelo (pending_period_switch) — MISMO
-              // layout en ambos casos, solo cambia la opacidad (señal sutil,
-              // nunca un segundo skeleton).
-              <Animated.View style={{ opacity: content_opacity, transform: [{ translateY: content_translate }] }}>
+              // layout en ambos casos, nunca un segundo skeleton. La señal
+              // de "en vuelo" es el RefreshingChip de arriba, no la opacidad
+              // del grupo (#261) — aquí solo queda el slide de asentado.
+              <Animated.View style={{ transform: [{ translateY: content_translate }] }}>
                 <AdStatsBody
                   ad={ad}
                   metric={metric}
@@ -571,6 +580,12 @@ const styles = StyleSheet.create({
   },
   seg_label_active: {
     color: colors.primary_deep,
+  },
+  // Alto fijo (chip + su propio marginVertical en modo "en flujo") para que
+  // el RefreshingChip aparecer/desaparecer NUNCA empuje el contenido de
+  // abajo (#261 — el "sin brinco" de #259 es invariante).
+  refreshing_chip_slot: {
+    minHeight: REFRESHING_CHIP_HEIGHT + spacing.s_8 * 2,
   },
 
   // ── 3 tiles grandes ──────────────────────────────────────────────────────
