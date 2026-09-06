@@ -23,7 +23,17 @@ import type { Database } from '@/types/database';
 // Tipos públicos
 // ---------------------------------------------------------------------------
 
-export type UserProfile = Database['public']['Tables']['users']['Row'];
+// #116 (expand → migrate → contract, paso 1 EXPAND): el perfil que viaja al
+// cliente NO incluye `date_of_birth`. Nadie la lee en la app (solo se ESCRIBE en
+// el registro vía register-user); sacarla de aquí es lo que permite que el paso
+// 2 (migración) revoque el grant de esa columna sin romper el login de las apps
+// instaladas. Cuando esta versión haya llegado por OTA, el backend cierra la
+// columna. Si la ves reaparecer aquí, el paso 2 vuelve a ser imposible.
+export type UserProfile = Omit<Database['public']['Tables']['users']['Row'], 'date_of_birth'>;
+
+/** Columnas de public.users que el cliente pide — todas MENOS date_of_birth (#116). */
+export const USER_PROFILE_COLUMNS =
+  'id, email, first_name, last_name, phone, role, agency_id, avatar_url, bio, city, state, state_id, municipality_id, is_verified_agent, last_login_at, deletion_pending_at, deleted_at, created_at, updated_at';
 
 export interface AuthContextValue {
   session: Session | null;
@@ -58,7 +68,7 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 async function load_user_profile(user_id: string): Promise<UserProfile | null> {
   const { data, error } = await supabase
     .from('users')
-    .select('*')
+    .select(USER_PROFILE_COLUMNS)
     .eq('id', user_id)
     .single();
 
