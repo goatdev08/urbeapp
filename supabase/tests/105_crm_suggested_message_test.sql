@@ -72,7 +72,7 @@
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(23);
+select plan(25);
 
 -- ── Helper de impersonación (mismo patrón que 02/.../35/62/100/.../103) ──────────────────────
 create or replace function pg_temp.act_as(p_uid uuid, p_role text default 'authenticated')
@@ -113,8 +113,8 @@ end $$;
 -- Fixtures — UUIDs prefijo '00000000-0000-0000-0000-000000267XXX' (subtarea 267.4, rango
 -- propio para no confundir la lectura con 266.5/103 aunque cada archivo corre en su propia
 -- transacción revertida).
---   USERS 700-718 · AGENCIES 730 · AGENCY_MEMBERS 740-741
---   PROPERTIES 750-754 · LEADS 770-778 · LEAD_ORIGIN_PROPERTIES 784-788
+--   USERS 700-720 · AGENCIES 730 · AGENCY_MEMBERS 740-741
+--   PROPERTIES 750-754 · LEADS 770-780 · LEAD_ORIGIN_PROPERTIES 784-788
 -- ════════════════════════════════════════════════════════════════════════════
 
 insert into auth.users (id, email) values
@@ -129,7 +129,9 @@ insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-000000267715', 'u.legacy.2674@test.local'),-- U_LEGACY (Renata)
   ('00000000-0000-0000-0000-000000267716', 'u.del.2674@test.local'),   -- U_DELETED (Borrado)
   ('00000000-0000-0000-0000-000000267717', 'u.noname.2674@test.local'),-- U_NONAME (sin nombre)
-  ('00000000-0000-0000-0000-000000267718', 'u.ajeno.2674@test.local'); -- U_AJENO
+  ('00000000-0000-0000-0000-000000267718', 'u.ajeno.2674@test.local'), -- U_AJENO
+  ('00000000-0000-0000-0000-000000267719', 'u.contac.noorig.2674@test.local'), -- U_CONTACTED_NOORIGIN (Iván)
+  ('00000000-0000-0000-0000-000000267720', 'u.visit.noorig.2674@test.local');   -- U_VISIT_NOORIGIN (Lucía)
 
 update public.users set role = 'agent', is_verified_agent = true
   where id in ('00000000-0000-0000-0000-000000267700',  -- AG1
@@ -145,6 +147,8 @@ update public.users set first_name = 'Renata'    where id = '00000000-0000-0000-
 update public.users set first_name = 'Borrado'   where id = '00000000-0000-0000-0000-000000267716'; -- U_DELETED
 -- U_NONAME (267717) se deja SIN first_name a propósito (NULL).
 update public.users set first_name = 'Ajeno'     where id = '00000000-0000-0000-0000-000000267718'; -- U_AJENO
+update public.users set first_name = 'Iván'      where id = '00000000-0000-0000-0000-000000267719'; -- U_CONTACTED_NOORIGIN
+update public.users set first_name = 'Lucía'     where id = '00000000-0000-0000-0000-000000267720'; -- U_VISIT_NOORIGIN
 
 insert into public.agencies (id, name, slug, status, created_by_user_id) values
   ('00000000-0000-0000-0000-000000267730', 'Inmobiliaria CRM Suggested 267.4', 'inmo-crm-suggested-2674',
@@ -192,7 +196,9 @@ insert into public.leads (id, agent_id, user_id, status) values
   ('00000000-0000-0000-0000-000000267775', '00000000-0000-0000-0000-000000267700', '00000000-0000-0000-0000-000000267715', 'new'),               -- L_LEGACY (estado legacy)
   ('00000000-0000-0000-0000-000000267776', '00000000-0000-0000-0000-000000267700', '00000000-0000-0000-0000-000000267716', 'whatsapp_opened'),  -- L_DELETED
   ('00000000-0000-0000-0000-000000267777', '00000000-0000-0000-0000-000000267700', '00000000-0000-0000-0000-000000267717', 'whatsapp_opened'),  -- L_NONAME
-  ('00000000-0000-0000-0000-000000267778', '00000000-0000-0000-0000-000000267702', '00000000-0000-0000-0000-000000267718', 'whatsapp_opened');  -- L_AJENO (de AG2)
+  ('00000000-0000-0000-0000-000000267778', '00000000-0000-0000-0000-000000267702', '00000000-0000-0000-0000-000000267718', 'whatsapp_opened'),  -- L_AJENO (de AG2)
+  ('00000000-0000-0000-0000-000000267779', '00000000-0000-0000-0000-000000267700', '00000000-0000-0000-0000-000000267719', 'contacted'),        -- L_CONTACTED_NOORIGIN
+  ('00000000-0000-0000-0000-000000267780', '00000000-0000-0000-0000-000000267700', '00000000-0000-0000-0000-000000267720', 'visit_scheduled');  -- L_VISIT_NOORIGIN
 
 insert into public.lead_origin_properties (id, lead_id, property_id, contacted_at) values
   ('00000000-0000-0000-0000-000000267784', '00000000-0000-0000-0000-000000267770', '00000000-0000-0000-0000-000000267750', now() - interval '3 days'), -- L_ORIGIN -> P_ORIGIN
@@ -305,6 +311,20 @@ select is(
   pg_temp.suggested_msg('00000000-0000-0000-0000-000000267771'),
   'Hola Diego, vi que te interesó una de mis propiedades. ¿Te gustaría agendar una visita?',
   'NOORIGIN1_nuevo_sin_origen_string_exacto'
+);
+
+-- Hallazgo del guardian (267.4): la rama "sin origen" existe también en contactado/visita;
+-- sin estos asserts un NULL en v_address colapsaría el texto entero a NULL sin que nadie lo viera.
+select is(
+  pg_temp.suggested_msg('00000000-0000-0000-0000-000000267779'), -- L_CONTACTED_NOORIGIN
+  'Hola Iván, ¿pudiste ver alguna de mis propiedades? Cuéntame qué te pareció y si quieres que te comparta más opciones.',
+  'NOORIGIN2_contactado_sin_origen_string_exacto'
+);
+
+select is(
+  pg_temp.suggested_msg('00000000-0000-0000-0000-000000267780'), -- L_VISIT_NOORIGIN
+  'Hola Lucía, te escribo para confirmar tu visita. ¿Sigue en pie?',
+  'NOORIGIN3_visita_sin_origen_string_exacto'
 );
 
 -- ════════════════════════════════════════════════════════════════════════════
