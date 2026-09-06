@@ -38,7 +38,7 @@ Proyecto live `urbea-app` (`mvpvqmyhrrkwbnpctpuq`). Base `0001`–`0010` (20 tab
 | `property_videos` | 0005, 0011 (`storage_path`) | [[propiedades-y-video]] | vivo |
 | `likes` | 0006 | [[feed-vertical-video]] | vivo |
 | `saves` | 0006 | [[propiedades-y-video]] | vivo |
-| `leads` | 0006 | [[crm-leads]] | vivo |
+| `leads` | 0006; RPCs agregadas `crm_leads_page`/`crm_funnel`/`crm_lead_detail`/`lead_activity`/`crm_radar_anon` (`20260906100003`–`100005`, #266) y `crm_suggested_message(p_lead_id) → text` (`20260906200001`, #267: plantilla server-side sin precio/teléfono/hora, cerrado → NULL) | [[crm-leads]] | vivo |
 | `lead_origin_properties` | 0006 | [[crm-leads]] | vivo |
 | `lead_temperature_daily` | 20260906100002 (#266.3) | [[crm-leads]] | vivo — snapshot diario `(lead_id, day)`, solo leads activos, escrita solo por `snapshot_lead_temperature()` vía pg_cron |
 | `events_raw` | 0007 | [[rls-seguridad]] | latente |

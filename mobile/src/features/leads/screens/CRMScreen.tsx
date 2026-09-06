@@ -1,229 +1,372 @@
 /**
- * CRMScreen — pantalla de leads/CRM para agentes.
+ * CRMScreen — rediseño del CRM/pipeline de leads del agente (subtarea 267.7).
  *
- * Subtarea 15.1 — scaffold con role guard.
- * Subtarea 15.7 — FilterTabs + FlatList de LeadCard + filtrado client-side.
- * Subtarea 15.8 — búsqueda client-side por full_name (compuesta con filtro de tab).
- * Subtarea 75.5/75.6 — canViewTeam (owner Y admin ven el equipo, no solo owner)
- *   + sección superior fija de leads en seguimiento (is_follow_up, §19.9).
- * Corrección code review (rama tarea/75-crm-estados-scoring):
- *   - FIX1: onFollowUpChange (refetch) al LeadExpandedView — el toggle de
- *     seguimiento ya no reusa onSuccess (que cierra el sheet).
- *   - FIX4: la sección "En seguimiento" ahora RESPETA el tab activo (antes lo
- *     ignoraba, mostrando leads de otro grupo bajo el tab equivocado) y está
- *     capada a FOLLOW_UP_SECTION_CAP tarjetas (antes montaba todas fuera de
- *     la virtualización del FlatList).
- *   - FIX5: se muestra un aviso + reintento si useAgencyRole().error es true
- *     (antes se degradaba en silencio a "Tus leads de contacto").
+ * Reescritura completa sobre los hooks del rediseño de datos (#266) y los
+ * componentes de 267.5/267.6. Sustituye la versión FilterTabs+FlatList de
+ * LeadCard client-side-filtered (15.7/75.6/75.5) — ver historial en git para
+ * ese código; NO se repite aquí.
  *
- * Filtrado (#75.1: lead_status se extendió a 11 valores — 7 legacy + 4
- * vigentes; los grupos cubren ambos para que un lead viejo no se muestre
- * mal):
- *   all         → todos los leads
- *   new         → status ∈ { whatsapp_opened, new(legacy) }
- *   in_progress → status ∈ { contacted, interested, in_progress(legacy), visit_scheduled }
- *   closed      → status ∈ { closed_won_rent, closed_won_sale, closed_won(legacy), closed_lost, discarded }
+ * Preview aprobado: mobile/design-previews/267-crm-santiago.html (sección 1 =
+ * layout completo: header CRM/subtítulo + ☰ · segmentado Míos/Equipo ·
+ * narrativa · embudo · 4 bandas por tendencia con "Ver los N restantes" · 4ª
+ * banda "En silencio" colapsada por default (decisión de Abraham 2026-09-06).
  *
- * Búsqueda:
- *   Si search no vacío → aplica sobre el resultado del filtro de tab (y sobre
- *   la sección de seguimiento, que también respeta el tab — ver más abajo).
- *   full_name null-safe: leads sin nombre no matchean cuando hay query.
+ * Estructura: UN solo FlatList (ListHeaderComponent = cabecera + segmentado +
+ * NarrativeHeader + FunnelCard; `data` = filas aplanadas de las 4 bandas en
+ * BAND_ORDER — header de banda, lead, ficha inline expandida, filas del radar
+ * anónimo dentro de Calentando, botón "Ver los N restantes"). Aplanar en un
+ * solo array (en vez de SectionList) hace trivial la regla "un solo lead
+ * expandido a la vez" y el onEndReached de "la primera banda con hasMore".
  *
- * Sección "En seguimiento" (75.6, §19.9; alcance corregido en FIX4): fija
- * arriba de la lista, agrupa los leads con is_follow_up=true DENTRO del tab
- * de estado activo (antes ignoraba el tab — un lead "Contactado" en
- * seguimiento aparecía incluso viendo el tab "Cerrados"), capada a las
- * primeras FOLLOW_UP_SECTION_CAP tarjetas para no montar decenas de LeadCard
- * fuera de la virtualización del FlatList. Solo las tarjetas EFECTIVAMENTE
- * mostradas en la sección se excluyen de la lista principal de abajo — un
- * lead en seguimiento más allá del cap sigue apareciendo ahí, no desaparece.
+ * Búsqueda (D7, obligatorio): SIEMPRE server-side — `query` viaja como
+ * `p_query` a los 4 `useCrmLeadsPage`, JAMÁS un filtro adicional en cliente.
+ * La hoja ☰ (CrmSearchSheet) es mínima; el sheet completo de filtros es #271.
  *
- * El mapeo de grupos es inline en esta pantalla (presentacional; sin utils/).
- *
- * Estadísticas de actividad (#112, decisión del dueño: fuera puntaje/temperatura):
- * useLeadStats se llama UNA sola vez aquí con TODOS los lead_ids visibles
- * (batch, evita N+1 — LeadCard/LeadExpandedView reciben `stats` ya resuelto
- * por prop, sin fetch propio). `lead_ids` va memoizado (useMemo sobre
- * `leads`, cuya referencia solo cambia con un fetch real) para no disparar
- * un refetch de estadísticas en cada render.
- *
- * Paleta: gestión clara (paper) — misma que MyListings / ProfileScreen.
+ * Agente efectivo: `agent_id = selected_agent_id ?? user.id` — "Míos" fuerza
+ * selected_agent_id=null (vuelve a "yo"); "Equipo" deja que AgentSelector lo
+ * fije a un compañero puntual (chip "Todos" también fija null → mismo "yo",
+ * conserva el patrón ya usado por AgentSelector/useAgencyRole, #28).
  */
 import React, { useCallback, useMemo, useState } from 'react';
-import {
-  FlatList,
-  LayoutAnimation,
-  Platform,
-  Pressable,
-  RefreshControl,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
-import { BookmarkSimple, MagnifyingGlass, Tray } from 'phosphor-react-native';
-// #241.3: SafeAreaView de safe-area-context, NO la de react-native — esa es
-// iOS-only y con edge-to-edge (SDK 56) el header del CRM quedaba bajo la hora/
-// wifi en Android (misma regla que #231 para el panel admin).
+import { FlatList, Platform, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { List, MagnifyingGlass, Tray, X } from 'phosphor-react-native';
+import { router } from 'expo-router';
+// #241.3/#231: SafeAreaView de safe-area-context, NUNCA la de react-native.
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { UrbeaLoader } from '@/components/UrbeaLoader';
 import { RefreshingChip } from '@/components/RefreshingChip';
-import { FilterTabs } from '@/components/FilterTabs';
 import { useAuth } from '@/features/auth/context';
 import { EmptyState } from '@/features/profile/components/EmptyState';
 import { colors, fonts, floating_content_clearance, layout, radii, spacing, type_scale } from '@/theme/theme';
+
 import { AgentSelector } from '../components/AgentSelector';
-import { LeadCard } from '../components/LeadCard';
-import { LeadExpandedView } from '../components/LeadExpandedView';
+import { BandHeader } from '../components/BandHeader';
+import { CrmLeadRow } from '../components/CrmLeadRow';
+import { CrmSearchSheet } from '../components/CrmSearchSheet';
+import { FunnelCard } from '../components/FunnelCard';
+import { LeadInlineDetail } from '../components/LeadInlineDetail';
+import { NarrativeHeader } from '../components/NarrativeHeader';
+import { RadarAnonRow } from '../components/RadarAnonRow';
 import { useAgencyAgents } from '../hooks/useAgencyAgents';
 import { useAgencyRole } from '../hooks/useAgencyRole';
-import { useAgentLeads } from '../hooks/useAgentLeads';
-import { useLeadStats } from '../hooks/useLeadStats';
-import type { AgentLead, LeadStatus } from '../types';
+import { useCrmFunnel } from '../hooks/useCrmFunnel';
+import { useCrmLeadsPage, type UseCrmLeadsPageState } from '../hooks/useCrmLeadsPage';
+import { useCrmRadarAnon } from '../hooks/useCrmRadarAnon';
+import { BAND_META, BAND_ORDER } from '../utils/crm_band_meta';
+import type { CrmBand, CrmLeadRow as CrmLeadRowData, CrmRadarRow as CrmRadarRowData } from '../types';
 
-// ─── Tipos de filtro ──────────────────────────────────────────────────────────
+// ─── Filas aplanadas del FlatList ───────────────────────────────────────────
 
-type CrmFilter = 'all' | 'new' | 'in_progress' | 'closed';
+type ListRow =
+  | { key: string; kind: 'band_header'; band: CrmBand }
+  | { key: string; kind: 'lead'; row: CrmLeadRowData }
+  | { key: string; kind: 'detail'; row: CrmLeadRowData }
+  | { key: string; kind: 'radar'; row: CrmRadarRowData }
+  | { key: string; kind: 'load_more'; band: CrmBand; remaining: number };
 
-// ─── Definición de tabs ───────────────────────────────────────────────────────
+/** Ruta de "publicar" ya existente en la app (tab central [+], app/(protected)/publish). */
+const PUBLISH_ROUTE = '/publish/step1' as const;
 
-const CRM_TABS: { value: CrmFilter; label: string }[] = [
-  { value: 'all',         label: 'Todos' },
-  { value: 'new',         label: 'Nuevos' },
-  { value: 'in_progress', label: 'En progreso' },
-  { value: 'closed',      label: 'Cerrados' },
-];
-
-// ─── Mapeo de grupos (inline — no es lógica de negocio; es presentacional) ────
-// #75.1: cada grupo incluye su equivalente legacy para que un lead viejo
-// (aún sin re-clasificar) no caiga en el grupo equivocado.
-
-/** Statuses que caen en el grupo "Nuevos". */
-const NEW_STATUSES: LeadStatus[] = [
-  'whatsapp_opened',
-  'new', // legacy
-];
-
-/** Statuses que caen en el grupo "En progreso". */
-const IN_PROGRESS_STATUSES: LeadStatus[] = [
-  'contacted',
-  'interested',
-  'visit_scheduled',
-  'in_progress', // legacy
-];
-
-/** Statuses que caen en el grupo "Cerrados". */
-const CLOSED_STATUSES: LeadStatus[] = [
-  'closed_won_rent',
-  'closed_won_sale',
-  'closed_lost',
-  'discarded',
-  'closed_won', // legacy
-];
-
-/** Aplica el filtro seleccionado sobre el array completo de leads. */
-function apply_filter(leads: AgentLead[], filter: CrmFilter): AgentLead[] {
-  if (filter === 'all')         return leads;
-  if (filter === 'new')         return leads.filter((l) => NEW_STATUSES.includes(l.status));
-  if (filter === 'in_progress') return leads.filter((l) => IN_PROGRESS_STATUSES.includes(l.status));
-  // 'closed'
-  return leads.filter((l) => CLOSED_STATUSES.includes(l.status));
+/** Primer token de un nombre completo — null si full_name es null (ver nota junto a top_cooling). */
+function first_token(full_name: string | null): string | null {
+  if (!full_name) return null;
+  return full_name.trim().split(/\s+/)[0] ?? null;
 }
-
-/** FIX4 (code review) — tope de tarjetas en la sección fija "En seguimiento";
- * evita montar decenas de LeadCard de golpe fuera de la virtualización del
- * FlatList (ListHeaderComponent no virtualiza). */
-const FOLLOW_UP_SECTION_CAP = 5;
 
 // ─── Componente ───────────────────────────────────────────────────────────────
 
 export function CRMScreen(): React.ReactElement {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  // FIX5 (code review): `error` distingue "no pude saber el rol" (RLS/red) de
-  // "no hay membresía" — antes se ignoraba y ambos casos degradaban en
-  // silencio a la vista de agente individual, escondiendo que RLS sigue
-  // devolviendo los leads de TODO el equipo (mal etiquetados como propios).
+
+  // FIX5 (heredado de la versión anterior): `error` distingue "no pude saber
+  // el rol" (RLS/red) de "no hay membresía" — se sigue avisando con reintento.
   const {
     canViewTeam,
     agencyId,
-    loading: role_loading,
     error: role_error,
     refetch: refetch_role,
   } = useAgencyRole();
   const { agents } = useAgencyAgents(agencyId, canViewTeam);
+
+  const [team_tab, set_team_tab] = useState<'mios' | 'equipo'>('mios');
   const [selected_agent_id, set_selected_agent_id] = useState<string | null>(null);
-  // #226: el alcance del agregado se pasa EXPLÍCITO — el hook ya no delega a
-  // RLS (para un admin de plataforma, "RLS decide" significaba "todo").
-  const { leads, loading, error, refetch } = useAgentLeads(selected_agent_id, 'score', {
-    loading: role_loading,
-    canViewTeam,
-    agencyId,
-  });
-  const [filter, set_filter] = useState<CrmFilter>('all');
-  const [search, set_search] = useState('');
-  const [selected_lead, set_selected_lead] = useState<AgentLead | null>(null);
+  const agent_id = selected_agent_id ?? user?.id ?? null;
+  const is_read_only = agent_id !== (user?.id ?? null);
 
-  // Estadísticas de actividad (#112) — batch ÚNICO para todos los leads
-  // visibles, nunca uno por tarjeta. `leads` referencia estable entre
-  // renders (solo cambia con un fetch real de useAgentLeads) → lead_ids
-  // memoizado no dispara refetch de estadísticas en cada render.
-  const lead_ids = useMemo(() => leads.map((l) => l.id), [leads]);
-  const { statsByLeadId } = useLeadStats(lead_ids);
+  const [query, set_query] = useState<string | null>(null);
+  const [sheet_open, set_sheet_open] = useState(false);
+  const [expanded_lead_id, set_expanded_lead_id] = useState<string | null>(null);
+  const [silent_collapsed, set_silent_collapsed] = useState(BAND_META.silent.collapsed_by_default);
+  // Sube a true en cuanto el primer pase de datos resuelve — evita que un
+  // refetch (pull-to-refresh, refetch tras cambio de estado) vuelva a tapar
+  // la pantalla entera con el loader inicial (RefreshingChip ya cubre eso).
+  const [has_loaded_once, set_has_loaded_once] = useState(false);
 
-  const search_query = search.trim().toLowerCase();
-  // ponytail: null-safe — leads sin full_name no matchean cuando hay query
-  const matches_search = useCallback(
-    (l: AgentLead) => (search_query ? (l.full_name?.toLowerCase().includes(search_query) ?? false) : true),
-    [search_query],
+  const funnel = useCrmFunnel(agent_id, 30);
+  const hot = useCrmLeadsPage(agent_id, 'hot', query);
+  const cooling = useCrmLeadsPage(agent_id, 'cooling', query);
+  const warming = useCrmLeadsPage(agent_id, 'warming', query);
+  const silent = useCrmLeadsPage(agent_id, 'silent', query);
+  const radar = useCrmRadarAnon(agent_id, 5);
+
+  const band_states: Record<CrmBand, UseCrmLeadsPageState> = useMemo(
+    () => ({ hot, cooling, warming, silent }),
+    [hot, cooling, warming, silent],
   );
 
-  // Sección fija "En seguimiento" (75.6, §19.9; FIX4): respeta el tab de
-  // estado activo (antes lo ignoraba) y el buscador. `_all` es el conjunto
-  // completo (para saber cuántos hay realmente); `follow_up_leads` es el
-  // subconjunto EFECTIVAMENTE mostrado en la sección (capado).
-  const follow_up_leads_all = useMemo(
-    () => apply_filter(leads, filter).filter((l) => l.is_follow_up && matches_search(l)),
-    [leads, filter, matches_search],
-  );
-  const follow_up_leads = useMemo(
-    () => follow_up_leads_all.slice(0, FOLLOW_UP_SECTION_CAP),
-    [follow_up_leads_all],
-  );
-  // IDs realmente renderizados en la sección fija — solo esos se excluyen de
-  // la lista principal (FIX4: un lead en seguimiento más allá del cap sigue
-  // visible ahí abajo en vez de desaparecer del tab por completo).
-  const follow_up_ids_shown = useMemo(
-    () => new Set(follow_up_leads.map((l) => l.id)),
-    [follow_up_leads],
-  );
-
-  const filtered_leads = useMemo(() => {
-    const by_tab = apply_filter(leads, filter).filter(matches_search);
-    // Excluye los que ya se muestran arriba en la sección de seguimiento —
-    // cada lead visible aparece en un solo lugar, sin duplicados.
-    return by_tab.filter((l) => !follow_up_ids_shown.has(l.id));
-  }, [leads, filter, matches_search, follow_up_ids_shown]);
+  // Ajuste de estado durante el render (patrón React oficial "adjusting state
+  // when props/state change") — no es un efecto: se resuelve ANTES del commit,
+  // sin flash, y la guarda `!has_loaded_once` evita el loop (una vez true,
+  // esta rama nunca vuelve a ejecutar set_has_loaded_once).
+  const first_pass_done =
+    !funnel.loading && !hot.loading && !cooling.loading && !warming.loading && !silent.loading;
+  if (!has_loaded_once && first_pass_done) {
+    set_has_loaded_once(true);
+  }
 
   // ── Handlers ────────────────────────────────────────────────────────────────
 
-  function handle_lead_press(lead: AgentLead): void {
-    set_selected_lead(lead);
+  function handle_select_tab(tab: 'mios' | 'equipo'): void {
+    set_team_tab(tab);
+    if (tab === 'mios') set_selected_agent_id(null);
   }
 
-  const handle_expanded_close = useCallback((): void => {
-    set_selected_lead(null);
+  const handle_lead_changed = useCallback((): void => {
+    void funnel.refetch();
+    void hot.refetch();
+    void cooling.refetch();
+    void warming.refetch();
+    void silent.refetch();
+  }, [funnel, hot, cooling, warming, silent]);
+
+  const handle_refresh = useCallback((): void => {
+    void funnel.refetch();
+    void hot.refetch();
+    void cooling.refetch();
+    void warming.refetch();
+    void silent.refetch();
+    void radar.refetch();
+  }, [funnel, hot, cooling, warming, silent, radar]);
+
+  const handle_row_press = useCallback((lead_id: string): void => {
+    set_expanded_lead_id((current) => (current === lead_id ? null : lead_id));
   }, []);
 
-  const handle_expanded_success = useCallback((): void => {
-    refetch();
-    set_selected_lead(null);
-  }, [refetch]);
+  const handle_toggle_silent = useCallback((): void => {
+    set_silent_collapsed((c) => !c);
+  }, []);
+
+  const handle_end_reached = useCallback((): void => {
+    const band = BAND_ORDER.find((b) => band_states[b].hasMore);
+    if (band) void band_states[band].loadMore();
+  }, [band_states]);
+
+  // ── Narrativa (counts = tamaño TOTAL conocido por banda: cargado + remaining) ──
+
+  const counts: Record<CrmBand, number> = {
+    hot: hot.data.length + (hot.remaining ?? 0),
+    cooling: cooling.data.length + (cooling.remaining ?? 0),
+    warming: warming.data.length + (warming.remaining ?? 0),
+    silent: silent.data.length + (silent.remaining ?? 0),
+  };
+
+  const top_cooling = useMemo(() => {
+    if (cooling.data.length === 0) return null;
+    const coldest = cooling.data.reduce((min, r) => (r.delta < min.delta ? r : min));
+    const name = first_token(coldest.full_name);
+    // ponytail: sin nombre no hay narrativa segura que citar (no inventar
+    // "Usuario" en la frase) — se omite el highlight, el subline cae al genérico.
+    return name ? { first_name: name, delta: coldest.delta } : null;
+  }, [cooling.data]);
+
+  // ── Filas aplanadas ──────────────────────────────────────────────────────────
+
+  const rows: ListRow[] = useMemo(() => {
+    const out: ListRow[] = [];
+    for (const band of BAND_ORDER) {
+      const state = band_states[band];
+      if (state.data.length === 0) continue; // banda vacía no se pinta
+      out.push({ key: `header-${band}`, kind: 'band_header', band });
+
+      if (band === 'silent' && silent_collapsed) continue; // filas ocultas, cabecera visible
+
+      for (const row of state.data) {
+        out.push({ key: `lead-${row.lead_id}`, kind: 'lead', row });
+        if (expanded_lead_id === row.lead_id) {
+          out.push({ key: `detail-${row.lead_id}`, kind: 'detail', row });
+        }
+      }
+
+      if (band === 'warming') {
+        for (const r of radar.data) {
+          out.push({ key: `radar-${r.row_n}`, kind: 'radar', row: r });
+        }
+      }
+
+      if ((state.remaining ?? 0) > 0) {
+        out.push({ key: `more-${band}`, kind: 'load_more', band, remaining: state.remaining as number });
+      }
+    }
+    return out;
+  }, [band_states, silent_collapsed, expanded_lead_id, radar]);
+
+  // ── Estados vacíos ───────────────────────────────────────────────────────────
+  // El preview (sección 3) dibuja el bloque "0 leads" EN VEZ DE la narrativa,
+  // no junto a ella — mostrar ambos duplicaría literalmente "Aún no hay señal
+  // que leer" (narrativa Y título del EmptyState dicen lo mismo). Búsqueda sin
+  // resultados: mismo criterio (la narrativa habla de los totales SIN
+  // filtrar, contradice un "no encontramos a nadie" justo debajo).
+
+  const all_bands_empty =
+    hot.data.length === 0 && cooling.data.length === 0 && warming.data.length === 0 && silent.data.length === 0;
+
+  const empty_state_kind: 'search' | 'no_signal' | null = !all_bands_empty
+    ? null
+    : query !== null
+      ? 'search'
+      : funnel.data?.vieron === 0
+        ? 'no_signal'
+        : null;
+
+  // ── Render item ──────────────────────────────────────────────────────────────
+
+  const render_item = useCallback(
+    ({ item }: { item: ListRow }): React.ReactElement | null => {
+      switch (item.kind) {
+        case 'band_header': {
+          const state = band_states[item.band];
+          const count = state.data.length + (state.remaining ?? 0);
+          return item.band === 'silent' ? (
+            <BandHeader band={item.band} count={count} collapsed={silent_collapsed} onToggle={handle_toggle_silent} />
+          ) : (
+            <BandHeader band={item.band} count={count} />
+          );
+        }
+        case 'lead':
+          return (
+            <CrmLeadRow
+              row={item.row}
+              onPress={() => handle_row_press(item.row.lead_id)}
+              expanded={expanded_lead_id === item.row.lead_id}
+            />
+          );
+        case 'detail':
+          return <LeadInlineDetail lead={item.row} readOnly={is_read_only} onChanged={handle_lead_changed} />;
+        case 'radar':
+          return <RadarAnonRow row={item.row} />;
+        case 'load_more':
+          return (
+            <Pressable
+              onPress={() => void band_states[item.band].loadMore()}
+              accessibilityRole="button"
+              accessibilityLabel={`Ver los ${item.remaining} restantes`}
+              style={styles.load_more}
+            >
+              <Text style={styles.load_more_text}>Ver los {item.remaining} restantes</Text>
+            </Pressable>
+          );
+        default:
+          return null;
+      }
+    },
+    [band_states, expanded_lead_id, silent_collapsed, is_read_only, handle_row_press, handle_toggle_silent, handle_lead_changed],
+  );
+
+  // ── Cabecera de la lista ─────────────────────────────────────────────────────
+
+  const list_header = (
+    <>
+      <View style={styles.header}>
+        <View style={styles.header_top}>
+          <View>
+            <Text style={styles.title}>CRM</Text>
+            <Text style={styles.subtitle}>{canViewTeam ? 'Leads de tu equipo' : 'Tus leads de contacto'}</Text>
+          </View>
+          <Pressable
+            onPress={() => set_sheet_open(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Buscar por nombre"
+            hitSlop={8}
+            style={styles.menu_btn}
+          >
+            <List size={20} color={colors.ink} weight="bold" />
+          </Pressable>
+        </View>
+
+        {query !== null && (
+          <Pressable
+            onPress={() => set_query(null)}
+            accessibilityRole="button"
+            accessibilityLabel={`Quitar búsqueda: ${query}`}
+            style={styles.query_chip}
+          >
+            <Text style={styles.query_chip_text}>{query}</Text>
+            <X size={11} color={colors.primary_deep} weight="bold" />
+          </Pressable>
+        )}
+      </View>
+
+      {role_error && (
+        <View style={styles.role_error_banner}>
+          <Text style={styles.role_error_text}>
+            No se pudo verificar tu rol en la agencia. Es posible que veas leads de tu equipo marcados
+            como propios.
+          </Text>
+          <Pressable
+            onPress={refetch_role}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Reintentar verificación de rol"
+          >
+            <Text style={styles.role_error_retry}>Reintentar</Text>
+          </Pressable>
+        </View>
+      )}
+
+      {canViewTeam && (
+        <View style={styles.segmented}>
+          <Pressable
+            onPress={() => handle_select_tab('mios')}
+            accessibilityRole="button"
+            accessibilityState={{ selected: team_tab === 'mios' }}
+            style={[styles.seg, team_tab === 'mios' && styles.seg_active]}
+          >
+            <Text style={[styles.seg_text, team_tab === 'mios' && styles.seg_text_active]}>Míos</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => handle_select_tab('equipo')}
+            accessibilityRole="button"
+            accessibilityState={{ selected: team_tab === 'equipo' }}
+            style={[styles.seg, team_tab === 'equipo' && styles.seg_active]}
+          >
+            <Text style={[styles.seg_text, team_tab === 'equipo' && styles.seg_text_active]}>Equipo</Text>
+          </Pressable>
+        </View>
+      )}
+
+      {canViewTeam && team_tab === 'equipo' && agents.length > 0 && (
+        <View style={styles.agent_selector_wrap}>
+          <AgentSelector agents={agents} selectedAgentId={selected_agent_id} onSelectAgent={set_selected_agent_id} />
+        </View>
+      )}
+
+      <RefreshingChip visible={has_loaded_once && (funnel.loading || hot.loading || cooling.loading || warming.loading || silent.loading)} />
+
+      {empty_state_kind === null && <NarrativeHeader counts={counts} top_cooling={top_cooling} />}
+
+      {empty_state_kind === null && funnel.data !== null && (
+        <View style={styles.funnel_wrap}>
+          <FunnelCard funnel={funnel.data} />
+        </View>
+      )}
+    </>
+  );
 
   // ── Estado de carga inicial ──────────────────────────────────────────────────
 
-  if (loading && leads.length === 0) {
+  if (!has_loaded_once) {
     return (
       <SafeAreaView style={styles.safe}>
         <View style={styles.center}>
@@ -233,198 +376,67 @@ export function CRMScreen(): React.ReactElement {
     );
   }
 
-  // ── Estado de error ──────────────────────────────────────────────────────────
+  // ── Estado vacío ─────────────────────────────────────────────────────────────
 
-  if (error !== null) {
-    return (
-      <SafeAreaView style={styles.safe}>
-        <View style={styles.center}>
-          <Text style={styles.error_text}>{error}</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
+  // ponytail: bandas vacías sin query y funnel.vieron>0 (empty_state_kind===null
+  // con all_bands_empty true) — combinación no cubierta por el copy aprobado
+  // (frame 4); la lista simplemente queda vacía sin mensaje propio, en vez de
+  // inventar un 3er estado vacío que el producto no ha definido.
+  const empty_component =
+    empty_state_kind === 'search' ? (
+      <EmptyState
+        message="No encontramos a nadie con ese nombre"
+        subtitle="Ajusta la búsqueda e inténtalo de nuevo."
+        icon={MagnifyingGlass}
+      />
+    ) : empty_state_kind === 'no_signal' ? (
+      <EmptyState
+        message="Aún no hay señal que leer"
+        subtitle="El radar se enciende cuando alguien ve, guarda o repite tus propiedades. Sube tu primer recorrido y en horas empiezas a ver quién está mirando."
+        icon={Tray}
+        cta_label="Subir una propiedad"
+        onPressCta={() => router.push(PUBLISH_ROUTE)}
+      />
+    ) : null;
 
   // ── Render principal ─────────────────────────────────────────────────────────
 
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.container}>
-
-        {/* Cabecera */}
-        <View style={styles.header}>
-          <Text style={styles.title}>CRM</Text>
-          <Text style={styles.subtitle}>
-            {canViewTeam ? 'Leads de tu equipo' : 'Tus leads de contacto'}
-          </Text>
-        </View>
-
-        {/* FIX5 (code review): aviso + reintento cuando no se pudo verificar el
-            rol de agencia — RLS puede seguir devolviendo leads del equipo
-            aunque el selector/subtítulo hayan degradado a la vista de agente. */}
-        {role_error && (
-          <View style={styles.role_error_banner}>
-            <Text style={styles.role_error_text}>
-              No se pudo verificar tu rol en la agencia. Es posible que veas leads de tu
-              equipo marcados como propios.
-            </Text>
-            <Pressable
-              onPress={refetch_role}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel="Reintentar verificación de rol"
-            >
-              <Text style={styles.role_error_retry}>Reintentar</Text>
-            </Pressable>
-          </View>
-        )}
-
-        {/* Búsqueda por nombre */}
-        <View style={styles.search_row}>
-          <TextInput
-            style={styles.search_input}
-            placeholder="Buscar por nombre..."
-            placeholderTextColor={colors.gray_1}
-            value={search}
-            onChangeText={set_search}
-            returnKeyType="search"
-            autoCorrect={false}
-            autoCapitalize="none"
-          />
-          {search.length > 0 && (
-            <Pressable
-              onPress={() => set_search('')}
-              style={styles.search_clear}
-              hitSlop={8}
-            >
-              <Text style={styles.search_clear_text}>✕</Text>
-            </Pressable>
-          )}
-        </View>
-
-        {/* Selector de agente (owner o admin con agentes en su agencia) */}
-        {canViewTeam && agents.length > 0 && (
-          <View style={styles.agent_selector_wrap}>
-            <AgentSelector
-              agents={agents}
-              selectedAgentId={selected_agent_id}
-              onSelectAgent={set_selected_agent_id}
-            />
-          </View>
-        )}
-
-        {/* Tabs de filtro */}
-        <View style={styles.tabs_wrap}>
-          <FilterTabs<CrmFilter>
-            tabs={CRM_TABS}
-            value={filter}
-            onChange={(next) => {
-              // Transición suave al reacomodar la lista filtrada.
-              LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-              set_filter(next);
-            }}
-          />
-        </View>
-
-        {/* Lista de leads */}
-        <FlatList<AgentLead>
+        <FlatList<ListRow>
           style={styles.list}
-          contentContainerStyle={[
-            styles.list_content,
-            // #65.6: GlassTabBar (Android) flota (position:absolute) sobre esta
-            // pantalla y ya no reserva alto — sin este despeje el último lead
-            // queda tapado tras la barra al hacer scroll hasta el fondo.
-            // #65.11: floating_content_clearance resuelve por plataforma — en
-            // iOS (NativeTabs, barra nativa anclada) insets.bottom ya incluye
-            // el alto de la barra, solo hace falta un margen chico.
-            { paddingBottom: insets.bottom + floating_content_clearance },
-          ]}
-          data={filtered_leads}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <LeadCard lead={item} onPress={handle_lead_press} stats={statsByLeadId[item.id]} />
-          )}
-          ItemSeparatorComponent={() => <View style={styles.separator} />}
-          ListHeaderComponent={
-            <>
-              {/* #243.2: indicador propio del pull-to-refresh (en flujo, sobre la lista). */}
-              <RefreshingChip visible={loading} />
-              {// Sección fija "En seguimiento" (75.6, §19.9; FIX4) — respeta el
-            // tab de estado activo, capada a FOLLOW_UP_SECTION_CAP tarjetas.
-            follow_up_leads.length > 0 ? (
-              <View style={styles.follow_up_section}>
-                <View style={styles.follow_up_title_row}>
-                  <BookmarkSimple size={14} weight="fill" color={colors.accent_deep} />
-                  <Text style={styles.follow_up_title}>En seguimiento</Text>
-                </View>
-                {follow_up_leads.map((lead) => (
-                  <View key={lead.id} style={styles.follow_up_item}>
-                    <LeadCard lead={lead} onPress={handle_lead_press} stats={statsByLeadId[lead.id]} />
-                  </View>
-                ))}
-                {follow_up_leads_all.length > FOLLOW_UP_SECTION_CAP && (
-                  <Text style={styles.follow_up_more}>
-                    +{follow_up_leads_all.length - FOLLOW_UP_SECTION_CAP} más en la lista de abajo
-                  </Text>
-                )}
-              </View>
-            ) : null}
-            </>
-          }
-          ListEmptyComponent={
-            // ponytail: tres casos — agente sin leads / sin resultados con nada
-            // arriba / sin resultados pero ya hay leads en la sección de seguimiento
-            leads.length === 0
-              ? <EmptyState
-                  message="Aún no tienes leads"
-                  subtitle="Los leads aparecen cuando un usuario contacta sobre una propiedad."
-                  icon={Tray}
-                />
-              : follow_up_leads.length > 0
-                ? null // ya se muestran arriba en la sección fija — no hay "sin resultados" que reportar
-                : <EmptyState
-                    message="Sin resultados"
-                    subtitle="Prueba con otro filtro o búsqueda."
-                    icon={MagnifyingGlass}
-                  />
-          }
+          contentContainerStyle={[styles.list_content, { paddingBottom: insets.bottom + floating_content_clearance }]}
+          data={rows}
+          keyExtractor={(item) => item.key}
+          renderItem={render_item}
+          onEndReached={handle_end_reached}
+          onEndReachedThreshold={0.4}
+          ListHeaderComponent={list_header}
+          ListEmptyComponent={empty_component}
+          // #241.3: bounces vive en la LISTA (ScrollViewProps), no en
+          // RefreshControl — bounces=false mata el pull-to-refresh en iOS;
+          // Android lo ignora.
+          bounces={Platform.OS === 'ios'}
           refreshControl={
-            // #243.2/#243.4: el gesto nativo queda transparente; se ve el
-            // RefreshingChip del header. En Android el color transparente no
-            // basta — el círculo nativo sigue visible — hay que sacarlo con offset.
             <RefreshControl
-              refreshing={loading}
-              onRefresh={refetch}
+              refreshing={has_loaded_once && (funnel.loading || hot.loading || cooling.loading || warming.loading || silent.loading)}
+              onRefresh={handle_refresh}
               tintColor="transparent"
               colors={['transparent']}
               progressBackgroundColor="transparent"
-              progressViewOffset={Platform.OS === 'android' ? -100 : undefined}
             />
           }
           showsVerticalScrollIndicator={false}
         />
-
       </View>
 
-      {/* Vista expandida del lead (modal bottom-sheet) */}
-      {selected_lead !== null && (
-        <LeadExpandedView
-          lead={selected_lead}
-          visible={selected_lead !== null}
-          onClose={handle_expanded_close}
-          onSuccess={handle_expanded_success}
-          // FIX1 (code review): el toggle "en seguimiento" refresca la lista
-          // SIN cerrar el sheet (a diferencia de onSuccess) — refetch de
-          // useAgentLeads ya es estable (useCallback), se pasa directo.
-          onFollowUpChange={refetch}
-          // Solo lectura si el lead pertenece a OTRO agente (owner viendo el
-          // pipeline del equipo). La EF solo autoriza al agente dueño a editar;
-          // sin este gate el cambio de estado devolvería UNAUTHORIZED_AGENT.
-          readOnly={selected_lead.agent_id !== user?.id}
-          stats={statsByLeadId[selected_lead.id]}
-        />
-      )}
-
+      <CrmSearchSheet
+        visible={sheet_open}
+        initialQuery={query}
+        onClose={() => set_sheet_open(false)}
+        onSubmit={set_query}
+      />
     </SafeAreaView>
   );
 }
@@ -441,12 +453,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: layout.screen_inset,
   },
 
-  // ── Cabecera ────────────────────────────────────────────────────────────────
   header: {
     paddingTop: spacing.s_24,
-    paddingBottom: spacing.s_16,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.silver,
+    paddingBottom: spacing.s_12,
+  },
+  header_top: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
   },
   title: {
     ...type_scale.h1,
@@ -457,8 +471,26 @@ const styles = StyleSheet.create({
     color: colors.gray_2,
     marginTop: spacing.s_4,
   },
+  menu_btn: {
+    padding: spacing.s_8,
+  },
+  query_chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 6,
+    marginTop: spacing.s_12,
+    paddingVertical: spacing.s_4,
+    paddingHorizontal: spacing.s_12,
+    borderRadius: radii.r_pill,
+    backgroundColor: colors.primary_tint,
+  },
+  query_chip_text: {
+    fontFamily: fonts.sans_semibold,
+    fontSize: 12,
+    color: colors.primary_deep,
+  },
 
-  // ── Aviso de rol no verificado (FIX5) ────────────────────────────────────────
   role_error_banner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -469,7 +501,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.r_8,
     paddingVertical: spacing.s_8,
     paddingHorizontal: spacing.s_12,
-    marginTop: spacing.s_12,
+    marginBottom: spacing.s_12,
   },
   role_error_text: {
     flex: 1,
@@ -484,92 +516,62 @@ const styles = StyleSheet.create({
     color: colors.primary,
   },
 
-  // ── Búsqueda ─────────────────────────────────────────────────────────────────
-  search_row: {
+  segmented: {
     flexDirection: 'row',
-    alignItems: 'center',
+    padding: 3,
+    borderRadius: radii.r_12,
     backgroundColor: colors.paper_2,
-    borderRadius: radii.r_8,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.silver,
-    marginTop: spacing.s_12,
-    paddingHorizontal: spacing.s_12,
+    marginBottom: spacing.s_8,
   },
-  search_input: {
+  seg: {
     flex: 1,
-    ...type_scale.body,
-    color: colors.ink,
-    paddingVertical: spacing.s_12,
+    minHeight: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radii.r_8,
   },
-  search_clear: {
-    paddingLeft: spacing.s_8,
-    paddingVertical: spacing.s_12,
+  seg_active: {
+    backgroundColor: colors.primary_tint,
   },
-  search_clear_text: {
-    ...type_scale.body,
+  seg_text: {
+    fontFamily: fonts.sans_semibold,
+    fontSize: 13,
     color: colors.gray_2,
   },
+  seg_text_active: {
+    color: colors.primary_deep,
+  },
 
-  // ── Selector de agente (owner) ─────────────────────────────────────────────
   agent_selector_wrap: {
-    marginTop: spacing.s_12,
+    marginBottom: spacing.s_8,
   },
 
-  // ── Tabs ────────────────────────────────────────────────────────────────────
-  tabs_wrap: {
-    paddingTop: spacing.s_12,
-    paddingBottom: spacing.s_4,
+  funnel_wrap: {
+    marginTop: spacing.s_4,
+    marginBottom: spacing.s_16,
   },
 
-  // ── Lista ───────────────────────────────────────────────────────────────────
   list: {
     flex: 1,
   },
   list_content: {
-    paddingTop: spacing.s_8,
-    // paddingBottom real se aplica inline (insets.bottom + floating_content_clearance, #65.6/#65.11)
     flexGrow: 1,
   },
-  separator: {
-    height: spacing.s_8,
-  },
 
-  // ── Sección fija "En seguimiento" (75.6) ────────────────────────────────────
-  follow_up_section: {
-    marginBottom: spacing.s_16,
-  },
-  follow_up_title_row: {
-    flexDirection: 'row',
+  load_more: {
+    paddingVertical: spacing.s_12,
     alignItems: 'center',
-    gap: 6,
-    marginBottom: spacing.s_8,
   },
-  follow_up_title: {
+  load_more_text: {
     fontFamily: fonts.sans_semibold,
-    fontSize: 12,
-    letterSpacing: 0.4,
-    textTransform: 'uppercase',
-    color: colors.accent_deep,
-  },
-  follow_up_item: {
-    marginBottom: spacing.s_8,
-  },
-  follow_up_more: {
-    fontFamily: fonts.sans,
-    fontSize: 11,
-    color: colors.gray_2,
+    fontSize: 13,
+    color: colors.primary,
   },
 
-  // ── Centro (loading / error) ─────────────────────────────────────────────────
   center: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     padding: spacing.s_24,
-  },
-  error_text: {
-    ...type_scale.body,
-    color: colors.gray_2,
-    textAlign: 'center',
   },
 });

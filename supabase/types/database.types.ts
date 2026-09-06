@@ -2214,6 +2214,7 @@ export type Database = {
           temperature: number
         }[]
       }
+      crm_suggested_message: { Args: { p_lead_id: string }; Returns: string }
       get_lead_stats: {
         Args: { p_lead_ids: string[] }
         Returns: {

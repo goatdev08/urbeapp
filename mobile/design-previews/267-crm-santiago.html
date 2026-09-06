@@ -1,0 +1,1111 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Urbea — Preview CRM rediseño de Santiago (267.1)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  /* ═══════════════════════════════════════════════════════════════════════
+     TOKENS — copiados LITERALMENTE de "Pantallas del CRM de Urbea.html"
+     (diseño de Santiago, raíz del repo). Fidelidad total en color/tipografía
+     dentro del CRM (CLAUDE.md §8, exploración 045 §7.6): NO se usan los
+     tokens de mobile/src/theme/theme.ts aquí a propósito — theme.ts casi
+     coincide (primary=#1A5E44 idéntico) pero paper/primary_tint difieren en
+     1-2 valores hex del original de Santiago; 267.2 decide cómo fusionar.
+     ═══════════════════════════════════════════════════════════════════════ */
+  :root{
+    --font_display: 'Outfit', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font_mono:    'DM Mono', ui-monospace, Menlo, monospace;
+
+    /* superficies y tinta — literales de Santiago */
+    --color_bg_gestion:   #F5F2EC; /* fondo de pantalla dentro de los frames */
+    --color_surface:      #FFFFFF;
+    --color_field:        #EDE7DD; /* segmentado Míos/Equipo, campos */
+    --color_chip_active:  #DEE8E1; /* pill activa del segmentado */
+    --color_border:       #E4DED2;
+    --color_border_2:     #D3CABA; /* divisores punteados / "otras zonas" */
+    --color_ink:          #1D1A15;
+    --color_ink_2:        #55524B; /* cuerpo, weight 300 */
+    --color_ink_3:        #6F6A61; /* etiquetas mono / terciario */
+    --color_whatsapp_bg:  #A8EDC1;
+    --color_whatsapp_ink: #123A2C;
+    --color_green:        #1A5E44; /* = temp_warming, coincide con primary de theme.ts */
+
+    /* escala de 4 colores — REUSADA para dos cosas distintas (267.2: son
+       los mismos 4 hex, solo cambia la regla de selección):
+       (a) color de FILA = banda por tendencia (hot/cooling/warming/silent)
+       (b) color del NÚMERO de grados = escala absoluta 0-29/30-59/60-79/80-100
+       Esto resuelve la incoherencia del frame 5 de Santiago (§7.3 exploración 045). */
+    --temp_hot:     #A8401A; /* Háblales hoy · 80-100 muy caliente */
+    --temp_cooling: #8A6A1E; /* Se están enfriando · 60-79 caliente */
+    --temp_warming: #1A5E44; /* Calentando · 30-59 tibio (= --color_green) */
+    --temp_silent:  #5F6D67; /* En silencio · 0-29 frío */
+
+    --r_10:10px; --r_11:11px; --r_12:12px; --r_16:16px; --r_18:18px; --r_24:24px; --r_pill:999px;
+    --s_4:4px; --s_6:6px; --s_8:8px; --s_10:10px; --s_12:12px; --s_16:16px; --s_20:20px; --s_24:24px;
+    --sh_card: 0 8px 22px -14px rgba(29,26,21,.4);
+  }
+
+  *{ box-sizing:border-box; }
+  body{
+    margin:0;
+    background:#EDE7DA;
+    color:var(--color_ink);
+    font-family:var(--font_display);
+    font-weight:400;
+    padding:32px 20px 64px;
+  }
+  .wrap{ max-width:1180px; margin:0 auto; }
+
+  /* ── Panel de spec (cabecera de la página, NO es UI de la app) ───────── */
+  .spec{
+    background:var(--color_surface);
+    border:1px solid var(--color_border);
+    border-radius:var(--r_16);
+    padding:22px 26px;
+    box-shadow:var(--sh_card);
+    margin-bottom:30px;
+  }
+  .spec h1{
+    font-family:var(--font_display); font-weight:700; font-size:21px;
+    letter-spacing:-.01em; margin:0 0 4px;
+  }
+  .spec .sub{ font-size:13px; color:var(--color_ink_2); margin:0 0 14px; line-height:1.55; }
+  .spec .chips{ display:flex; gap:8px; flex-wrap:wrap; }
+  .spec .tag{
+    font-family:var(--font_mono);
+    font-size:10.5px; letter-spacing:.04em;
+    padding:5px 10px; border-radius:var(--r_pill);
+    background:var(--color_field); color:var(--color_ink_2);
+  }
+  .spec .tag b{ color:var(--color_green); font-weight:500; }
+
+  /* ── Secciones aprobables ─────────────────────────────────────────────── */
+  .section{ margin-bottom:46px; }
+  .section-head{
+    display:flex; align-items:baseline; gap:12px; margin-bottom:6px;
+  }
+  .section-num{
+    font-family:var(--font_mono); font-size:13px; font-weight:500;
+    color:#FFFFFF; background:var(--color_green);
+    width:26px; height:26px; border-radius:8px;
+    display:flex; align-items:center; justify-content:center; flex:none;
+  }
+  .section-title{ font-family:var(--font_display); font-weight:700; font-size:19px; letter-spacing:-.01em; }
+  .section-desc{ font-size:12.5px; color:var(--color_ink_2); margin:2px 0 18px 38px; max-width:760px; line-height:1.55; }
+
+  .row-flex{ display:flex; gap:26px; flex-wrap:wrap; align-items:flex-start; }
+
+  /* ── "device" — marco de 393px, plano, SIN bisel de teléfono (preview de
+     componente, no de pantalla completa) ─────────────────────────────── */
+  .device{
+    width:393px; background:var(--color_bg_gestion); color:var(--color_ink);
+    border-radius:var(--r_24); border:1px solid var(--color_border);
+    box-shadow:var(--sh_card); overflow:hidden; flex:none;
+  }
+  .device-pad{ padding:18px 0 16px; }
+  .device-cap{
+    font-family:var(--font_display); font-weight:600; font-size:13px;
+    color:var(--color_ink); margin-bottom:8px;
+  }
+
+  /* ── Cabecera CRM (reusada literal en varios frames) ─────────────────── */
+  .crm-header{ display:flex; align-items:flex-start; justify-content:space-between; padding:0 20px; }
+  .crm-header h2{ font-size:27px; font-weight:700; letter-spacing:-.02em; line-height:1.1; margin:0; }
+  .crm-header .sub{ margin-top:4px; font-size:13.5px; color:var(--color_ink_3); }
+  .crm-header .menu{ width:44px; height:44px; border-radius:12px; display:flex; align-items:center; justify-content:center; }
+
+  .segmented{ display:flex; margin:14px 20px 0; padding:3px; background:var(--color_field); border-radius:12px; }
+  .segmented .seg{ flex:1; min-height:40px; display:flex; align-items:center; justify-content:center; border-radius:9px; font-size:13px; font-weight:600; color:var(--color_ink_3); }
+  .segmented .seg.active{ background:var(--color_chip_active); color:var(--color_green); }
+
+  /* ── Banda: cabecera + filas ──────────────────────────────────────────── */
+  .band{ margin-top:18px; }
+  .band.collapsed .band-rows{ display:none; }
+  .band-head{
+    display:grid; grid-template-columns:19px 1fr auto; align-items:center;
+    gap:2px 9px; padding:0 20px 10px; cursor:pointer; user-select:none;
+  }
+  .band-icon{ width:19px; height:19px; border-radius:6px; display:flex; align-items:center; justify-content:center; }
+  .band-name{ font-size:13px; font-weight:600; }
+  .band-count{ font-family:var(--font_mono); font-size:11px; color:var(--color_ink_3); }
+  .band-sub{ grid-column:2/4; font-size:11px; color:var(--color_ink_3); font-weight:300; line-height:1.3; }
+  .band-chevron{ grid-column:3; justify-self:end; color:var(--color_ink_3); transition:transform .15s; }
+  .band.collapsed .band-chevron{ transform:rotate(-90deg); }
+
+  .lead-row{
+    display:grid; grid-template-columns:3px 46px 1fr auto; gap:0 12px;
+    align-items:start; padding:13px 20px 13px 0; border-top:1px solid var(--color_border);
+    cursor:pointer;
+  }
+  .lead-rail{ width:3px; border-radius:0 3px 3px 0; align-self:stretch; }
+  .lead-ring{ width:46px; height:46px; border-radius:50%; display:flex; align-items:center; justify-content:center; }
+  .lead-ring-inner{ width:40px; height:40px; border-radius:50%; background:var(--color_bg_gestion); display:flex; align-items:center; justify-content:center; }
+  .lead-initials{ font-size:14px; font-weight:600; color:var(--color_ink_2); }
+  .lead-name-row{ display:flex; align-items:baseline; gap:7px; }
+  .lead-name{ font-size:15px; font-weight:600; letter-spacing:-.005em; }
+  .lead-time{ font-family:var(--font_mono); font-size:10px; color:var(--color_ink_3); }
+  .lead-narrative{ margin-top:4px; font-size:12.5px; line-height:1.45; color:var(--color_ink_2); font-weight:300; }
+  .lead-narrative b{ font-weight:600; }
+  .lead-signals-row{ display:flex; align-items:center; gap:9px; margin-top:8px; }
+  .lead-signals{ display:flex; align-items:center; gap:6px; }
+  .lead-signals span.sig{ display:inline-flex; align-items:center; gap:1px; }
+  .lead-signals span.sig.off{ opacity:.26; color:var(--color_ink_3) !important; }
+  .lead-count{ font-family:var(--font_mono); font-size:9px; line-height:1; }
+  .lead-grade{ text-align:right; padding-top:1px; }
+  .lead-grade-num{ font-family:var(--font_mono); font-size:19px; font-weight:500; letter-spacing:-.02em; }
+  .lead-grade-num .deg{ font-family:var(--font_display); font-size:.56em; vertical-align:super; margin-left:-4px; opacity:.85; }
+  .lead-delta{ font-family:var(--font_mono); font-size:9.5px; color:var(--color_ink_3); margin-top:2px; white-space:nowrap; }
+  .lead-proj{ margin-top:5px; }
+  .proj-pill{
+    font-family:var(--font_mono); font-size:8.5px; letter-spacing:.04em;
+    padding:2px 7px; border-radius:var(--r_pill); background:var(--color_field);
+    color:var(--color_ink_3); white-space:nowrap;
+  }
+  .proj-caption{ font-size:9px; color:var(--color_ink_3); text-align:right; }
+
+  /* Fila ANÓNIMA (radar) — sin identidad */
+  .lead-row.anon .lead-ring{ background:var(--color_field) !important; }
+  .lead-row.anon .lead-ring-inner{ background:transparent; }
+  .anon-label{ font-style:italic; font-weight:500; color:var(--color_ink_3) !important; }
+  .anon-property{ display:flex; align-items:center; gap:5px; margin-top:2px; font-size:11px; color:var(--color_ink_3); }
+
+  /* ── Tarjeta genérica (embudo, ficha) ─────────────────────────────────── */
+  .card{
+    margin:2px 16px 0; padding:14px 14px 10px; background:var(--color_surface);
+    border-radius:var(--r_18); border:1px solid var(--color_border);
+  }
+  .card-head{ display:flex; align-items:baseline; justify-content:space-between; margin-bottom:10px; }
+  .card-eyebrow{ font-family:var(--font_mono); font-size:10px; letter-spacing:.15em; text-transform:uppercase; color:var(--color_ink_3); }
+  .card-meta{ font-family:var(--font_mono); font-size:10px; color:var(--color_ink_3); }
+
+  .kpi-grid{ display:grid; grid-template-columns:repeat(5,1fr); gap:2px; margin-top:8px; }
+  .kpi-grid.four{ grid-template-columns:repeat(4,1fr); }
+  .kpi-tile{ text-align:center; padding:6px 2px 4px; }
+  .kpi-value{ font-family:var(--font_mono); font-size:15px; font-weight:500; color:var(--color_ink); }
+  .kpi-label{ font-size:9.5px; line-height:1.25; margin-top:3px; color:var(--color_ink_3); }
+  .kpi-drops{ display:grid; gap:2px; padding:0 10%; margin-top:2px; }
+  .kpi-drop{ font-family:var(--font_mono); font-size:9px; color:var(--temp_hot); text-align:center; }
+
+  /* ── Narrativa (header) ───────────────────────────────────────────────── */
+  .narrative{ padding:20px 20px 14px; }
+  .narrative h3{ font-size:23.5px; font-weight:700; letter-spacing:-.022em; line-height:1.18; margin:0; }
+  .narrative h3 .hl{ color:var(--temp_hot); }
+  .narrative .p2{ margin-top:8px; font-size:12.5px; line-height:1.5; color:var(--color_ink_2); font-weight:300; }
+  .narrative .p2 .hl{ font-weight:500; }
+
+  /* ── Ficha inline expandible ──────────────────────────────────────────── */
+  .ficha{ padding-top:8px; }
+  .origin-card{
+    display:flex; align-items:center; gap:11px; padding:9px 11px;
+    background:#F3EFE7; border-radius:12px; border:1px solid var(--color_border); margin-bottom:6px;
+  }
+  .origin-thumb{
+    width:38px; height:38px; border-radius:9px; flex:none; display:flex; align-items:center; justify-content:center;
+    color:var(--color_ink_3); background:linear-gradient(150deg,#E3DCCE,#F2EEE6);
+  }
+  .origin-addr{ font-size:12.5px; font-weight:500; line-height:1.25; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .origin-price{ font-family:var(--font_mono); font-size:11px; color:var(--color_ink_3); margin-top:2px; }
+  .origin-cta{
+    margin-left:auto; flex:none; background:var(--color_surface); border:1px solid var(--color_border);
+    color:var(--color_ink); font-size:11.5px; font-weight:600; min-height:34px; padding:0 12px; border-radius:9px;
+    display:flex; align-items:center;
+  }
+  .cross-props{ display:flex; align-items:flex-start; gap:7px; font-size:11.5px; line-height:1.4; color:var(--color_ink_2); font-weight:300; padding:2px 2px 0; margin-bottom:10px; }
+  .cross-props .ic{ color:var(--color_green); flex:none; margin-top:3px; display:inline-flex; }
+  .cross-props b{ font-weight:600; color:var(--color_ink); }
+
+  .fh-eyebrow{ font-family:var(--font_mono); font-size:9.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--color_ink_3); margin-bottom:8px; }
+  .timeline{ border-left:1px solid var(--color_border_2); padding:0 0 0 13px; margin:0 0 10px; display:flex; flex-direction:column; gap:8px; list-style:none; }
+  .timeline li{ position:relative; font-size:12px; line-height:1.4; color:var(--color_ink_2); font-weight:300; }
+  .timeline li .dot{ position:absolute; left:-16px; top:5px; width:5px; height:5px; border-radius:50%; }
+  .timeline li .ts{ display:block; font-family:var(--font_mono); font-size:9.5px; color:var(--color_ink_3); letter-spacing:.04em; margin-bottom:1px; }
+
+  .status-bar{ display:grid; grid-template-columns:repeat(4,1fr); gap:5px; margin-bottom:9px; }
+  .status-seg{ display:flex; flex-direction:column; gap:6px; cursor:pointer; }
+  .status-fill{ height:4px; border-radius:2px; background:var(--color_border); }
+  .status-fill.done{ background:var(--temp_hot); }
+  .status-fill.current{ background:transparent; box-shadow:inset 0 0 0 1px #C6BEAE; }
+  .status-label{ font-size:9.5px; line-height:1.2; white-space:nowrap; color:var(--color_ink_3); }
+  .status-label.active{ color:var(--color_ink); font-weight:600; }
+  .next-line{ font-size:11.5px; color:var(--color_ink_2); font-weight:300; margin-bottom:10px; }
+  .next-line b{ font-weight:600; color:var(--color_ink); }
+
+  .next-cta{
+    display:flex; align-items:center; justify-content:center; gap:6px; min-height:44px;
+    background:var(--color_green); color:#FDFBF6; font-size:12.5px; font-weight:600;
+    border-radius:11px; margin-bottom:8px; cursor:pointer;
+  }
+  .more-states-link{ text-align:center; font-family:var(--font_mono); font-size:10px; color:var(--color_ink_3); margin-bottom:8px; cursor:pointer; letter-spacing:.04em; }
+  .more-states-chips{ display:none; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
+  .more-states-chips.open{ display:flex; }
+  .state-chip{
+    font-size:10.5px; font-weight:500; padding:6px 10px; border-radius:var(--r_pill);
+    background:var(--color_field); color:var(--color_ink_2); border:1px solid transparent;
+  }
+
+  .msg-box{
+    padding:11px 13px; background:var(--color_chip_active); border:1px solid rgba(26,94,68,.22);
+    border-radius:11px; font-size:12px; line-height:1.5; color:var(--color_ink_2); font-weight:300; margin-bottom:8px;
+  }
+  .msg-eyebrow{ display:block; font-family:var(--font_mono); font-size:9.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--color_green); margin-bottom:5px; font-weight:500; }
+
+  .action-row{ display:flex; gap:8px; }
+  .btn-wa{ flex:1; background:var(--color_whatsapp_bg); color:var(--color_whatsapp_ink); font-size:12.5px; font-weight:600; min-height:46px; border-radius:11px; display:flex; align-items:center; justify-content:center; gap:6px; }
+  .btn-agendar{ flex:1; background:var(--color_surface); border:1px solid var(--color_border_2); color:var(--color_ink); font-size:12.5px; font-weight:600; min-height:46px; border-radius:11px; display:flex; align-items:center; justify-content:center; }
+  .note-add{ margin-top:8px; border:1px dashed var(--color_border_2); color:var(--color_ink_3); font-size:12px; min-height:44px; border-radius:11px; display:flex; align-items:center; justify-content:center; gap:7px; }
+
+  .readonly-badge{ display:inline-flex; align-items:center; gap:6px; font-size:11px; color:var(--color_ink_3); background:var(--color_field); padding:6px 10px; border-radius:var(--r_pill); margin-bottom:8px; }
+
+  /* ── Notas / bloque de aprobación ─────────────────────────────────────── */
+  .approve-box{
+    max-width:900px; margin-top:16px; background:var(--color_surface);
+    border:1.5px solid var(--color_green); border-radius:var(--r_16); padding:16px 20px;
+  }
+  .approve-box h4{ font-family:var(--font_display); font-weight:700; font-size:13px; margin:0 0 8px; color:var(--color_green); text-transform:uppercase; letter-spacing:.04em; }
+  .approve-box ul{ margin:0; padding-left:18px; font-size:12.5px; line-height:1.6; color:var(--color_ink_2); }
+  .approve-box li{ margin-bottom:6px; }
+  .approve-box b{ color:var(--color_ink); }
+  .approve-box code{ background:var(--color_field); padding:1px 5px; border-radius:4px; font-family:var(--font_mono); font-size:11px; }
+
+  .alt-row{ display:flex; gap:20px; flex-wrap:wrap; align-items:flex-start; margin-top:4px; }
+  .alt-card{
+    flex:1; min-width:280px; background:var(--color_surface); border:1px solid var(--color_border);
+    border-radius:var(--r_16); padding:16px 18px; box-shadow:var(--sh_card);
+  }
+  .alt-card .alt-tag{
+    display:inline-block; font-family:var(--font_mono); font-size:10px; font-weight:500;
+    letter-spacing:.06em; color:#FFFFFF; background:var(--color_ink_3); padding:2px 8px; border-radius:5px; margin-bottom:10px;
+  }
+  .alt-card .tradeoff{ margin-top:10px; font-size:11.5px; color:var(--color_ink_3); line-height:1.5; border-top:1px dashed var(--color_border_2); padding-top:8px; }
+
+  .empty-block{ text-align:center; padding:26px 30px; }
+  .empty-icon-box{ width:56px; height:56px; margin:0 auto 14px; border-radius:18px; background:var(--color_surface); border:1px solid var(--color_border); display:flex; align-items:center; justify-content:center; }
+  .empty-title{ font-size:16px; font-weight:600; letter-spacing:-.01em; line-height:1.3; }
+  .empty-sub{ margin-top:8px; font-size:12px; line-height:1.55; color:var(--color_ink_2); font-weight:300; }
+  .empty-cta{ margin-top:16px; display:inline-flex; align-items:center; justify-content:center; min-height:44px; background:var(--color_green); color:#FDFBF6; font-size:12px; font-weight:600; padding:0 20px; border-radius:12px; }
+
+  .footer-notes{
+    background:var(--color_surface); border:1px solid var(--color_border); border-radius:var(--r_16);
+    padding:22px 26px; box-shadow:var(--sh_card); max-width:900px; margin:0 auto;
+  }
+  .footer-notes h2{ font-family:var(--font_display); font-weight:700; font-size:16px; margin:0 0 12px; }
+  .footer-notes ul{ margin:0; padding-left:18px; font-size:12.5px; line-height:1.65; color:var(--color_ink_2); }
+  .footer-notes li{ margin-bottom:8px; }
+  .footer-notes b{ color:var(--color_ink); }
+  .footer-notes code{ background:var(--color_field); padding:1px 5px; border-radius:4px; font-family:var(--font_mono); font-size:11px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="spec">
+    <h1>Preview aprobable — CRM rediseño de Santiago (267.1)</h1>
+    <p class="sub">
+      5 secciones aprobables por separado, con datos de <b>NUESTRO modelo</b> (#266): embudo,
+      bandas por tendencia, tarjeta con grados+delta+sparkline+señales, ficha inline expandible y
+      radar anónimo. Fidelidad total de color/tipografía al diseño de Santiago
+      (<code>Pantallas del CRM de Urbea.html</code>, raíz del repo) — donde el diseño NO resuelve
+      algo de nuestro modelo se muestran <b>2 alternativas</b> lado a lado con su trade-off.
+      Fase PROPUESTA (CLAUDE.md §0): ponytail no aplica aquí.
+    </p>
+    <div class="chips">
+      <span class="tag">gate: <b>CLAUDE.md §8</b> — nada se porta a RN sin aprobación por sección</span>
+      <span class="tag">tipografía: <b>Outfit</b> + <b>DM Mono</b></span>
+      <span class="tag">delta: ventana fija <b>3 días</b> (crm_trend_window_days)</span>
+      <span class="tag">sparkline: <b>14 días</b> (no 7 — ver nota final)</span>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       SECCIÓN 1 — TARJETA DE LEAD (fila de banda)
+       ═══════════════════════════════════════════════════════════════════ -->
+  <div class="section" id="sec1">
+    <div class="section-head"><div class="section-num">1</div><div class="section-title">Tarjeta de lead (fila de banda)</div></div>
+    <div class="section-desc">
+      Una tarjeta por banda (hot/cooling/warming/silent). Color de FILA = banda por tendencia;
+      color del NÚMERO de grados = escala absoluta 0–29/30–79/80–100 (misma paleta de 4 colores,
+      dos reglas de selección distintas — así se resuelve la incoherencia del frame 5 de Santiago).
+      La 4ª banda "En silencio" nace <b>colapsada</b> (decisión de Abraham 2026-09-06).
+    </div>
+
+    <div class="row-flex">
+      <div class="device">
+        <div class="device-pad">
+          <div class="crm-header">
+            <div><h2>CRM</h2><div class="sub">Leads de tu equipo</div></div>
+            <div class="menu">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M4.5 8h7M7 12h2" stroke="#1D1A15" stroke-width="1.6" stroke-linecap="round"/></svg>
+            </div>
+          </div>
+          <div class="segmented">
+            <div class="seg active">Míos</div>
+            <div class="seg">Equipo</div>
+          </div>
+
+          <!-- Banda 1 — Háblales hoy -->
+          <div class="band">
+            <div class="band-head">
+              <div class="band-icon" style="background:var(--temp_hot)">
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M6.6 1 2.4 6.8h2.6L5.2 11l4.4-6h-2.7z" fill="#FDFBF6"/></svg>
+              </div>
+              <div class="band-name">Háblales hoy</div>
+              <div class="band-count">1</div>
+              <div class="band-sub">Señal fuerte en las últimas 24 h</div>
+            </div>
+            <div class="band-rows">
+              <div class="lead-row" data-target="ficha-main">
+                <div class="lead-rail" style="background:var(--temp_hot)"></div>
+                <div class="lead-ring" style="background:conic-gradient(var(--temp_hot) 94%, var(--color_border) 0)">
+                  <div class="lead-ring-inner"><span class="lead-initials">KN</span></div>
+                </div>
+                <div style="min-width:0">
+                  <div class="lead-name-row"><span class="lead-name">Karla Núñez</span><span class="lead-time">hace 12 min</span></div>
+                  <div class="lead-narrative">Vio <b style="color:var(--temp_hot)">4 veces</b> tu casa de Bugambilias, la guardó y <b style="color:var(--temp_hot)">abrió tu WhatsApp</b> sin escribirte.</div>
+                  <div class="lead-signals-row">
+                    <div class="lead-signals" id="sig-hot1"></div>
+                    <svg id="spark-hot1" width="68" height="18"></svg>
+                  </div>
+                  <div class="lead-proj"><span class="proj-pill">Nuevo</span></div>
+                </div>
+                <div class="lead-grade">
+                  <div class="lead-grade-num" style="color:var(--temp_hot)">94<span class="deg">°</span></div>
+                  <div class="lead-delta">+22 en 3 d</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Banda 2 — Se están enfriando -->
+          <div class="band">
+            <div class="band-head">
+              <div class="band-icon" style="background:var(--temp_cooling)">
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M6 2v7m0 0L3.4 6.4M6 9l2.6-2.6" stroke="#FDFBF6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </div>
+              <div class="band-name">Se están enfriando</div>
+              <div class="band-count">2</div>
+              <div class="band-sub">Estuvieron listos y nadie los alcanzó</div>
+            </div>
+            <div class="band-rows">
+              <div class="lead-row">
+                <div class="lead-rail" style="background:var(--temp_cooling)"></div>
+                <div class="lead-ring" style="background:conic-gradient(var(--temp_cooling) 63%, var(--color_border) 0)">
+                  <div class="lead-ring-inner"><span class="lead-initials">FR</span></div>
+                </div>
+                <div style="min-width:0">
+                  <div class="lead-name-row"><span class="lead-name">Fernando Reyes</span><span class="lead-time">hace 6 d</span></div>
+                  <div class="lead-narrative">Tenía visita agendada. <b style="color:var(--temp_cooling)">No ha vuelto a abrir</b> la app en 6 días.</div>
+                  <div class="lead-signals-row">
+                    <div class="lead-signals" id="sig-cool1"></div>
+                    <svg id="spark-cool1" width="68" height="18"></svg>
+                  </div>
+                  <div class="lead-proj"><span class="proj-pill">Visita</span></div>
+                </div>
+                <div class="lead-grade">
+                  <div class="lead-grade-num" style="color:var(--temp_cooling)">63<span class="deg">°</span></div>
+                  <div class="lead-delta">−5 en 3 d</div>
+                </div>
+              </div>
+              <div class="lead-row">
+                <div class="lead-rail" style="background:var(--temp_cooling)"></div>
+                <div class="lead-ring" style="background:conic-gradient(var(--temp_cooling) 55%, var(--color_border) 0)">
+                  <div class="lead-ring-inner"><span class="lead-initials">RS</span></div>
+                </div>
+                <div style="min-width:0">
+                  <div class="lead-name-row"><span class="lead-name">Renata Solís</span><span class="lead-time">hace 4 d</span></div>
+                  <div class="lead-narrative"><b style="color:var(--temp_cooling)">Nadie la contactó</b> y dejó de abrir tus videos.</div>
+                  <div class="lead-signals-row">
+                    <div class="lead-signals" id="sig-cool2"></div>
+                    <svg id="spark-cool2" width="68" height="18"></svg>
+                  </div>
+                  <div class="lead-proj"><span class="proj-pill">Contactado</span></div>
+                </div>
+                <div class="lead-grade">
+                  <!-- ⚠️ grado 55 cae en la escala "tibio" (verde), pese a que la
+                       FILA es ámbar (banda cooling) — decoupling deliberado, ver nota. -->
+                  <div class="lead-grade-num" style="color:var(--temp_warming)">55<span class="deg">°</span></div>
+                  <div class="lead-delta">−4 en 3 d</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Banda 3 — Calentando -->
+          <div class="band">
+            <div class="band-head">
+              <div class="band-icon" style="background:var(--temp_warming)">
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M6 10V3m0 0L3.4 5.6M6 3l2.6 2.6" stroke="#FDFBF6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </div>
+              <div class="band-name">Calentando</div>
+              <div class="band-count">2</div>
+              <div class="band-sub">Suben, pero aún no levantan la mano</div>
+            </div>
+            <div class="band-rows">
+              <div class="lead-row">
+                <div class="lead-rail" style="background:var(--temp_warming)"></div>
+                <div class="lead-ring" style="background:conic-gradient(var(--temp_warming) 47%, var(--color_border) 0)">
+                  <div class="lead-ring-inner"><span class="lead-initials">DI</span></div>
+                </div>
+                <div style="min-width:0">
+                  <div class="lead-name-row"><span class="lead-name">Diego Ibarra</span><span class="lead-time">hace 5 h</span></div>
+                  <div class="lead-narrative">Empezó a repetir tus videos de renta.</div>
+                  <div class="lead-signals-row">
+                    <div class="lead-signals" id="sig-warm1"></div>
+                    <svg id="spark-warm1" width="68" height="18"></svg>
+                  </div>
+                  <div class="lead-proj"><span class="proj-pill">Nuevo</span></div>
+                </div>
+                <div class="lead-grade">
+                  <div class="lead-grade-num" style="color:var(--temp_warming)">47<span class="deg">°</span></div>
+                  <div class="lead-delta">+11 en 3 d</div>
+                </div>
+              </div>
+              <!-- fila anónima del radar — ver sección 5 para el detalle y las 2 alternativas -->
+              <div class="lead-row anon">
+                <div class="lead-rail" style="background:var(--temp_warming)"></div>
+                <div class="lead-ring">
+                  <div class="lead-ring-inner">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z" stroke="#A39A8C" stroke-width="1.6"/><circle cx="12" cy="12" r="3" stroke="#A39A8C" stroke-width="1.6"/></svg>
+                  </div>
+                </div>
+                <div style="min-width:0">
+                  <div class="lead-name-row"><span class="lead-name anon-label">Alguien está mirando</span><span class="lead-time">hace 40 min</span></div>
+                  <div class="anon-property">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" style="flex:none"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z" stroke="#6F6A61" stroke-width="1.6" stroke-linejoin="round"/></svg>
+                    Depa en Colinas de San Javier, Zapopan
+                  </div>
+                  <div class="lead-signals-row" style="margin-top:8px">
+                    <div class="lead-signals" id="sig-anon1"></div>
+                    <svg id="spark-anon1" width="68" height="18"></svg>
+                  </div>
+                </div>
+                <div class="lead-grade">
+                  <div class="lead-grade-num" style="color:var(--temp_cooling)">68<span class="deg">°</span></div>
+                  <div class="lead-delta">+9 en 3 d</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Banda 4 — En silencio (COLAPSADA por default) -->
+          <div class="band collapsed" id="bandSilent">
+            <div class="band-head" onclick="document.getElementById('bandSilent').classList.toggle('collapsed')">
+              <div class="band-icon" style="background:var(--temp_silent)">
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="2" fill="#FDFBF6"/></svg>
+              </div>
+              <div class="band-name">En silencio</div>
+              <div class="band-count">1</div>
+              <div class="band-sub">Sin actividad reciente</div>
+              <svg class="band-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+            <div class="band-rows">
+              <div class="lead-row">
+                <div class="lead-rail" style="background:var(--temp_silent)"></div>
+                <div class="lead-ring" style="background:conic-gradient(var(--temp_silent) 22%, var(--color_border) 0)">
+                  <div class="lead-ring-inner"><span class="lead-initials">SP</span></div>
+                </div>
+                <div style="min-width:0">
+                  <div class="lead-name-row"><span class="lead-name">Sofía Palacios</span><span class="lead-time">hace 3 sem</span></div>
+                  <div class="lead-narrative">Vio tu contenido hace 3 semanas y no ha vuelto.</div>
+                  <div class="lead-signals-row">
+                    <div class="lead-signals" id="sig-silent1"></div>
+                    <svg id="spark-silent1" width="68" height="18"></svg>
+                  </div>
+                  <div class="lead-proj"><span class="proj-pill">Contactado</span></div>
+                </div>
+                <div class="lead-grade">
+                  <div class="lead-grade-num" style="color:var(--temp_silent)">22<span class="deg">°</span></div>
+                  <div class="lead-delta">sin cambio</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <div style="flex:1; min-width:320px; display:flex; flex-direction:column; gap:20px;">
+
+        <div class="alt-row">
+          <div class="alt-card">
+            <span class="alt-tag">ALTERNATIVA A</span>
+            <div class="device-cap" style="margin-bottom:12px">Sparkline con NULL — hueco</div>
+            <svg id="spark-altA" width="130" height="34"></svg>
+            <div class="tradeoff">Los días sin evento quedan literalmente vacíos (sin barra). Más honesto sobre la ausencia de dato, pero el ojo puede leer el hueco como un "cero" en vez de "no hay señal".</div>
+          </div>
+          <div class="alt-card">
+            <span class="alt-tag">ALTERNATIVA B</span>
+            <div class="device-cap" style="margin-bottom:12px">Sparkline con NULL — línea punteada</div>
+            <svg id="spark-altB" width="130" height="34"></svg>
+            <div class="tradeoff">Los días NULL se marcan con una barra punteada al último valor conocido. Mantiene el ritmo visual de 14 barras, pero puede sugerir (falsamente) que hubo actividad interpolada.</div>
+          </div>
+        </div>
+
+        <div class="alt-row">
+          <div class="alt-card">
+            <span class="alt-tag">ALTERNATIVA A</span>
+            <div class="device-cap">Estado proyectado en la fila — pill compacta</div>
+            <p style="font-size:12px;color:var(--color_ink_2);margin:6px 0 0">
+              Pill de <code style="font-family:var(--font_mono);background:var(--color_field);padding:1px 5px;border-radius:4px;font-size:10.5px">Nuevo</code>
+              junto al nombre (ver filas de arriba). Escaneable de un vistazo.
+            </p>
+            <div class="tradeoff">Compite visualmente con el color de banda y el riel — añade una 3ª fuente de color a la fila.</div>
+          </div>
+          <div class="alt-card">
+            <span class="alt-tag">ALTERNATIVA B</span>
+            <div class="device-cap">Estado proyectado en la fila — caption bajo grados</div>
+            <div style="text-align:right;margin-top:8px">
+              <div class="lead-grade-num" style="color:var(--temp_hot)">94<span class="deg">°</span></div>
+              <div class="lead-delta">+22 en 3 d</div>
+              <div class="proj-caption">Nuevo</div>
+            </div>
+            <div class="tradeoff">Sin color nuevo (mono gris, fiel a Santiago), pero queda casi invisible — un agente que escanea rápido puede no verlo.</div>
+          </div>
+        </div>
+
+        <div class="alt-card" style="max-width:640px">
+          <div class="device-cap">Estado vacío · sin leads (fidelidad total a Santiago, frame 4)</div>
+          <div class="empty-block" style="padding:18px 10px">
+            <div class="empty-icon-box">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="var(--color_green)" stroke-width="1.4" opacity=".5"/><circle cx="12" cy="12" r="5" stroke="var(--color_green)" stroke-width="1.4" opacity=".7"/><circle cx="12" cy="12" r="1.6" fill="var(--color_green)"/><path d="M12 12 19 7" stroke="var(--color_green)" stroke-width="1.4" stroke-linecap="round"/></svg>
+            </div>
+            <div class="empty-title">Aún no hay señal que leer</div>
+            <div class="empty-sub">El radar se enciende cuando alguien ve, guarda o repite tus propiedades. Sube tu primer recorrido y en horas empiezas a ver quién está mirando.</div>
+            <div class="empty-cta">Subir una propiedad</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="approve-box">
+      <h4>Qué aprobar / diferencias con Santiago</h4>
+      <ul>
+        <li><b>Fiel:</b> grid de la fila (riel 3px + anillo cónico 46px + narrativa + 5 iconos de señal + sparkline 68×18 + grados/delta), colores de banda, tipografía (Outfit/DM Mono) y el anillo cónico calculado sobre el % de temperatura.</li>
+        <li><b>Adaptado a nuestro modelo:</b> el delta usa <b>una sola plantilla por signo con ventana fija de 3 días</b> ("+22 en 3 d" / "−5 en 3 d" / "sin cambio") en vez de las 3 unidades mezcladas de Santiago ("hoy" / "al día" / "en 3 d") — nuestro backend solo calcula sobre <code>crm_trend_window_days</code>, no tiene un valor "de hoy" ni "por día" independiente.</li>
+        <li><b>Decisión de Abraham ya aplicada:</b> la banda "En silencio" nace <b>colapsada</b> (click en la cabecera la expande).</li>
+        <li><b>Fuera del mockup — <code>UI_FUERA_DEL_MOCKUP</code>:</b> Santiago no dibuja el estado proyectado en la fila (solo aparece en la ficha expandida, sección 4). 2 alternativas arriba — <b>(1) en conjunto:</b> entra en esta misma tarea, sin costo adicional real (ya se calcula server-side en <code>crm_leads_page.status_projected</code>) · <b>(2) default:</b> se omite en la fila y solo se muestra al expandir la ficha (sección 4), sin derivada — es la opción de menor riesgo visual.</li>
+        <li><b>Decoupling deliberado (fila Renata Solís):</b> banda = "Se están enfriando" (ámbar, fila/riel) pero el número 55° cae en la escala "tibio" (verde) — demuestra que el color de fila y el color del número son independientes, tal como resolvió la exploración 045 §7.3.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       SECCIÓN 2 — EMBUDO DE 30 DÍAS
+       ═══════════════════════════════════════════════════════════════════ -->
+  <div class="section" id="sec2">
+    <div class="section-head"><div class="section-num">2</div><div class="section-title">Embudo de 30 días</div></div>
+    <div class="section-desc">
+      SVG de 5 tramos (gris→verde→arena→terracota) + 5 KPIs en DM Mono + 4 caídas porcentuales.
+      KPI 4 renombrado de "Te escribieron" a <b>"Te contactaron"</b> — coincide con <code>crm_funnel</code> (#266),
+      que cuenta <code>contact-agent</code> real, no solo mensajes de WhatsApp sin registrar.
+    </div>
+
+    <div class="row-flex">
+      <div class="device">
+        <div class="device-pad" style="padding-top:16px">
+          <div class="card" style="margin-top:0">
+            <div class="card-head">
+              <div class="card-eyebrow">Tu embudo · 30 días</div>
+              <div class="card-meta">1.6% agenda</div>
+            </div>
+            <svg width="100%" viewBox="0 0 317 92" style="display:block">
+              <defs>
+                <linearGradient id="fnA" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0%" stop-color="#93A29B" stop-opacity=".70"/>
+                  <stop offset="45%" stop-color="#2F7A5A" stop-opacity=".78"/>
+                  <stop offset="78%" stop-color="#C2A07C" stop-opacity=".92"/>
+                  <stop offset="100%" stop-color="#B4491E" stop-opacity="1"/>
+                </linearGradient>
+              </defs>
+              <path d="M0.0,0.0 L79.2,16.9 L158.5,25.5 L237.8,30.5 L317.0,33.2 L317.0,42.8 L237.8,45.5 L158.5,50.5 L79.2,59.1 L0.0,76.0 Z" fill="url(#fnA)"/>
+              <line x1="79.2" y1="16.9" x2="79.2" y2="59.1" stroke="#FFFFFF" stroke-width="2"/>
+              <line x1="158.5" y1="25.5" x2="158.5" y2="50.5" stroke="#FFFFFF" stroke-width="2"/>
+              <line x1="237.8" y1="30.5" x2="237.8" y2="45.5" stroke="#FFFFFF" stroke-width="2"/>
+              <line x1="317.0" y1="33.2" x2="317.0" y2="42.8" stroke="#FFFFFF" stroke-width="2"/>
+            </svg>
+            <div class="kpi-grid">
+              <div class="kpi-tile"><div class="kpi-value">312</div><div class="kpi-label">Vieron tu<br>contenido</div></div>
+              <div class="kpi-tile"><div class="kpi-value">96</div><div class="kpi-label">Volvieron</div></div>
+              <div class="kpi-tile"><div class="kpi-value">34</div><div class="kpi-label">Guardaron</div></div>
+              <div class="kpi-tile"><div class="kpi-value">12</div><div class="kpi-label" style="color:var(--color_green);font-weight:500">Te contactaron</div></div>
+              <div class="kpi-tile"><div class="kpi-value">5</div><div class="kpi-label">Agendaron</div></div>
+            </div>
+            <div class="kpi-drops" style="grid-template-columns:repeat(4,1fr)">
+              <div class="kpi-drop">−69%</div><div class="kpi-drop">−65%</div><div class="kpi-drop">−65%</div><div class="kpi-drop">−58%</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="alt-card" style="flex:1; min-width:320px; max-width:520px; align-self:flex-start">
+        <div class="device-cap">Por qué "Te contactaron" y no "Te escribieron"</div>
+        <p style="font-size:12.5px; color:var(--color_ink_2); line-height:1.55; margin:6px 0 0">
+          <code style="font-family:var(--font_mono);background:var(--color_field);padding:1px 5px;border-radius:4px;font-size:11px">crm_funnel</code>
+          cuenta <code style="font-family:var(--font_mono);background:var(--color_field);padding:1px 5px;border-radius:4px;font-size:11px">count(distinct lead_id)</code>
+          sobre leads creados por <code style="font-family:var(--font_mono);background:var(--color_field);padding:1px 5px;border-radius:4px;font-size:11px">contact-agent</code> — el flujo real de la app
+          (feed, detalle, tarjeta de agente), que ya crea el lead y descuenta self-contact/idempotencia.
+          "Te escribieron" sugeriría un WhatsApp directo sin registrar, que es exactamente el segundo camino
+          que se cerró en #75.4. El nombre del KPI tiene que reflejar lo que cuenta, no una metáfora suelta.
+        </p>
+      </div>
+    </div>
+
+    <div class="approve-box">
+      <h4>Qué aprobar / diferencias con Santiago</h4>
+      <ul>
+        <li><b>Fiel total:</b> forma del SVG de 5 tramos, gradiente, 5 KPIs en grid y las 4 caídas porcentuales — pixel a pixel de Santiago.</li>
+        <li><b>Único cambio de copy:</b> KPI 4 <code>"Te escribieron"</code> → <code>"Te contactaron"</code>.</li>
+        <li>⚠️ <b>Aclaración de conteo:</b> la subtarea 267.1 describe "4 KPI" en su resumen, pero tanto el diseño de Santiago como <code>crm_funnel</code> (#266, exploración 045 §12) tienen <b>5</b> conteos (vieron / volvieron / guardaron / <b>contactaron</b> / agendaron). Este preview usa 5 — si la intención era recortar a 4, es una decisión de producto nueva que hay que confirmar explícitamente (no se infiere).</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       SECCIÓN 3 — RESPUESTA NARRATIVA
+       ═══════════════════════════════════════════════════════════════════ -->
+  <div class="section" id="sec3">
+    <div class="section-head"><div class="section-num">3</div><div class="section-title">Respuesta narrativa (header)</div></div>
+    <div class="section-desc">
+      Frase generada desde los conteos de bandas. Incluye el caso normal, "0 leads" y "En silencio"
+      (nadie necesita acción hoy) — este último NO lo dibuja Santiago, así que se muestran 2 alternativas.
+    </div>
+
+    <div class="row-flex">
+      <div class="device">
+        <div class="device-pad" style="padding-top:16px">
+          <div class="narrative">
+            <h3><span class="hl">2 personas</span> están listas para que les hables.</h3>
+            <div class="p2">Y <span class="hl" style="color:var(--temp_cooling)">2 se están enfriando</span> — Fernando bajó 5° en 3 días desde su visita agendada.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="device">
+        <div class="device-pad" style="padding-top:16px">
+          <div class="device-cap" style="padding:0 20px 10px">Caso "0 leads" — fidelidad total (frame 4 de Santiago)</div>
+          <div class="empty-block" style="padding:14px 24px 20px">
+            <div class="empty-icon-box">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="var(--color_green)" stroke-width="1.4" opacity=".5"/><circle cx="12" cy="12" r="5" stroke="var(--color_green)" stroke-width="1.4" opacity=".7"/><circle cx="12" cy="12" r="1.6" fill="var(--color_green)"/><path d="M12 12 19 7" stroke="var(--color_green)" stroke-width="1.4" stroke-linecap="round"/></svg>
+            </div>
+            <div class="empty-title">Aún no hay señal que leer</div>
+            <div class="empty-sub">El radar se enciende cuando alguien ve, guarda o repite tus propiedades. Sube tu primer recorrido y en horas empiezas a ver quién está mirando.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top:24px">
+      <div class="device-cap">Caso "En silencio" (nadie necesita acción hoy) — Santiago promete notificaciones ("te avisamos"), nuestro modelo no las tiene confirmadas → 2 alternativas sin esa promesa</div>
+      <div class="alt-row">
+        <div class="alt-card">
+          <span class="alt-tag">ALTERNATIVA A</span>
+          <div style="margin-top:8px">
+            <div style="font-size:19px;font-weight:700;letter-spacing:-.02em;line-height:1.2">Nadie pendiente por hoy.</div>
+            <div style="margin-top:8px;font-size:12px;color:var(--color_ink_2);line-height:1.5;font-weight:300">Vuelve a revisar más tarde — el radar se actualiza solo con actividad nueva.</div>
+          </div>
+          <div class="tradeoff">Neutro y corto (fiel al registro terso de Santiago), pero no da ninguna razón para volver a abrir la app.</div>
+        </div>
+        <div class="alt-card">
+          <span class="alt-tag">ALTERNATIVA B</span>
+          <div style="margin-top:8px">
+            <div style="font-size:19px;font-weight:700;letter-spacing:-.02em;line-height:1.2">Nadie pendiente por hoy.</div>
+            <div style="margin-top:8px;font-size:12px;color:var(--color_ink_2);line-height:1.5;font-weight:300">Ya contactaste a todos los que tenían señal fuerte.</div>
+          </div>
+          <div class="tradeoff">Reconoce el trabajo ya hecho por el agente (refuerzo positivo), pero asume que "silencio" siempre sigue a un contacto — no es cierto si nunca hubo leads calientes.</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top:24px">
+      <div class="device-cap">Estado vacío · sin resultados de búsqueda (Santiago no lo dibuja) — 2 alternativas</div>
+      <div class="alt-row">
+        <div class="alt-card">
+          <span class="alt-tag">ALTERNATIVA A</span>
+          <div style="margin-top:8px; text-align:center; padding:10px 6px">
+            <div class="empty-title" style="font-size:14px">Sin resultados para "andrea"</div>
+            <div class="empty-sub" style="margin-top:6px">Prueba con otro nombre o revisa la ortografía.</div>
+          </div>
+          <div class="tradeoff">Repite el término buscado (confirma qué se buscó), útil si hay typos, pero requiere interpolar el <code style="font-family:var(--font_mono);font-size:10px">p_query</code> en el copy.</div>
+        </div>
+        <div class="alt-card">
+          <span class="alt-tag">ALTERNATIVA B</span>
+          <div style="margin-top:8px; text-align:center; padding:10px 6px">
+            <div class="empty-title" style="font-size:14px">No encontramos a nadie con ese nombre</div>
+            <div class="empty-sub" style="margin-top:6px">Ajusta la búsqueda e inténtalo de nuevo.</div>
+          </div>
+          <div class="tradeoff">Copy genérico y más simple de implementar (sin interpolación), pero menos específico que repetir el término.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="approve-box">
+      <h4>Qué aprobar / diferencias con Santiago</h4>
+      <ul>
+        <li><b>Fiel:</b> estructura tipográfica de la narrativa (H1 23.5px/700 + línea secundaria 12.5px/300 con highlight de color) y el copy exacto de "Aún no hay señal que leer" (frame 4, sin cambios — no promete notificaciones, ya cumple la regla).</li>
+        <li><b>Adaptado a nuestro modelo:</b> "Fernando bajó 5° en 3 días" en vez de "pierde 5° al día" de Santiago — usa la misma ventana fija de 3 días que el resto de la UI, en vez de inventar una tasa diaria que no se muestra en ningún otro lugar.</li>
+        <li><b>Fuera del mockup:</b> el caso "En silencio" (nadie urgente pero SÍ hay leads) y el estado "sin resultados de búsqueda" no los dibuja Santiago — 2 alternativas cada uno arriba, ninguna promete notificaciones.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       SECCIÓN 4 — FICHA INLINE EXPANDIBLE
+       ═══════════════════════════════════════════════════════════════════ -->
+  <div class="section" id="sec4">
+    <div class="section-head"><div class="section-num">4</div><div class="section-title">Ficha inline expandible</div></div>
+    <div class="section-desc">
+      Sustituye el Modal bottom-sheet actual (<code>LeadExpandedView</code>): se expande <b>bajo la misma
+      fila</b>, sin overlay ni cambio de pantalla (haz click en la tarjeta de Karla Núñez, sección 1, o en
+      la fila de abajo). El mensaje sugerido lo arma una RPC server-side — el texto de la caja verde es
+      el que ESA RPC devolverá, no algo que el cliente compone.
+    </div>
+
+    <div class="row-flex">
+      <div class="device" id="ficha-main">
+        <div class="device-pad" style="padding-top:16px">
+          <div class="lead-row" onclick="document.getElementById('fichaBody').classList.toggle('open-hide')" style="border-top:none">
+            <div class="lead-rail" style="background:var(--temp_hot)"></div>
+            <div class="lead-ring" style="background:conic-gradient(var(--temp_hot) 94%, var(--color_border) 0)">
+              <div class="lead-ring-inner"><span class="lead-initials">KN</span></div>
+            </div>
+            <div style="min-width:0">
+              <div class="lead-name-row"><span class="lead-name">Karla Núñez</span><span class="lead-time">hace 12 min</span></div>
+              <div class="lead-narrative">Vio <b style="color:var(--temp_hot)">4 veces</b> tu casa de Bugambilias, la guardó y <b style="color:var(--temp_hot)">abrió tu WhatsApp</b> sin escribirte.</div>
+              <div class="lead-signals-row">
+                <div class="lead-signals" id="sig-ficha1"></div>
+                <svg id="spark-ficha1" width="68" height="18"></svg>
+              </div>
+
+              <div class="ficha" id="fichaBody">
+                <div class="origin-card">
+                  <div class="origin-thumb">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M9.5 21v-6h5v6" stroke="currentColor" stroke-width="1.5"/></svg>
+                  </div>
+                  <div style="min-width:0">
+                    <div class="origin-addr">Bugambilias, Zapopan</div>
+                    <div class="origin-price">$10,000,000 MXN</div>
+                  </div>
+                  <div class="origin-cta">Ver</div>
+                </div>
+                <div class="cross-props">
+                  <span class="ic"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 2.5v7M2.5 6h7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span>
+                  <span>También sigue <b>2</b> propiedades tuyas más</span>
+                </div>
+
+                <div class="fh-eyebrow">Lo que hizo</div>
+                <ul class="timeline">
+                  <li><span class="dot" style="background:var(--temp_hot)"></span><span class="ts">Hoy 11:42</span>Abrió tu WhatsApp sin escribir</li>
+                  <li><span class="dot" style="background:var(--color_border_2)"></span><span class="ts">Hoy 11:38</span>Vio Bugambilias — 4ª vez, 92%</li>
+                </ul>
+
+                <div class="fh-eyebrow">Estado</div>
+                <div class="status-bar">
+                  <div class="status-seg"><div class="status-fill done"></div><div class="status-label active">Nuevo</div></div>
+                  <div class="status-seg"><div class="status-fill current"></div><div class="status-label">Contactado</div></div>
+                  <div class="status-seg"><div class="status-fill"></div><div class="status-label">Visita</div></div>
+                  <div class="status-seg"><div class="status-fill"></div><div class="status-label">Cerrado</div></div>
+                </div>
+                <div class="next-line">Siguiente: marcar como <b>Contactado</b></div>
+                <div class="next-cta">Marcar como Contactado →</div>
+                <div class="more-states-link" onclick="event.stopPropagation(); this.nextElementSibling.classList.toggle('open')">Ver los 8 estados vigentes · más…</div>
+                <div class="more-states-chips">
+                  <span class="state-chip">whatsapp_opened</span>
+                  <span class="state-chip">contacted</span>
+                  <span class="state-chip">interested</span>
+                  <span class="state-chip">visit_scheduled</span>
+                  <span class="state-chip">closed_won_rent</span>
+                  <span class="state-chip">closed_won_sale</span>
+                  <span class="state-chip">closed_lost</span>
+                  <span class="state-chip">discarded</span>
+                </div>
+
+                <div class="msg-box">
+                  <span class="msg-eyebrow">Mensaje sugerido</span>
+                  Hola Karla, vi que te interesó la propiedad de Bugambilias, Zapopan. ¿Te gustaría agendar una visita?
+                </div>
+
+                <div class="action-row">
+                  <div class="btn-wa">
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1.2a4.8 4.8 0 0 0-4.1 7.3L1.2 11l2.6-.7A4.8 4.8 0 1 0 6 1.2z" fill="currentColor"/></svg>
+                    WhatsApp
+                  </div>
+                  <div class="btn-agendar">Agendar</div>
+                </div>
+                <div class="note-add">
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M8.4 1.8 10.2 3.6 4 9.8 1.6 10.4l.6-2.4z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+                  Agregar nota interna
+                </div>
+              </div>
+            </div>
+            <div class="lead-grade">
+              <div class="lead-grade-num" style="color:var(--temp_hot)">94<span class="deg">°</span></div>
+              <div class="lead-delta">+22 en 3 d</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="device">
+        <div class="device-pad" style="padding-top:16px">
+          <div class="device-cap" style="padding:0 20px 10px">Modo solo lectura — owner/admin viendo lead de otro agente (#28)</div>
+          <div style="padding:0 20px 16px">
+            <div class="lead-row" style="border-top:none; padding-left:0">
+              <div class="lead-rail" style="background:var(--temp_hot)"></div>
+              <div class="lead-ring" style="background:conic-gradient(var(--temp_hot) 94%, var(--color_border) 0)">
+                <div class="lead-ring-inner"><span class="lead-initials">KN</span></div>
+              </div>
+              <div style="min-width:0">
+                <div class="lead-name-row"><span class="lead-name">Karla Núñez</span><span class="lead-time">hace 12 min</span></div>
+                <div class="lead-narrative">Vio <b style="color:var(--temp_hot)">4 veces</b> tu casa de Bugambilias, la guardó.</div>
+                <div style="padding-top:10px">
+                  <div class="readonly-badge">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none"><rect x="5" y="11" width="14" height="9" rx="2" stroke="#6F6A61" stroke-width="1.6"/><path d="M8 11V8a4 4 0 0 1 8 0v3" stroke="#6F6A61" stroke-width="1.6"/></svg>
+                    Solo lectura · este lead pertenece a otro agente
+                  </div>
+                  <div class="status-bar" style="opacity:.55; pointer-events:none">
+                    <div class="status-seg"><div class="status-fill done"></div><div class="status-label active">Nuevo</div></div>
+                    <div class="status-seg"><div class="status-fill"></div><div class="status-label">Contactado</div></div>
+                    <div class="status-seg"><div class="status-fill"></div><div class="status-label">Visita</div></div>
+                    <div class="status-seg"><div class="status-fill"></div><div class="status-label">Cerrado</div></div>
+                  </div>
+                  <div class="action-row">
+                    <div class="btn-wa">WhatsApp</div>
+                    <div class="btn-agendar" style="opacity:.4">Agendar</div>
+                  </div>
+                  <div class="note-add" style="opacity:.5">Notas deshabilitadas en solo lectura</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="approve-box">
+      <h4>Qué aprobar / diferencias con Santiago</h4>
+      <ul>
+        <li><b>Fiel:</b> tarjeta de propiedad de origen (thumb+dirección+precio+"Ver"), "También sigue N propiedades tuyas más", timeline "Lo que hizo", barra de 4 tramos + caption "Siguiente: marcar como…", caja verde "Mensaje sugerido" y el patrón de apertura inline (misma fila, sin cambiar de pantalla).</li>
+        <li><b>Adaptado a nuestro modelo:</b> el mensaje sugerido de Santiago incluía una hora ("Tengo el jueves 5:30") — se quitó: la regla es plantilla por estado + primer nombre + dirección de origen, <b>nunca precio/teléfono/hora</b>. Solo 2 botones (Agendar/WhatsApp) en vez de los 3 de Santiago (WhatsApp/Llamar/Agendar) — "Llamar" no tiene contrato en nuestro modelo (no hay `phone` expuesto como acción de llamada, solo WhatsApp).</li>
+        <li><b>Spec ya resuelto (no requiere alternativas):</b> "Agendar" marca <code>visit_scheduled</code> directo. En estado proyectado <b>Visita</b> el botón "Siguiente" no envía un estado único — abre el desplegable fino (elegir renta/venta/perdido es obligatorio, #117 ya existe). En <b>Cerrado</b> no hay "Siguiente": se ofrece "Reabrir" (mismo desplegable).</li>
+        <li><b>Modo solo lectura:</b> badge no-editable + aviso, notas y botón Agendar deshabilitados; Ver propiedad/WhatsApp siguen activos — mismo comportamiento que <code>LeadExpandedView</code> hoy (#28), solo cambia el contenedor (inline vs modal).</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       SECCIÓN 5 — FILA ANÓNIMA DEL RADAR
+       ═══════════════════════════════════════════════════════════════════ -->
+  <div class="section" id="sec5">
+    <div class="section-head"><div class="section-num">5</div><div class="section-title">Fila anónima del radar</div></div>
+    <div class="section-desc">
+      Banda "Calentando" — Santiago NO dibuja esta pieza (es la decisión R2 de la exploración 045: registrar
+      la señal, nunca exponer a la persona). Sin nombre, sin avatar, sin contacto, sin botón: solo
+      actividad, grados y la propiedad (que ya es del agente, no expone a nadie).
+    </div>
+
+    <div class="device">
+      <div class="device-pad" style="padding-top:16px">
+        <div class="band" style="margin-top:0">
+          <div class="band-head">
+            <div class="band-icon" style="background:var(--temp_warming)">
+              <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M6 10V3m0 0L3.4 5.6M6 3l2.6 2.6" stroke="#FDFBF6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+            <div class="band-name">Calentando</div>
+            <div class="band-count">2</div>
+            <div class="band-sub">Suben, pero aún no levantan la mano</div>
+          </div>
+          <div class="band-rows">
+            <div class="lead-row">
+              <div class="lead-rail" style="background:var(--temp_warming)"></div>
+              <div class="lead-ring" style="background:conic-gradient(var(--temp_warming) 47%, var(--color_border) 0)">
+                <div class="lead-ring-inner"><span class="lead-initials">DI</span></div>
+              </div>
+              <div style="min-width:0">
+                <div class="lead-name-row"><span class="lead-name">Diego Ibarra</span><span class="lead-time">hace 5 h</span></div>
+                <div class="lead-narrative">Empezó a repetir tus videos de renta. <span style="font-size:10.5px;color:var(--color_ink_3);font-style:italic">(lead real — con nombre, para contraste)</span></div>
+              </div>
+              <div class="lead-grade">
+                <div class="lead-grade-num" style="color:var(--temp_warming)">47<span class="deg">°</span></div>
+                <div class="lead-delta">+11 en 3 d</div>
+              </div>
+            </div>
+            <div class="lead-row anon">
+              <div class="lead-rail" style="background:var(--temp_warming)"></div>
+              <div class="lead-ring">
+                <div class="lead-ring-inner">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z" stroke="#A39A8C" stroke-width="1.6"/><circle cx="12" cy="12" r="3" stroke="#A39A8C" stroke-width="1.6"/></svg>
+                </div>
+              </div>
+              <div style="min-width:0">
+                <div class="lead-name-row"><span class="lead-name anon-label" id="anonMainLabel">Alguien está mirando</span><span class="lead-time">hace 40 min</span></div>
+                <div class="anon-property">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" style="flex:none"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z" stroke="#6F6A61" stroke-width="1.6" stroke-linejoin="round"/></svg>
+                  Depa en Colinas de San Javier, Zapopan
+                </div>
+                <div class="lead-signals-row" style="margin-top:8px">
+                  <div class="lead-signals" id="sig-anon2"></div>
+                  <svg id="spark-anon2" width="68" height="18"></svg>
+                </div>
+              </div>
+              <div class="lead-grade">
+                <div class="lead-grade-num" style="color:var(--temp_cooling)">68<span class="deg">°</span></div>
+                <div class="lead-delta">+9 en 3 d</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top:24px">
+      <div class="device-cap">2 alternativas de microcopy — dónde iría el nombre</div>
+      <div class="alt-row">
+        <div class="alt-card">
+          <span class="alt-tag">ALTERNATIVA A</span>
+          <div style="margin-top:8px; font-style:italic; font-weight:500; color:var(--color_ink_3)">Alguien está mirando</div>
+          <div class="tradeoff">Tono conversacional, coincide con el registro cálido del resto de la narrativa ("2 personas están listas..."). Riesgo: puede leerse casi como una notificación de presencia en vivo, cuando es agregado de días.</div>
+        </div>
+        <div class="alt-card">
+          <span class="alt-tag">ALTERNATIVA B</span>
+          <div style="margin-top:8px; font-style:italic; font-weight:500; color:var(--color_ink_3)">Visitante anónimo</div>
+          <div class="tradeoff">Etiqueta más clínica/técnica — deja clarísimo que es un registro de dato, no una persona identificable. Menos cálido, más alineado con el tono de privacidad ("registrar ≠ exponer").</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="approve-box">
+      <h4>Qué aprobar / diferencias con Santiago</h4>
+      <ul>
+        <li><b>Nuevo, no dibujado por Santiago (decisión R2, exploración 045 §7.5):</b> el diseño original SÍ muestra nombre/foto de personas sin lead (bandas "Calentando" y "Sin dueño") — choca con "registrar ≠ exponer" (PRD §19.1/§19.2) y la fuga cerrada en #75.3/#226. Este preview reemplaza esa fila por la versión anónima: mismo grid de columnas que la fila normal, pero el slot de avatar es un ícono neutro (no iniciales), el nombre se sustituye por el microcopy (alternativas A/B) y la propiedad reemplaza cualquier dato de contacto.</li>
+        <li><b>Invariante de render (verificable por test):</b> ninguna fila anónima tiene botón de acción, avatar con iniciales, ni ningún dato que identifique a la persona — solo <code>property_label</code> (de la propiedad DEL AGENTE), grados, delta, sparkline y señales agregadas.</li>
+        <li><b>Decoupling reforzado:</b> esta fila vive en la banda "Calentando" (verde) pero su número 68° cae en la escala "caliente" (ámbar) — mismo patrón de independencia banda/escala que la sección 1.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       NOTAS FINALES
+       ═══════════════════════════════════════════════════════════════════ -->
+  <div class="footer-notes">
+    <h2>Decisiones de diseño y tokens para 267.2</h2>
+    <ul>
+      <li><b>Tokens nuevos para <code>theme.ts</code></b> (4 hex, reusados dos veces cada uno — ver sección 1): <code>temp_hot: '#A8401A'</code> · <code>temp_cooling: '#8A6A1E'</code> · <code>temp_warming: '#1A5E44'</code> (= <code>colors.primary</code> existente, no crear duplicado) · <code>temp_silent: '#5F6D67'</code>. Se usan tanto para el color de FILA (banda por tendencia) como para el color del NÚMERO de grados (escala absoluta 0–29/30–59/60–79/80–100) — misma paleta, dos reglas de selección.</li>
+      <li><b>Superficies/tinta de Santiago que NO coinciden 1:1 con <code>theme.ts</code>:</b> fondo de pantalla <code>#F5F2EC</code> (vs <code>colors.paper #F6F2EB</code>, 1 dígito de diferencia) · chip activo <code>#DEE8E1</code> (vs <code>colors.primary_tint #DCE8E1</code>, casi idéntico) · campo/segmentado <code>#EDE7DD</code> (nuevo, no existe en <code>theme.ts</code>) · bordes <code>#E4DED2</code>/<code>#D3CABA</code> (nuevos) · tinta <code>#1D1A15</code>/<code>#55524B</code>/<code>#6F6A61</code> (cercanos a <code>colors.ink</code>/<code>gray_2</code>/<code>gray_3</code> pero no idénticos). 267.2 decide: ¿el CRM usa una paleta ligeramente propia (fidelidad total a Santiago) o se reconcilian estos valores con los tokens existentes?</li>
+      <li><b>Pesos de Outfit usados:</b> 300 (cuerpo/narrativa secundaria), 400 (default), 500 (labels de dato, mensaje sugerido eyebrow), 600 (nombres, botones, labels activos), 700 (headings H1/H3), 800 (no usado en este preview — Santiago lo reserva para <code>h1</code> del canvas contenedor, que no es UI de la app).</li>
+      <li><b>DM Mono</b> se usa en más de un sitio: grados ("94°"), delta, todos los KPIs del embudo, timestamps ("hace 12 min"), eyebrows en mayúsculas ("LO QUE HIZO", "ESTADO"), chips de los 8 estados y el conteo del primer icono de señal (vistas de video). Es la tipografía de "todo número y etiqueta de dato" — no un uso aislado.</li>
+      <li>⚠️ <b>Discrepancia sparkline 7 vs 14 días:</b> el resumen de la subtarea 267.1 dice "sparkline de 7 días", pero tanto el diseño de Santiago (14 <code>&lt;rect&gt;</code> literales en cada fila) como el modelo real (<code>lead_temperature_daily</code> vía <code>crm_leads_page.sparkline int[14]</code>, exploración 045 §12) usan <b>14 días</b>. Este preview usa 14, fiel al diseño y al backend ya desplegado — hay que confirmar con Abraham si el "7 días" del resumen fue una simplificación de redacción o si se pretende recortar la ventana real.</li>
+      <li><b>Riesgo de fuente (§7.6 exploración 045):</b> <code>@expo-google-fonts/outfit</code> ya es dependencia; falta <code>@expo-google-fonts/dm-mono</code>. Generar fingerprint antes/después de instalarla — si cambia, es rebuild, no OTA (queda para 267.2/267.3, no aplica a este preview HTML).</li>
+      <li><b>Verificación de este preview:</b> HTML/CSS/JS puro, sin build de RN, cero riesgo de producción (fuera del bundle). Interactivo: click en la tarjeta de Karla Núñez (sección 1 o 4) expande/colapsa la ficha inline; click en la cabecera "En silencio" expande/colapsa esa banda; "Ver los 8 estados vigentes" despliega los chips.</li>
+    </ul>
+  </div>
+
+</div>
+
+<script>
+  // ── Helpers de render — sparklines y señales (evita repetir 14 <rect>/5 <svg> a mano) ──
+
+  var SIGNAL_ICONS = [
+    // 0: video completo (play)
+    'M3 2.2v7.6l6.2-3.8z',
+    // 1: like (corazón)
+    'M6 10.3C2.6 8.1 1 6.5 1 4.6A2.6 2.6 0 0 1 6 3.4a2.6 2.6 0 0 1 5 1.2c0 1.9-1.6 3.5-5 5.7z',
+    // 2: guardó (bookmark)
+    'M3 1.6h6v8.8L6 8.2l-3 2.2z',
+    // 3: abrió WhatsApp
+    'M6 1.2a4.8 4.8 0 0 0-4.1 7.3L1.2 11l2.6-.7A4.8 4.8 0 1 0 6 1.2z',
+    // 4: buscó la zona (lupa)
+    'M6 11S9.6 7.7 9.6 5A3.6 3.6 0 1 0 2.4 5C2.4 7.7 6 11 6 11z'
+  ];
+
+  function renderSignals(containerId, flags, color, countFirst) {
+    var el = document.getElementById(containerId);
+    if (!el) return;
+    var html = '';
+    for (var i = 0; i < 5; i++) {
+      var on = flags[i];
+      html += '<span class="sig' + (on ? '' : ' off') + '" style="color:' + color + '">' +
+        '<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="' + SIGNAL_ICONS[i] + '" fill="currentColor"/></svg>';
+      if (i === 0 && countFirst != null) {
+        html += '<span class="lead-count" style="font-family:var(--font_mono)">' + countFirst + '</span>';
+      }
+      html += '</span>';
+    }
+    el.innerHTML = html;
+  }
+
+  function renderSpark(svgId, values, color) {
+    // values: array de 14 números 0-1 (o null = sin evento)
+    var svg = document.getElementById(svgId);
+    if (!svg) return;
+    var w = 3, gap = 2, maxH = 18;
+    var out = '';
+    values.forEach(function (v, i) {
+      var x = i * (w + gap);
+      if (v === null) return; // ALTERNATIVA A: hueco — no se dibuja nada
+      var h = Math.max(2, Math.round(v * maxH));
+      var y = maxH - h;
+      var op = (0.15 + v * 0.85).toFixed(2);
+      out += '<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" rx="1.5" fill="' + color + '" opacity="' + op + '"/>';
+    });
+    svg.innerHTML = out;
+  }
+
+  function renderSparkDotted(svgId, values, color) {
+    // ALTERNATIVA B: días NULL se pintan punteados al último valor conocido
+    var svg = document.getElementById(svgId);
+    if (!svg) return;
+    var w = 3, gap = 2, maxH = 18;
+    var out = '';
+    var lastKnown = 0.15;
+    values.forEach(function (v, i) {
+      var x = i * (w + gap);
+      var isNull = (v === null);
+      var val = isNull ? lastKnown : v;
+      if (!isNull) lastKnown = v;
+      var h = Math.max(2, Math.round(val * maxH));
+      var y = maxH - h;
+      var op = isNull ? '0.30' : (0.15 + val * 0.85).toFixed(2);
+      var dash = isNull ? ' stroke="' + color + '" stroke-width="1" stroke-dasharray="1,1.4" fill="none"' : ' fill="' + color + '"';
+      out += '<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" rx="1.5"' + dash + ' opacity="' + op + '"/>';
+    });
+    svg.innerHTML = out;
+  }
+
+  // ── Datos de ejemplo (NUESTRO modelo, no el de Santiago) ──
+
+  renderSignals('sig-hot1',   [true, true, true, true, true],  '#A8401A', 4);
+  renderSpark('spark-hot1',   [0.10,0.10,0.28,0.32,0.28,0.10,0.35,0.32,0.42,0.38,0.35,0.45,0.90,1.00], '#A8401A');
+
+  renderSignals('sig-cool1',  [true, false, true, true, false], '#8A6A1E', 2);
+  renderSpark('spark-cool1',  [0.68,0.94,1.00,0.78,0.55,0.44,0.35,0.32,0.28,0.28,0.10,0.10,0.10,0.10], '#8A6A1E');
+
+  renderSignals('sig-cool2',  [true, true, true, false, false], '#8A6A1E', 5);
+  renderSpark('spark-cool2',  [0.78,1.00,0.94,0.68,0.55,0.35,0.32,0.32,0.28,0.10,0.10,0.28,0.10,0.10], '#8A6A1E');
+
+  renderSignals('sig-warm1',  [true, true, false, false, true], '#1A5E44', 4);
+  renderSpark('spark-warm1',  [0.10,0.10,0.10,0.10,0.30,0.10,0.38,0.30,0.42,0.38,0.50,0.44,1.00,0.50], '#1A5E44');
+
+  renderSignals('sig-anon1',  [true, false, true, false, true], '#1A5E44', 3);
+  renderSpark('spark-anon1',  [0.10,0.28,0.30,0.10,0.32,0.28,0.45,0.42,0.55,0.62,0.70,0.66,0.78,0.85], '#1A5E44');
+
+  renderSignals('sig-anon2',  [true, false, true, false, true], '#1A5E44', 3);
+  renderSpark('spark-anon2',  [0.10,0.28,0.30,0.10,0.32,0.28,0.45,0.42,0.55,0.62,0.70,0.66,0.78,0.85], '#1A5E44');
+
+  renderSignals('sig-silent1', [true, false, false, false, false], '#5F6D67', 1);
+  renderSpark('spark-silent1', [0.35,0.30,0.10,0.10,0.10,0.10,0.10,0.10,0.10,0.10,0.10,0.10,0.10,0.10], '#5F6D67');
+
+  renderSignals('sig-ficha1', [true, true, true, true, true], '#A8401A', 4);
+  renderSpark('spark-ficha1', [0.10,0.10,0.28,0.32,0.28,0.10,0.35,0.32,0.42,0.38,0.35,0.45,0.90,1.00], '#A8401A');
+
+  // ── Alternativas de sparkline con NULL (misma serie, 2 renders distintos) ──
+  var SERIE_CON_HUECOS = [0.20,0.35,null,0.42,0.38,null,null,0.55,0.62,0.58,null,0.70,0.82,0.90];
+  renderSpark('spark-altA', SERIE_CON_HUECOS.map(function(v){return v===null?null:v;}), '#1A5E44');
+  renderSparkDotted('spark-altB', SERIE_CON_HUECOS, '#1A5E44');
+</script>
+
+</body>
+</html>

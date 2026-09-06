@@ -14,9 +14,18 @@ import {
   useFonts as useHankenGrotesk,
 } from '@expo-google-fonts/hanken-grotesk';
 import {
+  Outfit_300Light,
+  Outfit_400Regular,
+  Outfit_500Medium,
   Outfit_600SemiBold,
+  Outfit_700Bold,
   useFonts as useOutfit,
 } from '@expo-google-fonts/outfit';
+import {
+  DMMono_400Regular,
+  DMMono_500Medium,
+  useFonts as useDmMono,
+} from '@expo-google-fonts/dm-mono';
 
 import { AuthProvider } from '@/features/auth/context';
 import { release_splash, SPLASH_SAFETY_TIMEOUT_MS } from '@/lib/splash-gate';
@@ -35,10 +44,18 @@ export default function RootLayout() {
     HankenGrotesk_600SemiBold,
     HankenGrotesk_700Bold,
   });
-  // Outfit: solo para el wordmark del logo final (#43.2) — login/branding.
-  const [outfit_loaded] = useOutfit({ Outfit_600SemiBold });
+  // Outfit: wordmark del logo final (#43.2) + escala de pesos del CRM (#267).
+  const [outfit_loaded] = useOutfit({
+    Outfit_300Light,
+    Outfit_400Regular,
+    Outfit_500Medium,
+    Outfit_600SemiBold,
+    Outfit_700Bold,
+  });
+  // DM Mono: cifras/tabla del CRM (#267) — alineación fija de dígitos.
+  const [dm_loaded] = useDmMono({ DMMono_400Regular, DMMono_500Medium });
 
-  const fonts_loaded = sg_loaded && hg_loaded && outfit_loaded;
+  const fonts_loaded = sg_loaded && hg_loaded && outfit_loaded && dm_loaded;
 
   // Techo de seguridad (#143.4): si ninguna pantalla libera el splash (deep
   // link a una ruta sin release explícito, servicio colgado), se suelta solo.
