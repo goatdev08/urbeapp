@@ -6885,7 +6885,7 @@
         "description": "Origen: subtareas 71.2/71.5/71.6 (varios MEDIO) · Detectado por: review PR #41 (lentes SQL y EFs). Hallazgos MEDIO del review del PR #41 agrupados: (a) properties_update WITH CHECK no replica la cláusula de membresía → suspendido inserta con agency_id null y luego se la pone por UPDATE; (b) viewer activo con role='agent' puede insertar properties con el agency_id de su agencia (la cláusula acepta cualquier membresía; matriz dice viewer=cero escritura); (c) INSERT directo de agent_applications con status='approved' esquiva el trigger BEFORE UPDATE y el índice one_pending (agregar with check status='pending'; ídem agencies, familia #97); (d) TOCTOU en member_manager.ts — el UPDATE no re-verifica el status leído (compare-and-swap: .in('status', from) + 0 filas → INVALID_TRANSITION); (e) remove/suspend no limpian users.agency_id (denorm inconsistente vs upgrade/switch/aprobación); (f) documentar orden de rollback 000009→000003→000002 en el header del rollback de 000003 (falla con dependencia de policy si se corre fuera de orden — repro empírica); (g) homologar sanitización del 500 DB_ERROR en manage-agency-member y request-agent-upgrade (fugan message crudo; convención heredada).",
         "details": "Cada fix es chico; TDD donde toque migración/EF (todos los paths son críticos). Ver el review completo en el comentario del PR #41.\n\n--- auditoría de backlog 2026-08-14 (.taskmaster/docs/auditoria-backlog-2026-08-14.md) ---\nFUSIÓN (F5): absorbe #97, #121 y #132. Las cuatro tocan la MISMA zona — policies de UPDATE/INSERT que permiten saltarse las Edge Functions. Parchearlas de a una arriesga que las policies se rompan entre sí: una sola pasada de diseño y un solo PR. Sube a HIGH porque #132 (la más grave) lo era. Ver subtareas.",
         "testStrategy": "pgTAP: (a)(b)(c) asserts de denegación; Deno: (d) CAS con 0 filas → 409, (g) mensaje genérico en 500. (e): remove deja users.agency_id null. (f) doc-only.",
-        "status": "pending",
+        "status": "in-progress",
         "dependencies": [
           "71",
           "73"
@@ -6937,7 +6937,7 @@
             "updatedAt": "2026-08-14T12:00:00.000Z"
           }
         ],
-        "updatedAt": "2026-08-14T12:00:00.000Z"
+        "updatedAt": "2026-09-06T07:11:42.736Z"
       },
       {
         "id": "102",
@@ -7215,14 +7215,15 @@
         "id": "116",
         "title": "hardening(75.3): users_select filtra correo/telefono de TODO agente verificado y la fecha de nacimiento exacta del lead",
         "description": "Origen: subtarea 75.3 · Detectado por: barrido de privacidad con JWT real (2026-08-08). Dos sobre-exposiciones en public.users que 75.3 NO pudo cerrar sin romper las apps ya instaladas. (1) La rama `role='agent' and is_verified_agent` de users_select expone la fila COMPLETA — correo, telefono y date_of_birth — a CUALQUIER usuario autenticado: comprobado, el agente Ramos leyo el telefono real de Vladimir. Contradice PRD §19.1 ('el telefono no se muestra publicamente en perfil'). (2) El agente con lead activo lee date_of_birth EXACTA, cuando §19.4 pide 'edad calculada (no fecha de nacimiento exacta)'. Hoy todas las filas la tienen en null, pero el registro SI la escribe (app/register.tsx): la fuga se activa con el primer alta nueva.",
-        "details": "POR QUE NO ENTRO EN 75.3: el grant de SELECT sobre public.users es a nivel de TABLA (todas las columnas). Postgres no permite restar una columna de un grant de tabla — hay que `revoke select on public.users from authenticated` y volver a otorgar columna por columna. En cuanto date_of_birth deja de estar en el grant, el `select('*')` de load_user_profile (mobile/src/features/auth/context.tsx:61) truena con permission denied y el perfil queda en null. Las apps 1.0.3 ya instaladas hacen ese `select('*')`: revocar hoy les rompe el login. Ironicamente el sintoma seria el mismo que #113 (user null -> readOnly -> sin opciones).\n\nSECUENCIA CORRECTA (expand -> migrate -> contract), en este orden:\n  1. EXPAND (cliente, viaja por OTA): cambiar `select('*')` por lista explicita de columnas sin date_of_birth en load_user_profile; tipar como Omit<Row,'date_of_birth'> (nada lo consume — verificado por grep, solo se ESCRIBE en el registro). Publicar OTA y esperar adopcion.\n  2. MIGRATE (backend): revoke select on public.users from authenticated + grant select (<columnas>) sin date_of_birth. Para la rama publica de agente verificado, exponer solo el perfil publico (nombre, avatar, bio, is_verified_agent) — via vista o RPC security definer — y sacar correo/telefono de ahi. ⚠️ El telefono del agente lo usa el CTA de WhatsApp: hoy llega por la EF contact-agent (verificar tambien AgentCard/usePropertyDetail:212, que lo lee del embed de users) — si algun camino lo lee directo hay que moverlo a la EF ANTES de revocar.\n  3. CONTRACT: si §19.4 sigue pidiendo mostrar la edad en el detalle del lead, exponerla CALCULADA (no la fecha) por get_lead_stats o un RPC hermano. Hoy la UI no muestra edad en ninguna parte, asi que no mostrarla no es una regresion — es alcance de producto pendiente.\n\nCRITICA (RLS + privacidad) -> TDD estricto. Pinear con pgTAP: un authenticated cualquiera NO lee correo/telefono/date_of_birth de un agente verificado; el agente con lead SI lee nombre y telefono de su lead pero NO su date_of_birth.\n\nContexto y evidencia: wiki/conceptos/privacidad-datos.md (seccion 'Deuda viva') y el anexo tecnico de docs/aviso-privacidad.md, que lista las dos contradicciones entre lo que el aviso promete y lo que el sistema hace hoy.",
+        "details": "POR QUE NO ENTRO EN 75.3: el grant de SELECT sobre public.users es a nivel de TABLA (todas las columnas). Postgres no permite restar una columna de un grant de tabla — hay que `revoke select on public.users from authenticated` y volver a otorgar columna por columna. En cuanto date_of_birth deja de estar en el grant, el `select('*')` de load_user_profile (mobile/src/features/auth/context.tsx:61) truena con permission denied y el perfil queda en null. Las apps 1.0.3 ya instaladas hacen ese `select('*')`: revocar hoy les rompe el login. Ironicamente el sintoma seria el mismo que #113 (user null -> readOnly -> sin opciones).\n\nSECUENCIA CORRECTA (expand -> migrate -> contract), en este orden:\n  1. EXPAND (cliente, viaja por OTA): cambiar `select('*')` por lista explicita de columnas sin date_of_birth en load_user_profile; tipar como Omit<Row,'date_of_birth'> (nada lo consume — verificado por grep, solo se ESCRIBE en el registro). Publicar OTA y esperar adopcion.\n  2. MIGRATE (backend): revoke select on public.users from authenticated + grant select (<columnas>) sin date_of_birth. Para la rama publica de agente verificado, exponer solo el perfil publico (nombre, avatar, bio, is_verified_agent) — via vista o RPC security definer — y sacar correo/telefono de ahi. ⚠️ El telefono del agente lo usa el CTA de WhatsApp: hoy llega por la EF contact-agent (verificar tambien AgentCard/usePropertyDetail:212, que lo lee del embed de users) — si algun camino lo lee directo hay que moverlo a la EF ANTES de revocar.\n  3. CONTRACT: si §19.4 sigue pidiendo mostrar la edad en el detalle del lead, exponerla CALCULADA (no la fecha) por get_lead_stats o un RPC hermano. Hoy la UI no muestra edad en ninguna parte, asi que no mostrarla no es una regresion — es alcance de producto pendiente.\n\nCRITICA (RLS + privacidad) -> TDD estricto. Pinear con pgTAP: un authenticated cualquiera NO lee correo/telefono/date_of_birth de un agente verificado; el agente con lead SI lee nombre y telefono de su lead pero NO su date_of_birth.\n\nContexto y evidencia: wiki/conceptos/privacidad-datos.md (seccion 'Deuda viva') y el anexo tecnico de docs/aviso-privacidad.md, que lista las dos contradicciones entre lo que el aviso promete y lo que el sistema hace hoy.\n<info added on 2026-09-06T07:11:33.289Z>\nPaso 1 EXPAND (cliente) — hecho 2026-09-06, PR #154 mergeado a main.\n- mobile/src/features/auth/context.tsx: `load_user_profile` pide 19 columnas explícitas (`USER_PROFILE_COLUMNS`, todas menos date_of_birth) en vez de select('*'); `UserProfile = Omit<Row,'date_of_birth'>`. Verificado por grep que nadie lee date_of_birth en la app (solo se escribe en register vía register-user).\n- mobile/src/features/auth/__tests__/context.test.tsx: fixture sin date_of_birth + test \"#116: pide public.users con lista explícita de columnas\" (no '*', sin date_of_birth, con id/email/role/first_name/last_name/avatar_url/bio/agency_id). Mutante select('*') → \"1 failed, 11 passed\".\n- Verificación real: tsc sin salida (limpio) · eslint ok · Jest \"Test Suites: 179 passed, 179 total / Tests: 2149 passed, 2149 total\".\n- Hallazgo del inventario: la puerta pública del publicador YA existe desde #255 (vista agent_public_profiles + RPC whatsapp_phone_for_profile + EF contact-agent); useAgentProfile lee de users solo `bio, created_at, agencies(name)`. Falta confirmar en el paso 2 que ningún camino del cliente dependa de email/phone de OTRO usuario vía users_select.\n- Pendiente: OTA con este cambio (sale con el siguiente OTA del lote) → esperar adopción → paso 2 (migración: revoke/grant por columnas + users_select sin correo/teléfono en la rama pública) → paso 3 (edad calculada, si producto la pide). Paso 2 y 3 requieren la base local (ola B).\n</info added on 2026-09-06T07:11:33.289Z>",
         "testStrategy": "pgTAP por impersonacion (patron de 35_lead_privacy_test.sql): agente cualquiera vs agente verificado (correo/telefono/DOB ocultos), agente con lead vs su lead (nombre y telefono visibles, DOB oculta), y el propio usuario sobre su fila. Ademas verificacion end-to-end del login con la lista explicita de columnas ANTES de revocar, y del CTA de WhatsApp con el telefono del agente.",
-        "status": "pending",
+        "status": "in-progress",
         "dependencies": [
           "75"
         ],
         "priority": "high",
-        "subtasks": []
+        "subtasks": [],
+        "updatedAt": "2026-09-06T07:11:35.791Z"
       },
       {
         "id": "117",
@@ -7273,7 +7274,7 @@
         "description": "Origen: subtarea 73.4 · Detectado por: guardian (mutación). El mapeo de PropertyPublishParams a los argumentos de la RPC publish_property_atomic vive inline dentro del Deno.serve de index.ts, fuera de todo seam probado. La mutación (b) del guardian quitó la línea p_property_status:params.property_status y la suite completa (836 Deno + 831 pgTAP) siguió en verde mientras la publicación real caía en 'active' en silencio — exactamente el defecto crítico que ya tuvo que corregirse una vez en esta misma subtarea.",
         "details": "Extraer el mapeo PropertyPublishParams→argumentos de la RPC a una función pura exportada y testeable (fuera del closure de Deno.serve), o agregar un test de integración mínimo contra el stack local que invoque el handler completo con adapters reales y verifique el estado final en DB. Mismo patrón de riesgo reaparecido en 73.9 (apply_revision_snapshot) — revisar si conviene una convención de repo (lint/checklist) para que todo index.ts nuevo declare explícitamente qué mapeos quedan sin test.\n\n--- auditoría de backlog 2026-08-14 (.taskmaster/docs/auditoria-backlog-2026-08-14.md) ---\nFUSIÓN (F6): absorbe #133 y #135. Mismo Edge Function + misma migración 0005, un solo PR. Sube a HIGH porque #135 lo era. Ver subtareas.",
         "testStrategy": "Deno: test directo de la función de mapeo (params→args) con fixtures representativos. Integración: invocar el handler real end-to-end contra el stack local y verificar la fila de properties resultante.",
-        "status": "pending",
+        "status": "in-progress",
         "dependencies": [
           "73"
         ],
@@ -7313,7 +7314,7 @@
             "updatedAt": "2026-08-14T12:00:00.000Z"
           }
         ],
-        "updatedAt": "2026-08-14T12:00:00.000Z"
+        "updatedAt": "2026-09-06T07:11:40.999Z"
       },
       {
         "id": "121",
@@ -7336,7 +7337,7 @@
         "description": "Origen: subtarea 73.6 · Detectado por: guardian. El fake de test de functions.invoke devuelve {data:null, error:{message}}, pero la supabase-js real ante un 4xx/5xx entrega un FunctionsHttpError cuyo .message es genérico ('Edge Function returned a non-2xx status code') y NO lee el body {error:{code,message}} que la EF sí manda. El usuario vería ese texto genérico en vez de, por ejemplo, 'No autorizado: no eres el dueño de esta propiedad'.",
         "details": "usePublish.ts (edit mode) debe leer el body real del FunctionsHttpError (supabase-js expone .context con la Response original, o hay que leer el body manualmente según la versión del SDK — verificar la API exacta contra la versión instalada) y mostrar error.message del payload {code,message} en vez del mensaje genérico del SDK. Aplica potencialmente también a otros callers de functions.invoke en el repo (publish-property ya en producción) — revisar si es un problema aislado o sistémico antes de decidir alcance.\n\n--- auditoría de backlog 2026-08-14 (.taskmaster/docs/auditoria-backlog-2026-08-14.md) ---\nFUSIÓN (F7): absorbe #134 y #137. Mismo Edge Function edit-property + su cliente, un solo PR. Sube a HIGH porque #134 lo era. NOTA: el hallazgo de RLS/TOCTOU del mismo EF (#132) NO va aquí — vive en la épica de policies #101 (101.4), porque es diseño de RLS. Ver subtareas.",
         "testStrategy": "Jest: mock de functions.invoke que simula un FunctionsHttpError real (no el {data,error} simplificado) y verifica que el mensaje mostrado viene del body, no del genérico del SDK.",
-        "status": "pending",
+        "status": "in-progress",
         "dependencies": [
           "73"
         ],
@@ -7347,11 +7348,11 @@
             "parentId": "122",
             "title": "usePublish.ts no parsea el body {code,message} real del error (original #122)",
             "description": "Origen: subtarea 73.6 · Detectado por: guardian.",
-            "details": "El fake de test de functions.invoke devuelve {data:null, error:{message}}, pero la supabase-js real ante un 4xx/5xx entrega un FunctionsHttpError con .message genérico: el usuario nunca ve el código de error real de la EF.",
+            "details": "El fake de test de functions.invoke devuelve {data:null, error:{message}}, pero la supabase-js real ante un 4xx/5xx entrega un FunctionsHttpError con .message genérico: el usuario nunca ve el código de error real de la EF.\n<info added on 2026-09-06T07:11:33.365Z>\nCerrada sin trabajo nuevo — ya estaba resuelta (evidencia 2026-09-06):\n- `git log -S extract_error_code -- mobile/src/features/publish/hooks/usePublish.ts` → 8de821b 2026-08-20 \"fix(200): usePublish traduce el código de error tipado — un agente suspendido ya no ve 'non-2xx status code' (#92)\".\n- usePublish.ts importa FunctionsHttpError y usa `extract_error_code` (mobile/src/lib/supabase/edge-errors.ts: `await error.context.json()` → body.error.code) en create y edit; los mensajes salen de map_publish_create_ef_error / map_publish_edit_ef_error.\n- Tests que ya lo cubren: usePublish.error_mapping.test.tsx, usePublish.edit.test.tsx, lib/supabase/__tests__/edge-errors.test.ts.\n</info added on 2026-09-06T07:11:33.365Z>",
             "testStrategy": "Test con FunctionsHttpError real (context.json()) → el mensaje específico llega a la UI.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
-            "updatedAt": "2026-08-14T12:00:00.000Z"
+            "updatedAt": "2026-09-06T07:11:37.557Z"
           },
           {
             "id": 2,
@@ -7376,7 +7377,7 @@
             "updatedAt": "2026-08-14T12:00:00.000Z"
           }
         ],
-        "updatedAt": "2026-08-14T12:00:00.000Z"
+        "updatedAt": "2026-09-06T07:11:37.557Z"
       },
       {
         "id": "123",
@@ -11709,7 +11710,7 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-09-06T11:34:22.653Z",
+      "lastModified": "2026-09-06T15:54:28.572Z",
       "taskCount": 274,
       "completedCount": 192,
       "tags": [
