@@ -112,7 +112,7 @@
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(59);
+select plan(61);
 
 -- ── Helper de impersonación (mismo patrón que 02/08/.../35/62/100/101/102_*) ─────────────────
 create or replace function pg_temp.act_as(p_uid uuid, p_role text default 'authenticated')
@@ -687,6 +687,19 @@ select is(
     '00000000-0000-0000-0000-000000266772', 5, timestamptz '2026-01-01 12:00:00+00' - interval '110 minutes'
   )),
   0, 'CURSOR4_pagina_despues_de_la_ultima_fila_0_filas_sin_mas_paginas'
+);
+
+-- LIMIT1/2 (hallazgo del guardian, 266.5): p_limit degenerado NO abre la página completa.
+-- 0 (o negativo) se acota a 1 → estrictamente menos que las 13 filas del lead; NULL = default 20 → las 13.
+select cmp_ok(
+  jsonb_array_length(pg_temp.activity_json('00000000-0000-0000-0000-000000266772', 0, null)),
+  '<', 13,
+  'LIMIT1_p_limit_0_no_devuelve_el_timeline_completo'
+);
+select is(
+  jsonb_array_length(pg_temp.activity_json('00000000-0000-0000-0000-000000266772', null, null)),
+  13,
+  'LIMIT2_p_limit_NULL_usa_el_default_20_y_devuelve_las_13_filas'
 );
 
 -- CURSOR5: la concatenación de las 3 páginas REALES (no recalculada) = el literal completo de
