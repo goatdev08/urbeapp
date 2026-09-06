@@ -38,6 +38,9 @@ describe('crm_header_narrative', () => {
     expect(result.subline).toBe(
       'Y 2 se están enfriando — Fernando bajó 5° en 3 días desde su última señal.',
     );
+    // El caso mixto NO degrada el headline: sigue habiendo un lead caliente.
+    expect(result.headline).toBe('1 persona está lista para que le hables.');
+    expect(result.highlight).toBe('1 persona');
   });
 
   it('cooling=1 con top_cooling: subline en singular ("se está enfriando")', () => {
@@ -48,6 +51,8 @@ describe('crm_header_narrative', () => {
     expect(result.subline).toBe(
       'Y 1 se está enfriando — Fernando bajó 5° en 3 días desde su última señal.',
     );
+    expect(result.headline).toBe('1 persona está lista para que le hables.');
+    expect(result.highlight).toBe('1 persona');
   });
 
   it('cooling=2 SIN top_cooling: subline corto, sin nombre', () => {

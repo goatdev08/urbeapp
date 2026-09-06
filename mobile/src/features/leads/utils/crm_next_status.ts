@@ -20,6 +20,25 @@ export type NextAction =
 /** El botón "Agendar" siempre marca este status vigente. */
 export const AGENDAR_STATUS: LeadStatus = 'visit_scheduled';
 
-export function crm_next_action(_projected: ProjectedStatus): NextAction {
-  throw new Error('not implemented');
+/**
+ * Mapa proyectado→acción (exploración 045 §7.4, decisiones de Abraham
+ * 2026-09-06): nuevo/contactado son un tap directo ('set'); visita/cerrado
+ * exigen elegir entre variantes (renta/venta/perdido o reabrir) y por eso
+ * SIEMPRE abren el picker completo, nunca asignan un status a ciegas.
+ * Cualquier valor fuera del dominio (legacy sin resolver, futuro no
+ * contemplado) cae en el mismo fallback seguro: abrir el picker.
+ */
+export function crm_next_action(projected: ProjectedStatus): NextAction {
+  switch (projected) {
+    case 'nuevo':
+      return { kind: 'set', status: 'contacted', label: 'Contactado' };
+    case 'contactado':
+      return { kind: 'set', status: AGENDAR_STATUS, label: 'Visita' };
+    case 'visita':
+      return { kind: 'open_picker', label: 'Cerrar…' };
+    case 'cerrado':
+      return { kind: 'open_picker', label: 'Reabrir' };
+    default:
+      return { kind: 'open_picker', label: 'Elegir estado' };
+  }
 }
