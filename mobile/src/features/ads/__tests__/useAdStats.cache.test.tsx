@@ -63,16 +63,7 @@
 
 import { renderHook, act } from '@testing-library/react-native';
 
-import {
-  useAdStats,
-  period_to_range,
-  type AdStatsPeriod,
-  // @ts-expect-error -- AD_STATS_STALE_MS todavía no existe (fase RED, #262).
-  AD_STATS_STALE_MS as AD_STATS_STALE_MS_RAW,
-} from '../hooks/useAdStats';
-
-const AD_STATS_STALE_MS: number =
-  typeof AD_STATS_STALE_MS_RAW === 'number' ? AD_STATS_STALE_MS_RAW : 60_000;
+import { useAdStats, period_to_range, AD_STATS_STALE_MS, type AdStatsPeriod } from '../hooks/useAdStats';
 
 // ---------------------------------------------------------------------------
 // Fixtures (copiadas del patrón de la suite hermana -- este archivo es
