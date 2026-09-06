@@ -698,7 +698,7 @@ describe('useVideoEngagementEvents', () => {
 //   - Fire-and-forget (nunca lanza) y fail-closed sin session_id, mismo
 //     patrón que report_view/report_time_update.
 //
-// EDGE CASES CUBIERTOS (8 casos):
+// EDGE CASES CUBIERTOS (9 casos):
 //
 // ### Happy path — progreso máximo se reporta una sola vez
 // - (EC-15) varios_timeupdate_luego_report_progress_inserta_el_maximo
@@ -712,6 +712,7 @@ describe('useVideoEngagementEvents', () => {
 //
 // ### Fail-closed / fire-and-forget
 // - (EC-19) sin_sesion_report_progress_no_escribe_y_loggea_sin_user_id
+// - (EC-23) sin_user_report_progress_no_escribe (sign-out con el feed montado)
 // - (EC-20) insert_de_video_progress_que_rechaza_no_rompe
 //
 // ### Dedupe compartido entre instancias (reciclaje de FlashList)
@@ -931,6 +932,45 @@ describe('useVideoEngagementEvents — video_progress (268.1)', () => {
     expect(completed_calls).toHaveLength(1);
     expect(view_calls[0]![0]).not.toHaveProperty('payload');
     expect(completed_calls[0]![0]).not.toHaveProperty('payload');
+  });
+
+  // ── (EC-23) Sin user (sign-out con el feed montado) — report_progress no escribe ──
+
+  it('(EC-23) sin_user_report_progress_no_escribe: hubo progreso (40/60) y luego user=null (sign-out) → report_progress() NO llama from("events_raw") y no lanza (el cleanup del feed lo dispara al desmontar)', async () => {
+    const mock_supabase = make_mock_supabase_events();
+    const { result, rerender } = await renderHook(() =>
+      useVideoEngagementEvents({
+        property_id: TEST_PROPERTY_ID,
+        property_video_id: TEST_PROPERTY_VIDEO_ID,
+        session_id: TEST_SESSION_ID,
+        supabase: mock_supabase,
+      })
+    );
+
+    await act(async () => {
+      await result.current.report_time_update(40, 60);
+    });
+
+    mock_use_auth.mockReturnValue({
+      user: null,
+      session: null,
+      isLoading: false,
+      signIn: jest.fn(),
+      signOut: jest.fn(),
+      requestPasswordReset: jest.fn(),
+      updatePassword: jest.fn(),
+    });
+    await act(async () => {
+      rerender({});
+    });
+
+    await expect(
+      act(async () => {
+        await result.current.report_progress();
+      })
+    ).resolves.toBeUndefined();
+
+    expect(insert_calls_of_type(mock_supabase._mock_insert, 'video_progress')).toHaveLength(0);
   });
 
 });
