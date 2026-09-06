@@ -104,7 +104,6 @@ function make_user_profile(id = 'uid-test-123'): UserProfile {
     municipality_id: null,
     phone: null,
     is_verified_agent: false,
-    date_of_birth: null,
     deleted_at: null,
     deletion_pending_at: null,
     last_login_at: null,
@@ -237,6 +236,26 @@ describe('EC-1: con_sesion_previa_carga_perfil_users', () => {
     // La implementación real debe consultar public.users con el uid
     expect(mock_from).toHaveBeenCalledWith('users');
     expect(mock_eq).toHaveBeenCalledWith('id', 'uid-test-123');
+  });
+
+  // #116 paso 1 (EXPAND): el perfil se pide con lista explícita de columnas y
+  // NUNCA con '*' ni con date_of_birth — es lo que permite que el backend
+  // revoque el grant de esa columna sin romper el login de las apps instaladas.
+  it('#116: pide public.users con lista explícita de columnas, sin "*" ni date_of_birth', async () => {
+    const session = make_session('uid-test-123');
+    mock_auth.getSession.mockResolvedValue({ data: { session }, error: null } as Awaited<ReturnType<typeof mock_auth.getSession>>);
+    const { mock_select } = setup_from_mock(make_user_profile('uid-test-123'));
+
+    await renderHook(() => useAuth(), { wrapper });
+
+    expect(mock_select).toHaveBeenCalledTimes(1);
+    const columns = String(mock_select.mock.calls[0]?.[0]);
+    expect(columns).not.toBe('*');
+    expect(columns).not.toContain('date_of_birth');
+    // Lo que sí consume la app hoy (grep de user.<campo>): role, email, nombre, avatar, bio.
+    for (const col of ['id', 'email', 'role', 'first_name', 'last_name', 'avatar_url', 'bio', 'agency_id']) {
+      expect(columns.split(',').map((c) => c.trim())).toContain(col);
+    }
   });
 });
 
