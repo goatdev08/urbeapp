@@ -2,6 +2,9 @@
 
 Append-only. Prefijo: `## [YYYY-MM-DD] tipo | título`.
 
+## [2026-09-05] cierre | #222 — smoke guiado completo, producción limpia; #261 por OTA
+Pasos 1-13 del smoke verificados contra producción; 15 derivadas (#246-#259 done, #261 mergeada en #150 y publicada por OTA a ambos canales, en review hasta el visual en Android físico). Limpieza de datos de prueba en un DO block con asserts de conteo: 59 notificaciones, 1 lead, 3 reportes, 2 solicitudes de agente, 2 anuncios + creativo, 1 solicitud comercial, 11 acciones de admin, 1 revisión, la inmobiliaria QA-Urbea y 2 cuentas de prueba. Conteos idénticos a la línea base; se conservan el agente y la propiedad de prueba. Backlog cerrado con OK de Abraham: #192 #202 #203 #213 #45 done, #38 y 74.8 cancelled, 74.5 done, #81 deferred. Queda un asset de Stream (13 s) por borrar del panel de Cloudflare.
+
 ## [2026-09-05] fix | lote 2 del smoke #222 — #255 #256 #257 #258 #259 en `main`
 Cinco derivadas del smoke guiado cerradas en un lote de agentes en worktrees (PRs #145–#148): #259 un solo loader, botón + cuadrado y tabs sin brinco en la pantalla de anuncios (pendiente smoke en Android físico); #256 el contador de anuncios cruza la costura entre páginas del feed; #257/#258 la auto-suspensión y la solicitud de agente dicen motivo y solicitante (migración `20260905300001`); #255 el WhatsApp del perfil se resuelve por la RPC `whatsapp_phone_for_profile` (migración `20260905300002`) en vez de leer `users.phone`. `main` verificado completo: pgTAP 99 archivos / 3059, tsc limpio, lint 0 errores, jest 174 suites / 2122. **Pendiente de aprobación de Abraham:** aplicar las dos migraciones al remoto (primero) y publicar el OTA (después). Patrón nuevo del lote: los agentes no tocan `tasks.json` (bitácora en .md, el orquestador la vuelca con `tm-log` en `main`) → cero conflictos entre PRs.
 
