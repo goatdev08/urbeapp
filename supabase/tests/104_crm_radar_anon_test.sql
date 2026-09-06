@@ -102,17 +102,25 @@
 -- 🔒 Los 4 invariantes de §7.5 (el corazón de esta suite):
 --   (1) INV1 — estructural: 0 columnas de identidad, guardado contra el vacuo (total_out=7).
 --   (2) ROWN1/2 — row_n no estable + ordinal denso.
---   (3) KANON1-3/WINDOW1-2 — k-anonimato por propiedad, incluida la ventana y el mata-count(*).
+--   (3) KANON1-3/WINDOW1-2/WINDOW3-4 — k-anonimato por propiedad, incluida la ventana
+--       (crm_radar_window_days leído de app_config, no solo hardcode) y el mata-count(*).
 --   (4) LEADACT1-3 — lead activo excluido, lead borrado puede salir, lead de OTRO agente sale.
 -- Ramas de reglas no obvias: D-AUTZ-REUSE (AUTZ2-8, mismo criterio 226/77/203.1 que
---   crm_leads_page), D-KANON-SCOPE (implícito en LEADACT1: el conteo de k-anon usa SOLO los
---   elegibles), solo Δ>0 (DELTA1, DELTAVAL1-2, LASTACT1 con valor Python independiente).
+--   crm_leads_page), D-KANON-SCOPE — 🟡 endurecimiento post-guardian (V1, bloqueante): tiene su
+--   PROPIO assert dedicado (KANONSCOPE1, sección 14) — ya NO es "implícito en LEADACT1": ese
+--   fixture (4 espectadores/1 lead → 3 elegibles) pasaba igual contando sobre el total (4) que
+--   sobre lo elegible (3), así que un mutante que moviera el conteo a `activity_typed` (tráfico
+--   total) sobrevivía 42/42; KANONSCOPE1 monta el caso que SÍ discrimina (2 de 3 son leads: el
+--   total pasa el umbral, lo elegible no) — solo Δ>0 (DELTA1/DELTAZERO1 —🟡 la frontera Δ=0
+--   con solo video_view, endurecimiento post-guardian V2, bloqueante—, DELTAVAL1-2, LASTACT1
+--   con valor Python independiente).
 -- Boundary/error: p_agent_id inexistente → 0 filas sin excepción (BOUNDARY1); p_limit
---   degenerado (LIMIT1-3); anon con 42501 real (ACLREAL1).
+--   degenerado (LIMIT1-3, LIMIT1 pinea el clamp EXACTO a 1 — 🟡 endurecimiento post-guardian
+--   O-6); anon con 42501 real (ACLREAL1).
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(42);
+select plan(46);
 
 -- ── Helper de impersonación (mismo patrón que 02/08/.../100/101/102/103) ────────────────────
 create or replace function pg_temp.act_as(p_uid uuid, p_role text default 'authenticated')
@@ -698,8 +706,9 @@ reset role;
 --     los días sin evento. PROP_SPARK (AGR_SPARK aislado): VSPK con 3 video_view + 1
 --     video_completed HOY + 1 save hace 6 días (delta>0 garantizado por el video_completed de
 --     hoy, ver cabecera D-ELIGIBILIDAD) + 2 rellenos (solo save reciente, para k-anon=3). El
---     array esperado se construye con una consulta INDEPENDIENTE (generate_series + count
---     directo sobre los fixtures), NO copiando la que use el SUT.
+--     array esperado es un LITERAL calculado A MANO desde las filas sembradas (mismo criterio
+--     que 100_/101_) — NUNCA una query contra events_raw/saves (ver corrección post-GREEN más
+--     abajo, junto al assert: una query ahí corre bajo el rol impersonado y RLS la bloquea).
 -- ════════════════════════════════════════════════════════════════════════════
 
 insert into auth.users (id, email) values
@@ -735,25 +744,26 @@ select ok(
   'SPARK1_longitud_14_ventana_completa'
 );
 
+-- 🟡 Corrección post-GREEN (árbitro, hallazgo del agente `supabase`, confirmado con repro
+-- propio): la versión anterior de "want" era una query directa a events_raw/saves DESPUÉS de
+-- pg_temp.act_as (rol authenticated impersonando al agente 957). events_raw_select exige
+-- `user_id = auth.uid() OR private.can_view_user_events(...)` y saves_select exige
+-- `user_id = auth.uid()` — el agente 957 no es auth.uid() de VSPK (958) ni tiene lead con él,
+-- así que RLS bloqueaba esa lectura de canal lateral y "want" daba 14 ceros SIEMPRE,
+-- independientemente de los datos reales (verificado: como authenticated/957 el count da 0;
+-- como postgres, que bypassa RLS por ownership, el mismo count da 2 (events_raw) y 1 (saves)).
+-- Fix: literal calculado A MANO (mismo criterio que 100_/101_) desde las filas sembradas
+-- arriba, SIN pasar por ninguna tabla ni por la SQL del SUT — solo aritmética de posiciones:
+-- ventana ascendente de 14 días [hoy−13 .. hoy], posición 1-based = 14 − días_de_antigüedad.
+-- "hoy" (video_view×3 + video_completed×1, todos "hace unos minutos") → posición 14 → 4.
+-- "hace 6 días" (el save) → posición 14−6 = 8 → 1. Los 12 días restantes, sin fixture → 0.
 select is(
   (
     select elem->'sparkline'
     from jsonb_array_elements(pg_temp.radar_json('00000000-0000-0000-0000-000000266957', 20)) elem
     where elem->>'temperature' <> '18'
   ),
-  (
-    select jsonb_agg(coalesce(cnt.n, 0) order by dd.day)
-    from generate_series((now()::date - 13), now()::date, interval '1 day') as dd(day)
-    left join (
-      select (created_at)::date as day, count(*) as n
-      from (
-        select created_at from public.events_raw where property_id = '00000000-0000-0000-0000-000000266913' and user_id = '00000000-0000-0000-0000-000000266958'
-        union all
-        select created_at from public.saves where property_id = '00000000-0000-0000-0000-000000266913' and user_id = '00000000-0000-0000-0000-000000266958'
-      ) ev
-      group by (created_at)::date
-    ) cnt on cnt.day = dd.day::date
-  ),
+  '[0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 4]'::jsonb,
   'SPARK2_array_exacto_por_dia_con_huecos_en_cero'
 );
 
@@ -855,9 +865,13 @@ insert into public.saves (user_id, property_id, created_at) values
 
 select pg_temp.act_as('00000000-0000-0000-0000-000000266966');
 
-select cmp_ok(
+-- 🟡 Endurecimiento post-guardian (O-6): el `cmp_ok(..., '<', 5)` original pasaba igual con el
+-- clamp real (1 fila) que con un SUT sin clamp que simplemente devolviera 0 filas por error —
+-- ambos son "< 5". D-LIMIT-RADAR fija el clamp en EXACTAMENTE 1
+-- (`greatest(coalesce(p_limit,20),1)`, 20260906100005 línea ~99); se pinea con `is(...,1)`.
+select is(
   pg_temp.real_count(pg_temp.radar_json('00000000-0000-0000-0000-000000266966', 0)),
-  '<', 5, 'LIMIT1_p_limit_0_acotado_menor_que_el_total_elegible'
+  1, 'LIMIT1_p_limit_0_acotado_EXACTAMENTE_a_1_D_LIMIT_RADAR'
 );
 select is(
   pg_temp.real_count(pg_temp.radar_json('00000000-0000-0000-0000-000000266966', null)),
@@ -871,7 +885,130 @@ select is(
 reset role;
 
 -- ════════════════════════════════════════════════════════════════════════════
--- 14) crm_anon_min_viewers — subible SIN publicar app (§7.5/exploración 045 tabla de claves).
+-- 14) D-KANON-SCOPE [INVARIANTE 3, endurecimiento post-guardian V1, bloqueante] — hasta aquí
+--     ningún assert distinguía "k-anonimato sobre el conjunto YA SIN LEAD" (correcto) de
+--     "k-anonimato sobre el tráfico TOTAL de la propiedad" (fuga: permite deducción por
+--     sustracción, el modo exacto de 75.3). Mutante M3b (mover `property_kanon` de
+--     `eligible_activity` a `activity_typed`, 20260906100005) sobrevivía 42/42 porque
+--     LEADACT1 usa 4 espectadores/1 lead — 3 elegibles YA pasa el umbral por sí solo, así que
+--     contar sobre el total (4) o sobre lo elegible (3) daba el MISMO resultado (ambos ≥ 3).
+--     PROP_V1 (AGR_V1 aislado): 3 espectadores, de los cuales 2 tienen lead ACTIVO con
+--     AGR_V1 y 1 es genuinamente anónimo (V1_NONLEAD, con señal reciente propia, delta>0).
+--     Con el conteo CORRECTO (solo lo elegible): elegibles = 1 (< 3) → la propiedad NO pasa
+--     k-anon → 0 filas. Con el mutante M3b (conteo sobre el total): distinct_viewers = 3
+--     (≥ 3) → la propiedad SÍ pasaría → V1_NONLEAD (el único elegible que sigue en
+--     `eligible_activity`/`attributed`) se mostraría solo — exactamente la deducción por
+--     sustracción que D-KANON-SCOPE cierra.
+-- ════════════════════════════════════════════════════════════════════════════
+
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-000000266976', 'agv1.266p6@test.local'),
+  ('00000000-0000-0000-0000-000000266977', 'v1leada.266p6@test.local'),
+  ('00000000-0000-0000-0000-000000266978', 'v1leadb.266p6@test.local'),
+  ('00000000-0000-0000-0000-000000266979', 'v1nonlead.266p6@test.local');
+update public.users set role = 'agent', is_verified_agent = true where id = '00000000-0000-0000-0000-000000266976';
+insert into public.properties (id, owner_user_id, property_type, operation_type, address, location, price, status) values
+  ('00000000-0000-0000-0000-000000266917', '00000000-0000-0000-0000-000000266976', 'departamento', 'rent',
+   'Fixture 266.6 — PROP_V1 (D-KANON-SCOPE: 2 de 3 son leads)',
+   extensions.ST_SetSRID(extensions.ST_MakePoint(-103.51, 20.83), 4326)::extensions.geography, 11200, 'active');
+insert into public.saves (user_id, property_id, created_at) values
+  ('00000000-0000-0000-0000-000000266977', '00000000-0000-0000-0000-000000266917', now() - interval '1 hour'),
+  ('00000000-0000-0000-0000-000000266978', '00000000-0000-0000-0000-000000266917', now() - interval '1 hour'),
+  ('00000000-0000-0000-0000-000000266979', '00000000-0000-0000-0000-000000266917', now() - interval '1 hour');
+insert into public.leads (id, agent_id, user_id, status) values
+  ('00000000-0000-0000-0000-000000266903', '00000000-0000-0000-0000-000000266976', '00000000-0000-0000-0000-000000266977', 'new'),
+  ('00000000-0000-0000-0000-000000266904', '00000000-0000-0000-0000-000000266976', '00000000-0000-0000-0000-000000266978', 'new');
+
+select pg_temp.act_as('00000000-0000-0000-0000-000000266976');
+select is(
+  pg_temp.real_count(pg_temp.radar_json('00000000-0000-0000-0000-000000266976', 20)),
+  0, 'KANONSCOPE1_dos_de_tres_son_leads_activos_1_elegible_bajo_el_umbral_0_filas_D_KANON_SCOPE'
+);
+reset role;
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 15) Frontera Δ=0 [endurecimiento post-guardian V2, bloqueante] — DELTA1 (sección 9) solo
+--     ejercita Δ<0 (VOLD). Una persona cuya ÚNICA actividad en la ventana es `video_view`
+--     cuenta para elegibilidad/k-anon (D-ELIGIBILIDAD) pero NO pesa en `private.crm_temperature`
+--     (solo video_completed/likes/saves/contacto pesan, 266.2) — su temperature es SIEMPRE 0 y
+--     su temp_prev también 0, así que delta = 0 − 0 = 0, exactamente en la frontera. El
+--     mutante `delta_filtered` con `>= 0` en vez de `> 0` la mete al radar sin señal real.
+--     PROP_V2 (AGR_V2 aislado): 3 espectadores con save reciente (delta>0, visibles) + 1
+--     espectador (V2_VIEWONLY) con SOLO un video_view reciente (delta=0, NO debe aparecer).
+-- ════════════════════════════════════════════════════════════════════════════
+
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-000000266980', 'agv2.266p6@test.local'),
+  ('00000000-0000-0000-0000-000000266981', 'v2a.266p6@test.local'),
+  ('00000000-0000-0000-0000-000000266982', 'v2b.266p6@test.local'),
+  ('00000000-0000-0000-0000-000000266983', 'v2c.266p6@test.local'),
+  ('00000000-0000-0000-0000-000000266984', 'v2viewonly.266p6@test.local');
+update public.users set role = 'agent', is_verified_agent = true where id = '00000000-0000-0000-0000-000000266980';
+insert into public.properties (id, owner_user_id, property_type, operation_type, address, location, price, status) values
+  ('00000000-0000-0000-0000-000000266918', '00000000-0000-0000-0000-000000266980', 'departamento', 'rent',
+   'Fixture 266.6 — PROP_V2 (frontera Δ=0, solo video_view)',
+   extensions.ST_SetSRID(extensions.ST_MakePoint(-103.52, 20.84), 4326)::extensions.geography, 11300, 'active');
+insert into public.saves (user_id, property_id, created_at) values
+  ('00000000-0000-0000-0000-000000266981', '00000000-0000-0000-0000-000000266918', now() - interval '1 hour'),
+  ('00000000-0000-0000-0000-000000266982', '00000000-0000-0000-0000-000000266918', now() - interval '1 hour'),
+  ('00000000-0000-0000-0000-000000266983', '00000000-0000-0000-0000-000000266918', now() - interval '1 hour');
+insert into public.events_raw (event_type, user_id, property_id, created_at) values
+  ('video_view', '00000000-0000-0000-0000-000000266984', '00000000-0000-0000-0000-000000266918', now() - interval '1 hour');
+
+select pg_temp.act_as('00000000-0000-0000-0000-000000266980');
+select is(
+  pg_temp.real_count(pg_temp.radar_json('00000000-0000-0000-0000-000000266980', 20)),
+  3, 'DELTAZERO1_solo_video_view_delta_igual_a_0_no_aparece_sigue_en_3'
+);
+reset role;
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 16) crm_radar_window_days [endurecimiento post-guardian O-8] — WINDOW1/2 (sección 7) fijan
+--     la ventana en el DEFAULT hardcodeado (14); ningún assert leía la clave desde
+--     `app_config`, gemelo de THRESH1/2 pero para `crm_radar_window_days`. PROP_WIN34
+--     (AGR_WIN34 aislado): 2 espectadores con save reciente (delta>0) + 1 (VW3) cuya ÚNICA
+--     señal es de hace 10 días — dentro del default 14 (cuenta, eleva elegibles a 3, pasa
+--     k-anon) pero delta<0 por sí sola (no aparece como fila, igual que WINDOW1/VE3). Con el
+--     default: 2 filas visibles. Al bajar `crm_radar_window_days` a 7 DENTRO de la misma
+--     transacción, la señal de VW3 (hace 10 días) deja de contar → elegibles caen a 2 (< 3) →
+--     la propiedad ENTERA queda oculta (0 filas, ni los 2 con delta>0 genuino) — SIN publicar
+--     app. Va junto a THRESH (antes de él): ambos mutan `app_config` GLOBAL dentro de la
+--     transacción y no deben contaminar los conteos con default de las secciones anteriores.
+-- ════════════════════════════════════════════════════════════════════════════
+
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-000000266985', 'agwin34.266p6@test.local'),
+  ('00000000-0000-0000-0000-000000266986', 'vw1.266p6@test.local'),
+  ('00000000-0000-0000-0000-000000266987', 'vw2.266p6@test.local'),
+  ('00000000-0000-0000-0000-000000266988', 'vw3.266p6@test.local');
+update public.users set role = 'agent', is_verified_agent = true where id = '00000000-0000-0000-0000-000000266985';
+insert into public.properties (id, owner_user_id, property_type, operation_type, address, location, price, status) values
+  ('00000000-0000-0000-0000-000000266919', '00000000-0000-0000-0000-000000266985', 'departamento', 'rent',
+   'Fixture 266.6 — PROP_WIN34 (crm_radar_window_days subible a la baja)',
+   extensions.ST_SetSRID(extensions.ST_MakePoint(-103.53, 20.85), 4326)::extensions.geography, 11400, 'active');
+insert into public.saves (user_id, property_id, created_at) values
+  ('00000000-0000-0000-0000-000000266986', '00000000-0000-0000-0000-000000266919', now() - interval '1 hour'),
+  ('00000000-0000-0000-0000-000000266987', '00000000-0000-0000-0000-000000266919', now() - interval '1 hour'),
+  ('00000000-0000-0000-0000-000000266988', '00000000-0000-0000-0000-000000266919', now() - interval '10 days');
+
+select pg_temp.act_as('00000000-0000-0000-0000-000000266985');
+select is(
+  pg_temp.real_count(pg_temp.radar_json('00000000-0000-0000-0000-000000266985', 20)),
+  2, 'WINDOW3_con_default_14_la_senal_de_hace_10_dias_cuenta_para_kanon_2_filas'
+);
+reset role;
+
+insert into public.app_config (key, value) values ('crm_radar_window_days', '7'::jsonb);
+
+select pg_temp.act_as('00000000-0000-0000-0000-000000266985');
+select is(
+  pg_temp.real_count(pg_temp.radar_json('00000000-0000-0000-0000-000000266985', 20)),
+  0, 'WINDOW4_bajar_crm_radar_window_days_a_7_oculta_la_senal_de_hace_10_dias_propiedad_oculta_0_filas'
+);
+reset role;
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 17) crm_anon_min_viewers — subible SIN publicar app (§7.5/exploración 045 tabla de claves).
 --     PROP_THRESH (AGR_THRESH aislado): 3 espectadores, visible con el default (3); al subir
 --     la clave a 4 DENTRO de la misma transacción, la propiedad queda oculta. Va AL FINAL del
 --     archivo a propósito: la clave override es GLOBAL de app_config y no debe afectar los
