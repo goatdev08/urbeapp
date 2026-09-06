@@ -2,6 +2,9 @@
 
 Append-only. Prefijo: `## [YYYY-MM-DD] tipo | título`.
 
+## [2026-09-05] polish | #265 — el tab de perfil se monta al arrancar en Android
+Abraham seguía viendo espera al entrar a Perfil tras #263. No era recarga (freezeOnBlur + refetch sin loader) sino la primera visita de la sesión: Android monta cada tab al primer toque (lazy) y ahí caían las 5 consultas + foto + portadas firmadas; iOS NativeTabs ya monta todo al arrancar. Fix de una línea (`lazy:false` en el tab profile) + `cacheKey` estable en las portadas de la grilla (URL firmada de Stream que cambiaba por llamada). Hecho directo por el orquestador, sin ciclo de agentes; OTA a ambos canales desde `6fa68d5`. Techo: si la primera visita aún pesa, caché de módulo SWR en los hooks del perfil.
+
 ## [2026-09-05] perf | #262 + #263 — el detalle del anuncio y las fotos de perfil dejan de esperar a la red
 Dos lentitudes reportadas por Abraham en Android físico, ambas de red y no de base (las RPCs de stats responden en 2–3 ms; el proyecto vive en us-west-2). #262: `useAdStats` cachea por (ad_id, period) con frescura de 60 s y prefetcha los otros dos periodos al asentar el visible; el cambio de tab es instantáneo y el chip de #261 no parpadea. El prefetch es un invariante nuevo: 4 asserts de conteo de la suite vieja se actualizaron con traza. #263: `r2Resolver` cachea la URL firmada de R2 (TTL de la EF, margen 5 min) con dedupe en vuelo, `useR2Urls` siembra el primer render desde la caché y expo-image recibe `source.cacheKey` estable (la key de R2) para que el disco acierte entre sesiones; cubre agente, admin y buscador (mismo ProfileHeader), feed y detalle. Guardians PASS en 2 rondas cada uno (hallazgos: test vacuo de la siembra, tests dependientes de la fecha real). OTA a ambos canales desde `899e3fd`; smoke en el teléfono pendiente. Derivada #264 (hueco de cobertura preexistente de 212.3). Palanca siguiente, decisión de Abraham: bucket de avatares público con CDN, sin EF.
 
