@@ -55,6 +55,13 @@ export const colors = {
 
   // Integraciones
   whatsapp:     '#25D366',
+
+  // CRM (paleta de Santiago, #267) — color de fila por banda de temperatura
+  // y color del número en la escala del CRM.
+  temp_hot:     '#A8401A',
+  temp_cooling: '#8A6A1E',
+  temp_warming: '#1A5E44',
+  temp_silent:  '#5F6D67',
 } as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -276,6 +283,20 @@ export const fonts = {
   sans_semibold: 'HankenGrotesk_600SemiBold', // Cuerpo semi-bold
   sans_bold:     'HankenGrotesk_700Bold',     // Cuerpo bold
   logo:    'Outfit_600SemiBold',              // Wordmark del logo final (#43.2)
+
+  // Mono — cifras/tabla del CRM (#267): alineación fija de dígitos.
+  mono:        'DMMono_400Regular',
+  mono_medium: 'DMMono_500Medium',
+
+  // Escala de pesos Outfit del CRM (#267). outfit_semibold es alias legible
+  // de `logo` (mismo string, Outfit_600SemiBold) — se conserva `logo` por su
+  // nombre semántico en el wordmark, y se añade el alias para completar la
+  // escala 300/400/500/600/700 que usan las pantallas del CRM.
+  outfit_light:    'Outfit_300Light',
+  outfit:          'Outfit_400Regular',
+  outfit_medium:   'Outfit_500Medium',
+  outfit_semibold: 'Outfit_600SemiBold',
+  outfit_bold:     'Outfit_700Bold',
 } as const;
 
 /** Type scale del kit 003.

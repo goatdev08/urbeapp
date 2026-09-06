@@ -11623,15 +11623,15 @@
             "id": 2,
             "title": "Tokens temp_* + fonts.mono en theme.ts, DM Mono y pesos de Outfit cargados, huella nativa antes/después",
             "description": "theme.ts: colors.temp_hot #A8401A · temp_cooling #8A6A1E · temp_warming #1A5E44 · temp_silent #5F6D67 · fonts.mono (DM Mono 400/500). mobile/app/_layout.tsx: cargar los pesos de Outfit que usan las previews aprobadas (mínimo 400/500/600/700) y DM Mono. pnpm add @expo-google-fonts/dm-mono.",
-            "details": "Procedimiento OBLIGATORIO (045 §7.6, #67, assets_nativos_gotchas): generar la huella nativa ANTES de añadir la fuente y DESPUÉS (npx @expo/fingerprint ./ en mobile/, ya está instalado 0.19.4) y pegar ambos hashes en la bitácora. Si cambian → esta tarea NO sale por OTA: rebuild (subir version), avisar a Abraham antes de seguir. Archivos: mobile/src/theme/theme.ts · mobile/app/_layout.tsx · mobile/package.json · pnpm-lock.yaml.\n<info added on 2026-09-06T16:15:36.049Z>\nPLAN: theme.ts colors.temp_hot #A8401A / temp_cooling #8A6A1E / temp_warming #1A5E44 / temp_silent #5F6D67 + fonts.mono (DM Mono 400/500); _layout.tsx carga los pesos de Outfit aprobados en 267.1 + DM Mono; pnpm add @expo-google-fonts/dm-mono · huella nativa OBLIGATORIA antes/después (npx @expo/fingerprint ./ en mobile/, 0.19.4 instalado), ambos hashes a la bitácora; si cambia = rebuild, no OTA (#67) y avisar a Abraham · agente=mobile · skills=urbea-expo · criticidad=no (config/tokens) · impacto-prod=sin riesgo en datos; riesgo de ENTREGA por fingerprint · footprint=mobile/src/theme/theme.ts · mobile/app/_layout.tsx · mobile/package.json · pnpm-lock.yaml\n</info added on 2026-09-06T16:15:36.049Z>",
+            "details": "Procedimiento OBLIGATORIO (045 §7.6, #67, assets_nativos_gotchas): generar la huella nativa ANTES de añadir la fuente y DESPUÉS (npx @expo/fingerprint ./ en mobile/, ya está instalado 0.19.4) y pegar ambos hashes en la bitácora. Si cambian → esta tarea NO sale por OTA: rebuild (subir version), avisar a Abraham antes de seguir. Archivos: mobile/src/theme/theme.ts · mobile/app/_layout.tsx · mobile/package.json · pnpm-lock.yaml.\n<info added on 2026-09-06T16:15:36.049Z>\nPLAN: theme.ts colors.temp_hot #A8401A / temp_cooling #8A6A1E / temp_warming #1A5E44 / temp_silent #5F6D67 + fonts.mono (DM Mono 400/500); _layout.tsx carga los pesos de Outfit aprobados en 267.1 + DM Mono; pnpm add @expo-google-fonts/dm-mono · huella nativa OBLIGATORIA antes/después (npx @expo/fingerprint ./ en mobile/, 0.19.4 instalado), ambos hashes a la bitácora; si cambia = rebuild, no OTA (#67) y avisar a Abraham · agente=mobile · skills=urbea-expo · criticidad=no (config/tokens) · impacto-prod=sin riesgo en datos; riesgo de ENTREGA por fingerprint · footprint=mobile/src/theme/theme.ts · mobile/app/_layout.tsx · mobile/package.json · pnpm-lock.yaml\n</info added on 2026-09-06T16:15:36.049Z>\n<info added on 2026-09-06T17:58:51.752Z>\nHECHO (2026-09-06, agente mobile, verificación ligera):\n- mobile/src/theme/theme.ts: colors.temp_hot #A8401A / temp_cooling #8A6A1E / temp_warming #1A5E44 / temp_silent #5F6D67; fonts.mono 'DMMono_400Regular', fonts.mono_medium 'DMMono_500Medium', fonts.outfit_light/outfit/outfit_medium/outfit_semibold/outfit_bold (300–700; outfit_semibold es alias legible del mismo string que `logo`).\n- mobile/app/_layout.tsx: useOutfit carga 300/400/500/600/700; useDmMono (400/500) sumado a fonts_loaded.\n- mobile/package.json + pnpm-lock.yaml: pnpm add @expo-google-fonts/dm-mono@^0.4.2 (0.4.3 no existe para ese paquete).\n- Decisión ponytail: NO se añaden tokens de superficie/tinta de Santiago (paper/chips/bordes difieren 1 dígito de los existentes); el CRM reusa colors.paper, primary_tint, ink, gray_*.\nFINGERPRINT (npx @expo/fingerprint ./ en mobile/):\n  ANTES:   d4f1e5270d9b72f03e8a7a72413359ff73923849\n  DESPUÉS: d4f1e5270d9b72f03e8a7a72413359ff73923849\n  → idéntico: las fuentes de @expo-google-fonts son assets JS cargados por expo-font en runtime, no módulo nativo. La tarea sigue saliendo por OTA (#67).\nVERIFICACIÓN (salida real):\n  pnpm tsc --noEmit → sin salida (0 errores)\n  pnpm lint → ✖ 135 problems (0 errors, 135 warnings) — preexistentes, ninguno en theme.ts ni _layout.tsx\n</info added on 2026-09-06T17:58:51.752Z>",
             "testStrategy": "pnpm tsc --noEmit + pnpm lint verdes; dos hashes de fingerprint en la bitácora; la app arranca en emulador con las fuentes resueltas (sin fallback a system).",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               1
             ],
             "priority": "high",
             "subtasks": [],
-            "updatedAt": "2026-09-06T16:15:36.049Z",
+            "updatedAt": "2026-09-06T17:58:54.525Z",
             "parentId": "undefined"
           },
           {
@@ -11726,7 +11726,7 @@
             "parentId": "undefined"
           }
         ],
-        "updatedAt": "2026-09-06T17:55:41.820Z"
+        "updatedAt": "2026-09-06T17:58:54.525Z"
       },
       {
         "id": "268",
@@ -11830,7 +11830,7 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-09-06T17:55:41.820Z",
+      "lastModified": "2026-09-06T17:58:54.526Z",
       "taskCount": 274,
       "completedCount": 192,
       "tags": [
