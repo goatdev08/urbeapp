@@ -35,7 +35,11 @@
 -- ── D-SIGNALS (decisión: signals es POR DÍA, no acumulado histórico) ─────────────────────────
 -- El SUT top-level solo dice "signals jsonb con conteos". Se decide: cuenta SOLO eventos con
 -- timestamp dentro del día p_day (00:00-23:59:59.999999 UTC) — un evento de OTRO día no debe
--- sumarse (SIGNALS2 lo cazaría). La TEMPERATURA sí es acumulada/decayendo (eso ya lo prueba
+-- sumarse. Frontera SUPERIOR (`< v_day_end`, un evento del día SIGUIENTE) la caza SIGNALS2.
+-- Frontera INFERIOR (`>= v_day_start`, un evento del día ANTERIOR) la caza SIGNALS3 — ambas
+-- cotas se prueban por separado porque un mutante que elimine solo las 4 cotas inferiores deja
+-- pasar la suite si el fixture no tiene actividad previa al día bajo prueba (hallazgo del
+-- guardian, subtarea 266.3). La TEMPERATURA sí es acumulada/decayendo (eso ya lo prueba
 -- 100_crm_temperature_test.sql vía private.crm_temperature) — signals es la única pieza
 -- genuinamente nueva de este archivo y por eso se aísla por día.
 --
@@ -77,7 +81,7 @@
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(87);
+select plan(88);
 
 -- ── Helper de impersonación (mismo patrón que 02/35/51/62/68/92/100_*) ──────────────────────
 create or replace function pg_temp.act_as(p_uid uuid, p_role text default 'authenticated')
@@ -140,7 +144,8 @@ insert into public.property_videos (id, property_id, agent_id, status, position,
   ('00000000-0000-0000-0000-000000266211', '00000000-0000-0000-0000-000000266201', '00000000-0000-0000-0000-000000266001', 'ready', 1, 'fixture-266-pv1'),
   ('00000000-0000-0000-0000-000000266212', '00000000-0000-0000-0000-000000266201', '00000000-0000-0000-0000-000000266001', 'ready', 2, 'fixture-266-pv2'),
   ('00000000-0000-0000-0000-000000266213', '00000000-0000-0000-0000-000000266201', '00000000-0000-0000-0000-000000266001', 'ready', 3, 'fixture-266-pv3'),
-  ('00000000-0000-0000-0000-000000266214', '00000000-0000-0000-0000-000000266201', '00000000-0000-0000-0000-000000266001', 'ready', 4, 'fixture-266-pv4');
+  ('00000000-0000-0000-0000-000000266214', '00000000-0000-0000-0000-000000266201', '00000000-0000-0000-0000-000000266001', 'ready', 4, 'fixture-266-pv4'),
+  ('00000000-0000-0000-0000-000000266215', '00000000-0000-0000-0000-000000266201', '00000000-0000-0000-0000-000000266001', 'ready', 5, 'fixture-266-pv5');
 
 -- L1: lead general (AG1, U1) — visibilidad/privacidad + "lead activo global" de COND-C.
 insert into public.leads (id, agent_id, user_id, status) values
@@ -171,7 +176,9 @@ insert into public.lead_origin_properties (id, lead_id, property_id, contacted_a
   ('00000000-0000-0000-0000-000000266805', '00000000-0000-0000-0000-000000266406', '00000000-0000-0000-0000-000000266201', now() - interval '20 days');
 
 -- LSIG: signals por día. Día D1=2026-03-10: 1 contacto + 2 video_completed + 3 likes + 1 save.
--- Día D2=2026-03-11: 1 like EXTRA (no debe sumarse al conteo de D1 — SIGNALS2).
+-- Día D2=2026-03-11: 1 like EXTRA (no debe sumarse al conteo de D1 — SIGNALS2, frontera
+-- SUPERIOR). Día D0=2026-03-09 (el día ANTERIOR): 1 video_completed + 1 like EXTRA (no deben
+-- sumarse al conteo de D1 — SIGNALS3, frontera INFERIOR `>= v_day_start`).
 insert into public.leads (id, agent_id, user_id, status) values
   ('00000000-0000-0000-0000-000000266407', '00000000-0000-0000-0000-000000266001', '00000000-0000-0000-0000-000000266011', 'contacted');
 insert into public.lead_origin_properties (id, lead_id, property_id, contacted_at) values
@@ -188,6 +195,12 @@ insert into public.saves (user_id, property_id, created_at) values
 -- Like extra de D2 — property_video distinto (unique user+video).
 insert into public.likes (user_id, property_video_id, property_id, created_at) values
   ('00000000-0000-0000-0000-000000266011', '00000000-0000-0000-0000-000000266214', '00000000-0000-0000-0000-000000266201', '2026-03-11 09:00:00+00');
+-- video_completed + like extra de D0=2026-03-09 (día ANTERIOR a D1) — frontera INFERIOR
+-- `>= v_day_start`. property_video distinto (PV5, unique user+video) para el like.
+insert into public.events_raw (event_type, user_id, property_id, created_at, payload) values
+  ('video_completed', '00000000-0000-0000-0000-000000266011', '00000000-0000-0000-0000-000000266201', '2026-03-09 09:00:00+00', '{}'::jsonb);
+insert into public.likes (user_id, property_video_id, property_id, created_at) values
+  ('00000000-0000-0000-0000-000000266011', '00000000-0000-0000-0000-000000266215', '00000000-0000-0000-0000-000000266201', '2026-03-09 09:00:00+00');
 
 -- LIDEMP: like de recálculo (día D0, 10:00 UTC) — usa PV1, distinto USUARIO que LSIG así que
 -- no colisiona con el unique index (user_id, property_video_id).
@@ -494,7 +507,9 @@ select is(coalesce((select exists_row from result_func3), false), true,
   'FUNC3_snapshot_por_default_deja_fila_para_lead_activo_L1_hoy');
 
 -- 6f) FUNC4 — signals jsonb por DÍA (D1=2026-03-10): 1 contacto + 2 video_completed +
---     3 likes + 1 save. El like extra de D2 (2026-03-11) NO debe sumarse a D1 (SIGNALS2).
+--     3 likes + 1 save. El like extra de D2 (2026-03-11) NO debe sumarse a D1 (SIGNALS2,
+--     frontera superior). El video_completed + like extra de D0 (2026-03-09) NO deben sumarse
+--     a D1 tampoco (SIGNALS3, frontera inferior).
 create temp table result_func4 (label text, ok boolean, signals jsonb);
 do $$
 begin
@@ -529,6 +544,26 @@ select is(
   coalesce((select signals from result_func4b where label = 'd1_despues'), '{}'::jsonb),
   jsonb_build_object('video_completed', 2, 'likes', 3, 'saves', 1, 'contacts', 1),
   'SIGNALS2_el_like_extra_de_D2_NO_se_suma_al_conteo_de_D1'
+);
+
+-- Re-correr D1 con el video_completed + like extra de D0=2026-03-09 (día ANTERIOR) ya
+-- sembrados en events_raw/likes -- signals de D1 no debe cambiar (esa actividad vive en OTRO
+-- día, ANTES de v_day_start). Mata al mutante que elimina las 4 cotas `>= v_day_start`.
+create temp table result_func4c (label text, ok boolean, signals jsonb);
+do $$
+begin
+  perform public.snapshot_lead_temperature('2026-03-10'::date);
+  insert into result_func4c
+    select 'd1_con_actividad_previa', true, signals
+    from public.lead_temperature_daily where lead_id = '00000000-0000-0000-0000-000000266407' and day = '2026-03-10'::date;
+exception when others then
+  insert into result_func4c values ('d1_con_actividad_previa', false, null);
+end $$;
+
+select is(
+  coalesce((select signals from result_func4c where label = 'd1_con_actividad_previa'), '{}'::jsonb),
+  jsonb_build_object('video_completed', 2, 'likes', 3, 'saves', 1, 'contacts', 1),
+  'SIGNALS3_el_video_completed_y_like_extra_de_D0_NO_se_suman_al_conteo_de_D1'
 );
 
 -- 6g) BACKFILL — 14 llamadas para LBACK (current_date-13 .. current_date). count(*)=14,
@@ -598,9 +633,11 @@ begin
       perform public.snapshot_lead_temperature('2026-01-15'::date);
       select temperature into v_temp from public.lead_temperature_daily
         where lead_id = '00000000-0000-0000-0000-000000266404' and day = '2026-01-15'::date;
-      insert into result_tzday values (v_tz, true, v_temp);
+      -- reset role ANTES del insert: la temp table es del rol de sesión y
+      -- service_role no tiene privilegio sobre ella (fix del fixture, GREEN 266.3).
       reset role;
       set local timezone to 'UTC';
+      insert into result_tzday values (v_tz, true, v_temp);
     exception when others then
       insert into result_tzday values (v_tz, false, null);
       reset role;
