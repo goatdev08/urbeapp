@@ -36,7 +36,12 @@
  * - (EC-3) exito_mapea_las_filas_1_a_1
  *
  * ### 🔒 Privacidad — invariante de tipo (75.3/§7.5)
- * - (EC-4) las_filas_mapeadas_tienen_exactamente_las_7_claves_sin_identidad
+ * - (EC-4) las_filas_mapeadas_tienen_exactamente_las_7_claves_sin_identidad: la fila CRUDA
+ *   que la RPC podría llegar a devolver (por un bug en el SQL, o un cambio futuro) trae
+ *   `user_id`/`lead_id`/`email` contaminantes — el hook debe DESCARTARLAS explícitamente.
+ *   Un mapeo por spread (`{ ...row }`) pasaría los demás 11 tests (las fixtures del resto
+ *   ya vienen limpias) pero cae aquí: es el único test que ancla "mapeo explícito de 7
+ *   claves", no "mapeo de lo que sea que llegue".
  *
  * ### Boundary — p_limit nunca undefined
  * - (EC-5) limit_ausente_usa_el_default_20_explicito_en_la_llamada
@@ -100,6 +105,28 @@ const RADAR_ROW_2: CrmRadarRow = {
   last_activity_at: '2026-09-05T18:00:00Z',
 };
 
+/**
+ * Fila CRUDA (tal como podría llegar de la RPC) con claves CONTAMINANTES de
+ * identidad — `user_id`/`lead_id`/`email` — que 🔒 D-SIN-IDENTIDAD prohíbe
+ * exponer. `unknown` a propósito: `CrmRadarRow` (types.ts) NO declara estas
+ * claves, así que anclarla al tipo público ocultaría el propio caso que EC-4
+ * quiere cazar (un `as CrmRadarRow` recortaría la forma en el mock antes de
+ * que el hook tenga oportunidad de filtrarla).
+ */
+const RAW_ROW_CONTAMINADA: unknown = {
+  row_n: 1,
+  property_label: 'Av. Reforma 100',
+  temperature: 65,
+  delta: 20,
+  sparkline: [0, 0, 1, 2, 3, 4, 5, 6, 5, 4, 3, 2, 1, 0],
+  signals: { views: 4, completed: true, saved: false, liked: true },
+  last_activity_at: '2026-09-06T09:00:00Z',
+  // Contaminantes — NUNCA deben sobrevivir al mapeo del hook.
+  user_id: 'user-uuid-fuga-266-7',
+  lead_id: 'lead-uuid-fuga-266-7',
+  email: 'fuga@example.com',
+};
+
 function make_supabase_mock(
   rpc_impl: jest.Mock = jest.fn().mockResolvedValue({ data: [RADAR_ROW_1, RADAR_ROW_2], error: null }),
 ): MockSupabaseClient {
@@ -154,6 +181,13 @@ describe('useCrmRadarAnon', () => {
   });
 
   it('(EC-4) las_filas_mapeadas_tienen_exactamente_las_7_claves_sin_identidad', async () => {
+    // La fila CRUDA que la RPC devuelve trae user_id/lead_id/email colados —
+    // el hook debe descartarlas explícitamente (mapeo por spread las dejaría
+    // pasar, ver el comentario de RAW_ROW_CONTAMINADA arriba).
+    mock_supabase_holder.client = make_supabase_mock(
+      jest.fn().mockResolvedValue({ data: [RAW_ROW_CONTAMINADA], error: null }),
+    );
+
     const { result } = await renderHook(() => useCrmRadarAnon(AGENT_ID, 20));
 
     const EXPECTED_KEYS = [
@@ -166,11 +200,15 @@ describe('useCrmRadarAnon', () => {
       'last_activity_at',
     ].sort();
 
+    expect(result.current.data).toHaveLength(1);
     for (const row of result.current.data) {
       expect(Object.keys(row).sort()).toEqual(EXPECTED_KEYS);
       expect(Object.prototype.hasOwnProperty.call(row, 'user_id')).toBe(false);
       expect(Object.prototype.hasOwnProperty.call(row, 'lead_id')).toBe(false);
+      expect(Object.prototype.hasOwnProperty.call(row, 'email')).toBe(false);
     }
+    // La forma limpia esperada, byte a byte — no solo "sin esas 3 claves".
+    expect(result.current.data[0]).toEqual(RADAR_ROW_1);
   });
 
   it('(EC-5) limit_ausente_usa_el_default_20_explicito_en_la_llamada', async () => {
@@ -234,6 +272,20 @@ describe('useCrmRadarAnon', () => {
     expect(result.current.loading).toBe(false);
   });
 
+  // 🔴 HALLAZGO (guardian, 266.7, 2026-09-06): se intentó fortalecer este
+  // test para que discrimine el mutante "quitar mounted_ref/ignore" —
+  // verificado EMPÍRICAMENTE (probe de render-count en useCrmFunnel Y
+  // useCrmLeadsPage, con la bandera removida) que resolver la RPC DESPUÉS
+  // de unmount() NO produce un re-render ni cambia `result.current`, CON o
+  // SIN el guard: React 18+ detacha el fiber ya desmontado y silencia
+  // cualquier setState posterior sin warning (el aviso clásico "Can't
+  // perform a React state update on an unmounted component" se eliminó
+  // del framework) — no hay señal de caja negra que discrimine ese mutante
+  // específico en este entorno (RNTL/react-test-renderer). Se deja el
+  // assert existente (no lanza + sin console.error) porque SÍ protege otra
+  // regresión real (una excepción o un warning genuino al desmontar) — no
+  // se fuerza un candado vacío para el guard mounted_ref (instrucción
+  // explícita del guardian: "si no es discriminante, dilo y no fuerces").
   it('(EC-10) unmount_durante_llamada_en_vuelo_no_aplica_estado_sin_warning_act', async () => {
     let resolve_rpc!: (value: { data: CrmRadarRow[]; error: null }) => void;
     const pending = new Promise<{ data: CrmRadarRow[]; error: null }>((resolve) => {

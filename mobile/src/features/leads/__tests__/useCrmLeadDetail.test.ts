@@ -225,6 +225,20 @@ describe('useCrmLeadDetail', () => {
     expect(result.current.loading).toBe(false);
   });
 
+  // 🔴 HALLAZGO (guardian, 266.7, 2026-09-06): se intentó fortalecer este
+  // test para que discrimine el mutante "quitar mounted_ref/ignore" —
+  // verificado EMPÍRICAMENTE (probe de render-count en useCrmFunnel Y
+  // useCrmLeadsPage, con la bandera removida) que resolver la RPC DESPUÉS
+  // de unmount() NO produce un re-render ni cambia `result.current`, CON o
+  // SIN el guard: React 18+ detacha el fiber ya desmontado y silencia
+  // cualquier setState posterior sin warning (el aviso clásico "Can't
+  // perform a React state update on an unmounted component" se eliminó
+  // del framework) — no hay señal de caja negra que discrimine ese mutante
+  // específico en este entorno (RNTL/react-test-renderer). Se deja el
+  // assert existente (no lanza + sin console.error) porque SÍ protege otra
+  // regresión real (una excepción o un warning genuino al desmontar) — no
+  // se fuerza un candado vacío para el guard mounted_ref (instrucción
+  // explícita del guardian: "si no es discriminante, dilo y no fuerces").
   it('(EC-9) unmount_durante_llamada_en_vuelo_no_aplica_estado_sin_warning_act', async () => {
     let resolve_rpc!: (value: { data: CrmLeadDetail[]; error: null }) => void;
     const pending = new Promise<{ data: CrmLeadDetail[]; error: null }>((resolve) => {

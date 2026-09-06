@@ -384,14 +384,15 @@ export type Database = {
           agency_id: string
           created_at: string
           created_by_user_id: string | null
-          creative_id: string
-          cta_type: Database["public"]["Enums"]["ad_cta_type"]
-          cta_value: string
+          creative_id: string | null
+          cta_type: Database["public"]["Enums"]["ad_cta_type"] | null
+          cta_value: string | null
           description: string | null
           ends_at: string
           id: string
           paused_at: string | null
           paused_by_suspension: boolean
+          property_id: string | null
           purchase_id: string | null
           rejection_reason: string | null
           starts_at: string
@@ -403,14 +404,15 @@ export type Database = {
           agency_id: string
           created_at?: string
           created_by_user_id?: string | null
-          creative_id: string
-          cta_type: Database["public"]["Enums"]["ad_cta_type"]
-          cta_value: string
+          creative_id?: string | null
+          cta_type?: Database["public"]["Enums"]["ad_cta_type"] | null
+          cta_value?: string | null
           description?: string | null
           ends_at: string
           id?: string
           paused_at?: string | null
           paused_by_suspension?: boolean
+          property_id?: string | null
           purchase_id?: string | null
           rejection_reason?: string | null
           starts_at: string
@@ -422,14 +424,15 @@ export type Database = {
           agency_id?: string
           created_at?: string
           created_by_user_id?: string | null
-          creative_id?: string
-          cta_type?: Database["public"]["Enums"]["ad_cta_type"]
-          cta_value?: string
+          creative_id?: string | null
+          cta_type?: Database["public"]["Enums"]["ad_cta_type"] | null
+          cta_value?: string | null
           description?: string | null
           ends_at?: string
           id?: string
           paused_at?: string | null
           paused_by_suspension?: boolean
+          property_id?: string | null
           purchase_id?: string | null
           rejection_reason?: string | null
           starts_at?: string
@@ -459,6 +462,71 @@ export type Database = {
             referencedRelation: "ad_creatives"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "ads_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      advertising_requests: {
+        Row: {
+          agency_id: string
+          created_at: string
+          id: string
+          proposed_category: Database["public"]["Enums"]["advertiser_category"]
+          rejection_reason: string | null
+          requested_by_user_id: string
+          resolved_at: string | null
+          resolved_by_user_id: string | null
+          status: string
+        }
+        Insert: {
+          agency_id: string
+          created_at?: string
+          id?: string
+          proposed_category: Database["public"]["Enums"]["advertiser_category"]
+          rejection_reason?: string | null
+          requested_by_user_id: string
+          resolved_at?: string | null
+          resolved_by_user_id?: string | null
+          status?: string
+        }
+        Update: {
+          agency_id?: string
+          created_at?: string
+          id?: string
+          proposed_category?: Database["public"]["Enums"]["advertiser_category"]
+          rejection_reason?: string | null
+          requested_by_user_id?: string
+          resolved_at?: string | null
+          resolved_by_user_id?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "advertising_requests_agency_id_fkey"
+            columns: ["agency_id"]
+            isOneToOne: false
+            referencedRelation: "agencies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "advertising_requests_requested_by_user_id_fkey"
+            columns: ["requested_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "advertising_requests_resolved_by_user_id_fkey"
+            columns: ["resolved_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
         ]
       }
       agencies: {
@@ -478,6 +546,7 @@ export type Database = {
           id: string
           logo_url: string | null
           name: string
+          rejection_reason: string | null
           slug: string
           status: Database["public"]["Enums"]["agency_status"]
           updated_at: string
@@ -498,6 +567,7 @@ export type Database = {
           id?: string
           logo_url?: string | null
           name: string
+          rejection_reason?: string | null
           slug: string
           status?: Database["public"]["Enums"]["agency_status"]
           updated_at?: string
@@ -518,6 +588,7 @@ export type Database = {
           id?: string
           logo_url?: string | null
           name?: string
+          rejection_reason?: string | null
           slug?: string
           status?: Database["public"]["Enums"]["agency_status"]
           updated_at?: string
@@ -937,6 +1008,35 @@ export type Database = {
           },
           {
             foreignKeyName: "lead_status_history_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lead_temperature_daily: {
+        Row: {
+          day: string
+          lead_id: string
+          signals: Json
+          temperature: number
+        }
+        Insert: {
+          day: string
+          lead_id: string
+          signals?: Json
+          temperature: number
+        }
+        Update: {
+          day?: string
+          lead_id?: string
+          signals?: Json
+          temperature?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_temperature_daily_lead_id_fkey"
             columns: ["lead_id"]
             isOneToOne: false
             referencedRelation: "leads"
@@ -1780,6 +1880,70 @@ export type Database = {
           },
         ]
       }
+      user_reports: {
+        Row: {
+          created_at: string
+          id: string
+          reason: Database["public"]["Enums"]["property_report_reason"]
+          reason_text: string | null
+          reported_by_user_id: string
+          reported_user_id: string
+          resolution: string | null
+          reviewed_at: string | null
+          reviewed_by_admin_id: string | null
+          status: Database["public"]["Enums"]["property_report_status"]
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          reason: Database["public"]["Enums"]["property_report_reason"]
+          reason_text?: string | null
+          reported_by_user_id: string
+          reported_user_id: string
+          resolution?: string | null
+          reviewed_at?: string | null
+          reviewed_by_admin_id?: string | null
+          status?: Database["public"]["Enums"]["property_report_status"]
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          reason?: Database["public"]["Enums"]["property_report_reason"]
+          reason_text?: string | null
+          reported_by_user_id?: string
+          reported_user_id?: string
+          resolution?: string | null
+          reviewed_at?: string | null
+          reviewed_by_admin_id?: string | null
+          status?: Database["public"]["Enums"]["property_report_status"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_reports_reported_by_user_id_fkey"
+            columns: ["reported_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_reports_reported_user_id_fkey"
+            columns: ["reported_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_reports_reviewed_by_admin_id_fkey"
+            columns: ["reviewed_by_admin_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       users: {
         Row: {
           agency_id: string | null
@@ -1876,6 +2040,7 @@ export type Database = {
       agent_public_profiles: {
         Row: {
           full_name: string | null
+          has_phone: boolean | null
           profile_photo_url: string | null
           user_id: string | null
         }
@@ -1893,6 +2058,33 @@ export type Database = {
     Functions: {
       ad_metrics_for_agency: {
         Args: { p_agency_id: string; p_from?: string; p_to?: string }
+        Returns: {
+          cta_taps: number
+          impressions: number
+          municipality_id: string
+          neighborhood_id: number
+          views: number
+        }[]
+      }
+      ad_stats_daily: {
+        Args: { p_ad_id: string; p_from?: string; p_to?: string }
+        Returns: {
+          cta_taps: number
+          day: string
+          impressions: number
+          views: number
+        }[]
+      }
+      ad_stats_totals: {
+        Args: { p_ad_id: string; p_from?: string; p_to?: string }
+        Returns: {
+          cta_taps: number
+          impressions: number
+          views: number
+        }[]
+      }
+      ad_stats_zones: {
+        Args: { p_ad_id: string; p_from?: string; p_to?: string }
         Returns: {
           cta_taps: number
           impressions: number
@@ -1946,9 +2138,11 @@ export type Database = {
           cta_value: string
           description: string
           id: string
+          property_id: string
           title: string
         }[]
       }
+      check_rollup_health: { Args: never; Returns: undefined }
       create_ad_campaign_atomic: {
         Args: {
           p_creative_id: string
@@ -1960,6 +2154,65 @@ export type Database = {
           p_zones?: Json
         }
         Returns: string
+      }
+      create_advertising_request: {
+        Args: { p_proposed_category: string }
+        Returns: string
+      }
+      crm_funnel: {
+        Args: { p_agent_id: string; p_days?: number }
+        Returns: {
+          agendaron: number
+          contactaron: number
+          guardaron: number
+          vieron: number
+          volvieron: number
+        }[]
+      }
+      crm_lead_detail: {
+        Args: { p_lead_id: string }
+        Returns: {
+          origin_property: Json
+          other_properties: number
+          suggested_next_status: string
+        }[]
+      }
+      crm_leads_page: {
+        Args: {
+          p_agent_id: string
+          p_band?: string
+          p_cursor?: Json
+          p_limit?: number
+          p_query?: string
+        }
+        Returns: {
+          avatar_url: string
+          band: string
+          delta: number
+          full_name: string
+          last_activity_at: string
+          lead_id: string
+          next_cursor: Json
+          origin_property: Json
+          remaining: number
+          signals: Json
+          sparkline: number[]
+          status_projected: string
+          temperature: number
+          user_id: string
+        }[]
+      }
+      crm_radar_anon: {
+        Args: { p_agent_id: string; p_limit?: number }
+        Returns: {
+          delta: number
+          last_activity_at: string
+          property_label: string
+          row_n: number
+          signals: Json
+          sparkline: number[]
+          temperature: number
+        }[]
       }
       get_lead_stats: {
         Args: { p_lead_ids: string[] }
@@ -2002,6 +2255,23 @@ export type Database = {
           skipped: number
         }[]
       }
+      lead_activity: {
+        Args: { p_cursor?: string; p_lead_id: string; p_limit?: number }
+        Returns: {
+          detail: Json
+          kind: string
+          occurred_at: string
+        }[]
+      }
+      moderate_ad_atomic: {
+        Args: {
+          p_ad_id: string
+          p_admin_id: string
+          p_next_status: string
+          p_rejection_reason: string
+        }
+        Returns: number
+      }
       moderate_property_atomic: {
         Args: {
           p_action_type: string
@@ -2018,6 +2288,7 @@ export type Database = {
         }
         Returns: undefined
       }
+      notify_ads_expiring_soon: { Args: never; Returns: number }
       org_can_advertise: { Args: { p_agency_id: string }; Returns: boolean }
       pending_legal_consents: {
         Args: never
@@ -2025,6 +2296,29 @@ export type Database = {
           doc_type: string
           terms_version_id: string
           version: string
+        }[]
+      }
+      place_at_point: {
+        Args: { p_lat: number; p_lng: number }
+        Returns: {
+          context: string
+          id: string
+          kind: string
+          max_lat: number
+          max_lng: number
+          min_lat: number
+          min_lng: number
+          name: string
+        }[]
+      }
+      promote_property_atomic: {
+        Args: { p_property_id: string }
+        Returns: string
+      }
+      properties_within_municipality: {
+        Args: { p_municipality_id: string }
+        Returns: {
+          id: string
         }[]
       }
       properties_within_neighborhood: {
@@ -2068,6 +2362,16 @@ export type Database = {
         }[]
       }
       purge_ad_impressions: { Args: never; Returns: undefined }
+      purge_events_raw: { Args: never; Returns: undefined }
+      purge_notifications: { Args: never; Returns: undefined }
+      reassign_member_properties_atomic: {
+        Args: {
+          p_agency_id: string
+          p_from_user_id: string
+          p_to_user_id: string
+        }
+        Returns: number
+      }
       redeem_invitation_atomic: {
         Args: { p_ip?: unknown; p_token_id: string; p_user_id: string }
         Returns: {
@@ -2098,8 +2402,39 @@ export type Database = {
           neighborhood_id: number
         }[]
       }
+      resolve_advertising_request: {
+        Args: { p_approve: boolean; p_reason?: string; p_request_id: string }
+        Returns: undefined
+      }
+      resolve_agency_registration: {
+        Args: { p_agency_id: string; p_approve: boolean; p_reason?: string }
+        Returns: undefined
+      }
+      resolve_agent_application: {
+        Args: {
+          p_application_id: string
+          p_approve: boolean
+          p_reason?: string
+        }
+        Returns: undefined
+      }
+      resolve_property_reports_atomic: {
+        Args: {
+          p_action_type: string
+          p_admin_id: string
+          p_property_id: string
+          p_reason?: string
+        }
+        Returns: undefined
+      }
+      rollup_ad_impressions_monthly: { Args: never; Returns: undefined }
       search_places: {
-        Args: { p_limit?: number; p_query: string }
+        Args: {
+          p_lat?: number
+          p_limit?: number
+          p_lng?: number
+          p_query: string
+        }
         Returns: {
           context: string
           id: string
@@ -2111,12 +2446,30 @@ export type Database = {
           name: string
         }[]
       }
-      set_org_advertising_atomic: {
-        Args: {
-          p_agency_id: string
-          p_category?: Database["public"]["Enums"]["advertiser_category"]
-          p_enabled: boolean
-        }
+      set_agency_status_atomic: {
+        Args: { p_admin_id: string; p_agency_id: string; p_next_status: string }
+        Returns: number
+      }
+      set_org_advertising_atomic:
+        | {
+            Args: {
+              p_agency_id: string
+              p_category?: Database["public"]["Enums"]["advertiser_category"]
+              p_enabled: boolean
+            }
+            Returns: undefined
+          }
+        | {
+            Args: {
+              p_admin_id: string
+              p_agency_id: string
+              p_category: Database["public"]["Enums"]["advertiser_category"]
+              p_enabled: boolean
+            }
+            Returns: undefined
+          }
+      snapshot_lead_temperature: {
+        Args: { p_day?: string }
         Returns: undefined
       }
       switch_agency_atomic: {

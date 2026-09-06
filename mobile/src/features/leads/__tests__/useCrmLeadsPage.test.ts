@@ -56,6 +56,11 @@
  *
  * ### Paginación (molde useFeedProperties)
  * - (EC-4) load_more_manda_el_cursor_recibido_y_apenda_sin_reemplazar
+ * - (EC-14) tercera_pagina_dos_load_more_consecutivos_mandan_el_cursor_de_CADA_pagina_previa_
+ *   sin_duplicados: el mutante "solo actualizar el cursor cuando !append" sobrevive a EC-4
+ *   (que solo hace UN loadMore) — con dos loadMore consecutivos, el segundo debe mandar el
+ *   cursor que dejó la SEGUNDA página (no el de la primera); si no, en producción reenviaría
+ *   el cursor de la página 1 para siempre y duplicaría filas sin fin.
  * - (EC-5) refetch_reinicia_desde_null_y_reemplaza_data_no_apenda
  * - (EC-6) cambiar_band_reinicia_desde_null_y_reemplaza_data
  * - (EC-7) cambiar_query_reinicia_desde_null_y_reemplaza_data
@@ -169,6 +174,36 @@ const ROW_C_ULTIMA_PAGINA: RpcRow = {
   last_activity_at: '2026-09-03T08:00:00Z',
   origin_property: { property_id: 'prop-2', address: 'Calle Sur 20', contacted_at: '2026-08-30T09:00:00Z' },
   status_projected: 'visita',
+  next_cursor: null,
+  remaining: 0,
+};
+
+// ---------------------------------------------------------------------------
+// Fixtures — EC-14 (tercera página, 2 loadMore consecutivos). Cadena propia
+// (3 páginas, 3 cursores distintos) para no compartir estado con ROW_A/B/C.
+// ---------------------------------------------------------------------------
+
+const CURSOR_P2: RpcCursor = { as_of: '2026-09-06T12:00:00Z', temperature: 60, lead_id: 'lead-p2' };
+const CURSOR_P3: RpcCursor = { as_of: '2026-09-06T12:00:00Z', temperature: 30, lead_id: 'lead-p3' };
+
+const ROW_P1: RpcRow = {
+  ...ROW_A,
+  lead_id: 'lead-p1',
+  user_id: 'user-p1',
+  next_cursor: CURSOR_P2,
+  remaining: 2,
+};
+const ROW_P2: RpcRow = {
+  ...ROW_A,
+  lead_id: 'lead-p2',
+  user_id: 'user-p2',
+  next_cursor: CURSOR_P3,
+  remaining: 1,
+};
+const ROW_P3_ULTIMA: RpcRow = {
+  ...ROW_A,
+  lead_id: 'lead-p3',
+  user_id: 'user-p3',
   next_cursor: null,
   remaining: 0,
 };
@@ -298,6 +333,52 @@ describe('useCrmLeadsPage', () => {
     // Apenda: las 2 filas de la primera página siguen presentes + la nueva.
     expect(result.current.data).toHaveLength(3);
     expect(result.current.data.map((r) => r.lead_id)).toEqual(['lead-a', 'lead-b', 'lead-c']);
+    expect(result.current.hasMore).toBe(false);
+    expect(result.current.remaining).toBe(0);
+  });
+
+  it('(EC-14) tercera_pagina_dos_load_more_consecutivos_mandan_el_cursor_de_CADA_pagina_previa_sin_duplicados', async () => {
+    const rpc = jest
+      .fn()
+      .mockResolvedValueOnce({ data: [ROW_P1], error: null })
+      .mockResolvedValueOnce({ data: [ROW_P2], error: null })
+      .mockResolvedValueOnce({ data: [ROW_P3_ULTIMA], error: null });
+    mock_supabase_holder.client = make_supabase_mock(rpc);
+
+    const { result } = await renderHook(() => useCrmLeadsPage(AGENT_ID, null, null));
+    expect(result.current.data.map((r) => r.lead_id)).toEqual(['lead-p1']);
+
+    await act(async () => {
+      await result.current.loadMore();
+    });
+    expect(rpc).toHaveBeenNthCalledWith(2, 'crm_leads_page', {
+      p_agent_id: AGENT_ID,
+      p_band: null,
+      p_cursor: CURSOR_P2,
+      p_limit: 20,
+      p_query: null,
+    });
+    expect(result.current.data.map((r) => r.lead_id)).toEqual(['lead-p1', 'lead-p2']);
+
+    // El SEGUNDO loadMore es la clave del candado: debe mandar el cursor que
+    // dejó la SEGUNDA página (CURSOR_P3), NUNCA repetir CURSOR_P2 (el
+    // mutante "solo actualizar el cursor cuando !append" congela el ref en
+    // el valor de la PRIMERA página y este assert lo destapa).
+    await act(async () => {
+      await result.current.loadMore();
+    });
+    expect(rpc).toHaveBeenCalledTimes(3);
+    expect(rpc).toHaveBeenNthCalledWith(3, 'crm_leads_page', {
+      p_agent_id: AGENT_ID,
+      p_band: null,
+      p_cursor: CURSOR_P3,
+      p_limit: 20,
+      p_query: null,
+    });
+
+    // Las 3 páginas acumuladas, sin duplicados (un cursor repetido volvería
+    // a traer lead-p2 dos veces).
+    expect(result.current.data.map((r) => r.lead_id)).toEqual(['lead-p1', 'lead-p2', 'lead-p3']);
     expect(result.current.hasMore).toBe(false);
     expect(result.current.remaining).toBe(0);
   });
@@ -449,6 +530,20 @@ describe('useCrmLeadsPage', () => {
     expect(result.current.loading).toBe(false);
   });
 
+  // 🔴 HALLAZGO (guardian, 266.7, 2026-09-06): se intentó fortalecer este
+  // test para que discrimine el mutante "quitar mounted_ref/ignore" —
+  // verificado EMPÍRICAMENTE (probe de render-count en useCrmFunnel Y
+  // useCrmLeadsPage, con la bandera removida) que resolver la RPC DESPUÉS
+  // de unmount() NO produce un re-render ni cambia `result.current`, CON o
+  // SIN el guard: React 18+ detacha el fiber ya desmontado y silencia
+  // cualquier setState posterior sin warning (el aviso clásico "Can't
+  // perform a React state update on an unmounted component" se eliminó
+  // del framework) — no hay señal de caja negra que discrimine ese mutante
+  // específico en este entorno (RNTL/react-test-renderer). Se deja el
+  // assert existente (no lanza + sin console.error) porque SÍ protege otra
+  // regresión real (una excepción o un warning genuino al desmontar) — no
+  // se fuerza un candado vacío para el guard mounted_ref (instrucción
+  // explícita del guardian: "si no es discriminante, dilo y no fuerces").
   it('(EC-12) unmount_durante_llamada_en_vuelo_no_aplica_estado_sin_warning_act', async () => {
     let resolve_rpc!: (value: { data: RpcRow[]; error: null }) => void;
     const pending = new Promise<{ data: RpcRow[]; error: null }>((resolve) => {
