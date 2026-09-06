@@ -155,7 +155,7 @@ function make_mock_supabase_events(opts: {
 /** Filtra las llamadas a insert() por event_type, para aserciones de conteo. */
 function insert_calls_of_type(
   mock_insert: jest.Mock,
-  event_type: 'video_view' | 'video_completed',
+  event_type: 'video_view' | 'video_completed' | 'video_progress',
 ) {
   return mock_insert.mock.calls.filter(
     ([row]: [{ event_type: string }]) => row.event_type === event_type,
@@ -677,6 +677,260 @@ describe('useVideoEngagementEvents', () => {
     expect(mock_supabase._mock_from).not.toHaveBeenCalled();
     expect(console_error_spy).toHaveBeenCalled();
     console_error_spy.mockRestore();
+  });
+
+});
+
+// ---------------------------------------------------------------------------
+// AÑADIDO 268.1 — video_progress: máximo % de reproducción por (sesión, propiedad)
+//
+// SUT nuevo: report_progress() en el return del hook.
+//
+// Contrato (subtarea 268.1, decisión Abraham 2026-09-06):
+//   - report_time_update ADEMÁS actualiza el máximo de progreso en el store
+//     (bump_max_progress), en cada tick, independientemente de si completa.
+//   - report_progress(): si hay un máximo registrado para (session_id,
+//     property_id) y aún no se envió video_progress para esa clave, inserta
+//     UNA fila events_raw {event_type:'video_progress', payload:{progress}}
+//     con el MÁXIMO vigente y marca la clave como vista. Sin máximo
+//     registrado (nunca hubo timeUpdate) → NO inserta.
+//   - video_view/video_completed NO cambian de forma: siguen sin `payload`.
+//   - Fire-and-forget (nunca lanza) y fail-closed sin session_id, mismo
+//     patrón que report_view/report_time_update.
+//
+// EDGE CASES CUBIERTOS (8 casos):
+//
+// ### Happy path — progreso máximo se reporta una sola vez
+// - (EC-15) varios_timeupdate_luego_report_progress_inserta_el_maximo
+// - (EC-16) segunda_llamada_a_report_progress_no_duplica
+//
+// ### Boundary — sin progreso registrado
+// - (EC-17) sin_ningun_timeupdate_report_progress_no_inserta
+//
+// ### video_progress y video_completed son eventos DISTINTOS (contexto 268.1)
+// - (EC-18) completar_e_progresar_generan_dos_filas_distintas
+//
+// ### Fail-closed / fire-and-forget
+// - (EC-19) sin_sesion_report_progress_no_escribe_y_loggea_sin_user_id
+// - (EC-20) insert_de_video_progress_que_rechaza_no_rompe
+//
+// ### Dedupe compartido entre instancias (reciclaje de FlashList)
+// - (EC-21) store_compartido_entre_instancias_un_solo_video_progress
+//
+// ### Forma de los eventos existentes NO cambia
+// - (EC-22) video_view_y_video_completed_siguen_sin_payload
+// ---------------------------------------------------------------------------
+
+describe('useVideoEngagementEvents — video_progress (268.1)', () => {
+
+  // ── (EC-15) Happy path — el máximo se reporta al pedir report_progress ──
+
+  it('(EC-15) varios_timeupdate_luego_report_progress_inserta_el_maximo: report_time_update(10,60), (40,60), (20,60) [máximo=66%] → report_progress() inserta UNA fila video_progress con payload.progress===66', async () => {
+    const mock_supabase = make_mock_supabase_events();
+    const { result } = await renderHook(() =>
+      useVideoEngagementEvents({
+        property_id: TEST_PROPERTY_ID,
+        property_video_id: TEST_PROPERTY_VIDEO_ID,
+        session_id: TEST_SESSION_ID,
+        supabase: mock_supabase,
+      })
+    );
+
+    await act(async () => {
+      await result.current.report_time_update(10, 60);
+      await result.current.report_time_update(40, 60);
+      await result.current.report_time_update(20, 60);
+      await result.current.report_progress();
+    });
+
+    const progress_calls = insert_calls_of_type(mock_supabase._mock_insert, 'video_progress');
+    expect(progress_calls).toHaveLength(1);
+    expect(progress_calls[0]![0]).toEqual(
+      expect.objectContaining({
+        event_type: 'video_progress',
+        user_id: TEST_USER_ID,
+        property_id: TEST_PROPERTY_ID,
+        property_video_id: TEST_PROPERTY_VIDEO_ID,
+        session_id: TEST_SESSION_ID,
+        payload: { progress: 66 },
+      })
+    );
+  });
+
+  // ── (EC-16) Dedupe — segunda llamada a report_progress no duplica ───────
+
+  it('(EC-16) segunda_llamada_a_report_progress_no_duplica: tras un report_progress() ya insertado, una SEGUNDA llamada → 0 inserts nuevos de video_progress', async () => {
+    const mock_supabase = make_mock_supabase_events();
+    const { result } = await renderHook(() =>
+      useVideoEngagementEvents({
+        property_id: TEST_PROPERTY_ID,
+        property_video_id: TEST_PROPERTY_VIDEO_ID,
+        session_id: TEST_SESSION_ID,
+        supabase: mock_supabase,
+      })
+    );
+
+    await act(async () => {
+      await result.current.report_time_update(30, 60);
+      await result.current.report_progress();
+      await result.current.report_progress();
+    });
+
+    expect(insert_calls_of_type(mock_supabase._mock_insert, 'video_progress')).toHaveLength(1);
+  });
+
+  // ── (EC-17) Sin timeUpdate — report_progress no inserta ──────────────────
+
+  it('(EC-17) sin_ningun_timeupdate_report_progress_no_inserta: report_progress() llamado SIN ningún report_time_update previo (nunca hubo máximo registrado) → NO inserta video_progress', async () => {
+    const mock_supabase = make_mock_supabase_events();
+    const { result } = await renderHook(() =>
+      useVideoEngagementEvents({
+        property_id: TEST_PROPERTY_ID,
+        property_video_id: TEST_PROPERTY_VIDEO_ID,
+        session_id: TEST_SESSION_ID,
+        supabase: mock_supabase,
+      })
+    );
+
+    await act(async () => {
+      await result.current.report_progress();
+    });
+
+    expect(insert_calls_of_type(mock_supabase._mock_insert, 'video_progress')).toHaveLength(0);
+    expect(mock_supabase._mock_from).not.toHaveBeenCalled();
+  });
+
+  // ── (EC-18) video_completed y video_progress son eventos distintos ──────
+
+  it('(EC-18) completar_e_progresar_generan_dos_filas_distintas: report_time_update(58,60) [95.67%, cruza el umbral de compleción] inserta video_completed SIN payload; luego report_progress() inserta video_progress con payload.progress===96 — DOS filas distintas', async () => {
+    const mock_supabase = make_mock_supabase_events();
+    const { result } = await renderHook(() =>
+      useVideoEngagementEvents({
+        property_id: TEST_PROPERTY_ID,
+        property_video_id: TEST_PROPERTY_VIDEO_ID,
+        session_id: TEST_SESSION_ID,
+        supabase: mock_supabase,
+      })
+    );
+
+    await act(async () => {
+      await result.current.report_time_update(58, 60);
+      await result.current.report_progress();
+    });
+
+    const completed_calls = insert_calls_of_type(mock_supabase._mock_insert, 'video_completed');
+    const progress_calls = insert_calls_of_type(mock_supabase._mock_insert, 'video_progress');
+    expect(completed_calls).toHaveLength(1);
+    expect(completed_calls[0]![0]).not.toHaveProperty('payload');
+    expect(progress_calls).toHaveLength(1);
+    expect(progress_calls[0]![0]).toEqual(
+      expect.objectContaining({ payload: { progress: 96 } })
+    );
+  });
+
+  // ── (EC-19) Sin sesión — report_progress no escribe ni expone PII ───────
+
+  it('(EC-19) sin_sesion_report_progress_no_escribe_y_loggea_sin_user_id: session_id vacío (fail-closed) → report_progress() NO llama from("events_raw"), no lanza, loggea con console.error SIN incluir el user_id en el mensaje', async () => {
+    const console_error_spy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const mock_supabase = make_mock_supabase_events();
+    const { result } = await renderHook(() =>
+      useVideoEngagementEvents({
+        property_id: TEST_PROPERTY_ID,
+        property_video_id: TEST_PROPERTY_VIDEO_ID,
+        session_id: '',
+        supabase: mock_supabase,
+      })
+    );
+
+    await act(async () => {
+      await result.current.report_progress();
+    });
+
+    expect(mock_supabase._mock_from).not.toHaveBeenCalled();
+    expect(console_error_spy).toHaveBeenCalled();
+    const logged_text = console_error_spy.mock.calls.map((args) => args.join(' ')).join(' | ');
+    expect(logged_text).not.toContain(TEST_USER_ID);
+    console_error_spy.mockRestore();
+  });
+
+  // ── (EC-20) Fire-and-forget — INSERT de video_progress rechaza ──────────
+
+  it('(EC-20) insert_de_video_progress_que_rechaza_no_rompe: el INSERT del video_progress RECHAZA la promesa (fallo fatal de red) → report_progress() NO lanza, se loggea con console.error', async () => {
+    const console_error_spy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const mock_insert = jest
+      .fn()
+      .mockReturnValue(make_rejecting_insert_builder(new Error('network fatal')));
+    const mock_supabase = { from: jest.fn().mockReturnValue({ insert: mock_insert }) };
+
+    const { result } = await renderHook(() =>
+      useVideoEngagementEvents({
+        property_id: TEST_PROPERTY_ID,
+        property_video_id: TEST_PROPERTY_VIDEO_ID,
+        session_id: TEST_SESSION_ID,
+        supabase: mock_supabase,
+      })
+    );
+
+    await act(async () => {
+      await result.current.report_time_update(30, 60);
+      await expect(result.current.report_progress()).resolves.toBeUndefined();
+    });
+
+    expect(console_error_spy).toHaveBeenCalled();
+    console_error_spy.mockRestore();
+  });
+
+  // ── (EC-21) Store compartido entre instancias (reciclaje de FlashList) ──
+
+  it('(EC-21) store_compartido_entre_instancias_un_solo_video_progress: 2 instancias del hook con el MISMO store y (session_id, property_id) — la 1ª acumula progreso e inserta video_progress; la 2ª (sin ticks propios) llama report_progress() de nuevo → 0 inserts nuevos (dedupe por store compartido)', async () => {
+    const shared_store = create_video_engagement_store();
+    const mock_supabase = make_mock_supabase_events();
+    const hook_opts = {
+      property_id: TEST_PROPERTY_ID,
+      property_video_id: TEST_PROPERTY_VIDEO_ID,
+      session_id: TEST_SESSION_ID,
+      supabase: mock_supabase,
+      store: shared_store,
+    };
+
+    const first = await renderHook(() => useVideoEngagementEvents(hook_opts));
+    await act(async () => {
+      await first.result.current.report_time_update(45, 60);
+      await first.result.current.report_progress();
+    });
+
+    const second = await renderHook(() => useVideoEngagementEvents(hook_opts));
+    await act(async () => {
+      await second.result.current.report_progress();
+    });
+
+    expect(insert_calls_of_type(mock_supabase._mock_insert, 'video_progress')).toHaveLength(1);
+  });
+
+  // ── (EC-22) Forma de video_view/video_completed intacta ─────────────────
+
+  it('(EC-22) video_view_y_video_completed_siguen_sin_payload: report_view() y report_time_update(40,40) (compleción) insertan SIN la clave `payload` — el contrato viejo de events_raw no cambia de forma', async () => {
+    const mock_supabase = make_mock_supabase_events();
+    const { result } = await renderHook(() =>
+      useVideoEngagementEvents({
+        property_id: TEST_PROPERTY_ID,
+        property_video_id: TEST_PROPERTY_VIDEO_ID,
+        session_id: TEST_SESSION_ID,
+        supabase: mock_supabase,
+      })
+    );
+
+    await act(async () => {
+      await result.current.report_view();
+      await result.current.report_time_update(40, 40);
+    });
+
+    const view_calls = insert_calls_of_type(mock_supabase._mock_insert, 'video_view');
+    const completed_calls = insert_calls_of_type(mock_supabase._mock_insert, 'video_completed');
+    expect(view_calls).toHaveLength(1);
+    expect(completed_calls).toHaveLength(1);
+    expect(view_calls[0]![0]).not.toHaveProperty('payload');
+    expect(completed_calls[0]![0]).not.toHaveProperty('payload');
   });
 
 });

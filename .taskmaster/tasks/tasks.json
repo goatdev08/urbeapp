@@ -11734,7 +11734,7 @@
         "description": "Empezar a registrar las señales que el modelo de temperatura necesita y hoy no existen, en el orden decidido: 1º % de reproducción en video_completed (payload.progress), 2º zone_search desde el mapa, más contact_repeat en contact-agent (rama inserted === false) y la escritura real de leads.last_contact_at. El histórico empieza el día que se publica.",
         "details": ".taskmaster/docs/exploraciones/045-rediseno-crm-santiago.md: §6.8 y §7.2, §14 T-C (6 asserts). events_raw.event_type es text libre y payload es jsonb con default → cero migración de enum; solo índices.\nArchivos previstos: mobile/src/features/feed/hooks/useVideoEngagementEvents.ts · mobile/src/features/feed/lib/videoEngagementDedupe.ts · mobile/src/features/map/ (zone_search) · supabase/functions/contact-agent/index.ts (rama inserted === false, index.ts:78-82) · supabase/functions/update-lead-status/ (last_contact_at) · migración de índices.\nReglas no obvias: p.timeUpdateEventInterval > 0 o la feature está MUERTA — el assert que lo ancla es intocable · dedupe a nivel de módulo (FlashList recicla) y deps por property.id, no por player · fail-closed sin session_id · fire-and-forget que nunca rompe la reproducción · ver video en pruebas quema cuota de Stream: verificar y PARAR.\nChecklist §0.5: aditivo · contact-agent conserva su contrato (solo añade un INSERT interno) · captura sale por OTA.\nDERIVADAS: #273 (señal de inactividad app_open / last_seen)",
         "testStrategy": "TDD estricto (lib/, hooks/, supabase/functions/**). Jest para el dedupe y payload.progress; Deno para contact-agent (1er contacto → sin evento; 2º misma propiedad → 1 evento; otra propiedad → fila en lead_origin_properties y NO contact_repeat). pgTAP para el índice y para que la fórmula siga siendo aditiva. Criterios: .taskmaster/docs/exploraciones/045-rediseno-crm-santiago.md §14 T-C.",
-        "status": "pending",
+        "status": "in-progress",
         "dependencies": [
           "266"
         ],
@@ -11744,13 +11744,14 @@
             "id": 1,
             "title": "video_progress: máximo % de reproducción por sesión+propiedad en la captura del feed",
             "description": "DECIDIDO (Abraham, 2026-09-06): evento nuevo video_progress con payload.progress = máximo alcanzado (entero 0–100), UNO por (sesión, propiedad), escrito al desactivarse el ítem (isActive → false) o al reciclarse hacia otra property. video_completed queda intacto como señal ×10 (se escribe solo al cruzar el 95 %, por eso un progress ahí siempre valdría ~95–100 y no informaría nada). Descartado: payload.progress dentro de video_completed.",
-            "details": "Footprint: mobile/src/features/feed/lib/videoEngagementDedupe.ts (store: max_progress por clave (session_id, property_id), monotónico) · mobile/src/features/feed/hooks/useVideoEngagementEvents.ts (report_time_update actualiza el máximo en cada tick; nuevo report_progress() escribe video_progress una vez por (sesión, propiedad) con payload {progress}; insert_event acepta payload) · mobile/src/features/feed/components/VideoFeedItem.tsx (disparo de report_progress al desactivarse y en el cleanup del efecto por reciclaje; deps por property.id — líneas 291-335 fijadas por el guardian de 112.2, no re-aprender esa lección). Reglas: p.timeUpdateEventInterval > 0 INTOCABLE (assert existente) · dedupe a nivel de módulo (FlashList recicla) · fail-closed sin session_id · fire-and-forget que nunca rompe la reproducción · sin PII en logs. Escritura directa a events_raw con RLS (user_id = auth.uid()), igual que hoy. Sale por OTA.\n<info added on 2026-09-06T22:49:56.595Z>\nPLAN: approach=evento nuevo `video_progress` con payload {progress: máximo entero 0–100} — uno por (sesión, propiedad), escrito al desactivarse el ítem o al reciclarse (cleanup del efecto); el store de dedupe guarda el máximo monotónico por (session_id, property_id); `video_completed` intacto como señal ×10 · decisiones del usuario=Abraham (2026-09-06) eligió el evento propio sobre el literal del doc (`payload.progress` en `video_completed`, que siempre valdría ~95–100 porque ese evento solo se escribe al cruzar el 95 %) · agente=mobile · skills=urbea-expo, urbea-testing · criticidad=crítica (mobile/**/lib/videoEngagementDedupe.ts, mobile/**/hooks/useVideoEngagementEvents.ts) · impacto-prod=sin riesgo (payload jsonb con default; aditivo; sale por OTA) · footprint=mobile/src/features/feed/lib/videoEngagementDedupe.ts · mobile/src/features/feed/hooks/useVideoEngagementEvents.ts · mobile/src/features/feed/components/VideoFeedItem.tsx · mobile/src/features/feed/__tests__/videoEngagementDedupe.test.ts · mobile/src/features/feed/__tests__/useVideoEngagementEvents.test.tsx · invariantes=p.timeUpdateEventInterval > 0 INTOCABLE (assert existente) · dedupe a nivel de módulo (FlashList recicla) · deps del listener por property.id (lección del guardian 112.2, L291-335) · fail-closed sin session_id · fire-and-forget que nunca rompe la reproducción · sin PII en logs · orden=1ª de 6.\n</info added on 2026-09-06T22:49:56.595Z>",
+            "details": "Footprint: mobile/src/features/feed/lib/videoEngagementDedupe.ts (store: max_progress por clave (session_id, property_id), monotónico) · mobile/src/features/feed/hooks/useVideoEngagementEvents.ts (report_time_update actualiza el máximo en cada tick; nuevo report_progress() escribe video_progress una vez por (sesión, propiedad) con payload {progress}; insert_event acepta payload) · mobile/src/features/feed/components/VideoFeedItem.tsx (disparo de report_progress al desactivarse y en el cleanup del efecto por reciclaje; deps por property.id — líneas 291-335 fijadas por el guardian de 112.2, no re-aprender esa lección). Reglas: p.timeUpdateEventInterval > 0 INTOCABLE (assert existente) · dedupe a nivel de módulo (FlashList recicla) · fail-closed sin session_id · fire-and-forget que nunca rompe la reproducción · sin PII en logs. Escritura directa a events_raw con RLS (user_id = auth.uid()), igual que hoy. Sale por OTA.\n<info added on 2026-09-06T22:49:56.595Z>\nPLAN: approach=evento nuevo `video_progress` con payload {progress: máximo entero 0–100} — uno por (sesión, propiedad), escrito al desactivarse el ítem o al reciclarse (cleanup del efecto); el store de dedupe guarda el máximo monotónico por (session_id, property_id); `video_completed` intacto como señal ×10 · decisiones del usuario=Abraham (2026-09-06) eligió el evento propio sobre el literal del doc (`payload.progress` en `video_completed`, que siempre valdría ~95–100 porque ese evento solo se escribe al cruzar el 95 %) · agente=mobile · skills=urbea-expo, urbea-testing · criticidad=crítica (mobile/**/lib/videoEngagementDedupe.ts, mobile/**/hooks/useVideoEngagementEvents.ts) · impacto-prod=sin riesgo (payload jsonb con default; aditivo; sale por OTA) · footprint=mobile/src/features/feed/lib/videoEngagementDedupe.ts · mobile/src/features/feed/hooks/useVideoEngagementEvents.ts · mobile/src/features/feed/components/VideoFeedItem.tsx · mobile/src/features/feed/__tests__/videoEngagementDedupe.test.ts · mobile/src/features/feed/__tests__/useVideoEngagementEvents.test.tsx · invariantes=p.timeUpdateEventInterval > 0 INTOCABLE (assert existente) · dedupe a nivel de módulo (FlashList recicla) · deps del listener por property.id (lección del guardian 112.2, L291-335) · fail-closed sin session_id · fire-and-forget que nunca rompe la reproducción · sin PII en logs · orden=1ª de 6.\n</info added on 2026-09-06T22:49:56.595Z>\n<info added on 2026-09-06T23:10:34.862Z>\nFASE RED — 268.1 (test-author)\n\nSEAMS (interfaz bajo test):\n- mobile/src/features/feed/lib/videoEngagementDedupe.ts: `compute_progress_percent(current_time, duration): number | null` (export nuevo) · store.`get_max_progress(session_id, property_id): number | null` · store.`bump_max_progress(session_id, property_id, progress): number` (extensión de VideoEngagementStore) — namespace independiente de has_seen/mark_seen.\n- mobile/src/features/feed/hooks/useVideoEngagementEvents.ts: `report_progress(): Promise<void>` (nuevo, en el return del hook) + `report_time_update` actualiza el máximo internamente (efecto observable: report_progress() posterior refleja ese máximo) · contrato existente `insert_event` para video_view/video_completed SIN `payload` (assert de no-regresión).\n- mobile/src/features/feed/components/VideoFeedItem.tsx: disparo de `report_progress()` de la instancia al desactivarse (isActive→false) y al reciclarse hacia otra property (cleanup del efecto) — verificación ligera (no crítico por path), 2 casos añadidos al patrón ya existente de VideoFeedItem.test.tsx.\n\nNo se tocó ningún seam de Edge Function ni RLS (fuera de footprint de esta subtarea).\n\nARCHIVOS TOCADOS (solo tests + fixtures del mock; CERO lógica de negocio):\n- mobile/src/features/feed/__tests__/videoEngagementDedupe.test.ts (+18 tests, EC-16..EC-33)\n- mobile/src/features/feed/__tests__/useVideoEngagementEvents.test.tsx (+8 tests, EC-15..EC-22; helper `insert_calls_of_type` amplió su union type a incluir 'video_progress')\n- mobile/src/features/feed/__tests__/VideoFeedItem.test.tsx (+2 tests, 268.1-a/268.1-b; el mock factory de useVideoEngagementEvents ahora también devuelve `report_progress: jest.fn()`)\n\nNo se necesitó ningún stub de producción: jest-expo usa babel (sin type-check), así que una función/propiedad ausente resuelve a `undefined` en runtime y el propio `TypeError: X is not a function` al invocarla YA es la falla en rojo por excepción — no por import roto. Verificado: los 41 tests preexistentes (112.2) siguen en verde.\n\nEDGE CASES (RED):\n\n### Happy path\n- compute_progress_percent(30,60) === 50 (EC-16)\n- compute_progress_percent(60,60) === 100, fin exacto (EC-18)\n- compute_progress_percent(0,60) === 0, inicio exacto (EC-19)\n- store.bump_max_progress(...,40) primer bump establece y devuelve el máximo (EC-29)\n- hook: varios report_time_update(10/60,40/60,20/60) → report_progress() inserta 1 fila video_progress con payload.progress===66 (EC-15, hook)\n\n### Edge cases del PRD / contrato explícito de la subtarea (decisión Abraham 2026-09-06, sin PRD §)\n- report_time_update(58,60) [95.67%, cruza 0.95] sigue insertando video_completed SIN payload, y report_progress() después inserta video_progress con progress=96 — DOS filas distintas (EC-18, hook)\n- video_view y video_completed NO cambian de forma: siguen insertándose SIN la clave `payload` (EC-22, hook — assert de no-regresión, actualmente en VERDE por diseño, debe seguir verde tras el GREEN)\n- store compartido entre 2 instancias del hook (mismo session_id+property_id, simula reciclaje FlashList) → UN SOLO video_progress (EC-21, hook)\n- VideoFeedItem dispara report_progress() de la instancia SALIENTE al desactivarse (268.1-a) y al reciclarse hacia otra property antes de que la vieja desaparezca (268.1-b)\n\n### Ramas de reglas no obvias\n- fraccion_se_trunca_por_piso_no_redondeo: (59.9,60) === 99, NO 100 — Math.floor, NUNCA Math.round (EC-17)\n- excede_la_duracion_se_clampa_a_cien: (70,60) === 100, nunca > 100 (EC-20)\n- bump_con_valor_menor_no_baja_el_maximo: máximo en 40, bump con 20 → sigue 40 — monotonicidad (EC-30)\n- bump_con_valor_mayor_si_sube_el_maximo: 40→90 (EC-31)\n- claves_de_progreso_independientes_por_sesion_y_propiedad (EC-32)\n- claves_de_progreso_no_colisionan_con_has_seen_mark_seen: mark_seen('video_view') no setea máximo; bump_max_progress no marca has_seen('video_view') (EC-33)\n- segunda_llamada_a_report_progress_no_duplica: dedupe interno vía has_seen('video_progress') (EC-16, hook)\n- sin_ningun_timeupdate_report_progress_no_inserta: sin máximo registrado, report_progress() NO llama from() (EC-17, hook)\n\n### Boundary / error\n- duration_cero_es_null, duration_negativa_es_null, duration_infinita_es_null, duration_nan_es_null (EC-21..EC-24)\n- current_time_nan_es_null, current_time_negativo_es_null, current_time_infinito_es_null (EC-25..EC-27)\n- sin_bump_previo_el_maximo_es_null: get_max_progress === null antes del primer bump (EC-28)\n- hook: sin_sesion_report_progress_no_escribe_y_loggea_sin_user_id — fail-closed, console.error SIN el user_id en el mensaje (EC-19, hook)\n- hook: insert_de_video_progress_que_rechaza_no_rompe — fire-and-forget, `await expect(...).resolves` (EC-20, hook)\n\nVERIFICACIÓN (salida real, jest sobre los 3 archivos):\nTest Suites: 3 failed, 3 total\nTests:       27 failed, 41 passed, 68 total\n— los 27 fallos son TODOS de los tests NUEVOS de 268.1 (TypeError: X is not a function, o diffs de aserción `toHaveBeenCalledTimes`); los 41 preexistentes de 112.2 (incluido EC-22 nuevo, que ya pasa por diseño) siguen en verde. Ninguna falla por error de import/tsc.\n\nPENDIENTE para GREEN: implementar compute_progress_percent, get_max_progress/bump_max_progress en videoEngagementDedupe.ts; report_progress + bump interno en report_time_update en useVideoEngagementEvents.ts (insert_event debe aceptar payload opcional); disparo de report_progress al desactivarse/reciclarse en VideoFeedItem.tsx (mismo patrón L291-335, deps por property.id).\n</info added on 2026-09-06T23:10:34.862Z>",
             "testStrategy": "TDD estricto (lib/, hooks/). Jest: progress real con timeUpdate simulado (0.92 → 92) · máximo monotónico (0.92 luego 0.40 → 92) · una fila video_progress por (sesión, propiedad) · sesión nueva vuelve a contar · sin ticks no escribe (progress 0 no genera fila) · sin session_id / sin user no escribe · error de INSERT no propaga · video_completed sigue escribiéndose igual · el assert de timeUpdateEventInterval > 0 sigue en verde. Mutación: quitar el máximo, el dedupe o el disparo al desactivar debe matar tests.",
-            "status": "pending",
+            "status": "in-progress",
             "dependencies": [],
             "priority": "medium",
             "subtasks": [],
-            "updatedAt": "2026-09-06T22:49:56.595Z"
+            "updatedAt": "2026-09-06T23:10:34.862Z",
+            "parentId": "undefined"
           },
           {
             "id": 2,
@@ -11762,7 +11763,8 @@
             "dependencies": [],
             "priority": "medium",
             "subtasks": [],
-            "updatedAt": "2026-09-06T22:49:56.672Z"
+            "updatedAt": "2026-09-06T22:49:56.672Z",
+            "parentId": "undefined"
           },
           {
             "id": 3,
@@ -11776,7 +11778,8 @@
             ],
             "priority": "medium",
             "subtasks": [],
-            "updatedAt": "2026-09-06T22:49:56.751Z"
+            "updatedAt": "2026-09-06T22:49:56.751Z",
+            "parentId": "undefined"
           },
           {
             "id": 4,
@@ -11788,7 +11791,8 @@
             "dependencies": [],
             "priority": "medium",
             "subtasks": [],
-            "updatedAt": "2026-09-06T22:49:56.828Z"
+            "updatedAt": "2026-09-06T22:49:56.828Z",
+            "parentId": "undefined"
           },
           {
             "id": 5,
@@ -11800,7 +11804,8 @@
             "dependencies": [],
             "priority": "medium",
             "subtasks": [],
-            "updatedAt": "2026-09-06T22:49:56.907Z"
+            "updatedAt": "2026-09-06T22:49:56.907Z",
+            "parentId": "undefined"
           },
           {
             "id": 6,
@@ -11818,10 +11823,11 @@
             ],
             "priority": "medium",
             "subtasks": [],
-            "updatedAt": "2026-09-06T22:49:56.991Z"
+            "updatedAt": "2026-09-06T22:49:56.991Z",
+            "parentId": "undefined"
           }
         ],
-        "updatedAt": "2026-09-06T22:49:56.991Z"
+        "updatedAt": "2026-09-06T23:10:34.862Z"
       },
       {
         "id": "269",
@@ -11925,7 +11931,7 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-09-06T22:26:45.260Z",
+      "lastModified": "2026-09-06T23:05:03.134Z",
       "taskCount": 275,
       "completedCount": 193,
       "tags": [
