@@ -98,7 +98,11 @@ export const PropertyGridCard = React.memo(function PropertyGridCard({ item, onP
     >
       {cover_uri !== null ? (
         <Image
-          source={{ uri: cover_uri }}
+          // #265: posterUrl es una URL FIRMADA de Stream (mint-poster-urls, TTL 4 h)
+          // que cambia en cada llamada; sin cacheKey estable expo-image nunca
+          // acertaba el disco y la grilla volvía a bajar cada portada (misma
+          // causa que #263 en los avatares).
+          source={{ uri: cover_uri, cacheKey: `grid-poster-${item.id}` }}
           style={StyleSheet.absoluteFill}
           contentFit="cover"
           transition={200}

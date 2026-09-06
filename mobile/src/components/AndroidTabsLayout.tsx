@@ -135,9 +135,14 @@ export function AndroidTabsLayout() {
           tabBarIcon: tab_icon(BookmarkSimple),
         }}
       />
+      {/* #265: el perfil propio se monta AL ARRANCAR (lazy:false), no al primer
+          toque. Sus cinco consultas y la foto corren en paralelo con el feed, y
+          al cambiar de tab la pantalla ya está lista; en iOS NativeTabs monta
+          todos los tabs de entrada, así que esto solo iguala Android. Con
+          freezeOnBlur sigue congelada mientras no se ve. */}
       <Tabs.Screen
         name="profile"
-        options={{ title: 'Perfil', tabBarIcon: tab_icon(UserCircle) }}
+        options={{ title: 'Perfil', tabBarIcon: tab_icon(UserCircle), lazy: false }}
       />
     </Tabs>
   );
