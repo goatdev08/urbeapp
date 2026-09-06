@@ -30,7 +30,7 @@ actualizado: 2026-08-08
 | Guardados | `saves` | solo admin (idem) |
 | Notificaciones | `notifications` | solo admin |
 | Solicitud de alta como agente | `agent_applications` | solo admin |
-| **Comportamiento de video** (`video_view`, `video_completed`, `app_open`) | `events_raw` | admin · **el agente/owner/admin de agencia SOLO si esa persona es su lead activo Y la propiedad es de ese agente** (`can_view_user_events`) |
+| **Comportamiento de video** (`video_view`, `video_completed`; `app_open` **no existe** como evento hoy — corrección 2026-09-06, doc 045 §21) | `events_raw` | admin · **el agente/owner/admin de agencia SOLO si esa persona es su lead activo Y la propiedad es de ese agente** (`can_view_user_events`) |
 | Lead (estado, notas internas del agente, puntaje) | `leads` | el agente dueño · owner/admin de su agencia · admin |
 | Historial de cambios de estado del lead | `lead_status_history` | quien pueda ver el lead. Append-only por trigger |
 
@@ -62,3 +62,15 @@ Lección: **abrir una tabla de comportamiento a la lectura es un acto de privaci
 - 🟡 **El aviso de privacidad vigente es un placeholder de 113 caracteres** que personas reales ya aceptaron. El borrador completo vive en `docs/aviso-privacidad.md`; activarlo requiere revisión legal y fuerza re-consentimiento a todos ([[legal-consentimientos]]).
 
 Ver [[rls-seguridad]] · [[crm-leads]] · [[legal-consentimientos]] · [[roles-y-permisos]]
+
+## Radar anónimo del CRM (#266.6, exploración 045 §7.5) — la forma exacta de la fuga 75.3, cerrada por diseño
+`crm_radar_anon(p_agent_id, p_limit)` muestra al agente "hay señal, no hay persona": gente **sin lead** con Δ>0 sobre sus propiedades. Cuatro invariantes, cada uno con un assert que muere ante su mutante (pgTAP 104, guardian 2026-09-06):
+1. **Ninguna columna capaz de portar identidad** — 7 columnas fijas (`row_n, property_label, temperature, delta, sparkline, signals, last_activity_at`); `property_label` es la dirección de la propiedad **del agente**, no de la persona.
+2. **`row_n` no es identificador estable** — `random()` al final del `order by`.
+3. **k-anonimato POR PROPIEDAD** con `count(distinct user_id) ≥ crm_anon_min_viewers` (3) **sobre el conjunto YA filtrado sin lead** — nunca sobre el tráfico total: con 3 espectadores de los que 2 son leads, contar el total dejaría al agente deducir al único anónimo por sustracción (la fuga 75.3 en su forma exacta).
+4. **Quien ya es lead activo del agente no sale** (se ve con nombre en su banda).
+Además: solo Δ>0 (quien solo vio el video tiene temperatura 0 y no aparece), `security definer` porque `events_raw_select` prohíbe con razón leer no-leads: la autorización vive en el cuerpo (`private.can_manage_agent_pipeline`). Las claves `crm_radar_window_days` (14) y `crm_anon_min_viewers` (3) se leen de `app_config`: subirlas oculta filas **sin publicar app**.
+
+🔴 **El anonimato del radar depende de tres policies, no del cuerpo de la RPC.** La tupla `(temperature, delta, last_activity_at, sparkline)` sería un quasi-identificador cruzable si el agente tuviera OTRA fuente con identidad + timestamp de un no-lead. Hoy no la tiene porque `likes_select` y `saves_select` exigen `user_id = auth.uid()` (o admin) y `events_raw_select` exige relación vigente de lead. **Si algún día se relaja "el dueño ve quién le dio like", la deanonimización se abre en silencio y ningún test del 104 se pondría rojo.** Tratar esas tres policies como dependencia del radar antes de tocarlas.
+
+**Riesgo aceptado por el diseño (comunicado 2026-09-06):** cuando `(temperature, delta)` no empatan — el caso normal — el orden es determinista y la tupla permite **seguir a la misma persona anónima entre llamadas** (pseudonimato persistente). El radar garantiza "no puedes saber quién es", no "no puedes seguirle la pista"; es inherente a las columnas que §7.5 eligió mostrar.

@@ -40,6 +40,7 @@ Proyecto live `urbea-app` (`mvpvqmyhrrkwbnpctpuq`). Base `0001`–`0010` (20 tab
 | `saves` | 0006 | [[propiedades-y-video]] | vivo |
 | `leads` | 0006 | [[crm-leads]] | vivo |
 | `lead_origin_properties` | 0006 | [[crm-leads]] | vivo |
+| `lead_temperature_daily` | 20260906100002 (#266.3) | [[crm-leads]] | vivo — snapshot diario `(lead_id, day)`, solo leads activos, escrita solo por `snapshot_lead_temperature()` vía pg_cron |
 | `events_raw` | 0007 | [[rls-seguridad]] | latente |
 | `property_reports` | 0007; CHECK «other exige texto» `20260828000001`, trigger de auto-suspensión `20260828000002`, RPC de resolución `20260828000004` (#220) | [[moderacion]] | vivo |
 | `user_reports` | `20260828000005` (#220.6) — reportes de PERFIL; reusa el enum `property_report_reason`; sin cola de resolución ni auto-suspensión de cuentas | [[moderacion]] | vivo (alcance mínimo) |
