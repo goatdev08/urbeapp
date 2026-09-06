@@ -200,6 +200,16 @@ afterEach(() => {
 
 describe('useAdStats — caché por period + prefetch (#262)', () => {
   it('(EC-C1) primera_carga_dispara_las_3_del_period_visible_y_al_asentar_prefetchea_los_otros_dos_periods_con_los_params_correctos', async () => {
+    // 🔴 Desbloqueo del orquestador (#262): sin fijar el reloj, `new Date()`
+    // dentro del hook usa la hora REAL de la corrida, que nunca coincide en
+    // precisión de milisegundo con el `NOW` fijo que usan `today_range`/
+    // `last30_range` abajo -- 'today' coincidía por casualidad (trunca a
+    // medianoche del mismo día calendario) pero 'last30' (resta exacta de
+    // 30*24h) fallaba siempre. `setSystemTime(NOW)` hace que `period_to_range`
+    // del hook calcule con el MISMO `now` que el test usa para comparar.
+    jest.useFakeTimers();
+    jest.setSystemTime(NOW);
+
     const { rpc } = make_multi_period_client(NOW);
 
     const { result } = await render_stats(AD_ID, 'max', { rpc });
@@ -255,6 +265,14 @@ describe('useAdStats — caché por period + prefetch (#262)', () => {
   });
 
   it('(EC-C3) cambio_a_period_fresco_nunca_pasa_por_totals_null_en_ningun_render_intermedio', async () => {
+    // 🔴 Desbloqueo del orquestador (#262): mismo fix que EC-C1 -- sin fijar
+    // el reloj, el prefetch de 'last30' durante el mount nunca matchea el
+    // mock (precisión de ms contra el `NOW` fijo) y esa entrada de caché
+    // queda con `totals: null`, haciendo que ESTE test fallara por una causa
+    // ajena a lo que en verdad prueba (el render intermedio del switch).
+    jest.useFakeTimers();
+    jest.setSystemTime(NOW);
+
     const { rpc } = make_multi_period_client(NOW);
     const client = { rpc }; // estable -- ver nota EC-C2 (loop infinito si no)
     const totals_snapshots: (TotalsRow | null)[] = [];
@@ -315,11 +333,24 @@ describe('useAdStats — caché por period + prefetch (#262)', () => {
 
     // Avanza el reloj más allá de AD_STATS_STALE_MS -- la entrada de 'today'
     // (guardada durante el prefetch) queda STALE.
-    act(() => {
+    //
+    // 🔴 Desbloqueo del orquestador (#262), refinado con una prueba empírica
+    // (probé 6 variantes con un test-probe standalone, ya descartado): NO
+    // basta con volver async el `act` del `rerender` de abajo -- un
+    // `act` SÍNCRONO alrededor de `jest.advanceTimersByTime` deja al
+    // scheduler de efectos pasivos de React en un estado que bloquea el
+    // flush del PRÓXIMO `act`, aunque ese próximo sea async (confirmado:
+    // sin este fix, ni una ronda extra de `flush_microtasks` después del
+    // `rerender` lo destraba). Envolver el propio avance del reloj en un
+    // `act` async con un `await Promise.resolve()` lo asienta antes de que
+    // el `rerender` siga (RNTL 14, memoria rntl14_renderhook_async: un act
+    // síncrono no aplica el estado del efecto).
+    await act(async () => {
       jest.advanceTimersByTime(AD_STATS_STALE_MS + 1_000);
+      await Promise.resolve();
     });
 
-    act(() => {
+    await act(async () => {
       rerender({ p: 'today' });
     });
 
