@@ -2198,8 +2198,10 @@ export type Database = {
           p_agent_id: string
           p_band?: string
           p_cursor?: Json
+          p_follow_up?: boolean
           p_limit?: number
           p_query?: string
+          p_status?: string[]
         }
         Returns: {
           avatar_url: string

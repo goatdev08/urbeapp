@@ -13,15 +13,37 @@
 -- ════════════════════════════════════════════════════════════════════════════
 -- SEAMS bajo prueba (contrato PÚBLICO, comportamiento observable, NUNCA internals):
 --   1) public.crm_leads_page(p_agent_id uuid, p_band text, p_cursor jsonb, p_limit int,
---      p_query text) — firma exacta, security definer, stable, search_path='', ACL
---      (revoke public/anon, grant authenticated), autorización fail-closed en el cuerpo,
---      cursor keyset con as_of congelado, filtro p_band, búsqueda p_query en SQL,
---      status_projected 8→4, sparkline int[14], remaining por banda.
+--      p_query text, p_status text[], p_follow_up boolean) — firma exacta (7 parámetros,
+--      subtarea 271.1: p_status/p_follow_up NUEVOS, ambos DEFAULT NULL), security definer,
+--      stable, search_path='', ACL (revoke public/anon, grant authenticated), autorización
+--      fail-closed en el cuerpo, cursor keyset INTACTO con as_of congelado (el ORDER BY y la
+--      forma del cursor NO cambian, Abraham descartó el selector de orden), filtro p_band,
+--      búsqueda p_query en SQL, status_projected 8→4, sparkline int[14], remaining por banda
+--      Y por los filtros nuevos (D-REMAINING-FILTRO, punto delicado 1 de la subtarea:
+--      p_status/p_follow_up viven en la CTE `matched`, el mismo universo base de
+--      `remaining`), p_status filtra por los 4 estados PROYECTADOS (nunca por el enum crudo
+--      de 11 valores — punto delicado 2: status_projected sube a la CTE `banded` para poder
+--      filtrar por él en `matched` sin duplicar el CASE 8→4 del SELECT final).
 --   2) public.crm_funnel(p_agent_id uuid, p_days int) — firma exacta, mismos atributos y
 --      ACL, autorización fail-closed idéntica, los 5 KPIs como CONTEOS agregados (nunca
---      filas de no-leads).
--- SUT (AÚN NO EXISTE — RED 2026-09-06): supabase/migrations/2026MMDDNNNNNN_
--- crm_leads_page_funnel.sql debe crear ambas funciones.
+--      filas de no-leads). SIN CAMBIO en esta subtarea (271.1 solo toca crm_leads_page).
+-- SUT (crm_leads_page/crm_funnel YA EXISTEN, 20260906100003): esta subtarea 271.1 ensancha
+-- SOLO crm_leads_page vía DROP+CREATE en supabase/migrations/_crm_leads_page_filtros.sql
+-- (RED 2026-09-07) — stub que declara los 2 parámetros nuevos pero los IGNORA (marcado
+-- `-- STUB RED`), para que el RED falle por aserción de filtrado, nunca por firma ausente.
+--
+-- ── D-STATUSARRAY (subtarea 271.1, decisión del test-author, fija el contrato) ────────────
+-- p_status text[] filtra por los 4 valores PROYECTADOS ('nuevo'/'contactado'/'visita'/
+-- 'cerrado'), nunca por el enum crudo de 11 valores — el cliente nunca conoce closed_won_*
+-- ni los legacy. NULL = sin filtro (D-DEFAULTS ya establecido). Array vacío '{}'::text[] SE
+-- DISTINGUE de NULL: significa "cero estados seleccionados" y se resuelve como 0 FILAS (NO
+-- como "sin filtro") — semántica SQL natural de `x = ANY('{}')` (siempre falso) y evita que
+-- una hoja de filtros con las 4 casillas desmarcadas muestre por error el pipeline completo;
+-- quien quiera "sin filtro" pasa NULL explícito, nunca '{}'. Ver STATUSARR6.
+-- D-FOLLOWUP (decisión del test-author): p_follow_up boolean filtra por leads.is_follow_up
+-- EXACTO (true → solo marcados, false → solo NO marcados); NULL = sin filtro. Ambos filtros
+-- (p_status, p_follow_up) entran en la CTE `matched` (mismo punto delicado 1 que p_band) y se
+-- combinan por AND entre sí y con p_band/p_query (nunca OR) — ver COMBO1/COMBO2.
 --
 -- ── Estrategia RED sin depender de "function does not exist" (patrón 100/101, adaptado a
 --    funciones SETOF) ───────────────────────────────────────────────────────────────────────
@@ -110,10 +132,22 @@
 --   Scan de todas formas (tablas de pocas filas); un assert pgTAP sobre el plan sería frágil
 --   por construcción. Queda para medición MANUAL con el seed de volumen de 266.1 y se pega
 --   en la bitácora del GREEN, no aquí (instrucción explícita del orquestador).
+--
+-- ── Extensión subtarea 271.1 (RED 2026-09-07): p_status/p_follow_up ─────────────────────────
+-- Happy path: p_status NULL no filtra (STATUSARR0, reusa sta_all — mismo total 19 que sin el
+--   parámetro). Edge cases del PRD/exploración 045 §19 (tarea G, "hoja completa de filtros"):
+--   cada uno de los 4 proyectados devuelve EXACTAMENTE sus leads (STATUSARR1-4, incluidos los
+--   tramos ambiguos contactado=contacted∪interested∪in_progress y cerrado=4 vigentes+legacy),
+--   array con 2 estados sin duplicados (STATUSARR5), array vacío=0 filas por D-STATUSARRAY
+--   (STATUSARR6), p_follow_up true/false/null (FOLLOW1-3, agente aislado AGFOLLOW). Ramas no
+--   obvias: combinación p_status+p_band+p_query simultánea por AND, nunca OR (COMBO1-2);
+--   remaining/next_cursor correctos CON filtro aplicado — universo de `matched` YA filtrado
+--   por p_status, paginado hasta agotar (FILTPAG1-8, agente aislado AGFILT, punto delicado 1);
+--   autorización fail-closed NO se salta por traer filtros nuevos (AUTZFILT1, agente ajeno).
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(72);
+select plan(94);
 
 -- ── Helper de impersonación (mismo patrón que 02/08/.../35/62/100/101_*) ────────────────────
 create or replace function pg_temp.act_as(p_uid uuid, p_role text default 'authenticated')
@@ -124,13 +158,16 @@ begin
 end $$;
 
 -- ── Wrappers RED: jsonb_agg + sentinel de error (ver cabecera) ──────────────────────────────
+-- p_status/p_follow_up (subtarea 271.1) con DEFAULT NULL al final: las llamadas existentes de
+-- 5 argumentos posicionales (secciones 4-11, ya escritas) siguen compilando sin tocarlas.
 create or replace function pg_temp.leads_page_json(
-  p_agent_id uuid, p_band text, p_cursor jsonb, p_limit int, p_query text
+  p_agent_id uuid, p_band text, p_cursor jsonb, p_limit int, p_query text,
+  p_status text[] default null, p_follow_up boolean default null
 ) returns jsonb language plpgsql as $$
 declare v jsonb;
 begin
   select coalesce(jsonb_agg(to_jsonb(t)), '[]'::jsonb) into v
-  from public.crm_leads_page(p_agent_id, p_band, p_cursor, p_limit, p_query) t;
+  from public.crm_leads_page(p_agent_id, p_band, p_cursor, p_limit, p_query, p_status, p_follow_up) t;
   return v;
 exception when others then
   return '[{"__error__": true}, {"__error__": true}]'::jsonb;
@@ -405,22 +442,78 @@ insert into public.lead_origin_properties (id, lead_id, property_id, contacted_a
   ('00000000-0000-0000-0000-000000266791', '00000000-0000-0000-0000-000000266591', '00000000-0000-0000-0000-000000266401', now() - interval '3 days');
 
 -- ════════════════════════════════════════════════════════════════════════════
+-- Fixtures — subtarea 271.1 (p_status/p_follow_up). Agentes AISLADOS (mismo criterio
+-- D-FIXTURE-AISLAMIENTO de arriba: sus universos SIN filtro deben ser un conteo exacto y
+-- conocido, sin contaminarse con los leads de AG1 usados en el resto del archivo).
+--
+-- AGFOLLOW (...266031) — 2 leads, is_follow_up true/false EXPLÍCITO (columna boolean not
+-- null default false, migración 20260807000003).
+-- AGFILT (...266034) — 12 leads FILT00..FILT11, agente aislado para D-REMAINING-FILTRO
+-- (punto delicado 1): contacted_at = now() - i días (i=0..11), MISMO patrón que LPAG (mismo
+-- tipo de señal única de "contacto"), reusando la progresión de temperatura YA verificada en
+-- la cabecera de la sección 6 (LPAG): i=0..11 -> temp [30,28,25,23,21,20,18,17,15,14,13,12].
+-- Estado alternado: i PAR (0,2,4,6,8,10) = 'new' (nuevo); i IMPAR (1,3,5,7,9,11) =
+-- 'visit_scheduled' (visita) — el subconjunto 'nuevo' filtrado (6 leads) queda YA ordenado
+-- descendente por temperatura sin empates (30,25,21,18,15,13), así FILTPAG* no depende de
+-- desempate por lead_id.
+-- ════════════════════════════════════════════════════════════════════════════
+
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-000000266031', 'agfollow.266p4@test.local'), -- AGFOLLOW (agente aislado)
+  ('00000000-0000-0000-0000-000000266032', 'followtrue.266p4@test.local'), -- FOLLOWU_TRUE
+  ('00000000-0000-0000-0000-000000266033', 'followfalse.266p4@test.local'), -- FOLLOWU_FALSE
+  ('00000000-0000-0000-0000-000000266034', 'agfilt.266p4@test.local'); -- AGFILT (agente aislado)
+update public.users set role = 'agent', is_verified_agent = true
+  where id in ('00000000-0000-0000-0000-000000266031', '00000000-0000-0000-0000-000000266034');
+
+insert into public.leads (id, agent_id, user_id, status, is_follow_up) values
+  ('00000000-0000-0000-0000-000000266578', '00000000-0000-0000-0000-000000266031', '00000000-0000-0000-0000-000000266032', 'new', true),  -- LFOLLOW_TRUE
+  ('00000000-0000-0000-0000-000000266579', '00000000-0000-0000-0000-000000266031', '00000000-0000-0000-0000-000000266033', 'new', false); -- LFOLLOW_FALSE (explícito, aunque coincide con el default)
+insert into public.lead_origin_properties (id, lead_id, property_id, contacted_at) values
+  ('00000000-0000-0000-0000-000000266786', '00000000-0000-0000-0000-000000266578', '00000000-0000-0000-0000-000000266401', now() - interval '4 days'),
+  ('00000000-0000-0000-0000-000000266787', '00000000-0000-0000-0000-000000266579', '00000000-0000-0000-0000-000000266401', now() - interval '4 days');
+
+insert into auth.users (id, email)
+select ('00000000-0000-0000-0000-000000266' || (126 + i))::uuid, 'filt' || i || '.266p4@test.local'
+from generate_series(0, 11) as i;
+
+insert into public.leads (id, agent_id, user_id, status)
+select ('00000000-0000-0000-0000-000000266' || (625 + i))::uuid,
+       '00000000-0000-0000-0000-000000266034',
+       ('00000000-0000-0000-0000-000000266' || (126 + i))::uuid,
+       (case when i % 2 = 0 then 'new' else 'visit_scheduled' end)::lead_status
+from generate_series(0, 11) as i;
+
+insert into public.lead_origin_properties (id, lead_id, property_id, contacted_at)
+select ('00000000-0000-0000-0000-000000266' || (825 + i))::uuid,
+       ('00000000-0000-0000-0000-000000266' || (625 + i))::uuid,
+       '00000000-0000-0000-0000-000000266401',
+       now() - (i || ' days')::interval
+from generate_series(0, 11) as i;
+
+-- ════════════════════════════════════════════════════════════════════════════
 -- 1) CATÁLOGO — public.crm_leads_page (firma, atributos, ACL). Seguro aunque no exista:
 --    has_function/pg_get_function_*/function_privs_are resuelven "not ok" sin lanzar.
 -- ════════════════════════════════════════════════════════════════════════════
 
-select has_function('public', 'crm_leads_page', array['uuid','text','jsonb','int','text'],
+-- SIG1/2/3/ACL1/2 actualizados a la firma de 7 parámetros (subtarea 271.1: p_status/
+-- p_follow_up NUEVOS, ambos al final con DEFAULT NULL — D-DEFAULTS). DROP+CREATE cambia la
+-- identidad de la función en pg_proc (el tipo de argumentos es parte de esa identidad), así
+-- que el ancla de 5 parámetros de 266.4 YA NO resuelve — se reemplaza por la firma vigente,
+-- no se duplica.
+select has_function('public', 'crm_leads_page',
+  array['uuid','text','jsonb','int','text','text[]','boolean'],
   'SIG1_crm_leads_page_existe_con_la_firma_declarada');
 
 select is(
-  (select pg_get_function_result(to_regprocedure('public.crm_leads_page(uuid,text,jsonb,int,text)'))),
+  (select pg_get_function_result(to_regprocedure('public.crm_leads_page(uuid,text,jsonb,int,text,text[],boolean)'))),
   'TABLE(lead_id uuid, user_id uuid, full_name text, avatar_url text, temperature integer, delta integer, band text, signals jsonb, sparkline integer[], last_activity_at timestamp with time zone, origin_property jsonb, status_projected text, next_cursor jsonb, remaining integer)',
   'SIG2_crm_leads_page_returns_table_EXACTA'
 );
 
 select is(
-  (select pg_get_function_arguments(to_regprocedure('public.crm_leads_page(uuid,text,jsonb,int,text)'))),
-  'p_agent_id uuid, p_band text DEFAULT NULL::text, p_cursor jsonb DEFAULT NULL::jsonb, p_limit integer DEFAULT 20, p_query text DEFAULT NULL::text',
+  (select pg_get_function_arguments(to_regprocedure('public.crm_leads_page(uuid,text,jsonb,int,text,text[],boolean)'))),
+  'p_agent_id uuid, p_band text DEFAULT NULL::text, p_cursor jsonb DEFAULT NULL::jsonb, p_limit integer DEFAULT 20, p_query text DEFAULT NULL::text, p_status text[] DEFAULT NULL::text[], p_follow_up boolean DEFAULT NULL::boolean',
   'SIG3_crm_leads_page_argumentos_EXACTOS_con_defaults_D_DEFAULTS'
 );
 
@@ -440,9 +533,11 @@ select is(
   'SIG6_crm_leads_page_search_path_vacio'
 );
 
-select function_privs_are('public', 'crm_leads_page', array['uuid','text','jsonb','int','text'], 'anon', array[]::name[],
+select function_privs_are('public', 'crm_leads_page',
+  array['uuid','text','jsonb','int','text','text[]','boolean'], 'anon', array[]::name[],
   'ACL1_crm_leads_page_anon_SIN_execute');
-select function_privs_are('public', 'crm_leads_page', array['uuid','text','jsonb','int','text'], 'authenticated', array['EXECUTE']::name[],
+select function_privs_are('public', 'crm_leads_page',
+  array['uuid','text','jsonb','int','text','text[]','boolean'], 'authenticated', array['EXECUTE']::name[],
   'ACL2_crm_leads_page_authenticated_CON_execute');
 
 -- ════════════════════════════════════════════════════════════════════════════
@@ -934,6 +1029,266 @@ select is(
   '[]'::jsonb, 'FUNAUTZ6_membresia_del_agente_objetivo_suspendida_0_conteos_203_1'
 );
 reset role;
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 13) p_status — filtro por los 4 estados PROYECTADOS (subtarea 271.1). D-STATUSARRAY.
+--     Reusa AG1/LSTA (sección 10, ya validado que status_projected es correcto por lead) —
+--     aquí solo se prueba el CABLEADO: que crm_leads_page usa status_projected para filtrar
+--     en la CTE `matched` (puntos delicados 1 y 2 de la subtarea).
+-- ════════════════════════════════════════════════════════════════════════════
+
+select pg_temp.act_as('00000000-0000-0000-0000-000000266001'); -- AG1
+
+select is(
+  jsonb_array_length((select v from sta_all)),
+  19, 'STATUSARR0_p_status_NULL_no_filtra_mismo_total_19_que_sin_el_parametro'
+);
+
+select is(
+  (select array_agg(elem->>'lead_id' order by elem->>'lead_id')
+   from jsonb_array_elements(
+     pg_temp.leads_page_json('00000000-0000-0000-0000-000000266001', null, null, 1000, null, array['nuevo'], null)
+   ) elem),
+  array[
+    '00000000-0000-0000-0000-000000266571',
+    '00000000-0000-0000-0000-000000266572',
+    '00000000-0000-0000-0000-000000266573',
+    '00000000-0000-0000-0000-000000266574',
+    '00000000-0000-0000-0000-000000266575',
+    '00000000-0000-0000-0000-000000266576',
+    '00000000-0000-0000-0000-000000266577',
+    '00000000-0000-0000-0000-000000266650',
+    '00000000-0000-0000-0000-000000266651'
+  ],
+  'STATUSARR1_p_status_nuevo_devuelve_EXACTAMENTE_new_y_whatsapp_opened_9_leads'
+);
+
+select is(
+  (select array_agg(elem->>'lead_id' order by elem->>'lead_id')
+   from jsonb_array_elements(
+     pg_temp.leads_page_json('00000000-0000-0000-0000-000000266001', null, null, 1000, null, array['contactado'], null)
+   ) elem),
+  array[
+    '00000000-0000-0000-0000-000000266501',
+    '00000000-0000-0000-0000-000000266652',
+    '00000000-0000-0000-0000-000000266653',
+    '00000000-0000-0000-0000-000000266654'
+  ],
+  'STATUSARR2_p_status_contactado_trae_contacted_Y_interested_Y_in_progress_tramo_ambiguo'
+);
+
+select is(
+  (select array_agg(elem->>'lead_id' order by elem->>'lead_id')
+   from jsonb_array_elements(
+     pg_temp.leads_page_json('00000000-0000-0000-0000-000000266001', null, null, 1000, null, array['visita'], null)
+   ) elem),
+  array['00000000-0000-0000-0000-000000266655'],
+  'STATUSARR3_p_status_visita_devuelve_EXACTAMENTE_visit_scheduled'
+);
+
+select is(
+  (select array_agg(elem->>'lead_id' order by elem->>'lead_id')
+   from jsonb_array_elements(
+     pg_temp.leads_page_json('00000000-0000-0000-0000-000000266001', null, null, 1000, null, array['cerrado'], null)
+   ) elem),
+  array[
+    '00000000-0000-0000-0000-000000266656',
+    '00000000-0000-0000-0000-000000266657',
+    '00000000-0000-0000-0000-000000266658',
+    '00000000-0000-0000-0000-000000266659',
+    '00000000-0000-0000-0000-000000266660'
+  ],
+  'STATUSARR4_p_status_cerrado_trae_los_4_vigentes_MAS_el_legacy_closed_won_tramo_ambiguo'
+);
+
+select is(
+  (select array_agg(elem->>'lead_id' order by elem->>'lead_id')
+   from jsonb_array_elements(
+     pg_temp.leads_page_json('00000000-0000-0000-0000-000000266001', null, null, 1000, null, array['visita','cerrado'], null)
+   ) elem),
+  array[
+    '00000000-0000-0000-0000-000000266655',
+    '00000000-0000-0000-0000-000000266656',
+    '00000000-0000-0000-0000-000000266657',
+    '00000000-0000-0000-0000-000000266658',
+    '00000000-0000-0000-0000-000000266659',
+    '00000000-0000-0000-0000-000000266660'
+  ],
+  'STATUSARR5_array_con_2_estados_union_sin_duplicados_visita_y_cerrado'
+);
+
+select is(
+  jsonb_array_length(
+    pg_temp.leads_page_json('00000000-0000-0000-0000-000000266001', null, null, 1000, null, '{}'::text[], null)
+  ),
+  0, 'STATUSARR6_array_vacio_es_0_filas_NUNCA_sin_filtro_D_STATUSARRAY'
+);
+
+reset role;
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 14) p_follow_up — filtro EXACTO sobre leads.is_follow_up (agente aislado AGFOLLOW).
+-- ════════════════════════════════════════════════════════════════════════════
+
+select pg_temp.act_as('00000000-0000-0000-0000-000000266031'); -- AGFOLLOW, dueño
+
+select is(
+  (select array_agg(elem->>'lead_id')
+   from jsonb_array_elements(
+     pg_temp.leads_page_json('00000000-0000-0000-0000-000000266031', null, null, 50, null, null, true)
+   ) elem),
+  array['00000000-0000-0000-0000-000000266578'],
+  'FOLLOW1_p_follow_up_true_devuelve_SOLO_el_marcado'
+);
+
+select is(
+  (select array_agg(elem->>'lead_id')
+   from jsonb_array_elements(
+     pg_temp.leads_page_json('00000000-0000-0000-0000-000000266031', null, null, 50, null, null, false)
+   ) elem),
+  array['00000000-0000-0000-0000-000000266579'],
+  'FOLLOW2_p_follow_up_false_devuelve_SOLO_el_NO_marcado'
+);
+
+select is(
+  jsonb_array_length(
+    pg_temp.leads_page_json('00000000-0000-0000-0000-000000266031', null, null, 50, null, null, null)
+  ),
+  2, 'FOLLOW3_p_follow_up_NULL_no_filtra_trae_AMBOS'
+);
+
+reset role;
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 15) Combinación p_status + p_band + p_query SIMULTÁNEOS — deben combinarse por AND, nunca
+--     por OR (si el punto delicado 1 se resolviera mal — filtros aplicados en momentos
+--     distintos, o alguno ignorado — esta sección lo cazaría). MARIA (574, status
+--     'new'→'nuevo') es la única lead de AG1 cuyo nombre matchea 'maria' Y cuya banda es
+--     'silent' (mismo perfil que LBANDSIL: un solo contacto viejo, sin señal adicional —
+--     ambos flags.signal_recent y flags.status_recent quedan en false, y temp < temp_prev
+--     por el decaimiento simple, así que private.crm_band cae en el 'else' -> 'silent').
+-- ════════════════════════════════════════════════════════════════════════════
+
+select pg_temp.act_as('00000000-0000-0000-0000-000000266001'); -- AG1
+
+select is(
+  (select array_agg(elem->>'lead_id')
+   from jsonb_array_elements(
+     pg_temp.leads_page_json('00000000-0000-0000-0000-000000266001', 'silent', null, 50, 'maria', array['nuevo'], null)
+   ) elem),
+  array['00000000-0000-0000-0000-000000266574'],
+  'COMBO1_p_status_p_band_p_query_A_LA_VEZ_aislan_a_MARIA_por_AND'
+);
+
+select is(
+  jsonb_array_length(
+    pg_temp.leads_page_json('00000000-0000-0000-0000-000000266001', 'silent', null, 50, 'maria', array['visita'], null)
+  ),
+  0, 'COMBO2_mismo_band_y_query_pero_status_equivocado_0_filas_prueba_AND_no_OR'
+);
+
+reset role;
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 16) remaining/next_cursor CON p_status APLICADO — agente aislado AGFILT, 12 leads (6
+--     'nuevo' + 6 'visita' intercalados por temperatura, ver cabecera del fixture).
+--     p_status=['nuevo'] debe reducir el universo de `matched` a 6 ANTES de paginar (punto
+--     delicado 1): si el filtro se aplicara DESPUÉS del cursor/remaining, la página o el
+--     remaining incluirían las 'visita' o contarían sobre las 12, no sobre las 6.
+-- ════════════════════════════════════════════════════════════════════════════
+
+select pg_temp.act_as('00000000-0000-0000-0000-000000266034'); -- AGFILT (aislado)
+
+create temp table filt_page1 (v jsonb);
+insert into filt_page1 select pg_temp.leads_page_json('00000000-0000-0000-0000-000000266034', null, null, 4, null, array['nuevo'], null);
+
+-- Página 1 esperada: las 4 temperaturas más altas del subconjunto 'nuevo' -> i=0,2,4,6 ->
+-- suffix 625,627,629,631 (temps 30,25,21,18 — sin empates, misma progresión que LPAG §6).
+select is(
+  (select array_agg(elem->>'lead_id') from jsonb_array_elements((select v from filt_page1)) elem),
+  array[
+    '00000000-0000-0000-0000-000000266625',
+    '00000000-0000-0000-0000-000000266627',
+    '00000000-0000-0000-0000-000000266629',
+    '00000000-0000-0000-0000-000000266631'
+  ],
+  'FILTPAG1_pagina1_los_4_nuevo_de_mayor_temperatura_las_visita_intercaladas_NO_aparecen'
+);
+select is(
+  ((select v from filt_page1) -> 0 ->> 'remaining')::int,
+  2, 'FILTPAG2_remaining_2_6_nuevo_totales_menos_4_devueltos_NO_12_menos_4'
+);
+select ok(
+  ((select v from filt_page1) -> 0 -> 'next_cursor') is not null,
+  'FILTPAG3_pagina1_next_cursor_no_es_null_quedan_2_nuevo_por_paginar'
+);
+
+create temp table filt_page2 (v jsonb);
+insert into filt_page2 select pg_temp.leads_page_json('00000000-0000-0000-0000-000000266034', null,
+  (select v from filt_page1) -> 0 -> 'next_cursor', 4, null, array['nuevo'], null);
+
+-- Página 2 esperada: los 2 'nuevo' restantes -> i=8,10 -> suffix 633,635 (temps 15,13).
+select is(
+  (select array_agg(elem->>'lead_id') from jsonb_array_elements((select v from filt_page2)) elem),
+  array[
+    '00000000-0000-0000-0000-000000266633',
+    '00000000-0000-0000-0000-000000266635'
+  ],
+  'FILTPAG4_pagina2_los_2_nuevo_restantes_exactos'
+);
+select is(
+  ((select v from filt_page2) -> 0 ->> 'remaining')::int,
+  0, 'FILTPAG5_pagina2_remaining_0_no_queda_ningun_nuevo_por_paginar'
+);
+select ok(
+  ((select v from filt_page2) -> 0 -> 'next_cursor') = 'null'::jsonb,
+  'FILTPAG6_pagina2_next_cursor_NULL_es_la_ultima_pagina_del_subconjunto_filtrado'
+);
+
+select is(
+  (select count(distinct elem->>'lead_id')::int from (
+    select elem from jsonb_array_elements((select v from filt_page1)) elem
+    union all
+    select elem from jsonb_array_elements((select v from filt_page2)) elem
+  ) u),
+  6, 'FILTPAG7_union_de_las_2_paginas_filtradas_tiene_EXACTAMENTE_6_leads_sin_repetir'
+);
+select is(
+  (select count(*)::int from public.leads
+   where agent_id = '00000000-0000-0000-0000-000000266034' and status = 'new' and deleted_at is null),
+  6, 'FILTPAG8_el_total_paginado_coincide_con_el_conteo_directo_en_la_tabla_leads'
+);
+
+reset role;
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 17) Autorización fail-closed NO se salta por traer filtros nuevos — mismo D-AUTZ de la
+--     sección 4, ahora con p_status/p_follow_up en la llamada.
+-- ════════════════════════════════════════════════════════════════════════════
+
+select pg_temp.act_as('00000000-0000-0000-0000-000000266003'); -- AG2, ajeno (sin agencia)
+select is(
+  jsonb_array_length(
+    pg_temp.leads_page_json('00000000-0000-0000-0000-000000266001', null, null, 50, null, array['nuevo'], true)
+  ),
+  0, 'AUTZFILT1_agente_ajeno_0_filas_aunque_traiga_p_status_y_p_follow_up'
+);
+reset role;
+
+-- ── 18. Guarda de esquema: el CASE de la proyección 8→4 no tiene ELSE ──────────
+-- 🔴 Hallazgo del guardian (271.1): si el enum lead_status gana un valor 12 y nadie
+-- actualiza el CASE de `banded`, ese brazo cae a NULL. Y como `NULL = any(p_status)`
+-- es NULL, esos leads DESAPARECEN de toda consulta filtrada mientras siguen saliendo
+-- sin filtro — falla silenciosa que ningún assert de comportamiento caza (no se puede
+-- sembrar un valor del enum que todavía no existe). Este assert de catálogo revienta
+-- en cuanto el enum crece, y obliga a tocar la proyección en el mismo cambio.
+select is(
+  (select string_agg(e.enumlabel, ',' order by e.enumsortorder)
+     from pg_enum e join pg_type t on t.oid = e.enumtypid
+    where t.typname = 'lead_status'),
+  'new,contacted,in_progress,visit_scheduled,closed_won,closed_lost,discarded,whatsapp_opened,interested,closed_won_rent,closed_won_sale',
+  'ENUMGUARD1_lead_status_sigue_teniendo_los_11_valores_que_cubre_el_CASE_de_status_projected'
+);
 
 select * from finish();
 rollback;
