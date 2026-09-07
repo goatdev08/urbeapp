@@ -14,6 +14,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
 
 import { supabase } from '@/lib/supabase/client';
+import { LEAD_EF_NETWORK_FALLBACK } from '../lead_error_messages';
 import type { AgencyAgentRow, UnmanagedLeadRow } from '../types';
 
 export type { AgencyAgentRow, UnmanagedLeadRow };
@@ -70,48 +71,59 @@ export function useCrmAgencyOverview(agency_id: string | null): UseCrmAgencyOver
 
     set_loading(true);
 
-    const rpc_result = (await supabase.rpc('crm_agency_overview', {
-      p_agency_id: agency_id,
-    })) as { data: RawOverviewRow[] | null; error: { message: string } | null };
+    // D-NETWORK (EC-15, hallazgo del guardian): un rechazo de la promesa
+    // (network/timeout) es distinto de {data:null,error} — sin este
+    // try/catch dejaba loading colgado en true para siempre. Mismo mensaje
+    // que useReassignLead para el mismo escenario.
+    try {
+      const rpc_result = (await supabase.rpc('crm_agency_overview', {
+        p_agency_id: agency_id,
+      })) as { data: RawOverviewRow[] | null; error: { message: string } | null };
 
-    if (!mounted_ref.current) return;
+      if (!mounted_ref.current) return;
 
-    if (rpc_result.error) {
-      set_error(ERROR_MESSAGE);
+      if (rpc_result.error) {
+        set_error(ERROR_MESSAGE);
+        set_agents([]);
+        set_unmanaged([]);
+        return;
+      }
+
+      // D-ORDER: la RPC ya llega ordenada (kind asc, agent_name asc /
+      // temperature desc) — no se reordena en cliente.
+      const next_agents: AgencyAgentRow[] = [];
+      const next_unmanaged: UnmanagedLeadRow[] = [];
+      for (const row of rpc_result.data ?? []) {
+        if (row.kind === 'agent') {
+          next_agents.push({
+            agent_id: row.agent_id!,
+            agent_name: row.agent_name,
+            untouched_count: row.untouched_count ?? 0,
+            response_hours: row.response_hours,
+            avg_temperature: row.avg_temperature,
+            flag: row.flag as AgencyAgentRow['flag'],
+          });
+        } else {
+          next_unmanaged.push({
+            lead_id: row.lead_id!,
+            lead_display_name: row.lead_display_name,
+            temperature: row.temperature ?? 0,
+            first_contact_at: row.first_contact_at,
+          });
+        }
+      }
+
+      set_agents(next_agents);
+      set_unmanaged(next_unmanaged);
+      set_error(null);
+    } catch {
+      if (!mounted_ref.current) return;
+      set_error(LEAD_EF_NETWORK_FALLBACK);
       set_agents([]);
       set_unmanaged([]);
-      set_loading(false);
-      return;
+    } finally {
+      if (mounted_ref.current) set_loading(false);
     }
-
-    // D-ORDER: la RPC ya llega ordenada (kind asc, agent_name asc /
-    // temperature desc) — no se reordena en cliente.
-    const next_agents: AgencyAgentRow[] = [];
-    const next_unmanaged: UnmanagedLeadRow[] = [];
-    for (const row of rpc_result.data ?? []) {
-      if (row.kind === 'agent') {
-        next_agents.push({
-          agent_id: row.agent_id!,
-          agent_name: row.agent_name,
-          untouched_count: row.untouched_count ?? 0,
-          response_hours: row.response_hours,
-          avg_temperature: row.avg_temperature,
-          flag: row.flag as AgencyAgentRow['flag'],
-        });
-      } else {
-        next_unmanaged.push({
-          lead_id: row.lead_id!,
-          lead_display_name: row.lead_display_name,
-          temperature: row.temperature ?? 0,
-          first_contact_at: row.first_contact_at,
-        });
-      }
-    }
-
-    set_agents(next_agents);
-    set_unmanaged(next_unmanaged);
-    set_error(null);
-    set_loading(false);
   }, [agency_id]);
 
   // D-FOCUS: el primer foco coincide con el mount; un refoco real o un

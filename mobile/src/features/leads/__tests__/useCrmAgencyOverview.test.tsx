@@ -65,6 +65,7 @@
  * - (EC-14) error_tras_exito_no_deja_filas_rancias — guarda de mutación
  *   (mata M4: quitar los `set_*([])` de la rama de error dejaría las filas
  *   de la carga previa exitosa "rancias" en pantalla).
+ * - (EC-16) rechazo_de_red_tras_exito_no_deja_filas_rancias — espejo de EC-14 en la rama catch (M16)
  * - (EC-15) rpc_rechaza_red_loading_false_y_error_conectividad — hallazgo
  *   del guardian (269.5): el GREEN actual NO envuelve `await supabase.rpc`
  *   en try/catch, así que un rechazo de RED (network/timeout, distinto de
@@ -479,5 +480,30 @@ describe('useCrmAgencyOverview', () => {
     // side-channel del proceso — el .catch mudo de arriba ya evita que se
     // filtre a las suites siguientes independientemente del resultado.
     void unhandled_rejection;
+  });
+
+  it('(EC-16) rechazo_de_red_tras_exito_no_deja_filas_rancias', async () => {
+    // Espejo de EC-14 para la rama `catch` (guardian 269.5, mutante M16):
+    // éxito → refetch() cuya promesa RECHAZA → las filas previas no
+    // sobreviven junto al banner de conectividad.
+    const rejected = Promise.reject(new Error('Network request failed'));
+    rejected.catch(() => {});
+    const rpc_sequence = jest
+      .fn()
+      .mockResolvedValueOnce({ data: [AGENT_ROW_1, UNMANAGED_ROW_1], error: null })
+      .mockImplementationOnce(() => rejected);
+    mock_supabase_holder.bundle = make_binding_sensitive_supabase_mock({ rpc: rpc_sequence });
+
+    const { result } = await renderHook(() => useCrmAgencyOverview(AGENCY_ID));
+    expect(result.current.agents).toEqual([EXPECTED_AGENT_1]);
+
+    await act(async () => {
+      await result.current.refetch();
+    });
+
+    expect(result.current.loading).toBe(false);
+    expect(result.current.error).toBe('No se pudo conectar. Verifica tu conexión e intenta de nuevo.');
+    expect(result.current.agents).toEqual([]);
+    expect(result.current.unmanaged).toEqual([]);
   });
 });
