@@ -4,7 +4,7 @@
 
 import { handler } from "./handler.ts";
 import { make_note_updater } from "./note_updater.ts";
-import { service_client } from "../_shared/clients.ts";
+import { make_agency_role_resolver, service_client } from "../_shared/clients.ts";
 import type { CallerVerifier, CallerVerifyResult } from "./types.ts";
 
 Deno.serve((req: Request) => {
@@ -25,7 +25,12 @@ Deno.serve((req: Request) => {
     },
   };
 
-  const noteUpdater = make_note_updater(client);
+  // 269.3: cierre de #31 — el owner/admin ACTIVO de la agencia del lead
+  // también puede editar la nota; mismo resolver que update-lead-status.
+  const noteUpdater = make_note_updater(
+    client,
+    make_agency_role_resolver(client),
+  );
 
   return handler(req, { callerVerifier, noteUpdater });
 });

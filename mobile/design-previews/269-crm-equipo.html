@@ -1,0 +1,799 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Urbea — Preview CRM Equipo, vista de agencia (269.4)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  /* ═══════════════════════════════════════════════════════════════════════
+     TOKENS — mismos literales que 267-crm-santiago.html (molde de esta
+     tarea, exploración 045 §7.6). Fidelidad total de color/tipografía
+     dentro del CRM: NO se usan los tokens de mobile/src/theme/theme.ts aquí
+     a propósito (mismo criterio que 267).
+     ═══════════════════════════════════════════════════════════════════════ */
+  :root{
+    --font_display: 'Outfit', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font_mono:    'DM Mono', ui-monospace, Menlo, monospace;
+
+    --color_bg_gestion:   #F5F2EC;
+    --color_surface:      #FFFFFF;
+    --color_field:        #EDE7DD;
+    --color_chip_active:  #DEE8E1;
+    --color_border:       #E4DED2;
+    --color_border_2:     #D3CABA;
+    --color_ink:          #1D1A15;
+    --color_ink_2:        #55524B;
+    --color_ink_3:        #6F6A61;
+    --color_green:        #1A5E44;
+
+    --temp_hot:     #A8401A;
+    --temp_cooling: #8A6A1E;
+    --temp_warming: #1A5E44;
+    --temp_silent:  #5F6D67;
+
+    --r_10:10px; --r_11:11px; --r_12:12px; --r_16:16px; --r_18:18px; --r_24:24px; --r_pill:999px;
+    --s_4:4px; --s_6:6px; --s_8:8px; --s_10:10px; --s_12:12px; --s_16:16px; --s_20:20px; --s_24:24px;
+    --sh_card: 0 8px 22px -14px rgba(29,26,21,.4);
+  }
+
+  *{ box-sizing:border-box; }
+  body{
+    margin:0;
+    background:#EDE7DA;
+    color:var(--color_ink);
+    font-family:var(--font_display);
+    font-weight:400;
+    padding:32px 20px 64px;
+  }
+  .wrap{ max-width:1180px; margin:0 auto; }
+
+  .spec{
+    background:var(--color_surface); border:1px solid var(--color_border);
+    border-radius:var(--r_16); padding:22px 26px; box-shadow:var(--sh_card); margin-bottom:30px;
+  }
+  .spec h1{ font-family:var(--font_display); font-weight:700; font-size:21px; letter-spacing:-.01em; margin:0 0 4px; }
+  .spec .sub{ font-size:13px; color:var(--color_ink_2); margin:0 0 14px; line-height:1.55; }
+  .spec .chips{ display:flex; gap:8px; flex-wrap:wrap; }
+  .spec .tag{ font-family:var(--font_mono); font-size:10.5px; letter-spacing:.04em; padding:5px 10px; border-radius:var(--r_pill); background:var(--color_field); color:var(--color_ink_2); }
+  .spec .tag b{ color:var(--color_green); font-weight:500; }
+
+  .section{ margin-bottom:46px; }
+  .section-head{ display:flex; align-items:baseline; gap:12px; margin-bottom:6px; }
+  .section-num{ font-family:var(--font_mono); font-size:13px; font-weight:500; color:#FFFFFF; background:var(--color_green); width:26px; height:26px; border-radius:8px; display:flex; align-items:center; justify-content:center; flex:none; }
+  .section-title{ font-family:var(--font_display); font-weight:700; font-size:19px; letter-spacing:-.01em; }
+  .section-desc{ font-size:12.5px; color:var(--color_ink_2); margin:2px 0 18px 38px; max-width:760px; line-height:1.55; }
+
+  .row-flex{ display:flex; gap:26px; flex-wrap:wrap; align-items:flex-start; }
+
+  .device{
+    width:393px; background:var(--color_bg_gestion); color:var(--color_ink);
+    border-radius:var(--r_24); border:1px solid var(--color_border);
+    box-shadow:var(--sh_card); overflow:hidden; flex:none; position:relative;
+  }
+  .device-pad{ padding:18px 0 16px; }
+  .device-cap{ font-family:var(--font_display); font-weight:600; font-size:13px; color:var(--color_ink); margin-bottom:8px; }
+
+  .crm-header{ display:flex; align-items:flex-start; justify-content:space-between; padding:0 20px; }
+  .crm-header h2{ font-size:27px; font-weight:700; letter-spacing:-.02em; line-height:1.1; margin:0; }
+  .crm-header .sub{ margin-top:4px; font-size:13.5px; color:var(--color_ink_3); }
+  .crm-header .menu{ width:44px; height:44px; border-radius:12px; display:flex; align-items:center; justify-content:center; }
+
+  .segmented{ display:flex; margin:14px 20px 0; padding:3px; background:var(--color_field); border-radius:12px; }
+  .segmented .seg{ flex:1; min-height:40px; display:flex; align-items:center; justify-content:center; border-radius:9px; font-size:13px; font-weight:600; color:var(--color_ink_3); }
+  .segmented .seg.active{ background:var(--color_chip_active); color:var(--color_green); }
+
+  /* ── back-header del drill-down ("← Equipo") ──────────────────────────── */
+  .back-header{ display:flex; align-items:center; gap:10px; padding:0 20px 4px; }
+  .back-btn{ width:32px; height:32px; border-radius:9px; background:var(--color_field); display:flex; align-items:center; justify-content:center; flex:none; }
+  .back-title{ font-size:13px; font-weight:600; color:var(--color_ink_3); }
+  .back-agent{ margin-top:2px; font-size:21px; font-weight:700; letter-spacing:-.015em; }
+
+  /* ── narrativa (idéntica a 267 sección 3) ─────────────────────────────── */
+  .narrative{ padding:20px 20px 14px; }
+  .narrative h3{ font-size:23.5px; font-weight:700; letter-spacing:-.022em; line-height:1.18; margin:0; }
+  .narrative h3 .hl{ color:var(--temp_hot); }
+  .narrative .p2{ margin-top:8px; font-size:12.5px; line-height:1.5; color:var(--color_ink_2); font-weight:300; }
+  .narrative .p2 .hl{ font-weight:500; }
+
+  /* ── banda: cabecera + filas (idéntico a 267) ─────────────────────────── */
+  .band{ margin-top:18px; }
+  .band-head{ display:grid; grid-template-columns:19px 1fr auto; align-items:center; gap:2px 9px; padding:0 20px 10px; }
+  .band-icon{ width:19px; height:19px; border-radius:6px; display:flex; align-items:center; justify-content:center; }
+  .band-name{ font-size:13px; font-weight:600; }
+  .band-count{ font-family:var(--font_mono); font-size:11px; color:var(--color_ink_3); }
+  .band-sub{ grid-column:2/4; font-size:11px; color:var(--color_ink_3); font-weight:300; line-height:1.3; }
+  .band-footnote{ grid-column:2/4; font-size:9.5px; color:var(--color_ink_3); font-weight:300; margin-top:2px; display:flex; align-items:center; gap:4px; }
+  .band-footnote svg{ flex:none; }
+
+  /* ── fila "Sin gestor" — variante de lead-row sin narrativa/señales ───── */
+  .lead-row{
+    display:grid; grid-template-columns:3px 46px 1fr auto; gap:0 12px;
+    align-items:center; padding:13px 20px 13px 0; border-top:1px solid var(--color_border);
+  }
+  .lead-rail{ width:3px; border-radius:0 3px 3px 0; align-self:stretch; }
+  .lead-ring{ width:46px; height:46px; border-radius:50%; display:flex; align-items:center; justify-content:center; }
+  .lead-ring-inner{ width:40px; height:40px; border-radius:50%; background:var(--color_bg_gestion); display:flex; align-items:center; justify-content:center; }
+  .lead-initials{ font-size:14px; font-weight:600; color:var(--color_ink_2); }
+  .lead-name-row{ display:flex; align-items:baseline; gap:7px; }
+  .lead-name{ font-size:15px; font-weight:600; letter-spacing:-.005em; }
+  .lead-time{ font-family:var(--font_mono); font-size:10px; color:var(--color_ink_3); }
+  .lead-temp-row{ margin-top:4px; display:flex; align-items:baseline; gap:6px; }
+  .lead-temp-num{ font-family:var(--font_mono); font-size:15px; font-weight:500; }
+  .lead-temp-num .deg{ font-family:var(--font_display); font-size:.7em; vertical-align:super; margin-left:-2px; opacity:.85; }
+  .lead-temp-label{ font-family:var(--font_mono); font-size:9px; letter-spacing:.06em; text-transform:uppercase; color:var(--color_ink_3); }
+
+  .btn-asignar{
+    font-family:var(--font_display); font-size:11.5px; font-weight:600; color:#FDFBF6;
+    background:var(--color_green); border-radius:9px; padding:0 14px; min-height:34px;
+    display:flex; align-items:center; justify-content:center; white-space:nowrap; flex:none;
+  }
+
+  /* ── fila de agente ("Tus agentes") ───────────────────────────────────── */
+  .agency-row{
+    display:grid; grid-template-columns:44px 1fr; gap:0 12px;
+    padding:14px 20px 14px 0; border-top:1px solid var(--color_border); align-items:flex-start; cursor:pointer;
+  }
+  .agency-avatar{ width:44px; height:44px; border-radius:50%; background:var(--color_field); display:flex; align-items:center; justify-content:center; font-size:14px; font-weight:600; color:var(--color_ink_2); flex:none; }
+  .agency-name-row{ display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  .agency-name-left{ display:flex; align-items:baseline; gap:8px; min-width:0; }
+  .agency-name{ font-size:15px; font-weight:600; letter-spacing:-.005em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .agency-chevron{ color:var(--color_ink_3); flex:none; }
+  .agency-metrics{ display:flex; gap:18px; margin-top:9px; }
+  .agency-metric{ display:flex; flex-direction:column; gap:3px; }
+  .agency-metric .m-label{ font-family:var(--font_mono); font-size:8.5px; letter-spacing:.06em; color:var(--color_ink_3); text-transform:uppercase; white-space:nowrap; }
+  .agency-metric .m-value{ font-family:var(--font_mono); font-size:13px; font-weight:500; color:var(--color_ink); }
+  .agency-metric .m-value.dim{ color:var(--color_ink_3); font-weight:400; }
+  .agency-caption{ margin-top:7px; font-size:11px; line-height:1.4; color:var(--color_ink_2); font-weight:300; }
+  .agency-caption b{ font-weight:600; }
+
+  .badge-flag{ font-family:var(--font_mono); font-size:9.5px; font-weight:500; letter-spacing:.03em; padding:3px 9px; border-radius:var(--r_pill); color:#FDFBF6; white-space:nowrap; flex:none; }
+  .badge-flag.pierde{ background:var(--temp_hot); }
+  .badge-flag.acumula{ background:var(--temp_cooling); }
+  .badge-flag.sindatos{ background:var(--color_field); color:var(--color_ink_3); }
+
+  /* ── hoja ASIGNAR (bottom sheet) ──────────────────────────────────────── */
+  .scrim{ position:absolute; inset:0; background:rgba(29,26,21,.42); border-radius:var(--r_24); }
+  .sheet{
+    position:absolute; left:0; right:0; bottom:0; background:var(--color_surface);
+    border-top-left-radius:var(--r_24); border-top-right-radius:var(--r_24);
+    box-shadow:0 -10px 26px -12px rgba(29,26,21,.4); padding:14px 0 20px; max-height:74%;
+  }
+  .sheet-handle{ width:36px; height:4px; border-radius:2px; background:var(--color_border_2); margin:0 auto 14px; }
+  .sheet-title{ padding:0 20px; font-size:16px; font-weight:700; letter-spacing:-.01em; margin-bottom:2px; }
+  .sheet-sub{ padding:0 20px; font-size:11.5px; color:var(--color_ink_3); margin-bottom:12px; }
+  .sheet-row{ display:flex; align-items:center; gap:11px; padding:10px 20px; border-top:1px solid var(--color_border); }
+  .sheet-row:first-of-type{ border-top:none; }
+  .sheet-avatar{ width:36px; height:36px; border-radius:50%; background:var(--color_field); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:600; color:var(--color_ink_2); flex:none; }
+  .sheet-name{ font-size:13.5px; font-weight:500; flex:1; }
+  .sheet-load{ font-family:var(--font_mono); font-size:10px; color:var(--color_ink_3); }
+
+  .empty-block{ text-align:center; padding:26px 30px; }
+  .empty-icon-box{ width:56px; height:56px; margin:0 auto 14px; border-radius:18px; background:var(--color_surface); border:1px solid var(--color_border); display:flex; align-items:center; justify-content:center; }
+  .empty-title{ font-size:16px; font-weight:600; letter-spacing:-.01em; line-height:1.3; }
+  .empty-sub{ margin-top:8px; font-size:12px; line-height:1.55; color:var(--color_ink_2); font-weight:300; }
+
+  .toast{
+    position:absolute; left:14px; right:14px; bottom:16px; background:var(--color_ink);
+    color:#FDFBF6; border-radius:12px; padding:11px 14px; font-size:12px; font-weight:500;
+    display:flex; align-items:center; gap:8px; box-shadow:0 10px 24px -10px rgba(0,0,0,.5);
+  }
+  .toast.err{ background:var(--temp_hot); }
+  .toast svg{ flex:none; }
+
+  .approve-box{
+    max-width:900px; margin-top:16px; background:var(--color_surface);
+    border:1.5px solid var(--color_green); border-radius:var(--r_16); padding:16px 20px;
+  }
+  .approve-box h4{ font-family:var(--font_display); font-weight:700; font-size:13px; margin:0 0 8px; color:var(--color_green); text-transform:uppercase; letter-spacing:.04em; }
+  .approve-box ul{ margin:0; padding-left:18px; font-size:12.5px; line-height:1.6; color:var(--color_ink_2); }
+  .approve-box li{ margin-bottom:6px; }
+  .approve-box b{ color:var(--color_ink); }
+  .approve-box code{ background:var(--color_field); padding:1px 5px; border-radius:4px; font-family:var(--font_mono); font-size:11px; }
+
+  .alt-row{ display:flex; gap:20px; flex-wrap:wrap; align-items:stretch; margin-top:4px; }
+  .alt-card{
+    flex:1; min-width:260px; background:var(--color_surface); border:1px solid var(--color_border);
+    border-radius:var(--r_16); padding:16px 18px; box-shadow:var(--sh_card); display:flex; flex-direction:column;
+  }
+  .alt-card.rec{ border:1.5px solid var(--color_green); }
+  .alt-card .alt-tag{
+    display:inline-flex; align-items:center; gap:6px; font-family:var(--font_mono); font-size:10px; font-weight:500;
+    letter-spacing:.06em; color:#FFFFFF; background:var(--color_ink_3); padding:2px 8px; border-radius:5px; margin-bottom:10px; width:fit-content;
+  }
+  .alt-card.rec .alt-tag{ background:var(--color_green); }
+  .alt-card .tradeoff{ margin-top:auto; padding-top:8px; font-size:11.5px; color:var(--color_ink_3); line-height:1.5; border-top:1px dashed var(--color_border_2); }
+
+  .footer-notes{
+    background:var(--color_surface); border:1px solid var(--color_border); border-radius:var(--r_16);
+    padding:22px 26px; box-shadow:var(--sh_card); max-width:900px; margin:0 auto;
+  }
+  .footer-notes h2{ font-family:var(--font_display); font-weight:700; font-size:16px; margin:0 0 12px; }
+  .footer-notes ul{ margin:0; padding-left:18px; font-size:12.5px; line-height:1.65; color:var(--color_ink_2); }
+  .footer-notes li{ margin-bottom:8px; }
+  .footer-notes b{ color:var(--color_ink); }
+  .footer-notes code{ background:var(--color_field); padding:1px 5px; border-radius:4px; font-family:var(--font_mono); font-size:11px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="spec">
+    <h1>Preview aprobable — CRM Equipo, vista de agencia (269.4)</h1>
+    <p class="sub">
+      6 secciones aprobables por separado (pestaña <b>Equipo</b> del CRM para owner/admin, frame 3
+      del diseño de Santiago reinterpretado con <b>NUESTRO</b> contrato de datos —
+      <code>crm_agency_overview</code>/<code>reassign_lead_atomic</code>, #269.1/269.2). Molde:
+      <code>267-crm-santiago.html</code> (mismos tokens, misma tipografía). Donde el diseño no
+      resuelve nuestro modelo se muestran <b>2–3 alternativas</b> lado a lado con su trade-off y una
+      marcada como recomendada.
+    </p>
+    <div class="chips">
+      <span class="tag">gate: <b>CLAUDE.md §8</b> — checkpoint HUMANO, aprobación por sección antes de 269.6</span>
+      <span class="tag">tipografía: <b>Outfit</b> + <b>DM Mono</b></span>
+      <span class="tag">frontera #31: <b>owner y admin activos</b></span>
+      <span class="tag">aviso reasignar: <b>solo agente destino</b></span>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       SECCIÓN 1 — NARRATIVA DE AGENCIA
+       ═══════════════════════════════════════════════════════════════════ -->
+  <div class="section" id="sec1">
+    <div class="section-head"><div class="section-num">1</div><div class="section-title">Narrativa de agencia (cabecera)</div></div>
+    <div class="section-desc">
+      Misma estructura tipográfica que la narrativa de agente (267 sección 3): H1 con el conteo de
+      leads calientes destacado + línea secundaria con "lo que se escapa" — aquí, cuántos no tienen
+      gestor y quién es el peor caso del equipo.
+    </div>
+
+    <div class="row-flex">
+      <div class="device">
+        <div class="device-pad" style="padding-top:16px">
+          <div class="crm-header">
+            <div><h2>Equipo</h2><div class="sub">Vista de agencia</div></div>
+            <div class="menu">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M4.5 8h7M7 12h2" stroke="#1D1A15" stroke-width="1.6" stroke-linecap="round"/></svg>
+            </div>
+          </div>
+          <div class="segmented">
+            <div class="seg">Míos</div>
+            <div class="seg active">Equipo</div>
+          </div>
+          <div class="narrative">
+            <h3><span class="hl">10 leads calientes</span> llevan horas sin que los toquen. <span class="hl">3</span> no tienen gestor.</h3>
+            <div class="p2">Y <span class="hl" style="color:var(--temp_hot)">Vlad Ramos</span> no marca contactado hace más de un día — 4 de sus leads siguen esperando.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="alt-card" style="flex:1; min-width:320px; max-width:520px; align-self:flex-start">
+        <div class="device-cap">De dónde sale cada número</div>
+        <p style="font-size:12.5px; color:var(--color_ink_2); line-height:1.55; margin:6px 0 0">
+          <b>"10 leads calientes"</b>: suma de leads en banda <i>Háblales hoy</i>/<i>Se están enfriando</i>
+          de todos los agentes de la agencia (mismo modelo T1 de temperatura que la vista Míos, #266).
+          <b>"3 no tienen gestor"</b>: <code>count(*)</code> de la banda Sin gestor. La 2ª línea toma el
+          agente con <code>flag='pierde_leads'</code> y <code>untouched_count</code> más alto — si nadie
+          tiene flag, la 2ª línea se omite (ver sección 6, agencia saludable).
+        </p>
+      </div>
+    </div>
+
+    <div class="approve-box">
+      <h4>Qué aprobar</h4>
+      <ul>
+        <li><b>Fiel a Santiago:</b> estructura H1 23.5px/700 + línea secundaria 12.5px/300 con highlight de color, calcada de la narrativa de agente (267.5).</li>
+        <li><b>Adaptado a nuestro modelo:</b> Santiago dice <i>"3 de ellos no tienen agente asignado"</i> (subordinado a los 10 calientes); aquí "no tienen gestor" es un conteo independiente (<code>crm_agency_overview</code> no cruza banda-de-temperatura con sin-gestor porque un lead sin gestor no tiene <code>agent_id</code> activo del que calcular banda por agente) — se presentan como 2 hechos separados, no uno anidado.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       SECCIÓN 2 — BANDA "SIN GESTOR"
+       ═══════════════════════════════════════════════════════════════════ -->
+  <div class="section" id="sec2">
+    <div class="section-head"><div class="section-num">2</div><div class="section-title">Banda "Sin gestor" — fila + ASIGNAR</div></div>
+    <div class="section-desc">
+      Reinterpreta la banda "Sin dueño" de Santiago con el mecanismo #203 (agente suspendido →
+      <code>leads.agent_id</code> cae a la membresía suspendida). Datos: <code>lead_display_name</code>,
+      <code>temperature</code>, <code>first_contact_at</code>.
+    </div>
+
+    <div class="row-flex">
+      <div class="device">
+        <div class="device-pad">
+          <div class="band">
+            <div class="band-head">
+              <div class="band-icon" style="background:var(--temp_hot)">
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M6 1.5c0 3-3 3.4-3 6a3 3 0 0 0 6 0c0-1.4-1-2-1-3.4C8 5.3 6 4.5 6 1.5z" fill="#FDFBF6"/></svg>
+              </div>
+              <div class="band-name">Sin gestor</div>
+              <div class="band-count">2</div>
+              <div class="band-sub">Nadie de tu equipo los está atendiendo</div>
+            </div>
+
+            <div class="lead-row">
+              <div class="lead-rail" style="background:var(--temp_hot)"></div>
+              <div class="lead-ring" style="background:conic-gradient(var(--temp_hot) 91%, var(--color_border) 0)">
+                <div class="lead-ring-inner"><span class="lead-initials">DM</span></div>
+              </div>
+              <div style="min-width:0">
+                <div class="lead-name-row"><span class="lead-name">Diego Martínez</span></div>
+                <div class="lead-time" style="margin-top:2px">ENTRÓ hace 18 min</div>
+                <div class="lead-temp-row">
+                  <span class="lead-temp-num" style="color:var(--temp_hot)">91<span class="deg">°</span></span>
+                  <span class="lead-temp-label">TEMP</span>
+                </div>
+              </div>
+              <div class="btn-asignar" onclick="document.getElementById('sec3').scrollIntoView({behavior:'smooth'})">ASIGNAR</div>
+            </div>
+
+            <div class="lead-row">
+              <div class="lead-rail" style="background:var(--temp_hot)"></div>
+              <div class="lead-ring" style="background:conic-gradient(var(--temp_cooling) 76%, var(--color_border) 0)">
+                <div class="lead-ring-inner"><span class="lead-initials">AT</span></div>
+              </div>
+              <div style="min-width:0">
+                <div class="lead-name-row"><span class="lead-name">Ana Torres</span></div>
+                <div class="lead-time" style="margin-top:2px">ENTRÓ hace 3 h</div>
+                <div class="lead-temp-row">
+                  <span class="lead-temp-num" style="color:var(--temp_cooling)">76<span class="deg">°</span></span>
+                  <span class="lead-temp-label">TEMP</span>
+                </div>
+              </div>
+              <div class="btn-asignar">ASIGNAR</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="alt-card" style="flex:1; min-width:320px; max-width:520px; align-self:flex-start">
+        <div class="device-cap">Por qué no hay frase narrativa aquí</div>
+        <p style="font-size:12.5px; color:var(--color_ink_2); line-height:1.55; margin:6px 0 0">
+          Santiago dibuja <code>avatar · nombre · ENTRÓ hace 18 min · TEMP 91° · frase</code>. El
+          contrato de <code>crm_agency_overview</code> para leads sin gestor devuelve exactamente
+          <code>lead_display_name</code>, <code>temperature</code>, <code>first_contact_at</code> —
+          <b>sin</b> el desglose de señales que sí trae la banda de un agente (267). Añadir la frase
+          exigiría reabrir 269.1 para agregar señales sobre un lead que, por definición, nadie está
+          viendo activamente — se omite (adaptado a nuestro modelo, no inventamos dato).
+        </p>
+      </div>
+    </div>
+
+    <div class="approve-box">
+      <h4>Qué aprobar / diferencias con Santiago</h4>
+      <ul>
+        <li><b>Fiel:</b> grid de la fila (riel + anillo cónico 46px + ENTRÓ hace + TEMP), color del anillo/riel por escala absoluta de temperatura (mismo criterio que 267 §7.3 para el número de grados).</li>
+        <li><b>Adaptado a nuestro modelo:</b> sin frase narrativa (ver nota arriba); botón <b>ASIGNAR</b> reemplaza el trailing de grados+delta de la fila de lead normal, porque aquí no hay tendencia que mostrar (un lead sin gestor no acumula historial de banda).</li>
+        <li><b>Decisión ya aplicada:</b> el botón ASIGNAR abre la hoja de la sección 3 (Abraham, 2026-09-07) — en la 1ª entrega de la épica este botón <b>no existía</b> (D10); esta subtarea sí lo dibuja porque reabre #31 con aviso solo al destino (D10-bis).</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       SECCIÓN 3 — HOJA ASIGNAR (3 alternativas obligatorias)
+       ═══════════════════════════════════════════════════════════════════ -->
+  <div class="section" id="sec3">
+    <div class="section-head"><div class="section-num">3</div><div class="section-title">Hoja ASIGNAR — 3 alternativas</div></div>
+    <div class="section-desc">
+      Santiago no dibuja qué pasa al tocar ASIGNAR. Selector de <b>agentes activos</b>, sin "Todos" y
+      sin inactivos (decisión de Abraham 2026-09-07). Reuso disponible: <code>AgentSelector.tsx</code>
+      ya existe como rail de chips con avatar/iniciales y etiqueta "(suspendido)" — hoy se usa para
+      filtrar Míos/Equipo; en Equipo, por decisión, <b>solo se usa en modo assign</b>.
+    </div>
+
+    <div class="alt-row">
+      <div class="alt-card rec" style="min-width:340px">
+        <span class="alt-tag">RECOMENDADA — A: bottom sheet</span>
+        <div class="device" style="width:280px; min-height:380px; margin:0 auto;">
+          <div class="device-pad" style="padding-top:14px">
+            <div class="lead-row" style="padding:10px 16px 10px 0">
+              <div class="lead-rail" style="background:var(--temp_hot)"></div>
+              <div class="lead-ring" style="background:conic-gradient(var(--temp_hot) 91%, var(--color_border) 0)"><div class="lead-ring-inner"><span class="lead-initials" style="font-size:11px">DM</span></div></div>
+              <div style="min-width:0"><div class="lead-name" style="font-size:13px">Diego Martínez</div><div class="lead-temp-num" style="font-size:12px;color:var(--temp_hot)">91°</div></div>
+              <div class="btn-asignar" style="opacity:.5">ASIGNAR</div>
+            </div>
+          </div>
+          <div class="scrim"></div>
+          <div class="sheet" style="max-height:none">
+            <div class="sheet-handle"></div>
+            <div class="sheet-title">Asignar a…</div>
+            <div class="sheet-sub">Diego Martínez · agentes activos de tu agencia</div>
+            <div class="sheet-row"><div class="sheet-avatar">KI</div><div class="sheet-name">Karla Ibarra</div><div class="sheet-load">1 sin tocar</div></div>
+            <div class="sheet-row"><div class="sheet-avatar">FR</div><div class="sheet-name">Fernando Reyes</div><div class="sheet-load">2 sin tocar</div></div>
+            <div class="sheet-row"><div class="sheet-avatar">RS</div><div class="sheet-name">Renata Solís</div><div class="sheet-load">0 leads</div></div>
+          </div>
+        </div>
+        <div class="tradeoff">Reusa <code>AgentSelector.tsx</code> como lista vertical dentro de una hoja nativa (patrón ya validado en el CRM). Escala bien con agencias grandes (scroll + buscador futuro). Evita el riesgo de "ficha inline en lista virtualizada" (§16 edge case 8 de la exploración 045: alturas variables + reciclado) que sí aplicaría a las otras 2 opciones porque la banda Sin gestor vive en una lista.</div>
+      </div>
+
+      <div class="alt-card">
+        <span class="alt-tag">B: lista inline</span>
+        <div class="device" style="width:280px; margin:0 auto;">
+          <div class="device-pad" style="padding-top:14px">
+            <div class="lead-row" style="padding:10px 16px 10px 0; border-bottom:none">
+              <div class="lead-rail" style="background:var(--temp_hot)"></div>
+              <div class="lead-ring" style="background:conic-gradient(var(--temp_hot) 91%, var(--color_border) 0)"><div class="lead-ring-inner"><span class="lead-initials" style="font-size:11px">DM</span></div></div>
+              <div style="min-width:0"><div class="lead-name" style="font-size:13px">Diego Martínez</div><div class="lead-temp-num" style="font-size:12px;color:var(--temp_hot)">91°</div></div>
+              <div class="btn-asignar" style="background:var(--color_ink_3)">Cerrar</div>
+            </div>
+            <div style="padding:0 20px 14px; display:flex; flex-direction:column; gap:6px">
+              <div style="display:flex;align-items:center;gap:9px;padding:8px 10px;background:var(--color_field);border-radius:9px"><div class="sheet-avatar" style="width:28px;height:28px;font-size:10px">KI</div><span style="font-size:12.5px;font-weight:500">Karla Ibarra</span></div>
+              <div style="display:flex;align-items:center;gap:9px;padding:8px 10px;background:var(--color_field);border-radius:9px"><div class="sheet-avatar" style="width:28px;height:28px;font-size:10px">FR</div><span style="font-size:12.5px;font-weight:500">Fernando Reyes</span></div>
+              <div style="display:flex;align-items:center;gap:9px;padding:8px 10px;background:var(--color_field);border-radius:9px"><div class="sheet-avatar" style="width:28px;height:28px;font-size:10px">RS</div><span style="font-size:12.5px;font-weight:500">Renata Solís</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="tradeoff">La fila se expande hacia abajo dentro de la lista de la banda. Sin overlay nuevo, pero exactamente el patrón que #231 marcó como zona muerta al tacto en Android cuando se hace con overlay absoluto — y si se hace inline (no overlay), cambia la altura de la fila en una lista que además puede virtualizarse a futuro.</div>
+      </div>
+
+      <div class="alt-card">
+        <span class="alt-tag">C: selector en la fila</span>
+        <div class="device" style="width:280px; margin:0 auto;">
+          <div class="device-pad" style="padding-top:14px">
+            <div class="lead-row" style="padding:10px 16px 10px 0">
+              <div class="lead-rail" style="background:var(--temp_hot)"></div>
+              <div class="lead-ring" style="background:conic-gradient(var(--temp_hot) 91%, var(--color_border) 0)"><div class="lead-ring-inner"><span class="lead-initials" style="font-size:11px">DM</span></div></div>
+              <div style="min-width:0">
+                <div class="lead-name" style="font-size:13px">Diego Martínez</div>
+                <div style="display:flex;gap:5px;margin-top:5px">
+                  <div class="sheet-avatar" style="width:22px;height:22px;font-size:8.5px;border:1.5px solid var(--color_green)">KI</div>
+                  <div class="sheet-avatar" style="width:22px;height:22px;font-size:8.5px">FR</div>
+                  <div class="sheet-avatar" style="width:22px;height:22px;font-size:8.5px">RS</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="tradeoff">Cero pasos — un toque directo sobre el avatar del agente asigna. Rapidísimo con equipos pequeños, pero no cabe más de 3–4 avatares antes de comprimirse ilegible; y sin buscador, una agencia con 15 agentes no tiene dónde crecer.</div>
+      </div>
+    </div>
+
+    <div class="approve-box">
+      <h4>Qué aprobar</h4>
+      <ul>
+        <li><b>Recomendación:</b> <b>A — bottom sheet</b>, por reuso directo de <code>AgentSelector.tsx</code> (adaptado: sin chip "Todos", solo agentes con <code>status='active'</code>) y por evitar el riesgo de layout inline en lista ya documentado en la exploración 045.</li>
+        <li><b>Filtro común a las 3:</b> agentes activos de la agencia, sin "Todos", sin suspendidos — <code>reassign_lead_atomic</code> ya rechaza <code>TARGET_NOT_ACTIVE_MEMBER</code>, así que ofrecerlos en el selector sería un error predecible en el 100% de los casos.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       SECCIÓN 4 — BANDA "TUS AGENTES" (2 alternativas obligatorias)
+       ═══════════════════════════════════════════════════════════════════ -->
+  <div class="section" id="sec4">
+    <div class="section-head"><div class="section-num">4</div><div class="section-title">Banda "Tus agentes" — fila + badge</div></div>
+    <div class="section-desc">
+      SIN TOCAR / RESPONDE EN / SUS LEADS + badge PIERDE LEADS / ACUMULA. Umbrales: pierde_leads =
+      ≥3 sin tocar <b>o</b> responde &gt;24 h; acumula = ≥5 leads abiertos sin cambio ≥7 días;
+      pierde_leads manda.
+    </div>
+
+    <div class="row-flex">
+      <div class="device">
+        <div class="device-pad">
+          <div class="band" style="margin-top:2px">
+            <div class="band-head">
+              <div class="band-icon" style="background:var(--color_green)">
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="4" r="2.2" fill="#FDFBF6"/><path d="M2 10c.6-2.6 2.2-3.4 4-3.4S9.4 7.4 10 10" stroke="#FDFBF6" stroke-width="1.3" stroke-linecap="round"/></svg>
+              </div>
+              <div class="band-name">Tus agentes</div>
+              <div class="band-count">4</div>
+              <div class="band-footnote">
+                <svg width="9" height="9" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.5" stroke="#6F6A61" stroke-width="1.2"/><path d="M8 7.2v3.6M8 5.2v.1" stroke="#6F6A61" stroke-width="1.2" stroke-linecap="round"/></svg>
+                "Responde en" mide cuándo el agente marca contactado, no cuándo escribe de verdad
+              </div>
+            </div>
+
+            <!-- Vlad Ramos — PIERDE LEADS -->
+            <div class="agency-row">
+              <div class="agency-avatar">VR</div>
+              <div>
+                <div class="agency-name-row">
+                  <div class="agency-name-left"><span class="agency-name">Vlad Ramos</span></div>
+                  <span class="badge-flag pierde">PIERDE LEADS</span>
+                </div>
+                <div class="agency-metrics">
+                  <div class="agency-metric"><span class="m-label">Sin tocar</span><span class="m-value">4</span></div>
+                  <div class="agency-metric"><span class="m-label">Responde en</span><span class="m-value">28h 40m</span></div>
+                  <div class="agency-metric"><span class="m-label">Sus leads</span><span class="m-value">61°</span></div>
+                </div>
+                <div class="agency-caption">No marca contactado hace más de <b>24 h</b> y tiene <b>4</b> leads sin tocar.</div>
+              </div>
+            </div>
+
+            <!-- Fernando Reyes — ACUMULA -->
+            <div class="agency-row">
+              <div class="agency-avatar">FR</div>
+              <div>
+                <div class="agency-name-row">
+                  <div class="agency-name-left"><span class="agency-name">Fernando Reyes</span></div>
+                  <span class="badge-flag acumula">ACUMULA</span>
+                </div>
+                <div class="agency-metrics">
+                  <div class="agency-metric"><span class="m-label">Sin tocar</span><span class="m-value">2</span></div>
+                  <div class="agency-metric"><span class="m-label">Responde en</span><span class="m-value">6h 40m</span></div>
+                  <div class="agency-metric"><span class="m-label">Sus leads</span><span class="m-value">41°</span></div>
+                </div>
+                <div class="agency-caption"><b>5</b> leads abiertos sin cambio de estado hace más de <b>7 días</b>.</div>
+              </div>
+            </div>
+
+            <!-- Karla Ibarra — sana, sin badge -->
+            <div class="agency-row">
+              <div class="agency-avatar">KI</div>
+              <div>
+                <div class="agency-name-row">
+                  <div class="agency-name-left"><span class="agency-name">Karla Ibarra</span></div>
+                </div>
+                <div class="agency-metrics">
+                  <div class="agency-metric"><span class="m-label">Sin tocar</span><span class="m-value">1</span></div>
+                  <div class="agency-metric"><span class="m-label">Responde en</span><span class="m-value">2h 15m</span></div>
+                  <div class="agency-metric"><span class="m-label">Sus leads</span><span class="m-value">54°</span></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Renata Solís — sin leads, badge "sin datos" (alternativa B recomendada) -->
+            <div class="agency-row">
+              <div class="agency-avatar">RS</div>
+              <div>
+                <div class="agency-name-row">
+                  <div class="agency-name-left"><span class="agency-name">Renata Solís</span></div>
+                  <span class="badge-flag sindatos">SIN LEADS</span>
+                </div>
+                <div class="agency-metrics">
+                  <div class="agency-metric"><span class="m-label">Sin tocar</span><span class="m-value dim">—</span></div>
+                  <div class="agency-metric"><span class="m-label">Responde en</span><span class="m-value dim">—</span></div>
+                  <div class="agency-metric"><span class="m-label">Sus leads</span><span class="m-value dim">—</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="flex:1; min-width:320px; display:flex; flex-direction:column; gap:20px;">
+
+        <div>
+          <div class="device-cap">Alternativa obligatoria 1 — etiqueta honesta de "responde en"</div>
+          <div class="alt-row">
+            <div class="alt-card">
+              <span class="alt-tag">A: fiel a Santiago</span>
+              <div style="font-family:var(--font_mono);font-size:8.5px;letter-spacing:.06em;color:var(--color_ink_3);text-transform:uppercase">Responde en</div>
+              <div style="font-family:var(--font_mono);font-size:13px;font-weight:500;margin-top:3px">28h 40m</div>
+              <div class="tradeoff">Copy calcado del mockup. Corto y escaneable, pero técnicamente engañoso: mide cuándo el agente <i>marca</i> contactado en el CRM, no cuándo responde de verdad por WhatsApp.</div>
+            </div>
+            <div class="alt-card">
+              <span class="alt-tag">B: label largo</span>
+              <div style="font-family:var(--font_mono);font-size:8.5px;letter-spacing:.06em;color:var(--color_ink_3);text-transform:uppercase">Marca contacto en</div>
+              <div style="font-family:var(--font_mono);font-size:13px;font-weight:500;margin-top:3px">28h 40m</div>
+              <div class="tradeoff">Honesto sin ambigüedad. Rompe el ritmo visual de labels de 1–2 palabras ("Sin tocar" / "Sus leads") y no cabe en 3 columnas sin apretar el tracking.</div>
+            </div>
+            <div class="alt-card rec">
+              <span class="alt-tag">RECOMENDADA — C: label corto + footnote de banda</span>
+              <div style="font-family:var(--font_mono);font-size:8.5px;letter-spacing:.06em;color:var(--color_ink_3);text-transform:uppercase">Responde en</div>
+              <div style="font-family:var(--font_mono);font-size:13px;font-weight:500;margin-top:3px">28h 40m</div>
+              <div class="tradeoff">Mantiene el label corto y fiel al diseño en cada fila; la aclaración vive <b>una sola vez</b>, bajo la cabecera de la banda (ver ícono ⓘ arriba en el device) — honesto sin repetirse 4 veces por pantalla.</div>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div class="device-cap">Alternativa obligatoria 2 — badge cuando no hay datos (0 leads)</div>
+          <div class="alt-row">
+            <div class="alt-card">
+              <span class="alt-tag">A: sin badge</span>
+              <span class="agency-name" style="display:block">Renata Solís</span>
+              <div class="agency-metrics" style="margin-top:8px"><div class="agency-metric"><span class="m-label">Sin tocar</span><span class="m-value dim">—</span></div></div>
+              <div class="tradeoff">Simple: ausencia de badge = sin problema. Pero ambiguo — un owner que escanea rápido no distingue "agente sano" de "agente sin ningún lead asignado", que puede ser señal de que no le están llegando propiedades.</div>
+            </div>
+            <div class="alt-card rec">
+              <span class="alt-tag">RECOMENDADA — B: badge "Sin leads"</span>
+              <span class="agency-name-row" style="display:flex;justify-content:space-between"><span class="agency-name">Renata Solís</span><span class="badge-flag sindatos">SIN LEADS</span></span>
+              <div class="agency-metrics" style="margin-top:8px"><div class="agency-metric"><span class="m-label">Sin tocar</span><span class="m-value dim">—</span></div></div>
+              <div class="tradeoff">3er estado de badge, visualmente neutro (gris, no rojo/ámbar) — no es un juicio ("pierde leads"), es un hecho ("no tiene con qué medirse"). Un badge más en el sistema, pero cierra la ambigüedad de A.</div>
+            </div>
+            <div class="alt-card">
+              <span class="alt-tag">C: caption sin badge</span>
+              <span class="agency-name" style="display:block">Renata Solís</span>
+              <div style="margin-top:8px;font-size:11px;color:var(--color_ink_3);font-style:italic">Sin leads asignados todavía</div>
+              <div class="tradeoff">Explícito como B, sin ocupar el slot visual del badge (reservado para juicios de desempeño). Pero rompe el patrón de "toda fila de agente tiene su badge a la derecha" que las otras 3 filas establecen.</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="approve-box">
+      <h4>Qué aprobar / diferencias con Santiago</h4>
+      <ul>
+        <li><b>Fiel:</b> las 3 métricas en DM Mono (SIN TOCAR / RESPONDE EN / SUS LEADS) + badge a la derecha del nombre.</li>
+        <li><b>Añadido sobre Santiago:</b> caption de una línea bajo las métricas explicando <i>por qué</i> salió el badge (umbral exacto que se cruzó) — el mockup solo dibuja el badge sin justificación; con un juicio publicado ante el jefe del agente (riesgo #16.6 de la exploración), la transparencia del umbral es la diferencia entre una métrica útil y una acusación opaca.</li>
+        <li><b><code>pierde_leads</code> manda:</b> Vlad cumpliría potencialmente ambas condiciones si tuviera además 5 leads sin cambio ≥7d, pero solo se pinta un badge — el más severo, tal como fija D11-bis.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       SECCIÓN 5 — DRILL-DOWN: TAP EN AGENTE → LEADS DEL AGENTE
+       ═══════════════════════════════════════════════════════════════════ -->
+  <div class="section" id="sec5">
+    <div class="section-head"><div class="section-num">5</div><div class="section-title">Drill-down — tap en agente → sus leads</div></div>
+    <div class="section-desc">
+      Tap en una fila de "Tus agentes" abre la lista de leads de ESE agente (la pantalla ya aprobada
+      en 267) con cabecera "← Equipo" (decisión de Abraham 2026-09-07). No se reconstruye la pantalla
+      completa aquí — solo la transición y la cabecera, que es lo nuevo de esta subtarea.
+    </div>
+
+    <div class="row-flex">
+      <div class="device">
+        <div class="device-pad">
+          <div class="band">
+            <div class="band-head" style="padding-bottom:6px">
+              <div class="band-icon" style="background:var(--color_green)"><svg width="11" height="11" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="4" r="2.2" fill="#FDFBF6"/><path d="M2 10c.6-2.6 2.2-3.4 4-3.4S9.4 7.4 10 10" stroke="#FDFBF6" stroke-width="1.3" stroke-linecap="round"/></svg></div>
+              <div class="band-name">Tus agentes</div>
+            </div>
+            <div class="agency-row" style="background:var(--color_chip_active); border-radius:12px; margin:0 20px; padding:12px; border-top:none">
+              <div class="agency-avatar">VR</div>
+              <div>
+                <div class="agency-name-row"><div class="agency-name-left"><span class="agency-name">Vlad Ramos</span></div><span class="badge-flag pierde">PIERDE LEADS</span></div>
+                <div class="agency-metrics"><div class="agency-metric"><span class="m-label">Sin tocar</span><span class="m-value">4</span></div></div>
+              </div>
+            </div>
+          </div>
+          <div style="text-align:center;margin:14px 0;color:var(--color_ink_3)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="transform:rotate(90deg)"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+        </div>
+      </div>
+
+      <div class="device">
+        <div class="device-pad">
+          <div class="back-header">
+            <div class="back-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M15 18l-6-6 6-6" stroke="#1D1A15" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+            <div class="back-title">← Equipo</div>
+          </div>
+          <div style="padding:0 20px">
+            <div class="back-agent">Vlad Ramos</div>
+            <div class="lead-time" style="margin-top:2px">4 leads sin tocar · 61° promedio</div>
+          </div>
+          <div class="band" style="margin-top:14px">
+            <div class="band-head">
+              <div class="band-icon" style="background:var(--temp_hot)"><svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M6.6 1 2.4 6.8h2.6L5.2 11l4.4-6h-2.7z" fill="#FDFBF6"/></svg></div>
+              <div class="band-name">Háblales hoy</div>
+              <div class="band-count">1</div>
+            </div>
+            <div class="lead-row">
+              <div class="lead-rail" style="background:var(--temp_hot)"></div>
+              <div class="lead-ring" style="background:conic-gradient(var(--temp_hot) 88%, var(--color_border) 0)"><div class="lead-ring-inner"><span class="lead-initials">MO</span></div></div>
+              <div style="min-width:0"><div class="lead-name-row"><span class="lead-name">Marcela Ontiveros</span><span class="lead-time">hace 2 d</span></div></div>
+              <div class="lead-temp-num" style="color:var(--temp_hot)">88<span class="deg">°</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="approve-box">
+      <h4>Qué aprobar</h4>
+      <ul>
+        <li><b>Decisión ya tomada (no es alternativa):</b> el drill-down reusa íntegro el patrón de bandas/filas de la pantalla Míos (267), con owner/admin en <code>readOnly</code> salvo lo que habilita #269.3 (edición del lead ajeno para owner/admin activo, footprint de 269.6).</li>
+        <li><b>Único elemento nuevo de esta subtarea:</b> la cabecera "← Equipo" + subtítulo con el resumen del agente (sin tocar / temperatura promedio) — reusa datos que <code>crm_agency_overview</code> ya trae, sin llamada extra.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       SECCIÓN 6 — ESTADOS VACÍOS
+       ═══════════════════════════════════════════════════════════════════ -->
+  <div class="section" id="sec6">
+    <div class="section-head"><div class="section-num">6</div><div class="section-title">Estados vacíos</div></div>
+    <div class="section-desc">
+      3 casos: sin leads sin gestor, agente sin leads (ya cubierto en sección 4 con Renata Solís),
+      agencia sin agentes.
+    </div>
+
+    <div class="row-flex">
+      <div class="device">
+        <div class="device-pad">
+          <div class="crm-header"><div><h2>Equipo</h2><div class="sub">Vista de agencia</div></div></div>
+          <div class="narrative" style="padding-top:14px">
+            <h3>Todo tiene gestor.</h3>
+            <div class="p2">No hay leads sin asignar en este momento.</div>
+          </div>
+          <div class="band" style="margin-top:6px">
+            <div class="band-head"><div class="band-icon" style="background:var(--color_green)"><svg width="11" height="11" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="4" r="2.2" fill="#FDFBF6"/><path d="M2 10c.6-2.6 2.2-3.4 4-3.4S9.4 7.4 10 10" stroke="#FDFBF6" stroke-width="1.3" stroke-linecap="round"/></svg></div><div class="band-name">Tus agentes</div><div class="band-count">4</div></div>
+            <div class="agency-row"><div class="agency-avatar">VR</div><div><div class="agency-name">Vlad Ramos</div></div></div>
+          </div>
+        </div>
+        <div class="device-cap" style="padding:0 20px 14px">Sin leads sin gestor — la banda "Sin gestor" desaparece por completo (no se dibuja vacía)</div>
+      </div>
+
+      <div class="device">
+        <div class="device-pad">
+          <div class="empty-block" style="padding-top:26px">
+            <div class="empty-icon-box">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><circle cx="9" cy="8" r="3" stroke="var(--color_green)" stroke-width="1.4"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M17 8h4M19 6v4" stroke="var(--color_green)" stroke-width="1.4" stroke-linecap="round"/></svg>
+            </div>
+            <div class="empty-title">Aún no tienes agentes en tu equipo</div>
+            <div class="empty-sub">En cuanto invites al primero, verás aquí sus leads sin tocar, su tiempo de respuesta y su temperatura promedio.</div>
+          </div>
+        </div>
+        <div class="device-cap" style="padding:0 20px 14px">Agencia sin agentes — reusa <code style="font-family:var(--font_mono);font-size:11px">EmptyState.tsx</code></div>
+      </div>
+    </div>
+
+    <div class="approve-box">
+      <h4>Qué aprobar</h4>
+      <ul>
+        <li><b>Sin leads sin gestor:</b> la banda desaparece (no se dibuja un "todo con gestor" dentro de una banda vacía) — mismo criterio de "banda que no aporta, no ocupa espacio" que Santiago aplica implícitamente al no dibujar bandas vacías en ningún frame. La narrativa de cabecera sí cambia su 2ª línea a un mensaje positivo cuando no hay flags ni sin-gestor.</li>
+        <li><b>Agente sin leads:</b> fila con métricas en "—" y badge "Sin leads" — ilustrado ya en sección 4 (Renata Solís), no se repite aquí.</li>
+        <li><b>Agencia sin agentes:</b> reusa <code>features/profile/components/EmptyState.tsx</code> (mismo patrón que 267 sección 6/frame 4). Sin CTA de invitación dibujado — no se confirmó que exista una pantalla de invitar agente alcanzable desde aquí; si existe, es un ajuste de una línea (agregar botón) en 269.6, no un rediseño.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       SECCIÓN 7 — UI_FUERA_DEL_MOCKUP: feedback tras ASIGNAR
+       ═══════════════════════════════════════════════════════════════════ -->
+  <div class="section" id="sec7">
+    <div class="section-head"><div class="section-num">7</div><div class="section-title">UI_FUERA_DEL_MOCKUP — feedback tras ASIGNAR</div></div>
+    <div class="section-desc">
+      Ninguna de las 3 referencias canónicas (Santiago, identidad, prototipo) dibuja qué pasa
+      DESPUÉS de tocar un agente en la hoja de asignación. <code>reassign_lead_atomic</code> puede
+      responder OK o con 3 errores tipados (<code>SAME_USER</code>, <code>TARGET_NOT_ACTIVE_MEMBER</code>,
+      <code>LEAD_NOT_FOUND</code>) — la pantalla necesita comunicarlo o el owner no sabe si funcionó.
+      Costo: <b>XS</b> (toast de texto, sin componente nuevo).
+    </div>
+
+    <div class="row-flex">
+      <div class="device" style="min-height:180px">
+        <div class="device-pad">
+          <div style="padding:16px 20px;font-size:12px;color:var(--color_ink_3)">Diego Martínez → Karla Ibarra</div>
+          <div class="toast">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="#FDFBF6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Diego Martínez ahora es de Karla Ibarra
+          </div>
+        </div>
+      </div>
+      <div class="device" style="min-height:180px">
+        <div class="device-pad">
+          <div style="padding:16px 20px;font-size:12px;color:var(--color_ink_3)">Diego Martínez → Renata Solís (recién suspendida)</div>
+          <div class="toast err">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="#FDFBF6" stroke-width="2"/><path d="M12 8v5M12 16v.1" stroke="#FDFBF6" stroke-width="2" stroke-linecap="round"/></svg>
+            Renata ya no está activa. Elige otro agente.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="approve-box">
+      <h4>Las 2 opciones (el agente propone, Abraham decide)</h4>
+      <ul>
+        <li><b>(1) En conjunto:</b> incluir el toast (éxito verde-oscuro/error terracota, texto plano, auto-dismiss) dentro de esta misma tarea (269.6) — es una línea de estado + un componente ya en el sistema (mismo family que <code>msg-box</code>/alertas existentes), sin diseño nuevo que aprobar por separado.</li>
+        <li><b>(2) Default — derivada:</b> <code>producto(269.4): feedback enriquecido de reasignación (undo de 5s, animación de la fila saliendo de la banda)</code>, dependencies=["269"], si Abraham prefiere no tocar 269.6 con esto.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       NOTAS FINALES
+       ═══════════════════════════════════════════════════════════════════ -->
+  <div class="footer-notes">
+    <h2>Notas para Abraham</h2>
+    <ul>
+      <li><b>Aprobación por sección (CLAUDE.md §8 / gate de la subtarea):</b> nada de esto se porta a RN hasta que cada sección tenga un "Aprobar" explícito — 269.5/269.6 quedan bloqueadas hasta entonces.</li>
+      <li><b>3 alternativas obligatorias resueltas</b> con recomendación marcada: etiqueta "responde en" (sección 4, C), badge sin datos (sección 4, B), hoja ASIGNAR (sección 3, A).</li>
+      <li><b>1 propuesta <code>UI_FUERA_DEL_MOCKUP</code></b> (sección 7, feedback tras ASIGNAR) — cupo 1/2 usado en esta subtarea.</li>
+      <li><b>Solo nombrado, sin gastar cupo:</b> paginación de las bandas "Sin gestor"/"Tus agentes" si una agencia crece — hoy el molde de <code>crm_leads_page</code> ya trae cursor por banda (267), pero <code>crm_agency_overview</code> no está paginada (269.1); no se propone porque el volumen esperado (agentes por agencia) es órdenes de magnitud menor que leads por agente — si deja de serlo, es una derivada `hardening(269.1)` cuando aparezca el caso real, no una decisión de diseño de esta pantalla.</li>
+      <li><b>Verificación de este preview:</b> HTML/CSS/JS puro, sin build de RN, cero riesgo de producción (fuera del bundle). Interactivo: click en "ASIGNAR" de la 1ª fila de la sección 2 desplaza el foco visual a la hoja recomendada de la sección 3 (misma página, sin JS de navegación real).</li>
+    </ul>
+  </div>
+
+</div>
+</body>
+</html>

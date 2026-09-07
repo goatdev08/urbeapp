@@ -47,6 +47,7 @@
 import { assertEquals, assertExists } from "@std/assert";
 import { make_note_updater } from "./note_updater.ts";
 import type { UpdateLeadNoteParams } from "./types.ts";
+import type { AgencyRoleResolver } from "../_shared/agency_role.ts";
 
 // ── Fake client (mismo patrón que lead_status_updater.test.ts) ────────────────
 
@@ -403,4 +404,142 @@ Deno.test("NU-15_is_follow_up_false_desactiva_la_bandera_no_se_confunde_con_ause
     false,
     "el valor en el payload debe ser exactamente false, no true ni undefined",
   );
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// 269.3 — cierre de #31: el owner/admin ACTIVO de la agencia del lead edita la
+// nota de un lead de su equipo (hoy: UNAUTHORIZED_AGENT). Mirror EXACTO de
+// lead_status_updater.test.ts (misma técnica de wrapper, mismo razonamiento RED:
+// make_note_updater aún solo acepta `client`; el GREEN le agrega
+// `agency_role_resolver: AgencyRoleResolver` como 2º parámetro — no se toca
+// note_updater.ts en esta fase, así que el wrapper solo castea el tipo y deja que
+// el runtime (JS ignora el argumento extra) ejerza el comportamiento VIEJO contra
+// la aserción NUEVA: falla por ASERCIÓN, no por tipo ni por import.
+// ════════════════════════════════════════════════════════════════════════════
+
+type NoteUpdaterFactory = (
+  // deno-lint-ignore no-explicit-any
+  client: { from(table: string): any },
+  agency_role_resolver: AgencyRoleResolver,
+) => ReturnType<typeof make_note_updater>;
+
+const make_note_updater_269 = make_note_updater as unknown as NoteUpdaterFactory;
+
+interface FakeAgencyRoleResolver extends AgencyRoleResolver {
+  calls: { user_id: string; agency_id: string }[];
+}
+
+function resolver_role(role: string | null): FakeAgencyRoleResolver {
+  return {
+    calls: [],
+    resolve(user_id: string, agency_id: string): Promise<string | null> {
+      this.calls.push({ user_id, agency_id });
+      return Promise.resolve(role);
+    },
+  } as FakeAgencyRoleResolver;
+}
+
+const AGENCY_ID = "00000000-0000-0000-0000-000000000003";
+const OWNER_ID = "00000000-0000-0000-0000-000000000004";
+const ADMIN_ID = "00000000-0000-0000-0000-000000000005";
+const VIEWER_ID = "00000000-0000-0000-0000-000000000006";
+const SUSPENDED_OWNER_ID = "00000000-0000-0000-0000-000000000007";
+const RASO_ID = "00000000-0000-0000-0000-000000000008";
+
+Deno.test("updater_real_269_3_owner_activo_de_la_agencia_edita_nota_de_lead_de_su_agente_ok_true", async () => {
+  const { client } = make_fake_client([
+    { data: null, error: null }, // ownership query (owner no es agent_id del lead) -> no match
+    { data: { id: LEAD_ID, agency_id: AGENCY_ID }, error: null }, // any_lead: existe, con agency_id
+    { data: { id: LEAD_ID, internal_notes: "nota del owner" }, error: null }, // UPDATE (solo tras el GREEN)
+  ]);
+  const resolver = resolver_role("owner");
+  const updater = make_note_updater_269(client, resolver);
+  const result = await updater.update({
+    user_id: OWNER_ID,
+    lead_id: LEAD_ID,
+    note: "nota del owner",
+  });
+
+  assertEquals(
+    result.ok,
+    true,
+    "el owner ACTIVO de la agencia del lead debe poder editar la nota (hoy: UNAUTHORIZED_AGENT — RED)",
+  );
+  // Guardia de mutación (guardian 269.3): mismo razonamiento que
+  // lead_status_updater.test.ts — el resolver debe consultarse con el
+  // agency_id DEL LEAD, nunca con undefined ni con el del caller.
+  assertEquals(resolver.calls.length, 1, "el resolver debe consultarse exactamente una vez");
+  assertEquals(
+    resolver.calls[0],
+    { user_id: OWNER_ID, agency_id: AGENCY_ID },
+    "el resolver debe recibir (user_id del caller, agency_id DEL LEAD) — no undefined ni el agency_id del caller",
+  );
+});
+
+Deno.test("updater_real_269_3_admin_activo_de_la_agencia_edita_nota_de_lead_del_equipo_ok_true", async () => {
+  const { client } = make_fake_client([
+    { data: null, error: null },
+    { data: { id: LEAD_ID, agency_id: AGENCY_ID }, error: null },
+    { data: { id: LEAD_ID, internal_notes: "nota del admin" }, error: null },
+  ]);
+  const updater = make_note_updater_269(client, resolver_role("admin"));
+  const result = await updater.update({
+    user_id: ADMIN_ID,
+    lead_id: LEAD_ID,
+    note: "nota del admin",
+  });
+
+  assertEquals(
+    result.ok,
+    true,
+    "el admin ACTIVO de la agencia del lead debe poder editar la nota (hoy: UNAUTHORIZED_AGENT — RED)",
+  );
+});
+
+Deno.test("updater_real_269_3_viewer_activo_de_la_agencia_sigue_UNAUTHORIZED_AGENT", async () => {
+  const { client } = make_fake_client([
+    { data: null, error: null },
+    { data: { id: LEAD_ID, agency_id: AGENCY_ID }, error: null },
+  ]);
+  const updater = make_note_updater_269(client, resolver_role("viewer"));
+  const result = await updater.update({
+    user_id: VIEWER_ID,
+    lead_id: LEAD_ID,
+    note: "intento de escritura del viewer",
+  });
+
+  assertEquals(result.ok, false);
+  if (!result.ok) assertEquals(result.error_code, "UNAUTHORIZED_AGENT");
+});
+
+Deno.test("updater_real_269_3_owner_suspendido_de_la_agencia_sigue_UNAUTHORIZED_AGENT", async () => {
+  const { client } = make_fake_client([
+    { data: null, error: null },
+    { data: { id: LEAD_ID, agency_id: AGENCY_ID }, error: null },
+  ]);
+  const updater = make_note_updater_269(client, resolver_role(null));
+  const result = await updater.update({
+    user_id: SUSPENDED_OWNER_ID,
+    lead_id: LEAD_ID,
+    note: "intento de escritura del owner suspendido",
+  });
+
+  assertEquals(result.ok, false);
+  if (!result.ok) assertEquals(result.error_code, "UNAUTHORIZED_AGENT");
+});
+
+Deno.test("updater_real_269_3_agente_raso_de_la_agencia_sigue_UNAUTHORIZED_AGENT", async () => {
+  const { client } = make_fake_client([
+    { data: null, error: null },
+    { data: { id: LEAD_ID, agency_id: AGENCY_ID }, error: null },
+  ]);
+  const updater = make_note_updater_269(client, resolver_role("agent"));
+  const result = await updater.update({
+    user_id: RASO_ID,
+    lead_id: LEAD_ID,
+    note: "intento de escritura del agente raso",
+  });
+
+  assertEquals(result.ok, false);
+  if (!result.ok) assertEquals(result.error_code, "UNAUTHORIZED_AGENT");
 });

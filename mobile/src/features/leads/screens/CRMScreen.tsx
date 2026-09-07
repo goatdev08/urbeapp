@@ -23,13 +23,28 @@
  * La hoja ☰ (CrmSearchSheet) es mínima; el sheet completo de filtros es #271.
  *
  * Agente efectivo: `agent_id = selected_agent_id ?? user.id` — "Míos" fuerza
- * selected_agent_id=null (vuelve a "yo"); "Equipo" deja que AgentSelector lo
- * fije a un compañero puntual (chip "Todos" también fija null → mismo "yo",
- * conserva el patrón ya usado por AgentSelector/useAgencyRole, #28).
+ * selected_agent_id=null (vuelve a "yo"); dentro de "Equipo",
+ * selected_agent_id fija el drill-down a un agente puntual (ver abajo).
+ *
+ * ── Segmento "Equipo" — vista de agencia (subtarea 269.6, preview aprobado
+ * mobile/design-previews/269-crm-equipo.html) ──────────────────────────────
+ * "Equipo" YA NO reusa el mismo FlatList de bandas con un AgentSelector de
+ * chips arriba (269.5 y anteriores) — decisión de Abraham 2026-09-07: ahora
+ * tiene 2 sub-estados, ambos gobernados por `selected_agent_id`:
+ *   - `selected_agent_id === null` → overview de agencia (useCrmAgencyOverview):
+ *     narrativa de agencia, banda "Sin gestor" (UnmanagedLeadRow + ASIGNAR →
+ *     AssignLeadSheet → useReassignLead) y banda "Tus agentes" (AgencyAgentRow
+ *     con badge; tap = drill-down).
+ *   - `selected_agent_id !== null` (tap en una fila de "Tus agentes") → la
+ *     MISMA lista de bandas por tendencia de siempre, agente=selected_agent_id,
+ *     con cabecera "← Equipo" en vez del header/segmentado normal.
+ * `is_read_only` (#31 UI): ya NO es `agent_id !== user.id` — un owner/admin
+ * ACTIVO edita la ficha de CUALQUIER agente de su agencia; solo un lector sin
+ * ese rol (viewer/agente raso viendo algo que no es suyo) sigue en solo-lectura.
  */
 import React, { useCallback, useMemo, useState } from 'react';
-import { FlatList, Platform, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
-import { List, MagnifyingGlass, Tray, X } from 'phosphor-react-native';
+import { FlatList, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { CaretLeft, Flame, List, MagnifyingGlass, Tray, Users, X } from 'phosphor-react-native';
 import { router } from 'expo-router';
 // #241.3/#231: SafeAreaView de safe-area-context, NUNCA la de react-native.
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -40,7 +55,8 @@ import { useAuth } from '@/features/auth/context';
 import { EmptyState } from '@/features/profile/components/EmptyState';
 import { colors, fonts, floating_content_clearance, layout, radii, spacing, type_scale } from '@/theme/theme';
 
-import { AgentSelector } from '../components/AgentSelector';
+import { AgencyAgentRow } from '../components/AgencyAgentRow';
+import { AssignLeadSheet } from '../components/AssignLeadSheet';
 import { BandHeader } from '../components/BandHeader';
 import { CrmLeadRow } from '../components/CrmLeadRow';
 import { CrmSearchSheet } from '../components/CrmSearchSheet';
@@ -48,13 +64,21 @@ import { FunnelCard } from '../components/FunnelCard';
 import { LeadInlineDetail } from '../components/LeadInlineDetail';
 import { NarrativeHeader } from '../components/NarrativeHeader';
 import { RadarAnonRow } from '../components/RadarAnonRow';
+import { UnmanagedLeadRow } from '../components/UnmanagedLeadRow';
 import { useAgencyAgents } from '../hooks/useAgencyAgents';
 import { useAgencyRole } from '../hooks/useAgencyRole';
+import { useCrmAgencyOverview } from '../hooks/useCrmAgencyOverview';
 import { useCrmFunnel } from '../hooks/useCrmFunnel';
 import { useCrmLeadsPage, type UseCrmLeadsPageState } from '../hooks/useCrmLeadsPage';
 import { useCrmRadarAnon } from '../hooks/useCrmRadarAnon';
+import { useReassignLead } from '../hooks/useReassignLead';
 import { BAND_META, BAND_ORDER } from '../utils/crm_band_meta';
-import type { CrmBand, CrmLeadRow as CrmLeadRowData, CrmRadarRow as CrmRadarRowData } from '../types';
+import type {
+  CrmBand,
+  CrmLeadRow as CrmLeadRowData,
+  CrmRadarRow as CrmRadarRowData,
+  UnmanagedLeadRow as UnmanagedLeadRowData,
+} from '../types';
 
 // ─── Filas aplanadas del FlatList ───────────────────────────────────────────
 
@@ -74,6 +98,44 @@ function first_token(full_name: string | null): string | null {
   return full_name.trim().split(/\s+/)[0] ?? null;
 }
 
+/**
+ * Narrativa de cabecera del overview de agencia (269.6, sección 1 del
+ * preview). 🪶 ponytail (disparador c, CLAUDE.md §0 — techo con los datos
+ * reales): el preview sugiere "N leads calientes llevan horas sin que los
+ * toquen" pero `crm_agency_overview` (269.1) NO expone conteos hot/cooling
+ * agregados de agencia — esa RPC solo trae untouched_count/response_hours/
+ * avg_temperature/flag por agente y el bloque "unmanaged". La narrativa aquí
+ * se construye SOLO con esos 2 datos reales: cuántos leads no tienen gestor
+ * y, si alguno tiene flag='pierde_leads', quién es el peor caso (mismo
+ * agente que `crm_agency_overview` ya marca, sin llamada extra). Techo:
+ * agregar hot/cooling por agencia a la RPC (derivada hardening(269.1)) lo
+ * habilita sin tocar esta función.
+ */
+function build_agency_narrative(
+  unmanaged_count: number,
+  worst_agent: { name: string; untouched_count: number } | null,
+): { headline: string; highlight: string | null; subline: string | null; subline_highlight: string | null } {
+  if (unmanaged_count === 0) {
+    return {
+      headline: 'Todo tiene gestor.',
+      highlight: null,
+      subline: 'No hay leads sin asignar en este momento.',
+      subline_highlight: null,
+    };
+  }
+  const headline = `${unmanaged_count} ${unmanaged_count === 1 ? 'lead no tiene' : 'leads no tienen'} gestor.`;
+  const highlight = `${unmanaged_count}`;
+  if (!worst_agent) {
+    return { headline, highlight, subline: null, subline_highlight: null };
+  }
+  return {
+    headline,
+    highlight,
+    subline: `Y ${worst_agent.name} es quien más leads sin tocar tiene: ${worst_agent.untouched_count}.`,
+    subline_highlight: worst_agent.name,
+  };
+}
+
 // ─── Componente ───────────────────────────────────────────────────────────────
 
 export function CRMScreen(): React.ReactElement {
@@ -83,6 +145,8 @@ export function CRMScreen(): React.ReactElement {
   // FIX5 (heredado de la versión anterior): `error` distingue "no pude saber
   // el rol" (RLS/red) de "no hay membresía" — se sigue avisando con reintento.
   const {
+    isOwner,
+    isAdmin,
     canViewTeam,
     agencyId,
     error: role_error,
@@ -93,12 +157,17 @@ export function CRMScreen(): React.ReactElement {
   const [team_tab, set_team_tab] = useState<'mios' | 'equipo'>('mios');
   const [selected_agent_id, set_selected_agent_id] = useState<string | null>(null);
   const agent_id = selected_agent_id ?? user?.id ?? null;
-  const is_read_only = agent_id !== (user?.id ?? null);
+  // #31 UI (269.6): owner/admin ACTIVO edita la ficha de CUALQUIER agente de
+  // su agencia (ya no solo la propia) — viewer/agente raso siguen readOnly.
+  const is_read_only = !(agent_id === (user?.id ?? null) || isOwner || isAdmin);
 
   const [query, set_query] = useState<string | null>(null);
   const [sheet_open, set_sheet_open] = useState(false);
   const [expanded_lead_id, set_expanded_lead_id] = useState<string | null>(null);
   const [silent_collapsed, set_silent_collapsed] = useState(BAND_META.silent.collapsed_by_default);
+  // Lead con la hoja ASIGNAR abierta (banda "Sin gestor" del overview de
+  // agencia, 269.6) — null = hoja cerrada.
+  const [assign_target, set_assign_target] = useState<UnmanagedLeadRowData | null>(null);
   // Sube a true en cuanto el primer pase de datos resuelve — evita que un
   // refetch (pull-to-refresh, refetch tras cambio de estado) vuelva a tapar
   // la pantalla entera con el loader inicial (RefreshingChip ya cubre eso).
@@ -110,6 +179,15 @@ export function CRMScreen(): React.ReactElement {
   const warming = useCrmLeadsPage(agent_id, 'warming', query);
   const silent = useCrmLeadsPage(agent_id, 'silent', query);
   const radar = useCrmRadarAnon(agent_id, 5);
+
+  // Overview de agencia (segmento Equipo, sub-estado selected_agent_id===null,
+  // 269.5/269.6) — corre siempre que hay agencia (igual que funnel/hot/etc.
+  // corren siempre independientemente del tab activo, patrón ya existente).
+  const agency_overview = useCrmAgencyOverview(agencyId);
+  // Sin `on_changed` en las opciones: el refetch lo dispara directo
+  // `onAssigned` de AssignLeadSheet (abajo) — más corto y observable sin
+  // depender de la clausura interna del hook.
+  const reassign_lead = useReassignLead();
 
   const band_states: Record<CrmBand, UseCrmLeadsPageState> = useMemo(
     () => ({ hot, cooling, warming, silent }),
@@ -130,8 +208,20 @@ export function CRMScreen(): React.ReactElement {
 
   function handle_select_tab(tab: 'mios' | 'equipo'): void {
     set_team_tab(tab);
-    if (tab === 'mios') set_selected_agent_id(null);
+    // Cualquier cambio de tab vuelve al overview de agencia (269.6) — un
+    // drill-down solo se alcanza tocando una fila de "Tus agentes".
+    set_selected_agent_id(null);
   }
+
+  /** Tap en una fila de "Tus agentes" — drill-down a los leads de ese agente. */
+  const handle_drilldown = useCallback((agent_id_to_view: string): void => {
+    set_selected_agent_id(agent_id_to_view);
+  }, []);
+
+  /** Cabecera "← Equipo" del drill-down — vuelve al overview de agencia. */
+  const handle_back_to_equipo = useCallback((): void => {
+    set_selected_agent_id(null);
+  }, []);
 
   const handle_lead_changed = useCallback((): void => {
     void funnel.refetch();
@@ -180,6 +270,21 @@ export function CRMScreen(): React.ReactElement {
     // "Usuario" en la frase) — se omite el highlight, el subline cae al genérico.
     return name ? { first_name: name, delta: coldest.delta } : null;
   }, [cooling.data]);
+
+  // ── Narrativa de agencia (segmento Equipo, overview) — ver build_agency_narrative ──
+
+  const worst_agent = useMemo(() => {
+    const losers = agency_overview.agents.filter((a) => a.flag === 'pierde_leads');
+    if (losers.length === 0) return null;
+    const worst = losers.reduce((max, a) => (a.untouched_count > max.untouched_count ? a : max));
+    // ponytail: mismo criterio que top_cooling — sin nombre no hay narrativa segura que citar.
+    return worst.agent_name ? { name: worst.agent_name, untouched_count: worst.untouched_count } : null;
+  }, [agency_overview.agents]);
+
+  const agency_narrative = useMemo(
+    () => build_agency_narrative(agency_overview.unmanaged.length, worst_agent),
+    [agency_overview.unmanaged.length, worst_agent],
+  );
 
   // ── Filas aplanadas ──────────────────────────────────────────────────────────
 
@@ -275,40 +380,72 @@ export function CRMScreen(): React.ReactElement {
   );
 
   // ── Cabecera de la lista ─────────────────────────────────────────────────────
+  // Equipo con drill-down (selected_agent_id!==null): cabecera "← Equipo" en
+  // vez del header normal + segmentado (sección 5 del preview 269.6).
+  const in_drilldown = team_tab === 'equipo' && selected_agent_id !== null;
+  const drilldown_agent = in_drilldown
+    ? (agency_overview.agents.find((a) => a.agent_id === selected_agent_id) ?? null)
+    : null;
 
   const list_header = (
     <>
-      <View style={styles.header}>
-        <View style={styles.header_top}>
-          <View>
-            <Text style={styles.title}>CRM</Text>
-            <Text style={styles.subtitle}>{canViewTeam ? 'Leads de tu equipo' : 'Tus leads de contacto'}</Text>
-          </View>
+      {in_drilldown ? (
+        <View style={styles.back_header_wrap}>
           <Pressable
-            onPress={() => set_sheet_open(true)}
+            onPress={handle_back_to_equipo}
             accessibilityRole="button"
-            accessibilityLabel="Buscar por nombre"
+            accessibilityLabel="Volver a Equipo"
             hitSlop={8}
-            style={styles.menu_btn}
+            style={styles.back_btn}
           >
-            <List size={20} color={colors.ink} weight="bold" />
+            <CaretLeft size={16} color={colors.ink} weight="bold" />
           </Pressable>
+          <Text style={styles.back_title}>← Equipo</Text>
         </View>
+      ) : (
+        <View style={styles.header}>
+          <View style={styles.header_top}>
+            <View>
+              <Text style={styles.title}>CRM</Text>
+              <Text style={styles.subtitle}>{canViewTeam ? 'Leads de tu equipo' : 'Tus leads de contacto'}</Text>
+            </View>
+            <Pressable
+              onPress={() => set_sheet_open(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Buscar por nombre"
+              hitSlop={8}
+              style={styles.menu_btn}
+            >
+              <List size={20} color={colors.ink} weight="bold" />
+            </Pressable>
+          </View>
 
-        {query !== null && (
-          <Pressable
-            onPress={() => set_query(null)}
-            accessibilityRole="button"
-            accessibilityLabel={`Quitar búsqueda: ${query}`}
-            style={styles.query_chip}
-          >
-            <Text style={styles.query_chip_text}>{query}</Text>
-            <X size={11} color={colors.primary_deep} weight="bold" />
-          </Pressable>
-        )}
-      </View>
+          {query !== null && (
+            <Pressable
+              onPress={() => set_query(null)}
+              accessibilityRole="button"
+              accessibilityLabel={`Quitar búsqueda: ${query}`}
+              style={styles.query_chip}
+            >
+              <Text style={styles.query_chip_text}>{query}</Text>
+              <X size={11} color={colors.primary_deep} weight="bold" />
+            </Pressable>
+          )}
+        </View>
+      )}
 
-      {role_error && (
+      {in_drilldown && (
+        <View style={styles.back_agent_block}>
+          <Text style={styles.back_agent_name}>{drilldown_agent?.agent_name ?? 'Agente'}</Text>
+          {drilldown_agent && (
+            <Text style={styles.back_agent_sub}>
+              {drilldown_agent.untouched_count} sin tocar · {drilldown_agent.avg_temperature ?? '—'}° promedio
+            </Text>
+          )}
+        </View>
+      )}
+
+      {!in_drilldown && role_error && (
         <View style={styles.role_error_banner}>
           <Text style={styles.role_error_text}>
             No se pudo verificar tu rol en la agencia. Es posible que veas leads de tu equipo marcados
@@ -325,7 +462,7 @@ export function CRMScreen(): React.ReactElement {
         </View>
       )}
 
-      {canViewTeam && (
+      {!in_drilldown && canViewTeam && (
         <View style={styles.segmented}>
           <Pressable
             onPress={() => handle_select_tab('mios')}
@@ -346,12 +483,6 @@ export function CRMScreen(): React.ReactElement {
         </View>
       )}
 
-      {canViewTeam && team_tab === 'equipo' && agents.length > 0 && (
-        <View style={styles.agent_selector_wrap}>
-          <AgentSelector agents={agents} selectedAgentId={selected_agent_id} onSelectAgent={set_selected_agent_id} />
-        </View>
-      )}
-
       <RefreshingChip visible={has_loaded_once && (funnel.loading || hot.loading || cooling.loading || warming.loading || silent.loading)} />
 
       {empty_state_kind === null && <NarrativeHeader counts={counts} top_cooling={top_cooling} />}
@@ -363,6 +494,144 @@ export function CRMScreen(): React.ReactElement {
       )}
     </>
   );
+
+  // ── Overview de agencia (segmento Equipo, sin drill-down, 269.5/269.6) ────────
+  // Sub-estado independiente del FlatList de bandas de abajo — otro shape de
+  // datos (AgencyAgentRow/UnmanagedLeadRow, no CrmLeadRow), otro hook
+  // (useCrmAgencyOverview, no useCrmLeadsPage) y volumen chico (agentes por
+  // agencia) — ponytail: ScrollView simple, sin la maquinaria de aplanado de
+  // filas del FlatList de abajo (esa SÍ la necesita virtualizar cientos de
+  // leads; una banda de agentes no).
+  if (team_tab === 'equipo' && selected_agent_id === null) {
+    const overview_first_pass =
+      agency_overview.loading && agency_overview.agents.length === 0 && agency_overview.unmanaged.length === 0;
+
+    if (overview_first_pass) {
+      return (
+        <SafeAreaView style={styles.safe}>
+          <View style={styles.center}>
+            <UrbeaLoader size="large" color={colors.primary} />
+          </View>
+        </SafeAreaView>
+      );
+    }
+
+    return (
+      <SafeAreaView style={styles.safe}>
+        <View style={styles.container}>
+          <ScrollView
+            contentContainerStyle={[styles.list_content, { paddingBottom: insets.bottom + floating_content_clearance }]}
+            refreshControl={
+              <RefreshControl
+                refreshing={agency_overview.loading}
+                onRefresh={() => void agency_overview.refetch()}
+                tintColor="transparent"
+                colors={['transparent']}
+                progressBackgroundColor="transparent"
+              />
+            }
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.header}>
+              <View style={styles.header_top}>
+                <View>
+                  <Text style={styles.title}>Equipo</Text>
+                  <Text style={styles.subtitle}>Vista de agencia</Text>
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.segmented}>
+              <Pressable
+                onPress={() => handle_select_tab('mios')}
+                accessibilityRole="button"
+                accessibilityState={{ selected: false }}
+                style={styles.seg}
+              >
+                <Text style={styles.seg_text}>Míos</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => handle_select_tab('equipo')}
+                accessibilityRole="button"
+                accessibilityState={{ selected: true }}
+                style={[styles.seg, styles.seg_active]}
+              >
+                <Text style={[styles.seg_text, styles.seg_text_active]}>Equipo</Text>
+              </Pressable>
+            </View>
+
+            {agency_overview.error && (
+              <View style={styles.role_error_banner}>
+                <Text style={styles.role_error_text}>{agency_overview.error}</Text>
+                <Pressable
+                  onPress={() => void agency_overview.refetch()}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel="Reintentar cargar el equipo"
+                >
+                  <Text style={styles.role_error_retry}>Reintentar</Text>
+                </Pressable>
+              </View>
+            )}
+
+            <NarrativeHeader narrative={agency_narrative} />
+
+            {agency_overview.unmanaged.length > 0 && (
+              <View style={styles.agency_band}>
+                <View style={styles.agency_band_head}>
+                  <View style={[styles.agency_band_icon, { backgroundColor: colors.temp_hot }]}>
+                    <Flame size={11} color="#FDFBF6" weight="fill" />
+                  </View>
+                  <Text style={styles.agency_band_name}>Sin gestor</Text>
+                  <Text style={styles.agency_band_count}>{agency_overview.unmanaged.length}</Text>
+                </View>
+                <Text style={styles.agency_band_subtitle}>Nadie de tu equipo los está atendiendo</Text>
+                {agency_overview.unmanaged.map((u) => (
+                  <UnmanagedLeadRow key={u.lead_id} row={u} onPressAssign={() => set_assign_target(u)} />
+                ))}
+              </View>
+            )}
+
+            <View style={styles.agency_band}>
+              <View style={styles.agency_band_head}>
+                <View style={[styles.agency_band_icon, { backgroundColor: colors.primary }]}>
+                  <Users size={11} color="#FDFBF6" weight="fill" />
+                </View>
+                <Text style={styles.agency_band_name}>Tus agentes</Text>
+                <Text style={styles.agency_band_count}>{agency_overview.agents.length}</Text>
+              </View>
+              {agency_overview.agents.length > 0 && (
+                <Text style={styles.agency_band_footnote}>
+                  &quot;Responde en&quot; mide cuándo el agente marca contactado, no cuándo escribe de verdad
+                </Text>
+              )}
+
+              {agency_overview.agents.length === 0 ? (
+                <EmptyState
+                  message="Aún no tienes agentes en tu equipo"
+                  subtitle="En cuanto invites al primero, verás aquí sus leads sin tocar, su tiempo de respuesta y su temperatura promedio."
+                  icon={Users}
+                />
+              ) : (
+                agency_overview.agents.map((a) => (
+                  <AgencyAgentRow key={a.agent_id} row={a} onPress={() => handle_drilldown(a.agent_id)} />
+                ))
+              )}
+            </View>
+          </ScrollView>
+        </View>
+
+        <AssignLeadSheet
+          visible={assign_target !== null}
+          lead={assign_target}
+          agents={agents}
+          reassign={reassign_lead.reassign}
+          onClose={() => set_assign_target(null)}
+          onAssigned={() => void agency_overview.refetch()}
+        />
+      </SafeAreaView>
+    );
+  }
 
   // ── Estado de carga inicial ──────────────────────────────────────────────────
 
@@ -542,8 +811,82 @@ const styles = StyleSheet.create({
     color: colors.primary_deep,
   },
 
-  agent_selector_wrap: {
-    marginBottom: spacing.s_8,
+  // ── Cabecera "← Equipo" del drill-down (269.6) ──────────────────────────────
+  back_header_wrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.s_8,
+    paddingTop: spacing.s_24,
+  },
+  back_btn: {
+    width: 32,
+    height: 32,
+    borderRadius: radii.r_8,
+    backgroundColor: colors.paper_2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  back_title: {
+    fontFamily: fonts.sans_semibold,
+    fontSize: 13,
+    color: colors.gray_2,
+  },
+  back_agent_block: {
+    marginTop: spacing.s_4,
+    marginBottom: spacing.s_12,
+  },
+  back_agent_name: {
+    ...type_scale.h1,
+    color: colors.ink,
+  },
+  back_agent_sub: {
+    marginTop: 2,
+    fontFamily: fonts.mono,
+    fontSize: 10,
+    color: colors.gray_2,
+  },
+
+  // ── Overview de agencia (segmento Equipo, 269.6) ────────────────────────────
+  agency_band: {
+    marginTop: spacing.s_16,
+  },
+  agency_band_head: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.s_8,
+  },
+  agency_band_icon: {
+    width: 19,
+    height: 19,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  agency_band_name: {
+    flex: 1,
+    fontFamily: fonts.sans_semibold,
+    fontSize: 13,
+    color: colors.ink,
+  },
+  agency_band_count: {
+    fontFamily: fonts.mono,
+    fontSize: 11,
+    color: colors.gray_2,
+  },
+  agency_band_subtitle: {
+    marginTop: 2,
+    marginLeft: 19 + spacing.s_8,
+    fontFamily: fonts.outfit_light,
+    fontSize: 11,
+    color: colors.gray_2,
+  },
+  agency_band_footnote: {
+    marginTop: 2,
+    marginLeft: 19 + spacing.s_8,
+    fontFamily: fonts.outfit_light,
+    fontSize: 9.5,
+    color: colors.gray_2,
   },
 
   funnel_wrap: {

@@ -26,6 +26,18 @@
  *   cabecera aparecen.
  * (EC-6) Tocar una fila monta LeadInlineDetail con ese lead; readOnly=true
  *   cuando selected_agent_id (vía Equipo) !== user.id.
+ *
+ * ── Subtarea 269.6 (segmento Equipo = vista de agencia) ─────────────────────
+ * (EC-7) Equipo (overview): narrativa de agencia + banda "Sin gestor" con
+ *   ASIGNAR + fila de agente con badge por flag.
+ * (EC-8) Sin unmanaged, la banda "Sin gestor" no se pinta.
+ * (EC-9) ASIGNAR → AssignLeadSheet → elegir agente llama reassign() y, tras
+ *   éxito, refetch del overview.
+ * (EC-10) Tap en una fila de "Tus agentes" → drill-down (cabecera "← Equipo",
+ *   nombre del agente) — tap en "← Equipo" vuelve al overview.
+ * (EC-11) is_read_only por rol: owner activo edita el lead ajeno
+ *   (readOnly=false); un rol sin isOwner/isAdmin (viewer) NO (readOnly=true)
+ *   aunque canViewTeam sea true (mock directo de la fórmula, ver useAgencyRole.ts).
  */
 import React from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
@@ -33,11 +45,13 @@ import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import { useAuth } from '@/features/auth/context';
 import { useAgencyAgents } from '../../hooks/useAgencyAgents';
 import { useAgencyRole } from '../../hooks/useAgencyRole';
+import { useCrmAgencyOverview } from '../../hooks/useCrmAgencyOverview';
 import { useCrmFunnel } from '../../hooks/useCrmFunnel';
 import { useCrmLeadsPage, type UseCrmLeadsPageState } from '../../hooks/useCrmLeadsPage';
 import { useCrmRadarAnon } from '../../hooks/useCrmRadarAnon';
+import { useReassignLead } from '../../hooks/useReassignLead';
 import { CRMScreen } from '../CRMScreen';
-import type { CrmBand, CrmFunnel, CrmLeadRow, CrmRadarRow } from '../../types';
+import type { AgencyAgentRow, CrmBand, CrmFunnel, CrmLeadRow, CrmRadarRow, UnmanagedLeadRow } from '../../types';
 
 // ---------------------------------------------------------------------------
 // Mocks — babel-plugin-jest-hoist iza estos jest.mock por ENCIMA de los
@@ -50,6 +64,8 @@ jest.mock('@/features/auth/context', () => ({ useAuth: jest.fn() }));
 
 jest.mock('../../hooks/useAgencyRole', () => ({ useAgencyRole: jest.fn() }));
 jest.mock('../../hooks/useAgencyAgents', () => ({ useAgencyAgents: jest.fn() }));
+jest.mock('../../hooks/useCrmAgencyOverview', () => ({ useCrmAgencyOverview: jest.fn() }));
+jest.mock('../../hooks/useReassignLead', () => ({ useReassignLead: jest.fn() }));
 jest.mock('../../hooks/useCrmFunnel', () => ({ useCrmFunnel: jest.fn() }));
 jest.mock('../../hooks/useCrmLeadsPage', () => ({ useCrmLeadsPage: jest.fn() }));
 jest.mock('../../hooks/useCrmRadarAnon', () => ({ useCrmRadarAnon: jest.fn() }));
@@ -114,6 +130,28 @@ function make_radar_row(overrides: Partial<CrmRadarRow> = {}): CrmRadarRow {
   };
 }
 
+function make_agency_agent_row(overrides: Partial<AgencyAgentRow> = {}): AgencyAgentRow {
+  return {
+    agent_id: OTHER_AGENT_ID,
+    agent_name: 'Fernando Reyes',
+    untouched_count: 2,
+    response_hours: 6,
+    avg_temperature: 41,
+    flag: null,
+    ...overrides,
+  };
+}
+
+function make_unmanaged_row(overrides: Partial<UnmanagedLeadRow> = {}): UnmanagedLeadRow {
+  return {
+    lead_id: 'lead-unmanaged-1',
+    lead_display_name: 'Diego Martínez',
+    temperature: 91,
+    first_contact_at: '2026-09-06T11:42:00.000Z',
+    ...overrides,
+  };
+}
+
 const FUNNEL: CrmFunnel = { vieron: 10, volvieron: 5, guardaron: 3, contactaron: 2, agendaron: 1 };
 const EMPTY_FUNNEL: CrmFunnel = { vieron: 0, volvieron: 0, guardaron: 0, contactaron: 0, agendaron: 0 };
 
@@ -141,6 +179,8 @@ async function change_text(element: ReturnType<typeof screen.getByText>, text: s
 const mock_use_auth = useAuth as jest.MockedFunction<typeof useAuth>;
 const mock_use_agency_role = useAgencyRole as jest.MockedFunction<typeof useAgencyRole>;
 const mock_use_agency_agents = useAgencyAgents as jest.MockedFunction<typeof useAgencyAgents>;
+const mock_use_crm_agency_overview = useCrmAgencyOverview as jest.MockedFunction<typeof useCrmAgencyOverview>;
+const mock_use_reassign_lead = useReassignLead as jest.MockedFunction<typeof useReassignLead>;
 const mock_use_crm_funnel = useCrmFunnel as jest.MockedFunction<typeof useCrmFunnel>;
 const mock_use_crm_leads_page = useCrmLeadsPage as jest.MockedFunction<typeof useCrmLeadsPage>;
 const mock_use_crm_radar_anon = useCrmRadarAnon as jest.MockedFunction<typeof useCrmRadarAnon>;
@@ -159,6 +199,14 @@ function setup_default(band_data: Partial<Record<CrmBand, UseCrmLeadsPageState>>
     refetch: jest.fn(),
   });
   mock_use_agency_agents.mockReturnValue({ agents: [], loading: false, error: null });
+  mock_use_crm_agency_overview.mockReturnValue({
+    agents: [],
+    unmanaged: [],
+    loading: false,
+    error: null,
+    refetch: jest.fn(),
+  });
+  mock_use_reassign_lead.mockReturnValue({ reassign: jest.fn(), busy: false });
   mock_use_crm_funnel.mockReturnValue({ data: FUNNEL, loading: false, error: null, refetch: jest.fn() });
   mock_use_crm_radar_anon.mockReturnValue({ data: [], loading: false, error: null, refetch: jest.fn() });
   mock_use_crm_leads_page.mockImplementation(
@@ -304,7 +352,7 @@ describe('CRMScreen', () => {
     );
   });
 
-  it('(EC-6b) viendo el pipeline de OTRO agente (Equipo) → readOnly=true', async () => {
+  it('(EC-6b) drill-down a OTRO agente (Equipo, #31 UI) → owner ACTIVO edita: readOnly=false', async () => {
     setup_default({
       hot: make_band_state({
         data: [make_lead_row({ lead_id: 'lead-theirs', full_name: 'Fernando Reyes', band: 'hot' })],
@@ -320,20 +368,198 @@ describe('CRMScreen', () => {
       error: false,
       refetch: jest.fn(),
     });
-    mock_use_agency_agents.mockReturnValue({
-      agents: [{ id: OTHER_AGENT_ID, full_name: 'Diego Ibarra', profile_photo_url: null, status: 'active' }],
+    mock_use_crm_agency_overview.mockReturnValue({
+      agents: [make_agency_agent_row({ agent_id: OTHER_AGENT_ID, agent_name: 'Diego Ibarra' })],
+      unmanaged: [],
       loading: false,
       error: null,
+      refetch: jest.fn(),
     });
 
     await render(<CRMScreen />);
 
     await press(screen.getByText('Equipo'));
-    await press(screen.getByText('Diego Ibarra')); // chip del AgentSelector — fija selected_agent_id
-    await press(screen.getByText('Fernando Reyes')); // fila del lead ajeno
+    await press(screen.getByText('Diego Ibarra')); // fila de AgencyAgentRow — drill-down
+    await press(screen.getByText('Fernando Reyes')); // fila del lead ajeno, ya dentro del drill-down
+
+    expect(mock_lead_inline_detail).toHaveBeenCalledWith(
+      expect.objectContaining({ lead: expect.objectContaining({ lead_id: 'lead-theirs' }), readOnly: false }),
+    );
+  });
+
+  it('(EC-11) is_read_only por rol: sin isOwner/isAdmin (viewer) NO edita el lead ajeno aunque canViewTeam sea true', async () => {
+    setup_default({
+      hot: make_band_state({
+        data: [make_lead_row({ lead_id: 'lead-theirs', full_name: 'Fernando Reyes', band: 'hot' })],
+      }),
+    });
+    // Mock directo de la fórmula (269.6): canViewTeam normalmente implica
+    // isOwner||isAdmin (useAgencyRole.ts), pero el mock puede desacoplarlos
+    // para probar is_read_only = !(agent_id===user.id || isOwner || isAdmin)
+    // en aislamiento, sin depender de si esa combinación es alcanzable hoy
+    // por la UI real.
+    mock_use_agency_role.mockReturnValue({
+      canViewTeam: true,
+      isOwner: false,
+      isAdmin: false,
+      agencyId: 'agency-1',
+      memberRole: 'viewer',
+      loading: false,
+      error: false,
+      refetch: jest.fn(),
+    });
+    mock_use_crm_agency_overview.mockReturnValue({
+      agents: [make_agency_agent_row({ agent_id: OTHER_AGENT_ID, agent_name: 'Diego Ibarra' })],
+      unmanaged: [],
+      loading: false,
+      error: null,
+      refetch: jest.fn(),
+    });
+
+    await render(<CRMScreen />);
+
+    await press(screen.getByText('Equipo'));
+    await press(screen.getByText('Diego Ibarra'));
+    await press(screen.getByText('Fernando Reyes'));
 
     expect(mock_lead_inline_detail).toHaveBeenCalledWith(
       expect.objectContaining({ lead: expect.objectContaining({ lead_id: 'lead-theirs' }), readOnly: true }),
     );
+  });
+
+  it('(EC-7) Equipo (overview): narrativa de agencia + banda "Sin gestor" con ASIGNAR + fila de agente con badge', async () => {
+    mock_use_agency_role.mockReturnValue({
+      canViewTeam: true,
+      isOwner: true,
+      isAdmin: false,
+      agencyId: 'agency-1',
+      memberRole: 'owner',
+      loading: false,
+      error: false,
+      refetch: jest.fn(),
+    });
+    mock_use_crm_agency_overview.mockReturnValue({
+      agents: [make_agency_agent_row({ agent_id: OTHER_AGENT_ID, agent_name: 'Vlad Ramos', flag: 'pierde_leads', untouched_count: 4 })],
+      unmanaged: [make_unmanaged_row({ lead_display_name: 'Diego Martínez' })],
+      loading: false,
+      error: null,
+      refetch: jest.fn(),
+    });
+
+    await render(<CRMScreen />);
+    await press(screen.getByText('Equipo'));
+
+    expect(screen.getByText('1 lead no tiene gestor.')).toBeTruthy();
+    expect(screen.getByText('Diego Martínez')).toBeTruthy();
+    expect(screen.getByText('ASIGNAR')).toBeTruthy();
+    // "Vlad Ramos" aparece 2 veces (subline de la narrativa + fila del
+    // agente) — se afirma la frase completa de la narrativa (única) para no
+    // pisar la del nombre en la fila, que se confirma junto al badge.
+    expect(screen.getByText('Y Vlad Ramos es quien más leads sin tocar tiene: 4.')).toBeTruthy();
+    expect(screen.getAllByText('Vlad Ramos').length).toBeGreaterThan(0);
+    expect(screen.getByText('PIERDE LEADS')).toBeTruthy();
+  });
+
+  it('(EC-8) sin leads sin gestor, la banda "Sin gestor" no se pinta', async () => {
+    mock_use_agency_role.mockReturnValue({
+      canViewTeam: true,
+      isOwner: true,
+      isAdmin: false,
+      agencyId: 'agency-1',
+      memberRole: 'owner',
+      loading: false,
+      error: false,
+      refetch: jest.fn(),
+    });
+    mock_use_crm_agency_overview.mockReturnValue({
+      agents: [make_agency_agent_row()],
+      unmanaged: [],
+      loading: false,
+      error: null,
+      refetch: jest.fn(),
+    });
+
+    await render(<CRMScreen />);
+    await press(screen.getByText('Equipo'));
+
+    expect(screen.queryByText('Sin gestor')).toBeNull();
+    expect(screen.queryByText('ASIGNAR')).toBeNull();
+    expect(screen.getByText('Todo tiene gestor.')).toBeTruthy();
+  });
+
+  it('(EC-9) ASIGNAR abre la hoja; elegir agente llama reassign() y, tras éxito, refetch del overview', async () => {
+    const mock_reassign = jest.fn().mockResolvedValue({ ok: true });
+    const mock_refetch_overview = jest.fn();
+    mock_use_agency_role.mockReturnValue({
+      canViewTeam: true,
+      isOwner: true,
+      isAdmin: false,
+      agencyId: 'agency-1',
+      memberRole: 'owner',
+      loading: false,
+      error: false,
+      refetch: jest.fn(),
+    });
+    mock_use_agency_agents.mockReturnValue({
+      agents: [{ id: OTHER_AGENT_ID, full_name: 'Karla Ibarra', profile_photo_url: null, status: 'active' }],
+      loading: false,
+      error: null,
+    });
+    mock_use_crm_agency_overview.mockReturnValue({
+      agents: [],
+      unmanaged: [make_unmanaged_row({ lead_id: 'lead-unmanaged-1', lead_display_name: 'Diego Martínez' })],
+      loading: false,
+      error: null,
+      refetch: mock_refetch_overview,
+    });
+    mock_use_reassign_lead.mockReturnValue({ reassign: mock_reassign, busy: false });
+
+    await render(<CRMScreen />);
+    await press(screen.getByText('Equipo'));
+    await press(screen.getByText('ASIGNAR'));
+    await press(screen.getByLabelText('Asignar a Karla Ibarra'));
+
+    expect(mock_reassign).toHaveBeenCalledWith('lead-unmanaged-1', OTHER_AGENT_ID);
+    expect(mock_refetch_overview).toHaveBeenCalled();
+    expect(screen.getByText('Diego Martínez ahora es de Karla Ibarra')).toBeTruthy();
+  });
+
+  it('(EC-10) tap en fila de "Tus agentes" → drill-down con cabecera "← Equipo"; tap en "← Equipo" vuelve al overview', async () => {
+    setup_default({
+      hot: make_band_state({
+        data: [make_lead_row({ lead_id: 'lead-theirs', full_name: 'Fernando Reyes', band: 'hot' })],
+      }),
+    });
+    mock_use_agency_role.mockReturnValue({
+      canViewTeam: true,
+      isOwner: true,
+      isAdmin: false,
+      agencyId: 'agency-1',
+      memberRole: 'owner',
+      loading: false,
+      error: false,
+      refetch: jest.fn(),
+    });
+    mock_use_crm_agency_overview.mockReturnValue({
+      agents: [make_agency_agent_row({ agent_id: OTHER_AGENT_ID, agent_name: 'Diego Ibarra', untouched_count: 4, avg_temperature: 61 })],
+      unmanaged: [],
+      loading: false,
+      error: null,
+      refetch: jest.fn(),
+    });
+
+    await render(<CRMScreen />);
+    await press(screen.getByText('Equipo'));
+    await press(screen.getByText('Diego Ibarra'));
+
+    expect(screen.getByText('← Equipo')).toBeTruthy();
+    expect(screen.getByText('Fernando Reyes')).toBeTruthy();
+    // El overview de agencia (narrativa "N no tienen gestor") ya no está montado.
+    expect(screen.queryByText('Todo tiene gestor.')).toBeNull();
+
+    await press(screen.getByLabelText('Volver a Equipo'));
+
+    expect(screen.getByText('Diego Ibarra')).toBeTruthy();
+    expect(screen.queryByText('← Equipo')).toBeNull();
   });
 });

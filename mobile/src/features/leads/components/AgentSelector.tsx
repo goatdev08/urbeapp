@@ -14,6 +14,14 @@
  * ya no filtra solo status='active') — su chip se etiqueta "(suspendido)"
  * para que el owner sepa, antes de tocarlo, que está viendo el pipeline de
  * una cuenta congelada.
+ *
+ * `mode="assign"` (subtarea 269.6, hoja ASIGNAR de la banda "Sin gestor" del
+ * segmento Equipo — alternativa A aprobada del preview 269-crm-equipo.html
+ * sección 3): variante de lista VERTICAL sin chip "Todos" y con SOLO
+ * agentes `status==='active'` (`reassign_lead_atomic` rechaza
+ * TARGET_NOT_ACTIVE_MEMBER — ofrecer un suspendido en el selector sería un
+ * error garantizado). `selectedAgentId` no aplica en este modo (la hoja se
+ * cierra al elegir, no hay chip "activo" que resaltar).
  */
 
 import React from 'react';
@@ -42,6 +50,9 @@ export interface AgentSelectorProps {
   agents: Agent[];
   selectedAgentId: string | null;
   onSelectAgent: (id: string | null) => void;
+  /** 'filter' (default) = rail horizontal de chips + "Todos". 'assign' = lista
+   * vertical sin "Todos", solo agentes `status==='active'` (269.6, ver nota de cabecera). */
+  mode?: 'filter' | 'assign';
 }
 
 // ─── Componente ───────────────────────────────────────────────────────────────
@@ -50,7 +61,43 @@ export function AgentSelector({
   agents,
   selectedAgentId,
   onSelectAgent,
+  mode = 'filter',
 }: AgentSelectorProps): React.JSX.Element {
+  if (mode === 'assign') {
+    const active_agents = agents.filter((agent) => agent.status === 'active');
+    return (
+      <View style={styles.assign_list}>
+        {active_agents.map((agent) => (
+          <Pressable
+            key={agent.id}
+            onPress={() => onSelectAgent(agent.id)}
+            accessibilityRole="button"
+            accessibilityLabel={`Asignar a ${agent.full_name ?? 'Agente'}`}
+            style={styles.assign_row}
+          >
+            <View style={styles.avatar}>
+              {agent.profile_photo_url !== null ? (
+                <Image
+                  source={{ uri: agent.profile_photo_url }}
+                  style={StyleSheet.absoluteFill}
+                  contentFit="cover"
+                  transition={200}
+                />
+              ) : (
+                <View style={[StyleSheet.absoluteFill, styles.avatar_placeholder]}>
+                  <Text style={styles.avatar_initial}>{get_initials(agent.full_name)}</Text>
+                </View>
+              )}
+            </View>
+            <Text style={styles.assign_name} numberOfLines={1}>
+              {agent.full_name ?? 'Agente'}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+    );
+  }
+
   return (
     <ScrollView
       horizontal
@@ -170,6 +217,25 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   label_inactive: {
+    color: colors.ink,
+  },
+
+  // ── mode="assign" — lista vertical (269.6) ────────────────────────────────
+  assign_list: {
+    paddingVertical: spacing.s_4,
+  },
+  assign_row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.s_12,
+    paddingVertical: spacing.s_12,
+    borderTopWidth: 1,
+    borderTopColor: colors.paper_3,
+  },
+  assign_name: {
+    flex: 1,
+    fontFamily: fonts.sans_semibold,
+    fontSize: 14,
     color: colors.ink,
   },
 });

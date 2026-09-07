@@ -197,3 +197,29 @@ export interface CrmRadarRow {
   signals: CrmRadarSignals;
   last_activity_at: string | null;
 }
+
+/**
+ * ── Vista de agencia del CRM (tarea #269, subtarea 269.5) ──────────────────
+ * Fuente: public.crm_agency_overview (migración 20260906400001), una fila por
+ * agente activo (`kind: 'agent'`) más una fila por lead sin agente asignado
+ * (`kind: 'unmanaged'`). El hook useCrmAgencyOverview separa la fila cruda en
+ * estos dos tipos, sin arrastrar `kind` ni los campos NULL del otro kind.
+ */
+
+/** AgencyAgentRow — fila `kind='agent'` de crm_agency_overview, proyectada. */
+export interface AgencyAgentRow {
+  agent_id: string;
+  agent_name: string | null;
+  untouched_count: number;
+  response_hours: number | null;
+  avg_temperature: number | null;
+  flag: 'pierde_leads' | 'acumula' | null;
+}
+
+/** UnmanagedLeadRow — fila `kind='unmanaged'` de crm_agency_overview, proyectada. */
+export interface UnmanagedLeadRow {
+  lead_id: string;
+  lead_display_name: string | null;
+  temperature: number;
+  first_contact_at: string | null;
+}

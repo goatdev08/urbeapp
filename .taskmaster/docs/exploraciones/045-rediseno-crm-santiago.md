@@ -863,6 +863,7 @@ Respuestas de Abraham (2026-09-05). Cada una con dónde quedó plasmada.
 | **D10** | Asignar | **Derivada/fase E** con **aviso al buscador**; reabre **#31** dentro de E; **en la 1ª entrega el botón no aparece** | §6.6, §13, §19 (tarea E) |
 | **D11** | Estados | **4 visibles, 8 por debajo**; mapeo exacto y regla del botón "Siguiente"; desplegable fino accesible (**ya existe, #117**); **sin tocar EF ni enum** | **§7.4** |
 | **D11-bis** | Badge de agente | **Sí**, umbrales en `app_config`, fase E | §6.6, §19 (tarea E) |
+| **D10-bis** (2026-09-07, /tm-plan 269) | Aviso al reasignar | **Solo al agente destino**; el buscador **no** recibe aviso (sustituye la parte de "aviso al buscador" de D10). Frontera #31 = owner **y admin** activos. Badge: umbrales absolutos en `app_config` (`crm_agent_flag_*`). | §6.6, tarea 269 |
 | **D12** | Estado vacío | **Copy sin promesa** + **derivada `producto()`** para la notificación "lead se calienta" | §6.7, §19 (tarea H) |
 | **D13** | #75 / #80 | La épica **absorbe #80** (`cancelled`, nota "absorbida por exploración 045") y **cierra #75** (`done`); **75.7 → derivada J** | §19, §20 |
 | **D14** | #108 | **No bloquea**: con T1 no hay columna nueva que escribir, así que un agente no puede inflar la temperatura por REST. #108 queda vivo solo por el `score` legacy y por `changed_by` | §1.B, §15 |
