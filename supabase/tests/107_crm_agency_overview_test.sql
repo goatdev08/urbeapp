@@ -86,14 +86,31 @@
 --   stale) >= crm_agent_flag_stale_leads_min. NULL en cualquier otro caso (incluido 0 leads).
 --   Todos los umbrales por COALESCE(app_config, default) — nunca hardcoded (CONFIG1 lo prueba
 --   cambiando crm_agent_flag_stale_leads_min en vivo).
--- D-UNMANAGED: kind='unmanaged' por cada lead (deleted_at is null, status NOT IN closed set)
---   cuyo agent_id sea un agency_member con status='suspended' EN p_agency_id (mecanismo #203,
---   20260904200001) — filtro por agency_members.status, NUNCA por leads.agency_id (ese campo
---   puede arrastrar el mismo fallback a la membresía suspendida, es circular usarlo aquí).
+-- D-UNMANAGED (🔴 CORREGIDO tras hallazgo del guardian, §0.5.4 — frontera de agencia):
+--   kind='unmanaged' por cada lead con `leads.agency_id = p_agency_id` (deleted_at is null,
+--   status NOT IN closed set) cuyo agent_id sea un agency_member con status='suspended' EN
+--   ESA MISMA p_agency_id (mecanismo #203, 20260904200001). El filtro por agency_members.status
+--   por sí solo NO basta — la RPC es SECURITY DEFINER y salta RLS, así que debe replicar la
+--   MISMA frontera que la policy `leads_select` (20260807000006: `agent_id = auth.uid() OR
+--   private.agency_role_of(agency_id) in ('owner','admin')`) exigiría si corriera con RLS. NO
+--   es circular usar leads.agency_id aquí: private.set_lead_agency_id (#203,
+--   20260904200001:64-105) resuelve PRIMERO a la membresía ACTIVA del agente al momento de
+--   CAPTAR el lead, y solo cae a la SUSPENDIDA más reciente si no hay ninguna activa — es
+--   exactamente la semántica "el lead pertenece a la agencia donde el agente lo captó", la
+--   MISMA fuente de verdad que leads_select ya usa. Sin este filtro, un agente suspendido EN
+--   la agencia A pero ACTIVO en la agencia B (su lead nuevo se captura correctamente con
+--   agency_id=B vía el trigger) aparecería IGUAL como "sin gestor" en A — fuga de un lead que
+--   ni siquiera es de A (ver FRONTERA_AGENCIA más abajo).
 --   temperature = private.crm_temperature(suspended_agent_id, lead.user_id, now()).
 --   first_contact_at = leads.first_contact_at (columna existente, sin cómputo).
 --   lead_display_name = trim(first_name || ' ' || last_name) del BUSCADOR (users del
 --   lead.user_id) — mismo patrón que full_name de crm_leads_page.
+-- D-METRICS-SCOPE (🔴 NUEVO tras hallazgo del guardian, §0.5.4): las métricas por agente
+--   (untouched_count, response_hours, avg_temperature, stale/flag) de un agent row SOLO cuentan
+--   `leads.agency_id = p_agency_id` — un agente puede trabajar en varias agencias a lo largo
+--   del tiempo (una activa a la vez, `agency_members_one_active_per_user`, pero puede acumular
+--   leads de agencias PREVIAS con agency_id distinto); ver overview de la agencia A NUNCA debe
+--   mezclar leads que le pertenecen a la agencia B. Ver FRONTERA_AGENCIA (CROSS).
 -- D-ORDER: kind='agent' PRIMERO (ORDER BY kind ASC ya los separa: 'agent' < 'unmanaged'
 --   alfabéticamente), ordenados por agent_name ASC; luego kind='unmanaged', ordenados por
 --   temperature DESC, lead_id ASC.
@@ -108,10 +125,25 @@
 -- el mecanismo general sobre crm_agent_flag_stale_leads_min; se asume el mismo patrón de
 -- COALESCE para las otras 3 claves (mismo molde literal que private.crm_temperature, ya
 -- custodiado por 100_crm_temperature_test.sql).
+--
+-- 🔴 AMPLIACIÓN post-guardian (269.1, FAIL por cobertura — la migración GREEN 20260906400001 es
+-- correcta en lo que cubría, incompleta en cobertura): V1 (mutante M6 "incluye viewers"), V2
+-- (mutante M23 "stale ignora transición" + M16 "stale sin edad"), M13 ("avg_temperature incluye
+-- cerrados") y FRONTERA_AGENCIA (§0.5.4, hallazgo NUEVO de privacidad: la RPC no acotaba por
+-- leads.agency_id, ver D-UNMANAGED/D-METRICS-SCOPE arriba). Los 3 primeros documentan
+-- comportamiento YA CORRECTO en el GREEN actual (asserts nuevos en verde); FRONTERA_AGENCIA
+-- expone una brecha REAL — sus asserts nuevos van en rojo contra la migración actual, y
+-- HAPPY1/HAPPY3/HAPPY4/ORDER2 (preexistentes) TAMBIÉN se vuelven rojo como consecuencia
+-- esperada del MISMO hueco (el lead de XAGENCY se cuela en unmanaged de A bajo el código
+-- actual, y su nombre NULL se intercala en la secuencia ordenada de ORDER2) — sus literales ya
+-- reflejan el valor OBJETIVO (post-fix), no el actual; no es una regresión nueva, es la MISMA
+-- brecha propagándose a asserts que ya existían. Verificado en vivo (docker exec, ver bitácora):
+-- 7 not ok de 70 — HAPPY1/HAPPY3/HAPPY4/ORDER2 + FRONTERA1/2/3; los otros 63 (incluidos V1, V2,
+-- M13, XAGENCY_SETUP) en ok.
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(62);
+select plan(70);
 
 -- ── Helper de impersonación (mismo patrón que 02/.../100/101/102/103/104/106) ───────────────
 create or replace function pg_temp.act_as(p_uid uuid, p_role text default 'authenticated')
@@ -123,9 +155,9 @@ end $$;
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- Fixtures — UUIDs prefijo '00000000-0000-0000-0000-000000269XXX' (subtarea 269.1).
---   USERS 001-012 (roles fijos) + 101-119 (buscadores del pipeline) + 201-203 (buscadores
---   sin gestor). AGENCIES 301-302. AGENCY_MEMBERS 311-321. PROPERTIES 401 (única, FK de
---   lead_origin_properties). LEADS 501-519 (pipeline) + 601-603 (sin gestor).
+--   USERS 001-014,021-022 (roles fijos) + 101-142 (buscadores del pipeline) + 201-203
+--   (buscadores sin gestor). AGENCIES 301-302. AGENCY_MEMBERS 311-327. PROPERTIES 401 (única,
+--   FK de lead_origin_properties). LEADS 501-534 (pipeline) + 601-603 (sin gestor).
 --
 --   001 OWNER            — owner  ACTIVO agencia A, 0 leads → NO sale como agent row.
 --   002 ADMIN             — admin  ACTIVO agencia A, 1 lead → boundary response_hours=24 exacto.
@@ -134,14 +166,26 @@ end $$;
 --   005 AGENT_ACUM        — agent  ACTIVO agencia A, 5 contacted stale, 0 untouched → acumula.
 --   006 AGENT_ZERO        — agent  ACTIVO agencia A, 0 leads reales (+1 BORRADO, decoy) → todo
 --                            NULL/0, prueba deleted_at is null.
---   007 VIEWER            — viewer ACTIVO agencia A → NUNCA sale como agent row.
+--   007 VIEWER            — viewer ACTIVO agencia A, +1 lead (decoy, V1) → NUNCA sale como
+--                            agent row pese a tener lead.
 --   008 AGENT_SUSP        — agent  SUSPENDIDO agencia A → sus leads pasan a 'unmanaged'.
 --   009 AGENT_NOFLAG      — agent  ACTIVO agencia A, 2 new + 1 contacted (resp=8h, avgtemp=10)
---                            → baseline sin flag.
+--                            + 1 CERRADO con señal caliente (decoy, M13, no debe contar) →
+--                            baseline sin flag.
 --   010 OWNER_SUSPENDED   — owner  SUSPENDIDO agencia A → ACL: 0 filas.
 --   011 OWNER_OTHER       — owner  ACTIVO agencia B (ajena) → ACL: 0 filas sobre agencia A.
 --   012 AGENT_SLOW        — agent  ACTIVO agencia A, 1 lead resp=30h (>24) → pierde_leads solo
 --                            por respuesta (untouched=0, stale=0).
+--   013 AGENT_STALE_TRANS — agent  ACTIVO agencia A, 5 leads viejos (10d) que SÍ transicionaron
+--                            a contacted (V2/M23) → NO deben contar como stale → flag NULL.
+--   014 AGENT_STALE_YOUNG — agent  ACTIVO agencia A, 5 leads SIN transición pero JÓVENES (2d,
+--                            V2/M16) → NO deben contar como stale (edad < umbral) → flag NULL.
+--   021 AGENT_CROSS       — agent  ACTIVO agencia A (+ SUSPENDIDO histórico en B,
+--                            FRONTERA_AGENCIA): 1 lead de A + 1 lead de B (agency_id explícito)
+--                            → untouched_count/avg_temperature de A deben contar SOLO el de A.
+--   022 AGENT_XAGENCY     — agent  SUSPENDIDO en A, ACTIVO en B (FRONTERA_AGENCIA): su lead
+--                            nuevo resuelve agency_id=B (vía trigger) → NO debe aparecer como
+--                            'unmanaged' de A aunque esté suspendido EN A.
 -- ════════════════════════════════════════════════════════════════════════════
 
 insert into auth.users (id, email) values
@@ -155,11 +199,15 @@ insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-000000269009', 'noflag.269e1@test.local'),
   ('00000000-0000-0000-0000-000000269010', 'ownersusp.269e1@test.local'),
   ('00000000-0000-0000-0000-000000269011', 'ownerother.269e1@test.local'),
-  ('00000000-0000-0000-0000-000000269012', 'slow.269e1@test.local');
+  ('00000000-0000-0000-0000-000000269012', 'slow.269e1@test.local'),
+  ('00000000-0000-0000-0000-000000269013', 'staletrans.269e1@test.local'),
+  ('00000000-0000-0000-0000-000000269014', 'staleyoung.269e1@test.local'),
+  ('00000000-0000-0000-0000-000000269021', 'cross.269e1@test.local'),
+  ('00000000-0000-0000-0000-000000269022', 'xagency.269e1@test.local');
 
 insert into auth.users (id, email)
 select ('00000000-0000-0000-0000-000000269' || i)::uuid, 'u' || i || '.269e1@test.local'
-from generate_series(101, 119) as i;
+from generate_series(101, 142) as i;
 
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-000000269201', 'hot.269e1@test.local'),
@@ -178,6 +226,12 @@ update public.users set first_name = 'Nu', last_name = 'Noflag'
   where id = '00000000-0000-0000-0000-000000269009';
 update public.users set first_name = 'Yara', last_name = 'Slow'
   where id = '00000000-0000-0000-0000-000000269012';
+update public.users set first_name = 'Ceci', last_name = 'Transitioned'
+  where id = '00000000-0000-0000-0000-000000269013';
+update public.users set first_name = 'Delta', last_name = 'Young'
+  where id = '00000000-0000-0000-0000-000000269014';
+update public.users set first_name = 'Xavier', last_name = 'Cross'
+  where id = '00000000-0000-0000-0000-000000269021';
 update public.users set first_name = 'Gonzalo', last_name = 'Buscador1'
   where id = '00000000-0000-0000-0000-000000269201';
 update public.users set first_name = 'Hilda', last_name = 'Buscador2'
@@ -200,7 +254,13 @@ insert into public.agency_members (id, agency_id, user_id, member_role, status) 
   ('00000000-0000-0000-0000-000000269318', '00000000-0000-0000-0000-000000269301', '00000000-0000-0000-0000-000000269009', 'agent',  'active'),    -- AGENT_NOFLAG
   ('00000000-0000-0000-0000-000000269319', '00000000-0000-0000-0000-000000269301', '00000000-0000-0000-0000-000000269010', 'owner',  'suspended'), -- OWNER_SUSPENDED
   ('00000000-0000-0000-0000-000000269320', '00000000-0000-0000-0000-000000269302', '00000000-0000-0000-0000-000000269011', 'owner',  'active'),    -- OWNER_OTHER (agencia B)
-  ('00000000-0000-0000-0000-000000269321', '00000000-0000-0000-0000-000000269301', '00000000-0000-0000-0000-000000269012', 'agent',  'active');    -- AGENT_SLOW
+  ('00000000-0000-0000-0000-000000269321', '00000000-0000-0000-0000-000000269301', '00000000-0000-0000-0000-000000269012', 'agent',  'active'),    -- AGENT_SLOW
+  ('00000000-0000-0000-0000-000000269326', '00000000-0000-0000-0000-000000269301', '00000000-0000-0000-0000-000000269013', 'agent',  'active'),    -- AGENT_STALE_TRANS
+  ('00000000-0000-0000-0000-000000269327', '00000000-0000-0000-0000-000000269301', '00000000-0000-0000-0000-000000269014', 'agent',  'active'),    -- AGENT_STALE_YOUNG
+  ('00000000-0000-0000-0000-000000269322', '00000000-0000-0000-0000-000000269301', '00000000-0000-0000-0000-000000269021', 'agent',  'active'),    -- AGENT_CROSS, ACTIVO en A
+  ('00000000-0000-0000-0000-000000269323', '00000000-0000-0000-0000-000000269302', '00000000-0000-0000-0000-000000269021', 'agent',  'suspended'), -- AGENT_CROSS, histórico SUSPENDIDO en B
+  ('00000000-0000-0000-0000-000000269324', '00000000-0000-0000-0000-000000269301', '00000000-0000-0000-0000-000000269022', 'agent',  'suspended'), -- AGENT_XAGENCY, SUSPENDIDO en A
+  ('00000000-0000-0000-0000-000000269325', '00000000-0000-0000-0000-000000269302', '00000000-0000-0000-0000-000000269022', 'agent',  'active');    -- AGENT_XAGENCY, ACTIVO en B
 
 insert into public.properties (id, owner_user_id, agency_id, property_type, operation_type, address, location, price, status) values
   ('00000000-0000-0000-0000-000000269401', '00000000-0000-0000-0000-000000269001',
@@ -248,6 +308,15 @@ update public.leads set status = 'contacted' where id = '00000000-0000-0000-0000
 insert into public.lead_origin_properties (id, lead_id, property_id, contacted_at) values
   ('00000000-0000-0000-0000-000000269716', '00000000-0000-0000-0000-000000269516', '00000000-0000-0000-0000-000000269401', now() - interval '1 hour');
 
+-- ── M13 decoy — AGENT_NOFLAG (009) recibe además 1 lead CERRADO con una señal CALIENTE
+--    (contact_first hace 1h → temperatura=30 si se incluyera). avg_temperature debe SEGUIR en
+--    10 ((0+0+30)/3, solo los 3 leads ABIERTOS) — si el mutante M13 incluyera cerrados, sería
+--    (0+0+30+30)/4=15. ─────────────────────────────────────────────────────────────────────────
+insert into public.leads (id, agent_id, user_id, status, created_at) values
+  ('00000000-0000-0000-0000-000000269521', '00000000-0000-0000-0000-000000269009', '00000000-0000-0000-0000-000000269120', 'closed_won_rent', now());
+insert into public.lead_origin_properties (id, lead_id, property_id, contacted_at) values
+  ('00000000-0000-0000-0000-000000269721', '00000000-0000-0000-0000-000000269521', '00000000-0000-0000-0000-000000269401', now() - interval '1 hour');
+
 -- ── ADMIN (002): 1 lead, response_hours=24 EXACTO (boundary, NO dispara — la condición es
 --    ESTRICTAMENTE mayor). Prueba también que un admin CON lead sí sale como agent row. ───────
 insert into public.leads (id, agent_id, user_id, status, created_at) values
@@ -259,6 +328,60 @@ update public.leads set status = 'contacted' where id = '00000000-0000-0000-0000
 insert into public.leads (id, agent_id, user_id, status, created_at) values
   ('00000000-0000-0000-0000-000000269518', '00000000-0000-0000-0000-000000269012', '00000000-0000-0000-0000-000000269119', 'new', now() - interval '30 hours');
 update public.leads set status = 'contacted' where id = '00000000-0000-0000-0000-000000269518';
+
+-- ── V1 decoy — VIEWER (007) recibe 1 lead ABIERTO. VIEWER NUNCA debe salir como agent row
+--    (mutante M6 "incluye viewers"). ─────────────────────────────────────────────────────────────
+insert into public.leads (id, agent_id, user_id, status, created_at) values
+  ('00000000-0000-0000-0000-000000269520', '00000000-0000-0000-0000-000000269007', '00000000-0000-0000-0000-000000269121', 'new', now());
+
+-- ── AGENT_STALE_TRANS (013): 5 leads 'contacted' directo, creados hace 10 días, CADA UNO con
+--    una fila de transición REAL (old_status='new'→new_status='contacted') insertada DIRECTO en
+--    lead_status_history (bypass del trigger, mismo patrón que 102_crm_leads_page_funnel_test.sql
+--    "agendaron") a solo 2h de created_at — response_hours=2 (bajo el umbral) y, sobre todo,
+--    SÍ transicionaron de verdad: aunque tengan 10 días de antigüedad, NUNCA deben contar como
+--    stale (mutante M23 "stale ignora transición" sí los contaría, dando acumula). ─────────────
+insert into public.leads (id, agent_id, user_id, status, created_at) values
+  ('00000000-0000-0000-0000-000000269522', '00000000-0000-0000-0000-000000269013', '00000000-0000-0000-0000-000000269130', 'contacted', now() - interval '10 days'),
+  ('00000000-0000-0000-0000-000000269523', '00000000-0000-0000-0000-000000269013', '00000000-0000-0000-0000-000000269131', 'contacted', now() - interval '10 days'),
+  ('00000000-0000-0000-0000-000000269524', '00000000-0000-0000-0000-000000269013', '00000000-0000-0000-0000-000000269132', 'contacted', now() - interval '10 days'),
+  ('00000000-0000-0000-0000-000000269525', '00000000-0000-0000-0000-000000269013', '00000000-0000-0000-0000-000000269133', 'contacted', now() - interval '10 days'),
+  ('00000000-0000-0000-0000-000000269526', '00000000-0000-0000-0000-000000269013', '00000000-0000-0000-0000-000000269134', 'contacted', now() - interval '10 days');
+insert into public.lead_status_history (lead_id, old_status, new_status, changed_by, changed_at) values
+  ('00000000-0000-0000-0000-000000269522', 'new', 'contacted', '00000000-0000-0000-0000-000000269013', now() - interval '10 days' + interval '2 hours'),
+  ('00000000-0000-0000-0000-000000269523', 'new', 'contacted', '00000000-0000-0000-0000-000000269013', now() - interval '10 days' + interval '2 hours'),
+  ('00000000-0000-0000-0000-000000269524', 'new', 'contacted', '00000000-0000-0000-0000-000000269013', now() - interval '10 days' + interval '2 hours'),
+  ('00000000-0000-0000-0000-000000269525', 'new', 'contacted', '00000000-0000-0000-0000-000000269013', now() - interval '10 days' + interval '2 hours'),
+  ('00000000-0000-0000-0000-000000269526', 'new', 'contacted', '00000000-0000-0000-0000-000000269013', now() - interval '10 days' + interval '2 hours');
+
+-- ── AGENT_STALE_YOUNG (014): 5 leads 'in_progress' directo (NUNCA transicionaron de verdad —
+--    solo la fila de creación con old_status NULL), pero JÓVENES (2 días, bajo
+--    crm_agent_flag_stale_days=7) — no deben contar como stale por EDAD (mutante M16 "stale sin
+--    edad" sí los contaría). ──────────────────────────────────────────────────────────────────
+insert into public.leads (id, agent_id, user_id, status, created_at) values
+  ('00000000-0000-0000-0000-000000269527', '00000000-0000-0000-0000-000000269014', '00000000-0000-0000-0000-000000269135', 'in_progress', now() - interval '2 days'),
+  ('00000000-0000-0000-0000-000000269528', '00000000-0000-0000-0000-000000269014', '00000000-0000-0000-0000-000000269136', 'in_progress', now() - interval '2 days'),
+  ('00000000-0000-0000-0000-000000269529', '00000000-0000-0000-0000-000000269014', '00000000-0000-0000-0000-000000269137', 'in_progress', now() - interval '2 days'),
+  ('00000000-0000-0000-0000-000000269530', '00000000-0000-0000-0000-000000269014', '00000000-0000-0000-0000-000000269138', 'in_progress', now() - interval '2 days'),
+  ('00000000-0000-0000-0000-000000269531', '00000000-0000-0000-0000-000000269014', '00000000-0000-0000-0000-000000269139', 'in_progress', now() - interval '2 days');
+
+-- ── FRONTERA_AGENCIA (§0.5.4, hallazgo del guardian) — AGENT_CROSS (021, ACTIVO en A, histórico
+--    SUSPENDIDO en B): 1 lead de A (agency_id resuelto por el trigger, sin señal) + 1 lead
+--    EXPLÍCITO de B (agency_id=B a propósito, con señal caliente contact_first hace 1h →
+--    temp=30) — el overview de A debe contar SOLO el de A: untouched_count=1 (no 2),
+--    avg_temperature=0 (no 15=(0+30)/2). ────────────────────────────────────────────────────────
+insert into public.leads (id, agent_id, user_id, status, created_at, agency_id) values
+  ('00000000-0000-0000-0000-000000269532', '00000000-0000-0000-0000-000000269021', '00000000-0000-0000-0000-000000269140', 'new', now(), null),
+  ('00000000-0000-0000-0000-000000269533', '00000000-0000-0000-0000-000000269021', '00000000-0000-0000-0000-000000269141', 'new', now(), '00000000-0000-0000-0000-000000269302');
+insert into public.lead_origin_properties (id, lead_id, property_id, contacted_at) values
+  ('00000000-0000-0000-0000-000000269733', '00000000-0000-0000-0000-000000269533', '00000000-0000-0000-0000-000000269401', now() - interval '1 hour');
+
+-- ── FRONTERA_AGENCIA — AGENT_XAGENCY (022, SUSPENDIDO en A, ACTIVO en B): su lead nuevo entra
+--    con agency_id=NULL y el trigger private.set_lead_agency_id (#203) lo resuelve a la
+--    membresía ACTIVA (B), NUNCA a la suspendida de A — verificado abajo (XAGENCY_SETUP). El
+--    overview de A NO debe mostrarlo como 'unmanaged' (D-UNMANAGED corregido: filtro por
+--    leads.agency_id = p_agency_id, no solo por agency_members.status). ───────────────────────
+insert into public.leads (id, agent_id, user_id, status, created_at) values
+  ('00000000-0000-0000-0000-000000269534', '00000000-0000-0000-0000-000000269022', '00000000-0000-0000-0000-000000269142', 'new', now());
 
 -- ── AGENT_SUSP (008, suspendido): 2 leads ABIERTOS (HOT con señal → temp=30, COLD sin señal
 --    → temp=0) + 1 lead CERRADO (closed_won_rent) que NO debe aparecer en 'unmanaged'. ────────
@@ -417,28 +540,34 @@ select is(
 reset role;
 
 -- ════════════════════════════════════════════════════════════════════════════
--- 4) HAPPY PATH — OWNER y ADMIN ven el mismo universo: 6 agent rows + 2 unmanaged.
+-- 4) HAPPY PATH — OWNER y ADMIN ven el mismo universo: 9 agent rows + 2 unmanaged = 11.
+--    🔴 HAPPY1/HAPPY3/HAPPY4 llevan el literal OBJETIVO (post-fix de FRONTERA_AGENCIA, §13):
+--    contra la migración actual (20260906400001, sin el filtro leads.agency_id=p_agency_id) el
+--    lead de AGENT_XAGENCY se cuela como unmanaged de más (actual=12/3/12) — mismo hueco que
+--    FRONTERA1-3, NO una regresión nueva. HAPPY2 (conteo de agent rows) es inmune al hueco
+--    (D-AGENTROWS nunca dependió de leads.agency_id) y sigue en verde. ORDER2 (más abajo, §5)
+--    también flipea: el nombre NULL de XAGENCY se intercala entre HOT y COLD.
 -- ════════════════════════════════════════════════════════════════════════════
 
 select pg_temp.act_as('00000000-0000-0000-0000-000000269001'); -- OWNER
 select is(
   jsonb_array_length(pg_temp.overview_json('00000000-0000-0000-0000-000000269301')),
-  8, 'HAPPY1_owner_ve_8_filas_totales'
+  11, 'HAPPY1_owner_ve_11_filas_totales'
 );
 select is(
   pg_temp.count_kind(pg_temp.overview_json('00000000-0000-0000-0000-000000269301'), 'agent'),
-  6, 'HAPPY2_owner_ve_6_agent_rows_OWNER_sin_leads_excluido'
+  9, 'HAPPY2_owner_ve_9_agent_rows_OWNER_sin_leads_y_VIEWER_excluidos'
 );
 select is(
   pg_temp.count_kind(pg_temp.overview_json('00000000-0000-0000-0000-000000269301'), 'unmanaged'),
-  2, 'HAPPY3_owner_ve_2_unmanaged_rows_el_cerrado_excluido'
+  2, 'HAPPY3_owner_ve_2_unmanaged_rows_cerrado_y_XAGENCY_excluidos'
 );
 reset role;
 
 select pg_temp.act_as('00000000-0000-0000-0000-000000269002'); -- ADMIN
 select is(
   jsonb_array_length(pg_temp.overview_json('00000000-0000-0000-0000-000000269301')),
-  8, 'HAPPY4_admin_ve_las_mismas_8_filas'
+  11, 'HAPPY4_admin_ve_las_mismas_11_filas'
 );
 reset role;
 
@@ -450,7 +579,7 @@ reset role;
 select pg_temp.act_as('00000000-0000-0000-0000-000000269001'); -- OWNER
 select is(
   pg_temp.seq_field(pg_temp.overview_json('00000000-0000-0000-0000-000000269301'), 'agent', 'agent_name'),
-  '["Alfa Pierde", "Beta Zero", "Meso Acum", "Nu Noflag", "Yara Slow", "Zeta Admin"]'::jsonb,
+  '["Alfa Pierde", "Beta Zero", "Ceci Transitioned", "Delta Young", "Meso Acum", "Nu Noflag", "Xavier Cross", "Yara Slow", "Zeta Admin"]'::jsonb,
   'ORDER1_agent_rows_por_agent_name_ASC'
 );
 select is(
@@ -686,6 +815,76 @@ select pg_temp.act_as('00000000-0000-0000-0000-000000269001'); -- OWNER
 select is(
   pg_temp.field_of(pg_temp.overview_json('00000000-0000-0000-0000-000000269301'), 'agent', 'agent_id', '00000000-0000-0000-0000-000000269005', 'flag'),
   'acumula', 'CONFIG2_borrar_la_override_regresa_al_default_5_acumula_de_vuelta'
+);
+reset role;
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 10) V1 — mutante M6 "incluye viewers": VIEWER (007) tiene 1 lead ABIERTO y AUN ASÍ nunca
+--     sale como agent row; HAPPY2 (agent rows) no se infla por él.
+-- ════════════════════════════════════════════════════════════════════════════
+
+select pg_temp.act_as('00000000-0000-0000-0000-000000269001'); -- OWNER
+select is(
+  pg_temp.kind_has_match(pg_temp.overview_json('00000000-0000-0000-0000-000000269301'), 'agent', 'agent_id', '00000000-0000-0000-0000-000000269007'),
+  false, 'V1_viewer_con_lead_NUNCA_sale_como_agent_row'
+);
+reset role;
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 11) V2 — mutante M23 "stale ignora transición real" + M16 "stale sin edad": ambos casos
+--     deben dar flag NULL (ninguno cuenta como stale).
+-- ════════════════════════════════════════════════════════════════════════════
+
+select pg_temp.act_as('00000000-0000-0000-0000-000000269001'); -- OWNER
+select is(
+  pg_temp.field_of(pg_temp.overview_json('00000000-0000-0000-0000-000000269301'), 'agent', 'agent_id', '00000000-0000-0000-0000-000000269013', 'flag'),
+  null, 'V2_TRANS_flag_NULL_5_leads_viejos_que_SI_transicionaron_no_son_stale_M23'
+);
+select is(
+  pg_temp.field_of(pg_temp.overview_json('00000000-0000-0000-0000-000000269301'), 'agent', 'agent_id', '00000000-0000-0000-0000-000000269014', 'flag'),
+  null, 'V2_YOUNG_flag_NULL_5_leads_sin_transicion_pero_jovenes_no_son_stale_M16'
+);
+reset role;
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 12) M13 — mutante "avg_temperature incluye cerrados": AGENT_NOFLAG (009) sigue en 10 pese al
+--     lead cerrado con señal caliente (literal calculado a mano, NO recomputado: (0+0+30)/3).
+-- ════════════════════════════════════════════════════════════════════════════
+
+select pg_temp.act_as('00000000-0000-0000-0000-000000269001'); -- OWNER
+select is(
+  pg_temp.safe_numeric(pg_temp.field_of(pg_temp.overview_json('00000000-0000-0000-0000-000000269301'), 'agent', 'agent_id', '00000000-0000-0000-0000-000000269009', 'avg_temperature')),
+  10::numeric, 'M13_avg_temperature_excluye_lead_cerrado_con_senal_caliente'
+);
+reset role;
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 13) FRONTERA_AGENCIA (§0.5.4, hallazgo del guardian) — D-UNMANAGED/D-METRICS-SCOPE: la RPC
+--     debe acotar por leads.agency_id = p_agency_id, replicando la frontera de leads_select.
+--     🔴 Esperado EN ROJO contra la migración actual (20260906400001) — es la brecha real.
+-- ════════════════════════════════════════════════════════════════════════════
+
+-- Sanity check de la fixture (independiente del SUT — verifica el trigger #203 ya vigente):
+-- el lead de AGENT_XAGENCY resuelve agency_id=B (su membresía ACTIVA), NUNCA a la suspendida
+-- de A.
+select is(
+  (select agency_id::text from public.leads where id = '00000000-0000-0000-0000-000000269534'),
+  '00000000-0000-0000-0000-000000269302',
+  'XAGENCY_SETUP_lead_resuelve_a_agencia_B_via_trigger_203'
+);
+
+select pg_temp.act_as('00000000-0000-0000-0000-000000269001'); -- OWNER
+select is(
+  pg_temp.kind_has_match(pg_temp.overview_json('00000000-0000-0000-0000-000000269301'), 'unmanaged', 'lead_id', '00000000-0000-0000-0000-000000269534'),
+  false, 'FRONTERA1_lead_de_agente_suspendido_en_A_pero_ACTIVO_en_B_NO_es_unmanaged_de_A'
+);
+select is(
+  pg_temp.safe_numeric(pg_temp.field_of(pg_temp.overview_json('00000000-0000-0000-0000-000000269301'), 'agent', 'agent_id', '00000000-0000-0000-0000-000000269021', 'untouched_count')),
+  1::numeric, 'FRONTERA2_untouched_count_de_CROSS_cuenta_SOLO_el_lead_de_A'
+);
+select is(
+  pg_temp.safe_numeric(pg_temp.field_of(pg_temp.overview_json('00000000-0000-0000-0000-000000269301'), 'agent', 'agent_id', '00000000-0000-0000-0000-000000269021', 'avg_temperature')),
+  0::numeric, 'FRONTERA3_avg_temperature_de_CROSS_cuenta_SOLO_el_lead_de_A_sin_senal'
 );
 reset role;
 
