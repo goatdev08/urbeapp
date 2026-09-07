@@ -11887,14 +11887,14 @@
             "id": 4,
             "title": "Preview HTML aprobable de la vista de agencia: narrativa, banda Sin gestor (fila + ASIGNAR) y fila de agente con badge",
             "description": "Preview HTML (mobile/design-previews/269-crm-equipo.html, mismo patrón que 267-crm-santiago.html) del frame 3 de Santiago con nuestro modelo: cabecera narrativa ('N leads calientes llevan horas sin que los toquen. M no tienen gestor'), banda Sin gestor (avatar · nombre · ENTRÓ hace · TEMP · frase + botón ASIGNAR que abre selector de agente activo), banda Tus agentes (fila: nombre · SIN TOCAR n · RESPONDE h m · SUS LEADS t° · badge PIERDE LEADS/ACUMULA) y estados vacíos. 2–3 alternativas donde el diseño no resuelve nuestro modelo (etiqueta honesta de 'responde', badge sin datos, fila sin leads). Gate CLAUDE.md §8: nada se porta a RN sin aprobación por sección.",
-            "details": "Régimen ponytail NO aplica (fase propuesta, agente design). Referencias: frame 3 del diseño de Santiago (doc 045 §0), urbea-identidad-visual.html (lenguaje visual: verde canónico #1A5E44, Space Grotesk + Hanken Grotesk), Urbea Prototipo (layout). Servir por http 127.0.0.1 (Chrome MCP rechaza file://). Checkpoint HUMANO: aprobación explícita de Abraham por sección antes de 269.6, incluso en modo auto.\n<info added on 2026-09-07T03:53:21.450Z>\nPLAN: preview HTML mobile/design-previews/269-crm-equipo.html (patrón 267-crm-santiago.html, servir por http 127.0.0.1) del frame 3 de Santiago con nuestro modelo: narrativa de agencia, banda Sin gestor (fila + ASIGNAR → hoja con selector de agentes activos), banda Tus agentes (SIN TOCAR / RESPONDE / SUS LEADS + badge PIERDE LEADS/ACUMULA con los umbrales de 269.1), cabecera '← Equipo' del drill-down (decisión Abraham 2026-09-07) y estados vacíos; 2–3 alternativas donde el diseño no resuelve el modelo (etiqueta honesta de 'responde', badge sin datos) · agente=design · skills=urbea-design · régimen ponytail=NO aplica (fase propuesta) · criticidad=no · impacto-prod=sin riesgo (HTML fuera del bundle) · gate=CLAUDE.md §8: checkpoint HUMANO, aprobación por sección de Abraham antes de 269.6 incluso en auto · footprint=mobile/design-previews/269-crm-equipo.html (nuevo).\n</info added on 2026-09-07T03:53:21.450Z>",
+            "details": "Régimen ponytail NO aplica (fase propuesta, agente design). Referencias: frame 3 del diseño de Santiago (doc 045 §0), urbea-identidad-visual.html (lenguaje visual: verde canónico #1A5E44, Space Grotesk + Hanken Grotesk), Urbea Prototipo (layout). Servir por http 127.0.0.1 (Chrome MCP rechaza file://). Checkpoint HUMANO: aprobación explícita de Abraham por sección antes de 269.6, incluso en modo auto.\n<info added on 2026-09-07T03:53:21.450Z>\nPLAN: preview HTML mobile/design-previews/269-crm-equipo.html (patrón 267-crm-santiago.html, servir por http 127.0.0.1) del frame 3 de Santiago con nuestro modelo: narrativa de agencia, banda Sin gestor (fila + ASIGNAR → hoja con selector de agentes activos), banda Tus agentes (SIN TOCAR / RESPONDE / SUS LEADS + badge PIERDE LEADS/ACUMULA con los umbrales de 269.1), cabecera '← Equipo' del drill-down (decisión Abraham 2026-09-07) y estados vacíos; 2–3 alternativas donde el diseño no resuelve el modelo (etiqueta honesta de 'responde', badge sin datos) · agente=design · skills=urbea-design · régimen ponytail=NO aplica (fase propuesta) · criticidad=no · impacto-prod=sin riesgo (HTML fuera del bundle) · gate=CLAUDE.md §8: checkpoint HUMANO, aprobación por sección de Abraham antes de 269.6 incluso en auto · footprint=mobile/design-previews/269-crm-equipo.html (nuevo).\n</info added on 2026-09-07T03:53:21.450Z>\n<info added on 2026-09-07T06:20:07.025Z>\nHECHO 269.4 (orquestador, 2026-09-07): preview aprobable mobile/design-previews/269-crm-equipo.html (57 KB, molde exacto de 267-crm-santiago.html: mismos tokens, Outfit + DM Mono del diseño de Santiago, verde #1A5E44, 390 px), 7 secciones con pie \"Aprobar / Cambiar\". Servido por http 127.0.0.1 y capturado con Chrome headless (capturas en scratchpad 269.4/part1-6.png + full-page.png; servidor apagado). Fuentes verificadas idénticas a las del preview aprobado en 267.\nSecciones: 1 Narrativa de agencia · 2 Banda Sin gestor (fila + ASIGNAR; sin frase narrativa porque el contrato de crm_agency_overview no la trae) · 3 Hoja ASIGNAR — alternativas A bottom sheet (RECOMENDADA, reusa AgentSelector como lista vertical sin Todos/inactivos) / B lista inline (riesgo #231 zona muerta) / C selector en la fila (no escala) · 4 Banda Tus agentes — etiqueta honesta de \"responde en\": A fiel al mockup / B label largo / C label corto + footnote de banda (RECOMENDADA); badge sin datos: A sin badge / B badge gris SIN LEADS (RECOMENDADA) / C caption · 5 Drill-down con cabecera \"← Equipo\" (decisión ya tomada) · 6 Estados vacíos (banda Sin gestor desaparece; agente sin leads con métricas \"—\"; agencia sin agentes reusa EmptyState) · 7 UI_FUERA_DEL_MOCKUP (propuesta 1/2): feedback tras ASIGNAR — toast de éxito/error para SAME_USER/TARGET_NOT_ACTIVE_MEMBER/LEAD_NOT_FOUND · costo XS · (1) en conjunto en 269.6 · (2) default derivada producto(269.4) con undo.\nRégimen ponytail: NO aplica (fase propuesta; divergencia 2–3 por punto). Impacto-prod: sin riesgo (HTML fuera del bundle).\nCHECKPOINT HUMANO (CLAUDE.md §8): estado → review; 269.6 NO arranca hasta la aprobación por sección de Abraham (preview enviado con SendUserFile). 269.5 (hooks) no depende de 269.4 y sigue mientras tanto.\n</info added on 2026-09-07T06:20:07.025Z>",
             "testStrategy": "Verificación ligera: HTML servido responde 200, sin ids rotos; captura por Chrome headless entregada a Abraham; aprobación por sección registrada en la bitácora.",
-            "status": "in-progress",
+            "status": "review",
             "dependencies": [],
             "priority": "medium",
             "parentId": "269",
             "subtasks": [],
-            "updatedAt": "2026-09-07T06:09:25.667Z"
+            "updatedAt": "2026-09-07T06:20:09.338Z"
           },
           {
             "id": 5,
@@ -11902,7 +11902,7 @@
             "description": "mobile/src/features/leads/hooks/useCrmAgencyOverview.ts (rpc crm_agency_overview por agency_id; loading/error/refetch; mapea flags y formatea 'responde en' con un util puro) y useReassignLead.ts (rpc reassign_lead_atomic; mapea errcodes SAME_USER/TARGET_NOT_ACTIVE_MEMBER/LEAD_NOT_FOUND a mensajes vía lead_error_messages.ts + extract_error_code; nunca rechaza; refetch al éxito). Tipos en types.ts.",
             "details": "Crítica por path (hooks/**). Reuso: patrón de useCrmFunnel/useCrmLeadsPage (client.rpc con this intacto — gotcha supabase_js_metodo_desprendido), lead_error_messages.ts, format_relative_time. Regenerar database.types tras 269.1/269.2 (quitar la línea PostHog del stdout). Archivos: hooks nuevos + mobile/src/features/leads/__tests__/useCrmAgencyOverview.test.tsx, useReassignLead.test.tsx (+ util puro en utils/ con su test).\n<info added on 2026-09-07T03:53:21.528Z>\nPLAN: hooks useCrmAgencyOverview (rpc crm_agency_overview por agency_id, molde useCrmFunnel: refetch por foco, client.rpc con this intacto) y useReassignLead (rpc reassign_lead_atomic; errcodes SAME_USER/TARGET_NOT_ACTIVE_MEMBER/LEAD_NOT_FOUND → EXTENDER LEAD_EF_ERROR_MESSAGES en lead_error_messages.ts; nunca rechaza; onChanged al éxito; no re-entra si busy) + util puro format_response_time en utils/ (reloj fijo, 4 TZ) · tipos en types.ts · regenerar database.types tras 269.1/269.2 (quitar línea PostHog) · agente=mobile · skills=urbea-expo,urbea-testing · criticidad=crítica (hooks/**, utils/**) · impacto-prod=sin riesgo (cliente, sin consumidor hasta 269.6) · footprint=mobile/src/features/leads/hooks/useCrmAgencyOverview.ts, useReassignLead.ts (nuevos) · utils/ (nuevo util) · lead_error_messages.ts, types.ts (existen) · __tests__/useCrmAgencyOverview.test.tsx, useReassignLead.test.tsx (nuevos) · mobile/src/lib/supabase/database.types.ts. Depende de 269.1 y 269.2.\n</info added on 2026-09-07T03:53:21.528Z>",
             "testStrategy": "Jest: estado inicial (sonda del primer render), éxito con filas mapeadas, rpc con error → error legible sin PII, sin user → no llama, refetch; useReassignLead: éxito → onChanged, cada errcode → mensaje esperado, error desconocido → genérico, no re-entra mientras busy. Reloj fijo en los tests de formateo (4 TZ).",
-            "status": "pending",
+            "status": "in-progress",
             "dependencies": [
               1,
               2
@@ -11910,7 +11910,7 @@
             "priority": "medium",
             "parentId": "269",
             "subtasks": [],
-            "updatedAt": "2026-09-07T03:53:21.528Z"
+            "updatedAt": "2026-09-07T06:20:11.028Z"
           },
           {
             "id": 6,
@@ -11945,7 +11945,7 @@
             "updatedAt": "2026-09-07T03:53:21.681Z"
           }
         ],
-        "updatedAt": "2026-09-07T06:09:25.667Z"
+        "updatedAt": "2026-09-07T06:20:11.028Z"
       },
       {
         "id": "270",
@@ -12049,7 +12049,7 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-09-07T06:09:25.667Z",
+      "lastModified": "2026-09-07T06:20:11.029Z",
       "taskCount": 276,
       "completedCount": 194,
       "tags": [
