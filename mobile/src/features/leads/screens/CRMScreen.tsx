@@ -18,9 +18,13 @@
  * solo array (en vez de SectionList) hace trivial la regla "un solo lead
  * expandido a la vez" y el onEndReached de "la primera banda con hasMore".
  *
- * Búsqueda (D7, obligatorio): SIEMPRE server-side — `query` viaja como
- * `p_query` a los 4 `useCrmLeadsPage`, JAMÁS un filtro adicional en cliente.
- * La hoja ☰ (CrmSearchSheet) es mínima; el sheet completo de filtros es #271.
+ * Búsqueda + filtros (D7, obligatorio): SIEMPRE server-side — `query`,
+ * `status` y `followUp` viajan como `p_query`/`p_status`/`p_follow_up` a los
+ * 4 `useCrmLeadsPage`, JAMÁS un filtro adicional en cliente. La hoja ☰
+ * (CrmFilterSheet, #271.3) cubre los 3: búsqueda por nombre, estado
+ * (multi-select de los 4 proyectados) y "En seguimiento". El indicador de
+ * filtros activos (chips bajo el header, "×" para quitar cada uno) evita el
+ * bug de #115 (lista corta sin explicación visible de por qué).
  *
  * Agente efectivo: `agent_id = selected_agent_id ?? user.id` — "Míos" fuerza
  * selected_agent_id=null (vuelve a "yo"); dentro de "Equipo",
@@ -59,7 +63,7 @@ import { AgencyAgentRow } from '../components/AgencyAgentRow';
 import { AssignLeadSheet } from '../components/AssignLeadSheet';
 import { BandHeader } from '../components/BandHeader';
 import { CrmLeadRow } from '../components/CrmLeadRow';
-import { CrmSearchSheet } from '../components/CrmSearchSheet';
+import { CrmFilterSheet, PROJECTED_STATUS_OPTIONS, type CrmFilters } from '../components/CrmFilterSheet';
 import { FunnelCard } from '../components/FunnelCard';
 import { LeadInlineDetail } from '../components/LeadInlineDetail';
 import { NarrativeHeader } from '../components/NarrativeHeader';
@@ -77,6 +81,7 @@ import type {
   CrmBand,
   CrmLeadRow as CrmLeadRowData,
   CrmRadarRow as CrmRadarRowData,
+  ProjectedStatus,
   UnmanagedLeadRow as UnmanagedLeadRowData,
 } from '../types';
 
@@ -162,6 +167,8 @@ export function CRMScreen(): React.ReactElement {
   const is_read_only = !(agent_id === (user?.id ?? null) || isOwner || isAdmin);
 
   const [query, set_query] = useState<string | null>(null);
+  const [status_filter, set_status_filter] = useState<ProjectedStatus[] | null>(null);
+  const [follow_up_filter, set_follow_up_filter] = useState<boolean | null>(null);
   const [sheet_open, set_sheet_open] = useState(false);
   const [expanded_lead_id, set_expanded_lead_id] = useState<string | null>(null);
   const [silent_collapsed, set_silent_collapsed] = useState(BAND_META.silent.collapsed_by_default);
@@ -174,10 +181,10 @@ export function CRMScreen(): React.ReactElement {
   const [has_loaded_once, set_has_loaded_once] = useState(false);
 
   const funnel = useCrmFunnel(agent_id, 30);
-  const hot = useCrmLeadsPage(agent_id, 'hot', query);
-  const cooling = useCrmLeadsPage(agent_id, 'cooling', query);
-  const warming = useCrmLeadsPage(agent_id, 'warming', query);
-  const silent = useCrmLeadsPage(agent_id, 'silent', query);
+  const hot = useCrmLeadsPage(agent_id, 'hot', query, status_filter, follow_up_filter);
+  const cooling = useCrmLeadsPage(agent_id, 'cooling', query, status_filter, follow_up_filter);
+  const warming = useCrmLeadsPage(agent_id, 'warming', query, status_filter, follow_up_filter);
+  const silent = useCrmLeadsPage(agent_id, 'silent', query, status_filter, follow_up_filter);
   const radar = useCrmRadarAnon(agent_id, 5);
 
   // Overview de agencia (segmento Equipo, sub-estado selected_agent_id===null,
@@ -261,6 +268,33 @@ export function CRMScreen(): React.ReactElement {
     warming: warming.data.length + (warming.remaining ?? 0),
     silent: silent.data.length + (silent.remaining ?? 0),
   };
+
+  // Indicador de filtros activos (chips bajo el header, cada uno con su
+  // propio "×" para quitar SOLO ese filtro) — extiende el patrón que ya
+  // tenía `query_chip` a status/followUp; sin esto el agente ve su lista
+  // corta y no sabe por qué (bug de #115 en la hoja de búsqueda vieja).
+  const active_filter_chips = useMemo(() => {
+    const chips: { key: string; label: string; onRemove: () => void }[] = [];
+    if (query !== null) {
+      chips.push({ key: 'query', label: query, onRemove: () => set_query(null) });
+    }
+    if (status_filter !== null && status_filter.length > 0) {
+      const label = status_filter
+        .map((s) => PROJECTED_STATUS_OPTIONS.find((o) => o.value === s)?.label ?? s)
+        .join(', ');
+      chips.push({ key: 'status', label, onRemove: () => set_status_filter(null) });
+    }
+    if (follow_up_filter === true) {
+      chips.push({ key: 'follow_up', label: 'En seguimiento', onRemove: () => set_follow_up_filter(null) });
+    }
+    return chips;
+  }, [query, status_filter, follow_up_filter]);
+
+  const handle_apply_filters = useCallback((filters: CrmFilters): void => {
+    set_query(filters.query);
+    set_status_filter(filters.status);
+    set_follow_up_filter(filters.followUp);
+  }, []);
 
   const top_cooling = useMemo(() => {
     if (cooling.data.length === 0) return null;
@@ -412,7 +446,7 @@ export function CRMScreen(): React.ReactElement {
             <Pressable
               onPress={() => set_sheet_open(true)}
               accessibilityRole="button"
-              accessibilityLabel="Buscar por nombre"
+              accessibilityLabel="Filtros"
               hitSlop={8}
               style={styles.menu_btn}
             >
@@ -420,16 +454,21 @@ export function CRMScreen(): React.ReactElement {
             </Pressable>
           </View>
 
-          {query !== null && (
-            <Pressable
-              onPress={() => set_query(null)}
-              accessibilityRole="button"
-              accessibilityLabel={`Quitar búsqueda: ${query}`}
-              style={styles.query_chip}
-            >
-              <Text style={styles.query_chip_text}>{query}</Text>
-              <X size={11} color={colors.primary_deep} weight="bold" />
-            </Pressable>
+          {active_filter_chips.length > 0 && (
+            <View style={styles.active_filters_row}>
+              {active_filter_chips.map((chip) => (
+                <Pressable
+                  key={chip.key}
+                  onPress={chip.onRemove}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Quitar filtro: ${chip.label}`}
+                  style={styles.query_chip}
+                >
+                  <Text style={styles.query_chip_text}>{chip.label}</Text>
+                  <X size={11} color={colors.primary_deep} weight="bold" />
+                </Pressable>
+              ))}
+            </View>
           )}
         </View>
       )}
@@ -700,11 +739,11 @@ export function CRMScreen(): React.ReactElement {
         />
       </View>
 
-      <CrmSearchSheet
+      <CrmFilterSheet
         visible={sheet_open}
-        initialQuery={query}
+        initialFilters={{ query, status: status_filter, followUp: follow_up_filter }}
         onClose={() => set_sheet_open(false)}
-        onSubmit={set_query}
+        onSubmit={handle_apply_filters}
       />
     </SafeAreaView>
   );
@@ -743,12 +782,17 @@ const styles = StyleSheet.create({
   menu_btn: {
     padding: spacing.s_8,
   },
+  active_filters_row: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.s_8,
+    marginTop: spacing.s_12,
+  },
   query_chip: {
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
     gap: 6,
-    marginTop: spacing.s_12,
     paddingVertical: spacing.s_4,
     paddingHorizontal: spacing.s_12,
     borderRadius: radii.r_pill,

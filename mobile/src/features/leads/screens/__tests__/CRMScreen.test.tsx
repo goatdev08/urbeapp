@@ -7,7 +7,7 @@
  * reemplazado por un stub que registra props (arrastra sus propios hooks de
  * datos — 267.6 ya lo cubre por separado). El resto de los componentes
  * (BandHeader, CrmLeadRow, RadarAnonRow, AgentSelector, FunnelCard,
- * NarrativeHeader, CrmSearchSheet) son los REALES: ya tienen su cobertura
+ * NarrativeHeader, CrmFilterSheet) son los REALES: ya tienen su cobertura
  * unitaria propia, pero el cableado screen→ellos es justo lo que este
  * archivo ancla (mismo criterio que PropertyDetailScreen.test.tsx, #220.6).
  *
@@ -38,6 +38,12 @@
  * (EC-11) is_read_only por rol: owner activo edita el lead ajeno
  *   (readOnly=false); un rol sin isOwner/isAdmin (viewer) NO (readOnly=true)
  *   aunque canViewTeam sea true (mock directo de la fórmula, ver useAgencyRole.ts).
+ *
+ * ── Subtarea 271.3 (CrmFilterSheet: estado + "En seguimiento") ──────────────
+ * (EC-12) elegir estado(s) + "En seguimiento" en la hoja de filtros manda
+ *   p_status/p_follow_up a los 4 useCrmLeadsPage.
+ * (EC-13) el indicador de filtros activos pinta un chip por filtro
+ *   (búsqueda/estado/seguimiento) y el "×" de cada uno quita SOLO ese filtro.
  */
 import React from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
@@ -228,9 +234,9 @@ describe('CRMScreen', () => {
   it('(EC-1) confirmar búsqueda en la hoja ☰ manda p_query a los 4 useCrmLeadsPage, sin filtrado en cliente', async () => {
     await render(<CRMScreen />);
 
-    await press(screen.getByLabelText('Buscar por nombre'));
+    await press(screen.getByLabelText('Filtros'));
     await change_text(screen.getByPlaceholderText('Buscar por nombre'), 'andrea');
-    await press(screen.getByRole('button', { name: 'Buscar' }));
+    await press(screen.getByRole('button', { name: 'Aplicar' }));
 
     const bands_queried = mock_use_crm_leads_page.mock.calls.map(([, band, query]) => [band, query]);
     expect(bands_queried).toEqual(
@@ -241,6 +247,59 @@ describe('CRMScreen', () => {
         ['silent', 'andrea'],
       ]),
     );
+  });
+
+  it('(EC-12) elegir estado + "En seguimiento" en la hoja de filtros manda p_status/p_follow_up a los 4 useCrmLeadsPage', async () => {
+    await render(<CRMScreen />);
+
+    await press(screen.getByLabelText('Filtros'));
+    await press(screen.getByRole('checkbox', { name: 'Nuevo' }));
+    await press(screen.getByRole('checkbox', { name: 'Visita' }));
+    await act(async () => {
+      fireEvent(screen.getByLabelText('En seguimiento'), 'valueChange', true);
+    });
+    await press(screen.getByRole('button', { name: 'Aplicar' }));
+
+    const bands_filtered = mock_use_crm_leads_page.mock.calls.map(([, band, , status, follow_up]) => [
+      band,
+      status,
+      follow_up,
+    ]);
+    expect(bands_filtered).toEqual(
+      expect.arrayContaining([
+        ['hot', ['nuevo', 'visita'], true],
+        ['cooling', ['nuevo', 'visita'], true],
+        ['warming', ['nuevo', 'visita'], true],
+        ['silent', ['nuevo', 'visita'], true],
+      ]),
+    );
+  });
+
+  it('(EC-13) el indicador de filtros activos aparece con un chip por filtro y cada "×" quita SOLO ese filtro', async () => {
+    await render(<CRMScreen />);
+
+    await press(screen.getByLabelText('Filtros'));
+    await change_text(screen.getByPlaceholderText('Buscar por nombre'), 'andrea');
+    await press(screen.getByRole('checkbox', { name: 'Nuevo' }));
+    await act(async () => {
+      fireEvent(screen.getByLabelText('En seguimiento'), 'valueChange', true);
+    });
+    await press(screen.getByRole('button', { name: 'Aplicar' }));
+
+    expect(screen.getByText('andrea')).toBeTruthy();
+    expect(screen.getByText('Nuevo')).toBeTruthy();
+    expect(screen.getByText('En seguimiento')).toBeTruthy();
+
+    // Quitar SOLO el chip de estado — la búsqueda y "En seguimiento" no se tocan.
+    await press(screen.getByLabelText('Quitar filtro: Nuevo'));
+
+    expect(screen.queryByText('Nuevo')).toBeNull();
+    expect(screen.getByText('andrea')).toBeTruthy();
+    expect(screen.getByText('En seguimiento')).toBeTruthy();
+    const bands_after_remove = mock_use_crm_leads_page.mock.calls
+      .filter(([, band]) => band === 'hot')
+      .at(-1);
+    expect(bands_after_remove).toEqual([USER_ID, 'hot', 'andrea', null, true]);
   });
 
   it('(EC-2) "Ver los N restantes" en cooling llama loadMore SOLO de cooling', async () => {
@@ -312,9 +371,9 @@ describe('CRMScreen', () => {
   it('(EC-4b) estado vacío de búsqueda sin resultados en ninguna banda', async () => {
     await render(<CRMScreen />);
 
-    await press(screen.getByLabelText('Buscar por nombre'));
+    await press(screen.getByLabelText('Filtros'));
     await change_text(screen.getByPlaceholderText('Buscar por nombre'), 'andrea');
-    await press(screen.getByRole('button', { name: 'Buscar' }));
+    await press(screen.getByRole('button', { name: 'Aplicar' }));
 
     expect(screen.getByText('No encontramos a nadie con ese nombre')).toBeTruthy();
     expect(screen.getByText('Ajusta la búsqueda e inténtalo de nuevo.')).toBeTruthy();
