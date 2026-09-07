@@ -12151,13 +12151,25 @@
         "description": "Origen: subtarea 275.2 · Detectado por: agente mobile (UI_FUERA_DEL_MOCKUP, propuesta aprobada por Abraham en el cierre de #275). En modo readOnly, LeadInlineDetail NO monta el StatusPicker: pinta solo la barra atenuada de 4 tramos. Un owner/admin que revisa el lead de otro agente de su inmobiliaria ve 'Contactado' cuando el estado real es 'Interesado', o 'Cerrado' sin saber si fue ganado o perdido. El dato crudo YA viaja en el cliente desde #275.1 (useLeadRawFields.status); lo que falta es la decisión visual.",
         "details": "El mockup 267-crm-santiago.html no dibuja un badge de estado en la vista de solo lectura, por eso #275.2 no lo implementó (CLAUDE.md §8: techo con propuesta, el agente propone y nunca decide). Alcance previsto: en mobile/src/features/leads/components/LeadInlineDetail.tsx, montar en modo readOnly un badge NO tappable con el estado exacto (get_status_meta(status) da label y colores), o pasar StatusPicker con readOnly=true, que ya tiene ese contrato probado en StatusPicker.test.tsx (disparador no tappable, sin caret, lista nunca montada) — evaluar cuál es menos código. Fallback intacto: si el select directo no devuelve fila (RLS o deleted_at), status es null y se sigue pintando la etiqueta proyectada. Sin backend: 0 migraciones, 0 contratos. Criticidad: NO crítica (components/**) → verificación ligera. Diseño: decidir si el badge en solo lectura va atenuado o con el color pleno del estado, y si convive con la barra de 4 tramos o la sustituye.",
         "testStrategy": "Jest de componente en LeadInlineDetail.test.tsx: en readOnly con status crudo 'interested' el badge dice Interesado (no Contactado); con un status de cierre dice el cierre exacto; con status null cae a la etiqueta proyectada; el badge no es tappable y la lista de 8 estados nunca se monta. pnpm tsc --noEmit + pnpm lint.",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           "275"
         ],
         "priority": "low",
-        "subtasks": [],
-        "updatedAt": "2026-09-07T16:59:21.724957Z"
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Badge de estado exacto en modo solo lectura (StatusPicker readOnly)",
+            "description": "Montar StatusPicker con readOnly bajo la barra de 4 tramos en LeadInlineDetail, con el status crudo de useLeadRawFields y fallback a la etiqueta proyectada.",
+            "details": "\n<info added on 2026-09-07T23:24:08.350Z>\nHECHO 277.1 — el estado exacto del lead también en modo solo lectura.\n\nDECISIÓN DE ABRAHAM (2026-09-07): reusar StatusPicker con readOnly y color PLENO del\nestado, conviviendo con la barra de 4 tramos (no la sustituye). Descartadas: badge\npropio atenuado, y badge que reemplaza la barra. Razón del color pleno: atenuar el\nbadge reproduce justo la ambigüedad que la tarea viene a quitar.\n\nARCHIVOS\n- mobile/src/features/leads/components/LeadInlineDetail.tsx\n  · const projected_label (STAGES.find) extraído: lo usaban el picker editable y ahora\n    también el de solo lectura; antes la expresión estaba inline duplicada.\n  · bloque nuevo {readOnly && <StatusPicker ... readOnly />} justo debajo de la barra\n    de 4 tramos: la barra dice la TRAYECTORIA, el badge el ESTADO EXACTO.\n  · current={status ?? null} (crudo de useLeadRawFields, #275.1) con\n    current_label={projected_label} de fallback cuando el select no devuelve fila.\n  · onToggle/onSelect van como no-op: en readOnly el Pressable va disabled y la lista\n    no se monta, así que son inalcanzables.\n  · docblock: anotada la DIVERGENCIA deliberada del preview aprobado\n    267-crm-santiago.html §4, que no dibuja badge en solo lectura. El preview NO se\n    tocó (mismo criterio que el degradado del embudo en #279).\n- mobile/src/features/leads/components/__tests__/LeadInlineDetail.test.tsx\n  · (13) reescrito: antes afirmaba \"el picker no se monta\"; ahora afirma lo que sigue\n    siendo cierto y es lo que importa — en solo lectura no hay NINGUNA vía de edición\n    (sin enlace de los 8 estados, sin radios).\n  · (14) 'interested' con proyección 'contactado' -> el badge dice Interesado y NO\n    Contactado (el caso que motivó la tarea).\n  · (15) 'closed_won_sale' con proyección 'cerrado' -> distingue ganado de perdido.\n  · (16) status crudo null -> cae a la etiqueta proyectada, no a un hueco.\n  · (17) el badge es texto, no botón: accessibilityRole 'text' y sin `expanded`.\n  · (18) en modo editable el badge NO aparece (guarda contra quitar el `readOnly &&`).\n\nPONYTAIL: 0 componentes nuevos, 0 estilos nuevos, 0 hooks nuevos. El contrato readOnly\nde StatusPicker ya existía y ya estaba probado (StatusPicker.test.tsx \"readOnly: sin\nbotón disparador ni opciones montadas\"); el dato crudo ya viajaba desde 275.1. El diff\nde producción es un bloque JSX de 9 líneas más un const extraído.\n\nCORRECCIÓN DURANTE EL TRABAJO: el (17) primero asertaba accessibilityState undefined y\nfalló — Pressable INYECTA {disabled:true} aunque el componente pase undefined. Lo que\nsepara etiqueta de control es `expanded`: sin él un lector de pantalla no lo anuncia\ncomo desplegable. El assert quedó sobre expanded (undefined) + disabled (true).\n\nVERIFICACIÓN POR MUTACIÓN (manual, subtarea NO crítica pero el badge es lo único que\nla tarea entrega). Salida real:\n  MUTANTE 1 `{readOnly &&` -> `{false &&`   : Tests: 4 failed, 14 passed, 18 total\n  MUTANTE 2 current={status ?? null} -> {null}: Tests: 3 failed, 15 passed, 18 total\n  MUTANTE 3 se quita la prop readOnly       : Tests: 4 failed, 14 passed, 18 total\n  restaurado                                 : Tests: 18 passed, 18 total\nLos tres mutantes mueren. Restauración re-escribiendo el contenido del archivo desde\nuna copia, nunca git checkout (incidente 219.3).\n\nVERIFICACIÓN FINAL (salida real)\n  pnpm tsc --noEmit  -> exit 0, sin salida\n  pnpm lint          -> exit 0 (0 errors, 136 warnings preexistentes)\n  jest (suite completa) -> Test Suites: 201 passed, 201 total\n                           Tests: 2476 passed, 2476 total   (2471 antes, +5 casos)\n\nPRODUCCIÓN VIVA: 0 migraciones, 0 contratos tocados, 0 RPC. Solo UI -> viaja por OTA.\n</info added on 2026-09-07T23:24:08.350Z>",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 277,
+            "updatedAt": "2026-09-07T23:24:15.659Z",
+            "parentId": "undefined"
+          }
+        ],
+        "updatedAt": "2026-09-07T23:24:15.659Z"
       },
       {
         "id": "278",
@@ -12191,9 +12203,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-09-07T19:12:06.837Z",
+      "lastModified": "2026-09-07T23:24:15.659Z",
       "taskCount": 279,
-      "completedCount": 198,
+      "completedCount": 199,
       "tags": [
         "master"
       ]

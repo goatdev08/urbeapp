@@ -28,6 +28,14 @@
  * migraciones, `crm_leads_page` intacta. El `status` crudo pasa directo a
  * `StatusPicker.current`; `current_label` (la etiqueta proyectada) sigue de
  * fallback para cuando el select no devuelve fila (RLS o `deleted_at`).
+ *
+ * #277 extiende eso a SOLO LECTURA: el preview aprobado no dibuja badge de
+ * estado en esa vista, así que 275.2 no lo montó y quien revisaba el lead de
+ * otro agente seguía leyendo la proyección 8→4. Ahora la vista de solo lectura
+ * monta el mismo `StatusPicker` con `readOnly` (etiqueta, no control) debajo de
+ * la barra de 4 tramos: la barra dice la trayectoria, el badge el estado exacto.
+ * Divergencia deliberada del preview 267-crm-santiago.html §4 — el preview NO
+ * se toca (mismo criterio que el degradado del embudo en #279).
  */
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
@@ -118,6 +126,10 @@ export function LeadInlineDetail({ lead, readOnly, onChanged }: LeadInlineDetail
   const busy = status_updating || note_updating;
   const next_action = crm_next_action(lead.status_projected);
   const current_stage_index = STAGES.findIndex((s) => s.key === lead.status_projected);
+  // Etiqueta de la proyección 8->4: es el fallback del badge cuando el select
+  // directo a `leads` no devolvió fila (status crudo null). La usan los DOS
+  // StatusPicker (el editable y el de solo lectura), de ahí el const.
+  const projected_label = STAGES.find((t) => t.key === lead.status_projected)?.label;
   const show_agendar = lead.status_projected === 'nuevo' || lead.status_projected === 'contactado';
 
   function toggle_status_picker(): void {
@@ -249,6 +261,29 @@ export function LeadInlineDetail({ lead, readOnly, onChanged }: LeadInlineDetail
         })}
       </View>
 
+      {/*
+        Solo lectura: el estado EXACTO, no la proyección (#277). La barra de
+        arriba resume la trayectoria en 4 tramos, y por eso un owner/admin que
+        revisaba el lead de otro agente leía “Contactado” cuando el estado real
+        era “Interesado”, o “Cerrado” sin saber si fue ganado o perdido. El color
+        va pleno, el del estado: atenuarlo es justo lo que volvía ambiguo el
+        dato. `onToggle`/`onSelect` son inalcanzables en readOnly (el Pressable
+        va `disabled` y la lista no se monta).
+        // ponytail: sin badge propio — se reusa el contrato readOnly de
+        // StatusPicker (disparador no tappable, sin caret, lista nunca
+        // montada), ya probado en StatusPicker.test.tsx.
+      */}
+      {readOnly && (
+        <StatusPicker
+          current={status ?? null}
+          current_label={projected_label}
+          open={false}
+          onToggle={() => {}}
+          onSelect={() => {}}
+          readOnly
+        />
+      )}
+
       {!readOnly && next_action.kind === 'set' && (
         <Text style={styles.next_line}>
           Siguiente: marcar como <Text style={styles.bold}>{next_action.label}</Text>
@@ -291,7 +326,7 @@ export function LeadInlineDetail({ lead, readOnly, onChanged }: LeadInlineDetail
       {!readOnly && is_status_open && (
         <StatusPicker
           current={status ?? null}
-          current_label={STAGES.find((t) => t.key === lead.status_projected)?.label}
+          current_label={projected_label}
           open
           onToggle={toggle_status_picker}
           onSelect={(s) => {

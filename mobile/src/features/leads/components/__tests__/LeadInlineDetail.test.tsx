@@ -284,14 +284,12 @@ describe('LeadInlineDetail', () => {
     }
   });
 
-  it('(13) readOnly — el picker no se monta sin importar el status crudo', async () => {
-    // El contrato de StatusPicker en solo-lectura (badge exacto no-tappable,
-    // lista nunca montada) ya está cubierto a nivel de componente en
-    // StatusPicker.test.tsx ("readOnly: sin botón disparador ni opciones
-    // montadas"). Aquí solo se verifica que LeadInlineDetail, en readOnly,
-    // ni siquiera monta el picker (mismo criterio que el mockup 267-crm-
-    // santiago.html: solo lectura muestra la barra de 4 tramos atenuada, sin
-    // un StatusPicker interactivo).
+  it('(13) readOnly — ningún control de estado: sin enlace de los 8, sin radios', async () => {
+    // El picker SÍ se monta en solo lectura desde #277, pero como ETIQUETA:
+    // el contrato readOnly de StatusPicker (disparador no tappable, sin caret,
+    // lista nunca montada) está cubierto a nivel de componente en
+    // StatusPicker.test.tsx. Lo que este caso fija es que LeadInlineDetail no
+    // ofrece NINGUNA vía de edición cuando el lead es de otro agente.
     mock_status.current = 'interested';
     await render(
       <LeadInlineDetail lead={make_lead({ status_projected: 'contactado' })} readOnly onChanged={on_changed} />,
@@ -299,5 +297,67 @@ describe('LeadInlineDetail', () => {
 
     expect(screen.queryByLabelText('Ver los 8 estados vigentes')).toBeNull();
     expect(screen.queryAllByRole('radio').length).toBe(0);
+  });
+
+  it("(14) readOnly + status crudo 'interested' — el badge dice Interesado, NO Contactado", async () => {
+    // El caso que motivó #277: la proyección 8→4 mete 'interested' en el tramo
+    // 'contactado', así que la barra pinta "Contactado" y quien revisa el lead
+    // de otro agente leía un estado que no es el real.
+    mock_status.current = 'interested';
+    await render(
+      <LeadInlineDetail lead={make_lead({ status_projected: 'contactado' })} readOnly onChanged={on_changed} />,
+    );
+
+    expect(screen.getByLabelText('Estado: Interesado')).toBeTruthy();
+    expect(screen.queryByLabelText('Estado: Contactado')).toBeNull();
+  });
+
+  it("(15) readOnly + cierre 'closed_won_sale' — distingue ganado de perdido", async () => {
+    // 'cerrado' colapsa closed_won_sale / closed_won_rent / closed_lost: sin el
+    // badge exacto, un cierre ganado y uno perdido se leían idénticos.
+    mock_status.current = 'closed_won_sale';
+    await render(
+      <LeadInlineDetail lead={make_lead({ status_projected: 'cerrado' })} readOnly onChanged={on_changed} />,
+    );
+
+    expect(screen.getByLabelText('Estado: Ganado (venta)')).toBeTruthy();
+  });
+
+  it('(16) readOnly + status crudo null — cae a la etiqueta proyectada, no a un hueco', async () => {
+    // Sin fila del select directo (RLS o deleted_at) el fallback sigue vivo:
+    // se degrada a la proyección, nunca se adivina ni se pinta vacío.
+    mock_status.current = null;
+    await render(
+      <LeadInlineDetail lead={make_lead({ status_projected: 'contactado' })} readOnly onChanged={on_changed} />,
+    );
+
+    expect(screen.getByLabelText('Estado: Contactado')).toBeTruthy();
+  });
+
+  it('(17) readOnly — el badge es texto, no botón (no invita a tocarlo)', async () => {
+    mock_status.current = 'interested';
+    await render(
+      <LeadInlineDetail lead={make_lead({ status_projected: 'contactado' })} readOnly onChanged={on_changed} />,
+    );
+
+    const badge = screen.getByLabelText('Estado: Interesado');
+    expect(badge.props.accessibilityRole).toBe('text');
+    // Pressable inyecta `disabled` en accessibilityState aunque el componente
+    // lo pase undefined; lo que separa etiqueta de control es `expanded`: sin
+    // él, un lector de pantalla no lo anuncia como desplegable.
+    expect(badge.props.accessibilityState.expanded).toBeUndefined();
+    expect(badge.props.accessibilityState.disabled).toBe(true);
+  });
+
+  it('(18) NO readOnly — el badge de solo lectura no aparece (el picker sigue cerrado)', async () => {
+    // Guarda contra el mutante que quita el `readOnly &&`: en modo editable la
+    // ficha NO debe mostrar el badge suelto, solo el enlace de los 8 estados.
+    mock_status.current = 'interested';
+    await render(
+      <LeadInlineDetail lead={make_lead({ status_projected: 'contactado' })} readOnly={false} onChanged={on_changed} />,
+    );
+
+    expect(screen.queryByLabelText('Estado: Interesado')).toBeNull();
+    expect(screen.getByLabelText('Ver los 8 estados vigentes')).toBeTruthy();
   });
 });
