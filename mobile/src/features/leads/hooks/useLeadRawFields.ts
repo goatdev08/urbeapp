@@ -16,6 +16,11 @@
  *     .maybeSingle()
  * El hint `users!leads_user_id_fkey` es obligatorio: `leads` tiene dos FKs a
  * `users` (agent_id y user_id) y sin el hint PostgREST no sabe cuál usar.
+ * DECISIÓN (Abraham, /tm-plan 2026-09-07): el status crudo se saca por el
+ * CLIENTE ensanchando este select ya existente, no por migración —evita el
+ * DROP+CREATE del RETURNS TABLE de `crm_leads_page` que los details de #275
+ * proponían (0 migraciones, 0 contrato publicado tocado, #271 queda libre de
+ * acarrear esta columna en su propio cambio de firma).
  * Molde de estado/ciclo de vida: useCrmSuggestedMessage.ts. Contrato
  * completo (SEAMS, decisiones D-XXX, edge cases) en
  * mobile/src/features/leads/__tests__/useLeadRawFields.test.ts — no se
@@ -40,9 +45,7 @@ const ERROR_MESSAGE = 'No se pudo cargar el teléfono del lead.';
 
 export function useLeadRawFields(leadId: string | null | undefined): UseLeadRawFieldsState {
   const [phone, set_phone] = useState<string | null>(null);
-  // STUB RED (275.1): falta exponer el status real — se hardcodea a null
-  // hasta el GREEN, que también añade 'status' al string de .select(...).
-  const [status] = useState<LeadStatus | null>(null);
+  const [status, set_status] = useState<LeadStatus | null>(null);
   const [loading, set_loading] = useState(Boolean(leadId));
   const [error, set_error] = useState<string | null>(null);
 
@@ -59,9 +62,14 @@ export function useLeadRawFields(leadId: string | null | undefined): UseLeadRawF
     };
   }, []);
 
-  const fetch_phone = useCallback(async (): Promise<void> => {
+  const fetch_fields = useCallback(async (): Promise<void> => {
     if (!leadId) {
+      // El guard resetea TODOS los campos, no solo phone: al cerrar una ficha
+      // (leadId -> null) un `status` rancio haría que el StatusPicker de la
+      // siguiente ficha pintara el ✓ del lead anterior en el primer frame
+      // (hallazgo V1 del guardian, 275.1 ciclo 1 — fijado por EC-13).
       set_phone(null);
+      set_status(null);
       set_loading(false);
       set_error(null);
       return;
@@ -71,14 +79,13 @@ export function useLeadRawFields(leadId: string | null | undefined): UseLeadRawF
     const seq = ++seq_ref.current;
 
     let query_result: {
-      data: { users: { phone: string | null } | null } | null;
+      data: { status: LeadStatus | null; users: { phone: string | null } | null } | null;
       error: { message: string } | null;
     };
     try {
       query_result = (await supabase
         .from('leads')
-        // STUB RED (275.1): falta 'status, ' al frente del select.
-        .select('users!leads_user_id_fkey(phone)')
+        .select('status, users!leads_user_id_fkey(phone)')
         .eq('id', leadId)
         .is('deleted_at', null)
         .maybeSingle()) as typeof query_result;
@@ -93,24 +100,27 @@ export function useLeadRawFields(leadId: string | null | undefined): UseLeadRawF
     if (query_result.error) {
       set_error(ERROR_MESSAGE);
       set_phone(null);
+      set_status(null);
       set_loading(false);
       return;
     }
 
-    // D-MAP: el embed many-to-one puede llegar sin fila (D-SINFILA, RLS o
-    // deleted_at) o con `users` null (usuario borrado) — nunca se asume la
-    // forma, siempre se resuelve a phone null sin error.
+    // D-MAP: `phone` y `status` son dos ramas INDEPENDIENTES del mismo row —
+    // el embed many-to-one `users` puede llegar null (usuario borrado) o sin
+    // fila (D-SINFILA, RLS o deleted_at) sin que `status` deje de venir, y
+    // viceversa; nunca se deriva una rama de la otra.
     set_phone(query_result.data?.users?.phone ?? null);
+    set_status(query_result.data?.status ?? null);
     set_error(null);
     set_loading(false);
   }, [leadId]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch_phone hace setState tras el await de la query (o sincrónico solo en el guard sin leadId); molde useCrmSuggestedMessage.ts.
-    void fetch_phone();
-  }, [fetch_phone]);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch_fields hace setState tras el await de la query (o sincrónico solo en el guard sin leadId); molde useCrmSuggestedMessage.ts.
+    void fetch_fields();
+  }, [fetch_fields]);
 
-  const refetch = useCallback(() => fetch_phone(), [fetch_phone]);
+  const refetch = useCallback(() => fetch_fields(), [fetch_fields]);
 
   return { phone, status, loading, error, refetch };
 }

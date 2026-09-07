@@ -74,6 +74,7 @@
  * - (EC-5) data_con_users_null_status_presente_phone_null_status_intacto_ramas_independientes
  * - (EC-6) error_de_postgrest_mensaje_neutro_en_espanol_phone_y_status_null_D_ERROR
  * - (EC-14) recuperacion_tras_error_un_refetch_exitoso_limpia_el_error_y_puebla_status
+ * - (EC-15) error_tras_exito_previo_limpia_phone_y_status_previos_no_vacuo
  *
  * ### Boundary / error
  * - (EC-7) rerender_con_el_mismo_leadId_no_dispara_otra_llamada
@@ -82,8 +83,27 @@
  * - (EC-8c) respuesta_tardia_de_un_leadId_anterior_no_pisa_ni_phone_ni_status_del_actual_D_SEQ
  * - (EC-6b) rechazo_real_de_red_termina_con_error_neutro_phone_y_status_null_loading_false
  * - (EC-9) leadId_null_o_undefined_no_llama_supabase_phone_y_status_null_sin_error_loading_false
+ * - (EC-13) leadId_pasa_a_null_tras_estar_poblado_reinicia_phone_y_status_a_null
  * - (EC-10) unmount_durante_llamada_en_vuelo_no_aplica_estado_sin_warning
  * - (EC-11) refetch_manual_redispara_la_query
+ *
+ * ### Extensión RED post-guardian (2026-09-07, subtarea 275.1 tras FAIL)
+ * - EC-13 (nuevo): guardian confirmó por mutación que el guard `if
+ *   (!leadId)` (useLeadRawFields.ts:66-71) resetea phone/loading/error pero
+ *   NO status — bug real de producción. EC-9 solo cubre el estado inicial
+ *   con leadId null, nunca la TRANSICIÓN poblado→null. Este test DEBE
+ *   fallar hasta que el arreglo (fuera de este archivo) agregue
+ *   `set_status(null)` a ese guard.
+ * - EC-15 (nuevo): el guardian borró `set_status(null)` Y `set_phone(null)`
+ *   de la rama `if (query_result.error)` y la suite siguió 26/26 verde
+ *   porque EC-6/EC-6b/EC-14 llegan al error desde el estado inicial (ambos
+ *   campos ya null — aserción vacua). EC-15 puebla primero con un fetch
+ *   exitoso y fuerza un segundo fetch que falla, así SÍ puede ver la caída
+ *   a null. Pasa ya (el código de producción sí resetea); su valor es matar
+ *   los mutantes M5/M6. Verificado por mutación manual (ver bitácora
+ *   275.1): borrar `set_status(null)` → EC-15 muere; restaurado; borrar
+ *   `set_phone(null)` → EC-15 muere; restaurado (re-escritura del archivo,
+ *   nunca git checkout/restore — GREEN sin commitear, incidente 219.3).
  */
 
 import { renderHook, act } from '@testing-library/react-native';
@@ -305,6 +325,33 @@ describe('useLeadRawFields', () => {
     expect(result.current.phone).toBe(TELEFONO);
   });
 
+  it('(EC-15) error_tras_exito_previo_limpia_phone_y_status_previos_no_vacuo', async () => {
+    // Guardian 275 (M5/M6): un mutante que borrara `set_status(null)` o
+    // `set_phone(null)` de la rama `if (query_result.error)` seguía
+    // 26/26 verde porque EC-6/EC-6b/EC-14 llegan al error desde el estado
+    // inicial, donde ambos campos YA son null (aserción vacua). Aquí se
+    // puebla primero con un fetch exitoso y el SEGUNDO fetch (otro leadId,
+    // molde EC-8b) falla — la caída a null sí puede fallar.
+    const maybe_single = jest
+      .fn()
+      .mockResolvedValueOnce({ data: { status: STATUS_DEFAULT, users: { phone: TELEFONO } }, error: null })
+      .mockResolvedValueOnce({ data: null, error: { message: 'permission denied for relation leads' } });
+    mock_supabase_holder.client = make_supabase_mock(maybe_single);
+
+    const { result, rerender } = await renderHook(({ leadId }: { leadId: string }) => useLeadRawFields(leadId), {
+      initialProps: { leadId: LEAD_ID },
+    });
+    expect(result.current.phone).toBe(TELEFONO);
+    expect(result.current.status).toBe(STATUS_DEFAULT);
+
+    await rerender({ leadId: 'lead-uuid-275-error-tras-exito' });
+
+    expect(result.current.error).toBe('No se pudo cargar el teléfono del lead.');
+    expect(result.current.phone).toBeNull();
+    expect(result.current.status).toBeNull();
+    expect(result.current.loading).toBe(false);
+  });
+
   it('(EC-7) rerender_con_el_mismo_leadId_no_dispara_otra_llamada', async () => {
     const maybe_single = jest
       .fn()
@@ -433,6 +480,37 @@ describe('useLeadRawFields', () => {
     expect(mock_supabase_holder.client._mock_from).not.toHaveBeenCalled();
     expect(result_undefined.current.phone).toBeNull();
     expect(result_undefined.current.status).toBeNull();
+  });
+
+  it('(EC-13) leadId_pasa_a_null_tras_estar_poblado_reinicia_phone_y_status_a_null', async () => {
+    // Guardian 275 — bug real de producción confirmado por mutación:
+    // useLeadRawFields.ts:66-71 (`if (!leadId)`) resetea phone/loading/error
+    // pero deja `status` con el valor del lead anterior. Sonda del
+    // guardian: montar 'lead-a' (status "closed_won_sale"), rerender a
+    // null -> phone=null pero status="closed_won_sale" (RANCIO). EC-9 solo
+    // cubre el estado inicial con leadId null, nunca esta TRANSICIÓN. El
+    // StatusPicker de la subtarea 275.2 pintaría el ✓ del lead anterior en
+    // el primer frame al cerrar una ficha y abrir otra. Este test DEBE
+    // fallar hasta que el arreglo de producción agregue
+    // `set_status(null)` a ese guard.
+    const STATUS_RANCIO: LeadStatus = 'closed_won_sale';
+    mock_supabase_holder.client = make_supabase_mock(
+      jest.fn().mockResolvedValue({ data: { status: STATUS_RANCIO, users: { phone: TELEFONO } }, error: null }),
+    );
+
+    const { result, rerender } = await renderHook(
+      ({ leadId }: { leadId: string | null }) => useLeadRawFields(leadId),
+      { initialProps: { leadId: 'lead-a' } },
+    );
+    expect(result.current.phone).toBe(TELEFONO);
+    expect(result.current.status).toBe(STATUS_RANCIO);
+
+    await rerender({ leadId: null });
+
+    expect(result.current.phone).toBeNull();
+    expect(result.current.status).toBeNull();
+    expect(result.current.error).toBeNull();
+    expect(result.current.loading).toBe(false);
   });
 
   it('(EC-10) unmount_durante_llamada_en_vuelo_no_aplica_estado_sin_warning', async () => {
