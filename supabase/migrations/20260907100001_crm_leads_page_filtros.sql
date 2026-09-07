@@ -6,16 +6,11 @@
 -- edge cases — está en la cabecera de ese archivo).
 --
 -- ════════════════════════════════════════════════════════════════════════════
--- 🔴 STUB RED (2026-09-07): esta migración SOLO ensancha la FIRMA de public.crm_leads_page
--- (2 parámetros nuevos, ambos DEFAULT NULL) para que el pgTAP falle por ASERCIÓN de
--- filtrado, nunca por "función no existe" ni por error de tipo de argumento. El CUERPO es
--- BYTE POR BYTE el mismo que 20260906100003_crm_leads_page_funnel.sql — los 2 parámetros
--- nuevos se declaran pero se IGNORAN por completo (no hay ninguna referencia a ellos dentro
--- del cuerpo). Las líneas marcadas `-- STUB RED` son las que el GREEN de 271.1 debe tocar:
---   1) subir status_projected (CASE 8→4) de la proyección final a la CTE `banded` (punto
---      delicado 2 de la subtarea, evitando duplicar el CASE en 2 sitios).
---   2) filtrar por p_status (sobre status_projected) y por p_follow_up dentro de la CTE
---      `matched` (punto delicado 1: es el universo base de `remaining`, D-REMAINING).
+-- GREEN (2026-09-07): public.crm_leads_page ensancha su FIRMA con p_status text[] y
+-- p_follow_up boolean (ambos DEFAULT NULL) y los aplica de verdad: status_projected
+-- (CASE 8→4) se calcula UNA sola vez en la CTE `banded` (punto delicado 2) y ambos filtros
+-- entran en la CTE `matched` (punto delicado 1: es el universo base de `remaining`,
+-- D-REMAINING) combinados por AND con p_band/p_query.
 -- Ensanchamiento puro del contrato (§0.5.2): p_status/p_follow_up con DEFAULT NULL, ningún
 -- build instalado (que llama con los 5 parámetros de hoy) pierde nada. DROP+CREATE en UNA
 -- transacción porque cambiar la firma (agregar parámetros) NO admite `create or replace`
@@ -33,8 +28,8 @@ create or replace function public.crm_leads_page(
   p_cursor jsonb default null,
   p_limit int default 20,
   p_query text default null,
-  p_status text[] default null,      -- STUB RED: declarado, IGNORADO por completo abajo
-  p_follow_up boolean default null   -- STUB RED: declarado, IGNORADO por completo abajo
+  p_status text[] default null,      -- D-STATUSARRAY: null = sin filtro, '{}' = 0 filas
+  p_follow_up boolean default null   -- D-FOLLOWUP: null = sin filtro, filtra is_follow_up exacto
 )
 returns table (
   lead_id           uuid,
@@ -86,6 +81,7 @@ begin
       l.id as lead_id,
       l.user_id,
       l.status,
+      l.is_follow_up,
       u.first_name,
       u.last_name,
       u.avatar_url
@@ -176,6 +172,7 @@ begin
       bl.lead_id,
       bl.user_id,
       bl.status,
+      bl.is_follow_up,
       bl.first_name,
       bl.last_name,
       bl.avatar_url,
@@ -200,9 +197,8 @@ begin
     left join origin o on o.lead_id = bl.lead_id
   ),
   banded as (
-    -- STUB RED: status_projected (CASE 8→4) DEBE subir aquí (punto delicado 2) para que
-    -- `matched` pueda filtrar por él sin duplicar el CASE del SELECT final. El stub NO lo
-    -- hace todavía — se calcula solo abajo, en el SELECT final, como en 266.4.
+    -- D-STATUSPROJ / punto delicado 2: status_projected (CASE 8→4) se calcula UNA sola vez
+    -- aquí (nunca duplicado en el SELECT final) para que `matched` pueda filtrar por él.
     select
       s.*,
       greatest(coalesce(s.max14_daily, s.temperature), s.temperature) as max14,
@@ -220,15 +216,32 @@ begin
             and h.changed_at <= v_as_of
         ),
         v_as_of
-      ) as band
+      ) as band,
+      case s.status
+        when 'whatsapp_opened'  then 'nuevo'
+        when 'new'              then 'nuevo'
+        when 'contacted'        then 'contactado'
+        when 'interested'       then 'contactado'
+        when 'in_progress'      then 'contactado'
+        when 'visit_scheduled'  then 'visita'
+        when 'closed_won_rent'  then 'cerrado'
+        when 'closed_won_sale'  then 'cerrado'
+        when 'closed_lost'      then 'cerrado'
+        when 'discarded'        then 'cerrado'
+        when 'closed_won'       then 'cerrado'
+      end as status_projected
     from scored s
   ),
   matched as (
-    -- STUB RED: p_status/p_follow_up DEBEN entrar aquí (punto delicado 1, mismo criterio que
-    -- p_band — `matched` es el universo base de `remaining`, D-REMAINING). El stub los IGNORA
-    -- por completo: universo COMPLETO que matchea banda+query, exactamente igual que 266.4.
+    -- Punto delicado 1 (D-REMAINING): p_status/p_follow_up entran aquí, mismo criterio que
+    -- p_band — `matched` es el universo base de `remaining`, así que filtrar más tarde haría
+    -- mentir a `remaining`/`next_cursor`. Los 3 filtros combinan por AND (D-STATUSARRAY,
+    -- D-FOLLOWUP): NULL = sin filtro; p_status='{}' = 0 filas (ANY sobre array vacío es
+    -- siempre falso, D-STATUSARRAY).
     select * from banded bd
-    where p_band is null or bd.band = p_band
+    where (p_band is null or bd.band = p_band)
+      and (p_status is null or bd.status_projected = any(p_status))
+      and (p_follow_up is null or bd.is_follow_up = p_follow_up)
   ),
   paged as (
     -- D-TIEBREAK: predicado del keyset relativo al cursor de ENTRADA. NO se toca (Abraham
@@ -279,21 +292,9 @@ begin
         'contacted_at', pr.origin_contacted_at
       )
     end as origin_property,
-    -- D-STATUSPROJ: proyección 8→4 exacta de la exploración 045 §7.4, los 11 valores del
-    -- enum incluidos los 3 legacy (new, in_progress, closed_won).
-    case pr.status
-      when 'whatsapp_opened'  then 'nuevo'
-      when 'new'              then 'nuevo'
-      when 'contacted'        then 'contactado'
-      when 'interested'       then 'contactado'
-      when 'in_progress'      then 'contactado'
-      when 'visit_scheduled'  then 'visita'
-      when 'closed_won_rent'  then 'cerrado'
-      when 'closed_won_sale'  then 'cerrado'
-      when 'closed_lost'      then 'cerrado'
-      when 'discarded'        then 'cerrado'
-      when 'closed_won'       then 'cerrado'
-    end as status_projected,
+    -- D-STATUSPROJ: proyección 8→4 (exploración 045 §7.4) calculada UNA sola vez en `banded`
+    -- (punto delicado 2) y leída aquí, nunca recalculada.
+    pr.status_projected,
     case when (select n from remaining_count) = 0 then null
       else jsonb_build_object(
         'as_of', v_as_of,

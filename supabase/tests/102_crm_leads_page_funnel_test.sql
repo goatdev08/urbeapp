@@ -147,7 +147,7 @@
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(93);
+select plan(94);
 
 -- ── Helper de impersonación (mismo patrón que 02/08/.../35/62/100/101_*) ────────────────────
 create or replace function pg_temp.act_as(p_uid uuid, p_role text default 'authenticated')
@@ -1274,6 +1274,21 @@ select is(
   0, 'AUTZFILT1_agente_ajeno_0_filas_aunque_traiga_p_status_y_p_follow_up'
 );
 reset role;
+
+-- ── 18. Guarda de esquema: el CASE de la proyección 8→4 no tiene ELSE ──────────
+-- 🔴 Hallazgo del guardian (271.1): si el enum lead_status gana un valor 12 y nadie
+-- actualiza el CASE de `banded`, ese brazo cae a NULL. Y como `NULL = any(p_status)`
+-- es NULL, esos leads DESAPARECEN de toda consulta filtrada mientras siguen saliendo
+-- sin filtro — falla silenciosa que ningún assert de comportamiento caza (no se puede
+-- sembrar un valor del enum que todavía no existe). Este assert de catálogo revienta
+-- en cuanto el enum crece, y obliga a tocar la proyección en el mismo cambio.
+select is(
+  (select string_agg(e.enumlabel, ',' order by e.enumsortorder)
+     from pg_enum e join pg_type t on t.oid = e.enumtypid
+    where t.typname = 'lead_status'),
+  'new,contacted,in_progress,visit_scheduled,closed_won,closed_lost,discarded,whatsapp_opened,interested,closed_won_rent,closed_won_sale',
+  'ENUMGUARD1_lead_status_sigue_teniendo_los_11_valores_que_cubre_el_CASE_de_status_projected'
+);
 
 select * from finish();
 rollback;
