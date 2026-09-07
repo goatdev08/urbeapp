@@ -18,7 +18,17 @@ export const LEAD_EF_ERROR_MESSAGES: Record<string, string> = {
   UNAUTHORIZED_AGENT: 'No tienes permiso para modificar este lead.',
   LEAD_NOT_FOUND:     'Este lead ya no existe o fue eliminado.',
   DB_ERROR:            'Error interno. Intenta de nuevo.',
+  // Extendido en 269.5 — códigos P0001 de la RPC reassign_lead_atomic
+  // (migración 20260906400002, no una EF): mismo mapa compartido, mismo
+  // criterio error.message.includes(code). Ver hooks/useReassignLead.ts.
+  SAME_USER:                'Ese lead ya está asignado a esa persona.',
+  TARGET_NOT_ACTIVE_MEMBER: 'Ese agente ya no está activo en la inmobiliaria.',
 };
+
+/** Fallback de red/timeout — reusado por map_lead_ef_error y useReassignLead. */
+export const LEAD_EF_NETWORK_FALLBACK = 'No se pudo conectar. Verifica tu conexión e intenta de nuevo.';
+/** Fallback genérico (código presente pero fuera del mapa) — idem. */
+export const LEAD_EF_GENERIC_FALLBACK = 'Ocurrió un error. Intenta de nuevo.';
 
 /**
  * code === undefined es lo que devuelve extract_error_code cuando el error
@@ -28,7 +38,7 @@ export const LEAD_EF_ERROR_MESSAGES: Record<string, string> = {
  */
 export function map_lead_ef_error(code: string | undefined): string {
   if (code === undefined) {
-    return 'No se pudo conectar. Verifica tu conexión e intenta de nuevo.';
+    return LEAD_EF_NETWORK_FALLBACK;
   }
-  return LEAD_EF_ERROR_MESSAGES[code] ?? 'Ocurrió un error. Intenta de nuevo.';
+  return LEAD_EF_ERROR_MESSAGES[code] ?? LEAD_EF_GENERIC_FALLBACK;
 }
