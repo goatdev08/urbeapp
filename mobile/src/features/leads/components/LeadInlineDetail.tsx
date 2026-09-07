@@ -50,7 +50,7 @@ import type { CrmLeadRow, LeadActivityEntry, LeadStatus, ProjectedStatus } from 
 import { useCrmLeadDetail } from '../hooks/useCrmLeadDetail';
 import { useCrmSuggestedMessage } from '../hooks/useCrmSuggestedMessage';
 import { useLeadActivity } from '../hooks/useLeadActivity';
-import { useLeadPhone } from '../hooks/useLeadPhone';
+import { useLeadRawFields } from '../hooks/useLeadRawFields';
 import { useUpdateLeadNote } from '../hooks/useUpdateLeadNote';
 import { useUpdateLeadStatus } from '../hooks/useUpdateLeadStatus';
 import { StatusPicker } from './StatusPicker';
@@ -115,7 +115,7 @@ export function LeadInlineDetail({ lead, readOnly, onChanged }: LeadInlineDetail
   const { data: detail } = useCrmLeadDetail(lead.lead_id);
   const { data: activity, hasMore, loadMore } = useLeadActivity(lead.lead_id);
   const { message } = useCrmSuggestedMessage(lead.lead_id);
-  const { phone } = useLeadPhone(lead.lead_id);
+  const { phone } = useLeadRawFields(lead.lead_id);
   const { update_status, is_updating: status_updating, error: status_error } = useUpdateLeadStatus({
     onSuccess: onChanged,
   });

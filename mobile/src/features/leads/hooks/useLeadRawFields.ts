@@ -1,13 +1,16 @@
 /**
- * useLeadPhone — teléfono de contacto de un lead del CRM (subtarea 267.6,
- * tarea #267 "CRM UI agente", GREEN).
+ * useLeadRawFields — teléfono de contacto Y status crudo de un lead del CRM
+ * (subtarea 275.1, tarea #275 "hardening(267.6)", renombrado de
+ * useLeadPhone — el nombre viejo mentía en cuanto empezó a devolver status).
  *
- * Las RPC del CRM (crm_lead_detail, lead_activity, crm_suggested_message) no
- * exponen `phone` — es un dato sensible que solo se necesita para el botón
- * de WhatsApp. Se lee con un embed puntual ya probado bajo RLS en
- * useAgentLeads.ts (el flujo viejo, se borra en 267.7):
+ * Las RPC del CRM (crm_lead_detail, lead_activity, crm_suggested_message,
+ * crm_leads_page) no exponen ni `phone` (dato sensible, solo para el botón de
+ * WhatsApp) ni el `status` CRUDO del enum lead_status (solo exponen
+ * `status_projected`, la proyección 8→4). Ambos se leen en el MISMO embed
+ * puntual, ya probado bajo RLS en useAgentLeads.ts (el flujo viejo, se borró
+ * en 267.7):
  *   supabase.from('leads')
- *     .select('users!leads_user_id_fkey(phone)')
+ *     .select('status, users!leads_user_id_fkey(phone)')
  *     .eq('id', leadId)
  *     .is('deleted_at', null)
  *     .maybeSingle()
@@ -15,16 +18,19 @@
  * `users` (agent_id y user_id) y sin el hint PostgREST no sabe cuál usar.
  * Molde de estado/ciclo de vida: useCrmSuggestedMessage.ts. Contrato
  * completo (SEAMS, decisiones D-XXX, edge cases) en
- * mobile/src/features/leads/__tests__/useLeadPhone.test.ts — no se repite
- * aquí.
+ * mobile/src/features/leads/__tests__/useLeadRawFields.test.ts — no se
+ * repite aquí.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { supabase } from '@/lib/supabase/client';
 
-export interface UseLeadPhoneState {
+import type { LeadStatus } from '../types';
+
+export interface UseLeadRawFieldsState {
   phone: string | null;
+  status: LeadStatus | null;
   loading: boolean;
   error: string | null;
   refetch: () => Promise<void>;
@@ -32,8 +38,11 @@ export interface UseLeadPhoneState {
 
 const ERROR_MESSAGE = 'No se pudo cargar el teléfono del lead.';
 
-export function useLeadPhone(leadId: string | null | undefined): UseLeadPhoneState {
+export function useLeadRawFields(leadId: string | null | undefined): UseLeadRawFieldsState {
   const [phone, set_phone] = useState<string | null>(null);
+  // STUB RED (275.1): falta exponer el status real — se hardcodea a null
+  // hasta el GREEN, que también añade 'status' al string de .select(...).
+  const [status] = useState<LeadStatus | null>(null);
   const [loading, set_loading] = useState(Boolean(leadId));
   const [error, set_error] = useState<string | null>(null);
 
@@ -68,6 +77,7 @@ export function useLeadPhone(leadId: string | null | undefined): UseLeadPhoneSta
     try {
       query_result = (await supabase
         .from('leads')
+        // STUB RED (275.1): falta 'status, ' al frente del select.
         .select('users!leads_user_id_fkey(phone)')
         .eq('id', leadId)
         .is('deleted_at', null)
@@ -102,5 +112,5 @@ export function useLeadPhone(leadId: string | null | undefined): UseLeadPhoneSta
 
   const refetch = useCallback(() => fetch_phone(), [fetch_phone]);
 
-  return { phone, loading, error, refetch };
+  return { phone, status, loading, error, refetch };
 }

@@ -65,10 +65,10 @@ jest.mock('../../hooks/useCrmSuggestedMessage', () => ({
 }));
 
 const mock_phone: { current: string | null } = { current: '+525512345678' };
-jest.mock('../../hooks/useLeadPhone', () => ({
-  useLeadPhone: (..._args: unknown[]) => {
+jest.mock('../../hooks/useLeadRawFields', () => ({
+  useLeadRawFields: (..._args: unknown[]) => {
     mock_hook_calls.lead_phone.push(_args[0]);
-    return { phone: mock_phone.current, loading: false, error: null, refetch: jest.fn() };
+    return { phone: mock_phone.current, status: null, loading: false, error: null, refetch: jest.fn() };
   },
 }));
 
