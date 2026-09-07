@@ -35,6 +35,11 @@ export function useLeadActivity(leadId: string | null | undefined): UseLeadActiv
   const [hasMore, set_has_more] = useState(false);
 
   const mounted_ref = useRef(true);
+  // D-SEQ (guardian 267.6/269.5, molde useLeadRawFields.ts): token de
+  // petición — cubre tanto la carga inicial como loadMore (modo append): una
+  // página tardía de un leadId/petición ANTERIOR no debe concatenarse ni
+  // pisar next_cursor_ref (EC-18).
+  const seq_ref = useRef(0);
   useEffect(() => {
     mounted_ref.current = true;
     return () => {
@@ -58,17 +63,30 @@ export function useLeadActivity(leadId: string | null | undefined): UseLeadActiv
       }
 
       set_loading(true);
+      const seq = ++seq_ref.current;
 
-      // ponytail: `as any` — Args generado tipa p_cursor como `string`
-      // opcional SIN null, aunque el SQL lo declara `default null` (mismo
-      // gotcha que useCrmLeadsPage.ts).
-      const rpc_result = (await supabase.rpc('lead_activity', {
-        p_lead_id: leadId,
-        p_limit: 20,
-        p_cursor: cursor,
-      } as any)) as { data: LeadActivityEntry[] | null; error: { message: string } | null };
+      let rpc_result: { data: LeadActivityEntry[] | null; error: { message: string } | null };
+      try {
+        // ponytail: `as any` — Args generado tipa p_cursor como `string`
+        // opcional SIN null, aunque el SQL lo declara `default null` (mismo
+        // gotcha que useCrmLeadsPage.ts).
+        rpc_result = (await supabase.rpc('lead_activity', {
+          p_lead_id: leadId,
+          p_limit: 20,
+          p_cursor: cursor,
+        } as any)) as typeof rpc_result;
+      } catch {
+        // Rechazo real de red (offline): sin esto la promesa queda sin
+        // manejar y `loading` no vuelve a bajar (bug confirmado por el
+        // guardian en 269.5).
+        rpc_result = { data: null, error: { message: 'network' } };
+      }
 
-      if (!mounted_ref.current) return;
+      // Corta ANTES de tocar next_cursor_ref y ANTES de set_data: una página
+      // obsoleta (leadId anterior o loadMore lento superado por un refetch)
+      // no debe pisar el cursor de paginación ni concatenarse al array
+      // vigente (EC-18).
+      if (!mounted_ref.current || seq !== seq_ref.current) return;
 
       if (rpc_result.error) {
         set_error(ERROR_MESSAGE);
