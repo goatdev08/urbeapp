@@ -45,6 +45,23 @@
  * - (EC-8) error_de_rpc_mensaje_neutro_en_espanol_data_null
  * - (EC-9) unmount_durante_llamada_en_vuelo_no_aplica_estado_sin_warning_act
  * - (EC-10) agentId_null_o_undefined_no_llama_rpc_data_null_sin_error
+ *
+ * ### Extensión RED (subtarea 275.4, tarea #275 "hardening(267.6)",
+ * 2026-09-07, AMPLIACIÓN DE ALCANCE): D-SEQ + try/catch, molde
+ * useCrmLeadDetail.ts/useLeadRawFields.ts. Hoy el hook NO tiene seq_ref ni
+ * try/catch — estos casos DEBEN fallar hasta el GREEN. La carrera que
+ * importa aquí es un cambio de `days` (no de agentId) y un refoco disparado
+ * mientras una petición anterior sigue en vuelo.
+ * - (EC-11) carrera_de_days_la_respuesta_tardia_del_days_anterior_no_pisa_el_embudo_del_days_actual_D_SEQ
+ * - (EC-12) rechazo_real_de_red_desde_estado_poblado_error_neutro_y_data_null_no_vacuo
+ * - (EC-13) recuperacion_tras_error_un_refetch_exitoso_limpia_el_error_y_repuebla_data
+ * - (EC-14) refoco_disparado_durante_una_peticion_anterior_en_vuelo_no_pisa_el_resultado_del_refoco_D_SEQ
+ *
+ * ### Extensión RED (275.4, frente B): barrido del guard de argumento
+ * faltante — el guard `if (!agentId)` no se prueba en TRANSICIÓN (solo en el
+ * primer render, donde useState ya nace vacío) y no bumpea seq_ref.
+ * - (EC-15) agentId_pasa_a_null_tras_estar_poblado_reinicia_data_a_null_sin_error_loading_false
+ * - (EC-16) peticion_en_vuelo_del_agentId_anterior_resuelve_tras_la_transicion_a_null_y_no_repuebla_D_SEQ
  */
 
 import { renderHook, act } from '@testing-library/react-native';
@@ -288,5 +305,183 @@ describe('useCrmFunnel', () => {
     const { result: result_undefined } = await renderHook(() => useCrmFunnel(undefined, 30));
     expect(rpc).not.toHaveBeenCalled();
     expect(result_undefined.current.data).toBeNull();
+  });
+
+  // -------------------------------------------------------------------------
+  // Extensión RED (subtarea 275.4): D-SEQ + try/catch, molde
+  // useCrmLeadDetail.ts. El hook hoy NO tiene seq_ref ni try/catch — deben
+  // fallar hasta el GREEN.
+  // -------------------------------------------------------------------------
+
+  it('(EC-11) carrera_de_days_la_respuesta_tardia_del_days_anterior_no_pisa_el_embudo_del_days_actual_D_SEQ', async () => {
+    const FUNNEL_30_DIAS_LENTO: CrmFunnel = {
+      vieron: 999,
+      volvieron: 999,
+      guardaron: 999,
+      contactaron: 999,
+      agendaron: 999,
+    };
+    const FUNNEL_7_DIAS_RAPIDO: CrmFunnel = {
+      vieron: 3,
+      volvieron: 1,
+      guardaron: 0,
+      contactaron: 0,
+      agendaron: 0,
+    };
+    let resolve_lento!: (value: { data: CrmFunnel[]; error: null }) => void;
+    const pending_lento = new Promise<{ data: CrmFunnel[]; error: null }>((resolve) => {
+      resolve_lento = resolve;
+    });
+    const rpc = jest
+      .fn()
+      .mockReturnValueOnce(pending_lento)
+      .mockResolvedValueOnce({ data: [FUNNEL_7_DIAS_RAPIDO], error: null });
+    mock_supabase_holder.client = make_supabase_mock(rpc);
+
+    const { result, rerender } = await renderHook(({ days }: { days: number }) => useCrmFunnel(AGENT_ID, days), {
+      initialProps: { days: 30 },
+    });
+    await rerender({ days: 7 });
+    expect(result.current.data).toEqual(FUNNEL_7_DIAS_RAPIDO);
+
+    await act(async () => {
+      resolve_lento({ data: [FUNNEL_30_DIAS_LENTO], error: null });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(result.current.data).toEqual(FUNNEL_7_DIAS_RAPIDO);
+    expect(result.current.loading).toBe(false);
+  });
+
+  it('(EC-12) rechazo_real_de_red_desde_estado_poblado_error_neutro_y_data_null_no_vacuo', async () => {
+    const rpc = jest
+      .fn()
+      .mockResolvedValueOnce({ data: [FUNNEL_ROW], error: null })
+      .mockRejectedValueOnce(new TypeError('Network request failed'));
+    mock_supabase_holder.client = make_supabase_mock(rpc);
+
+    const { result } = await renderHook(() => useCrmFunnel(AGENT_ID, 30));
+    expect(result.current.data).toEqual(FUNNEL_ROW);
+
+    await act(async () => {
+      await result.current.refetch();
+    });
+
+    expect(result.current.error).toBe('No se pudo cargar el embudo del CRM. Intenta de nuevo.');
+    expect(result.current.data).toBeNull();
+    expect(result.current.loading).toBe(false);
+  });
+
+  it('(EC-13) recuperacion_tras_error_un_refetch_exitoso_limpia_el_error_y_repuebla_data', async () => {
+    const OTRO_FUNNEL: CrmFunnel = { vieron: 2, volvieron: 1, guardaron: 1, contactaron: 0, agendaron: 0 };
+    const rpc = jest
+      .fn()
+      .mockResolvedValueOnce({ data: [FUNNEL_ROW], error: null })
+      .mockRejectedValueOnce(new TypeError('Network request failed'))
+      .mockResolvedValueOnce({ data: [OTRO_FUNNEL], error: null });
+    mock_supabase_holder.client = make_supabase_mock(rpc);
+
+    const { result } = await renderHook(() => useCrmFunnel(AGENT_ID, 30));
+
+    await act(async () => {
+      await result.current.refetch();
+    });
+    expect(result.current.error).toBe('No se pudo cargar el embudo del CRM. Intenta de nuevo.');
+
+    await act(async () => {
+      await result.current.refetch();
+    });
+
+    expect(result.current.error).toBeNull();
+    expect(result.current.data).toEqual(OTRO_FUNNEL);
+  });
+
+  it('(EC-14) refoco_disparado_durante_una_peticion_anterior_en_vuelo_no_pisa_el_resultado_del_refoco_D_SEQ', async () => {
+    const FUNNEL_MOUNT_LENTO: CrmFunnel = {
+      vieron: 111,
+      volvieron: 111,
+      guardaron: 111,
+      contactaron: 111,
+      agendaron: 111,
+    };
+    const FUNNEL_REFOCO_RAPIDO: CrmFunnel = { vieron: 5, volvieron: 2, guardaron: 1, contactaron: 1, agendaron: 0 };
+    let resolve_mount!: (value: { data: CrmFunnel[]; error: null }) => void;
+    const pending_mount = new Promise<{ data: CrmFunnel[]; error: null }>((resolve) => {
+      resolve_mount = resolve;
+    });
+    const rpc = jest
+      .fn()
+      .mockReturnValueOnce(pending_mount) // carga inicial (mount) — LENTA
+      .mockResolvedValueOnce({ data: [FUNNEL_REFOCO_RAPIDO], error: null }); // refoco — RÁPIDO
+    mock_supabase_holder.client = make_supabase_mock(rpc);
+
+    const { result } = await renderHook(() => useCrmFunnel(AGENT_ID, 30));
+    expect(captured_focus_callback).not.toBeNull();
+
+    // Refoco disparado ANTES de que la carga inicial resuelva.
+    await act(async () => {
+      captured_focus_callback!();
+    });
+    expect(result.current.data).toEqual(FUNNEL_REFOCO_RAPIDO);
+
+    // La carga inicial (obsoleta) resuelve tarde — no debe pisar el refoco.
+    await act(async () => {
+      resolve_mount({ data: [FUNNEL_MOUNT_LENTO], error: null });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(result.current.data).toEqual(FUNNEL_REFOCO_RAPIDO);
+    expect(result.current.loading).toBe(false);
+  });
+
+  // -------------------------------------------------------------------------
+  // Extensión RED (subtarea 275.4): barrido del guard de argumento faltante.
+  // El guard `if (!agentId)` hoy resetea data/loading/error pero NO bumpea
+  // seq_ref — deben fallar hasta el GREEN.
+  // -------------------------------------------------------------------------
+
+  it('(EC-15) agentId_pasa_a_null_tras_estar_poblado_reinicia_data_a_null_sin_error_loading_false', async () => {
+    const rpc = jest.fn().mockResolvedValue({ data: [FUNNEL_ROW], error: null });
+    mock_supabase_holder.client = make_supabase_mock(rpc);
+
+    const { result, rerender } = await renderHook(
+      ({ agentId }: { agentId: string | null }) => useCrmFunnel(agentId, 30),
+      { initialProps: { agentId: AGENT_ID } },
+    );
+    expect(result.current.data).toEqual(FUNNEL_ROW);
+
+    await rerender({ agentId: null });
+
+    expect(result.current.data).toBeNull();
+    expect(result.current.loading).toBe(false);
+    expect(result.current.error).toBeNull();
+  });
+
+  it('(EC-16) peticion_en_vuelo_del_agentId_anterior_resuelve_tras_la_transicion_a_null_y_no_repuebla_D_SEQ', async () => {
+    let resolve_a!: (value: { data: CrmFunnel[]; error: null }) => void;
+    const pending_a = new Promise<{ data: CrmFunnel[]; error: null }>((resolve) => {
+      resolve_a = resolve;
+    });
+    mock_supabase_holder.client = make_supabase_mock(jest.fn().mockReturnValue(pending_a));
+
+    const { result, rerender } = await renderHook(
+      ({ agentId }: { agentId: string | null }) => useCrmFunnel(agentId, 30),
+      { initialProps: { agentId: AGENT_ID } },
+    );
+
+    await rerender({ agentId: null });
+    expect(result.current.data).toBeNull();
+
+    await act(async () => {
+      resolve_a({ data: [FUNNEL_ROW], error: null });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(result.current.data).toBeNull();
+    expect(result.current.loading).toBe(false);
+    expect(result.current.error).toBeNull();
   });
 });

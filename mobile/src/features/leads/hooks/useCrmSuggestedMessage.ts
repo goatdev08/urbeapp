@@ -34,6 +34,10 @@ export function useCrmSuggestedMessage(
   const [error, set_error] = useState<string | null>(null);
 
   const mounted_ref = useRef(true);
+  // D-SEQ (guardian 267.6/269.5, molde useLeadRawFields.ts): token de
+  // petición — una respuesta tardía de un leadId ANTERIOR no pisa el mensaje
+  // sugerido del lead actual (dato cruzado en pantalla).
+  const seq_ref = useRef(0);
   useEffect(() => {
     mounted_ref.current = true;
     return () => {
@@ -43,6 +47,11 @@ export function useCrmSuggestedMessage(
 
   const fetch_message = useCallback(async (): Promise<void> => {
     if (!leadId) {
+      // D-SEQ (275.4): bump ANTES de los resets — invalida cualquier
+      // petición en vuelo del leadId anterior (si no, su respuesta tardía
+      // pasa el guard del token y repuebla el estado que este guard acaba
+      // de limpiar).
+      ++seq_ref.current;
       set_message(null);
       set_loading(false);
       set_error(null);
@@ -50,12 +59,21 @@ export function useCrmSuggestedMessage(
     }
 
     set_loading(true);
+    const seq = ++seq_ref.current;
 
-    const rpc_result = (await supabase.rpc('crm_suggested_message', {
-      p_lead_id: leadId,
-    })) as { data: string | null; error: { message: string } | null };
+    let rpc_result: { data: string | null; error: { message: string } | null };
+    try {
+      rpc_result = (await supabase.rpc('crm_suggested_message', {
+        p_lead_id: leadId,
+      })) as typeof rpc_result;
+    } catch {
+      // Rechazo real de red (offline): sin esto la promesa queda sin manejar
+      // y `loading` no vuelve a bajar (bug confirmado por el guardian en
+      // 269.5).
+      rpc_result = { data: null, error: { message: 'network' } };
+    }
 
-    if (!mounted_ref.current) return;
+    if (!mounted_ref.current || seq !== seq_ref.current) return;
 
     if (rpc_result.error) {
       set_error(ERROR_MESSAGE);

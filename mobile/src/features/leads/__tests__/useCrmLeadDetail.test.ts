@@ -46,6 +46,27 @@
  * - (EC-9) unmount_durante_llamada_en_vuelo_no_aplica_estado_sin_warning_act
  * - (EC-10) leadId_null_o_undefined_no_llama_rpc_data_null_sin_error
  * - (EC-11) refetch_manual_redispara_la_rpc
+ *
+ * ### Extensión RED (subtarea 275.3, tarea #275 "hardening(267.6)",
+ * 2026-09-07): D-SEQ + try/catch, molde useLeadRawFields.ts. Hoy el hook NO
+ * tiene seq_ref ni try/catch — estos casos DEBEN fallar hasta el GREEN.
+ * - (EC-12) respuesta_tardia_de_un_leadId_anterior_no_pisa_la_ficha_del_actual_D_SEQ
+ * - (EC-13) rechazo_real_de_red_desde_estado_poblado_error_neutro_y_data_null_no_vacuo
+ * - (EC-14) recuperacion_tras_error_un_refetch_exitoso_limpia_el_error_y_puebla_data
+ * - (EC-15) estado_inicial_con_leadId_null_primer_render_data_null_loading_false_sin_error
+ *
+ * ### Extensión RED (subtarea 275.4, tarea #275 "hardening(267.6)",
+ * 2026-09-07): barrido del guard de argumento faltante — el guardian de
+ * 275.3 confirmó por mutación que el cuerpo COMPLETO del guard `if
+ * (!leadId)` se puede vaciar y la suite sigue verde: los EC de estado inicial
+ * (EC-15) sondean el PRIMER render con leadId null, donde los inicializadores
+ * de useState ya nacen vacíos — el reset nunca se ejecuta bajo test. Falta la
+ * TRANSICIÓN leadId poblado -> null. Segundo aspecto: ese branch NO
+ * incrementa seq_ref, así que una petición en vuelo del leadId ANTERIOR que
+ * resuelve DESPUÉS de la transición a null pasa el guard del token y repuebla
+ * el estado que el guard acababa de limpiar.
+ * - (EC-16) transicion_leadId_pasa_a_null_tras_estar_poblado_reinicia_data_a_null_sin_error_loading_false
+ * - (EC-17) peticion_en_vuelo_del_leadId_anterior_resuelve_tras_la_transicion_a_null_y_no_repuebla_D_SEQ
  */
 
 import { renderHook, act } from '@testing-library/react-native';
@@ -297,5 +318,170 @@ describe('useCrmLeadDetail', () => {
     });
 
     expect(rpc).toHaveBeenCalledTimes(2);
+  });
+
+  // -------------------------------------------------------------------------
+  // Extensión RED (subtarea 275.3): D-SEQ + try/catch, molde
+  // useLeadRawFields.ts. El hook hoy NO tiene seq_ref ni try/catch — deben
+  // fallar hasta el GREEN.
+  // -------------------------------------------------------------------------
+
+  it('(EC-12) respuesta_tardia_de_un_leadId_anterior_no_pisa_la_ficha_del_actual_D_SEQ', async () => {
+    // Guardian 267.6/269.5 (patrón D-SEQ): LEAD-A lento, LEAD-B rápido. El
+    // hook ya representa a B cuando A por fin resuelve — no debe volver a la
+    // ficha de A.
+    const DETAIL_A: CrmLeadDetail = {
+      origin_property: null,
+      other_properties: 9,
+      suggested_next_status: 'discarded',
+    };
+    const DETAIL_B: CrmLeadDetail = {
+      origin_property: null,
+      other_properties: 1,
+      suggested_next_status: 'interested',
+    };
+    let resolve_a!: (value: { data: CrmLeadDetail[]; error: null }) => void;
+    const pending_a = new Promise<{ data: CrmLeadDetail[]; error: null }>((resolve) => {
+      resolve_a = resolve;
+    });
+    const rpc = jest
+      .fn()
+      .mockReturnValueOnce(pending_a)
+      .mockResolvedValueOnce({ data: [DETAIL_B], error: null });
+    mock_supabase_holder.client = make_supabase_mock(rpc);
+
+    const { result, rerender } = await renderHook(({ leadId }: { leadId: string }) => useCrmLeadDetail(leadId), {
+      initialProps: { leadId: 'lead-a-275-3' },
+    });
+    await rerender({ leadId: 'lead-b-275-3' });
+    expect(result.current.data).toEqual(DETAIL_B);
+
+    await act(async () => {
+      resolve_a({ data: [DETAIL_A], error: null });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(result.current.data).toEqual(DETAIL_B);
+    expect(result.current.loading).toBe(false);
+  });
+
+  it('(EC-13) rechazo_real_de_red_desde_estado_poblado_error_neutro_y_data_null_no_vacuo', async () => {
+    // Regla del guardian (275.1): el reset solo se prueba desde un estado
+    // POBLADO — se puebla primero con un fetch exitoso para que la caída a
+    // null sea observable (no vacua). Hoy `await supabase.rpc(...)` que
+    // rechaza deja una promesa sin manejar y `loading` en true para siempre
+    // (bug confirmado por el guardian en 269.5).
+    const rpc = jest
+      .fn()
+      .mockResolvedValueOnce({ data: [DETAIL_ROW_CON_ORIGEN], error: null })
+      .mockRejectedValueOnce(new TypeError('Network request failed'));
+    mock_supabase_holder.client = make_supabase_mock(rpc);
+
+    const { result } = await renderHook(() => useCrmLeadDetail(LEAD_ID));
+    expect(result.current.data).toEqual(DETAIL_ROW_CON_ORIGEN);
+
+    await act(async () => {
+      await result.current.refetch();
+    });
+
+    expect(result.current.error).toBe('No se pudo cargar la ficha del lead. Intenta de nuevo.');
+    expect(result.current.data).toBeNull();
+    expect(result.current.loading).toBe(false);
+  });
+
+  it('(EC-14) recuperacion_tras_error_un_refetch_exitoso_limpia_el_error_y_puebla_data', async () => {
+    const rpc = jest
+      .fn()
+      .mockResolvedValueOnce({ data: [DETAIL_ROW_CON_ORIGEN], error: null })
+      .mockRejectedValueOnce(new TypeError('Network request failed'))
+      .mockResolvedValueOnce({ data: [DETAIL_ROW_SIN_ORIGEN], error: null });
+    mock_supabase_holder.client = make_supabase_mock(rpc);
+
+    const { result } = await renderHook(() => useCrmLeadDetail(LEAD_ID));
+
+    await act(async () => {
+      await result.current.refetch();
+    });
+    expect(result.current.error).toBe('No se pudo cargar la ficha del lead. Intenta de nuevo.');
+
+    await act(async () => {
+      await result.current.refetch();
+    });
+
+    expect(result.current.error).toBeNull();
+    expect(result.current.data).toEqual(DETAIL_ROW_SIN_ORIGEN);
+  });
+
+  it('(EC-15) estado_inicial_con_leadId_null_primer_render_data_null_loading_false_sin_error', async () => {
+    // Sonda del PRIMER render (memoria tests_bomba_de_fecha_y_estado_inicial):
+    // no basta leer result.current tras el render terminado.
+    const render_states: ReturnType<typeof useCrmLeadDetail>[] = [];
+    function useProbe() {
+      const state = useCrmLeadDetail(null);
+      render_states.push(state);
+      return state;
+    }
+
+    await renderHook(() => useProbe());
+
+    const first = render_states[0]!;
+    expect(first.data).toBeNull();
+    expect(first.loading).toBe(false);
+    expect(first.error).toBeNull();
+  });
+
+  // -------------------------------------------------------------------------
+  // Extensión RED (subtarea 275.4): barrido del guard de argumento faltante.
+  // El guard `if (!leadId)` hoy resetea data/loading/error pero NO bumpea
+  // seq_ref — deben fallar hasta el GREEN.
+  // -------------------------------------------------------------------------
+
+  it('(EC-16) transicion_leadId_pasa_a_null_tras_estar_poblado_reinicia_data_a_null_sin_error_loading_false', async () => {
+    const rpc = jest.fn().mockResolvedValue({ data: [DETAIL_ROW_CON_ORIGEN], error: null });
+    mock_supabase_holder.client = make_supabase_mock(rpc);
+
+    const { result, rerender } = await renderHook(
+      ({ leadId }: { leadId: string | null }) => useCrmLeadDetail(leadId),
+      { initialProps: { leadId: LEAD_ID } },
+    );
+    expect(result.current.data).toEqual(DETAIL_ROW_CON_ORIGEN);
+
+    await rerender({ leadId: null });
+
+    expect(result.current.data).toBeNull();
+    expect(result.current.loading).toBe(false);
+    expect(result.current.error).toBeNull();
+  });
+
+  it('(EC-17) peticion_en_vuelo_del_leadId_anterior_resuelve_tras_la_transicion_a_null_y_no_repuebla_D_SEQ', async () => {
+    // Segundo aspecto del guard (guardian 275.3, hallazgo diferido a 275.4):
+    // el branch `if (!leadId)` NO incrementa seq_ref. Una petición en vuelo
+    // del leadId ANTERIOR que resuelve DESPUÉS de la transición a null pasa
+    // el guard del token (seq === seq_ref.current sigue siendo cierto) y
+    // repuebla el estado que el guard acababa de limpiar.
+    let resolve_a!: (value: { data: CrmLeadDetail[]; error: null }) => void;
+    const pending_a = new Promise<{ data: CrmLeadDetail[]; error: null }>((resolve) => {
+      resolve_a = resolve;
+    });
+    mock_supabase_holder.client = make_supabase_mock(jest.fn().mockReturnValue(pending_a));
+
+    const { result, rerender } = await renderHook(
+      ({ leadId }: { leadId: string | null }) => useCrmLeadDetail(leadId),
+      { initialProps: { leadId: LEAD_ID } },
+    );
+
+    await rerender({ leadId: null });
+    expect(result.current.data).toBeNull();
+
+    await act(async () => {
+      resolve_a({ data: [DETAIL_ROW_CON_ORIGEN], error: null });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(result.current.data).toBeNull();
+    expect(result.current.loading).toBe(false);
+    expect(result.current.error).toBeNull();
   });
 });

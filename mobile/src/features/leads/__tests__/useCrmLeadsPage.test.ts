@@ -76,6 +76,26 @@
  * - (EC-11) error_de_rpc_mensaje_neutro_en_espanol_data_vacio_loading_false
  * - (EC-12) unmount_durante_llamada_en_vuelo_no_aplica_estado_sin_warning_act
  * - (EC-13) agentId_null_o_undefined_no_llama_rpc_estado_vacio_sin_error
+ *
+ * ### Extensión RED (subtarea 275.4, tarea #275 "hardening(267.6)",
+ * 2026-09-07, AMPLIACIÓN DE ALCANCE): D-SEQ + try/catch, molde
+ * useCrmLeadDetail.ts/useLeadActivity.ts. Hoy el hook NO tiene seq_ref ni
+ * try/catch — estos casos DEBEN fallar hasta el GREEN. La carrera que
+ * importa aquí es un cambio de `query` (búsqueda), una página tardía de
+ * `loadMore` y un refoco disparado mientras una petición anterior sigue en
+ * vuelo — NUNCA el agentId (ver frente B para esa transición).
+ * - (EC-15) carrera_de_busqueda_la_respuesta_tardia_de_la_query_anterior_no_repuebla_una_lista_ya_vaciada_D_SEQ
+ * - (EC-16) rechazo_real_de_red_desde_estado_poblado_error_neutro_y_data_vacia_no_vacuo
+ * - (EC-17) recuperacion_tras_error_un_refetch_exitoso_limpia_el_error_y_repuebla_data
+ * - (EC-18) pagina_tardia_de_loadMore_en_modo_append_no_concatena_ni_pisa_el_cursor_de_la_siguiente_llamada_D_SEQ
+ * - (EC-19) refoco_disparado_durante_una_peticion_anterior_en_vuelo_no_pisa_el_resultado_del_refoco_D_SEQ
+ *
+ * ### Extensión RED (275.4, frente B): barrido del guard de argumento
+ * faltante — el guard `if (!agentId)` no se prueba en TRANSICIÓN (solo en el
+ * primer render, donde useState ya nace vacío) y no bumpea seq_ref ni
+ * observa el reset del cursor de paginación.
+ * - (EC-20) agentId_pasa_a_null_tras_estar_poblado_reinicia_data_hasmore_remaining_y_el_cursor_de_paginacion
+ * - (EC-21) peticion_en_vuelo_del_agentId_anterior_resuelve_tras_la_transicion_a_null_y_no_repuebla_ni_pisa_el_cursor_D_SEQ
  */
 
 import { renderHook, act } from '@testing-library/react-native';
@@ -589,5 +609,269 @@ describe('useCrmLeadsPage', () => {
     expect(rpc).not.toHaveBeenCalled();
     expect(result_undefined.current.data).toEqual([]);
     expect(result_undefined.current.loading).toBe(false);
+  });
+
+  // -------------------------------------------------------------------------
+  // Extensión RED (subtarea 275.4): D-SEQ + try/catch, molde
+  // useCrmLeadDetail.ts/useLeadActivity.ts. El hook hoy NO tiene seq_ref ni
+  // try/catch — deben fallar hasta el GREEN.
+  // -------------------------------------------------------------------------
+
+  it('(EC-15) carrera_de_busqueda_la_respuesta_tardia_de_la_query_anterior_no_repuebla_una_lista_ya_vaciada_D_SEQ', async () => {
+    // Escribir 'juan' (lenta) y luego limpiar la búsqueda (rápida): la
+    // respuesta tardía de 'juan' NO debe repoblar la lista que el usuario ya
+    // vació.
+    const ROW_SIN_QUERY_275_4: RpcRow = { ...ROW_B, lead_id: 'lead-sin-query-275-4', next_cursor: null, remaining: 0 };
+    const ROW_JUAN_TARDIO_275_4: RpcRow = { ...ROW_A, lead_id: 'lead-juan-tardio-275-4', next_cursor: null, remaining: 0 };
+
+    let resolve_juan!: (value: { data: RpcRow[]; error: null }) => void;
+    const pending_juan = new Promise<{ data: RpcRow[]; error: null }>((resolve) => {
+      resolve_juan = resolve;
+    });
+    const rpc = jest
+      .fn()
+      .mockReturnValueOnce(pending_juan) // query='juan' — LENTA
+      .mockResolvedValueOnce({ data: [ROW_SIN_QUERY_275_4], error: null }); // query=null — RÁPIDA
+    mock_supabase_holder.client = make_supabase_mock(rpc);
+
+    const { result, rerender } = await renderHook(
+      ({ query }: { query: string | null }) => useCrmLeadsPage(AGENT_ID, null, query),
+      { initialProps: { query: 'juan' } },
+    );
+
+    await rerender({ query: null });
+    expect(result.current.data.map((r) => r.lead_id)).toEqual(['lead-sin-query-275-4']);
+
+    await act(async () => {
+      resolve_juan({ data: [ROW_JUAN_TARDIO_275_4], error: null });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(result.current.data.map((r) => r.lead_id)).toEqual(['lead-sin-query-275-4']);
+    expect(result.current.loading).toBe(false);
+  });
+
+  it('(EC-16) rechazo_real_de_red_desde_estado_poblado_error_neutro_y_data_vacia_no_vacuo', async () => {
+    const rpc = jest
+      .fn()
+      .mockResolvedValueOnce({ data: [ROW_A, ROW_B], error: null })
+      .mockRejectedValueOnce(new TypeError('Network request failed'));
+    mock_supabase_holder.client = make_supabase_mock(rpc);
+
+    const { result } = await renderHook(() => useCrmLeadsPage(AGENT_ID, null, null));
+    expect(result.current.data).toHaveLength(2);
+
+    await act(async () => {
+      await result.current.refetch();
+    });
+
+    expect(result.current.error).toBe('No se pudo cargar el pipeline de leads. Intenta de nuevo.');
+    expect(result.current.data).toEqual([]);
+    expect(result.current.hasMore).toBe(false);
+    expect(result.current.loading).toBe(false);
+  });
+
+  it('(EC-17) recuperacion_tras_error_un_refetch_exitoso_limpia_el_error_y_repuebla_data', async () => {
+    const rpc = jest
+      .fn()
+      .mockResolvedValueOnce({ data: [ROW_A], error: null })
+      .mockRejectedValueOnce(new TypeError('Network request failed'))
+      .mockResolvedValueOnce({ data: [ROW_C_ULTIMA_PAGINA], error: null });
+    mock_supabase_holder.client = make_supabase_mock(rpc);
+
+    const { result } = await renderHook(() => useCrmLeadsPage(AGENT_ID, null, null));
+
+    await act(async () => {
+      await result.current.refetch();
+    });
+    expect(result.current.error).toBe('No se pudo cargar el pipeline de leads. Intenta de nuevo.');
+
+    await act(async () => {
+      await result.current.refetch();
+    });
+
+    expect(result.current.error).toBeNull();
+    expect(result.current.data.map((r) => r.lead_id)).toEqual(['lead-c']);
+  });
+
+  it('(EC-18) pagina_tardia_de_loadMore_en_modo_append_no_concatena_ni_pisa_el_cursor_de_la_siguiente_llamada_D_SEQ', async () => {
+    const CURSOR_REFETCH_275_4: RpcCursor = { as_of: '2026-09-07T09:00:00Z', temperature: 55, lead_id: 'lead-refetch-275-4' };
+    const CURSOR_LATE_275_4: RpcCursor = { as_of: '2026-09-01T09:00:00Z', temperature: 10, lead_id: 'lead-late-275-4' };
+    const ROW_REFETCH_275_4: RpcRow = { ...ROW_A, lead_id: 'lead-refetch-275-4', next_cursor: CURSOR_REFETCH_275_4, remaining: 1 };
+    const ROW_LATE_APPEND_275_4: RpcRow = { ...ROW_B, lead_id: 'lead-late-append-275-4', next_cursor: CURSOR_LATE_275_4, remaining: 3 };
+
+    let resolve_load_more!: (value: { data: RpcRow[]; error: null }) => void;
+    const pending_load_more = new Promise<{ data: RpcRow[]; error: null }>((resolve) => {
+      resolve_load_more = resolve;
+    });
+    const rpc = jest
+      .fn()
+      .mockResolvedValueOnce({ data: [ROW_A], error: null }) // carga inicial
+      .mockReturnValueOnce(pending_load_more) // loadMore — LENTO
+      .mockResolvedValueOnce({ data: [ROW_REFETCH_275_4], error: null }) // refetch — RÁPIDO, reemplaza
+      .mockResolvedValueOnce({ data: [], error: null }); // siguiente loadMore (probe del cursor)
+    mock_supabase_holder.client = make_supabase_mock(rpc);
+
+    const { result } = await renderHook(() => useCrmLeadsPage(AGENT_ID, null, null));
+    expect(result.current.data.map((r) => r.lead_id)).toEqual(['lead-a']);
+
+    // loadMore lento — awaited (RNTL v14, memoria rntl14_renderhook_async):
+    // `await Promise.resolve()` deja que fetch_page llegue hasta su propio
+    // await (la llamada #2 a rpc) sin esperar a que esa promesa resuelva.
+    let load_more_promise!: Promise<void>;
+    await act(async () => {
+      load_more_promise = result.current.loadMore();
+      await Promise.resolve();
+    });
+
+    // El refetch resuelve RÁPIDO — reemplaza data y avanza el token.
+    await act(async () => {
+      await result.current.refetch();
+    });
+    expect(result.current.data.map((r) => r.lead_id)).toEqual(['lead-refetch-275-4']);
+
+    // Ahora resuelve el loadMore lento y obsoleto.
+    await act(async () => {
+      resolve_load_more({ data: [ROW_LATE_APPEND_275_4], error: null });
+      await load_more_promise;
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // (a) La página tardía NO se concatenó.
+    expect(result.current.data.map((r) => r.lead_id)).toEqual(['lead-refetch-275-4']);
+
+    // (b) El cursor NO quedó pisado por la página tardía: el siguiente
+    // loadMore debe mandar CURSOR_REFETCH_275_4 (el del refetch), NUNCA
+    // CURSOR_LATE_275_4.
+    await act(async () => {
+      await result.current.loadMore();
+    });
+    expect(rpc).toHaveBeenLastCalledWith('crm_leads_page', {
+      p_agent_id: AGENT_ID,
+      p_band: null,
+      p_cursor: CURSOR_REFETCH_275_4,
+      p_limit: 20,
+      p_query: null,
+    });
+  });
+
+  it('(EC-19) refoco_disparado_durante_una_peticion_anterior_en_vuelo_no_pisa_el_resultado_del_refoco_D_SEQ', async () => {
+    const ROW_MOUNT_STALE_275_4: RpcRow = { ...ROW_A, lead_id: 'lead-mount-stale-275-4', next_cursor: null, remaining: 0 };
+    const ROW_REFOCO_275_4: RpcRow = { ...ROW_B, lead_id: 'lead-refoco-275-4', next_cursor: null, remaining: 0 };
+
+    let resolve_mount!: (value: { data: RpcRow[]; error: null }) => void;
+    const pending_mount = new Promise<{ data: RpcRow[]; error: null }>((resolve) => {
+      resolve_mount = resolve;
+    });
+    const rpc = jest
+      .fn()
+      .mockReturnValueOnce(pending_mount) // carga inicial (mount) — LENTA
+      .mockResolvedValueOnce({ data: [ROW_REFOCO_275_4], error: null }); // refoco — RÁPIDO
+    mock_supabase_holder.client = make_supabase_mock(rpc);
+
+    const { result } = await renderHook(() => useCrmLeadsPage(AGENT_ID, null, null));
+    expect(captured_focus_callback).not.toBeNull();
+
+    // Refoco disparado ANTES de que la carga inicial resuelva.
+    await act(async () => {
+      captured_focus_callback!();
+    });
+    expect(result.current.data.map((r) => r.lead_id)).toEqual(['lead-refoco-275-4']);
+
+    // La carga inicial (obsoleta) resuelve tarde — no debe pisar el refoco.
+    await act(async () => {
+      resolve_mount({ data: [ROW_MOUNT_STALE_275_4], error: null });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(result.current.data.map((r) => r.lead_id)).toEqual(['lead-refoco-275-4']);
+    expect(result.current.loading).toBe(false);
+  });
+
+  // -------------------------------------------------------------------------
+  // Extensión RED (subtarea 275.4): barrido del guard de argumento faltante.
+  // El guard `if (!agentId)` hoy resetea data/loading/error/hasMore/remaining
+  // y next_cursor_ref, pero NO bumpea seq_ref — deben fallar hasta el GREEN.
+  // -------------------------------------------------------------------------
+
+  it('(EC-20) agentId_pasa_a_null_tras_estar_poblado_reinicia_data_hasmore_remaining_y_el_cursor_de_paginacion', async () => {
+    const AGENT_ID_2_275_4 = 'agent-uuid-275-4-otro';
+    const ROW_TRAS_TRANSICION_275_4: RpcRow = { ...ROW_C_ULTIMA_PAGINA, lead_id: 'lead-tras-transicion-275-4' };
+    const rpc = jest
+      .fn()
+      .mockResolvedValueOnce({ data: [ROW_A], error: null }) // agentId inicial
+      .mockResolvedValueOnce({ data: [ROW_TRAS_TRANSICION_275_4], error: null }); // agentId nuevo tras null
+    mock_supabase_holder.client = make_supabase_mock(rpc);
+
+    const { result, rerender } = await renderHook(
+      ({ agentId }: { agentId: string | null }) => useCrmLeadsPage(agentId, null, null),
+      { initialProps: { agentId: AGENT_ID } },
+    );
+    expect(result.current.data.map((r) => r.lead_id)).toEqual(['lead-a']);
+    expect(result.current.hasMore).toBe(true);
+    expect(result.current.remaining).toBe(1);
+
+    await rerender({ agentId: null });
+
+    expect(result.current.data).toEqual([]);
+    expect(result.current.loading).toBe(false);
+    expect(result.current.error).toBeNull();
+    expect(result.current.hasMore).toBe(false);
+    expect(result.current.remaining).toBeNull();
+
+    // El cursor de paginación también debe reiniciarse: al volver a un
+    // agentId válido, la llamada debe mandar p_cursor null, NUNCA
+    // CURSOR_1 (rancio del agentId anterior).
+    await rerender({ agentId: AGENT_ID_2_275_4 });
+
+    expect(rpc).toHaveBeenLastCalledWith('crm_leads_page', {
+      p_agent_id: AGENT_ID_2_275_4,
+      p_band: null,
+      p_cursor: null,
+      p_limit: 20,
+      p_query: null,
+    });
+  });
+
+  it('(EC-21) peticion_en_vuelo_del_agentId_anterior_resuelve_tras_la_transicion_a_null_y_no_repuebla_ni_pisa_el_cursor_D_SEQ', async () => {
+    // Segundo aspecto del guard (guardian 275.3, hallazgo diferido a 275.4):
+    // el branch `if (!agentId)` NO incrementa seq_ref. Una página en vuelo
+    // del agentId ANTERIOR que resuelve DESPUÉS de la transición a null (y
+    // MIENTRAS SIGUE en null — sin otra petición real de por medio que
+    // adelante el token por su cuenta) pasa el guard del token y repuebla el
+    // estado (data Y el cursor) que el guard acababa de limpiar.
+    const CURSOR_A_LATE_275_4: RpcCursor = { as_of: '2026-09-01T09:00:00Z', temperature: 5, lead_id: 'lead-a-late-275-4' };
+    const ROW_A_LATE_275_4: RpcRow = { ...ROW_A, lead_id: 'lead-a-late-275-4', next_cursor: CURSOR_A_LATE_275_4, remaining: 5 };
+
+    let resolve_a!: (value: { data: RpcRow[]; error: null }) => void;
+    const pending_a = new Promise<{ data: RpcRow[]; error: null }>((resolve) => {
+      resolve_a = resolve;
+    });
+    mock_supabase_holder.client = make_supabase_mock(jest.fn().mockReturnValue(pending_a));
+
+    const { result, rerender } = await renderHook(
+      ({ agentId }: { agentId: string | null }) => useCrmLeadsPage(agentId, null, null),
+      { initialProps: { agentId: 'agent-a-275-4' } },
+    );
+
+    await rerender({ agentId: null });
+    expect(result.current.data).toEqual([]);
+    expect(result.current.hasMore).toBe(false);
+    expect(result.current.remaining).toBeNull();
+
+    await act(async () => {
+      resolve_a({ data: [ROW_A_LATE_275_4], error: null });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(result.current.data).toEqual([]);
+    expect(result.current.hasMore).toBe(false);
+    expect(result.current.remaining).toBeNull();
+    expect(result.current.loading).toBe(false);
+    expect(result.current.error).toBeNull();
   });
 });

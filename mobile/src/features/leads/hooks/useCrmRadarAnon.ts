@@ -37,6 +37,10 @@ export function useCrmRadarAnon(
   const [error, set_error] = useState<string | null>(null);
 
   const mounted_ref = useRef(true);
+  // D-SEQ (guardian 267.6/269.5, molde useCrmLeadDetail.ts): token de
+  // petición — una respuesta tardía de un agentId ANTERIOR no pisa el radar
+  // vigente.
+  const seq_ref = useRef(0);
   useEffect(() => {
     mounted_ref.current = true;
     return () => {
@@ -50,6 +54,9 @@ export function useCrmRadarAnon(
 
   const fetch_radar = useCallback(async (): Promise<void> => {
     if (!agentId) {
+      // D-SEQ: bump ANTES de los resets — invalida cualquier petición en
+      // vuelo del agentId anterior.
+      ++seq_ref.current;
       set_data([]);
       set_loading(false);
       set_error(null);
@@ -57,13 +64,22 @@ export function useCrmRadarAnon(
     }
 
     set_loading(true);
+    const seq = ++seq_ref.current;
 
-    const rpc_result = (await supabase.rpc('crm_radar_anon', {
-      p_agent_id: agentId,
-      p_limit: resolved_limit,
-    })) as { data: CrmRadarRow[] | null; error: { message: string } | null };
+    let rpc_result: { data: CrmRadarRow[] | null; error: { message: string } | null };
+    try {
+      rpc_result = (await supabase.rpc('crm_radar_anon', {
+        p_agent_id: agentId,
+        p_limit: resolved_limit,
+      })) as typeof rpc_result;
+    } catch {
+      // Rechazo real de red (offline): sin esto la promesa queda sin
+      // manejar y `loading` no vuelve a bajar (bug confirmado por el
+      // guardian en 269.5).
+      rpc_result = { data: null, error: { message: 'network' } };
+    }
 
-    if (!mounted_ref.current) return;
+    if (!mounted_ref.current || seq !== seq_ref.current) return;
 
     if (rpc_result.error) {
       set_error(ERROR_MESSAGE);

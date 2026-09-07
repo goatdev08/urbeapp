@@ -6,7 +6,7 @@
  * memorias RNTL 14 (render()/renderHook() son async → `await`).
  *
  * Los 6 hooks de datos/mutación se mockean (el SUT es la UI, no la red):
- * useCrmLeadDetail, useLeadActivity, useCrmSuggestedMessage, useLeadPhone,
+ * useCrmLeadDetail, useLeadActivity, useCrmSuggestedMessage, useLeadRawFields,
  * useUpdateLeadStatus, useUpdateLeadNote. Los mocks de mutación CAPTURAN
  * los `deps` que el componente pasa al hook (igual que la implementación
  * real) para poder disparar `onSuccess` (= onChanged del padre) al resolver
@@ -17,7 +17,7 @@ import React from 'react';
 import { render, screen, userEvent } from '@testing-library/react-native';
 
 import { LeadInlineDetail } from '../LeadInlineDetail';
-import type { CrmLeadRow } from '../../types';
+import type { CrmLeadRow, LeadStatus } from '../../types';
 
 jest.mock('expo-router', () => ({ router: { push: jest.fn() } }));
 
@@ -65,10 +65,11 @@ jest.mock('../../hooks/useCrmSuggestedMessage', () => ({
 }));
 
 const mock_phone: { current: string | null } = { current: '+525512345678' };
-jest.mock('../../hooks/useLeadPhone', () => ({
-  useLeadPhone: (..._args: unknown[]) => {
+const mock_status: { current: LeadStatus | null } = { current: null };
+jest.mock('../../hooks/useLeadRawFields', () => ({
+  useLeadRawFields: (..._args: unknown[]) => {
     mock_hook_calls.lead_phone.push(_args[0]);
-    return { phone: mock_phone.current, loading: false, error: null, refetch: jest.fn() };
+    return { phone: mock_phone.current, status: mock_status.current, loading: false, error: null, refetch: jest.fn() };
   },
 }));
 
@@ -140,6 +141,7 @@ beforeEach(() => {
   mock_activity_data.current = [{ occurred_at: '2026-09-06T11:38:00Z', kind: 'video_view', detail: {} }];
   mock_message.current = 'Hola Karla, ¿te gustaría agendar una visita?';
   mock_phone.current = '+525512345678';
+  mock_status.current = null;
   mock_hook_calls.crm_lead_detail = [];
   mock_hook_calls.lead_activity = [];
   mock_hook_calls.suggested_message = [];
@@ -235,5 +237,67 @@ describe('LeadInlineDetail', () => {
     await render(<LeadInlineDetail lead={make_lead()} readOnly={false} onChanged={on_changed} />);
 
     expect(screen.queryByText('Mensaje sugerido')).toBeNull();
+  });
+
+  // ── 275.2: current del StatusPicker cableado al status crudo de useLeadRawFields ──
+
+  it("(10) status crudo 'interested' — el ✓ cae en Interesado, no en Contactado", async () => {
+    mock_status.current = 'interested';
+    const user = userEvent.setup();
+    await render(
+      <LeadInlineDetail lead={make_lead({ status_projected: 'contactado' })} readOnly={false} onChanged={on_changed} />,
+    );
+
+    await user.press(screen.getByLabelText('Ver los 8 estados vigentes'));
+
+    expect(screen.getByLabelText('Estado: Interesado, seleccionado').props.accessibilityState.checked).toBe(true);
+    expect(screen.getByLabelText('Estado: Contactado').props.accessibilityState.checked).toBe(false);
+  });
+
+  it("(11) status crudo de cierre 'closed_won_sale' — ✓ exacto en Ganado (venta)", async () => {
+    mock_status.current = 'closed_won_sale';
+    const user = userEvent.setup();
+    await render(
+      <LeadInlineDetail lead={make_lead({ status_projected: 'cerrado' })} readOnly={false} onChanged={on_changed} />,
+    );
+
+    await user.press(screen.getByLabelText('Ver los 8 estados vigentes'));
+
+    expect(
+      screen.getByLabelText('Estado: Ganado (venta), seleccionado').props.accessibilityState.checked,
+    ).toBe(true);
+  });
+
+  it('(12) status crudo null (sin fila) — badge con la etiqueta proyectada, ningún ✓ (no regresa)', async () => {
+    mock_status.current = null;
+    const user = userEvent.setup();
+    await render(
+      <LeadInlineDetail lead={make_lead({ status_projected: 'contactado' })} readOnly={false} onChanged={on_changed} />,
+    );
+
+    await user.press(screen.getByLabelText('Ver los 8 estados vigentes'));
+
+    expect(screen.getByLabelText(/^Estado actual: Contactado\./)).toBeTruthy();
+    expect(screen.queryByText('✓')).toBeNull();
+    for (const radio of screen.getAllByRole('radio')) {
+      expect(radio.props.accessibilityState.checked).toBe(false);
+    }
+  });
+
+  it('(13) readOnly — el picker no se monta sin importar el status crudo', async () => {
+    // El contrato de StatusPicker en solo-lectura (badge exacto no-tappable,
+    // lista nunca montada) ya está cubierto a nivel de componente en
+    // StatusPicker.test.tsx ("readOnly: sin botón disparador ni opciones
+    // montadas"). Aquí solo se verifica que LeadInlineDetail, en readOnly,
+    // ni siquiera monta el picker (mismo criterio que el mockup 267-crm-
+    // santiago.html: solo lectura muestra la barra de 4 tramos atenuada, sin
+    // un StatusPicker interactivo).
+    mock_status.current = 'interested';
+    await render(
+      <LeadInlineDetail lead={make_lead({ status_projected: 'contactado' })} readOnly onChanged={on_changed} />,
+    );
+
+    expect(screen.queryByLabelText('Ver los 8 estados vigentes')).toBeNull();
+    expect(screen.queryAllByRole('radio').length).toBe(0);
   });
 });
