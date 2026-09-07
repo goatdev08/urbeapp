@@ -43,6 +43,7 @@ import type {
   ContactAgentDeps,
   FindActiveLeadResult,
   IncrementContactCountResult,
+  InsertContactRepeatEventResult,
   InsertLeadResult,
   InsertOriginResult,
   LeadRecord,
@@ -341,6 +342,8 @@ const VIDEO_ID = "99999999-9999-9999-9999-999999999999";
 interface FakeOriginRepo extends OriginRepo {
   insert_calls: [string, string, string | undefined][];
   increment_calls: string[];
+  // 268.4 — args exactos de cada llamada a insert_contact_repeat_event
+  contact_repeat_calls: { user_id: string; property_id: string; agent_id: string; lead_id: string }[];
 }
 
 // No-op: insert devuelve no-op (no fila nueva); increment accesible pero no debería llamarse.
@@ -349,6 +352,7 @@ function origin_repo_noop(): FakeOriginRepo {
   return {
     insert_calls: [],
     increment_calls: [],
+    contact_repeat_calls: [],
     insert_origin(
       lead_id: string,
       property_id: string,
@@ -359,6 +363,13 @@ function origin_repo_noop(): FakeOriginRepo {
     },
     increment_contact_count(property_id: string): Promise<IncrementContactCountResult> {
       this.increment_calls.push(property_id);
+      return Promise.resolve({ ok: true });
+    },
+    // 268.4 — noop: registra la llamada, nunca falla (default para los tests que no lo miran).
+    insert_contact_repeat_event(
+      args: { user_id: string; property_id: string; agent_id: string; lead_id: string },
+    ): Promise<InsertContactRepeatEventResult> {
+      this.contact_repeat_calls.push(args);
       return Promise.resolve({ ok: true });
     },
   } as FakeOriginRepo;
@@ -395,6 +406,7 @@ function origin_repo_insert_new(): FakeOriginRepo {
   return {
     insert_calls: [],
     increment_calls: [],
+    contact_repeat_calls: [],
     insert_origin(
       lead_id: string,
       property_id: string,
@@ -407,6 +419,13 @@ function origin_repo_insert_new(): FakeOriginRepo {
       this.increment_calls.push(property_id);
       return Promise.resolve({ ok: true });
     },
+    // 268.4 — inserted=true: contact_repeat NUNCA debe llamarse en esta rama.
+    insert_contact_repeat_event(
+      args: { user_id: string; property_id: string; agent_id: string; lead_id: string },
+    ): Promise<InsertContactRepeatEventResult> {
+      this.contact_repeat_calls.push(args);
+      return Promise.resolve({ ok: true });
+    },
   } as FakeOriginRepo;
 }
 
@@ -416,6 +435,7 @@ function origin_repo_no_op(): FakeOriginRepo {
   return {
     insert_calls: [],
     increment_calls: [],
+    contact_repeat_calls: [],
     insert_origin(
       lead_id: string,
       property_id: string,
@@ -428,6 +448,13 @@ function origin_repo_no_op(): FakeOriginRepo {
       this.increment_calls.push(property_id);
       return Promise.resolve({ ok: true });
     },
+    // 268.4 — inserted=false: esta es la rama que SÍ debe disparar contact_repeat.
+    insert_contact_repeat_event(
+      args: { user_id: string; property_id: string; agent_id: string; lead_id: string },
+    ): Promise<InsertContactRepeatEventResult> {
+      this.contact_repeat_calls.push(args);
+      return Promise.resolve({ ok: true });
+    },
   } as FakeOriginRepo;
 }
 
@@ -436,6 +463,7 @@ function origin_repo_insert_db_error(): FakeOriginRepo {
   return {
     insert_calls: [],
     increment_calls: [],
+    contact_repeat_calls: [],
     insert_origin(
       lead_id: string,
       property_id: string,
@@ -448,6 +476,12 @@ function origin_repo_insert_db_error(): FakeOriginRepo {
       this.increment_calls.push(property_id);
       return Promise.resolve({ ok: true });
     },
+    insert_contact_repeat_event(
+      args: { user_id: string; property_id: string; agent_id: string; lead_id: string },
+    ): Promise<InsertContactRepeatEventResult> {
+      this.contact_repeat_calls.push(args);
+      return Promise.resolve({ ok: true });
+    },
   } as FakeOriginRepo;
 }
 
@@ -456,6 +490,7 @@ function origin_repo_increment_db_error(): FakeOriginRepo {
   return {
     insert_calls: [],
     increment_calls: [],
+    contact_repeat_calls: [],
     insert_origin(
       lead_id: string,
       property_id: string,
@@ -467,6 +502,73 @@ function origin_repo_increment_db_error(): FakeOriginRepo {
     increment_contact_count(property_id: string): Promise<IncrementContactCountResult> {
       this.increment_calls.push(property_id);
       return Promise.resolve({ ok: false, error_code: "DB_ERROR" });
+    },
+    insert_contact_repeat_event(
+      args: { user_id: string; property_id: string; agent_id: string; lead_id: string },
+    ): Promise<InsertContactRepeatEventResult> {
+      this.contact_repeat_calls.push(args);
+      return Promise.resolve({ ok: true });
+    },
+  } as FakeOriginRepo;
+}
+
+// ── 268.4 — Factories OriginRepo para contact_repeat ─────────────────────────
+//
+// Ambas fuerzan insert_origin inserted=false (la única rama que dispara
+// contact_repeat) y varían la respuesta de insert_contact_repeat_event.
+
+// insert_contact_repeat_event resuelve { ok:false, error_code:"DB_ERROR" } —
+// fire-and-forget: NUNCA debe cambiar el status/body de la respuesta.
+function origin_repo_contact_repeat_db_error(): FakeOriginRepo {
+  return {
+    insert_calls: [],
+    increment_calls: [],
+    contact_repeat_calls: [],
+    insert_origin(
+      lead_id: string,
+      property_id: string,
+      property_video_id?: string,
+    ): Promise<InsertOriginResult> {
+      this.insert_calls.push([lead_id, property_id, property_video_id]);
+      return Promise.resolve({ ok: true, inserted: false });
+    },
+    increment_contact_count(property_id: string): Promise<IncrementContactCountResult> {
+      this.increment_calls.push(property_id);
+      return Promise.resolve({ ok: true });
+    },
+    insert_contact_repeat_event(
+      args: { user_id: string; property_id: string; agent_id: string; lead_id: string },
+    ): Promise<InsertContactRepeatEventResult> {
+      this.contact_repeat_calls.push(args);
+      return Promise.resolve({ ok: false, error_code: "DB_ERROR" });
+    },
+  } as FakeOriginRepo;
+}
+
+// insert_contact_repeat_event RECHAZA (throw) — fire-and-forget: el handler
+// debe absorber la excepción, nunca dejarla escapar como 5xx.
+function origin_repo_contact_repeat_throws(): FakeOriginRepo {
+  return {
+    insert_calls: [],
+    increment_calls: [],
+    contact_repeat_calls: [],
+    insert_origin(
+      lead_id: string,
+      property_id: string,
+      property_video_id?: string,
+    ): Promise<InsertOriginResult> {
+      this.insert_calls.push([lead_id, property_id, property_video_id]);
+      return Promise.resolve({ ok: true, inserted: false });
+    },
+    increment_contact_count(property_id: string): Promise<IncrementContactCountResult> {
+      this.increment_calls.push(property_id);
+      return Promise.resolve({ ok: true });
+    },
+    insert_contact_repeat_event(
+      args: { user_id: string; property_id: string; agent_id: string; lead_id: string },
+    ): Promise<InsertContactRepeatEventResult> {
+      this.contact_repeat_calls.push(args);
+      return Promise.reject(new Error("network_boom_test_only"));
     },
   } as FakeOriginRepo;
 }
@@ -1808,5 +1910,241 @@ Deno.test("unificacion_75_4_el_origen_nuevo_se_cuelga_del_lead_existente", async
     origin.insert_calls[0][1],
     OTRA_PROPERTY_ID,
     "75.4/§19.5: el origen registrado es la propiedad NUEVA desde la que se contactó",
+  );
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TESTS 268.4 — contact_repeat: evento cuando el par (lead, propiedad) ya existía
+//
+// Regla no obvia (fórmula private.crm_temperature, CTE contact_repeat, 266.2/266.3):
+// empareja events_raw.property_id → properties.owner_user_id, por eso el evento
+// SIEMPRE lleva property_id (además de user_id, agent_id, lead_id).
+// Contrato de contact-agent INTACTO (producción viva §0.5): fire-and-forget —
+// nunca cambia status/body de la respuesta 200 ni contamina rutas de error previas.
+//
+// EDGE CASES (RED):
+// ### Happy path — inserted=true (origen nuevo, invariante preexistente)
+// - 0 llamadas a insert_contact_repeat_event, 1 a increment_contact_count
+// ### Rama nueva — inserted=false (el par lead↔propiedad ya existía)
+// - insert_contact_repeat_event llamado EXACTAMENTE una vez
+// - recibe los 4 campos correctos: user_id=caller, property_id=input, agent_id=owner, lead_id=lead resuelto
+// - increment_contact_count sigue en 0 (invariante §14.5 no se rompe)
+// ### Fire-and-forget — el fallo del evento nunca sube a la respuesta
+// - insert_contact_repeat_event devuelve {ok:false} → 200 con body intacto
+// - insert_contact_repeat_event RECHAZA (throw) → 200 con body intacto
+// - el log del fallo (console.error) no debe exponer user_id ni teléfono (sin PII)
+// ### Nunca se dispara en rutas de error previas
+// - insert_origin {ok:false} (DB_ERROR) → 500 y 0 llamadas a contact_repeat
+// - CANNOT_CONTACT_SELF → 400 y 0 llamadas a contact_repeat
+// - propiedad no encontrada → 404 y 0 llamadas a contact_repeat
+// ═══════════════════════════════════════════════════════════════════════════════
+
+Deno.test("contact_repeat_268_4_primer_contacto_no_dispara_evento_y_si_incrementa", async () => {
+  // inserted=true (origen nuevo): insert_contact_repeat_event NUNCA debe llamarse;
+  // el contador sigue incrementándose como hasta hoy (invariante que no debe romperse).
+  const origin = origin_repo_insert_new();
+  const h = make_handler(
+    verifier_caller(),
+    resolver_property_owner(),
+    lead_repo_not_found_then_inserted(),
+    origin,
+  );
+  await h(post_auth(PAYLOAD_VALIDO));
+  assertEquals(
+    origin.contact_repeat_calls.length,
+    0,
+    "268.4: insert_contact_repeat_event NO debe llamarse en el primer contacto (inserted=true)",
+  );
+  assertEquals(
+    origin.increment_calls.length,
+    1,
+    "268.4: increment_contact_count debe seguir llamándose una vez en el primer contacto",
+  );
+});
+
+Deno.test("contact_repeat_268_4_segundo_contacto_dispara_evento_exactamente_una_vez", async () => {
+  // inserted=false (el par lead↔propiedad ya existía): el handler debe llamar
+  // insert_contact_repeat_event EXACTAMENTE una vez.
+  // RED: el handler aún no llama al método → contact_repeat_calls.length === 0 (no 1) → FALLA.
+  const origin = origin_repo_no_op();
+  const h = make_handler(
+    verifier_caller(),
+    resolver_property_owner(),
+    lead_repo_found_existing(),
+    origin,
+  );
+  await h(post_auth(PAYLOAD_VALIDO));
+  assertEquals(
+    origin.contact_repeat_calls.length,
+    1,
+    "268.4: insert_contact_repeat_event debe llamarse exactamente una vez cuando inserted=false",
+  );
+});
+
+Deno.test("contact_repeat_268_4_evento_lleva_los_4_campos_correctos", async () => {
+  // user_id=caller autenticado, property_id=el del input, agent_id=owner de la
+  // propiedad, lead_id=el lead resuelto (existente en este escenario).
+  // RED: contact_repeat_calls vacío → contact_repeat_calls[0] es undefined → FALLA.
+  const origin = origin_repo_no_op();
+  const h = make_handler(
+    verifier_caller(),
+    resolver_property_owner(),
+    lead_repo_found_existing(),
+    origin,
+  );
+  await h(post_auth(PAYLOAD_VALIDO));
+  assertEquals(origin.contact_repeat_calls.length, 1, "insert_contact_repeat_event debe llamarse una vez");
+  assertEquals(
+    origin.contact_repeat_calls[0],
+    { user_id: CALLER_ID, property_id: PROPERTY_ID, agent_id: AGENT_ID, lead_id: LEAD_ID_EXISTENTE },
+    "268.4: el evento debe llevar user_id=caller, property_id=input, agent_id=owner, lead_id=lead resuelto",
+  );
+});
+
+Deno.test("contact_repeat_268_4_segundo_contacto_no_incrementa_contador", async () => {
+  // INVARIANTE §14.5 preservada: inserted=false sigue sin incrementar el contador,
+  // aunque ahora también dispare el evento contact_repeat.
+  const origin = origin_repo_no_op();
+  const h = make_handler(
+    verifier_caller(),
+    resolver_property_owner(),
+    lead_repo_found_existing(),
+    origin,
+  );
+  await h(post_auth(PAYLOAD_VALIDO));
+  assertEquals(
+    origin.increment_calls.length,
+    0,
+    "268.4: increment_contact_count NO debe llamarse cuando inserted=false",
+  );
+});
+
+Deno.test("contact_repeat_268_4_evento_falla_ok_false_no_cambia_la_respuesta_200", async () => {
+  // Fire-and-forget: si insert_contact_repeat_event devuelve {ok:false}, la
+  // respuesta sigue siendo 200 con el body intacto (success/phone/message/lead_id/property_id).
+  const origin = origin_repo_contact_repeat_db_error();
+  const h = make_handler(
+    verifier_caller(),
+    resolver_property_owner(),
+    lead_repo_found_existing(),
+    origin,
+  );
+  const res = await h(post_auth(PAYLOAD_VALIDO));
+  // Guard: confirma que el fake SÍ fue invocado (si no, este test pasaría trivial).
+  // RED: contact_repeat_calls.length === 0 (no 1) → FALLA.
+  assertEquals(
+    origin.contact_repeat_calls.length,
+    1,
+    "268.4: insert_contact_repeat_event debe intentarse aunque vaya a fallar",
+  );
+  assertEquals(res.status, 200, "268.4: {ok:false} en el evento NO debe degradar la respuesta a 5xx");
+  const body = await res.json();
+  assertEquals(body.success, true, "268.4: body.success debe seguir en true");
+  assertEquals(body.lead_id, LEAD_ID_EXISTENTE, "268.4: body.lead_id no debe alterarse por el fallo del evento");
+  assertEquals(body.property_id, PROPERTY_ID, "268.4: body.property_id no debe alterarse por el fallo del evento");
+  assertEquals(typeof body.message, "string", "268.4: body.message debe seguir presente");
+  assertEquals(typeof body.phone, "string", "268.4: body.phone debe seguir presente");
+});
+
+Deno.test("contact_repeat_268_4_evento_rechaza_no_cambia_la_respuesta_200", async () => {
+  // Fire-and-forget: si insert_contact_repeat_event LANZA (rechaza la promesa),
+  // el handler debe absorberlo — nunca debe propagarse como 500 ni tumbar el handler.
+  const origin = origin_repo_contact_repeat_throws();
+  const h = make_handler(
+    verifier_caller(),
+    resolver_property_owner(),
+    lead_repo_found_existing(),
+    origin,
+  );
+  const res = await h(post_auth(PAYLOAD_VALIDO));
+  // Guard: confirma que el fake SÍ se invocó antes de rechazar.
+  // RED: contact_repeat_calls.length === 0 (no 1) → FALLA.
+  assertEquals(
+    origin.contact_repeat_calls.length,
+    1,
+    "268.4: insert_contact_repeat_event debe intentarse aunque vaya a rechazar",
+  );
+  assertEquals(res.status, 200, "268.4: una excepción en el evento NO debe tumbar la respuesta a 500");
+  const body = await res.json();
+  assertEquals(body.success, true, "268.4: body.success debe seguir en true pese al throw");
+});
+
+Deno.test("contact_repeat_268_4_fallo_del_evento_se_loggea_sin_pii", async () => {
+  // Si el handler registra el fallo con console.error, el mensaje NO debe
+  // contener el user_id del caller ni el teléfono del agente (privacidad, CLAUDE.md §0.5.4).
+  const original_console_error = console.error;
+  const console_error_calls: unknown[][] = [];
+  console.error = (...args: unknown[]) => {
+    console_error_calls.push(args);
+  };
+  try {
+    const origin = origin_repo_contact_repeat_throws();
+    const h = make_handler(
+      verifier_caller(),
+      resolver_property_owner(),
+      lead_repo_found_existing(),
+      origin,
+    );
+    const res = await h(post_auth(PAYLOAD_VALIDO));
+    assertEquals(res.status, 200, "268.4: el fallo del evento no debe cambiar el status de la respuesta");
+    const serialized = console_error_calls.map((args) => args.map(String).join(" ")).join("\n");
+    assertEquals(
+      serialized.includes(CALLER_ID),
+      false,
+      `268.4: el log de contact_repeat NO debe exponer el user_id (caller): ${serialized}`,
+    );
+    assertEquals(
+      serialized.includes(AGENT_PHONE),
+      false,
+      `268.4: el log de contact_repeat NO debe exponer el teléfono del agente: ${serialized}`,
+    );
+  } finally {
+    console.error = original_console_error;
+  }
+});
+
+Deno.test("contact_repeat_268_4_db_error_en_insert_origin_no_dispara_evento", async () => {
+  // insert_origin {ok:false} (DB_ERROR) corta el flujo con 500 ANTES de saber si
+  // hubo o no contact_repeat — el evento nunca debe intentarse.
+  const origin = origin_repo_insert_db_error();
+  const h = make_handler(
+    verifier_caller(),
+    resolver_property_owner(),
+    lead_repo_not_found_then_inserted(),
+    origin,
+  );
+  const res = await h(post_auth(PAYLOAD_VALIDO));
+  assertEquals(res.status, 500, "268.4: DB_ERROR en insert_origin debe seguir devolviendo 500");
+  assertEquals(
+    origin.contact_repeat_calls.length,
+    0,
+    "268.4: insert_contact_repeat_event NO debe llamarse si insert_origin falló",
+  );
+});
+
+Deno.test("contact_repeat_268_4_self_contact_no_dispara_evento", async () => {
+  // CANNOT_CONTACT_SELF corta el flujo ANTES de tocar originRepo — 0 llamadas.
+  const origin = origin_repo_noop();
+  const verifier = verifier_ok(AGENT_ID); // caller === owner
+  const h = make_handler(verifier, resolver_property_owner(), lead_repo_noop(), origin);
+  const res = await h(post_auth(PAYLOAD_VALIDO));
+  assertEquals(res.status, 400, "268.4: self-contact sigue devolviendo 400");
+  assertEquals(
+    origin.contact_repeat_calls.length,
+    0,
+    "268.4: insert_contact_repeat_event NO debe llamarse en self-contact",
+  );
+});
+
+Deno.test("contact_repeat_268_4_propiedad_no_encontrada_no_dispara_evento", async () => {
+  // 404 NOT_FOUND corta el flujo ANTES de tocar originRepo — 0 llamadas.
+  const origin = origin_repo_noop();
+  const h = make_handler(verifier_ok(), resolver_property_not_found(), lead_repo_noop(), origin);
+  const res = await h(post_auth(PAYLOAD_VALIDO));
+  assertEquals(res.status, 404, "268.4: propiedad no encontrada sigue devolviendo 404");
+  assertEquals(
+    origin.contact_repeat_calls.length,
+    0,
+    "268.4: insert_contact_repeat_event NO debe llamarse si la propiedad no existe",
   );
 });

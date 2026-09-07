@@ -10,6 +10,7 @@ import type {
   CallerVerifier,
   CallerVerifyResult,
   IncrementContactCountResult,
+  InsertContactRepeatEventResult,
   InsertOriginResult,
   OriginRepo,
 } from "./types.ts";
@@ -101,6 +102,12 @@ Deno.serve((req: Request) => {
 
       if (update_err) return { ok: false, error_code: "DB_ERROR" };
       return { ok: true };
+    },
+
+    // 268.4 — stub RED: la implementación real (INSERT en events_raw) la añade
+    // el GREEN de esta subtarea. Solo existe para que types.ts compile.
+    insert_contact_repeat_event(): Promise<InsertContactRepeatEventResult> {
+      throw new Error("not_implemented");
     },
   };
 
