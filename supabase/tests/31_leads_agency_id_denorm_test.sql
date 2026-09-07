@@ -279,9 +279,15 @@ select is(
 reset role;
 
 -- ════════════════════════════════════════════════════════════════════════════
--- 6) [INVARIANTE de escritura] Ni el admin ni el owner de NINGUNA de las dos agencias
---    pueden hacer UPDATE del lead ajeno — esta tarea es SOLO de lectura (leads_update no
---    se toca, misma línea que separa 75.5 de la #31 diferida).
+-- 6) [DELTA de escritura — INVERTIDO por la subtarea 269.3, cierre de #31] Hasta
+--    269.3 esta ancla probaba que NI el admin ni el owner de NINGUNA agencia podían
+--    escribir el lead ajeno ("misma línea que separa 75.5 de la #31 diferida").
+--    Decisión de Abraham (2026-09-07): el admin ACTIVO de la agencia DE NACIMIENTO
+--    del lead (leads.agency_id=X, la fuente de verdad de la frontera desde ESTE
+--    MISMO archivo — no la membresía "hoy" de GG, que ya es Y) YA puede escribir.
+--    AX es admin ACTIVO de X (agencia de nacimiento) → ahora 1 fila (no 0). El SUT
+--    es el mismo que fijó agency_id como fuente de verdad para LECTURA en esta
+--    subtarea (75.5-bis); 269.3 extiende la MISMA fuente a ESCRITURA.
 -- ════════════════════════════════════════════════════════════════════════════
 
 select pg_temp.act_as('00000000-0000-0000-0000-000000075802'); -- AX (admin de la agencia de nacimiento)
@@ -290,16 +296,16 @@ select lives_ok(
   do $do$
   declare v_count int;
   begin
-    update public.leads set internal_notes = 'intento de escritura del admin de nacimiento'
+    update public.leads set internal_notes = 'nota del admin de la agencia de nacimiento'
       where id = '00000000-0000-0000-0000-000000075881';
     get diagnostics v_count = row_count;
-    if v_count is distinct from 0 then
-      raise exception 'el admin de la agencia (aun la de nacimiento) NO debe poder actualizar un lead ajeno; filas afectadas: %', v_count;
+    if v_count is distinct from 1 then
+      raise exception 'el admin ACTIVO de la agencia de NACIMIENTO del lead (leads.agency_id) YA puede actualizarlo (cierre de #31); filas afectadas: %', v_count;
     end if;
   end
   $do$;
   $$,
-  'I5_admin_de_la_agencia_de_nacimiento_no_puede_actualizar_el_lead_ajeno_solo_lectura'
+  'I5_admin_de_la_agencia_de_nacimiento_ya_puede_actualizar_el_lead_cierre_de_31'
 );
 reset role;
 

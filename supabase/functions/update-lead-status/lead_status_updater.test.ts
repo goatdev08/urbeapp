@@ -18,6 +18,7 @@
 
 import { assertEquals, assertExists } from "@std/assert";
 import { make_lead_status_updater } from "./lead_status_updater.ts";
+import type { AgencyRoleResolver } from "../_shared/agency_role.ts";
 
 // ── Fake client ───────────────────────────────────────────────────────────────
 
@@ -503,4 +504,147 @@ Deno.test("updater_real_268_5_contacted_con_note_payload_tiene_exactamente_4_cla
     ["internal_notes", "last_contact_at", "status", "updated_at"],
     "con note el payload de 'contacted' debe tener EXACTAMENTE 4 claves, incluida last_contact_at",
   );
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// 269.3 — cierre de #31: el owner/admin ACTIVO de la agencia del lead edita el
+// status/nota de un lead de su equipo (hoy: UNAUTHORIZED_AGENT). Molde de
+// inyección: AgencyRoleResolver de _shared/agency_role.ts (mismo contrato que
+// edit-property/update-property-status, #202).
+//
+// 🔴 RED — el SUT (make_lead_status_updater) TODAVÍA solo acepta `client` (un
+// parámetro). El GREEN de 269.3 le agrega `agency_role_resolver: AgencyRoleResolver`
+// como 2º parámetro (regla de la subtarea: "NO tocar el código de las EFs" en esta
+// fase). Para escribir el contrato FUTURO sin tocar lead_status_updater.ts, estos
+// tests llaman a través de `make_lead_status_updater_269` — un wrapper que solo
+// CASTEA el tipo (nunca cambia el runtime): en JS, un argumento extra que la
+// función real no declara simplemente se ignora, así que estos tests EJERCEN el
+// comportamiento VIEJO (agent_id puro) contra la aserción NUEVA y fallan por
+// ASERCIÓN (ok/error_code equivocado), nunca por tipo ni por import — exactamente
+// lo pedido por el protocolo RED. El GREEN, al agregar el 2º parámetro real,
+// vuelve el wrapper redundante (pero inofensivo) y las aserciones pasan.
+// ════════════════════════════════════════════════════════════════════════════
+
+type LeadStatusUpdaterFactory = (
+  // deno-lint-ignore no-explicit-any
+  client: { from(table: string): any },
+  agency_role_resolver: AgencyRoleResolver,
+) => ReturnType<typeof make_lead_status_updater>;
+
+const make_lead_status_updater_269 =
+  make_lead_status_updater as unknown as LeadStatusUpdaterFactory;
+
+interface FakeAgencyRoleResolver extends AgencyRoleResolver {
+  calls: { user_id: string; agency_id: string }[];
+}
+
+function resolver_role(role: string | null): FakeAgencyRoleResolver {
+  return {
+    calls: [],
+    resolve(user_id: string, agency_id: string): Promise<string | null> {
+      this.calls.push({ user_id, agency_id });
+      return Promise.resolve(role);
+    },
+  } as FakeAgencyRoleResolver;
+}
+
+const AGENCY_ID = "00000000-0000-0000-0000-000000000003";
+const OWNER_ID = "00000000-0000-0000-0000-000000000004";
+const ADMIN_ID = "00000000-0000-0000-0000-000000000005";
+const VIEWER_ID = "00000000-0000-0000-0000-000000000006";
+const SUSPENDED_OWNER_ID = "00000000-0000-0000-0000-000000000007";
+const RASO_ID = "00000000-0000-0000-0000-000000000008";
+
+Deno.test("updater_real_269_3_owner_activo_de_la_agencia_cambia_status_de_lead_de_su_agente_ok_true", async () => {
+  const { client } = make_fake_client([
+    { data: null, error: null }, // ownership query (owner no es agent_id del lead) -> no match
+    { data: { id: LEAD_ID, agency_id: AGENCY_ID }, error: null }, // any_lead: existe, con agency_id
+    { data: { id: LEAD_ID, status: "contacted", internal_notes: null }, error: null }, // UPDATE (solo tras el GREEN)
+  ]);
+  const updater = make_lead_status_updater_269(client, resolver_role("owner"));
+  const result = await updater.update({
+    user_id: OWNER_ID,
+    lead_id: LEAD_ID,
+    new_status: "contacted",
+  });
+
+  assertEquals(
+    result.ok,
+    true,
+    "el owner ACTIVO de la agencia del lead debe poder cambiar el status (hoy: UNAUTHORIZED_AGENT — RED)",
+  );
+});
+
+Deno.test("updater_real_269_3_admin_activo_de_la_agencia_cambia_status_de_lead_del_equipo_ok_true", async () => {
+  const { client } = make_fake_client([
+    { data: null, error: null },
+    { data: { id: LEAD_ID, agency_id: AGENCY_ID }, error: null },
+    { data: { id: LEAD_ID, status: "interested", internal_notes: null }, error: null },
+  ]);
+  const updater = make_lead_status_updater_269(client, resolver_role("admin"));
+  const result = await updater.update({
+    user_id: ADMIN_ID,
+    lead_id: LEAD_ID,
+    new_status: "interested",
+  });
+
+  assertEquals(
+    result.ok,
+    true,
+    "el admin ACTIVO de la agencia del lead debe poder cambiar el status (hoy: UNAUTHORIZED_AGENT — RED)",
+  );
+});
+
+Deno.test("updater_real_269_3_viewer_activo_de_la_agencia_sigue_UNAUTHORIZED_AGENT", async () => {
+  // INVARIANTE: viewer nunca gestiona el pipeline (§71) — ya pasa hoy y debe seguir
+  // pasando tras el GREEN (solo owner/admin ganan el bypass).
+  const { client } = make_fake_client([
+    { data: null, error: null },
+    { data: { id: LEAD_ID, agency_id: AGENCY_ID }, error: null },
+  ]);
+  const updater = make_lead_status_updater_269(client, resolver_role("viewer"));
+  const result = await updater.update({
+    user_id: VIEWER_ID,
+    lead_id: LEAD_ID,
+    new_status: "contacted",
+  });
+
+  assertEquals(result.ok, false);
+  if (!result.ok) assertEquals(result.error_code, "UNAUTHORIZED_AGENT");
+});
+
+Deno.test("updater_real_269_3_owner_suspendido_de_la_agencia_sigue_UNAUTHORIZED_AGENT", async () => {
+  // INVARIANTE: AgencyRoleResolver fail-closed (#202) — membresía no-activa resuelve
+  // null, nunca entra al bypass owner/admin.
+  const { client } = make_fake_client([
+    { data: null, error: null },
+    { data: { id: LEAD_ID, agency_id: AGENCY_ID }, error: null },
+  ]);
+  const updater = make_lead_status_updater_269(client, resolver_role(null));
+  const result = await updater.update({
+    user_id: SUSPENDED_OWNER_ID,
+    lead_id: LEAD_ID,
+    new_status: "contacted",
+  });
+
+  assertEquals(result.ok, false);
+  if (!result.ok) assertEquals(result.error_code, "UNAUTHORIZED_AGENT");
+});
+
+Deno.test("updater_real_269_3_agente_raso_de_la_agencia_sigue_UNAUTHORIZED_AGENT", async () => {
+  // INVARIANTE: un agente (member_role='agent') de la MISMA agencia, sin ser el
+  // dueño del lead, NO gana el bypass — solo owner/admin lo ganan.
+  const { client } = make_fake_client([
+    { data: null, error: null },
+    { data: { id: LEAD_ID, agency_id: AGENCY_ID }, error: null },
+  ]);
+  const updater = make_lead_status_updater_269(client, resolver_role("agent"));
+  const result = await updater.update({
+    user_id: RASO_ID,
+    lead_id: LEAD_ID,
+    new_status: "contacted",
+  });
+
+  assertEquals(result.ok, false);
+  if (!result.ok) assertEquals(result.error_code, "UNAUTHORIZED_AGENT");
 });

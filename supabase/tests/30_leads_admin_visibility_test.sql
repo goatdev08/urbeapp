@@ -270,11 +270,16 @@ select is(
 reset role;
 
 -- ════════════════════════════════════════════════════════════════════════════
--- 6) [INVARIANTE de escritura — línea que separa esta tarea de la #31, diferida
---    a propósito] Ni el admin ni el owner de la agencia pueden hacer UPDATE de
---    un lead ajeno — la ampliación de esta subtarea es SOLO de lectura
---    (leads_update no se toca). Debe seguir en 0 filas afectadas antes Y
---    después del GREEN.
+-- 6) [DELTA de escritura — INVERTIDO por la subtarea 269.3, cierre de #31] Hasta
+--    269.3 esta sección anclaba que NI el admin NI el owner podían escribir un lead
+--    ajeno ("línea que separa 75.5 de la #31, diferida"). Decisión de Abraham
+--    (2026-09-07): el owner Y el admin ACTIVOS de la agencia DEL LEAD ya GESTIONAN
+--    (editan) los leads de su equipo, no solo los leen — #31 se cierra. Los mismos
+--    dos actores (AX admin, OX owner) que antes debían fallar con 0 filas ahora
+--    deben escribir con éxito (1 fila) sobre el MISMO lead 075601 (GX, agencia X).
+--    SUT: private.can_edit_lead + policy leads_update (ver
+--    109_leads_owner_write_test.sql para el resto de la matriz — este archivo solo
+--    invierte su propia ancla histórica, no la duplica completa).
 -- ════════════════════════════════════════════════════════════════════════════
 
 select pg_temp.act_as('00000000-0000-0000-0000-000000075502'); -- AX (admin)
@@ -283,16 +288,16 @@ select lives_ok(
   do $do$
   declare v_count int;
   begin
-    update public.leads set internal_notes = 'intento de escritura del admin'
+    update public.leads set internal_notes = 'nota del admin de la agencia'
       where id = '00000000-0000-0000-0000-000000075601';
     get diagnostics v_count = row_count;
-    if v_count is distinct from 0 then
-      raise exception 'el admin de la agencia NO debe poder actualizar un lead ajeno (solo lectura); filas afectadas: %', v_count;
+    if v_count is distinct from 1 then
+      raise exception 'el admin ACTIVO de la agencia YA puede actualizar el lead de su equipo (cierre de #31); filas afectadas: %', v_count;
     end if;
   end
   $do$;
   $$,
-  'I9_admin_no_puede_actualizar_un_lead_ajeno_solo_lectura'
+  'I9_admin_activo_ya_puede_actualizar_el_lead_de_su_equipo_cierre_de_31'
 );
 reset role;
 
@@ -302,16 +307,16 @@ select lives_ok(
   do $do$
   declare v_count int;
   begin
-    update public.leads set internal_notes = 'intento de escritura del owner'
+    update public.leads set internal_notes = 'nota del owner de la agencia'
       where id = '00000000-0000-0000-0000-000000075601';
     get diagnostics v_count = row_count;
-    if v_count is distinct from 0 then
-      raise exception 'el owner de la agencia NO debe poder actualizar un lead ajeno (solo lectura, precedente ya vigente); filas afectadas: %', v_count;
+    if v_count is distinct from 1 then
+      raise exception 'el owner ACTIVO de la agencia YA puede actualizar el lead de su equipo (cierre de #31); filas afectadas: %', v_count;
     end if;
   end
   $do$;
   $$,
-  'I10_owner_no_puede_actualizar_un_lead_ajeno_solo_lectura'
+  'I10_owner_activo_ya_puede_actualizar_el_lead_de_su_equipo_cierre_de_31'
 );
 reset role;
 
