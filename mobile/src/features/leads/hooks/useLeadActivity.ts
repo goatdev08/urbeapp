@@ -54,6 +54,11 @@ export function useLeadActivity(leadId: string | null | undefined): UseLeadActiv
   const fetch_page = useCallback(
     async (cursor: string | null, append: boolean): Promise<void> => {
       if (!leadId) {
+        // D-SEQ (275.4): bump ANTES de los resets — invalida cualquier
+        // página en vuelo del leadId anterior (si no, su respuesta tardía
+        // pasa el guard del token y repuebla data/cursor que este guard
+        // acaba de limpiar).
+        ++seq_ref.current;
         set_data([]);
         set_loading(false);
         set_error(null);

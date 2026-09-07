@@ -68,6 +68,11 @@ export function useLeadRawFields(leadId: string | null | undefined): UseLeadRawF
       // (leadId -> null) un `status` rancio haría que el StatusPicker de la
       // siguiente ficha pintara el ✓ del lead anterior en el primer frame
       // (hallazgo V1 del guardian, 275.1 ciclo 1 — fijado por EC-13).
+      // D-SEQ (275.4): bump ANTES de los resets — invalida cualquier
+      // petición en vuelo del leadId anterior (si no, su respuesta tardía
+      // pasa el guard del token y repuebla el estado que este guard acaba
+      // de limpiar).
+      ++seq_ref.current;
       set_phone(null);
       set_status(null);
       set_loading(false);

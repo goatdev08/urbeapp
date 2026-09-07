@@ -42,6 +42,11 @@ export function useCrmLeadDetail(leadId: string | null | undefined): UseCrmLeadD
 
   const fetch_detail = useCallback(async (): Promise<void> => {
     if (!leadId) {
+      // D-SEQ (275.4): bump ANTES de los resets — invalida cualquier
+      // petición en vuelo del leadId anterior (si no, su respuesta tardía
+      // pasa el guard del token y repuebla el estado que este guard acaba
+      // de limpiar).
+      ++seq_ref.current;
       set_data(null);
       set_loading(false);
       set_error(null);

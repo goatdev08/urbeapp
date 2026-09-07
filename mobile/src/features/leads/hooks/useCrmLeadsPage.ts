@@ -69,6 +69,10 @@ export function useCrmLeadsPage(
   // Cancelación en unmount: flag simple (molde useAgentProfile), evita
   // aplicar estado tras desmontar (warning "act" de React).
   const mounted_ref = useRef(true);
+  // D-SEQ (guardian 267.6/269.5, molde useCrmLeadDetail.ts): token de
+  // petición — una respuesta tardía de un agentId/band/query ANTERIOR (o de
+  // un loadMore superado por un refetch/refoco) no pisa la lista vigente.
+  const seq_ref = useRef(0);
   useEffect(() => {
     mounted_ref.current = true;
     return () => {
@@ -84,6 +88,10 @@ export function useCrmLeadsPage(
   const fetch_page = useCallback(
     async (cursor: CrmLeadsPageCursor | null, append: boolean): Promise<void> => {
       if (!agentId) {
+        // D-SEQ: bump ANTES de los resets — invalida cualquier petición en
+        // vuelo del agentId anterior (EC-21), no solo el mecanismo de
+        // cancelación por unmount.
+        ++seq_ref.current;
         set_data([]);
         set_loading(false);
         set_error(null);
@@ -94,21 +102,34 @@ export function useCrmLeadsPage(
       }
 
       set_loading(true);
+      const seq = ++seq_ref.current;
 
       // ponytail: `as any` en los args — el Args generado tipa p_band/p_query
       // como `string` opcional SIN null, aunque el SQL los declara
       // `default null` y los acepta explícitos (mismo gotcha de tipos
       // generados que useAdMetrics.ts). p_cursor es Json — sí admite null
       // sin cast.
-      const rpc_result = (await supabase.rpc('crm_leads_page', {
-        p_agent_id: agentId,
-        p_band: band,
-        p_cursor: cursor,
-        p_limit: 20,
-        p_query: query,
-      } as any)) as { data: RpcRow[] | null; error: { message: string } | null };
+      let rpc_result: { data: RpcRow[] | null; error: { message: string } | null };
+      try {
+        rpc_result = (await supabase.rpc('crm_leads_page', {
+          p_agent_id: agentId,
+          p_band: band,
+          p_cursor: cursor,
+          p_limit: 20,
+          p_query: query,
+        } as any)) as typeof rpc_result;
+      } catch {
+        // Rechazo real de red (offline): sin esto la promesa queda sin
+        // manejar y `loading` no vuelve a bajar (bug confirmado por el
+        // guardian en 269.5).
+        rpc_result = { data: null, error: { message: 'network' } };
+      }
 
-      if (!mounted_ref.current) return;
+      // Corta ANTES de tocar next_cursor_ref y ANTES de set_data: una
+      // respuesta obsoleta (búsqueda/banda vieja, loadMore superado por un
+      // refetch/refoco) no debe pisar el cursor de paginación ni
+      // concatenarse/reemplazar el array vigente (EC-15/EC-18/EC-19).
+      if (!mounted_ref.current || seq !== seq_ref.current) return;
 
       if (rpc_result.error) {
         set_error(ERROR_MESSAGE);
