@@ -1,11 +1,12 @@
 // supabase/functions/update-lead-status/index.ts
-// Entry point de producción — STUB (fase RED, subtarea 15.6).
-// Construirá las dependencias reales cuando el handler esté implementado.
-// Los tests importan handler.ts y lead_status_updater.ts directamente, NO este archivo.
+// Entry point de producción. Construye dependencias reales (supabase-js
+// service_role) e inyecta al handler. La lógica de negocio vive en handler.ts
+// y lead_status_updater.ts; los tests importan esos módulos directamente y NO
+// pasan por este archivo.
 
 import { handler } from "./handler.ts";
 import { make_lead_status_updater } from "./lead_status_updater.ts";
-import { service_client } from "../_shared/clients.ts";
+import { make_agency_role_resolver, service_client } from "../_shared/clients.ts";
 import type { CallerVerifier, CallerVerifyResult } from "./types.ts";
 
 Deno.serve((req: Request) => {
@@ -26,7 +27,13 @@ Deno.serve((req: Request) => {
     },
   };
 
-  const leadStatusUpdater = make_lead_status_updater(client);
+  // 269.3: cierre de #31 — el owner/admin ACTIVO de la agencia del lead
+  // también puede escribir; mismo resolver de membresía vigente que
+  // edit-property/update-property-status (#202).
+  const leadStatusUpdater = make_lead_status_updater(
+    client,
+    make_agency_role_resolver(client),
+  );
 
   return handler(req, { callerVerifier, leadStatusUpdater });
 });
