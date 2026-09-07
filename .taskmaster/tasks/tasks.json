@@ -12023,13 +12023,68 @@
         "description": "Origen: subtarea 267.6 · Detectado por: guardian (ciclos 1–2) y orquestador. (1) crm_leads_page no expone el status crudo del lead, solo status_projected: el StatusPicker de LeadInlineDetail pinta la etiqueta proyectada sin ✓ en contactado/cerrado. (2) Los moldes useCrmLeadDetail, useCrmSuggestedMessage y useLeadActivity no tienen token de petición (una respuesta tardía de otro leadId pisa el estado actual) ni try/catch del rechazo real de red (loading queda en true para siempre); useLeadPhone ya lo tiene (D-SEQ, 267.6).",
         "details": "(1) Migración aditiva: añadir columna `status public.lead_status` al RETURNS TABLE de public.crm_leads_page (exige DROP+CREATE del tipo de retorno; ningún build instalado la llama antes del OTA de #267 → verificar con eas build:list y hacerlo cliente-tolerante: el hook mapea `status` opcional). Actualizar pgTAP 102, tipos generados, CrmLeadRow.status y LeadInlineDetail/StatusPicker (current = row.status, con ✓ exacto; retirar status_hint_for_projected). (2) Portar D-SEQ (seq_ref) + try/catch de mobile/src/features/leads/hooks/useLeadPhone.ts a useCrmLeadDetail, useCrmSuggestedMessage y useLeadActivity, con tests de carrera (respuesta tardía no pisa) y de rechazo de red; añadir caso error→recuperación y sonda inicial con leadId null en los 4 hooks. Reglas: §0.5 (aditivo, rollback, pgTAP), hooks/** = crítica (RED→GREEN→guardian).",
         "testStrategy": "pgTAP: crm_leads_page devuelve status para los 11 valores del enum; RLS/ACL sin cambio. Jest: en cada hook, mutante \"sin seq\" y \"sin catch\" cazados; StatusPicker con ✓ exacto en contactado/cerrado.",
-        "status": "pending",
+        "status": "in-progress",
         "dependencies": [
           "267"
         ],
         "priority": "medium",
-        "subtasks": [],
-        "updatedAt": "2026-09-06T20:09:52.104Z"
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "useLeadRawFields: status crudo + teléfono en un solo select directo a leads (renombra useLeadPhone)",
+            "description": "DECISIÓN DE ABRAHAM (/tm-plan, 2026-09-07): el status crudo NO se saca por migración. useLeadPhone ya lee public.leads bajo RLS con un embed puntual y se monta SIEMPRE en la ficha expandida (LeadInlineDetail.tsx:118), así que basta añadir la columna al select existente: 0 migraciones, 0 contrato publicado tocado, 0 requests nuevos. Descarta la opción escrita en los details de #275 (DROP+CREATE del RETURNS TABLE de crm_leads_page) — ese DROP+CREATE se evita del todo, y #271 podrá hacer el suyo sin acarrear esta columna.",
+            "details": "Renombrar mobile/src/features/leads/hooks/useLeadPhone.ts → useLeadRawFields.ts (el nombre viejo miente en cuanto devuelve status). Nombre elegido por lo que ES: los campos que las RPC del CRM no exponen, leídos directo de la tabla bajo RLS. Cambios: (1) .select('users!leads_user_id_fkey(phone)') → .select('status, users!leads_user_id_fkey(phone)') — el hint leads_user_id_fkey sigue siendo obligatorio (leads tiene 2 FKs a users). (2) El estado pasa de {phone,...} a {phone, status, ...} con status: LeadStatus | null. (3) D-SINFILA se mantiene: sin fila (RLS o deleted_at) → phone null Y status null SIN error; el picker cae al fallback de etiqueta proyectada que ya existe. (4) seq_ref (D-SEQ) y try/catch YA están en el molde — se conservan intactos y ahora también protegen el status. (5) Renombrar el test __tests__/useLeadPhone.test.ts → useLeadRawFields.test.ts y actualizar el import en LeadInlineDetail.tsx. Ponytail: NO se crea un hook nuevo ni un request nuevo; se ensancha el que ya se monta.\n<info added on 2026-09-07T15:20:03.232Z>\nPLAN: approach = ensanchar el select que ya existe en useLeadPhone (from('leads').select('status, users!leads_user_id_fkey(phone)')) y renombrar el hook a useLeadRawFields. · decisiones del usuario = Abraham eligió 'por el cliente, sin migración' sobre la opción escrita en los details de #275 (DROP+CREATE del RETURNS TABLE de crm_leads_page): 0 migraciones, 0 contrato publicado tocado, 0 requests nuevos, y #271 queda libre de acarrear esta columna en su propio cambio de firma. · agente=mobile · skills=urbea-expo, urbea-testing · criticidad=CRÍTICA (mobile/**/hooks/** por path, CLAUDE.md §5) · impacto-prod=sin riesgo (solo cliente; ni migración ni EF ni contrato; el status ya es legible bajo leads_select para el agente dueño y para owner/admin desde #269.3) · footprint=mobile/src/features/leads/hooks/useLeadPhone.ts→useLeadRawFields.ts, mobile/src/features/leads/__tests__/useLeadPhone.test.ts→useLeadRawFields.test.ts, import en mobile/src/features/leads/components/LeadInlineDetail.tsx\n</info added on 2026-09-07T15:20:03.232Z>",
+            "testStrategy": "Jest (RED→GREEN→guardian): status crudo mapeado para los 11 valores del enum lead_status; sin fila → status null sin error; users null pero status presente → phone null, status intacto (las dos ramas son independientes); el caso de carrera existente (respuesta tardía de otro leadId) sigue cazado y ahora cubre status; rechazo real de red → error y loading false. Mutantes a cazar: quitar 'status' del select, devolver status desde el embed users, quitar el seq_ref.",
+            "status": "pending",
+            "dependencies": [],
+            "priority": "medium",
+            "subtasks": [],
+            "parentId": "275",
+            "updatedAt": "2026-09-07T15:20:03.232Z"
+          },
+          {
+            "id": 2,
+            "title": "StatusPicker con ✓ exacto en la ficha; retirar status_hint_for_projected",
+            "description": "Con el status crudo disponible (275.1), el StatusPicker deja de pintar la etiqueta proyectada sin ✓. Hoy status_hint_for_projected() solo resuelve 'nuevo' y 'visita' y devuelve null en 'contactado' (contacted|interested) y 'cerrado' (4 vigentes + legacy), así que en esos dos tramos ningún ítem lleva ✓ — el techo que el comentario ponytail de LeadInlineDetail.tsx:20-34 dejaba anotado.",
+            "details": "mobile/src/features/leads/components/LeadInlineDetail.tsx: current={status_hint_for_projected(lead.status_projected)} → current={raw?.status ?? null}, conservando current_label como fallback exacto para cuando el select no devuelve fila (RLS/borrado). Borrar la función status_hint_for_projected y reescribir el bloque ponytail de cabecera (el techo ya no aplica: se resolvió sin tocar crm_leads_page). StatusPicker.tsx NO cambia su API — `current: LeadStatus | null` ya contempla ambos casos; sí se actualiza el comentario de la prop `current` que hoy afirma que crm_leads_page no expone el status crudo. Verificar que en modo readOnly (lead ajeno visto por owner/admin, #269.3) el badge también muestra el estado exacto.\n<info added on 2026-09-07T15:20:03.307Z>\nPLAN: approach = cablear current={raw?.status ?? null} en el StatusPicker de la ficha y borrar status_hint_for_projected; conservar current_label como fallback cuando el select no devuelve fila. · decisiones del usuario = se levanta el techo que el bloque ponytail de LeadInlineDetail.tsx:20-34 dejaba anotado, pero SIN la migración que ese comentario proponía (ver 275.1). · agente=mobile · skills=urbea-expo, urbea-design · criticidad=NO crítica (components/**) → verificación ligera: pnpm tsc --noEmit + pnpm lint + suite Jest del feature · impacto-prod=sin riesgo (UI; mejora la exactitud del badge, no cambia ninguna escritura) · footprint=mobile/src/features/leads/components/LeadInlineDetail.tsx, mobile/src/features/leads/components/StatusPicker.tsx (solo comentario de la prop current), tests de componente\n</info added on 2026-09-07T15:20:03.307Z>",
+            "testStrategy": "NO crítica (components/**): pnpm tsc --noEmit + pnpm lint + suite Jest del feature. Casos de componente: contactado con status crudo 'interested' pinta ✓ en Interesado (no en Contactado); cerrado con 'won' pinta ✓ en Ganado; sin fila del select → badge con la etiqueta proyectada y ningún ✓ (comportamiento de hoy, no regresa).",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "priority": "medium",
+            "subtasks": [],
+            "parentId": "275",
+            "updatedAt": "2026-09-07T15:20:03.307Z"
+          },
+          {
+            "id": 3,
+            "title": "D-SEQ + try/catch en los 3 hooks de la ficha (useCrmLeadDetail, useCrmSuggestedMessage, useLeadActivity)",
+            "description": "Los tres hooks de la ficha expandida toman leadId y no tienen token de petición ni try/catch: una respuesta tardía de un leadId ANTERIOR pisa el estado del lead actual (dato cruzado en pantalla), y un rechazo real de red deja loading en true para siempre. useLeadPhone/useLeadRawFields ya lo resolvió (D-SEQ, 267.6) y el guardian confirmó el segundo bug como real en 269.5.",
+            "details": "Portar el molde EXACTO de useLeadRawFields.ts a mobile/src/features/leads/hooks/{useCrmLeadDetail,useCrmSuggestedMessage,useLeadActivity}.ts: (1) const seq_ref = useRef(0) y const seq = ++seq_ref.current justo después de set_loading(true); (2) guard if (!mounted_ref.current || seq !== seq_ref.current) return; (3) try/catch alrededor del await con salida neutra {data:null, error:{message:'network'}}. En useLeadActivity el token va en fetch_page y debe respetar el modo append: una página tardía NO se concatena; next_cursor_ref tampoco se pisa. Ponytail: mismo patrón las 3 veces, sin abstraer a un helper (3 usos de 3 líneas no pagan la indirección; si aparece un 7º hook se reconsidera).\n<info added on 2026-09-07T15:20:03.383Z>\nPLAN: approach = portar el molde D-SEQ (seq_ref + guard) y el try/catch de useLeadRawFields a los 3 hooks de la ficha; en useLeadActivity el token vive en fetch_page y debe bloquear también la concatenación en modo append y el avance de next_cursor_ref. · decisiones del usuario = alcance confirmado por Abraham (6 hooks en total, repartidos entre esta subtarea y 275.4). · agente=mobile · skills=urbea-expo, urbea-testing · criticidad=CRÍTICA (mobile/**/hooks/**) · impacto-prod=sin riesgo (solo cliente; corrige un loading colgado ante rechazo real de red, bug confirmado por el guardian en 269.5) · footprint=mobile/src/features/leads/hooks/{useCrmLeadDetail,useCrmSuggestedMessage,useLeadActivity}.ts + sus 3 archivos en __tests__/\n</info added on 2026-09-07T15:20:03.383Z>",
+            "testStrategy": "Jest (RED→GREEN→guardian), por hook: carrera — leadId A lento + leadId B rápido, la respuesta tardía de A no pisa a B; rechazo real de red (mockRejectedValue) → error poblado y loading false; error→recuperación — tras el fallo, refetch exitoso limpia el error; sonda del primer render con leadId null (estado inicial, no tras el efecto — memoria tests_bomba_de_fecha_y_estado_inicial). En useLeadActivity además: página tardía en modo append no concatena. Mutantes a cazar: quitar el seq_ref, quitar el catch, comparar seq con != en vez de !==.",
+            "status": "pending",
+            "dependencies": [],
+            "priority": "medium",
+            "subtasks": [],
+            "parentId": "275",
+            "updatedAt": "2026-09-07T15:20:03.383Z"
+          },
+          {
+            "id": 4,
+            "title": "D-SEQ + try/catch en los 3 hooks de la lista (useCrmLeadsPage, useCrmFunnel, useCrmRadarAnon)",
+            "description": "DECISIÓN DE ABRAHAM (/tm-plan, 2026-09-07): el alcance se extiende más allá de los 3 hooks que nombraba #275. useCrmLeadsPage es la lista principal del CRM y useCrmFunnel el embudo de la cabecera: si la red rechaza, el CRM se queda girando para siempre. Es el mismo bug que el guardian marcó real en 269.5, en la pantalla más visitada del rol agente.",
+            "details": "Mismo molde que 275.3 en mobile/src/features/leads/hooks/{useCrmLeadsPage,useCrmFunnel,useCrmRadarAnon}.ts. Diferencia de edge cases: estos hooks NO toman leadId sino agentId + filtros, así que la carrera que importa es el cambio de filtro/búsqueda (escribir 'juan' y limpiar: la respuesta tardía de 'juan' repuebla una lista que el usuario ya vació) y la paginación (una página tardía no debe concatenarse ni mover el cursor). useCrmLeadsPage y useCrmFunnel se re-suscriben por foco (PLAN 266.7): verificar que el refetch por foco también respeta el token.\n<info added on 2026-09-07T15:20:03.459Z>\nPLAN: approach = mismo molde que 275.3 en los 3 hooks de lista; la carrera que importa aquí no es el leadId sino el cambio de filtro/búsqueda y la paginación. · decisiones del usuario = AMPLIACIÓN DE ALCANCE aprobada por Abraham en /tm-plan (2026-09-07): #275 nombraba solo 3 hooks; useCrmLeadsPage (lista principal), useCrmFunnel (embudo) y useCrmRadarAnon entran porque tienen el MISMO bug de loading colgado y viven en la pantalla más visitada del rol agente. Alternativa descartada: derivada hardening(275). · agente=mobile · skills=urbea-expo, urbea-testing · criticidad=CRÍTICA (mobile/**/hooks/**) · impacto-prod=sin riesgo (solo cliente) · footprint=mobile/src/features/leads/hooks/{useCrmLeadsPage,useCrmFunnel,useCrmRadarAnon}.ts + sus archivos en __tests__/\n</info added on 2026-09-07T15:20:03.459Z>",
+            "testStrategy": "Jest (RED→GREEN→guardian), por hook: carrera de filtro — query A lenta + query B rápida, la tardía de A no repuebla; rechazo real de red → error y loading false (mutante \"sin catch\" cazado); error→recuperación por refetch; sonda del estado inicial en el primer render. En useCrmLeadsPage además: página tardía no concatena ni pisa next_cursor; el refetch por foco respeta el token.",
+            "status": "pending",
+            "dependencies": [],
+            "priority": "medium",
+            "subtasks": [],
+            "parentId": "275",
+            "updatedAt": "2026-09-07T15:20:03.459Z"
+          }
+        ],
+        "updatedAt": "2026-09-07T15:20:15.801Z"
       },
       {
         "id": "276",
@@ -12049,7 +12104,7 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-09-07T14:57:39.396Z",
+      "lastModified": "2026-09-07T15:20:15.801Z",
       "taskCount": 276,
       "completedCount": 195,
       "tags": [
