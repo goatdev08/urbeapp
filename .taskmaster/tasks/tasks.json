@@ -12021,7 +12021,7 @@
         "id": "275",
         "title": "hardening(267.6): status crudo en crm_leads_page, token de petición y try/catch en los hooks del CRM",
         "description": "Origen: subtarea 267.6 · Detectado por: guardian (ciclos 1–2) y orquestador. (1) crm_leads_page no expone el status crudo del lead, solo status_projected: el StatusPicker de LeadInlineDetail pinta la etiqueta proyectada sin ✓ en contactado/cerrado. (2) Los moldes useCrmLeadDetail, useCrmSuggestedMessage y useLeadActivity no tienen token de petición (una respuesta tardía de otro leadId pisa el estado actual) ni try/catch del rechazo real de red (loading queda en true para siempre); useLeadPhone ya lo tiene (D-SEQ, 267.6).",
-        "details": "(1) Migración aditiva: añadir columna `status public.lead_status` al RETURNS TABLE de public.crm_leads_page (exige DROP+CREATE del tipo de retorno; ningún build instalado la llama antes del OTA de #267 → verificar con eas build:list y hacerlo cliente-tolerante: el hook mapea `status` opcional). Actualizar pgTAP 102, tipos generados, CrmLeadRow.status y LeadInlineDetail/StatusPicker (current = row.status, con ✓ exacto; retirar status_hint_for_projected). (2) Portar D-SEQ (seq_ref) + try/catch de mobile/src/features/leads/hooks/useLeadPhone.ts a useCrmLeadDetail, useCrmSuggestedMessage y useLeadActivity, con tests de carrera (respuesta tardía no pisa) y de rechazo de red; añadir caso error→recuperación y sonda inicial con leadId null en los 4 hooks. Reglas: §0.5 (aditivo, rollback, pgTAP), hooks/** = crítica (RED→GREEN→guardian).",
+        "details": "(1) Migración aditiva: añadir columna `status public.lead_status` al RETURNS TABLE de public.crm_leads_page (exige DROP+CREATE del tipo de retorno; ningún build instalado la llama antes del OTA de #267 → verificar con eas build:list y hacerlo cliente-tolerante: el hook mapea `status` opcional). Actualizar pgTAP 102, tipos generados, CrmLeadRow.status y LeadInlineDetail/StatusPicker (current = row.status, con ✓ exacto; retirar status_hint_for_projected). (2) Portar D-SEQ (seq_ref) + try/catch de mobile/src/features/leads/hooks/useLeadPhone.ts a useCrmLeadDetail, useCrmSuggestedMessage y useLeadActivity, con tests de carrera (respuesta tardía no pisa) y de rechazo de red; añadir caso error→recuperación y sonda inicial con leadId null en los 4 hooks. Reglas: §0.5 (aditivo, rollback, pgTAP), hooks/** = crítica (RED→GREEN→guardian).\n\nDERIVADAS: #277 (UI_FUERA_DEL_MOCKUP 275.2, agente mobile)",
         "testStrategy": "pgTAP: crm_leads_page devuelve status para los 11 valores del enum; RLS/ACL sin cambio. Jest: en cada hook, mutante \"sin seq\" y \"sin catch\" cazados; StatusPicker con ✓ exacto en contactado/cerrado.",
         "status": "done",
         "dependencies": [
@@ -12084,7 +12084,7 @@
             "updatedAt": "2026-09-07T16:35:56.365Z"
           }
         ],
-        "updatedAt": "2026-09-07T16:35:56.365Z"
+        "updatedAt": "2026-09-07T16:59:21.724957Z"
       },
       {
         "id": "276",
@@ -12100,6 +12100,20 @@
         "priority": "low",
         "subtasks": [],
         "updatedAt": "2026-09-07T06:09:16.043Z"
+      },
+      {
+        "id": "277",
+        "title": "producto(275): el estado exacto del lead también en modo solo lectura",
+        "description": "Origen: subtarea 275.2 · Detectado por: agente mobile (UI_FUERA_DEL_MOCKUP, propuesta aprobada por Abraham en el cierre de #275). En modo readOnly, LeadInlineDetail NO monta el StatusPicker: pinta solo la barra atenuada de 4 tramos. Un owner/admin que revisa el lead de otro agente de su inmobiliaria ve 'Contactado' cuando el estado real es 'Interesado', o 'Cerrado' sin saber si fue ganado o perdido. El dato crudo YA viaja en el cliente desde #275.1 (useLeadRawFields.status); lo que falta es la decisión visual.",
+        "details": "El mockup 267-crm-santiago.html no dibuja un badge de estado en la vista de solo lectura, por eso #275.2 no lo implementó (CLAUDE.md §8: techo con propuesta, el agente propone y nunca decide). Alcance previsto: en mobile/src/features/leads/components/LeadInlineDetail.tsx, montar en modo readOnly un badge NO tappable con el estado exacto (get_status_meta(status) da label y colores), o pasar StatusPicker con readOnly=true, que ya tiene ese contrato probado en StatusPicker.test.tsx (disparador no tappable, sin caret, lista nunca montada) — evaluar cuál es menos código. Fallback intacto: si el select directo no devuelve fila (RLS o deleted_at), status es null y se sigue pintando la etiqueta proyectada. Sin backend: 0 migraciones, 0 contratos. Criticidad: NO crítica (components/**) → verificación ligera. Diseño: decidir si el badge en solo lectura va atenuado o con el color pleno del estado, y si convive con la barra de 4 tramos o la sustituye.",
+        "testStrategy": "Jest de componente en LeadInlineDetail.test.tsx: en readOnly con status crudo 'interested' el badge dice Interesado (no Contactado); con un status de cierre dice el cierre exacto; con status null cae a la etiqueta proyectada; el badge no es tappable y la lista de 8 estados nunca se monta. pnpm tsc --noEmit + pnpm lint.",
+        "status": "pending",
+        "dependencies": [
+          "275"
+        ],
+        "priority": "low",
+        "subtasks": [],
+        "updatedAt": "2026-09-07T16:59:21.724957Z"
       }
     ],
     "metadata": {
