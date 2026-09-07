@@ -26,9 +26,10 @@ import type { LeadStatus } from '../types';
 export interface StatusPickerProps {
   /**
    * Estado actual del lead — se muestra SIEMPRE como badge del disparador.
-   * `null` = el padre solo conoce la proyección 8→4 (crm_leads_page no
-   * expone el status crudo): el badge pinta `current_label` en neutro y
-   * ningún ítem lleva ✓ (nunca se adivina).
+   * `null` = el select directo a `leads` (useLeadRawFields, #275.1) no
+   * devolvió fila todavía (loading) o no devolvió ninguna (RLS/`deleted_at`):
+   * el badge pinta `current_label` (la proyección 8→4) en neutro y ningún
+   * ítem lleva ✓ (nunca se adivina).
    */
   current: LeadStatus | null;
   /** Etiqueta del badge cuando `current` es null (p. ej. "Contactado"). */

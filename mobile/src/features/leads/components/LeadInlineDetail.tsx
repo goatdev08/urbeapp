@@ -11,27 +11,23 @@
  * WhatsApp/Agendar · nota interna.
  *
  * Datos: useCrmLeadDetail (origen/other_properties) + useLeadActivity
- * (timeline paginado) + useCrmSuggestedMessage (caja verde) + useLeadPhone
- * (WhatsApp) + useUpdateLeadStatus/useUpdateLeadNote (mutaciones). Ninguno
- * de los 4 hooks de lectura falla montando esta ficha si están en `loading`
- * o `error` — cada bloque se degrada a "nada"/"vacío" en vez de bloquear el
- * resto (mismo criterio D-SINFILA/D-SINMSG de los hooks: ausencia ≠ error).
+ * (timeline paginado) + useCrmSuggestedMessage (caja verde) + useLeadRawFields
+ * (teléfono + status crudo para WhatsApp/StatusPicker) +
+ * useUpdateLeadStatus/useUpdateLeadNote (mutaciones). Ninguno de los 4 hooks
+ * de lectura falla montando esta ficha si están en `loading` o `error` —
+ * cada bloque se degrada a "nada"/"vacío" en vez de bloquear el resto (mismo
+ * criterio D-SINFILA/D-SINMSG de los hooks: ausencia ≠ error).
  *
- * 🔴 ponytail (disparador c, CLAUDE.md §0 — techo con los datos reales):
- * `StatusPicker.current` exige un `LeadStatus` crudo, pero NINGUNA RPC
- * nueva del CRM (crm_leads_page, crm_lead_detail) expone el status crudo —
- * solo `status_projected` (proyección 8→4, migraciones 20260906100003:358-
- * 369 y 20260906100004:127-143). La proyección es 1:1 SOLO en 'nuevo'
- * (whatsapp_opened|new comparten el label "Nuevo" — cualquiera se ve
- * idéntico) y 'visita' (visit_scheduled es el ÚNICO status vigente que
- * proyecta ahí). 'contactado' (contacted|interested) y 'cerrado' (4
- * vigentes + legacy) son AMBIGUOS — no hay forma honesta de saber cuál
- * marcar como ✓ en el picker. `status_hint_for_projected` solo resuelve los
- * 2 casos exactos y devuelve null en los ambiguos: StatusPicker pinta la
- * etiqueta PROYECTADA en el badge y ningún ítem lleva ✓ — nunca se adivina
- * ni se muestra un estado falso. Techo: exponer el status crudo en
- * crm_leads_page (derivada hardening(267.6)) lo resuelve exacto sin tocar
- * StatusPicker.
+ * El techo que un comentario ponytail anterior dejaba anotado aquí (el
+ * `StatusPicker` solo podía pintar la etiqueta proyectada, sin ✓, en los
+ * tramos 'contactado'/'cerrado') ya se levantó — pero NO por la vía que ese
+ * comentario proponía (exponer el status crudo en `crm_leads_page`). La
+ * subtarea 275.1 lo resolvió por el cliente: `useLeadRawFields` ya leía
+ * `public.leads` bajo RLS para el teléfono y ya se montaba siempre en esta
+ * ficha, así que bastó sumar la columna `status` a ese mismo select. 0
+ * migraciones, `crm_leads_page` intacta. El `status` crudo pasa directo a
+ * `StatusPicker.current`; `current_label` (la etiqueta proyectada) sigue de
+ * fallback para cuando el select no devuelve fila (RLS o `deleted_at`).
  */
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
@@ -74,13 +70,6 @@ const STAGES: { key: ProjectedStatus; label: string }[] = [
   { key: 'cerrado', label: 'Cerrado' },
 ];
 
-/** Ver el comentario ponytail de cabecera — resuelve exacto solo 'nuevo'/'visita'. */
-function status_hint_for_projected(projected: ProjectedStatus): LeadStatus | null {
-  if (projected === 'nuevo') return 'whatsapp_opened';
-  if (projected === 'visita') return 'visit_scheduled';
-  return null; // ambiguo — el picker pinta la etiqueta proyectada y ningún ✓
-}
-
 /** Texto de una entrada del timeline "Lo que hizo" — switch mínimo con
  * fallback al `kind` crudo (events_raw.event_type admite valores futuros). */
 function describe_activity(entry: LeadActivityEntry): string {
@@ -115,7 +104,7 @@ export function LeadInlineDetail({ lead, readOnly, onChanged }: LeadInlineDetail
   const { data: detail } = useCrmLeadDetail(lead.lead_id);
   const { data: activity, hasMore, loadMore } = useLeadActivity(lead.lead_id);
   const { message } = useCrmSuggestedMessage(lead.lead_id);
-  const { phone } = useLeadRawFields(lead.lead_id);
+  const { phone, status } = useLeadRawFields(lead.lead_id);
   const { update_status, is_updating: status_updating, error: status_error } = useUpdateLeadStatus({
     onSuccess: onChanged,
   });
@@ -301,7 +290,7 @@ export function LeadInlineDetail({ lead, readOnly, onChanged }: LeadInlineDetail
 
       {!readOnly && is_status_open && (
         <StatusPicker
-          current={status_hint_for_projected(lead.status_projected)}
+          current={status ?? null}
           current_label={STAGES.find((t) => t.key === lead.status_projected)?.label}
           open
           onToggle={toggle_status_picker}
