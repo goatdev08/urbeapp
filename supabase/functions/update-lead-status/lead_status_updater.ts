@@ -21,7 +21,8 @@ import type {
  * Responsabilidades (en dos queries máximo):
  *   1. Verificar existencia + ownership (query con agent_id filter).
  *   2. Distinguir not-found vs unauthorized (segunda query sin agent filter).
- *   3. Aplicar UPDATE (status, updated_at, internal_notes solo si note presente).
+ *   3. Aplicar UPDATE (status, updated_at, internal_notes solo si note presente,
+ *      last_contact_at solo al pasar a 'contacted').
  *   4. Retornar el lead actualizado.
  *
  * El parámetro `client` es duck-typed para facilitar el testing con fakes.
@@ -69,6 +70,10 @@ export function make_lead_status_updater(client: { from(table: string): any }): 
       };
       if (params.note !== undefined) {
         update_payload.internal_notes = params.note;
+      }
+      // 268.5 — histórico de contacto para la ficha/agenda (#270): solo al pasar a contacted.
+      if (params.new_status === "contacted") {
+        update_payload.last_contact_at = update_payload.updated_at;
       }
 
       const { data: updated, error: update_error } = await client

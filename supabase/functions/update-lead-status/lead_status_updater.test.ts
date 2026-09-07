@@ -441,14 +441,17 @@ for (const estado of OTROS_ESTADOS_268_5) {
       { data: { id: LEAD_ID, status: estado, internal_notes: null }, error: null },
     ]);
     const updater = make_lead_status_updater(client);
-    const result = await updater.update(make_params(estado));
+    // Con `note` a propósito (guardian 268.5, mutante M6b: `contacted || note !== undefined`):
+    // la nota NUNCA es motivo para fijar last_contact_at.
+    const result = await updater.update(make_params(estado, "nota 268.5"));
 
     assertEquals(result.ok, true);
     const payload = captured_calls[1].update_payload ?? {};
+    assertEquals(payload.internal_notes, "nota 268.5");
     assertEquals(
       "last_contact_at" in payload,
       false,
-      `la transición a '${estado}' NO debe incluir la clave last_contact_at en el UPDATE`,
+      `la transición a '${estado}' NO debe incluir la clave last_contact_at en el UPDATE (ni con note)`,
     );
   });
 }
