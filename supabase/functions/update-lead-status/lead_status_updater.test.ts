@@ -561,7 +561,8 @@ Deno.test("updater_real_269_3_owner_activo_de_la_agencia_cambia_status_de_lead_d
     { data: { id: LEAD_ID, agency_id: AGENCY_ID }, error: null }, // any_lead: existe, con agency_id
     { data: { id: LEAD_ID, status: "contacted", internal_notes: null }, error: null }, // UPDATE (solo tras el GREEN)
   ]);
-  const updater = make_lead_status_updater_269(client, resolver_role("owner"));
+  const resolver = resolver_role("owner");
+  const updater = make_lead_status_updater_269(client, resolver);
   const result = await updater.update({
     user_id: OWNER_ID,
     lead_id: LEAD_ID,
@@ -572,6 +573,17 @@ Deno.test("updater_real_269_3_owner_activo_de_la_agencia_cambia_status_de_lead_d
     result.ok,
     true,
     "el owner ACTIVO de la agencia del lead debe poder cambiar el status (hoy: UNAUTHORIZED_AGENT — RED)",
+  );
+  // Guardia de mutación (guardian 269.3): el resolver debe consultarse con el
+  // agency_id DEL LEAD (any_lead.agency_id), NUNCA con el del caller (que ni
+  // siquiera viaja en los params) ni con undefined — un mutante que resuelva
+  // contra un agency_id equivocado seguiría dando ok:true en este fake (el
+  // resolver ignora el argumento), así que solo esta aserción lo mata.
+  assertEquals(resolver.calls.length, 1, "el resolver debe consultarse exactamente una vez");
+  assertEquals(
+    resolver.calls[0],
+    { user_id: OWNER_ID, agency_id: AGENCY_ID },
+    "el resolver debe recibir (user_id del caller, agency_id DEL LEAD) — no undefined ni el agency_id del caller",
   );
 });
 

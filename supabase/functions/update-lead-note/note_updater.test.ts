@@ -452,7 +452,8 @@ Deno.test("updater_real_269_3_owner_activo_de_la_agencia_edita_nota_de_lead_de_s
     { data: { id: LEAD_ID, agency_id: AGENCY_ID }, error: null }, // any_lead: existe, con agency_id
     { data: { id: LEAD_ID, internal_notes: "nota del owner" }, error: null }, // UPDATE (solo tras el GREEN)
   ]);
-  const updater = make_note_updater_269(client, resolver_role("owner"));
+  const resolver = resolver_role("owner");
+  const updater = make_note_updater_269(client, resolver);
   const result = await updater.update({
     user_id: OWNER_ID,
     lead_id: LEAD_ID,
@@ -463,6 +464,15 @@ Deno.test("updater_real_269_3_owner_activo_de_la_agencia_edita_nota_de_lead_de_s
     result.ok,
     true,
     "el owner ACTIVO de la agencia del lead debe poder editar la nota (hoy: UNAUTHORIZED_AGENT — RED)",
+  );
+  // Guardia de mutación (guardian 269.3): mismo razonamiento que
+  // lead_status_updater.test.ts — el resolver debe consultarse con el
+  // agency_id DEL LEAD, nunca con undefined ni con el del caller.
+  assertEquals(resolver.calls.length, 1, "el resolver debe consultarse exactamente una vez");
+  assertEquals(
+    resolver.calls[0],
+    { user_id: OWNER_ID, agency_id: AGENCY_ID },
+    "el resolver debe recibir (user_id del caller, agency_id DEL LEAD) — no undefined ni el agency_id del caller",
   );
 });
 

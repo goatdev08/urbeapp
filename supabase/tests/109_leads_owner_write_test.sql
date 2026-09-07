@@ -82,7 +82,7 @@
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(15);
+select plan(28);
 
 -- Helper de impersonación (mismo patrón que 02/.../90/107/108).
 create or replace function pg_temp.act_as(p_uid uuid, p_role text default 'authenticated')
@@ -112,13 +112,15 @@ end $$;
 --     14 B2   buscador del lead 343 (WITHCHECK1) · 15 B3 buscador del lead 344 (WITHCHECK2)
 --        — distintos de BX: leads_agent_user_unique_active exige un par (agent_id,user_id)
 --        único, y GX es agent_id de 341/343/344 a la vez.
+--     352-358 B4..B10 — buscadores de los leads 371-377 (sección 14, "policy aislada").
 --   AGENCIES: 20=X, 21=Y
 --   AGENCY_MEMBERS: 31=X/OX(owner,active) 32=X/AX(admin,active) 33=X/VX(viewer,active)
 --     34=X/SOX(owner,suspended) 35=X/SAX(admin,suspended) 36=X/GX(agent,active)
 --     37=X/RX(agent,active) 38=X/MX(agent,active) 39=Y/OY(owner,active)
 --   LEADS: 41=lead de GX en X (happy path, múltiples actores) · 42=lead de HH (agency_id NULL)
 --     43=lead de GX en X (WITH CHECK — reasignación DENTRO de la agencia) · 44=lead de GX en X
---     (WITH CHECK — intento de reasignación HACIA agencia ajena)
+--     (WITH CHECK — intento de reasignación HACIA agencia ajena) · 371-377=leads dedicados a la
+--     sección 14 ("policy aislada" — leads_select relajada al final del archivo, ver esa sección).
 --   PROPERTIES: 51=propiedad de GX (efecto lateral lead_origin_insert sobre el lead 41)
 -- ════════════════════════════════════════════════════════════════════════════
 
@@ -137,7 +139,14 @@ insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-000000109312', 'bh.1093@test.local'),
   ('00000000-0000-0000-0000-000000109313', 'pa.1093@test.local'),
   ('00000000-0000-0000-0000-000000109314', 'b2.1093@test.local'),
-  ('00000000-0000-0000-0000-000000109315', 'b3.1093@test.local');
+  ('00000000-0000-0000-0000-000000109315', 'b3.1093@test.local'),
+  ('00000000-0000-0000-0000-000000109352', 'b4.1093@test.local'),
+  ('00000000-0000-0000-0000-000000109353', 'b5.1093@test.local'),
+  ('00000000-0000-0000-0000-000000109354', 'b6.1093@test.local'),
+  ('00000000-0000-0000-0000-000000109355', 'b7.1093@test.local'),
+  ('00000000-0000-0000-0000-000000109356', 'b8.1093@test.local'),
+  ('00000000-0000-0000-0000-000000109357', 'b9.1093@test.local'),
+  ('00000000-0000-0000-0000-000000109358', 'b10.1093@test.local');
 
 update public.users set role = 'agent', is_verified_agent = true
   where id in (
@@ -185,6 +194,18 @@ insert into public.properties (id, owner_user_id, agency_id, property_type, oper
   ('00000000-0000-0000-0000-000000109351', '00000000-0000-0000-0000-000000109306',
    '00000000-0000-0000-0000-000000109320', 'departamento', 'rent', 'Fixture 269.3 — propiedad de GX',
    extensions.ST_SetSRID(extensions.ST_MakePoint(-103.35, 20.67), 4326)::extensions.geography, 13500, 'active');
+
+-- Leads dedicados a la sección 14 ("policy aislada" — leads_select relajada al final del
+-- archivo). Todos de GX en agencia X, cada uno con un buscador distinto para no chocar con
+-- leads_agent_user_unique_active (GX ya es agent_id de 341/343/344).
+insert into public.leads (id, agent_id, user_id, status) values
+  ('00000000-0000-0000-0000-000000109371', '00000000-0000-0000-0000-000000109306', '00000000-0000-0000-0000-000000109352', 'new'), -- ISO viewer
+  ('00000000-0000-0000-0000-000000109372', '00000000-0000-0000-0000-000000109306', '00000000-0000-0000-0000-000000109353', 'new'), -- ISO owner suspendido
+  ('00000000-0000-0000-0000-000000109373', '00000000-0000-0000-0000-000000109306', '00000000-0000-0000-0000-000000109354', 'new'), -- ISO owner otra agencia
+  ('00000000-0000-0000-0000-000000109374', '00000000-0000-0000-0000-000000109306', '00000000-0000-0000-0000-000000109355', 'new'), -- ISO agente raso
+  ('00000000-0000-0000-0000-000000109375', '00000000-0000-0000-0000-000000109306', '00000000-0000-0000-0000-000000109356', 'new'), -- ISO owner activo (positivo)
+  ('00000000-0000-0000-0000-000000109376', '00000000-0000-0000-0000-000000109306', '00000000-0000-0000-0000-000000109357', 'new'), -- ISO WITH CHECK éxito (reasignar dentro de X)
+  ('00000000-0000-0000-0000-000000109377', '00000000-0000-0000-0000-000000109306', '00000000-0000-0000-0000-000000109358', 'new'); -- ISO WITH CHECK falla (mover a Y)
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- 1) [DELTA] OWNER activo de la agencia del lead escribe: UPDATE afecta 1 fila,
@@ -406,6 +427,158 @@ select lives_ok(
   $do$;
   $$,
   'D7_owner_activo_puede_insertar_lead_origin_properties_de_un_lead_de_su_agente'
+);
+reset role;
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 13) [DELTA/INVARIANTE, guardia de mutación — hallazgo del guardian 269.3]
+--    `private.can_edit_lead` es SECURITY DEFINER: su SELECT interno sobre
+--    `public.leads` BYPASSA por completo la RLS de la tabla (confirmado: D2/D4
+--    arriba ya lo ejercen así). Se asertan aquí los casos NEGATIVOS que hasta
+--    ahora solo se probaban indirecto vía UPDATE (secciones 3-7) — un UPDATE que
+--    da "0 filas" puede deberse a que `leads_select` ya filtra la fila ANTES de
+--    llegar a `leads_update` (Postgres exige que la fila candidata pase la
+--    policy de SELECT, además del USING de UPDATE — verificado empíricamente:
+--    con `leads_update` mutado a `using(true) with check(true)`, las 15
+--    aserciones de este archivo siguen en verde porque `leads_select` sola ya
+--    bloquea/permite lo mismo). `can_edit_lead` no tiene ese problema — se
+--    asertan aquí DIRECTO contra la función, sin pasar por ninguna tabla RLS.
+-- ════════════════════════════════════════════════════════════════════════════
+
+select pg_temp.act_as('00000000-0000-0000-0000-000000109303'); -- VX (viewer)
+select is(
+  private.can_edit_lead('00000000-0000-0000-0000-000000109341'),
+  false,
+  'CE1_can_edit_lead_false_para_viewer_activo'
+);
+reset role;
+
+select pg_temp.act_as('00000000-0000-0000-0000-000000109304'); -- SOX (owner suspendido)
+select is(
+  private.can_edit_lead('00000000-0000-0000-0000-000000109341'),
+  false,
+  'CE2_can_edit_lead_false_para_owner_suspendido'
+);
+reset role;
+
+select pg_temp.act_as('00000000-0000-0000-0000-000000109305'); -- SAX (admin suspendido)
+select is(
+  private.can_edit_lead('00000000-0000-0000-0000-000000109341'),
+  false,
+  'CE3_can_edit_lead_false_para_admin_suspendido'
+);
+reset role;
+
+select pg_temp.act_as('00000000-0000-0000-0000-000000109309'); -- OY (owner de otra agencia)
+select is(
+  private.can_edit_lead('00000000-0000-0000-0000-000000109341'),
+  false,
+  'CE4_can_edit_lead_false_para_owner_de_otra_agencia'
+);
+reset role;
+
+select pg_temp.act_as('00000000-0000-0000-0000-000000109307'); -- RX (agente raso)
+select is(
+  private.can_edit_lead('00000000-0000-0000-0000-000000109341'),
+  false,
+  'CE5_can_edit_lead_false_para_agente_raso'
+);
+reset role;
+
+select pg_temp.act_as('00000000-0000-0000-0000-000000109306'); -- GX (agente dueño)
+select is(
+  private.can_edit_lead('00000000-0000-0000-0000-000000109341'),
+  true,
+  'CE6_can_edit_lead_true_para_el_agente_dueno'
+);
+reset role;
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 14) [Guardia de mutación — "policy aislada", hallazgo del guardian 269.3]
+--    Como se documentó en la sección 13: `leads_select` domina a `leads_update`
+--    (Postgres exige que la fila sea visible por SELECT, además de pasar el
+--    USING/WITH CHECK de UPDATE — misma regla que ya volvió inerte a
+--    `is_admin()` en la sección "HALLAZGO BLOQUEANTE" de la cabecera, aplicada
+--    aquí a `agency_role_of`). Eso deja a las secciones 3-7 con poco poder de
+--    mutación sobre `leads_update` EN SÍ: un mutante que abra `leads_update` de
+--    más (`using(true) with check(true)`, aceptar 'viewer' en el IN, quitar el
+--    filtro `status='active'`) sigue dando los mismos resultados, porque
+--    `leads_select` ya bloqueaba/permitía esas mismas filas por su cuenta.
+--    Verificado en vivo (docker exec, mutante M6 `leads_update using(true) with
+--    check(true)` aplicado en una transacción aparte revertida): las 15
+--    aserciones originales de este archivo siguen TODAS en verde.
+--
+--    Para aislar `leads_update` de esa dominancia, esta sección relaja SOLO
+--    `leads_select` (`using(true)`) — como superusuario, DENTRO de esta misma
+--    transacción, revertida por el `rollback;` final — y repite los negativos/
+--    positivos contra `leads_update` SOLA. Va AL FINAL del archivo, después de
+--    TODO lo demás (una vez relajada, `leads_select` ya no protege ninguna
+--    aserción posterior de una fuga real).
+-- ════════════════════════════════════════════════════════════════════════════
+
+alter policy leads_select on public.leads using (true);
+
+select pg_temp.act_as('00000000-0000-0000-0000-000000109303'); -- VX (viewer)
+with u as (
+  update public.leads set internal_notes = 'ISO viewer'
+   where id = '00000000-0000-0000-0000-000000109371'
+   returning id
+)
+select is(count(*)::int, 0, 'ISO1_leads_update_sola_viewer_activo_0_filas') from u;
+reset role;
+
+select pg_temp.act_as('00000000-0000-0000-0000-000000109304'); -- SOX (owner suspendido)
+with u as (
+  update public.leads set internal_notes = 'ISO owner suspendido'
+   where id = '00000000-0000-0000-0000-000000109372'
+   returning id
+)
+select is(count(*)::int, 0, 'ISO2_leads_update_sola_owner_suspendido_0_filas') from u;
+reset role;
+
+select pg_temp.act_as('00000000-0000-0000-0000-000000109309'); -- OY (owner de otra agencia)
+with u as (
+  update public.leads set internal_notes = 'ISO owner otra agencia'
+   where id = '00000000-0000-0000-0000-000000109373'
+   returning id
+)
+select is(count(*)::int, 0, 'ISO3_leads_update_sola_owner_de_otra_agencia_0_filas') from u;
+reset role;
+
+select pg_temp.act_as('00000000-0000-0000-0000-000000109307'); -- RX (agente raso)
+with u as (
+  update public.leads set internal_notes = 'ISO agente raso'
+   where id = '00000000-0000-0000-0000-000000109374'
+   returning id
+)
+select is(count(*)::int, 0, 'ISO4_leads_update_sola_agente_raso_0_filas') from u;
+reset role;
+
+select pg_temp.act_as('00000000-0000-0000-0000-000000109301'); -- OX (owner activo)
+with u as (
+  update public.leads set internal_notes = 'ISO owner activo'
+   where id = '00000000-0000-0000-0000-000000109375'
+   returning id
+)
+select is(count(*)::int, 1, 'ISO5_leads_update_sola_owner_activo_1_fila') from u;
+reset role;
+
+select pg_temp.act_as('00000000-0000-0000-0000-000000109301'); -- OX — WITH CHECK: reasignar DENTRO de la agencia
+with u as (
+  update public.leads set agent_id = '00000000-0000-0000-0000-000000109308' -- MX
+   where id = '00000000-0000-0000-0000-000000109376'
+   returning id
+)
+select is(count(*)::int, 1, 'ISO6_leads_update_sola_with_check_reasigna_dentro_de_la_agencia_1_fila') from u;
+reset role;
+
+select pg_temp.act_as('00000000-0000-0000-0000-000000109301'); -- OX — WITH CHECK: mover el lead hacia la agencia ajena Y
+select throws_ok(
+  $$ update public.leads set agent_id = '00000000-0000-0000-0000-000000109309',
+       agency_id = '00000000-0000-0000-0000-000000109321'
+     where id = '00000000-0000-0000-0000-000000109377' $$,
+  '42501', null,
+  'ISO7_leads_update_sola_with_check_rechaza_mover_el_lead_a_una_agencia_ajena'
 );
 reset role;
 
