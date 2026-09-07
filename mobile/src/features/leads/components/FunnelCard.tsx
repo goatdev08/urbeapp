@@ -2,7 +2,10 @@
  * FunnelCard — actividad por etapa de los últimos 30 días (#267.5).
  *
  * Preview: mobile/design-previews/267-crm-santiago.html (sección 2 — SVG de
- * 5 tramos gris→verde→arena→terracota + 5 KPIs en DM Mono). Fuente de datos:
+ * 5 tramos + 5 KPIs en DM Mono). ⚠️ El degradado del preview iba
+ * gris→verde→arena→terracota y aquí va INVERTIDO (terracota→arena→verde→verde
+ * del logo) desde el 2026-09-07: en el preview el rojo caía sobre "Agendaron",
+ * que es la conversión. Ver el comentario del LinearGradient. Fuente de datos:
  * `CrmFunnel` (public.crm_funnel, #266.4). Las 5 etapas se calculan CADA UNA
  * sobre la ventana (no son una cohorte anidada: "Agendaron" puede superar a
  * "Te contactaron"), por eso el título dice ACTIVIDAD y no EMBUDO, y por eso
@@ -86,10 +89,17 @@ export function FunnelCard({ funnel }: FunnelCardProps): React.JSX.Element {
       <Svg width="100%" height={VIEWBOX_H} viewBox={`0 0 ${VIEWBOX_W} ${VIEWBOX_H}`}>
         <Defs>
           <LinearGradient id={GRADIENT_ID} x1="0" y1="0" x2="1" y2="0">
-            <Stop offset="0%" stopColor="#93A29B" stopOpacity={0.7} />
-            <Stop offset="45%" stopColor="#2F7A5A" stopOpacity={0.78} />
-            <Stop offset="78%" stopColor="#C2A07C" stopOpacity={0.92} />
-            <Stop offset="100%" stopColor="#B4491E" stopOpacity={1} />
+            {/* Escala INVERTIDA (decisión de Abraham, 2026-09-07): antes el degradado
+                terminaba en terracota justo sobre "Te contactaron" y "Agendaron", o sea
+                el rojo caía en el MEJOR resultado. Ahora el rojo marca la boca ancha del
+                embudo — la masa que solo miró y no hizo nada — y el verde del logo cierra
+                en la agenda, que es la conversión. La rampa de opacidad NO se invierte:
+                sigue subiendo hacia la derecha para que el tramo valioso sea el más
+                saturado. */}
+            <Stop offset="0%" stopColor="#B4491E" stopOpacity={0.7} />
+            <Stop offset="45%" stopColor="#C2A07C" stopOpacity={0.78} />
+            <Stop offset="78%" stopColor="#2F7A5A" stopOpacity={0.92} />
+            <Stop offset="100%" stopColor={colors.primary} stopOpacity={1} />
           </LinearGradient>
         </Defs>
         <Path d={path_d} fill={`url(#${GRADIENT_ID})`} />
