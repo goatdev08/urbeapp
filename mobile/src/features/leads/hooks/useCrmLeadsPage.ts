@@ -59,15 +59,19 @@ export function useCrmLeadsPage(
   agentId: string | null | undefined,
   band: CrmBand | null,
   query: string | null,
-  // STUB RED (271.2): status/followUp aceptados pero IGNORADOS por completo
-  // — no viajan a la RPC ni entran en las deps de fetch_page. El GREEN de
-  // 271.2 los cablea siguiendo D-STATUSNULL/D-STATUSEMPTY (contrato fijado
-  // en __tests__/useCrmLeadsPage.test.ts, EC-22..EC-29).
+  // D-STATUSNULL/D-STATUSEMPTY (contrato en __tests__/useCrmLeadsPage.test.ts,
+  // EC-22..EC-29): `undefined` (arg omitido, llamador viejo) => la clave
+  // p_status/p_follow_up se OMITE del objeto de args; `null` explícito => la
+  // clave viaja con valor null; `[]` explícito => se manda tal cual, sin
+  // normalizar a null.
   status?: ProjectedStatus[] | null,
   followUp?: boolean | null,
 ): UseCrmLeadsPageState {
-  void status;
-  void followUp;
+  // Clave por CONTENIDO (molde useUnmanagedInventory.ts) — status es un
+  // ARRAY; si entrara por referencia en las deps de fetch_page, un array
+  // recreado inline en el padre en cada render dispararía refetch en bucle
+  // (memoria hook_array_prop_reference_loop, heap OOM en Jest — EC-28).
+  const status_key = status == null ? String(status) : status.join('|');
   const [data, set_data] = useState<CrmLeadRow[]>([]);
   const [loading, set_loading] = useState(Boolean(agentId));
   const [error, set_error] = useState<string | null>(null);
@@ -117,15 +121,21 @@ export function useCrmLeadsPage(
       // `default null` y los acepta explícitos (mismo gotcha de tipos
       // generados que useAdMetrics.ts). p_cursor es Json — sí admite null
       // sin cast.
+      // D-STATUSNULL: `undefined` omite la clave (retrocompat con llamadores
+      // sin hoja de filtros); `null`/`[]` explícitos SÍ viajan.
+      const args: Record<string, unknown> = {
+        p_agent_id: agentId,
+        p_band: band,
+        p_cursor: cursor,
+        p_limit: 20,
+        p_query: query,
+      };
+      if (status !== undefined) args.p_status = status;
+      if (followUp !== undefined) args.p_follow_up = followUp;
+
       let rpc_result: { data: RpcRow[] | null; error: { message: string } | null };
       try {
-        rpc_result = (await supabase.rpc('crm_leads_page', {
-          p_agent_id: agentId,
-          p_band: band,
-          p_cursor: cursor,
-          p_limit: 20,
-          p_query: query,
-        } as any)) as typeof rpc_result;
+        rpc_result = (await supabase.rpc('crm_leads_page', args as any)) as typeof rpc_result;
       } catch {
         // Rechazo real de red (offline): sin esto la promesa queda sin
         // manejar y `loading` no vuelve a bajar (bug confirmado por el
@@ -159,7 +169,8 @@ export function useCrmLeadsPage(
       set_error(null);
       set_loading(false);
     },
-    [agentId, band, query],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- status_key representa a status (por contenido); status/followUp entran en el body por closure, no en las deps (evita refetch por referencia, EC-28).
+    [agentId, band, query, status_key, followUp],
   );
 
   // D-FOCUS: el primer foco coincide con el mount; un refoco real (o un

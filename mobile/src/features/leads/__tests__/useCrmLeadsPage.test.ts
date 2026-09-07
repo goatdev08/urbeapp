@@ -1086,6 +1086,12 @@ describe('useCrmLeadsPage', () => {
       p_cursor: null,
       p_limit: 20,
       p_query: null,
+      // CORRECCIÓN del orquestador (271.2, GREEN): la llamada de este caso pasa
+      // `status` EXPLÍCITO como null (4º argumento), así que por D-STATUSNULL la
+      // clave DEBE viajar. Omitirla aquí contradecía a EC-23, que asierta lo
+      // contrario con exactamente el mismo escenario. Es un fallo de la
+      // expectativa, no de la implementación: el arreglo la hace más estricta.
+      p_status: null,
       p_follow_up: false,
     });
   });
