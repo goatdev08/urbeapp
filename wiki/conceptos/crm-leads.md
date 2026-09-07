@@ -200,3 +200,32 @@ El degradado de `FunnelCard` iba gris→verde→arena→**terracota**, así que 
 - El preview aprobado `mobile/design-previews/267-crm-santiago.html` §2 **no se modifica**: conserva el degradado viejo como registro de lo que se aprobó entonces, y la divergencia queda anotada en el docblock del componente para que nadie la «corrija» de vuelta.
 - **Fuera de alcance a propósito:** los badges de `STATUS_META` ya estaban bien (Ganado en verde profundo, Perdido y Descartado en gris, ni un rojo) y los colores de banda de `crm_band_meta` se quedan — ahí `temp_hot` es la escala de **calor** y cae en «Háblales hoy», que es una instrucción y no un juicio sobre el lead.
 - ⭐ Regla que deja: **un color no es decoración, es una afirmación sobre el dato que cubre.** Antes de heredar una escala de un preview, comprueba sobre qué valores aterriza cada extremo.
+
+## El estado exacto también en solo lectura — vivo (#277 `producto(275.2)`, 2026-09-07)
+
+La ficha del CRM tiene dos lecturas del mismo dato y **dicen cosas distintas**: la barra de
+4 tramos pinta la **proyección** 8→4 (`nuevo`/`contactado`/`visita`/`cerrado`) y el badge
+pinta el **estado crudo** de `leads.status`. Hasta #275 el badge solo existía en modo
+editable, así que un owner o admin que revisaba el lead de otro agente de su inmobiliaria
+leía «Contactado» cuando el estado real era `interested`, y «Cerrado» sin poder distinguir
+`closed_won_sale` de `closed_lost`. La persona con más autoridad sobre el pipeline era la
+que veía el dato más pobre.
+
+**Decisión (Abraham, 2026-09-07):** reusar `StatusPicker` con `readOnly` y **color pleno**
+del estado, **conviviendo** con la barra —no sustituyéndola—. Descartadas: un badge propio
+atenuado, y un badge que reemplaza la barra. La razón del color pleno es la misma que
+motivó la tarea: atenuar el badge reproduce la ambigüedad que se viene a quitar.
+
+**El código nuevo son 9 líneas de JSX.** El contrato `readOnly` de `StatusPicker` ya existía
+y ya estaba probado desde #267.6 (disparador no tappable con `accessibilityRole='text'`, sin
+caret, lista nunca montada), y el `status` crudo ya viajaba al cliente desde #275.1. La
+tarea no agregó componentes, estilos ni hooks: solo cableó dos piezas que ya se conocían.
+
+🔒 **Divergencia deliberada del preview aprobado.** `267-crm-santiago.html` §4 no dibuja
+badge de estado en la vista de solo lectura, y por eso #275.2 no lo montó (CLAUDE.md §8:
+el agente propone, nunca decide). El preview **no se tocó**; la divergencia queda anotada
+en el docblock del componente, mismo criterio que el degradado del embudo en #279.
+
+**Regla que deja:** cuando una pantalla muestra un dato proyectado y el dato exacto está a
+la mano, el modo solo lectura no es excusa para mostrar el pobre — *quien no puede editar
+un dato es justamente quien más necesita leerlo bien.*
