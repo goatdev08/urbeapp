@@ -233,6 +233,7 @@ beforeEach(() => {
   mock_use_video_engagement_events.mockImplementation(() => ({
     report_view: jest.fn(),
     report_time_update: jest.fn(),
+    report_progress: jest.fn(),
   }));
 });
 
@@ -377,6 +378,54 @@ describe('VideoFeedItem — wiring de telemetría (112.2)', () => {
     const report_view_z = mock_use_video_engagement_events.mock.results[last]!.value.report_view as jest.Mock;
 
     expect(report_view_z).toHaveBeenCalledTimes(1);
+  });
+
+  // ── AÑADIDO 268.1 — report_progress al desactivar / reciclar ──────────────
+  //
+  // EDGE CASES CUBIERTOS (2 casos, verificación ligera — footprint de
+  // integración de componente, NO crítico por path §5 de CLAUDE.md):
+  // - (268.1-a) reporta_progreso_al_desactivarse
+  // - (268.1-b) reporta_progreso_de_la_propiedad_vieja_antes_de_reciclar_hacia_otra
+
+  it('(268.1-a) reporta_progreso_al_desactivarse: isActive pasa de true a false (el usuario sigue scrolleando) → report_progress() de ESA instancia se invoca — sin este disparo, video_progress nunca se registra en producción', async () => {
+    const property = make_property();
+
+    let view: RenderResult;
+    await act(async () => {
+      view = await render(<VideoFeedItem property={property} isActive={true} />);
+    });
+
+    const { report_progress } = mock_use_video_engagement_events.mock.results[0]!.value;
+    expect(report_progress).not.toHaveBeenCalled();
+
+    await act(async () => {
+      view.rerender(<VideoFeedItem property={property} isActive={false} />);
+    });
+
+    expect(report_progress).toHaveBeenCalledTimes(1);
+  });
+
+  it('(268.1-b) reporta_progreso_de_la_propiedad_vieja_antes_de_reciclar_hacia_otra: FlashList recicla la celda de la propiedad A hacia Z (isActive sin cambiar) → el report_progress() de LA INSTANCIA DE A (cleanup del efecto) se invoca antes de que A desaparezca — sin esto, el progreso máximo de A se pierde en cada reciclaje', async () => {
+    const property_a = make_property({ id: 'propiedad-uuid-A', video_id: 'video-uuid-A' });
+    const property_z = make_property({
+      id: 'propiedad-uuid-Z',
+      video_id: 'video-uuid-Z',
+      signed_url: 'https://cdn.example/video-Z.mp4',
+    });
+
+    let view: RenderResult;
+    await act(async () => {
+      view = await render(<VideoFeedItem property={property_a} isActive={true} />);
+    });
+
+    const report_progress_a = mock_use_video_engagement_events.mock.results[0]!.value
+      .report_progress as jest.Mock;
+
+    await act(async () => {
+      view.rerender(<VideoFeedItem property={property_z} isActive={true} />);
+    });
+
+    expect(report_progress_a).toHaveBeenCalledTimes(1);
   });
 
 });

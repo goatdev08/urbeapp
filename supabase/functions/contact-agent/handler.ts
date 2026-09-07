@@ -235,6 +235,23 @@ export function make_contact_agent_handler(
       if (!counter_result.ok) {
         return error_response("DB_ERROR", "Error interno al incrementar el contador de contactos", 500);
       }
+    } else {
+      // 268.4 — el par (lead, propiedad) ya existía: señal contact_repeat para la
+      // fórmula de temperatura (private.crm_temperature, CTE contact_repeat, 266.2/266.3).
+      // Fire-and-forget: nunca debe cambiar el contrato de respuesta de contact-agent.
+      try {
+        const event_result = await deps.originRepo.insert_contact_repeat_event({
+          user_id: caller_id,
+          property_id: parsed.data.propertyId,
+          agent_id: agent_id_for_lead,
+          lead_id: lead.id,
+        });
+        if (!event_result.ok) {
+          console.error("[contact-agent] contact_repeat event failed", { error_code: event_result.error_code });
+        }
+      } catch {
+        console.error("[contact-agent] contact_repeat event failed", { error_code: "THREW" });
+      }
     }
 
     // (l) Mensaje WhatsApp pre-llenado + respuesta final (14.6)

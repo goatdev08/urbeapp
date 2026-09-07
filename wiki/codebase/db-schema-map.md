@@ -38,10 +38,10 @@ Proyecto live `urbea-app` (`mvpvqmyhrrkwbnpctpuq`). Base `0001`–`0010` (20 tab
 | `property_videos` | 0005, 0011 (`storage_path`) | [[propiedades-y-video]] | vivo |
 | `likes` | 0006 | [[feed-vertical-video]] | vivo |
 | `saves` | 0006 | [[propiedades-y-video]] | vivo |
-| `leads` | 0006; RPCs agregadas `crm_leads_page`/`crm_funnel`/`crm_lead_detail`/`lead_activity`/`crm_radar_anon` (`20260906100003`–`100005`, #266) y `crm_suggested_message(p_lead_id) → text` (`20260906200001`, #267: plantilla server-side sin precio/teléfono/hora, cerrado → NULL) | [[crm-leads]] | vivo |
+| `leads` | 0006; RPCs agregadas `crm_leads_page`/`crm_funnel`/`crm_lead_detail`/`lead_activity`/`crm_radar_anon` (`20260906100003`–`100005`, #266) y `crm_suggested_message(p_lead_id) → text` (`20260906200001`, #267: plantilla server-side sin precio/teléfono/hora, cerrado → NULL); `last_contact_at` la fija `update-lead-status` solo al pasar a `contacted` (#268.5) | [[crm-leads]] | vivo |
 | `lead_origin_properties` | 0006 | [[crm-leads]] | vivo |
 | `lead_temperature_daily` | 20260906100002 (#266.3) | [[crm-leads]] | vivo — snapshot diario `(lead_id, day)`, solo leads activos, escrita solo por `snapshot_lead_temperature()` vía pg_cron |
-| `events_raw` | 0007 | [[rls-seguridad]] | latente |
+| `events_raw` | 0007; RLS `20260808000001` (append-only); escritores: cliente bajo RLS (`video_view`/`video_completed` #112, `video_progress`/`zone_search` #268) y `contact-agent` con service_role (`contact_repeat` #268); la consume `private.crm_temperature` (`20260906100001` + `20260906300001` matching espacial de `zone_search`) | [[crm-leads]] | vivo |
 | `property_reports` | 0007; CHECK «other exige texto» `20260828000001`, trigger de auto-suspensión `20260828000002`, RPC de resolución `20260828000004` (#220) | [[moderacion]] | vivo |
 | `user_reports` | `20260828000005` (#220.6) — reportes de PERFIL; reusa el enum `property_report_reason`; sin cola de resolución ni auto-suspensión de cuentas | [[moderacion]] | vivo (alcance mínimo) |
 | `notifications` | 0007; escritores desde `20260825000001` (#219) y `20260828000002`/`20260828000004` (#220) | [[notificaciones]] | vivo |

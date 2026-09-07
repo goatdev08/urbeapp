@@ -110,7 +110,7 @@ function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedIte
   // ── Telemetría de engagement (112.2) ───────────────────────────────────────
   // session_id + store son singletons de módulo (arriba) — sobreviven el
   // reciclaje de VideoFeedItem por FlashList dentro de la MISMA sesión de app.
-  const { report_view, report_time_update } = useVideoEngagementEvents({
+  const { report_view, report_time_update, report_progress } = useVideoEngagementEvents({
     property_id: property.id,
     property_video_id: property.video_id,
     session_id: get_app_session_id(),
@@ -328,10 +328,21 @@ function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedIte
     } else {
       player.pause();
     }
-    // ponytail: sin cleanup con player.pause() — useVideoPlayer libera el player
+    // ponytail: sin cleanup de player.pause() — useVideoPlayer libera el player
     // al desmontar y pausar un objeto liberado truena ("shared object already
     // released"). El else de arriba ya pausa al desactivarse.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- report_view en sí no está memoizado (nueva identidad cada render) y por eso NO se lista directo — property.id ya fuerza la re-ejecución cuando importa (ver comentario arriba).
+    //
+    // 268.1: el cleanup SÍ reporta el progreso — cierra sobre el
+    // report_progress DE ESTA instancia del efecto (la que corresponde a
+    // isActive/property.id vigentes cuando el efecto corrió), así que se
+    // dispara justo antes de que React reemplace el efecto: al desactivarse
+    // (isActive→false) o al reciclar la celda hacia otra property (property.id
+    // cambia, FlashList). Fire-and-forget + dedupe interno — seguro llamarlo
+    // también en el unmount final.
+    return () => {
+      report_progress();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- report_view/report_progress en sí no están memoizados (nueva identidad cada render) y por eso NO se listan directo — property.id ya fuerza la re-ejecución/cleanup cuando importa (ver comentario arriba).
   }, [isActive, player, property.id]);
 
   // ── Fallback de error ──────────────────────────────────────────────────────

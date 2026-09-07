@@ -361,3 +361,146 @@ Deno.test("updater_real_visit_scheduled_a_closed_won_retorna_ok_true", async () 
   assertEquals(result.ok, true);
   if (result.ok) assertEquals(result.lead.status, "closed_won");
 });
+
+// ── 268.5 — last_contact_at ────────────────────────────────────────────────────
+// La columna leads.last_contact_at (timestamptz, migración 20260604000006) alimenta
+// el orden "last_contact" del CRM y la fórmula de temperatura T1 (268.2/268.3): debe
+// fijarse SOLO al pasar a 'contacted' — es la señal real de "hoy le hablé", no un
+// timestamp genérico como updated_at (que cambia en CUALQUIER transición).
+//
+// EC-1: contacted → update_payload.last_contact_at es ISO 8601 parseable y ≈ ahora
+//       (|Date.now() - Date.parse(x)| < 5000ms); updated_at también presente.
+// EC-2: contacted con note → internal_notes Y last_contact_at conviven, no se pisan.
+// EC-3: cada uno de los demás 10 estados del enum → NO agrega la clave last_contact_at
+//       (ni null ni undefined como valor — la clave simplemente no existe en el payload).
+// EC-4: transiciones libres (75.1) — reabrir closed_won_rent → contacted SÍ fija
+//       last_contact_at (no hay excepción por venir de un estado "cerrado").
+// EC-5: shape EXACTO del payload en 'contacted' — sin note: exactamente
+//       {status, updated_at, last_contact_at} (3 claves); con note: exactamente
+//       {status, updated_at, last_contact_at, internal_notes} (4 claves). Mata al
+//       mutante que agregue una clave extra sin que ningún otro assert lo note.
+// (El .eq('agent_id', user_id) del UPDATE ya está cubierto por
+//  "updater_real_update_eq_filtra_por_id_y_agent_id" — no se duplica aquí.)
+
+Deno.test("updater_real_268_5_contacted_fija_last_contact_at_iso_cercano_a_ahora", async () => {
+  const { client, captured_calls } = make_fake_client([
+    { data: { id: LEAD_ID, status: "new" }, error: null },
+    { data: { id: LEAD_ID, status: "contacted", internal_notes: null }, error: null },
+  ]);
+  const updater = make_lead_status_updater(client);
+  const before = Date.now();
+  const result = await updater.update(make_params("contacted"));
+  const after = Date.now();
+
+  assertEquals(result.ok, true);
+  const payload = captured_calls[1].update_payload ?? {};
+  const raw = payload.last_contact_at;
+
+  assertEquals(typeof raw, "string", "last_contact_at debe ser un string ISO");
+  const parsed = Date.parse(raw as string);
+  assertEquals(Number.isNaN(parsed), false, "last_contact_at debe ser parseable como fecha ISO 8601");
+  assertEquals(
+    parsed >= before - 5000 && parsed <= after + 5000,
+    true,
+    "last_contact_at debe representar 'ahora' (± 5s), no una fecha arbitraria",
+  );
+  assertExists(payload.updated_at, "updated_at sigue presente junto con last_contact_at");
+});
+
+Deno.test("updater_real_268_5_contacted_con_note_conserva_internal_notes_y_last_contact_at", async () => {
+  const nota = "Contactado por WhatsApp, quedó de llamar mañana";
+  const { client, captured_calls } = make_fake_client([
+    { data: { id: LEAD_ID, status: "new" }, error: null },
+    { data: { id: LEAD_ID, status: "contacted", internal_notes: nota }, error: null },
+  ]);
+  const updater = make_lead_status_updater(client);
+  await updater.update(make_params("contacted", nota));
+
+  const payload = captured_calls[1].update_payload ?? {};
+  assertEquals(payload.internal_notes, nota, "internal_notes no debe perderse al fijar last_contact_at");
+  assertEquals(typeof payload.last_contact_at, "string", "last_contact_at debe seguir presente junto con internal_notes");
+});
+
+const OTROS_ESTADOS_268_5: string[] = [
+  "new",
+  "whatsapp_opened",
+  "interested",
+  "in_progress",
+  "visit_scheduled",
+  "closed_won",
+  "closed_won_rent",
+  "closed_won_sale",
+  "closed_lost",
+  "discarded",
+];
+
+for (const estado of OTROS_ESTADOS_268_5) {
+  Deno.test(`updater_real_268_5_transicion_a_${estado}_no_agrega_last_contact_at`, async () => {
+    const { client, captured_calls } = make_fake_client([
+      { data: { id: LEAD_ID, status: "new" }, error: null },
+      { data: { id: LEAD_ID, status: estado, internal_notes: null }, error: null },
+    ]);
+    const updater = make_lead_status_updater(client);
+    // Con `note` a propósito (guardian 268.5, mutante M6b: `contacted || note !== undefined`):
+    // la nota NUNCA es motivo para fijar last_contact_at.
+    const result = await updater.update(make_params(estado, "nota 268.5"));
+
+    assertEquals(result.ok, true);
+    const payload = captured_calls[1].update_payload ?? {};
+    assertEquals(payload.internal_notes, "nota 268.5");
+    assertEquals(
+      "last_contact_at" in payload,
+      false,
+      `la transición a '${estado}' NO debe incluir la clave last_contact_at en el UPDATE (ni con note)`,
+    );
+  });
+}
+
+Deno.test("updater_real_268_5_reabrir_closed_won_rent_a_contacted_fija_last_contact_at", async () => {
+  // Transiciones libres (75.1): reabrir un lead "cerrado" hacia contacted debe
+  // fijar last_contact_at igual que cualquier otra transición hacia contacted —
+  // no hay excepción por venir de un estado terminal.
+  const { client, captured_calls } = make_fake_client([
+    { data: { id: LEAD_ID, status: "closed_won_rent" }, error: null },
+    { data: { id: LEAD_ID, status: "contacted", internal_notes: null }, error: null },
+  ]);
+  const updater = make_lead_status_updater(client);
+  const result = await updater.update(make_params("contacted"));
+
+  assertEquals(result.ok, true);
+  const payload = captured_calls[1].update_payload ?? {};
+  assertEquals(typeof payload.last_contact_at, "string", "reabrir hacia contacted también fija last_contact_at");
+});
+
+Deno.test("updater_real_268_5_contacted_sin_note_payload_tiene_exactamente_3_claves", async () => {
+  const { client, captured_calls } = make_fake_client([
+    { data: { id: LEAD_ID, status: "new" }, error: null },
+    { data: { id: LEAD_ID, status: "contacted", internal_notes: null }, error: null },
+  ]);
+  const updater = make_lead_status_updater(client);
+  await updater.update(make_params("contacted"));
+
+  const payload = captured_calls[1].update_payload ?? {};
+  assertEquals(
+    Object.keys(payload).sort(),
+    ["last_contact_at", "status", "updated_at"],
+    "sin note el payload de 'contacted' debe tener EXACTAMENTE status+updated_at+last_contact_at",
+  );
+});
+
+Deno.test("updater_real_268_5_contacted_con_note_payload_tiene_exactamente_4_claves", async () => {
+  const nota = "Nota de prueba";
+  const { client, captured_calls } = make_fake_client([
+    { data: { id: LEAD_ID, status: "new" }, error: null },
+    { data: { id: LEAD_ID, status: "contacted", internal_notes: nota }, error: null },
+  ]);
+  const updater = make_lead_status_updater(client);
+  await updater.update(make_params("contacted", nota));
+
+  const payload = captured_calls[1].update_payload ?? {};
+  assertEquals(
+    Object.keys(payload).sort(),
+    ["internal_notes", "last_contact_at", "status", "updated_at"],
+    "con note el payload de 'contacted' debe tener EXACTAMENTE 4 claves, incluida last_contact_at",
+  );
+});

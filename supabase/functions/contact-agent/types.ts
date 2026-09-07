@@ -158,6 +158,23 @@ export type IncrementContactCountResult =
   | { ok: true }
   | { ok: false; error_code: "DB_ERROR" };
 
+// ── contact_repeat (268.4) ──────────────────────────────────────────────────
+//
+// Cuando insert_origin devuelve inserted=false (ON CONFLICT DO NOTHING — el par
+// lead↔propiedad YA existía), la fórmula de temperatura (private.crm_temperature,
+// CTE contact_repeat) necesita una señal de que el mismo usuario volvió a
+// contactar la MISMA propiedad. Ese evento se escribe en events_raw con
+// event_type='contact_repeat' y property_id (la fórmula empareja por
+// events_raw.property_id → properties.owner_user_id).
+//
+// Fire-and-forget: nunca cambia el contrato de respuesta de contact-agent
+// (200 con success/phone/message/lead_id/property_id intactos). Si el INSERT
+// falla ({ok:false}) o lanza, el handler lo absorbe y NO propaga el error.
+
+export type InsertContactRepeatEventResult =
+  | { ok: true }
+  | { ok: false; error_code: "DB_ERROR" };
+
 export interface OriginRepo {
   /**
    * INSERT INTO lead_origin_properties
@@ -181,6 +198,18 @@ export interface OriginRepo {
    * Solo debe llamarse cuando insert_origin devuelve inserted: true.
    */
   increment_contact_count(property_id: string): Promise<IncrementContactCountResult>;
+
+  /**
+   * INSERT INTO events_raw (user_id, event_type, property_id, agent_id)
+   * VALUES (?, 'contact_repeat', ?, ?)
+   *
+   * Se llama SOLO cuando insert_origin devolvió inserted=false (el par
+   * lead↔propiedad ya existía). Fire-and-forget: el handler nunca deja que
+   * un fallo aquí cambie el código de estado ni el body de la respuesta.
+   */
+  insert_contact_repeat_event(
+    args: { user_id: string; property_id: string; agent_id: string; lead_id: string },
+  ): Promise<InsertContactRepeatEventResult>;
 }
 
 // ── Deps inyectables del handler ───────────────────────────────────────────────

@@ -44,9 +44,11 @@
 import { useRef } from 'react';
 import { useAuth } from '@/features/auth/context';
 import {
+  compute_progress_percent,
   create_video_engagement_store,
   is_video_completed,
   VIDEO_COMPLETED_EVENT_TYPE,
+  VIDEO_PROGRESS_EVENT_TYPE,
   VIDEO_VIEW_EVENT_TYPE,
   type VideoEngagementEventType,
   type VideoEngagementStore,
@@ -70,6 +72,8 @@ export interface UseVideoEngagementEventsReturn {
   report_view: () => Promise<void>;
   /** Llamar en cada tick de `timeUpdate` del player de expo-video. */
   report_time_update: (current_time: number, duration: number) => Promise<void>;
+  /** Llamar al desactivarse el ítem o al reciclarse hacia otra property (268.1). */
+  report_progress: () => Promise<void>;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -105,12 +109,15 @@ export function useVideoEngagementEvents(
   // debe romper la reproducción del video que lo dispara.
   const insert_event = async (
     event_type: VideoEngagementEventType,
-    user_id: string
+    user_id: string,
+    payload?: { progress: number }
   ): Promise<void> => {
     try {
-      const { error } = await get_client()
-        .from('events_raw')
-        .insert({ event_type, user_id, property_id, property_video_id, session_id });
+      const row: Record<string, unknown> = { event_type, user_id, property_id, property_video_id, session_id };
+      // video_view/video_completed NO llevan `payload` (contrato de no-regresión,
+      // EC-22) — solo se agrega la clave cuando el llamador la pasa (video_progress).
+      if (payload !== undefined) row.payload = payload;
+      const { error } = await get_client().from('events_raw').insert(row);
 
       if (error) {
         console.error(`[useVideoEngagementEvents] fallo al insertar ${event_type}`, error);
@@ -157,11 +164,39 @@ export function useVideoEngagementEvents(
       );
       return;
     }
+    // 268.1: además del umbral de compleción (video_completed), cada tick
+    // actualiza el máximo de avance del store — independiente de si completa
+    // o no. report_progress() (abajo) lee ese máximo al desactivarse/reciclar.
+    const progress = compute_progress_percent(current_time, duration);
+    if (progress !== null) {
+      store.bump_max_progress(session_id, property_id, progress);
+    }
     if (!is_video_completed(current_time, duration)) return;
     if (store.has_seen(session_id, VIDEO_COMPLETED_EVENT_TYPE, property_id)) return;
     store.mark_seen(session_id, VIDEO_COMPLETED_EVENT_TYPE, property_id);
     await insert_event(VIDEO_COMPLETED_EVENT_TYPE, user.id);
   };
 
-  return { report_view, report_time_update };
+  /** Llamar al desactivarse el ítem en el feed o al reciclarse hacia otra property. */
+  const report_progress = async (): Promise<void> => {
+    if (!user) return;
+    // ver razón (fail-closed, sin PII) en report_view arriba.
+    if (!session_id) {
+      console.error(
+        '[useVideoEngagementEvents] session_id vacío/inválido — se descarta video_progress sin escribir (fail-closed)'
+      );
+      return;
+    }
+    const max = store.get_max_progress(session_id, property_id);
+    // Sin ningún report_time_update previo (nunca hubo máximo) → nada que
+    // reportar; NO es un error, es el estado inicial.
+    if (max === null) return;
+    if (store.has_seen(session_id, VIDEO_PROGRESS_EVENT_TYPE, property_id)) return;
+    // Marca ANTES de insertar — mismo motivo que report_view (fire-and-forget
+    // sin await entre llamadas concurrentes).
+    store.mark_seen(session_id, VIDEO_PROGRESS_EVENT_TYPE, property_id);
+    await insert_event(VIDEO_PROGRESS_EVENT_TYPE, user.id, { progress: max });
+  };
+
+  return { report_view, report_time_update, report_progress };
 }

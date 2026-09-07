@@ -10,6 +10,7 @@ import type {
   CallerVerifier,
   CallerVerifyResult,
   IncrementContactCountResult,
+  InsertContactRepeatEventResult,
   InsertOriginResult,
   OriginRepo,
 } from "./types.ts";
@@ -100,6 +101,25 @@ Deno.serve((req: Request) => {
         .eq("id", property_id);
 
       if (update_err) return { ok: false, error_code: "DB_ERROR" };
+      return { ok: true };
+    },
+
+    // 268.4 — señal para private.crm_temperature (CTE contact_repeat, 266.2/266.3):
+    // la fórmula empareja events_raw.property_id → properties.owner_user_id, por eso
+    // property_id es obligatorio aquí (no basta con agent_id). lead_id no tiene columna
+    // propia en events_raw → va en payload. session_id no se manda (default anotado en
+    // el PLAN de la subtarea: ContactAgentInput no lo trae hoy).
+    async insert_contact_repeat_event(
+      args: { user_id: string; property_id: string; agent_id: string; lead_id: string },
+    ): Promise<InsertContactRepeatEventResult> {
+      const { error } = await client.from("events_raw").insert({
+        event_type: "contact_repeat",
+        user_id: args.user_id,
+        property_id: args.property_id,
+        agent_id: args.agent_id,
+        payload: { lead_id: args.lead_id },
+      });
+      if (error) return { ok: false, error_code: "DB_ERROR" };
       return { ok: true };
     },
   };
