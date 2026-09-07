@@ -2159,6 +2159,22 @@ export type Database = {
         Args: { p_proposed_category: string }
         Returns: string
       }
+      crm_agency_overview: {
+        Args: { p_agency_id: string }
+        Returns: {
+          agent_id: string
+          agent_name: string
+          avg_temperature: number
+          first_contact_at: string
+          flag: string
+          kind: string
+          lead_display_name: string
+          lead_id: string
+          response_hours: number
+          temperature: number
+          untouched_count: number
+        }[]
+      }
       crm_funnel: {
         Args: { p_agent_id: string; p_days?: number }
         Returns: {
@@ -2365,6 +2381,10 @@ export type Database = {
       purge_ad_impressions: { Args: never; Returns: undefined }
       purge_events_raw: { Args: never; Returns: undefined }
       purge_notifications: { Args: never; Returns: undefined }
+      reassign_lead_atomic: {
+        Args: { p_lead_id: string; p_to_agent: string }
+        Returns: undefined
+      }
       reassign_member_properties_atomic: {
         Args: {
           p_agency_id: string
