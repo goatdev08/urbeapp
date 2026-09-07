@@ -17,7 +17,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
 
 import { supabase } from '@/lib/supabase/client';
-import type { CrmBand, CrmLeadRow, CrmLeadsPageCursor } from '../types';
+import type { CrmBand, CrmLeadRow, CrmLeadsPageCursor, ProjectedStatus } from '../types';
 
 export interface UseCrmLeadsPageState {
   data: CrmLeadRow[];
@@ -59,7 +59,15 @@ export function useCrmLeadsPage(
   agentId: string | null | undefined,
   band: CrmBand | null,
   query: string | null,
+  // STUB RED (271.2): status/followUp aceptados pero IGNORADOS por completo
+  // — no viajan a la RPC ni entran en las deps de fetch_page. El GREEN de
+  // 271.2 los cablea siguiendo D-STATUSNULL/D-STATUSEMPTY (contrato fijado
+  // en __tests__/useCrmLeadsPage.test.ts, EC-22..EC-29).
+  status?: ProjectedStatus[] | null,
+  followUp?: boolean | null,
 ): UseCrmLeadsPageState {
+  void status;
+  void followUp;
   const [data, set_data] = useState<CrmLeadRow[]>([]);
   const [loading, set_loading] = useState(Boolean(agentId));
   const [error, set_error] = useState<string | null>(null);
