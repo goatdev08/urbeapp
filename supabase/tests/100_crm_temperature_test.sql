@@ -72,8 +72,9 @@
 --   mutante que trate todas las filas como "primer contacto" cambie el literal esperado).
 -- Lead inactivo (INACTIVE1): el mismo piso de entrada NO cuenta si el lead está borrado
 --   (deleted_at) — derivado literal de "del lead ACTIVO" en la firma de la subtarea.
--- Señales aditivas de fase C (EVENTSADD1): events_raw.zone_search + .contact_repeat suman
---   junto con un like — "la fórmula los suma aunque hoy nadie los escriba".
+-- Señales aditivas de fase C (EVENTSADD1): events_raw.contact_repeat suma junto con un like;
+--   zone_search (property_id, sin lead activo en este fixture) aporta 0 desde 268.3 —
+--   emparejamiento espacial vía lead_origin_properties, ya no property_id -> owner.
 -- Recalibración sin deploy (CONFIG1-2): cambiar crm_weight_save en app_config cambia el
 --   número sin publicar app (precedente lead_score_threshold_*, 20260807000004).
 -- Techo (CAP100): min(100) con una combinación de señales que suma 103 en crudo.
@@ -350,8 +351,13 @@ insert into public.lead_origin_properties (lead_id, property_id, contacted_at) v
   ('00000000-0000-0000-0000-000000100065', '00000000-0000-0000-0000-000000100063',
    (select t0 from t100_anchor));
 
--- ── EVENTSADD: like (5) + events_raw.zone_search (8) + events_raw.contact_repeat (30), todo
---    en T0 — nadie escribe estos 2 eventos hoy (fase C), pero la fórmula ya debe sumarlos ──────
+-- ── EVENTSADD: like (5) + events_raw.contact_repeat (30), todo en T0. events_raw.zone_search
+--    SIGUE presente en el fixture (property_id apunta a la propiedad del agente) pero, desde
+--    268.3, zone_search ya NO empareja por property_id -> owner: empareja espacialmente contra
+--    lead_origin_properties del lead ACTIVO, y este grupo no tiene lead alguno -- el evento
+--    zone_search aporta 0 a propósito (mata el mutante "seguir contando por property_id"; ver
+--    OLDJOIN1 en 106_crm_zone_search_test.sql para el caso dedicado). contact_repeat SIGUE por
+--    property_id -> owner, sin cambio (268.3 solo tocó la rama zone_search) ─────────────────
 insert into public.likes (user_id, property_video_id, property_id, created_at) values
   ('00000000-0000-0000-0000-000000100072', '00000000-0000-0000-0000-000000100074',
    '00000000-0000-0000-0000-000000100073', (select t0 from t100_anchor));
@@ -561,15 +567,18 @@ select is(
 );
 
 -- ════════════════════════════════════════════════════════════════════════════
--- 12) Señales aditivas de fase C — zone_search (8) + contact_repeat de events_raw (30) suman
---     junto con un like (5), aunque hoy nadie los escriba. round(5+8+30)=43.
+-- 12) Señales aditivas de fase C — contact_repeat de events_raw (30) suma junto con un like
+--     (5) por property_id -> owner, sin cambio. zone_search (property_id, sin lead activo)
+--     aporta 0 desde 268.3 (emparejamiento espacial vía lead_origin_properties, no
+--     property_id): round(5+30)=35. Regresión actualizada por 268.3 (test propio en
+--     106_crm_zone_search_test.sql).
 -- ════════════════════════════════════════════════════════════════════════════
 
 select is(
   pg_temp.crm_temp_safe('00000000-0000-0000-0000-000000100071'::uuid,
                          '00000000-0000-0000-0000-000000100072'::uuid, (select t0 from t100_anchor)),
-  43,
-  'EVENTSADD1_like_mas_zone_search_mas_contact_repeat_de_events_raw_suman_43'
+  35,
+  'EVENTSADD1_like_mas_contact_repeat_suman_35_zone_search_sin_lead_activo_aporta_0_268_3'
 );
 
 -- ════════════════════════════════════════════════════════════════════════════

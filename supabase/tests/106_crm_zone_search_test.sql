@@ -80,7 +80,7 @@
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(31);
+select plan(33);
 
 -- ── Helper de impersonación (mismo patrón que 02/08/.../35/62/100_*) ────────────────────
 create or replace function pg_temp.act_as(p_uid uuid, p_role text default 'authenticated')
@@ -222,7 +222,13 @@ insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-000000268152', 'user-contactrepeat1.268@test.local'),
   -- MULTIZONE1 (neighborhood + area matchean la misma propiedad, suman)
   ('00000000-0000-0000-0000-000000268161', 'agent-multizone1.268@test.local'),
-  ('00000000-0000-0000-0000-000000268162', 'user-multizone1.268@test.local');
+  ('00000000-0000-0000-0000-000000268162', 'user-multizone1.268@test.local'),
+  -- ZONE3 / MUNI3 (guardian 268.3, mutantes M1/M1b): origen dentro de OTRA zona distinta a
+  -- la buscada — ata el resultado a CUÁL zona buscó el usuario, no a "alguna colonia".
+  ('00000000-0000-0000-0000-000000268171', 'agent-zone3.268@test.local'),
+  ('00000000-0000-0000-0000-000000268172', 'user-zone3.268@test.local'),
+  ('00000000-0000-0000-0000-000000268181', 'agent-muni3.268@test.local'),
+  ('00000000-0000-0000-0000-000000268182', 'user-muni3.268@test.local');
 
 update public.users set role = 'agent', is_verified_agent = true
   where id in (
@@ -234,7 +240,8 @@ update public.users set role = 'agent', is_verified_agent = true
     '00000000-0000-0000-0000-000000268091', '00000000-0000-0000-0000-000000268101',
     '00000000-0000-0000-0000-000000268111', '00000000-0000-0000-0000-000000268121',
     '00000000-0000-0000-0000-000000268131', '00000000-0000-0000-0000-000000268141',
-    '00000000-0000-0000-0000-000000268151', '00000000-0000-0000-0000-000000268161'
+    '00000000-0000-0000-0000-000000268151', '00000000-0000-0000-0000-000000268161',
+    '00000000-0000-0000-0000-000000268171', '00000000-0000-0000-0000-000000268181'
   );
 
 -- ── Propiedades de origen (una por grupo; ubicaciones dentro/fuera de las zonas) ───────
@@ -306,6 +313,14 @@ insert into public.properties (id, owner_user_id, property_type, operation_type,
   -- MULTIZONE1: EXACTAMENTE en el centro de zona A (también centro del área del payload)
   ('00000000-0000-0000-0000-000000268164', '00000000-0000-0000-0000-000000268161',
    'departamento', 'rent', 'Fixture 268 — MULTIZONE1 origen en el centro de zona A y del area',
+   extensions.ST_SetSRID(extensions.ST_MakePoint(-114.98, 22.02), 4326)::extensions.geography, 12000, 'active'),
+  -- ZONE3: origen DENTRO de zona B; el payload buscará zona A (otra colonia)
+  ('00000000-0000-0000-0000-000000268173', '00000000-0000-0000-0000-000000268171',
+   'departamento', 'rent', 'Fixture 268 — ZONE3 origen dentro de zona B, busqueda en zona A',
+   extensions.ST_SetSRID(extensions.ST_MakePoint(-115.08, 22.02), 4326)::extensions.geography, 12000, 'active'),
+  -- MUNI3: origen DENTRO de zona A (municipio 14039); el payload buscará OTRO municipio
+  ('00000000-0000-0000-0000-000000268183', '00000000-0000-0000-0000-000000268181',
+   'departamento', 'rent', 'Fixture 268 — MUNI3 origen dentro de zona A, busqueda en otro municipio',
    extensions.ST_SetSRID(extensions.ST_MakePoint(-114.98, 22.02), 4326)::extensions.geography, 12000, 'active');
 
 -- ── Leads activos (uno por grupo, salvo NOLEAD1 que se borra y CONTACTREPEAT1 que no
@@ -344,7 +359,11 @@ insert into public.leads (id, agent_id, user_id, status) values
   ('00000000-0000-0000-0000-000000268143', '00000000-0000-0000-0000-000000268141',
    '00000000-0000-0000-0000-000000268142', 'whatsapp_opened'),
   ('00000000-0000-0000-0000-000000268163', '00000000-0000-0000-0000-000000268161',
-   '00000000-0000-0000-0000-000000268162', 'whatsapp_opened');
+   '00000000-0000-0000-0000-000000268162', 'whatsapp_opened'),
+  ('00000000-0000-0000-0000-000000268174', '00000000-0000-0000-0000-000000268171',
+   '00000000-0000-0000-0000-000000268172', 'whatsapp_opened'),
+  ('00000000-0000-0000-0000-000000268184', '00000000-0000-0000-0000-000000268181',
+   '00000000-0000-0000-0000-000000268182', 'whatsapp_opened');
 
 update public.leads set deleted_at = (select t0 from t268_anchor)
   where id = '00000000-0000-0000-0000-000000268074';
@@ -366,7 +385,9 @@ insert into public.lead_origin_properties (lead_id, property_id, contacted_at) v
   ('00000000-0000-0000-0000-000000268123', '00000000-0000-0000-0000-000000268124', (select t0 from t268_anchor)),
   ('00000000-0000-0000-0000-000000268133', '00000000-0000-0000-0000-000000268134', (select t0 from t268_anchor)),
   ('00000000-0000-0000-0000-000000268143', '00000000-0000-0000-0000-000000268144', (select t0 from t268_anchor)),
-  ('00000000-0000-0000-0000-000000268163', '00000000-0000-0000-0000-000000268164', (select t0 from t268_anchor));
+  ('00000000-0000-0000-0000-000000268163', '00000000-0000-0000-0000-000000268164', (select t0 from t268_anchor)),
+  ('00000000-0000-0000-0000-000000268174', '00000000-0000-0000-0000-000000268173', (select t0 from t268_anchor)),
+  ('00000000-0000-0000-0000-000000268184', '00000000-0000-0000-0000-000000268183', (select t0 from t268_anchor));
 
 -- ── NOLEAD1: like independiente (weight 5) para probar que el 0 de zone_search NO es
 --    un fixture vacío — el resto de la fórmula sigue viva ──────────────────────────────
@@ -444,6 +465,16 @@ insert into public.events_raw (event_type, user_id, property_id, payload, create
    (select t0 from t268_anchor)),
   ('zone_search', '00000000-0000-0000-0000-000000268162', null,
    '{"kind":"area","center":{"lat":22.020,"lng":-114.980},"radius_m":5000}'::jsonb,
+   (select t0 from t268_anchor)),
+  -- ZONE3: busca zona A, pero el origen está en zona B (mutante M1: ignorar neighborhood_id).
+  ('zone_search', '00000000-0000-0000-0000-000000268172', null,
+   json_build_object('kind', 'neighborhood', 'neighborhood_id',
+     (select n.id::text from public.mx_neighborhoods n where n.source_key = 'test-268-zone-a'))::jsonb,
+   (select t0 from t268_anchor)),
+  -- MUNI3: busca OTRO municipio (14120 Zapopan, sin colonias en esta tx), origen en zona A
+  -- de 14039 (mutante M1b: ignorar municipality_id).
+  ('zone_search', '00000000-0000-0000-0000-000000268182', null,
+   '{"kind":"municipality","municipality_id":"14120"}'::jsonb,
    (select t0 from t268_anchor));
 
 -- ── CONTACTREPEAT1: contact_repeat sigue por property_id -> owner, SIN lead alguno ─────
@@ -499,6 +530,22 @@ select is(
                          '00000000-0000-0000-0000-000000268052'::uuid, (select t0 from t268_anchor)),
   30,
   'AREA2_area_fuera_mismo_centro_radius_pequeno_30'
+);
+
+-- ZONE3/MUNI3 (guardian 268.3): el origen SÍ cae dentro de alguna colonia, pero NO en la
+-- buscada — un SUT que ignore neighborhood_id/municipality_id del payload daría 38.
+select is(
+  pg_temp.crm_temp_safe('00000000-0000-0000-0000-000000268171'::uuid,
+                         '00000000-0000-0000-0000-000000268172'::uuid, (select t0 from t268_anchor)),
+  30,
+  'ZONE3_origen_en_zona_B_busqueda_en_zona_A_no_cuenta_30'
+);
+
+select is(
+  pg_temp.crm_temp_safe('00000000-0000-0000-0000-000000268181'::uuid,
+                         '00000000-0000-0000-0000-000000268182'::uuid, (select t0 from t268_anchor)),
+  30,
+  'MUNI3_origen_en_colonia_de_14039_busqueda_en_municipio_14120_no_cuenta_30'
 );
 
 -- ════════════════════════════════════════════════════════════════════════════
