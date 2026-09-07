@@ -54,6 +54,19 @@
  * - (EC-13) rechazo_real_de_red_desde_estado_poblado_error_neutro_y_data_null_no_vacuo
  * - (EC-14) recuperacion_tras_error_un_refetch_exitoso_limpia_el_error_y_puebla_data
  * - (EC-15) estado_inicial_con_leadId_null_primer_render_data_null_loading_false_sin_error
+ *
+ * ### Extensión RED (subtarea 275.4, tarea #275 "hardening(267.6)",
+ * 2026-09-07): barrido del guard de argumento faltante — el guardian de
+ * 275.3 confirmó por mutación que el cuerpo COMPLETO del guard `if
+ * (!leadId)` se puede vaciar y la suite sigue verde: los EC de estado inicial
+ * (EC-15) sondean el PRIMER render con leadId null, donde los inicializadores
+ * de useState ya nacen vacíos — el reset nunca se ejecuta bajo test. Falta la
+ * TRANSICIÓN leadId poblado -> null. Segundo aspecto: ese branch NO
+ * incrementa seq_ref, así que una petición en vuelo del leadId ANTERIOR que
+ * resuelve DESPUÉS de la transición a null pasa el guard del token y repuebla
+ * el estado que el guard acababa de limpiar.
+ * - (EC-16) transicion_leadId_pasa_a_null_tras_estar_poblado_reinicia_data_a_null_sin_error_loading_false
+ * - (EC-17) peticion_en_vuelo_del_leadId_anterior_resuelve_tras_la_transicion_a_null_y_no_repuebla_D_SEQ
  */
 
 import { renderHook, act } from '@testing-library/react-native';
@@ -416,5 +429,59 @@ describe('useCrmLeadDetail', () => {
     expect(first.data).toBeNull();
     expect(first.loading).toBe(false);
     expect(first.error).toBeNull();
+  });
+
+  // -------------------------------------------------------------------------
+  // Extensión RED (subtarea 275.4): barrido del guard de argumento faltante.
+  // El guard `if (!leadId)` hoy resetea data/loading/error pero NO bumpea
+  // seq_ref — deben fallar hasta el GREEN.
+  // -------------------------------------------------------------------------
+
+  it('(EC-16) transicion_leadId_pasa_a_null_tras_estar_poblado_reinicia_data_a_null_sin_error_loading_false', async () => {
+    const rpc = jest.fn().mockResolvedValue({ data: [DETAIL_ROW_CON_ORIGEN], error: null });
+    mock_supabase_holder.client = make_supabase_mock(rpc);
+
+    const { result, rerender } = await renderHook(
+      ({ leadId }: { leadId: string | null }) => useCrmLeadDetail(leadId),
+      { initialProps: { leadId: LEAD_ID } },
+    );
+    expect(result.current.data).toEqual(DETAIL_ROW_CON_ORIGEN);
+
+    await rerender({ leadId: null });
+
+    expect(result.current.data).toBeNull();
+    expect(result.current.loading).toBe(false);
+    expect(result.current.error).toBeNull();
+  });
+
+  it('(EC-17) peticion_en_vuelo_del_leadId_anterior_resuelve_tras_la_transicion_a_null_y_no_repuebla_D_SEQ', async () => {
+    // Segundo aspecto del guard (guardian 275.3, hallazgo diferido a 275.4):
+    // el branch `if (!leadId)` NO incrementa seq_ref. Una petición en vuelo
+    // del leadId ANTERIOR que resuelve DESPUÉS de la transición a null pasa
+    // el guard del token (seq === seq_ref.current sigue siendo cierto) y
+    // repuebla el estado que el guard acababa de limpiar.
+    let resolve_a!: (value: { data: CrmLeadDetail[]; error: null }) => void;
+    const pending_a = new Promise<{ data: CrmLeadDetail[]; error: null }>((resolve) => {
+      resolve_a = resolve;
+    });
+    mock_supabase_holder.client = make_supabase_mock(jest.fn().mockReturnValue(pending_a));
+
+    const { result, rerender } = await renderHook(
+      ({ leadId }: { leadId: string | null }) => useCrmLeadDetail(leadId),
+      { initialProps: { leadId: LEAD_ID } },
+    );
+
+    await rerender({ leadId: null });
+    expect(result.current.data).toBeNull();
+
+    await act(async () => {
+      resolve_a({ data: [DETAIL_ROW_CON_ORIGEN], error: null });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(result.current.data).toBeNull();
+    expect(result.current.loading).toBe(false);
+    expect(result.current.error).toBeNull();
   });
 });

@@ -61,6 +61,14 @@
  * - (EC-12) rechazo_real_de_red_desde_estado_poblado_error_neutro_y_message_null_no_vacuo
  * - (EC-13) recuperacion_tras_error_un_refetch_exitoso_limpia_el_error_y_puebla_message
  * - (EC-14) estado_inicial_con_leadId_null_primer_render_message_null_loading_false_sin_error
+ *
+ * ### Extensión RED (subtarea 275.4, tarea #275 "hardening(267.6)",
+ * 2026-09-07): barrido del guard de argumento faltante (mismo hallazgo del
+ * guardian de 275.3 en los otros 2 hooks de la ficha). El guard `if
+ * (!leadId)` no se prueba en TRANSICIÓN (solo en el primer render, donde
+ * useState ya nace vacío) y no bumpea seq_ref.
+ * - (EC-15) transicion_leadId_pasa_a_null_tras_estar_poblado_reinicia_message_a_null_sin_error_loading_false
+ * - (EC-16) peticion_en_vuelo_del_leadId_anterior_resuelve_tras_la_transicion_a_null_y_no_repuebla_D_SEQ
  */
 
 import { renderHook, act } from '@testing-library/react-native';
@@ -372,5 +380,54 @@ describe('useCrmSuggestedMessage', () => {
     expect(first.message).toBeNull();
     expect(first.loading).toBe(false);
     expect(first.error).toBeNull();
+  });
+
+  // -------------------------------------------------------------------------
+  // Extensión RED (subtarea 275.4): barrido del guard de argumento faltante.
+  // El guard `if (!leadId)` hoy resetea message/loading/error pero NO bumpea
+  // seq_ref — deben fallar hasta el GREEN.
+  // -------------------------------------------------------------------------
+
+  it('(EC-15) transicion_leadId_pasa_a_null_tras_estar_poblado_reinicia_message_a_null_sin_error_loading_false', async () => {
+    const rpc = jest.fn().mockResolvedValue({ data: MENSAJE_SUGERIDO, error: null });
+    mock_supabase_holder.client = make_supabase_mock(rpc);
+
+    const { result, rerender } = await renderHook(
+      ({ leadId }: { leadId: string | null }) => useCrmSuggestedMessage(leadId),
+      { initialProps: { leadId: LEAD_ID } },
+    );
+    expect(result.current.message).toBe(MENSAJE_SUGERIDO);
+
+    await rerender({ leadId: null });
+
+    expect(result.current.message).toBeNull();
+    expect(result.current.loading).toBe(false);
+    expect(result.current.error).toBeNull();
+  });
+
+  it('(EC-16) peticion_en_vuelo_del_leadId_anterior_resuelve_tras_la_transicion_a_null_y_no_repuebla_D_SEQ', async () => {
+    let resolve_a!: (value: { data: string; error: null }) => void;
+    const pending_a = new Promise<{ data: string; error: null }>((resolve) => {
+      resolve_a = resolve;
+    });
+    mock_supabase_holder.client = make_supabase_mock(jest.fn().mockReturnValue(pending_a));
+
+    const { result, rerender } = await renderHook(
+      ({ leadId }: { leadId: string | null }) => useCrmSuggestedMessage(leadId),
+      { initialProps: { leadId: LEAD_ID } },
+    );
+
+    await rerender({ leadId: null });
+    expect(result.current.message).toBeNull();
+
+    await act(async () => {
+      resolve_a({ data: MENSAJE_SUGERIDO, error: null });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(result.current.message).toBeNull();
+    expect(result.current.loading).toBe(false);
+    expect(result.current.error).toBeNull();
   });
 });

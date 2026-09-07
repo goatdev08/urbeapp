@@ -104,6 +104,15 @@
  *   275.1): borrar `set_status(null)` → EC-15 muere; restaurado; borrar
  *   `set_phone(null)` → EC-15 muere; restaurado (re-escritura del archivo,
  *   nunca git checkout/restore — GREEN sin commitear, incidente 219.3).
+ *
+ * ### Extensión RED (subtarea 275.4, tarea #275 "hardening(267.6)",
+ * 2026-09-07): EC-13 ya cubre la TRANSICIÓN leadId poblado -> null (fijada en
+ * 275.1) — no se duplica. Falta el segundo aspecto del mismo guard,
+ * confirmado por el guardian en 275.3 sobre los otros hooks: el branch `if
+ * (!leadId)` NO incrementa seq_ref, así que una query en vuelo del leadId
+ * ANTERIOR que resuelve DESPUÉS de la transición a null pasa el guard del
+ * token y repuebla phone/status.
+ * - (EC-16) query_en_vuelo_del_leadId_anterior_resuelve_tras_la_transicion_a_null_y_no_repuebla_ni_phone_ni_status_D_SEQ
  */
 
 import { renderHook, act } from '@testing-library/react-native';
@@ -558,5 +567,33 @@ describe('useLeadRawFields', () => {
     });
 
     expect(maybe_single).toHaveBeenCalledTimes(2);
+  });
+
+  it('(EC-16) query_en_vuelo_del_leadId_anterior_resuelve_tras_la_transicion_a_null_y_no_repuebla_ni_phone_ni_status_D_SEQ', async () => {
+    let resolve_a!: (value: QueryResult) => void;
+    const pending_a = new Promise<QueryResult>((resolve) => {
+      resolve_a = resolve;
+    });
+    mock_supabase_holder.client = make_supabase_mock(jest.fn().mockReturnValue(pending_a));
+
+    const { result, rerender } = await renderHook(
+      ({ leadId }: { leadId: string | null }) => useLeadRawFields(leadId),
+      { initialProps: { leadId: LEAD_ID } },
+    );
+
+    await rerender({ leadId: null });
+    expect(result.current.phone).toBeNull();
+    expect(result.current.status).toBeNull();
+
+    await act(async () => {
+      resolve_a({ data: { status: STATUS_DEFAULT, users: { phone: TELEFONO } }, error: null });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(result.current.phone).toBeNull();
+    expect(result.current.status).toBeNull();
+    expect(result.current.loading).toBe(false);
+    expect(result.current.error).toBeNull();
   });
 });

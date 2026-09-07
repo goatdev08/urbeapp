@@ -67,6 +67,17 @@
  * - (EC-16) recuperacion_tras_error_un_refetch_exitoso_limpia_el_error_y_repuebla_data
  * - (EC-17) estado_inicial_con_leadId_null_primer_render_data_vacia_loading_false_sin_error
  * - (EC-18) pagina_tardia_de_loadMore_en_modo_append_no_concatena_ni_pisa_next_cursor_ref_D_SEQ
+ *
+ * ### Extensión RED (subtarea 275.4, tarea #275 "hardening(267.6)",
+ * 2026-09-07): barrido del guard de argumento faltante. El guardian de 275.3
+ * confirmó que el guard `if (!leadId)` se puede vaciar y la suite sigue
+ * verde: EC-12/EC-17 solo sondean el PRIMER render con leadId null (donde
+ * useState ya nace vacío), nunca la TRANSICIÓN. Segundo aspecto: ese branch
+ * NO incrementa seq_ref, así que una página en vuelo del leadId ANTERIOR que
+ * resuelve DESPUÉS de la transición a null pasa el guard y repuebla el
+ * estado que el guard acababa de limpiar (data Y next_cursor_ref).
+ * - (EC-19) transicion_leadId_pasa_a_null_tras_estar_poblado_reinicia_data_hasmore_y_el_cursor_de_paginacion
+ * - (EC-20) pagina_en_vuelo_del_leadId_anterior_resuelve_tras_la_transicion_a_null_y_no_repuebla_ni_pisa_el_cursor_D_SEQ
  */
 
 import { renderHook, act } from '@testing-library/react-native';
@@ -611,5 +622,81 @@ describe('useLeadActivity', () => {
       p_limit: 20,
       p_cursor: ROW_A_275_3.occurred_at,
     });
+  });
+
+  // -------------------------------------------------------------------------
+  // Extensión RED (subtarea 275.4): barrido del guard de argumento faltante.
+  // El guard `if (!leadId)` hoy resetea data/loading/error/hasMore y
+  // next_cursor_ref, pero NO bumpea seq_ref — deben fallar hasta el GREEN.
+  // -------------------------------------------------------------------------
+
+  it('(EC-19) transicion_leadId_pasa_a_null_tras_estar_poblado_reinicia_data_hasmore_y_el_cursor_de_paginacion', async () => {
+    const rpc = jest
+      .fn()
+      .mockResolvedValueOnce({ data: [ROW_1, ROW_2, ROW_3_ULTIMA_DE_PAGINA_1], error: null })
+      .mockResolvedValueOnce({ data: [ROW_4_SEGUNDA_PAGINA], error: null });
+    mock_supabase_holder.client = make_supabase_mock(rpc);
+
+    const { result, rerender } = await renderHook(({ leadId }: { leadId: string | null }) => useLeadActivity(leadId), {
+      initialProps: { leadId: LEAD_ID },
+    });
+    expect(result.current.data).toHaveLength(3);
+    expect(result.current.hasMore).toBe(true);
+
+    await rerender({ leadId: null });
+
+    expect(result.current.data).toEqual([]);
+    expect(result.current.loading).toBe(false);
+    expect(result.current.error).toBeNull();
+    expect(result.current.hasMore).toBe(false);
+
+    // El cursor de paginación también debe reiniciarse: al volver a un
+    // leadId válido, la llamada debe mandar p_cursor null, NUNCA el
+    // occurred_at rancio de ROW_3_ULTIMA_DE_PAGINA_1.
+    await rerender({ leadId: 'lead-uuid-266-7-otro' });
+
+    expect(rpc).toHaveBeenLastCalledWith('lead_activity', {
+      p_lead_id: 'lead-uuid-266-7-otro',
+      p_limit: 20,
+      p_cursor: null,
+    });
+  });
+
+  it('(EC-20) pagina_en_vuelo_del_leadId_anterior_resuelve_tras_la_transicion_a_null_y_no_repuebla_ni_pisa_el_cursor_D_SEQ', async () => {
+    // Segundo aspecto del guard (guardian 275.3, hallazgo diferido a 275.4):
+    // el branch `if (!leadId)` NO incrementa seq_ref. Una página en vuelo del
+    // leadId ANTERIOR que resuelve DESPUÉS de la transición a null (y
+    // MIENTRAS SIGUE en null — sin otra petición real de por medio que
+    // adelante el token por su cuenta) pasa el guard del token y repuebla el
+    // estado (data Y next_cursor_ref) que el guard acababa de limpiar.
+    const ROW_A_TARDIA: LeadActivityEntry = {
+      occurred_at: '2026-09-01T08:00:00Z',
+      kind: 'video_view',
+      detail: { property_id: 'prop-a-275-4' },
+    };
+    let resolve_a!: (value: { data: LeadActivityEntry[]; error: null }) => void;
+    const pending_a = new Promise<{ data: LeadActivityEntry[]; error: null }>((resolve) => {
+      resolve_a = resolve;
+    });
+    mock_supabase_holder.client = make_supabase_mock(jest.fn().mockReturnValue(pending_a));
+
+    const { result, rerender } = await renderHook(({ leadId }: { leadId: string | null }) => useLeadActivity(leadId), {
+      initialProps: { leadId: 'lead-a-275-4' },
+    });
+
+    await rerender({ leadId: null });
+    expect(result.current.data).toEqual([]);
+    expect(result.current.hasMore).toBe(false);
+
+    await act(async () => {
+      resolve_a({ data: [ROW_A_TARDIA], error: null });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(result.current.data).toEqual([]);
+    expect(result.current.hasMore).toBe(false);
+    expect(result.current.loading).toBe(false);
+    expect(result.current.error).toBeNull();
   });
 });

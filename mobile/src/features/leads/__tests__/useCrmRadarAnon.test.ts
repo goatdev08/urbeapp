@@ -56,6 +56,20 @@
  * - (EC-10) unmount_durante_llamada_en_vuelo_no_aplica_estado_sin_warning_act
  * - (EC-11) agentId_null_o_undefined_no_llama_rpc_data_vacio_sin_error
  * - (EC-12) refetch_manual_redispara_la_rpc
+ *
+ * ### Extensión RED (subtarea 275.4, tarea #275 "hardening(267.6)",
+ * 2026-09-07, AMPLIACIÓN DE ALCANCE): D-SEQ + try/catch, molde
+ * useCrmLeadDetail.ts/useLeadRawFields.ts. Hoy el hook NO tiene seq_ref ni
+ * try/catch — estos casos DEBEN fallar hasta el GREEN.
+ * - (EC-13) rechazo_real_de_red_desde_estado_poblado_error_neutro_y_data_vacia_no_vacuo
+ * - (EC-14) recuperacion_tras_error_un_refetch_exitoso_limpia_el_error_y_repuebla_data
+ * - (EC-15) respuesta_tardia_de_un_agentId_anterior_no_pisa_el_radar_del_actual_D_SEQ
+ *
+ * ### Extensión RED (275.4, frente B): barrido del guard de argumento
+ * faltante — el guard `if (!agentId)` no se prueba en TRANSICIÓN (solo en el
+ * primer render, donde useState ya nace vacío) y no bumpea seq_ref.
+ * - (EC-16) agentId_pasa_a_null_tras_estar_poblado_reinicia_data_a_vacio_sin_error_loading_false
+ * - (EC-17) peticion_en_vuelo_del_agentId_anterior_resuelve_tras_la_transicion_a_null_y_no_repuebla_D_SEQ
  */
 
 import { renderHook, act } from '@testing-library/react-native';
@@ -344,5 +358,129 @@ describe('useCrmRadarAnon', () => {
     });
 
     expect(rpc).toHaveBeenCalledTimes(2);
+  });
+
+  // -------------------------------------------------------------------------
+  // Extensión RED (subtarea 275.4): D-SEQ + try/catch, molde
+  // useCrmLeadDetail.ts. El hook hoy NO tiene seq_ref ni try/catch — deben
+  // fallar hasta el GREEN.
+  // -------------------------------------------------------------------------
+
+  it('(EC-13) rechazo_real_de_red_desde_estado_poblado_error_neutro_y_data_vacia_no_vacuo', async () => {
+    const rpc = jest
+      .fn()
+      .mockResolvedValueOnce({ data: [RADAR_ROW_1, RADAR_ROW_2], error: null })
+      .mockRejectedValueOnce(new TypeError('Network request failed'));
+    mock_supabase_holder.client = make_supabase_mock(rpc);
+
+    const { result } = await renderHook(() => useCrmRadarAnon(AGENT_ID, 20));
+    expect(result.current.data).toEqual([RADAR_ROW_1, RADAR_ROW_2]);
+
+    await act(async () => {
+      await result.current.refetch();
+    });
+
+    expect(result.current.error).toBe('No se pudo cargar el radar de interesados. Intenta de nuevo.');
+    expect(result.current.data).toEqual([]);
+    expect(result.current.loading).toBe(false);
+  });
+
+  it('(EC-14) recuperacion_tras_error_un_refetch_exitoso_limpia_el_error_y_repuebla_data', async () => {
+    const rpc = jest
+      .fn()
+      .mockResolvedValueOnce({ data: [RADAR_ROW_1], error: null })
+      .mockRejectedValueOnce(new TypeError('Network request failed'))
+      .mockResolvedValueOnce({ data: [RADAR_ROW_2], error: null });
+    mock_supabase_holder.client = make_supabase_mock(rpc);
+
+    const { result } = await renderHook(() => useCrmRadarAnon(AGENT_ID, 20));
+
+    await act(async () => {
+      await result.current.refetch();
+    });
+    expect(result.current.error).toBe('No se pudo cargar el radar de interesados. Intenta de nuevo.');
+
+    await act(async () => {
+      await result.current.refetch();
+    });
+
+    expect(result.current.error).toBeNull();
+    expect(result.current.data).toEqual([RADAR_ROW_2]);
+  });
+
+  it('(EC-15) respuesta_tardia_de_un_agentId_anterior_no_pisa_el_radar_del_actual_D_SEQ', async () => {
+    let resolve_a!: (value: { data: CrmRadarRow[]; error: null }) => void;
+    const pending_a = new Promise<{ data: CrmRadarRow[]; error: null }>((resolve) => {
+      resolve_a = resolve;
+    });
+    const rpc = jest
+      .fn()
+      .mockReturnValueOnce(pending_a)
+      .mockResolvedValueOnce({ data: [RADAR_ROW_2], error: null });
+    mock_supabase_holder.client = make_supabase_mock(rpc);
+
+    const { result, rerender } = await renderHook(({ agentId }: { agentId: string }) => useCrmRadarAnon(agentId, 20), {
+      initialProps: { agentId: 'agent-a-275-4' },
+    });
+    await rerender({ agentId: 'agent-b-275-4' });
+    expect(result.current.data).toEqual([RADAR_ROW_2]);
+
+    await act(async () => {
+      resolve_a({ data: [RADAR_ROW_1], error: null });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(result.current.data).toEqual([RADAR_ROW_2]);
+    expect(result.current.loading).toBe(false);
+  });
+
+  // -------------------------------------------------------------------------
+  // Extensión RED (subtarea 275.4): barrido del guard de argumento faltante.
+  // El guard `if (!agentId)` hoy resetea data/loading/error pero NO bumpea
+  // seq_ref — deben fallar hasta el GREEN.
+  // -------------------------------------------------------------------------
+
+  it('(EC-16) agentId_pasa_a_null_tras_estar_poblado_reinicia_data_a_vacio_sin_error_loading_false', async () => {
+    const rpc = jest.fn().mockResolvedValue({ data: [RADAR_ROW_1], error: null });
+    mock_supabase_holder.client = make_supabase_mock(rpc);
+
+    const { result, rerender } = await renderHook(
+      ({ agentId }: { agentId: string | null }) => useCrmRadarAnon(agentId, 20),
+      { initialProps: { agentId: AGENT_ID } },
+    );
+    expect(result.current.data).toEqual([RADAR_ROW_1]);
+
+    await rerender({ agentId: null });
+
+    expect(result.current.data).toEqual([]);
+    expect(result.current.loading).toBe(false);
+    expect(result.current.error).toBeNull();
+  });
+
+  it('(EC-17) peticion_en_vuelo_del_agentId_anterior_resuelve_tras_la_transicion_a_null_y_no_repuebla_D_SEQ', async () => {
+    let resolve_a!: (value: { data: CrmRadarRow[]; error: null }) => void;
+    const pending_a = new Promise<{ data: CrmRadarRow[]; error: null }>((resolve) => {
+      resolve_a = resolve;
+    });
+    mock_supabase_holder.client = make_supabase_mock(jest.fn().mockReturnValue(pending_a));
+
+    const { result, rerender } = await renderHook(
+      ({ agentId }: { agentId: string | null }) => useCrmRadarAnon(agentId, 20),
+      { initialProps: { agentId: AGENT_ID } },
+    );
+
+    await rerender({ agentId: null });
+    expect(result.current.data).toEqual([]);
+
+    await act(async () => {
+      resolve_a({ data: [RADAR_ROW_1], error: null });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(result.current.data).toEqual([]);
+    expect(result.current.loading).toBe(false);
+    expect(result.current.error).toBeNull();
   });
 });
