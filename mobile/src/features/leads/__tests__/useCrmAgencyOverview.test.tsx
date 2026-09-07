@@ -62,6 +62,17 @@
  * - (EC-11) rpc_sin_filas_arreglos_vacios_sin_error_0_filas_es_legitimo
  * - (EC-12) error_de_rpc_mensaje_legible_en_espanol_sin_pii_arreglos_vacios
  * - (EC-13) unmount_durante_llamada_en_vuelo_no_lanza_sin_warning_act
+ * - (EC-14) error_tras_exito_no_deja_filas_rancias — guarda de mutación
+ *   (mata M4: quitar los `set_*([])` de la rama de error dejaría las filas
+ *   de la carga previa exitosa "rancias" en pantalla).
+ * - (EC-15) rpc_rechaza_red_loading_false_y_error_conectividad — hallazgo
+ *   del guardian (269.5): el GREEN actual NO envuelve `await supabase.rpc`
+ *   en try/catch, así que un rechazo de RED (network/timeout, distinto de
+ *   `{data:null,error}`) deja `loading` colgado en `true` para siempre.
+ *   Mensaje esperado = LEAD_EF_NETWORK_FALLBACK (lead_error_messages.ts,
+ *   mismo texto que usa useReassignLead para el mismo escenario) — literal
+ *   fijado aquí, NUNCA importado del SUT ni del mapa. Este caso queda en
+ *   ROJO contra el hook vigente; cierra cuando el GREEN agregue el catch.
  */
 
 import { act, renderHook } from '@testing-library/react-native';
@@ -400,5 +411,73 @@ describe('useCrmAgencyOverview', () => {
 
     expect(console_error_spy).not.toHaveBeenCalled();
     console_error_spy.mockRestore();
+  });
+
+  it('(EC-14) error_tras_exito_no_deja_filas_rancias', async () => {
+    const rpc_sequence = jest
+      .fn()
+      .mockResolvedValueOnce({ data: [AGENT_ROW_1, UNMANAGED_ROW_1], error: null })
+      .mockResolvedValueOnce({ data: null, error: { message: 'permission denied' } });
+    mock_supabase_holder.bundle = make_binding_sensitive_supabase_mock({ rpc: rpc_sequence });
+
+    const { result } = await renderHook(() => useCrmAgencyOverview(AGENCY_ID));
+
+    // Carga inicial exitosa — hay filas en pantalla.
+    expect(result.current.agents).toEqual([EXPECTED_AGENT_1]);
+    expect(result.current.unmanaged).toEqual([EXPECTED_UNMANAGED_1]);
+    expect(result.current.error).toBeNull();
+
+    // refetch() cuya rpc devuelve error — las filas previas NO deben
+    // sobrevivir en pantalla junto al mensaje de error (M4: si el GREEN
+    // quitara los `set_agents([])`/`set_unmanaged([])` de la rama de
+    // error, este test lo cazaría).
+    await act(async () => {
+      await result.current.refetch();
+    });
+
+    expect(result.current.agents).toEqual([]);
+    expect(result.current.unmanaged).toEqual([]);
+    expect(result.current.error).toBe('No se pudo cargar la vista de agencia del CRM. Intenta de nuevo.');
+  });
+
+  it('(EC-15) rpc_rechaza_red_loading_false_y_error_conectividad', async () => {
+    // La promesa RECHAZA (network/timeout) — distinto de {data:null,error}.
+    // Se adjunta un .catch mudo sobre LA MISMA instancia que consume el SUT
+    // (no una copia) para que Node no la reporte como "unhandled" aunque el
+    // hook vigente todavía no la envuelva en try/catch — el assert de abajo
+    // es el que realmente decide si el test pasa o falla, no el catch mudo.
+    const NETWORK_ERROR = new Error('Network request failed');
+    const rejected = Promise.reject(NETWORK_ERROR);
+    rejected.catch(() => {});
+
+    let unhandled_rejection: unknown = null;
+    const on_unhandled_rejection = (reason: unknown) => {
+      unhandled_rejection = reason;
+    };
+    process.on('unhandledRejection', on_unhandled_rejection);
+
+    mock_supabase_holder.bundle = make_binding_sensitive_supabase_mock({ rpc: () => rejected });
+
+    const { result } = await renderHook(() => useCrmAgencyOverview(AGENCY_ID));
+
+    // Da margen a que el rechazo drene por completo antes de asertar —
+    // sin esto, el hook actual (sin catch) podría dejar el efecto a medias.
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(result.current.loading).toBe(false);
+    expect(result.current.error).toBe('No se pudo conectar. Verifica tu conexión e intenta de nuevo.');
+    expect(result.current.agents).toEqual([]);
+    expect(result.current.unmanaged).toEqual([]);
+
+    process.off('unhandledRejection', on_unhandled_rejection);
+    // No se asierta unhandled_rejection aquí a propósito: el objetivo de
+    // este caso es el estado observable del hook (loading/error), no el
+    // side-channel del proceso — el .catch mudo de arriba ya evita que se
+    // filtre a las suites siguientes independientemente del resultado.
+    void unhandled_rejection;
   });
 });
