@@ -77,6 +77,18 @@ jest.mock('../hooks/usePlaceSearch', () => ({
   }),
 }));
 
+// 268.2: useZoneSearchEvent (vía @/features/auth/context) evalúa el cliente
+// real de Supabase al importarse — truena bajo Jest sin env vars (este
+// archivo no las mockea, MapScreen no lo necesitaba antes de 268.2). Mock
+// mínimo: MapScreen no tiene lógica bajo prueba aquí sobre la telemetría
+// (su contrato vive en useZoneSearchEvent.test.tsx), solo necesita no explotar.
+// Hoisteado (guardian 268.2): un jest.fn estable permite asertar el cableado
+// de los 3 disparos desde los tests que ya conducen on_select_place.
+const mock_report_zone_search = jest.fn();
+jest.mock('../hooks/useZoneSearchEvent', () => ({
+  useZoneSearchEvent: () => ({ report_zone_search: mock_report_zone_search }),
+}));
+
 const mock_fetch_neighborhood_polygon = jest.fn();
 jest.mock('../lib/neighborhoodPolygon', () => ({
   fetch_neighborhood_polygon: (...args: unknown[]) => mock_fetch_neighborhood_polygon(...args),
@@ -124,6 +136,8 @@ describe('MapScreen — candado #233.1 (fetch de polígono fallido)', () => {
     });
 
     expect(getByText(NEIGHBORHOOD_POLYGON_ERROR_MESSAGE)).toBeTruthy();
+    // 268.2: una búsqueda de colonia que FALLÓ no es señal CRM (mutante M13 del guardian)
+    expect(mock_report_zone_search).not.toHaveBeenCalled();
   });
 
   it('fetch exitoso → sin mensaje de error de polígono', async () => {
@@ -142,6 +156,12 @@ describe('MapScreen — candado #233.1 (fetch de polígono fallido)', () => {
     });
 
     expect(queryByText(NEIGHBORHOOD_POLYGON_ERROR_MESSAGE)).toBeNull();
+    // 268.2: colonia con polígono OK → un zone_search {kind:'neighborhood'}
+    expect(mock_report_zone_search).toHaveBeenCalledTimes(1);
+    expect(mock_report_zone_search).toHaveBeenCalledWith({
+      kind: 'neighborhood',
+      neighborhood_id: NEIGHBORHOOD.id,
+    });
   });
 
   it('fallo→éxito: una segunda selección que SÍ resuelve limpia el mensaje de la anterior (candado del guardian — mutante: borrar el reset de polygon_error al inicio de handle_select_place)', async () => {
@@ -166,5 +186,38 @@ describe('MapScreen — candado #233.1 (fetch de polígono fallido)', () => {
     });
 
     expect(queryByText(NEIGHBORHOOD_POLYGON_ERROR_MESSAGE)).toBeNull();
+  });
+});
+
+describe('MapScreen — zone_search (268.2): disparo de municipio', () => {
+  it('municipio con bbox → un zone_search {kind:\'municipality\'} con su id; sin bbox → nada', async () => {
+    await render(<MapScreen />);
+    const latest_props = mock_place_search_calls[mock_place_search_calls.length - 1];
+
+    await act(async () => {
+      await latest_props.on_select_place({
+        kind: 'municipality',
+        id: 'muni-1',
+        name: 'Zapopan',
+        context: 'Jal.',
+        bbox: null,
+      });
+    });
+    expect(mock_report_zone_search).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await latest_props.on_select_place({
+        kind: 'municipality',
+        id: 'muni-1',
+        name: 'Zapopan',
+        context: 'Jal.',
+        bbox: { min_lat: 20.6, min_lng: -103.5, max_lat: 20.8, max_lng: -103.3 },
+      });
+    });
+    expect(mock_report_zone_search).toHaveBeenCalledTimes(1);
+    expect(mock_report_zone_search).toHaveBeenCalledWith({
+      kind: 'municipality',
+      municipality_id: 'muni-1',
+    });
   });
 });

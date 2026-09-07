@@ -23,14 +23,17 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { UrbeaLoader } from '@/components/UrbeaLoader';
 import { colors, spacing } from '@/theme/theme';
 import { useLocation } from '@/features/location/LocationProvider';
+import { get_app_session_id } from '@/features/feed/lib/appSession';
 import { useFilters } from '../search/filterStore';
 import { GDL_REGION } from './constants';
 import { useMapProperties } from './hooks/useMapProperties';
 import { usePlaceSearch } from './hooks/usePlaceSearch';
+import { useZoneSearchEvent } from './hooks/useZoneSearchEvent';
 import { cluster_properties } from './lib/clusterMarkers';
 import { viewport_to_area } from './lib/viewportToArea';
 import { bbox_to_region } from './lib/bboxRegion';
 import { fetch_neighborhood_polygon, type NeighborhoodPolygon } from './lib/neighborhoodPolygon';
+import { create_zone_search_store } from './lib/zoneSearchEvent';
 import type { PlaceBBox, PlaceSuggestion } from './lib/placeSearch';
 import { PropertyMarker } from './components/PropertyMarker';
 import { ClusterMarker } from './components/ClusterMarker';
@@ -125,6 +128,14 @@ type ClusterCoords = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Store de dedupe de zone_search — singleton de MÓDULO (268.2): sobrevive el
+// remount de MapContent (misma razón que video_engagement_store en
+// VideoFeedItem.tsx / get_app_session_id: el dedupe por (sesión, zona) no
+// puede reiniciarse en cada montaje de la pantalla).
+// ─────────────────────────────────────────────────────────────────────────────
+const zone_search_store = create_zone_search_store();
+
+// ─────────────────────────────────────────────────────────────────────────────
 // MapContent — lógica + hooks (separado del class boundary)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -156,6 +167,14 @@ function MapContent(): React.JSX.Element {
   const [polygon_error, set_polygon_error] = useState<string | null>(null);
 
   const { data, loading, error } = useMapProperties(undefined, filters, neighborhood_id, municipality);
+
+  // Telemetría CRM (268.2): un evento zone_search por (sesión, zona) — ver
+  // los 3 disparos abajo (pill de área, colonia, municipio). Nunca bloquea
+  // la búsqueda (fire-and-forget, ver useZoneSearchEvent.ts).
+  const { report_zone_search } = useZoneSearchEvent({
+    session_id: get_app_session_id(),
+    store: zone_search_store,
+  });
   const [initial_region] = useState<Region>(() =>
     user_coords !== null
       ? {
@@ -250,6 +269,7 @@ function MapContent(): React.JSX.Element {
   function handle_area_search(): void {
     const area = viewport_to_area(region);
     set_filter('area', area);
+    void report_zone_search({ kind: 'area', center: area.center, radius_m: area.radius_m });
     set_show_area_pill(false);
     clear_neighborhood();
     set_municipality(null);
@@ -303,6 +323,7 @@ function MapContent(): React.JSX.Element {
           set_municipality(null);
           set_active_polygon(polygon);
           set_neighborhood_id(suggestion.id);
+          void report_zone_search({ kind: 'neighborhood', neighborhood_id: suggestion.id });
           fit_bbox(polygon.bbox);
           return;
         }
@@ -332,6 +353,7 @@ function MapContent(): React.JSX.Element {
     map_ref.current?.animateToRegion(muni_region, 400);
     set_filter('area', null); // D9: el municipio ya no vive en filters.area
     set_municipality({ id: suggestion.id, bbox: suggestion.bbox, name: suggestion.name });
+    void report_zone_search({ kind: 'municipality', municipality_id: suggestion.id });
     set_show_area_pill(false);
   }
 

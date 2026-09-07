@@ -1,12 +1,19 @@
 /**
- * zoneSearchEvent.ts — STUB fase RED, subtarea Taskmaster 268.2.
+ * zoneSearchEvent.ts — lógica pura de normalización y dedupe del evento
+ * `zone_search` (búsqueda de zona en el mapa: colonia, municipio o el pill
+ * "Buscar en esta zona").
  *
- * Contrato completo bajo test en:
- *   mobile/src/features/map/__tests__/zoneSearchEvent.test.ts
+ * Subtarea Taskmaster: 268.2. Implementación completa (GREEN); contrato
+ * verificado en mobile/src/features/map/__tests__/zoneSearchEvent.test.ts.
  *
- * NO CONTIENE LÓGICA — solo firmas que lanzan, para que la suite falle por
- * excepción/aserción (nunca por "module not found"). La implementación real
- * la escribe la fase GREEN (268.2).
+ * Por qué existe (mismo espíritu que videoEngagementDedupe.ts):
+ *   - El pill "Buscar en esta zona" dispara sobre un CÍRCULO
+ *     (viewport_to_area → {center:{lat,lng}, radius_m}), y dos paneos casi
+ *     idénticos del mapa producirían coordenadas ligeramente distintas sin
+ *     redondear — normalize_zone_search_payload fija el redondeo para que
+ *     zone_search_key trate paneos equivalentes como la MISMA zona.
+ *   - neighborhood/municipality son passthrough por id (no hay coords que
+ *     redondear); NUNCA llevan property_id (una zona no es una propiedad).
  */
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -24,10 +31,26 @@ export type ZoneSearchPayload =
 // Normalización (redondeo determinista para dedupe de área)
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Redondea a 3 decimales evitando -0 (Object.is(-0, 0) === false engañaría al dedupe). */
+function round_coord(value: number): number {
+  const rounded = Math.round(value * 1000) / 1000;
+  return rounded === 0 ? 0 : rounded;
+}
+
 export function normalize_zone_search_payload(
-  _input: ZoneSearchPayload
+  input: ZoneSearchPayload
 ): ZoneSearchPayload {
-  throw new Error('not_implemented');
+  if (input.kind === 'area') {
+    return {
+      kind: 'area',
+      center: {
+        lat: round_coord(input.center.lat),
+        lng: round_coord(input.center.lng),
+      },
+      radius_m: Math.round(input.radius_m),
+    };
+  }
+  return input;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -35,10 +58,17 @@ export function normalize_zone_search_payload(
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function zone_search_key(
-  _session_id: string,
-  _payload: ZoneSearchPayload
+  session_id: string,
+  payload: ZoneSearchPayload
 ): string {
-  throw new Error('not_implemented');
+  const normalized = normalize_zone_search_payload(payload);
+  if (normalized.kind === 'neighborhood') {
+    return `${session_id}::neighborhood::${normalized.neighborhood_id}`;
+  }
+  if (normalized.kind === 'municipality') {
+    return `${session_id}::municipality::${normalized.municipality_id}`;
+  }
+  return `${session_id}::area::${normalized.center.lat}:${normalized.center.lng}:${normalized.radius_m}`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -53,5 +83,14 @@ export interface ZoneSearchStore {
 }
 
 export function create_zone_search_store(): ZoneSearchStore {
-  throw new Error('not_implemented');
+  // ponytail: Set<string> — mismo patrón que create_video_engagement_store,
+  // dedupe en memoria sin BD ni dependencia nueva; la clave ya viene resuelta
+  // por zone_search_key, así que el store no necesita conocer su forma.
+  const seen = new Set<string>();
+  return {
+    has_seen: (key) => seen.has(key),
+    mark_seen: (key) => {
+      seen.add(key);
+    },
+  };
 }
