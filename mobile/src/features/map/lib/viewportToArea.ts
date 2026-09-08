@@ -1,24 +1,28 @@
 /**
  * viewportToArea.ts — conversión del viewport del mapa (rectángulo) a
- * {center, radius_m} para reusar el RPC `properties_within_radius` (#56.1,
- * approach G1 — ver .taskmaster/docs/exploraciones/030-buscar-en-esta-zona.md).
+ * {center, radius_m} para reusar el RPC `properties_within_radius` (#56.1).
  *
  * Función PURA (sin side-effects, sin estado): misma Region → mismo resultado.
  *
- * Trade-off círculo vs rectángulo (regla no obvia #6 de la exploración 030):
- * el viewport visible es un RECTÁNGULO, pero `properties_within_radius` solo
- * acepta {center, radius_m} (círculo). Usamos radius_m = mitad de la diagonal
- * del rectángulo (Haversine del centro a la esquina), así el círculo
- * SIEMPRE cubre el viewport completo — a costa de sobre-incluir las 4
- * esquinas del rectángulo (propiedades fuera de la vista pero dentro del
- * círculo circunscrito). Aceptado para la demo: más resultados de más no es
- * un bug visible, menos resultados de menos sí lo sería.
+ * Trade-off círculo vs rectángulo — CÍRCULO INSCRITO (decisión de Abraham
+ * 2026-09-08, exploración 046 §"Círculo de zona", opción B). Revierte la
+ * decisión 1 (G1, circunscrito) de la exploración 030/#56.1, tomada cuando
+ * el círculo todavía no se dibujaba en el mapa: ahora que SÍ se dibuja
+ * (281.2/281.3), el circunscrito rompía WYSIWYG — el usuario ve el círculo
+ * pero la búsqueda incluía además las 4 esquinas del rectángulo, fuera de lo
+ * dibujado. El inscrito es WYSIWYG estricto (lo que se ve es lo que se
+ * busca) a costa de NO cubrir esquinas ni, en viewports muy asimétricos, las
+ * franjas sobrantes del lado más largo — trade-off aceptado: buscar "en esta
+ * zona" y traer menos de lo visible confunde más que traer menos que el
+ * rectángulo completo.
  *
  * Contrato:
  *   - center = { lat: region.latitude, lng: region.longitude } (passthrough exacto).
- *   - radius_m = distancia Haversine del centro a la esquina del viewport,
- *     usando (latitudeDelta/2, longitudeDelta/2) como offset — es decir, la
- *     mitad de la diagonal del rectángulo visible.
+ *   - radius_m = mínimo entre dos distancias Haversine desde el centro:
+ *       (a) centro → (lat + latitudeDelta/2, lng)  — media ALTURA.
+ *       (b) centro → (lat, lng + longitudeDelta/2) — media ANCHURA.
+ *     Es decir, el radio del círculo INSCRITO en el rectángulo (el lado más
+ *     corto manda), no la diagonal.
  *   - Clamp: MIN_RADIUS_M <= radius_m <= MAX_RADIUS_M.
  *   - 🔒 Invariante A1 (igual que `radius_m` de #42/#58): el `area` resultante
  *     NUNCA viaja por `build_filter_query` — es SOLO parámetro del RPC
@@ -65,15 +69,19 @@ function haversine_distance_m(
 }
 
 export function viewport_to_area(region: Region): ViewportArea {
-  const corner_lat = region.latitude + region.latitudeDelta / 2;
-  const corner_lng = region.longitude + region.longitudeDelta / 2;
-
-  const raw_radius_m = haversine_distance_m(
+  const half_height_m = haversine_distance_m(
     region.latitude,
     region.longitude,
-    corner_lat,
-    corner_lng
+    region.latitude + region.latitudeDelta / 2,
+    region.longitude
   );
+  const half_width_m = haversine_distance_m(
+    region.latitude,
+    region.longitude,
+    region.latitude,
+    region.longitude + region.longitudeDelta / 2
+  );
+  const raw_radius_m = Math.min(half_height_m, half_width_m);
 
   return {
     center: { lat: region.latitude, lng: region.longitude },

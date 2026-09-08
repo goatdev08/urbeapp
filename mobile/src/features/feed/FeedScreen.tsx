@@ -30,6 +30,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, spacing } from '@/theme/theme';
 import { REFRESHING_CHIP_HEIGHT, RefreshingChip } from '@/components/RefreshingChip';
 import { EmptyState } from '@/features/profile/components/EmptyState';
+import { format_radius_m } from '@/features/map/lib/formatRadius';
 import { useFilters } from '../search/filterStore';
 import { FilterSheet } from '../search/components/FilterSheet';
 import { ZoneActiveChip } from '../search/components/ZoneActiveChip';
@@ -320,6 +321,7 @@ export function FeedScreen() {
       {filters.area != null && (
         <ZoneActiveChip
           dark
+          label={`Zona activa · ${format_radius_m(filters.area.radius_m)}`}
           on_press={() => set_filter('area', null)}
           // #241: cuelga DEBAJO de los tabs de sección (que ocupan el centro).
           style={{
