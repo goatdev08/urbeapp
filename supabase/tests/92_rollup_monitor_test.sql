@@ -166,6 +166,17 @@ update public.users set role = 'admin'
 update public.users set deleted_at = now()
  where id = '00000000-0000-0000-0000-000000920003';
 
+-- #280 (fix(266.3), 2026-09-08): check_rollup_health evalúa 4 condiciones (A rollup
+-- caído, B mes congelado, C snapshot del CRM ausente, D jobs CRM caídos —
+-- 20260906100002). Esta suite prueba A y B; C y D se APAGAN aquí, explícitamente y
+-- dentro de la transacción revertida, para que el estado del mundo (un stack recién
+-- reseteado donde el snapshot nunca corrió, o el calendario) no sume avisos ajenos a
+-- los conteos EXACTOS de FAIL1/STALE1 ni reviente los asserts escalares con 2 filas.
+-- Regla: un test que dispara UNA condición de una función que evalúa VARIAS apaga las
+-- demás o filtra por la suya; si no, pasa solo mientras el resto del mundo esté callado.
+delete from cron.job_run_details;            -- D: sin historial no hay 3 fallos seguidos
+delete from public.lead_temperature_daily;   -- C: desde cero, determinista en ambos sentidos
+
 -- Sembrador de historial del job del rollup: p_statuses[1] es la corrida MÁS
 -- RECIENTE. Borra el historial previo de ESE job para que la ventana de las
 -- últimas 3 sea exactamente lo que el caso quiere probar.
@@ -214,6 +225,15 @@ $$;
 -- Agencia/ad mínimos para poder sembrar crudo (FKs de ad_impressions).
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-000000920011', 'owner_92@urbea.mx');
+
+-- #280 — C, segunda mitad: "el snapshot SÍ corrió hoy": 1 lead activo (agent = owner
+-- 920011, user 920004) con su fila de hoy. Sin el lead, C tampoco dispararía, pero solo
+-- mientras el stack no tenga leads reales: sembrarlo hace el apagado honesto.
+insert into public.leads (id, agent_id, user_id, status) values
+  ('00000000-0000-0000-0000-000000920501', '00000000-0000-0000-0000-000000920011',
+   '00000000-0000-0000-0000-000000920004', 'new');
+insert into public.lead_temperature_daily (lead_id, day, temperature) values
+  ('00000000-0000-0000-0000-000000920501', current_date, 0);
 insert into public.agencies (id, name, slug, status, can_advertise, advertiser_category, created_by_user_id) values
   ('00000000-0000-0000-0000-000000920101', 'Agencia Monitor 92', 'agencia-monitor-92',
    'active', true, 'otro', '00000000-0000-0000-0000-000000920011');

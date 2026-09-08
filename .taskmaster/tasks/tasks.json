@@ -12218,13 +12218,25 @@
         "description": "Origen: subtarea 266.3 · Detectado por: orquestador durante el GREEN de #276 (2026-09-07). Los asserts FAIL1a/FAIL1b de supabase/tests/92_rollup_monitor_test.sql (\"el admin vivo recibe EXACTAMENTE 1 aviso\") fallan con have: 2 / want: 1, y el assert FAIL5 revienta con \"more than one row returned by a subquery\". El test siembra 3 corridas de cron en 'failed' para disparar la condición A (job_failing) y da por sentado que esa es la ÚNICA condición que se cumple. No lo es: la condición C (stale_snapshot, 20260906100002:341-369) se dispara en cuanto no hay ninguna fila en lead_temperature_daily para hoy ni ayer habiendo ≥1 lead activo — que es justo el estado de cualquier stack local recién reseteado, porque pg_cron no corre ahí. El admin recibe 2 avisos, uno por condición, y el conteo exacto revienta.",
         "details": "VERIFICADO, no es hipótesis: con la base local reseteada, `select max(day) from lead_temperature_daily` = NULL y `count(*) from leads where deleted_at is null` = 323. Se descartó que fuera del cambio de #276 revirtiendo su migración y volviendo a correr la suite: falla idéntico (mismos asserts 15-16). También se descartó estado sucio (falla igual tras `supabase db reset --local`) y falta del seed de volumen (falla igual tras aplicar supabase/scripts/seed-crm-volume.sql).\n\nNO es un bug de producción: check_rollup_health() hace lo correcto — si el snapshot no corrió, avisarlo es su trabajo. El defecto está en el TEST, que no aísla la condición que dice estar probando.\n\nArreglo previsto (elegir uno, decide quien la tome): (a) el fixture de la sección 4 inserta una fila de lead_temperature_daily con day = current_date antes de correr el SUT, para que la condición C no se cumpla y la sección A quede aislada; o (b) count_alerts_92 filtra además por data->>'condition' = 'job_failing', y los asserts escalares (FAIL4/FAIL5/FAIL6) añaden ese mismo filtro para no volver a reventar con más de una fila. La (a) es más fiel a lo que la sección dice probar; la (b) es más corta y hace la suite robusta a que se agreguen condiciones nuevas en el futuro. Se pueden hacer las dos.\n\nRegla que deja para el vault (emparienta con [[tests_bomba_de_fecha_y_estado_inicial]]): un test que dispara UNA condición de una función que evalúa VARIAS tiene que apagar explícitamente las demás, o filtrar su assert por la condición que dice probar. Si no, pasa solo mientras el resto del mundo esté callado — y deja de pasar por el calendario o por un reset, sin que nadie haya tocado el código.\n\nImpacto-prod: ninguno. Solo tests; 0 migraciones, 0 contratos.",
         "testStrategy": "La propia suite 92 en verde (40/40) sobre un stack local RECIÉN RESETEADO, sin seeds extra — esa es la condición que hoy no se cumple. Además: correr la suite completa (`supabase test db supabase/tests/ --local`) y confirmar 0 `not ok` en los 110 archivos.",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           "266"
         ],
         "priority": "medium",
-        "subtasks": [],
-        "updatedAt": "2026-09-08T00:00:05.044Z"
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Aislar la condición A en la suite 92: apagar C (snapshot) y D (jobs CRM) en el fixture",
+            "description": "Hacer determinista supabase/tests/92_rollup_monitor_test.sql frente al estado del mundo: el fixture de la sección 0 vacía lead_temperature_daily y cron.job_run_details dentro de la transacción (revertida) y siembra 1 lead + 1 fila de snapshot con day = current_date, para que la condición C (stale_snapshot) y la D (jobs CRM caídos) no puedan disparar mientras la suite prueba A y B. RED = solo el vaciado (reproduce la falla have 2/want 1 y el subquery multi-fila); GREEN = el vaciado + la siembra.",
+            "details": "Opción (a) de la tarea. No se toca check_rollup_health ni ninguna migración. El vaciado de cron.job_run_details generaliza el que seed_runs_92 ya hace por job (la condición D mira los 2 jobs CRM, que un stack local con pg_cron vivo puede haber registrado en failed).\n<info added on 2026-09-08T23:15:40.173Z>\nPLAN 280.1 (orquestador, 2026-09-08): approach = opción (a) de la tarea — el fixture de la sección 0 de supabase/tests/92_rollup_monitor_test.sql apaga explícitamente las condiciones que la suite NO prueba (C stale_snapshot, D jobs CRM caídos) dentro de la transacción revertida: `delete from cron.job_run_details` + `delete from public.lead_temperature_daily` + 1 lead fixture (920501; agent 920011 / user 920004, ya sembrados) + 1 fila de lead_temperature_daily con day = current_date. RED = solo los deletes (reproduce la falla aunque el stack local tenga el snapshot de hoy — ahora mismo lo tiene: max(day)=2026-09-08, 323 leads, por eso la suite pasa \"sola\" hoy y volvería a fallar mañana o tras un reset). GREEN = deletes + siembra. agente=orquestador (solo tests, footprint supabase/tests/** — nunca se bloquea) · skills=urbea-supabase · criticidad=no aplica TDD (el SUT no cambia; el RED aquí es la reproducción determinista) · impacto-prod=sin riesgo (0 migraciones, 0 contratos) · footprint=supabase/tests/92_rollup_monitor_test.sql.\n</info added on 2026-09-08T23:15:40.173Z>\n<info added on 2026-09-08T23:20:34.331Z>\nHECHO 280.1 (orquestador, 2026-09-08) — supabase/tests/92_rollup_monitor_test.sql, sección 0 (fixtures).\n\nCambio: opción (a). Dentro de la transacción revertida el fixture apaga explícitamente las 2 condiciones de check_rollup_health que la suite no prueba:\n- D (jobs CRM caídos): `delete from cron.job_run_details;` — generaliza el borrado por job que seed_runs_92 ya hacía.\n- C (snapshot ausente): `delete from public.lead_temperature_daily;` + 1 lead fixture 920501 (agent = owner 920011, user 920004 — la inserción va DESPUÉS de sembrar al owner, si no revienta el FK leads_agent_id_fkey, primer intento) + 1 fila de lead_temperature_daily con day = current_date. Determinista en ambos sentidos: no depende de que el stack local tenga o no el snapshot de hoy.\nComentario en el fixture con la regla: un test que dispara UNA condición de una función que evalúa VARIAS apaga las demás o filtra por la suya.\n\nPor qué hoy la suite pasaba \"sola\": el stack local tenía max(day)=2026-09-08 en lead_temperature_daily (323 filas / 323 leads) — alguien corrió el snapshot; mañana o tras un reset volvía a fallar.\n\nVerificación (salida real):\n- RED (solo los 2 deletes, sin siembra): `# Failed test 15: \"FAIL1a_el_admin_vivo_1_recibe_EXACTAMENTE_1_aviso\"` · `# Failed test 16: \"FAIL1b_...\"` · `Failed 24/40 subtests` (aborta en FAIL5 por subquery multi-fila) · `Result: FAIL` — la falla de la tarea, reproducida con el mundo en cualquier estado.\n- GREEN: `supabase test db supabase/tests/92_rollup_monitor_test.sql --local` → `Files=1, Tests=40 … Result: PASS`.\n- Suite completa: `supabase test db supabase/tests/ --local` → `Files=111, Tests=3650, 8 wallclock secs … Result: PASS` (0 not ok).\nImpacto-prod: ninguno (solo tests; 0 migraciones, 0 contratos).\n</info added on 2026-09-08T23:20:34.331Z>",
+            "testStrategy": "supabase test db supabase/tests/92_rollup_monitor_test.sql --local → 40/40 con el mundo en cualquier estado (verificado: falla con solo el vaciado, pasa con la siembra). Suite completa supabase/tests/ --local con 0 not ok.",
+            "status": "done",
+            "dependencies": [],
+            "updatedAt": "2026-09-08T23:20:36.603Z",
+            "parentId": "undefined"
+          }
+        ],
+        "updatedAt": "2026-09-08T23:20:36.603Z"
       },
       {
         "id": "281",
@@ -12399,9 +12411,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-09-08T22:29:04.314Z",
+      "lastModified": "2026-09-08T23:20:36.603Z",
       "taskCount": 284,
-      "completedCount": 204,
+      "completedCount": 205,
       "tags": [
         "master"
       ]
