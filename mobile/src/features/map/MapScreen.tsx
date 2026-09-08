@@ -16,7 +16,7 @@
  */
 import React, { Component, useEffect, useMemo, useRef, useState } from 'react';
 import { Keyboard, StyleSheet, Text, View } from 'react-native';
-import MapView, { Polygon, Region } from 'react-native-maps';
+import MapView, { Circle, Polygon, Region } from 'react-native-maps';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -402,6 +402,54 @@ function MapContent(): React.JSX.Element {
     );
   }
 
+  /**
+   * Círculo de zona (281.2, exploración 046 B+A+D) — mini-spec: UI ausente
+   * del mockup 6·MAPA, pedida EXPLÍCITA por el cliente (CLAUDE.md §8, "entra
+   * en conjunto" ya decidido en la exploración) — tokens existentes, cero
+   * tokens nuevos en theme.ts. Un solo cómputo derivado con 3 estados
+   * MUTUAMENTE EXCLUYENTES, en orden de prioridad (nunca junto al `<Polygon>`
+   * de colonia, D9):
+   *   1. Visor — show_area_pill visible → el círculo ES lo que se buscará al
+   *      pulsar la píldora (viewport_to_area(region), inscrito). Si el
+   *      usuario paneó con una zona ya activa (filters.area != null) el
+   *      visor SIGUE ganando por ser la prioridad más alta: muestra el
+   *      círculo nuevo que reemplazaría al activo.
+   *   2. Persistente — filters.area activo (sin pill visible): mismo círculo
+   *      que se aplicó, para que no desaparezca al volver al mapa.
+   *   3. Cerca de mí — sin ninguna zona (area/colonia/municipio null) y un
+   *      radio explícito (`typeof filters.radius_m === 'number'`, NUNCA el
+   *      fallback implícito de 5000 que usa mapProperties.ts cuando
+   *      radius_m es undefined) + coords reales: punteado alrededor del
+   *      usuario, distinto del sólido de zona.
+   * ponytail: cómputo inline (if/else-if), sin useMemo — Haversine de
+   * viewport_to_area ya es barato y solo corre en el estado 1.
+   * ponytail: lineDashPattern es "Apple Maps only" según el propio .d.ts de
+   * react-native-maps 1.27.2 (Android: Not supported) — la diferenciación
+   * que SIEMPRE aplica, en ambas plataformas, es strokeWidth 1.5 vs 2; el
+   * punteado es el plus en iOS. Verificación visual en Android → 281.3.
+   */
+  let zone_circle:
+    | { center: { latitude: number; longitude: number }; radius_m: number; dashed: boolean }
+    | null = null;
+  if (active_polygon == null) {
+    if (show_area_pill) {
+      const area = viewport_to_area(region);
+      zone_circle = {
+        center: { latitude: area.center.lat, longitude: area.center.lng },
+        radius_m: area.radius_m,
+        dashed: false,
+      };
+    } else if (filters.area != null) {
+      zone_circle = {
+        center: { latitude: filters.area.center.lat, longitude: filters.area.center.lng },
+        radius_m: filters.area.radius_m,
+        dashed: false,
+      };
+    } else if (municipality == null && typeof filters.radius_m === 'number' && user_coords != null) {
+      zone_circle = { center: user_coords, radius_m: filters.radius_m, dashed: true };
+    }
+  }
+
   return (
     <View style={styles.container}>
       {/* ── Mapa principal ──────────────────────────────────────────────── */}
@@ -429,6 +477,17 @@ function MapContent(): React.JSX.Element {
             fillColor="rgba(26, 94, 68, 0.10)"
           />
         ))}
+        {/* Círculo de zona (281.2) — ver mini-spec en el cómputo de zone_circle arriba. */}
+        {zone_circle != null && (
+          <Circle
+            center={zone_circle.center}
+            radius={zone_circle.radius_m}
+            fillColor="rgba(26, 94, 68, 0.12)"
+            strokeColor={colors.primary}
+            strokeWidth={zone_circle.dashed ? 1.5 : 2}
+            {...(zone_circle.dashed ? { lineDashPattern: [8, 6] } : {})}
+          />
+        )}
         {clustered.map((item) => {
           if (item.type === 'point') {
             return (
