@@ -122,7 +122,15 @@ jest.mock('../components/PropertyMiniCard', () => ({ PropertyMiniCard: () => nul
 jest.mock('../components/AreaSearchPill', () => ({ AreaSearchPill: () => null }));
 jest.mock('../components/MapSearchBar', () => ({ MapSearchBar: () => null }));
 jest.mock('../../search/components/FilterSheet', () => ({ FilterSheet: () => null }));
-jest.mock('../../search/components/ZoneActiveChip', () => ({ ZoneActiveChip: () => null }));
+// 281.3: captura las props (como PlaceSearch más abajo) para asertar el
+// label "Zona activa · {radio}" sin depender del render real del chip.
+let mock_zone_active_chip_calls: any[] = [];
+jest.mock('../../search/components/ZoneActiveChip', () => ({
+  ZoneActiveChip: (props: any) => {
+    mock_zone_active_chip_calls.push(props);
+    return null;
+  },
+}));
 
 let mock_place_search_calls: any[] = [];
 jest.mock('../components/PlaceSearch', () => ({
@@ -143,6 +151,7 @@ const NEIGHBORHOOD: PlaceSuggestion = {
 beforeEach(() => {
   jest.clearAllMocks();
   mock_place_search_calls = [];
+  mock_zone_active_chip_calls = [];
   mock_map_view_props = {};
   mock_use_map_properties.mockReturnValue({ data: [], loading: false, error: null });
   mock_use_location.mockReturnValue({ coords: null });
@@ -301,6 +310,19 @@ describe('MapScreen — círculo de zona (281.2)', () => {
     );
     expect(circle.props['data-radius']).toBe(1200);
     expect(circle.props['data-dashed']).toBe(false);
+  });
+
+  it('281.3: el chip de zona activa muestra "Zona activa · 2.4 km" con radius_m=2400', async () => {
+    mock_use_filters.mockReturnValue({
+      filters: { area: { center: { lat: 20.6, lng: -103.3 }, radius_m: 2400 }, radius_m: null },
+      set_filter: jest.fn(),
+      active_filter_count: 1,
+    });
+
+    await render(<MapScreen />);
+
+    const chip_call = mock_zone_active_chip_calls.find((props) => props.label != null);
+    expect(chip_call?.label).toBe('Zona activa · 2.4 km');
   });
 
   it('cerca de mí: radius_m numérico + user_coords → círculo PUNTEADO en el usuario', async () => {

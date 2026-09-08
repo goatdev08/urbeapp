@@ -30,6 +30,7 @@ import { useMapProperties } from './hooks/useMapProperties';
 import { usePlaceSearch } from './hooks/usePlaceSearch';
 import { useZoneSearchEvent } from './hooks/useZoneSearchEvent';
 import { cluster_properties } from './lib/clusterMarkers';
+import { format_radius_m } from './lib/formatRadius';
 import { viewport_to_area } from './lib/viewportToArea';
 import { bbox_to_region } from './lib/bboxRegion';
 import { fetch_neighborhood_polygon, type NeighborhoodPolygon } from './lib/neighborhoodPolygon';
@@ -558,6 +559,7 @@ function MapContent(): React.JSX.Element {
        */}
       {filters.area != null && (
         <ZoneActiveChip
+          label={`Zona activa · ${format_radius_m(filters.area.radius_m)}`}
           on_press={() => set_filter('area', null)}
           style={{
             top: insets.top + spacing.s_8 + MAP_SEARCH_BAR_HEIGHT_APPROX + spacing.s_8,
