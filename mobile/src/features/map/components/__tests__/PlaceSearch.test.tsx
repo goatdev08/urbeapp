@@ -179,6 +179,15 @@ describe('PlaceSearch — buscador unificado (#232, smoke)', () => {
     expect(headers.map((h) => h.props.children)).toEqual(['Colonias', 'Municipios', 'Direcciones']);
   });
 
+  it('si la primera sugerencia de la RPC es municipio, "Municipios" va antes que "Colonias" (#283)', async () => {
+    const { findAllByText } = await render(
+      <PlaceSearch query="zapo" suggestions={[MUNICIPALITY, NEIGHBORHOOD]} on_select_place={jest.fn()} />,
+    );
+
+    const headers = await findAllByText(/^(Colonias|Municipios)$/);
+    expect(headers.map((h) => h.props.children)).toEqual(['Municipios', 'Colonias']);
+  });
+
   it('conserva el orden de la RPC dentro de cada grupo, sin reordenar (#282.2)', async () => {
     const first: PlaceSuggestion = { ...NEIGHBORHOOD, id: '1', name: 'Providencia' };
     const second: PlaceSuggestion = { ...NEIGHBORHOOD, id: '2', name: 'Providencia Sur' };
