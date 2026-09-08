@@ -1163,3 +1163,5 @@ Se retira `is_admin()` de `leads_update`, `leads_delete` y `private.can_edit_lea
 ## [2026-09-08] tarea | #283 polish(282.2) — el grupo con la primera sugerencia de la RPC va primero en el dropdown (Zapopan ya no queda bajo siete colonias)
 
 ## [2026-09-08] tarea | #284 polish(281.2) — círculo de zona bajo demanda: «modo búsqueda» con círculo fijo al centro y el mapa moviéndose debajo (patrón MapPicker); píldora siempre visible con «Buscar aquí · X km» + Cancelar; fuera el visor al panear y el debounce de 500 ms
+
+## [2026-09-08] release | OTA #277 + #281 + #282 + #283 + #284 — iOS `production` (runtime ca62b26a…, grupo 54ce8973) y Android `preview` (runtime 374ba3dd…, grupo 5d6c28b7), runtimes = builds 1.0.6; backend producción verificado por el guard de ota.sh
