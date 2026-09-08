@@ -36,6 +36,14 @@ const NEIGHBORHOOD: PlaceSuggestion = {
   bbox: null,
 };
 
+const MUNICIPALITY: PlaceSuggestion = {
+  kind: 'municipality',
+  id: '7',
+  name: 'Zapopan',
+  context: 'Jalisco',
+  bbox: null,
+};
+
 beforeEach(() => {
   jest.clearAllMocks();
   mock_has_google_places_key.mockReturnValue(false); // sin key por defecto
@@ -132,6 +140,56 @@ describe('PlaceSearch — buscador unificado (#232, smoke)', () => {
 
     expect(on_out_of_coverage).toHaveBeenCalledWith({ lat: 32.5, lng: -117.0 });
     expect(on_select_place).not.toHaveBeenCalled();
+  });
+
+  it('solo colonias: encabezado "Colonias" presente, "Municipios" ausente (#282.2)', async () => {
+    const { queryByText } = await render(
+      <PlaceSearch query="provi" suggestions={[NEIGHBORHOOD]} on_select_place={jest.fn()} />,
+    );
+
+    expect(queryByText('Colonias')).not.toBeNull();
+    expect(queryByText('Municipios')).toBeNull();
+  });
+
+  it('solo municipios: encabezado "Municipios" presente, "Colonias" ausente (#282.2)', async () => {
+    const { queryByText } = await render(
+      <PlaceSearch query="zapo" suggestions={[MUNICIPALITY]} on_select_place={jest.fn()} />,
+    );
+
+    expect(queryByText('Municipios')).not.toBeNull();
+    expect(queryByText('Colonias')).toBeNull();
+  });
+
+  it('colonias + municipios + direcciones: orden de encabezados Colonias → Municipios → Direcciones (#282.2)', async () => {
+    mock_has_google_places_key.mockReturnValue(true);
+    mock_fetch_address_predictions.mockResolvedValue([
+      { place_id: 'place-1', main_text: 'Av. Chapultepec 123', secondary_text: 'Guadalajara, Jal.' },
+    ]);
+
+    const { findAllByText } = await render(
+      <PlaceSearch
+        query="prov"
+        suggestions={[NEIGHBORHOOD, MUNICIPALITY]}
+        on_select_place={jest.fn()}
+        deps={{ address: { api_key: 'test-key' } }}
+      />,
+    );
+
+    const headers = await findAllByText(/^(Colonias|Municipios|Direcciones)$/);
+    expect(headers.map((h) => h.props.children)).toEqual(['Colonias', 'Municipios', 'Direcciones']);
+  });
+
+  it('conserva el orden de la RPC dentro de cada grupo, sin reordenar (#282.2)', async () => {
+    const first: PlaceSuggestion = { ...NEIGHBORHOOD, id: '1', name: 'Providencia' };
+    const second: PlaceSuggestion = { ...NEIGHBORHOOD, id: '2', name: 'Providencia Sur' };
+    // Orden deliberado "fuera de alfabético" — la RPC ya rankeó por cercanía;
+    // este componente NO debe reordenar dentro del grupo.
+    const { getAllByText } = await render(
+      <PlaceSearch query="provi" suggestions={[second, first]} on_select_place={jest.fn()} />,
+    );
+
+    const names = getAllByText(/^Providencia/);
+    expect(names.map((n) => n.props.children)).toEqual(['Providencia Sur', 'Providencia']);
   });
 
   it('modo inline: el contenedor de sugerencias NO usa position:absolute (candado #233.2 — #231, overlay absoluto en ScrollView es zona MUERTA al tacto en Android)', async () => {

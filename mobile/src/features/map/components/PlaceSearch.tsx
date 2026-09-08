@@ -32,6 +32,18 @@
  * #231): `inline` en flujo (wizard, dentro de un ScrollView — un overlay
  * absoluto ahí es zona MUERTA al tacto en Android) y overlay flotante
  * (mapa, con `top` inyectado por el padre).
+ *
+ * Mini-spec (#282.2, UI fuera del mockup 6·MAPA con propuesta aceptada en
+ * conjunto — exploración 046 dirección F, requerimiento explícito del
+ * cliente: "los íconos... deben ser más claros o... identificarlas más
+ * claramente"): `suggestions` llega YA rankeado por la RPC (282.1, ranking
+ * por cercanía) — este componente solo AGRUPA por `kind`, nunca reordena.
+ * Encabezados "Colonias" / "Municipios" (mismo estilo `section_header` que
+ * ya usaba "Direcciones") aparecen solo si ese grupo tiene filas. Colonias
+ * antes que Municipios antes que Direcciones. Sin etiqueta de texto por
+ * fila: el ícono (MapPinSimple primary / Buildings accent / MapPin gray) +
+ * el encabezado del grupo ya distinguen el tipo sin repetir texto en cada
+ * fila (ponytail — ver bitácora 282.2). Cero tokens nuevos.
  */
 import React, { useCallback } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -117,6 +129,10 @@ export function PlaceSearch({
   const has_content = suggestions.length > 0 || loading || error != null || has_address_content;
   if (!has_content) return null;
 
+  // Agrupar por kind SIN reordenar (el ranking ya lo hizo la RPC, #282.1).
+  const neighborhoods = suggestions.filter((s) => s.kind === 'neighborhood');
+  const municipalities = suggestions.filter((s) => s.kind === 'municipality');
+
   return (
     <View
       style={inline ? styles.container_inline : [styles.container, { top: top ?? 0 }]}
@@ -131,29 +147,23 @@ export function PlaceSearch({
         {loading && <StatusRow text="Buscando…" spinner />}
         {error != null && <StatusRow text={error} variant="error" />}
 
-        {suggestions.map((s) => (
-          <TouchableOpacity
-            key={`${s.kind}-${s.id}`}
-            style={[styles.row, styles.row_border]}
-            onPress={() => on_select_place(s)}
-            accessibilityRole="button"
-            accessibilityLabel={`Buscar ${s.name}, ${s.context}`}
-          >
-            {s.kind === 'neighborhood' ? (
-              <MapPinSimple size={18} weight="fill" color={colors.primary} />
-            ) : (
-              <Buildings size={18} weight="fill" color={colors.accent} />
-            )}
-            <View style={styles.texts}>
-              <Text style={styles.name} numberOfLines={1}>
-                {s.name}
-              </Text>
-              <Text style={styles.context} numberOfLines={1}>
-                {s.context}
-              </Text>
-            </View>
-          </TouchableOpacity>
-        ))}
+        {neighborhoods.length > 0 && (
+          <>
+            <Text style={styles.section_header}>Colonias</Text>
+            {neighborhoods.map((s) => (
+              <PlaceRow key={`${s.kind}-${s.id}`} suggestion={s} on_select_place={on_select_place} />
+            ))}
+          </>
+        )}
+
+        {municipalities.length > 0 && (
+          <>
+            <Text style={styles.section_header}>Municipios</Text>
+            {municipalities.map((s) => (
+              <PlaceRow key={`${s.kind}-${s.id}`} suggestion={s} on_select_place={on_select_place} />
+            ))}
+          </>
+        )}
 
         {has_address_content && (
           <>
@@ -195,6 +205,42 @@ export function PlaceSearch({
         )}
       </ScrollView>
     </View>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PlaceRow — fila de catálogo (colonia/municipio); ícono por tipo, sin
+// etiqueta de texto (el section_header del grupo ya distingue el tipo, #282.2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function PlaceRow({
+  suggestion: s,
+  on_select_place,
+}: {
+  suggestion: PlaceSuggestion;
+  on_select_place: (suggestion: PlaceSuggestion) => void;
+}): React.JSX.Element {
+  return (
+    <TouchableOpacity
+      style={[styles.row, styles.row_border]}
+      onPress={() => on_select_place(s)}
+      accessibilityRole="button"
+      accessibilityLabel={`Buscar ${s.name}, ${s.context}`}
+    >
+      {s.kind === 'neighborhood' ? (
+        <MapPinSimple size={18} weight="fill" color={colors.primary} />
+      ) : (
+        <Buildings size={18} weight="fill" color={colors.accent} />
+      )}
+      <View style={styles.texts}>
+        <Text style={styles.name} numberOfLines={1}>
+          {s.name}
+        </Text>
+        <Text style={styles.context} numberOfLines={1}>
+          {s.context}
+        </Text>
+      </View>
+    </TouchableOpacity>
   );
 }
 
