@@ -22,12 +22,20 @@
  *     fonts.sans_semibold (HankenGrotesk_600SemiBold).
  *   - Borde: radii.r_24 (full pill). Sombra: shadows.primary.
  *   - Padding: vertical spacing.s_12, horizontal spacing.s_24.
- *   - Estados: solo se renderiza cuando el padre decide mostrarlo
- *     (show_area_pill); sin estado propio de press más allá de
- *     TouchableOpacity (activeOpacity estándar del resto del mapa).
+ *   - Estados (#284, 2026-09-08 — modo búsqueda estilo MapPicker): la
+ *     píldora es SIEMPRE visible (es la entrada al modo; antes aparecía
+ *     500 ms después de panear). El padre manda el `label` («Buscar en esta
+ *     zona» en reposo · «Buscar aquí · 6.2 km» en modo búsqueda) y, solo en
+ *     modo búsqueda, `on_cancel`: un segundo botón «Cancelar» a la derecha,
+ *     paleta clara del ZoneActiveChip (surface + borde rgba(227,220,207,0.60),
+ *     texto colors.ink) para que la acción primaria siga siendo la verde.
+ *     Sin estado propio de press más allá de TouchableOpacity.
+ *   - Layout: un contenedor absoluto en fila (gap s_8) que aloja la píldora
+ *     primaria y el «Cancelar» opcional; `pointerEvents="box-none"` para que
+ *     el hueco entre botones siga llegando al mapa.
  */
 import React from 'react';
-import { StyleSheet, Text, TouchableOpacity } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, floating_content_clearance, fonts, radii, shadows, spacing, type_scale } from '@/theme/theme';
@@ -43,34 +51,71 @@ interface AreaSearchPillProps {
   on_press: () => void;
   /** true cuando la PropertyMiniCard está visible — sube el pill para no encimarse. */
   lifted: boolean;
+  /** Texto de la píldora primaria. Default «Buscar en esta zona» (reposo). */
+  label?: string | undefined;
+  /** Presente solo en modo búsqueda (#284): pinta el botón «Cancelar». */
+  on_cancel?: (() => void) | undefined;
 }
 
-export function AreaSearchPill({ on_press, lifted }: AreaSearchPillProps) {
+export function AreaSearchPill({
+  on_press,
+  lifted,
+  label = 'Buscar en esta zona',
+  on_cancel,
+}: AreaSearchPillProps) {
   const insets = useSafeAreaInsets();
   const base_bottom = insets.bottom + floating_content_clearance;
 
   return (
-    <TouchableOpacity
-      style={[styles.container, { bottom: lifted ? base_bottom + LIFTED_EXTRA : base_bottom }]}
-      onPress={on_press}
-      activeOpacity={0.88}
-      accessibilityRole="button"
-      accessibilityLabel="Buscar en esta zona"
+    <View
+      style={[styles.row, { bottom: lifted ? base_bottom + LIFTED_EXTRA : base_bottom }]}
+      pointerEvents="box-none"
     >
-      <Text style={styles.label}>Buscar en esta zona</Text>
-    </TouchableOpacity>
+      <TouchableOpacity
+        style={styles.container}
+        onPress={on_press}
+        activeOpacity={0.88}
+        accessibilityRole="button"
+        accessibilityLabel={label}
+      >
+        <Text style={styles.label}>{label}</Text>
+      </TouchableOpacity>
+      {on_cancel != null && (
+        <TouchableOpacity
+          style={[styles.container, styles.container_cancel]}
+          onPress={on_cancel}
+          activeOpacity={0.88}
+          accessibilityRole="button"
+          accessibilityLabel="Cancelar búsqueda por zona"
+        >
+          <Text style={[styles.label, styles.label_cancel]}>Cancelar</Text>
+        </TouchableOpacity>
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  row: {
     position: 'absolute',
     alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.s_8,
+  },
+  container: {
     backgroundColor: colors.primary,
     borderRadius: radii.r_24,
     paddingVertical: spacing.s_12,
     paddingHorizontal: spacing.s_24,
     ...shadows.primary,
+  },
+  container_cancel: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: 'rgba(227, 220, 207, 0.60)',
+    paddingHorizontal: spacing.s_16,
+    ...shadows.sm,
   },
   label: {
     ...type_scale.body,
@@ -78,5 +123,8 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 18,
     color: colors.on_primary,
+  },
+  label_cancel: {
+    color: colors.ink,
   },
 });

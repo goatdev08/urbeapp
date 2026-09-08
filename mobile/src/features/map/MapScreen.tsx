@@ -65,13 +65,6 @@ interface ActiveMunicipality {
 const MAP_SEARCH_BAR_HEIGHT_APPROX = spacing.s_24 * 2;
 
 /**
- * Debounce (ms) tras terminar de panear/zoomear antes de mostrar el pill
- * "Buscar en esta zona" — patrón Airbnb (#56.4, ver
- * .taskmaster/docs/exploraciones/030-buscar-en-esta-zona.md).
- */
-const AREA_PILL_DEBOUNCE_MS = 500;
-
-/**
  * Delta de zoom (#232.3) al centrar en un punto de dirección FUERA de
  * cobertura del catálogo (place_at_point → 0 filas): sin polígono ni bbox
  * que encuadrar, solo un zoom "a nivel de calle" fijo — mismo orden de
@@ -189,8 +182,18 @@ function MapContent(): React.JSX.Element {
   const [region, set_region] = useState<Region>(initial_region);
   const [selected, set_selected] = useState<MapProperty | null>(null);
   const [filter_visible, set_filter_visible] = useState(false);
-  const [show_area_pill, set_show_area_pill] = useState(false);
-  const area_pill_timer_ref = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /**
+   * Modo búsqueda por zona (#284, 2026-09-08 — pedido de Abraham tras ver
+   * #281): el círculo ya NO aparece solo por panear. La píldora «Buscar en
+   * esta zona» (siempre visible) ENTRA al modo; dentro, un círculo FIJO al
+   * centro de la pantalla (overlay, no geo-anclado — calco del `center_pin`
+   * de publish/components/MapPicker.tsx) muestra la zona mientras el mapa se
+   * mueve y hace zoom debajo; «Buscar aquí» busca esa zona y «Cancelar» sale.
+   * Sustituye al visor de 281.2 y al debounce de 500 ms del pill (#56.4).
+   */
+  const [zone_mode, set_zone_mode] = useState(false);
+  /** Tamaño del contenedor (onLayout) — diámetro del círculo fijo = min(w, h). */
+  const [map_size, set_map_size] = useState<{ width: number; height: number } | null>(null);
   // Anti-stale (#161, bug 2): contador de request de handle_select_place —
   // solo el ÚLTIMO fetch de polígono en vuelo puede mutar el estado de zona
   // activa. Mismo patrón que usePlaceSearch/useAddressSearch.
@@ -232,38 +235,21 @@ function MapContent(): React.JSX.Element {
     [data, region],
   );
 
-  // Limpia el timer del pill "Buscar en esta zona" al desmontar (evita fugas).
-  useEffect(() => {
-    return () => {
-      if (area_pill_timer_ref.current !== null) {
-        clearTimeout(area_pill_timer_ref.current);
-      }
-    };
-  }, []);
-
   /**
-   * Handler de `onRegionChangeComplete`: guarda la región (comportamiento
-   * previo intacto) y arranca un debounce de 500ms — el pill "Buscar en esta
-   * zona" solo aparece cuando el usuario TERMINA de panear/zoomear (patrón
-   * Airbnb), no en cada frame intermedio.
-   * ponytail: setTimeout/clearTimeout a mano, sin librería de debounce.
+   * Handler de `onRegionChangeComplete`: guarda la región. En modo búsqueda
+   * (#284) es lo que mantiene al día el radio del label «Buscar aquí · X km»
+   * y la zona que se aplicará al confirmar — el círculo fijo no se mueve, la
+   * región debajo sí.
    */
   function handle_region_change_complete(next_region: Region): void {
     set_region(next_region);
-
-    if (area_pill_timer_ref.current !== null) {
-      clearTimeout(area_pill_timer_ref.current);
-    }
-    area_pill_timer_ref.current = setTimeout(() => {
-      set_show_area_pill(true);
-      area_pill_timer_ref.current = null;
-    }, AREA_PILL_DEBOUNCE_MS);
   }
 
   /**
-   * onPress del pill: convierte el viewport actual a {center, radius_m}
-   * (#56.1), lo setea como `filters.area` y navega al feed — la capa de
-   * datos (56.3) ya reacciona sola al cambio de `area`, sin plomería extra.
+   * Segunda pulsación de la píldora («Buscar aquí», #284): convierte el
+   * viewport actual a {center, radius_m} (#56.1), lo setea como
+   * `filters.area` y navega al feed — la capa de datos (56.3) ya reacciona
+   * sola al cambio de `area`, sin plomería extra.
    * #157 (D9): además limpia la colonia/municipio activos — son todos
    * mutuamente excluyentes (dos acotaciones simultáneas serían ambiguas).
    */
@@ -271,7 +257,7 @@ function MapContent(): React.JSX.Element {
     const area = viewport_to_area(region);
     set_filter('area', area);
     void report_zone_search({ kind: 'area', center: area.center, radius_m: area.radius_m });
-    set_show_area_pill(false);
+    set_zone_mode(false);
     clear_neighborhood();
     set_municipality(null);
     router.push('/');
@@ -313,6 +299,7 @@ function MapContent(): React.JSX.Element {
     place_search.clear();
     Keyboard.dismiss();
     set_polygon_error(null); // nueva selección — descarta el error de la anterior
+    set_zone_mode(false); // #284: elegir un lugar del buscador abandona el modo búsqueda por zona
 
     if (suggestion.kind === 'neighborhood') {
       try {
@@ -355,7 +342,6 @@ function MapContent(): React.JSX.Element {
     set_filter('area', null); // D9: el municipio ya no vive en filters.area
     set_municipality({ id: suggestion.id, bbox: suggestion.bbox, name: suggestion.name });
     void report_zone_search({ kind: 'municipality', municipality_id: suggestion.id });
-    set_show_area_pill(false);
   }
 
   /**
@@ -404,43 +390,33 @@ function MapContent(): React.JSX.Element {
   }
 
   /**
-   * Círculo de zona (281.2, exploración 046 B+A+D) — mini-spec: UI ausente
-   * del mockup 6·MAPA, pedida EXPLÍCITA por el cliente (CLAUDE.md §8, "entra
-   * en conjunto" ya decidido en la exploración) — tokens existentes, cero
-   * tokens nuevos en theme.ts. Un solo cómputo derivado con 3 estados
+   * Círculo de zona geo-anclado (281.2, exploración 046 A+D) — mini-spec: UI
+   * ausente del mockup 6·MAPA, pedida EXPLÍCITA por el cliente (CLAUDE.md §8,
+   * "entra en conjunto" ya decidido en la exploración) — tokens existentes,
+   * cero tokens nuevos en theme.ts. Un solo cómputo derivado con 2 estados
    * MUTUAMENTE EXCLUYENTES, en orden de prioridad (nunca junto al `<Polygon>`
-   * de colonia, D9):
-   *   1. Visor — show_area_pill visible → el círculo ES lo que se buscará al
-   *      pulsar la píldora (viewport_to_area(region), inscrito). Si el
-   *      usuario paneó con una zona ya activa (filters.area != null) el
-   *      visor SIGUE ganando por ser la prioridad más alta: muestra el
-   *      círculo nuevo que reemplazaría al activo.
-   *   2. Persistente — filters.area activo (sin pill visible): mismo círculo
-   *      que se aplicó, para que no desaparezca al volver al mapa.
-   *   3. Cerca de mí — sin ninguna zona (area/colonia/municipio null) y un
+   * de colonia, D9). El «visor» de 281.2 (círculo al panear) se RETIRÓ en
+   * #284: en modo búsqueda el círculo es el overlay fijo de abajo, no un
+   * <Circle> del mapa.
+   *   1. Persistente — filters.area activo: mismo círculo que se aplicó, para
+   *      que no desaparezca al volver al mapa. En modo búsqueda se oculta
+   *      (el círculo fijo ya muestra la zona nueva que lo reemplazaría).
+   *   2. Cerca de mí — sin ninguna zona (area/colonia/municipio null) y un
    *      radio explícito (`typeof filters.radius_m === 'number'`, NUNCA el
    *      fallback implícito de 5000 que usa mapProperties.ts cuando
    *      radius_m es undefined) + coords reales: punteado alrededor del
    *      usuario, distinto del sólido de zona.
-   * ponytail: cómputo inline (if/else-if), sin useMemo — Haversine de
-   * viewport_to_area ya es barato y solo corre en el estado 1.
+   * ponytail: cómputo inline (if/else-if), sin useMemo.
    * ponytail: lineDashPattern es "Apple Maps only" según el propio .d.ts de
    * react-native-maps 1.27.2 (Android: Not supported) — la diferenciación
    * que SIEMPRE aplica, en ambas plataformas, es strokeWidth 1.5 vs 2; el
-   * punteado es el plus en iOS. Verificación visual en Android → 281.3.
+   * punteado es el plus en iOS (verificado en Android en 281.3).
    */
   let zone_circle:
     | { center: { latitude: number; longitude: number }; radius_m: number; dashed: boolean }
     | null = null;
-  if (active_polygon == null) {
-    if (show_area_pill) {
-      const area = viewport_to_area(region);
-      zone_circle = {
-        center: { latitude: area.center.lat, longitude: area.center.lng },
-        radius_m: area.radius_m,
-        dashed: false,
-      };
-    } else if (filters.area != null) {
+  if (active_polygon == null && !zone_mode) {
+    if (filters.area != null) {
       zone_circle = {
         center: { latitude: filters.area.center.lat, longitude: filters.area.center.lng },
         radius_m: filters.area.radius_m,
@@ -451,8 +427,29 @@ function MapContent(): React.JSX.Element {
     }
   }
 
+  /**
+   * Círculo FIJO del modo búsqueda (#284): diámetro = lado corto del
+   * contenedor, centrado. Coherente con viewport_to_area (inscrito = min de
+   * media altura / media anchura): lo que encierra el overlay es, al confirmar,
+   * lo que busca la RPC. No es un <Circle> geo-anclado a propósito — no
+   * representa una coordenada, sino el centro del viewport (misma decisión
+   * que el pin de MapPicker.tsx).
+   */
+  const viewfinder_diameter =
+    map_size != null ? Math.min(map_size.width, map_size.height) : 0;
+  const zone_mode_label = zone_mode
+    ? `Buscar aquí · ${format_radius_m(viewport_to_area(region).radius_m)}`
+    : undefined;
+
   return (
-    <View style={styles.container}>
+    <View
+      style={styles.container}
+      testID="map-container"
+      onLayout={(e) => {
+        const { width, height } = e.nativeEvent.layout;
+        set_map_size({ width, height });
+      }}
+    >
       {/* ── Mapa principal ──────────────────────────────────────────────── */}
       <MapView
         ref={map_ref}
@@ -517,13 +514,35 @@ function MapContent(): React.JSX.Element {
         />
       )}
 
-      {/* ── Pill "Buscar en esta zona" (#56.4) — aparece 500ms tras panear/zoomear ── */}
-      {show_area_pill && (
-        <AreaSearchPill
-          on_press={handle_area_search}
-          lifted={selected !== null}
+      {/* ── Círculo fijo del modo búsqueda (#284) — sobre el mapa, bajo la píldora ── */}
+      {zone_mode && viewfinder_diameter > 0 && map_size != null && (
+        <View
+          pointerEvents="none"
+          testID="zone-viewfinder"
+          style={[
+            styles.zone_viewfinder,
+            {
+              width: viewfinder_diameter,
+              height: viewfinder_diameter,
+              borderRadius: viewfinder_diameter / 2,
+              top: (map_size.height - viewfinder_diameter) / 2,
+              left: (map_size.width - viewfinder_diameter) / 2,
+            },
+          ]}
         />
       )}
+
+      {/*
+       * ── Píldora "Buscar en esta zona" (#56.4 → #284) — SIEMPRE visible ──
+       * Reposo: entra al modo búsqueda. Modo: «Buscar aquí · X km» confirma
+       * (handle_area_search) y «Cancelar» sale sin buscar.
+       */}
+      <AreaSearchPill
+        on_press={zone_mode ? handle_area_search : () => set_zone_mode(true)}
+        lifted={selected !== null}
+        label={zone_mode_label}
+        on_cancel={zone_mode ? () => set_zone_mode(false) : undefined}
+      />
 
       {/* ── Overlay de carga — ActivityIndicator discreto arriba ─────────── */}
       {loading && (
@@ -657,6 +676,18 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+  },
+  /**
+   * Círculo fijo del modo búsqueda (#284): mismos tokens que el <Circle>
+   * geo-anclado de 281.2 (fill primary al 12 %, trazo primary 2 px) para que
+   * el usuario lea "es la misma zona" antes y después de confirmar.
+   * width/height/borderRadius/top/left se inyectan inline (dependen del layout).
+   */
+  zone_viewfinder: {
+    position: 'absolute',
+    backgroundColor: 'rgba(26, 94, 68, 0.12)',
+    borderWidth: 2,
+    borderColor: colors.primary,
   },
   fallback: {
     flex: 1,

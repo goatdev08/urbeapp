@@ -12230,7 +12230,7 @@
         "id": "281",
         "title": "feat(56/157): zona visible en el mapa — círculo verde translúcido inscrito antes y después de «Buscar en esta zona» + radio «cerca de mí»",
         "description": "Origen: requerimiento del cliente vía Abraham 2026-09-08 (exploración 046) · Detectado por: usuario. Hoy la píldora «Buscar en esta zona» busca un círculo que nunca se dibuja y cuyo radio (media diagonal = círculo circunscrito) mide ≈1.8× el rectángulo visible, así que no cabe en pantalla. Se pasa a círculo INSCRITO (WYSIWYG: lo que se ve es lo que se busca; Abraham aceptó que esquinas y franjas superior/inferior dejen de entrar) y se dibuja con <Circle> de react-native-maps en tres estados: visor junto con la píldora, persistente con filters.area activa (chip con el radio en km) y punteado alrededor del usuario para filters.radius_m.",
-        "details": "Doc: .taskmaster/docs/exploraciones/046-zona-visible-y-buscador-claro.md (direcciones B + A + D). Footprint: mobile/src/features/map/lib/viewportToArea.ts (+ __tests__/viewportToArea.test.ts), mobile/src/features/map/lib/formatRadius.ts (nuevo, + test), mobile/src/features/map/MapScreen.tsx, mobile/src/features/search/components/ZoneActiveChip.tsx. Reglas: 🔒 A1 (filters.area solo parámetro del RPC); D9 (colonia/municipio/área excluyentes → nunca círculo + polígono a la vez); §8 techo con propuesta: UI ausente del mockup 6·MAPA, pedida explícita por el cliente → mini-spec en el componente con tokens existentes (fill rgba(26,94,68,0.12), stroke colors.primary, punteado para «cerca de mí»); `Circle` ya lo exporta react-native-maps 1.27.2 (src/index.ts) → sin dependencia nueva, OTA-safe. lib/** = crítica (RED→GREEN→guardian); MapScreen/chip = verificación ligera + smoke por adb. Sin migraciones ni contratos: OTA único al final junto con #277.",
+        "details": "Doc: .taskmaster/docs/exploraciones/046-zona-visible-y-buscador-claro.md (direcciones B + A + D). Footprint: mobile/src/features/map/lib/viewportToArea.ts (+ __tests__/viewportToArea.test.ts), mobile/src/features/map/lib/formatRadius.ts (nuevo, + test), mobile/src/features/map/MapScreen.tsx, mobile/src/features/search/components/ZoneActiveChip.tsx. Reglas: 🔒 A1 (filters.area solo parámetro del RPC); D9 (colonia/municipio/área excluyentes → nunca círculo + polígono a la vez); §8 techo con propuesta: UI ausente del mockup 6·MAPA, pedida explícita por el cliente → mini-spec en el componente con tokens existentes (fill rgba(26,94,68,0.12), stroke colors.primary, punteado para «cerca de mí»); `Circle` ya lo exporta react-native-maps 1.27.2 (src/index.ts) → sin dependencia nueva, OTA-safe. lib/** = crítica (RED→GREEN→guardian); MapScreen/chip = verificación ligera + smoke por adb. Sin migraciones ni contratos: OTA único al final junto con #277. DERIVADAS: #284 (usuario).",
         "testStrategy": "Jest: viewport_to_area devuelve min(media altura, media anchura) por Haversine con clamp [100, 50000] intacto (casos: viewport vertical, horizontal, cuadrado, zoom extremo ambos lados, passthrough del centro); format_radius_m → «800 m» / «2.4 km» / «50 km». MapScreen.test: círculo presente con show_area_pill, con filters.area y con radius_m finito sin zona; ausente con polígono de colonia. tsc + lint verdes. Smoke adb en el emulador: panear → círculo + píldora; pulsar → feed; volver → círculo persistente + chip «Zona activa · X km · Quitar».",
         "status": "done",
         "dependencies": [
@@ -12277,7 +12277,7 @@
             "parentId": "undefined"
           }
         ],
-        "updatedAt": "2026-09-08T20:32:15.331Z"
+        "updatedAt": "2026-09-08T22:30:00.000Z"
       },
       {
         "id": "282",
@@ -12356,12 +12356,50 @@
           }
         ],
         "updatedAt": "2026-09-08T21:48:57.977Z"
+      },
+      {
+        "id": "284",
+        "title": "polish(281.2): círculo de zona bajo demanda — «modo búsqueda» con círculo fijo al centro y el mapa moviéndose debajo (patrón MapPicker)",
+        "description": "Origen: subtarea 281.2 · Detectado por: usuario (Abraham, 2026-09-08, tras ver #281 en el emulador). El círculo verde NO debe mostrarse cada vez que se panea: se pulsa la píldora para ENTRAR en modo búsqueda (aparece el círculo), en ese modo el círculo queda ESTÁTICO al centro de la pantalla y es el mapa el que se mueve y hace zoom debajo —igual que el pin del MapPicker del wizard de publicar—, y se pulsa de nuevo para buscar en la zona seleccionada. Cancelar sale del modo sin buscar.",
+        "details": "Reemplaza el estado 1 («visor» con la píldora tras panear + debounce 500 ms) de zone_circle en MapScreen. Footprint: mobile/src/features/map/MapScreen.tsx (estado zone_mode + onLayout del contenedor para el diámetro = min(ancho, alto), overlay <View> circular absoluto pointerEvents=none — mismo patrón que center_pin de publish/components/MapPicker.tsx; se elimina show_area_pill + area_pill_timer_ref), mobile/src/features/map/components/AreaSearchPill.tsx (props label y on_cancel: en modo búsqueda «Buscar aquí · 6.2 km» + botón secundario «Cancelar»), mobile/src/features/map/__tests__/MapScreen.test.tsx. La píldora queda SIEMPRE visible (es la entrada al modo; antes dependía del pan). El círculo estático es coherente con viewport_to_area (inscrito = lado corto) porque ambos toman min(alto, ancho). Se conservan el círculo persistente con filters.area (estado 2) y el punteado «cerca de mí» (estado 3) — no fueron objetados; se listan en el reporte por si Abraham los quiere fuera. Sin lib/** tocado → no crítica (tsc + lint + suite MapScreen + smoke adb). Sin migraciones ni contratos: viaja en el OTA único pendiente.",
+        "testStrategy": "Jest MapScreen: sin modo no hay zone-circle ni visor aunque se panee; pulsar la píldora → overlay zone-viewfinder con diámetro min(w,h) centrado; segunda pulsación → set_filter('area', viewport_to_area(region)) + router.push('/') y sale del modo; Cancelar → sale sin set_filter; seleccionar un lugar del buscador sale del modo; persistente y punteado intactos. tsc + lint. Smoke adb: pulsar → círculo fijo, panear/zoom debajo, pulsar → feed acotado, volver → círculo persistente + chip.",
+        "status": "in-progress",
+        "dependencies": [
+          "281"
+        ],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Modo búsqueda en MapScreen + AreaSearchPill con label/cancelar (tests de MapScreen)",
+            "description": "zone_mode + map_size (onLayout) + overlay circular fijo; píldora siempre visible con label dinámico y Cancelar; borrar el debounce/visor; actualizar MapScreen.test.tsx.",
+            "details": "No crítica (pantalla + components/**). ponytail: overlay inline en MapScreen, sin componente nuevo; el radio del label sale de viewport_to_area(region) + format_radius_m ya existentes.\n<info added on 2026-09-08T22:04:41.175Z>\nPLAN 284.1 (orquestador, 2026-09-08): modo búsqueda estilo MapPicker.\n- Abraham: \"no quiero que se muestre todo el tiempo, debe presionarse un botón para mostrar el círculo, y después pulsar de nuevo para buscar; en modo búsqueda el círculo queda estático y el mapa es el que se mueve, junto con el zoom, como el pin del wizard\".\n- Approach: `zone_mode` boolean en MapScreen. Píldora SIEMPRE visible (entrada al modo; se borra show_area_pill + debounce 500 ms + area_pill_timer_ref). En modo: overlay <View> circular absoluto centrado con pointerEvents=\"none\" (calco de center_pin de publish/components/MapPicker.tsx), diámetro = min(ancho, alto) del contenedor (onLayout) — coherente con viewport_to_area (inscrito = lado corto). Label de la píldora en modo: «Buscar aquí · {format_radius_m(viewport_to_area(region).radius_m)}» + botón secundario «Cancelar» (prop on_cancel en AreaSearchPill). Confirmar = handle_area_search (igual que antes) + salir del modo. Seleccionar lugar del buscador sale del modo.\n- Se quita el estado 1 (visor) de zone_circle; quedan el persistente (filters.area) y el punteado «cerca de mí».\n- agente=orquestador (mobile inline) · criticidad=no (pantalla + components/**) · impacto-prod=sin riesgo (solo JS/UI, OTA) · footprint=MapScreen.tsx, components/AreaSearchPill.tsx, __tests__/MapScreen.test.tsx.\n</info added on 2026-09-08T22:04:41.175Z>",
+            "status": "in-progress",
+            "dependencies": [],
+            "testStrategy": "Suite MapScreen verde con los casos nuevos; tsc + lint.",
+            "parentId": "undefined",
+            "updatedAt": "2026-09-08T22:04:41.175Z"
+          },
+          {
+            "id": 2,
+            "title": "Smoke por adb en el emulador contra producción",
+            "description": "Pulsar la píldora → círculo fijo; panear y hacer zoom → el mapa se mueve y el círculo no; pulsar «Buscar aquí» → feed acotado; volver → persistente + chip; Cancelar sale del modo. Capturas en el scratchpad.",
+            "details": "Metro sin CI=1 y dev-client relanzado antes de validar (memoria metro-bundle-stale-tras-git-switch).",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "testStrategy": "Capturas + salida real en la bitácora.",
+            "parentId": "undefined"
+          }
+        ],
+        "updatedAt": "2026-09-08T22:04:41.175Z"
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-09-08T21:48:57.977Z",
-      "taskCount": 283,
+      "lastModified": "2026-09-08T22:04:39.127Z",
+      "taskCount": 284,
       "completedCount": 203,
       "tags": [
         "master"

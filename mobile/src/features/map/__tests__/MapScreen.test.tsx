@@ -19,11 +19,13 @@
  * simular taps dentro de una ScrollView real.
  */
 import React from 'react';
-import { act, render } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
+import { act, fireEvent, render } from '@testing-library/react-native';
 
 import { MapScreen, NEIGHBORHOOD_POLYGON_ERROR_MESSAGE } from '../MapScreen';
 import type { PlaceSuggestion } from '../lib/placeSearch';
 import { viewport_to_area } from '../lib/viewportToArea';
+import { format_radius_m } from '../lib/formatRadius';
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -67,8 +69,10 @@ jest.mock('react-native-maps', () => {
   };
 });
 
+// #284: push hoisteado para asertar la navegación al feed al confirmar la zona.
+const mock_router_push = jest.fn();
 jest.mock('expo-router', () => ({
-  useRouter: () => ({ push: jest.fn() }),
+  useRouter: () => ({ push: mock_router_push }),
 }));
 
 // 281.2: jest.fn() en vez de valor fijo — los tests de zone_circle necesitan
@@ -119,7 +123,15 @@ jest.mock('../lib/neighborhoodPolygon', () => ({
 jest.mock('../components/PropertyMarker', () => ({ PropertyMarker: () => null }));
 jest.mock('../components/ClusterMarker', () => ({ ClusterMarker: () => null }));
 jest.mock('../components/PropertyMiniCard', () => ({ PropertyMiniCard: () => null }));
-jest.mock('../components/AreaSearchPill', () => ({ AreaSearchPill: () => null }));
+// #284: la píldora captura props — los tests pulsan on_press/on_cancel directo
+// (mismo seam que PlaceSearch/ZoneActiveChip) y leen el label del modo.
+let mock_area_pill_calls: any[] = [];
+jest.mock('../components/AreaSearchPill', () => ({
+  AreaSearchPill: (props: any) => {
+    mock_area_pill_calls.push(props);
+    return null;
+  },
+}));
 jest.mock('../components/MapSearchBar', () => ({ MapSearchBar: () => null }));
 jest.mock('../../search/components/FilterSheet', () => ({ FilterSheet: () => null }));
 // 281.3: captura las props (como PlaceSearch más abajo) para asertar el
@@ -152,6 +164,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mock_place_search_calls = [];
   mock_zone_active_chip_calls = [];
+  mock_area_pill_calls = [];
   mock_map_view_props = {};
   mock_use_map_properties.mockReturnValue({ data: [], loading: false, error: null });
   mock_use_location.mockReturnValue({ coords: null });
@@ -260,49 +273,170 @@ describe('MapScreen — zone_search (268.2): disparo de municipio', () => {
   });
 });
 
-describe('MapScreen — círculo de zona (281.2)', () => {
+describe('MapScreen — modo búsqueda por zona (#284) y círculo geo-anclado (281.2)', () => {
   const REGION = { latitude: 20.7, longitude: -103.35, latitudeDelta: 0.05, longitudeDelta: 0.05 };
+  const LAYOUT = { nativeEvent: { layout: { x: 0, y: 0, width: 400, height: 800 } } };
 
-  beforeEach(() => {
-    jest.useFakeTimers();
-  });
-
-  afterEach(() => {
-    jest.useRealTimers();
-  });
-
-  /** Avanza el debounce del pill y drena microtasks pendientes, dentro de act. */
-  async function advance(ms: number) {
-    await act(async () => {
-      jest.advanceTimersByTime(ms);
-    });
+  /** Última píldora renderizada (props vivas). */
+  function last_pill() {
+    return mock_area_pill_calls[mock_area_pill_calls.length - 1];
   }
 
-  it('visor: tras onRegionChangeComplete + 500ms el círculo usa viewport_to_area(region)', async () => {
-    const { getByTestId } = await render(<MapScreen />);
-
+  /** Layout del contenedor + una región conocida, como tras el primer pan. */
+  async function layout_and_pan(getByTestId: (id: string) => any) {
+    // RNTL 14: fireEvent es async (envuelve act) — sin await se solapan los act().
+    await fireEvent(getByTestId('map-container'), 'layout', LAYOUT);
     await act(async () => {
       mock_map_view_props.onRegionChangeComplete(REGION);
     });
-    await advance(500);
+  }
 
-    const expected = viewport_to_area(REGION);
-    const circle = getByTestId('zone-circle');
-    expect(circle.props['data-center']).toBe(
-      JSON.stringify({ latitude: expected.center.lat, longitude: expected.center.lng }),
-    );
-    expect(circle.props['data-radius']).toBe(expected.radius_m);
-    expect(circle.props['data-dashed']).toBe(false);
+  it('reposo: la píldora está SIEMPRE visible con el label default y sin Cancelar; panear NO dibuja ningún círculo (el visor de 281.2 se retiró)', async () => {
+    const { getByTestId, queryByTestId } = await render(<MapScreen />);
+    expect(last_pill()).toBeDefined();
+
+    await layout_and_pan(getByTestId);
+
+    expect(last_pill().label).toBeUndefined();
+    expect(last_pill().on_cancel).toBeUndefined();
+    expect(queryByTestId('zone-circle')).toBeNull();
+    expect(queryByTestId('zone-viewfinder')).toBeNull();
   });
 
-  it('persistente: filters.area activo dibuja su center/radius sin necesitar el pill', async () => {
+  it('entrar al modo: pulsar la píldora → círculo FIJO centrado con diámetro = lado corto del contenedor, label «Buscar aquí · X km» y Cancelar', async () => {
+    const { getByTestId, queryByTestId } = await render(<MapScreen />);
+    await layout_and_pan(getByTestId);
+
+    await act(async () => {
+      last_pill().on_press();
+    });
+
+    const style = StyleSheet.flatten(getByTestId('zone-viewfinder').props.style);
+    expect(style.width).toBe(400);
+    expect(style.height).toBe(400);
+    expect(style.borderRadius).toBe(200);
+    expect(style.top).toBe(200); // (800 - 400) / 2
+    expect(style.left).toBe(0); // (400 - 400) / 2
+    expect(last_pill().label).toBe(
+      `Buscar aquí · ${format_radius_m(viewport_to_area(REGION).radius_m)}`,
+    );
+    expect(typeof last_pill().on_cancel).toBe('function');
+    // En modo el círculo geo-anclado no compite con el fijo.
+    expect(queryByTestId('zone-circle')).toBeNull();
+  });
+
+  it('en modo el mapa se mueve debajo: una región nueva actualiza el radio del label (el círculo fijo no cambia de sitio)', async () => {
+    const { getByTestId } = await render(<MapScreen />);
+    await layout_and_pan(getByTestId);
+    await act(async () => {
+      last_pill().on_press();
+    });
+    const before = StyleSheet.flatten(getByTestId('zone-viewfinder').props.style);
+
+    const ZOOMED = { ...REGION, latitudeDelta: 0.01, longitudeDelta: 0.01 };
+    await act(async () => {
+      mock_map_view_props.onRegionChangeComplete(ZOOMED);
+    });
+
+    expect(last_pill().label).toBe(
+      `Buscar aquí · ${format_radius_m(viewport_to_area(ZOOMED).radius_m)}`,
+    );
+    const after = StyleSheet.flatten(getByTestId('zone-viewfinder').props.style);
+    expect(after.top).toBe(before.top);
+    expect(after.left).toBe(before.left);
+    expect(after.width).toBe(before.width);
+  });
+
+  it('confirmar: segunda pulsación → set_filter(\'area\', viewport_to_area(region)) + push(\'/\') y sale del modo', async () => {
+    const set_filter = jest.fn();
+    mock_use_filters.mockReturnValue({
+      filters: { area: null, radius_m: null },
+      set_filter,
+      active_filter_count: 0,
+    });
+    const { getByTestId, queryByTestId } = await render(<MapScreen />);
+    await layout_and_pan(getByTestId);
+    await act(async () => {
+      last_pill().on_press();
+    });
+
+    await act(async () => {
+      last_pill().on_press();
+    });
+
+    expect(set_filter).toHaveBeenCalledWith('area', viewport_to_area(REGION));
+    expect(mock_router_push).toHaveBeenCalledWith('/');
+    expect(mock_report_zone_search).toHaveBeenCalledWith({
+      kind: 'area',
+      center: viewport_to_area(REGION).center,
+      radius_m: viewport_to_area(REGION).radius_m,
+    });
+    expect(queryByTestId('zone-viewfinder')).toBeNull();
+    expect(last_pill().on_cancel).toBeUndefined();
+  });
+
+  it('cancelar: sale del modo sin set_filter ni navegación', async () => {
+    const set_filter = jest.fn();
+    mock_use_filters.mockReturnValue({
+      filters: { area: null, radius_m: null },
+      set_filter,
+      active_filter_count: 0,
+    });
+    const { getByTestId, queryByTestId } = await render(<MapScreen />);
+    await layout_and_pan(getByTestId);
+    await act(async () => {
+      last_pill().on_press();
+    });
+    expect(getByTestId('zone-viewfinder')).toBeTruthy();
+
+    await act(async () => {
+      last_pill().on_cancel();
+    });
+
+    expect(queryByTestId('zone-viewfinder')).toBeNull();
+    expect(set_filter).not.toHaveBeenCalled();
+    expect(mock_router_push).not.toHaveBeenCalled();
+    expect(last_pill().label).toBeUndefined();
+  });
+
+  it('elegir un lugar del buscador abandona el modo búsqueda', async () => {
+    mock_fetch_neighborhood_polygon.mockResolvedValue({
+      id: '42',
+      name: 'Providencia',
+      polygons: [],
+      bbox: { min_lat: 0, min_lng: 0, max_lat: 1, max_lng: 1 },
+    });
+    const { getByTestId, queryByTestId } = await render(<MapScreen />);
+    await layout_and_pan(getByTestId);
+    await act(async () => {
+      last_pill().on_press();
+    });
+    expect(getByTestId('zone-viewfinder')).toBeTruthy();
+
+    const latest_props = mock_place_search_calls[mock_place_search_calls.length - 1];
+    await act(async () => {
+      await latest_props.on_select_place(NEIGHBORHOOD);
+    });
+
+    expect(queryByTestId('zone-viewfinder')).toBeNull();
+  });
+
+  it('sin layout todavía (map_size null) el modo no pinta un círculo de 0 px', async () => {
+    const { queryByTestId } = await render(<MapScreen />);
+    await act(async () => {
+      last_pill().on_press();
+    });
+    expect(queryByTestId('zone-viewfinder')).toBeNull();
+  });
+
+  it('persistente: filters.area activo dibuja su center/radius; en modo búsqueda se OCULTA (el fijo muestra la zona nueva)', async () => {
     mock_use_filters.mockReturnValue({
       filters: { area: { center: { lat: 20.6, lng: -103.3 }, radius_m: 1200 }, radius_m: null },
       set_filter: jest.fn(),
       active_filter_count: 1,
     });
 
-    const { getByTestId } = await render(<MapScreen />);
+    const { getByTestId, queryByTestId } = await render(<MapScreen />);
 
     const circle = getByTestId('zone-circle');
     expect(circle.props['data-center']).toBe(
@@ -310,6 +444,13 @@ describe('MapScreen — círculo de zona (281.2)', () => {
     );
     expect(circle.props['data-radius']).toBe(1200);
     expect(circle.props['data-dashed']).toBe(false);
+
+    await layout_and_pan(getByTestId);
+    await act(async () => {
+      last_pill().on_press();
+    });
+    expect(queryByTestId('zone-circle')).toBeNull();
+    expect(getByTestId('zone-viewfinder')).toBeTruthy();
   });
 
   it('281.3: el chip de zona activa muestra "Zona activa · 2.4 km" con radius_m=2400', async () => {
@@ -356,7 +497,13 @@ describe('MapScreen — círculo de zona (281.2)', () => {
     expect(queryByTestId('zone-circle')).toBeNull();
   });
 
-  it('ausente con polígono de colonia activo (D9): ni siquiera el visor lo desplaza', async () => {
+  it('ausente con polígono de colonia activo (D9): ni el punteado «cerca de mí» se dibuja encima', async () => {
+    mock_use_filters.mockReturnValue({
+      filters: { area: null, radius_m: 3000 },
+      set_filter: jest.fn(),
+      active_filter_count: 0,
+    });
+    mock_use_location.mockReturnValue({ coords: { latitude: 20.65, longitude: -103.34 } });
     mock_fetch_neighborhood_polygon.mockResolvedValue({
       id: '42',
       name: 'Providencia',
@@ -364,17 +511,13 @@ describe('MapScreen — círculo de zona (281.2)', () => {
       bbox: { min_lat: 0, min_lng: 0, max_lat: 1, max_lng: 1 },
     });
 
-    const { queryByTestId } = await render(<MapScreen />);
+    const { getByTestId, queryByTestId } = await render(<MapScreen />);
+    expect(getByTestId('zone-circle')).toBeTruthy();
+
     const latest_props = mock_place_search_calls[mock_place_search_calls.length - 1];
     await act(async () => {
       await latest_props.on_select_place(NEIGHBORHOOD);
     });
-
-    // Con la colonia activa el pill igual podría aparecer al panear — D9 gana: sin círculo.
-    await act(async () => {
-      mock_map_view_props.onRegionChangeComplete(REGION);
-    });
-    await advance(500);
 
     expect(queryByTestId('zone-circle')).toBeNull();
   });
