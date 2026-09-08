@@ -1153,3 +1153,5 @@ La vista de solo lectura de la ficha del CRM mostraba la proyección 8→4: un o
 
 ## [2026-09-07] tarea | #276 hardening(226) — una sola frontera de escritura en leads
 Se retira `is_admin()` de `leads_update`, `leads_delete` y `private.can_edit_lead`. En las policies la rama estaba inerte desde #226; en `can_edit_lead` seguía viva por ser security definer, y dejaba a un admin de plataforma insertar `lead_origin_properties` de un lead que no puede ver — escribir a ciegas lo que no se puede leer. `leads_delete` no gana la rama de agencia: nadie borra en duro. Guardian PASS 5/5; después se endurecieron CAT1/CAT2 a igualdad exacta porque un mutante que olvidaba `status=active` sobrevivía. Desplegado y sondeado por impersonación: owner conserva escritura, admin sin membresía queda fuera.
+
+## [2026-09-08] explore | aprobado tareas 281, 282 — Zona visible en el mapa (círculo inscrito) + buscador de lugares claro (search_places v3, dropdown por tipo)

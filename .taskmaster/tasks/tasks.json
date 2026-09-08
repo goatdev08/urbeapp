@@ -12225,6 +12225,99 @@
         "priority": "medium",
         "subtasks": [],
         "updatedAt": "2026-09-08T00:00:05.044Z"
+      },
+      {
+        "id": "281",
+        "title": "feat(56/157): zona visible en el mapa — círculo verde translúcido inscrito antes y después de «Buscar en esta zona» + radio «cerca de mí»",
+        "description": "Origen: requerimiento del cliente vía Abraham 2026-09-08 (exploración 046) · Detectado por: usuario. Hoy la píldora «Buscar en esta zona» busca un círculo que nunca se dibuja y cuyo radio (media diagonal = círculo circunscrito) mide ≈1.8× el rectángulo visible, así que no cabe en pantalla. Se pasa a círculo INSCRITO (WYSIWYG: lo que se ve es lo que se busca; Abraham aceptó que esquinas y franjas superior/inferior dejen de entrar) y se dibuja con <Circle> de react-native-maps en tres estados: visor junto con la píldora, persistente con filters.area activa (chip con el radio en km) y punteado alrededor del usuario para filters.radius_m.",
+        "details": "Doc: .taskmaster/docs/exploraciones/046-zona-visible-y-buscador-claro.md (direcciones B + A + D). Footprint: mobile/src/features/map/lib/viewportToArea.ts (+ __tests__/viewportToArea.test.ts), mobile/src/features/map/lib/formatRadius.ts (nuevo, + test), mobile/src/features/map/MapScreen.tsx, mobile/src/features/search/components/ZoneActiveChip.tsx. Reglas: 🔒 A1 (filters.area solo parámetro del RPC); D9 (colonia/municipio/área excluyentes → nunca círculo + polígono a la vez); §8 techo con propuesta: UI ausente del mockup 6·MAPA, pedida explícita por el cliente → mini-spec en el componente con tokens existentes (fill rgba(26,94,68,0.12), stroke colors.primary, punteado para «cerca de mí»); `Circle` ya lo exporta react-native-maps 1.27.2 (src/index.ts) → sin dependencia nueva, OTA-safe. lib/** = crítica (RED→GREEN→guardian); MapScreen/chip = verificación ligera + smoke por adb. Sin migraciones ni contratos: OTA único al final junto con #277.",
+        "testStrategy": "Jest: viewport_to_area devuelve min(media altura, media anchura) por Haversine con clamp [100, 50000] intacto (casos: viewport vertical, horizontal, cuadrado, zoom extremo ambos lados, passthrough del centro); format_radius_m → «800 m» / «2.4 km» / «50 km». MapScreen.test: círculo presente con show_area_pill, con filters.area y con radius_m finito sin zona; ausente con polígono de colonia. tsc + lint verdes. Smoke adb en el emulador: panear → círculo + píldora; pulsar → feed; volver → círculo persistente + chip «Zona activa · X km · Quitar».",
+        "status": "pending",
+        "dependencies": [
+          "56",
+          "157"
+        ],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "viewport_to_area inscrito + format_radius_m (lib, TDD)",
+            "description": "Cambiar el radio de media diagonal a min(media altura, media anchura) por Haversine (círculo inscrito en el viewport), clamp intacto; reescribir el header del archivo con el nuevo trade-off (WYSIWYG, esquinas fuera) y la fecha/decisión. Nuevo lib/formatRadius.ts: format_radius_m(m) → «800 m» (< 1 km) / «2.4 km» (1 decimal) / «50 km» (entero cuando ≥ 10 km). Actualizar viewportToArea.test.ts y añadir formatRadius.test.ts.",
+            "details": "Crítica (lib/**). Los tests existentes de la diagonal deben cambiar de expectativa, no borrarse. Documentar en la bitácora el trade-off (disparador d: descarta la alternativa circunscrita nombrada en la exploración 030).",
+            "status": "pending",
+            "dependencies": [],
+            "testStrategy": "Jest RED→GREEN→guardian sobre ambos archivos."
+          },
+          {
+            "id": 2,
+            "title": "<Circle> en MapScreen: visor con la píldora, persistente con filters.area, punteado para radius_m",
+            "description": "Dentro del <MapView>: (1) show_area_pill → <Circle center={region} radius={viewport_to_area(region).radius_m} fill rgba(26,94,68,0.12) stroke colors.primary strokeWidth 2>; (2) filters.area != null → mismo círculo con center/radius de filters.area; (3) sin zona activa (area, colonia y municipio null) y filters.radius_m numérico y user_coords → círculo con lineDashPattern alrededor del usuario. Nunca junto al <Polygon> de colonia (D9). Mini-spec en comentario del componente.",
+            "details": "No crítica (pantalla). ponytail: un solo bloque de render con el círculo que toque, sin componente nuevo salvo que se repita 3 veces igual (entonces un `ZoneCircle` mínimo en components/). Verificar en Android que lineDashPattern se respeta (en iOS sí); si no, punteado → strokeWidth 1 + fill más tenue y anotarlo.",
+            "status": "pending",
+            "dependencies": [
+              1
+            ],
+            "testStrategy": "MapScreen.test.tsx: mock de Circle; presente/ausente por estado. tsc + lint. Smoke adb: screenshot con círculo + píldora."
+          },
+          {
+            "id": 3,
+            "title": "Chip «Zona activa · 2.4 km · Quitar» + smoke en emulador",
+            "description": "En MapScreen y FeedScreen, el ZoneActiveChip de filters.area recibe label `Zona activa · ${format_radius_m(filters.area.radius_m)}`. Smoke completo por adb (CLI, nunca computer-use): panear → círculo y píldora; pulsar → feed acotado; volver al mapa → círculo persistente y chip con radio; Quitar → círculo punteado de «cerca de mí» si radius_m es finito. Capturas en el scratchpad y salida real en la bitácora.",
+            "details": "No crítica. Reusa la prop `label` existente del chip (#157.8); sin cambios en el componente salvo que el texto no quepa (numberOfLines=1 ya existe).",
+            "status": "pending",
+            "dependencies": [
+              2
+            ],
+            "testStrategy": "tsc + lint + suites del mapa y del feed verdes; capturas del smoke."
+          }
+        ],
+        "updatedAt": "2026-09-08T19:59:48.974Z"
+      },
+      {
+        "id": "282",
+        "title": "feat(159/232): buscador de lugares claro — cercanía primero en search_places v3 y dropdown agrupado por tipo",
+        "description": "Origen: requerimiento del cliente vía Abraham 2026-09-08 (exploración 046) · Detectado por: usuario. Con «provi» desde Guadalajara, search_places v2 (prefijo → similitud → distancia) pone Providencia (Guadalajara) en el lugar 9, fuera de las ~6 filas visibles: el usuario ve seis pins verdes idénticos de colonias lejanas. Verificado en producción con y sin coordenadas. Se cambia el ranking (cercanía antes que similitud cuando hay coordenadas, con la colonia base antes que sus secciones) manteniendo la firma publicada, y el dropdown agrupa Colonias / Municipios / Direcciones con ícono y etiqueta por tipo.",
+        "details": "Doc: .taskmaster/docs/exploraciones/046-zona-visible-y-buscador-claro.md (direcciones E + F; G en reserva). Footprint: supabase/migrations/2026090830000?_search_places_v3.sql + rollbacks/ (restaura la v2 byte a byte) + supabase/tests/83_search_places_v3_test.sql; mobile/src/features/map/components/PlaceSearch.tsx (+ components/__tests__/PlaceSearch.test.tsx); mobile/app/(protected)/ads/new/step4.tsx solo verificación (reusa PlaceSearch). 🔴 §0.5.2 contrato publicado: los builds instalados llaman rpc('search_places', {p_query, p_limit}); la v3 conserva firma (text, int, float8 default null, float8 default null), shape de fila y grants; SIN coordenadas debe devolver exactamente el orden de la v2 (dist NULL → no-op). Ranking propuesto (el agente supabase lo afina con los datos reales de mx_neighborhoods): is_prefix desc → bucket de distancia (p.ej. floor(dist/0.05) en grados ≈ 5 km) asc nulls last → sim desc → (kind='municipality') desc → name asc; así Providencia (GDL) y sus secciones caen en el mismo bucket y la base gana por similitud. Deploy remoto por apply_migration ANTES del OTA único (ver memoria supabase_remote_deploy_apply_migration).",
+        "testStrategy": "pgTAP 83: fixture mínima (colonias homónimas a 4 km y a 50 km + una con nombre más corto tipo «Provima»); con p_lat/p_lng de GDL, la cercana va primero y la base antes que sus secciones; sin coords, orden idéntico a la v2 (comparar contra la 80 sin cambios); firma, grants y escape de metacaracteres intactos. Jest PlaceSearch: encabezados solo cuando hay filas de ese tipo, ícono por tipo, etiqueta de texto; step4 sin regresión. Smoke adb con «provi» desde GDL: Providencia (Guadalajara) visible sin scroll.",
+        "status": "pending",
+        "dependencies": [
+          "159",
+          "232"
+        ],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "search_places v3: cercanía antes que similitud (migración + rollback + pgTAP 83)",
+            "description": "Nueva migración idempotente que reemplaza el cuerpo de public.search_places con el ranking de cercanía por bucket, misma firma y grants; rollback que restaura la v2; test pgTAP 83 con los casos del testStrategy. La 80 debe seguir verde sin tocarla (es la garantía del contrato sin coords).",
+            "details": "Crítica (migrations/**). ⚠️ contrato: firma intacta, deploy antes del OTA. Verificar con los datos reales antes de fijar el tamaño del bucket: «provi» desde GDL debe dar Providencia (Guadalajara) en el top 3 y por encima de Provima; «la estancia» desde Zapopan debe seguir dando la de Zapopan primero (caso de la v2).",
+            "status": "pending",
+            "dependencies": [],
+            "testStrategy": "pgTAP RED→GREEN→guardian: 83 nueva + 80 y 43 sin cambios verdes."
+          },
+          {
+            "id": 2,
+            "title": "PlaceSearch agrupado por tipo: encabezados Colonias / Municipios / Direcciones, ícono y etiqueta por fila",
+            "description": "Partir `suggestions` por kind y renderizar cada grupo con section_header (el estilo ya existe para «Direcciones»); ícono por tipo (MapPinSimple primary para colonia, Buildings accent para municipio, MapPin gray para dirección) y etiqueta de texto pequeña por fila («Colonia» / «Municipio» / «Dirección») o el context ya existente en gris. Mini-spec en el header del componente; sin tokens nuevos. Mantener el orden que devuelve la RPC dentro de cada grupo.",
+            "details": "No crítica (components/**). Reusar section_header y StatusRow; si el maxHeight 360 deja fuera al grupo de municipios, subirlo a 420 y anotarlo. Verificar ads/new/step4 (mismo componente inline).",
+            "status": "pending",
+            "dependencies": [],
+            "testStrategy": "PlaceSearch.test.tsx: encabezados condicionales y orden; tsc + lint; smoke adb en mapa y en step4."
+          },
+          {
+            "id": 3,
+            "title": "Deploy remoto de la v3 + smoke «provi» en el emulador contra producción",
+            "description": "Aplicar la migración al remoto (apply_migration), verificar con la sonda SQL real («provi» con coords de GDL) y hacer el smoke por adb en el emulador: Providencia (Guadalajara) visible sin scroll, encabezados por tipo. Pegar la salida real en la bitácora.",
+            "details": "Orquestador: el deploy es acción sobre producción viva (§0.5.3); se hace tras el merge del PR y antes del OTA único.",
+            "status": "pending",
+            "dependencies": [
+              1,
+              2
+            ],
+            "testStrategy": "Sonda SQL + capturas del smoke."
+          }
+        ],
+        "updatedAt": "2026-09-08T19:59:48.974Z"
       }
     ],
     "metadata": {
