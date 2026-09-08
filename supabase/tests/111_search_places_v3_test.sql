@@ -71,7 +71,7 @@
 -- que de verdad ejercita el `least(..., 20)`.
 
 begin;
-select plan(17);
+select plan(19);
 
 -- ── Fixtures ────────────────────────────────────────────────────────────────
 insert into public.mx_municipalities (id, state_id, name,
@@ -99,6 +99,18 @@ insert into public.mx_neighborhoods (source_key, municipality_id, name, geom) va
 -- ════════════════════════════════════════════════════════════════════════════
 -- Firma y compatibilidad hacia atrás (§0.5) — deben seguir intactas
 -- ════════════════════════════════════════════════════════════════════════════
+
+-- Hallazgo del guardian (282.1): NADA fijaba dónde caen las candidatas con
+-- dist NULL (municipios sin bbox — en el catálogo real son TODOS los que no
+-- tienen colonias cargadas). Con `nulls first` una colonia a 2 km desaparecía
+-- del top expulsada por municipios lejanos sin bbox: el síntoma que #282
+-- corrige. Fixture propia (query 'sinbboxtest') para no tocar las listas
+-- exactas de 'providtest'.
+insert into public.mx_municipalities (id, state_id, name)
+values ('14996', '14', 'Sinbboxtest');
+insert into public.mx_neighborhoods (source_key, municipality_id, name, geom) values
+  ('t282-sinbbox-col', '14120', 'Sinbboxtest Colonia',
+   extensions.ST_Multi(extensions.ST_MakeEnvelope(-103.36, 20.68, -103.35, 20.69, 4326))::extensions.geography);
 
 -- ── 1) La firma de 4 args sigue siendo la única ────────────────────────────
 select has_function('public', 'search_places',
@@ -241,6 +253,21 @@ select lives_ok(
   $$ select * from public.search_places('providtest', 10, 20.6736, -103.344) $$,
   'authenticated puede ejecutar search_places v3');
 reset role;
+
+-- ── 18-19) 🔒 dist NULL (municipio sin bbox) va AL FINAL con coords ──────────
+-- Sin coords el municipio gana (sim 1.0, kind desc); con coords la colonia
+-- cercana (bucket 0) lo adelanta y el NULL cae al final (nulls last). Un
+-- mutante `nulls first` invierte el 19 sin tocar el 18.
+select is(
+  (select p.kind || ':' || p.name from public.search_places('sinbboxtest', 5) p limit 1),
+  'municipality:Sinbboxtest',
+  'sin coords: el municipio sin bbox gana por similitud exacta (orden v2 intacto)');
+select is(
+  (select array_agg(p.kind || ':' || p.name order by p.rn)
+     from (select kind, name, row_number() over () as rn
+             from public.search_places('sinbboxtest', 5, 20.6736, -103.344)) p),
+  array['neighborhood:Sinbboxtest Colonia', 'municipality:Sinbboxtest'],
+  'con coords: la colonia cercana (bucket 0) adelanta al municipio sin bbox (dist NULL → nulls last)');
 
 select * from finish();
 rollback;
