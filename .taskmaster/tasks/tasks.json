@@ -12285,7 +12285,7 @@
         "description": "Origen: requerimiento del cliente vía Abraham 2026-09-08 (exploración 046) · Detectado por: usuario. Con «provi» desde Guadalajara, search_places v2 (prefijo → similitud → distancia) pone Providencia (Guadalajara) en el lugar 9, fuera de las ~6 filas visibles: el usuario ve seis pins verdes idénticos de colonias lejanas. Verificado en producción con y sin coordenadas. Se cambia el ranking (cercanía antes que similitud cuando hay coordenadas, con la colonia base antes que sus secciones) manteniendo la firma publicada, y el dropdown agrupa Colonias / Municipios / Direcciones con ícono y etiqueta por tipo.",
         "details": "Doc: .taskmaster/docs/exploraciones/046-zona-visible-y-buscador-claro.md (direcciones E + F; G en reserva). Footprint: supabase/migrations/2026090830000?_search_places_v3.sql + rollbacks/ (restaura la v2 byte a byte) + supabase/tests/83_search_places_v3_test.sql; mobile/src/features/map/components/PlaceSearch.tsx (+ components/__tests__/PlaceSearch.test.tsx); mobile/app/(protected)/ads/new/step4.tsx solo verificación (reusa PlaceSearch). 🔴 §0.5.2 contrato publicado: los builds instalados llaman rpc('search_places', {p_query, p_limit}); la v3 conserva firma (text, int, float8 default null, float8 default null), shape de fila y grants; SIN coordenadas debe devolver exactamente el orden de la v2 (dist NULL → no-op). Ranking propuesto (el agente supabase lo afina con los datos reales de mx_neighborhoods): is_prefix desc → bucket de distancia (p.ej. floor(dist/0.05) en grados ≈ 5 km) asc nulls last → sim desc → (kind='municipality') desc → name asc; así Providencia (GDL) y sus secciones caen en el mismo bucket y la base gana por similitud. Deploy remoto por apply_migration ANTES del OTA único (ver memoria supabase_remote_deploy_apply_migration).",
         "testStrategy": "pgTAP 83: fixture mínima (colonias homónimas a 4 km y a 50 km + una con nombre más corto tipo «Provima»); con p_lat/p_lng de GDL, la cercana va primero y la base antes que sus secciones; sin coords, orden idéntico a la v2 (comparar contra la 80 sin cambios); firma, grants y escape de metacaracteres intactos. Jest PlaceSearch: encabezados solo cuando hay filas de ese tipo, ícono por tipo, etiqueta de texto; step4 sin regresión. Smoke adb con «provi» desde GDL: Providencia (Guadalajara) visible sin scroll.",
-        "status": "pending",
+        "status": "in-progress",
         "dependencies": [
           "159",
           "232"
@@ -12296,42 +12296,45 @@
             "id": 1,
             "title": "search_places v3: cercanía antes que similitud (migración + rollback + pgTAP 83)",
             "description": "Nueva migración idempotente que reemplaza el cuerpo de public.search_places con el ranking de cercanía por bucket, misma firma y grants; rollback que restaura la v2; test pgTAP 83 con los casos del testStrategy. La 80 debe seguir verde sin tocarla (es la garantía del contrato sin coords).",
-            "details": "Crítica (migrations/**). ⚠️ contrato: firma intacta, deploy antes del OTA. Verificar con los datos reales antes de fijar el tamaño del bucket: «provi» desde GDL debe dar Providencia (Guadalajara) en el top 3 y por encima de Provima; «la estancia» desde Zapopan debe seguir dando la de Zapopan primero (caso de la v2).",
-            "status": "pending",
+            "details": "Crítica (migrations/**). ⚠️ contrato: firma intacta, deploy antes del OTA. Verificar con los datos reales antes de fijar el tamaño del bucket: «provi» desde GDL debe dar Providencia (Guadalajara) en el top 3 y por encima de Provima; «la estancia» desde Zapopan debe seguir dando la de Zapopan primero (caso de la v2).\n<info added on 2026-09-08T20:33:22.128Z>\nPLAN: migración search_places v3 (misma firma text,int,float8 default null,float8 default null; mismo RETURNS TABLE; revoke anon + grant authenticated; comment) que cambia SOLO el order by de top_candidates: cercanía por bucket antes que similitud cuando hay coords; sin coords (dist NULL) orden idéntico a la v2 · rollback = restaurar el cuerpo v2 · pgTAP 83 con fixture en transacción (colonias homónimas cercana/lejana + nombre corto tipo Provima) · agente=supabase · skills=urbea-supabase, urbea-testing · criticidad=crítica (migrations/**) · impacto-prod=contrato publicado: firma intacta, reemplazo de función en una transacción (mismo patrón que la v2); deploy remoto vía apply_migration ANTES del OTA · footprint=supabase/migrations/20260908300001_search_places_v3.sql, supabase/migrations/rollbacks/20260908300001_search_places_v3.sql, supabase/tests/83_search_places_v3_test.sql\n</info added on 2026-09-08T20:33:22.128Z>",
+            "status": "in-progress",
             "dependencies": [],
             "testStrategy": "pgTAP RED→GREEN→guardian: 83 nueva + 80 y 43 sin cambios verdes.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-09-08T20:33:25.614Z"
           },
           {
             "id": 2,
             "title": "PlaceSearch agrupado por tipo: encabezados Colonias / Municipios / Direcciones, ícono y etiqueta por fila",
             "description": "Partir `suggestions` por kind y renderizar cada grupo con section_header (el estilo ya existe para «Direcciones»); ícono por tipo (MapPinSimple primary para colonia, Buildings accent para municipio, MapPin gray para dirección) y etiqueta de texto pequeña por fila («Colonia» / «Municipio» / «Dirección») o el context ya existente en gris. Mini-spec en el header del componente; sin tokens nuevos. Mantener el orden que devuelve la RPC dentro de cada grupo.",
-            "details": "No crítica (components/**). Reusar section_header y StatusRow; si el maxHeight 360 deja fuera al grupo de municipios, subirlo a 420 y anotarlo. Verificar ads/new/step4 (mismo componente inline).",
+            "details": "No crítica (components/**). Reusar section_header y StatusRow; si el maxHeight 360 deja fuera al grupo de municipios, subirlo a 420 y anotarlo. Verificar ads/new/step4 (mismo componente inline).\n<info added on 2026-09-08T20:33:22.209Z>\nPLAN: PlaceSearch.tsx agrupa suggestions por kind con section_header (Colonias / Municipios) reusando el estilo de «Direcciones»; ícono por tipo ya existente (MapPinSimple primary / Buildings accent / MapPin gray) + etiqueta chica de tipo por fila; orden de la RPC intacto dentro de cada grupo; mini-spec en el header; sin tokens nuevos · agente=mobile · skills=urbea-expo · criticidad=no (components/**) · impacto-prod=sin riesgo · footprint=mobile/src/features/map/components/PlaceSearch.tsx, mobile/src/features/map/components/__tests__/PlaceSearch.test.tsx; verificar mobile/app/(protected)/ads/new/step4.tsx\n</info added on 2026-09-08T20:33:22.209Z>",
             "status": "pending",
             "dependencies": [],
             "testStrategy": "PlaceSearch.test.tsx: encabezados condicionales y orden; tsc + lint; smoke adb en mapa y en step4.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-09-08T20:33:22.209Z"
           },
           {
             "id": 3,
             "title": "Deploy remoto de la v3 + smoke «provi» en el emulador contra producción",
             "description": "Aplicar la migración al remoto (apply_migration), verificar con la sonda SQL real («provi» con coords de GDL) y hacer el smoke por adb en el emulador: Providencia (Guadalajara) visible sin scroll, encabezados por tipo. Pegar la salida real en la bitácora.",
-            "details": "Orquestador: el deploy es acción sobre producción viva (§0.5.3); se hace tras el merge del PR y antes del OTA único.",
+            "details": "Orquestador: el deploy es acción sobre producción viva (§0.5.3); se hace tras el merge del PR y antes del OTA único.\n<info added on 2026-09-08T20:33:22.290Z>\nPLAN: orquestador — tras el merge del PR, apply_migration al remoto + sonda SQL real («provi» con coords GDL) + smoke adb en el emulador (dropdown agrupado, Providencia (Guadalajara) visible sin scroll) · criticidad=no · impacto-prod=deploy a producción viva (§0.5.3), verificado después de publicar · footprint=ninguno (verificación)\n</info added on 2026-09-08T20:33:22.290Z>",
             "status": "pending",
             "dependencies": [
               1,
               2
             ],
             "testStrategy": "Sonda SQL + capturas del smoke.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-09-08T20:33:22.290Z"
           }
         ],
-        "updatedAt": "2026-09-08T19:59:48.974Z"
+        "updatedAt": "2026-09-08T20:33:25.614Z"
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-09-08T20:32:15.331Z",
+      "lastModified": "2026-09-08T20:33:25.620Z",
       "taskCount": 282,
       "completedCount": 201,
       "tags": [
