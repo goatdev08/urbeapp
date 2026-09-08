@@ -229,3 +229,42 @@ en el docblock del componente, mismo criterio que el degradado del embudo en #27
 **Regla que deja:** cuando una pantalla muestra un dato proyectado y el dato exacto está a
 la mano, el modo solo lectura no es excusa para mostrar el pobre — *quien no puede editar
 un dato es justamente quien más necesita leerlo bien.*
+
+## Una sola frontera de escritura en leads — vivo (#276 `hardening(226)`, desplegado 2026-09-07)
+
+#226 le quitó a los admins de PLATAFORMA la **lectura** del pipeline comercial ajeno:
+`leads_select` dejó de incluir `private.is_admin()`. Lo que nadie revisó entonces es qué
+pasaba con la **escritura**, y el guardian de 269.3 lo encontró un año de tareas después:
+
+- En `leads_update` y `leads_delete` la rama `is_admin()` quedó **inerte**. Postgres exige
+  que la fila sea visible por la policy de SELECT *además* de pasar el `USING` de
+  UPDATE/DELETE, y desde #226 esa visibilidad ya no existe para ese perfil. La suite
+  `77_leads_admin_plataforma_test` seguía verde porque solo prueba SELECT.
+- En `private.can_edit_lead` la rama seguía **viva**, porque es `security definer` y bypassa
+  `leads_select` por completo. Esa función gatea `lead_origin_insert`: un admin de plataforma
+  podía insertar `lead_origin_properties` de un lead que no puede ver. **Escribir a ciegas lo
+  que no se puede leer.**
+
+Se retiró `is_admin()` de los tres. La frontera de escritura queda en la relación real con el
+lead: ser su agente, o tener membresía ACTIVA owner/admin en su agencia.
+
+🔒 **`leads_delete` NO gana la rama de agencia — retiro puro, no unificación.** El RED llegó
+proponiendo agregársela «para que la frontera sea una sola», y se rechazó tras verificar que
+**no existe un solo `DELETE` sobre `leads`** en la app ni en las Edge Functions: el producto
+borra en suave con `deleted_at`. Repartir un poder de borrado duro nuevo, sobre una ruta que
+nadie ejerce, por simetría cosmética, es lo contrario de lo que pedía la tarea. `leads_delete`
+queda como la frontera más angosta de las tres: la edición se comparte con el equipo, el
+borrado duro se queda con el dueño del registro.
+
+`leads_insert` y `lead_origin_delete` **conservan** `is_admin()` a propósito — decisión #226
+vigente, fuera del footprint. Dos asserts de catálogo (CAT6/CAT7) vigilan que nadie los amplíe
+de pasada.
+
+**Regla que deja (endurecimiento post-guardian):** un assert de catálogo que comprueba
+*ausencia de una subcadena* es más débil de lo que aparenta. `CAT1`/`CAT2` verificaban que la
+expresión «no mencionara `is_admin`», y así sobrevivía un mutante realista: reescribir la rama
+de agencia como un `exists (select 1 from agency_members …)` inline que olvida
+`status = 'active'` — concediendo escritura a un owner suspendido, justo lo que
+`90_suspension_congela_escritura` protege. Pasaron a **igualdad exacta** de la expresión, con
+el literal leído del catálogo vivo. *Un test de catálogo debe fijar la forma que quieres, no
+prohibir la palabra que no quieres.*

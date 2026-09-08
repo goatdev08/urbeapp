@@ -58,27 +58,21 @@
 -- dedicada `public.reassign_lead_atomic` (subtarea 269.2, 20260906400002) — la RPC es el canal
 -- oficial de reasignación; este RLS es la red de seguridad genérica contra un PATCH crudo.
 --
--- ── 🔴 BLOQUEANTE (hallazgo del test-author, verificado empíricamente, 2026-09-06) ───────
--- El PLAN de la subtarea pedía anclar "is_admin() de plataforma sigue editando (1 fila)".
--- Verificado por impersonación real contra el local: HOY un admin de PLATAFORMA sin
+-- ── ✅ RESUELTO por 276 (era 🔴 BLOQUEANTE — hallazgo del test-author, 2026-09-06) ───────
+-- El PLAN de esta subtarea (269.3) pedía anclar "is_admin() de plataforma sigue editando
+-- (1 fila)". Verificado por impersonación real: HOY (269.3) un admin de PLATAFORMA sin
 -- relación de agencia (`private.is_admin()=true`) NO puede hacer UPDATE de un lead ajeno vía
--- RLS — afecta 0 filas — aunque `leads_update.using` incluya `or private.is_admin()`.
+-- RLS — afecta 0 filas — aunque `leads_update.using` incluyera `or private.is_admin()`.
 -- CAUSA: Postgres exige que la fila sea VISIBLE por la policy de SELECT de la tabla ADEMÁS
--- de pasar el USING de UPDATE/DELETE (verificado por contraste: agregar `is_admin()` a
--- `leads_select` en la misma transacción hace que el UPDATE SÍ afecte 1 fila). Desde
--- `20260901000001` (#226) `leads_select` YA NO incluye `is_admin()` (fix de fuga de PII) —
--- así que la rama `is_admin()` de `leads_update`/`leads_delete` quedó INERTE para cualquier
--- admin de plataforma sin relación de agencia, sin que #226 lo notara (su propio archivo,
--- 77_leads_admin_plataforma_test.sql, solo prueba SELECT/lectura, nunca UPDATE).
--- Esta subtarea (269.3) NO toca `leads_select` (fuera de su footprint: SUT = can_edit_lead +
--- leads_update/lead_origin_insert) y no puede resucitar esa rama sin revertir la decisión de
--- privacidad de #226 — por eso el caso NO se ancla en este archivo (un test que jamás puede
--- pasar con el GREEN planeado de 269.3 no es RED válido, es una garantía inventada). Se
--- reporta aquí como HALLAZGO para que el orquestador abra la derivada
--- `hardening(226): private.is_admin() inerte en leads_update/leads_delete` (origen: RED de
--- 269.3, detectado por test-author) — decidir si se resuelve con una RPC SECURITY DEFINER
--- dedicada para el admin de plataforma (bypassa RLS, no reexpone leads_select) o se acepta
--- como alcance retirado de #226 con el comentario de esa migración corregido.
+-- de pasar el USING de UPDATE/DELETE, y desde `20260901000001` (#226) `leads_select` ya no
+-- incluye `is_admin()` — la rama quedó INERTE para cualquier admin de plataforma sin
+-- relación de agencia. can_edit_lead, en cambio, es SECURITY DEFINER y bypassa leads_select
+-- por completo, así que ahí la rama seguía VIVA (escribía a ciegas vía lead_origin_insert).
+-- Esta subtarea (269.3) no tocó leads_select ni resolvió el hallazgo — quedó reportado como
+-- derivada `hardening(226)`. Esa derivada es la tarea/subtarea 276.1 (20260907200001):
+-- retira `private.is_admin()` de can_edit_lead, leads_update y leads_delete. Ver
+-- supabase/tests/110_frontera_is_admin_leads_test.sql para el ancla completa. Los asserts de
+-- ESTE archivo (109) no cambian: ninguno dependía de is_admin() para su resultado.
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;

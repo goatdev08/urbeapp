@@ -17,9 +17,10 @@
 --   2) private.can_view_lead           (usada por lead_status_history_select,
 --      lead_origin_select y el RPC get_lead_stats — la fuga se PROPAGA ahí)
 -- SUT del GREEN: migración nueva que quita `or private.is_admin()` de ambos.
--- leads_update/leads_delete CONSERVAN is_admin() (decisión anotada en #226:
--- el borrado por petición del titular es legítimo; moverlo a EF+service_role
--- es trabajo aparte) — este archivo NO los toca.
+-- leads_update/leads_delete YA NO conservan is_admin() -- retirada en la
+-- subtarea 276.1 (20260907200001, derivada hardening(226) de este mismo
+-- hallazgo): ver supabase/tests/110_frontera_is_admin_leads_test.sql. Este
+-- archivo (77) NO los toca -- solo prueba SELECT/lectura.
 --
 -- ── Convención DELTA vs INVARIANTE (heredada de 08/21/25/27/28/29/30) ────────
 -- DELTA      = falla hoy, pasa tras el GREEN (discrimina la implementación).
