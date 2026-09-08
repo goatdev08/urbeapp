@@ -430,16 +430,28 @@ reset role;
 --    (porque ya está inerte por el hallazgo de 269.3) pasaría todos los asserts de arriba.
 -- ════════════════════════════════════════════════════════════════════════════
 
-select ok(
-  (select pg_get_expr(polqual, polrelid) !~ 'is_admin'
+-- Igualdad EXACTA, no ausencia de la subcadena 'is_admin' (endurecido por el guardian de
+-- 276.1, 2026-09-07). Un `!~ 'is_admin'` deja pasar un mutante REALISTA: reescribir la rama
+-- de agencia como un `exists (select 1 from agency_members ...)` inline que olvida
+-- `status = 'active'`. Ese mutante concede escritura a un owner SUSPENDIDO y a un admin
+-- RETIRADO -- justo lo que LU_I4/LU_I5 dicen anclar y lo que protege
+-- 90_suspension_congela_escritura -- y sobrevivía la suite entera, porque LU_I4/LU_I5 son
+-- vacuos (esos actores tampoco ven la fila por leads_select) y CAT1/CAT2 solo miraban que no
+-- apareciera la palabra. La igualdad exacta obliga a que la frontera pase por
+-- private.agency_role_of, que es la única que filtra status='active'.
+-- Literal leído del catálogo vivo (docker exec, 2026-09-07), no recompuesto a mano.
+select is(
+  (select pg_get_expr(polqual, polrelid)
      from pg_policy where polrelid = 'public.leads'::regclass and polname = 'leads_update'),
-  'CAT1_leads_update_using_ya_no_menciona_is_admin'
+  $canon$((agent_id = ( SELECT auth.uid() AS uid)) OR (private.agency_role_of(agency_id) = ANY (ARRAY['owner'::agency_member_role, 'admin'::agency_member_role])))$canon$,
+  'CAT1_leads_update_using_es_exactamente_agent_id_o_agency_role_of_sin_ramas_extra'
 );
 
-select ok(
-  (select pg_get_expr(polwithcheck, polrelid) !~ 'is_admin'
+select is(
+  (select pg_get_expr(polwithcheck, polrelid)
      from pg_policy where polrelid = 'public.leads'::regclass and polname = 'leads_update'),
-  'CAT2_leads_update_with_check_ya_no_menciona_is_admin'
+  $canon$((agent_id = ( SELECT auth.uid() AS uid)) OR (private.agency_role_of(agency_id) = ANY (ARRAY['owner'::agency_member_role, 'admin'::agency_member_role])))$canon$,
+  'CAT2_leads_update_with_check_es_exactamente_igual_al_using'
 );
 
 select ok(
