@@ -30,6 +30,18 @@
 --       Sin coordenadas el orden queda idéntico (regresión); con coordenadas
 --       la distancia desempata similitudes iguales pero NO las domina.
 --
+-- 🔴 ACTUALIZACIÓN (2026-09-08, #282.1/v3): el test 16 original congelaba
+-- "la distancia desempata, NUNCA domina" como invariante permanente. La v3
+-- (exploración 046, "provi" desde GDL enterraba a Providencia en el lugar 9)
+-- cambia DELIBERADAMENTE esa regla: la cercanía por bucket de ~5 km ahora
+-- MANDA sobre similitud/prefijo (ver supabase/tests/111_search_places_v3_test.sql
+-- test 8, que exige exactamente lo contrario de lo que este test 16
+-- verificaba). Es la misma forma de caso: un match co-ubicado de menor
+-- similitud vs. un match exacto lejano — ningún tamaño de bucket satisface
+-- ambas reglas a la vez, así que el test 16 se actualiza para reflejar el
+-- contrato v3 (que sigue siendo lo único observable desde afuera: el resto
+-- de este archivo, incluida la garantía SIN coordenadas, no cambia).
+--
 -- 🔴 NOMBRES ACUÑADOS A PROPÓSITO ('Estanciatest', 'Municipiotest ...') —
 -- lección #175: 'La Estancia' existe ~19 veces solo en Jalisco y ataría el
 -- archivo al estado global de mx_neighborhoods (el import de #157 deja filas
@@ -154,13 +166,17 @@ select is(
   (select n.id::text from public.mx_neighborhoods n where n.source_key = 'test-159-estancia-col'),
   'search_places con coordenadas en Colima: la homónima de Colima va primero');
 
--- ── 16) 🔒 La distancia DESEMPATA la similitud, no la domina ───────────────
--- El punto cae DENTRO de 'Estanciatest Nueva' (distancia 0) y aun así las dos
--- 'Estanciatest' exactas van antes: sim manda, dist solo rompe empates.
-select isnt(
+-- ── 16) 🔒 v3 (#282.1): la cercanía por bucket MANDA sobre la similitud ────
+-- El punto cae DENTRO de 'Estanciatest Nueva' (bucket 0) mientras las dos
+-- 'Estanciatest' exactas (sim 1.0) están a ~850 km (bucket >>0): con la v2
+-- ganaban ellas (sim domina); con la v3 gana la co-ubicada de menor
+-- similitud, exactamente el mismo mecanismo que corrige "provi" desde GDL
+-- (111_search_places_v3_test.sql test 8). Actualizado 2026-09-08 junto con
+-- la migración v3 — ver nota arriba del header.
+select is(
   (select p.id from public.search_places('estanciatest', 10, 24.15, -110.31) p limit 1),
   (select n.id::text from public.mx_neighborhoods n where n.source_key = 'test-159-estancia-paz'),
-  'search_places: la distancia NO adelanta a una candidata de menor similitud');
+  'search_places v3: la cercanía por bucket adelanta a una candidata co-ubicada de menor similitud');
 
 -- ── 17) Coordenadas NULL explícitas == omitirlas ───────────────────────────
 select is(

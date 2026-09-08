@@ -1157,3 +1157,5 @@ Se retira `is_admin()` de `leads_update`, `leads_delete` y `private.can_edit_lea
 ## [2026-09-08] explore | aprobado tareas 281, 282 — Zona visible en el mapa (círculo inscrito) + buscador de lugares claro (search_places v3, dropdown por tipo)
 
 ## [2026-09-08] tarea | #281 zona visible en el mapa — círculo verde inscrito (visor + persistente + cerca de mí) con <Circle> de react-native-maps; viewport_to_area pasa de diagonal/2 a inscrito; chip con radio en km
+
+## [2026-09-08] tarea | #282 buscador de lugares claro — search_places v3 (cercanía por bucket antes que similitud, misma firma) + dropdown agrupado Colonias / Municipios / Direcciones
