@@ -132,6 +132,27 @@ export function PlaceSearch({
   // Agrupar por kind SIN reordenar (el ranking ya lo hizo la RPC, #282.1).
   const neighborhoods = suggestions.filter((s) => s.kind === 'neighborhood');
   const municipalities = suggestions.filter((s) => s.kind === 'municipality');
+  // #283: el grupo que contiene la PRIMERA sugerencia de la RPC va primero —
+  // con «zapo» desde GDL la fila 1 es el municipio Zapopan y el agrupado fijo
+  // lo mandaba bajo siete colonias, fuera de la vista sin scroll.
+  // ponytail: un booleano y dos bloques en orden condicional, sin sort.
+  const municipalities_first = suggestions[0]?.kind === 'municipality';
+  const neighborhood_group = neighborhoods.length > 0 && (
+    <>
+      <Text style={styles.section_header}>Colonias</Text>
+      {neighborhoods.map((s) => (
+        <PlaceRow key={`${s.kind}-${s.id}`} suggestion={s} on_select_place={on_select_place} />
+      ))}
+    </>
+  );
+  const municipality_group = municipalities.length > 0 && (
+    <>
+      <Text style={styles.section_header}>Municipios</Text>
+      {municipalities.map((s) => (
+        <PlaceRow key={`${s.kind}-${s.id}`} suggestion={s} on_select_place={on_select_place} />
+      ))}
+    </>
+  );
 
   return (
     <View
@@ -147,23 +168,8 @@ export function PlaceSearch({
         {loading && <StatusRow text="Buscando…" spinner />}
         {error != null && <StatusRow text={error} variant="error" />}
 
-        {neighborhoods.length > 0 && (
-          <>
-            <Text style={styles.section_header}>Colonias</Text>
-            {neighborhoods.map((s) => (
-              <PlaceRow key={`${s.kind}-${s.id}`} suggestion={s} on_select_place={on_select_place} />
-            ))}
-          </>
-        )}
-
-        {municipalities.length > 0 && (
-          <>
-            <Text style={styles.section_header}>Municipios</Text>
-            {municipalities.map((s) => (
-              <PlaceRow key={`${s.kind}-${s.id}`} suggestion={s} on_select_place={on_select_place} />
-            ))}
-          </>
-        )}
+        {municipalities_first ? municipality_group : neighborhood_group}
+        {municipalities_first ? neighborhood_group : municipality_group}
 
         {has_address_content && (
           <>
