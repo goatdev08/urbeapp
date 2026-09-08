@@ -12232,7 +12232,7 @@
         "description": "Origen: requerimiento del cliente vía Abraham 2026-09-08 (exploración 046) · Detectado por: usuario. Hoy la píldora «Buscar en esta zona» busca un círculo que nunca se dibuja y cuyo radio (media diagonal = círculo circunscrito) mide ≈1.8× el rectángulo visible, así que no cabe en pantalla. Se pasa a círculo INSCRITO (WYSIWYG: lo que se ve es lo que se busca; Abraham aceptó que esquinas y franjas superior/inferior dejen de entrar) y se dibuja con <Circle> de react-native-maps en tres estados: visor junto con la píldora, persistente con filters.area activa (chip con el radio en km) y punteado alrededor del usuario para filters.radius_m.",
         "details": "Doc: .taskmaster/docs/exploraciones/046-zona-visible-y-buscador-claro.md (direcciones B + A + D). Footprint: mobile/src/features/map/lib/viewportToArea.ts (+ __tests__/viewportToArea.test.ts), mobile/src/features/map/lib/formatRadius.ts (nuevo, + test), mobile/src/features/map/MapScreen.tsx, mobile/src/features/search/components/ZoneActiveChip.tsx. Reglas: 🔒 A1 (filters.area solo parámetro del RPC); D9 (colonia/municipio/área excluyentes → nunca círculo + polígono a la vez); §8 techo con propuesta: UI ausente del mockup 6·MAPA, pedida explícita por el cliente → mini-spec en el componente con tokens existentes (fill rgba(26,94,68,0.12), stroke colors.primary, punteado para «cerca de mí»); `Circle` ya lo exporta react-native-maps 1.27.2 (src/index.ts) → sin dependencia nueva, OTA-safe. lib/** = crítica (RED→GREEN→guardian); MapScreen/chip = verificación ligera + smoke por adb. Sin migraciones ni contratos: OTA único al final junto con #277.",
         "testStrategy": "Jest: viewport_to_area devuelve min(media altura, media anchura) por Haversine con clamp [100, 50000] intacto (casos: viewport vertical, horizontal, cuadrado, zoom extremo ambos lados, passthrough del centro); format_radius_m → «800 m» / «2.4 km» / «50 km». MapScreen.test: círculo presente con show_area_pill, con filters.area y con radius_m finito sin zona; ausente con polígono de colonia. tsc + lint verdes. Smoke adb en el emulador: panear → círculo + píldora; pulsar → feed; volver → círculo persistente + chip «Zona activa · X km · Quitar».",
-        "status": "pending",
+        "status": "in-progress",
         "dependencies": [
           "56",
           "157"
@@ -12243,35 +12243,41 @@
             "id": 1,
             "title": "viewport_to_area inscrito + format_radius_m (lib, TDD)",
             "description": "Cambiar el radio de media diagonal a min(media altura, media anchura) por Haversine (círculo inscrito en el viewport), clamp intacto; reescribir el header del archivo con el nuevo trade-off (WYSIWYG, esquinas fuera) y la fecha/decisión. Nuevo lib/formatRadius.ts: format_radius_m(m) → «800 m» (< 1 km) / «2.4 km» (1 decimal) / «50 km» (entero cuando ≥ 10 km). Actualizar viewportToArea.test.ts y añadir formatRadius.test.ts.",
-            "details": "Crítica (lib/**). Los tests existentes de la diagonal deben cambiar de expectativa, no borrarse. Documentar en la bitácora el trade-off (disparador d: descarta la alternativa circunscrita nombrada en la exploración 030).",
-            "status": "pending",
+            "details": "Crítica (lib/**). Los tests existentes de la diagonal deben cambiar de expectativa, no borrarse. Documentar en la bitácora el trade-off (disparador d: descarta la alternativa circunscrita nombrada en la exploración 030).\n<info added on 2026-09-08T20:00:21.858Z>\nPLAN: círculo inscrito — radius_m = min(haversine(centro→centro+latDelta/2), haversine(centro→centro+lngDelta/2)), clamp [100, 50000] intacto, header reescrito con el nuevo trade-off (WYSIWYG; decisión de Abraham 2026-09-08, exploración 046) · nuevo lib/formatRadius.ts con format_radius_m(m): <1000 → «800 m», <10000 → «2.4 km» (1 decimal), ≥10000 → «12 km» entero · agente=mobile · skills=urbea-expo, urbea-testing · criticidad=crítica (lib/**) · impacto-prod=sin riesgo (solo cliente, OTA) · footprint=mobile/src/features/map/lib/viewportToArea.ts, mobile/src/features/map/lib/formatRadius.ts, mobile/src/features/map/__tests__/viewportToArea.test.ts, mobile/src/features/map/__tests__/formatRadius.test.ts\n</info added on 2026-09-08T20:00:21.858Z>\n<info added on 2026-09-08T20:03:13.217Z>\nFASE RED — 281.1: viewport_to_area inscrito + format_radius_m\n\nSEAMS (interfaz bajo test):\n- `viewport_to_area(region: Region): { center: {lat,lng}, radius_m: number }` — export público de mobile/src/features/map/lib/viewportToArea.ts. Junto con MIN_RADIUS_M=100 / MAX_RADIUS_M=50000 exportados.\n- `format_radius_m(radius_m: number): string` — export público NUEVO de mobile/src/features/map/lib/formatRadius.ts (aún no existe → stub que lanza).\nAmbas son funciones puras; se testean por su firma/contrato, nunca por internals.\n\nEDGE CASES (RED):\n\n### Happy path\n- gdl_region_centro_exacto_y_radio_inscrito_menor_que_diagonal: GDL_REGION (0.12/0.12) → center passthrough, radius_m ≈ 6242 m (±2%), estrictamente < 7000 (evidencia de que ya NO es la diagonal 9135.6m)\n- format_radius_m(800) === '800 m'\n- format_radius_m(2400) === '2.4 km'\n\n### Edge cases del PRD / exploración 046 (§\"Círculo de zona\", opción B — círculo inscrito, revierte el trade-off de la decisión 1 de la exploración 030)\n- viewport_vertical_gana_media_anchura: lat=20.6736,lng=-103.344, latDelta=0.12, lngDelta=0.06 → radius_m ≈ 3121 m (±2%) — la media ANCHURA (menor), NO la media altura (6671.7m)\n- viewport_horizontal_gana_media_altura: latDelta=0.03, lngDelta=0.12 → radius_m ≈ 1667.9 m (±2%) — la media ALTURA (menor), NO la media anchura (6242m)\n- cdmx_region_asimetrica_gana_media_altura: 19.4326,-99.1332, 0.05/0.08 → radius_m ≈ 2779.9 m (±2%), menor que la media anchura 4194.4m calculada a mano\n- format_radius_m label reproducible del mockup \"Zona activa · 2.4 km · Quitar\": format_radius_m(2400) === '2.4 km'\n\n### Ramas de reglas no obvias\n- mutante_max_en_vez_de_min: los casos vertical y horizontal cazan una implementación que usa Math.max en vez de Math.min (darían 6671.7/6242 en vez de 3121/1667.9)\n- mutante_sigue_usando_diagonal: los mismos casos cazan una implementación que no migró del todo (diagonal vertical≈7365.4m, diagonal horizontal≈6460.8m — ambos muy distintos de los esperados)\n- format_radius_m_cruce_de_banda_por_redondeo: 999.6 → '1.0 km' (Math.round a metros cruza el umbral de 1000, pasa a formatear como km)\n- format_radius_m_colapso_a_entero_en_banda_km: 9950 → '10 km' (redondeo a 1 decimal da 10.0 → se muestra sin decimal, NO '10.0 km')\n- format_radius_m_redondeo_half_up_banda_entera: 12499 → '12 km' vs 12500 → '13 km' (medio hacia arriba)\n- format_radius_m_separador_punto_no_coma: 6245.5 → '6.2 km' (regex: sin coma, un solo punto decimal)\n- format_radius_m_un_espacio_antes_de_unidad: regex `/^\\d+(\\.\\d)? (m|km)$/` sobre varias salidas\n\n### Boundary / error\n- zoom_extremo_chico_clampa_a_min_radius_m_100 (se mantiene, contrato de clamp intacto)\n- zoom_extremo_grande_clampa_a_max_radius_m_50000 (se mantiene)\n- radio_en_rango_normal_no_se_clampa (se mantiene, sobre GDL con nuevo valor inscrito)\n- determinismo_funcion_pura (se mantiene)\n- format_radius_m(100) === '100 m' (piso MIN_RADIUS_M, banda m)\n- format_radius_m(1000) === '1.0 km' (frontera exacta m→km)\n- format_radius_m(10000) === '10 km' (frontera exacta banda decimal→entera)\n- format_radius_m(50000) === '50 km' (techo MAX_RADIUS_M, banda entera)\n</info added on 2026-09-08T20:03:13.217Z>",
+            "status": "in-progress",
             "dependencies": [],
-            "testStrategy": "Jest RED→GREEN→guardian sobre ambos archivos."
+            "testStrategy": "Jest RED→GREEN→guardian sobre ambos archivos.",
+            "updatedAt": "2026-09-08T20:03:13.217Z",
+            "parentId": "undefined"
           },
           {
             "id": 2,
             "title": "<Circle> en MapScreen: visor con la píldora, persistente con filters.area, punteado para radius_m",
             "description": "Dentro del <MapView>: (1) show_area_pill → <Circle center={region} radius={viewport_to_area(region).radius_m} fill rgba(26,94,68,0.12) stroke colors.primary strokeWidth 2>; (2) filters.area != null → mismo círculo con center/radius de filters.area; (3) sin zona activa (area, colonia y municipio null) y filters.radius_m numérico y user_coords → círculo con lineDashPattern alrededor del usuario. Nunca junto al <Polygon> de colonia (D9). Mini-spec en comentario del componente.",
-            "details": "No crítica (pantalla). ponytail: un solo bloque de render con el círculo que toque, sin componente nuevo salvo que se repita 3 veces igual (entonces un `ZoneCircle` mínimo en components/). Verificar en Android que lineDashPattern se respeta (en iOS sí); si no, punteado → strokeWidth 1 + fill más tenue y anotarlo.",
+            "details": "No crítica (pantalla). ponytail: un solo bloque de render con el círculo que toque, sin componente nuevo salvo que se repita 3 veces igual (entonces un `ZoneCircle` mínimo en components/). Verificar en Android que lineDashPattern se respeta (en iOS sí); si no, punteado → strokeWidth 1 + fill más tenue y anotarlo.\n<info added on 2026-09-08T20:00:21.939Z>\nPLAN: <Circle> de react-native-maps dentro del MapView en 3 estados excluyentes: (1) show_area_pill → center=region, radius=viewport_to_area(region).radius_m; (2) filters.area != null → center/radius de filters.area; (3) sin zona (area/colonia/municipio null) + filters.radius_m numérico + user_coords → círculo punteado (lineDashPattern) en el usuario. fill rgba(26,94,68,0.12), stroke colors.primary, strokeWidth 2. Nunca junto al Polygon de colonia (D9). Mini-spec en comentario. Si Android ignora lineDashPattern → strokeWidth 1 + fill más tenue y anotar · agente=mobile · skills=urbea-expo · criticidad=no (pantalla) · impacto-prod=sin riesgo · footprint=mobile/src/features/map/MapScreen.tsx, mobile/src/features/map/__tests__/MapScreen.test.tsx\n</info added on 2026-09-08T20:00:21.939Z>",
             "status": "pending",
             "dependencies": [
               1
             ],
-            "testStrategy": "MapScreen.test.tsx: mock de Circle; presente/ausente por estado. tsc + lint. Smoke adb: screenshot con círculo + píldora."
+            "testStrategy": "MapScreen.test.tsx: mock de Circle; presente/ausente por estado. tsc + lint. Smoke adb: screenshot con círculo + píldora.",
+            "updatedAt": "2026-09-08T20:00:21.939Z",
+            "parentId": "undefined"
           },
           {
             "id": 3,
             "title": "Chip «Zona activa · 2.4 km · Quitar» + smoke en emulador",
             "description": "En MapScreen y FeedScreen, el ZoneActiveChip de filters.area recibe label `Zona activa · ${format_radius_m(filters.area.radius_m)}`. Smoke completo por adb (CLI, nunca computer-use): panear → círculo y píldora; pulsar → feed acotado; volver al mapa → círculo persistente y chip con radio; Quitar → círculo punteado de «cerca de mí» si radius_m es finito. Capturas en el scratchpad y salida real en la bitácora.",
-            "details": "No crítica. Reusa la prop `label` existente del chip (#157.8); sin cambios en el componente salvo que el texto no quepa (numberOfLines=1 ya existe).",
+            "details": "No crítica. Reusa la prop `label` existente del chip (#157.8); sin cambios en el componente salvo que el texto no quepa (numberOfLines=1 ya existe).\n<info added on 2026-09-08T20:00:22.020Z>\nPLAN: label del ZoneActiveChip de filters.area = «Zona activa · {format_radius_m(radius_m)}» en MapScreen y FeedScreen (prop label existente, #157.8) · smoke por adb en el emulador (CLI, nunca computer-use): panear → círculo + píldora; pulsar → feed; volver → círculo persistente + chip con radio; Quitar → punteado de cerca de mí · agente=mobile · criticidad=no · impacto-prod=sin riesgo · footprint=mobile/src/features/map/MapScreen.tsx, mobile/src/features/feed/FeedScreen.tsx (o donde viva el chip del feed)\n</info added on 2026-09-08T20:00:22.020Z>",
             "status": "pending",
             "dependencies": [
               2
             ],
-            "testStrategy": "tsc + lint + suites del mapa y del feed verdes; capturas del smoke."
+            "testStrategy": "tsc + lint + suites del mapa y del feed verdes; capturas del smoke.",
+            "updatedAt": "2026-09-08T20:00:22.020Z",
+            "parentId": "undefined"
           }
         ],
-        "updatedAt": "2026-09-08T19:59:48.974Z"
+        "updatedAt": "2026-09-08T20:03:13.217Z"
       },
       {
         "id": "282",
@@ -12293,7 +12299,8 @@
             "details": "Crítica (migrations/**). ⚠️ contrato: firma intacta, deploy antes del OTA. Verificar con los datos reales antes de fijar el tamaño del bucket: «provi» desde GDL debe dar Providencia (Guadalajara) en el top 3 y por encima de Provima; «la estancia» desde Zapopan debe seguir dando la de Zapopan primero (caso de la v2).",
             "status": "pending",
             "dependencies": [],
-            "testStrategy": "pgTAP RED→GREEN→guardian: 83 nueva + 80 y 43 sin cambios verdes."
+            "testStrategy": "pgTAP RED→GREEN→guardian: 83 nueva + 80 y 43 sin cambios verdes.",
+            "parentId": "undefined"
           },
           {
             "id": 2,
@@ -12302,7 +12309,8 @@
             "details": "No crítica (components/**). Reusar section_header y StatusRow; si el maxHeight 360 deja fuera al grupo de municipios, subirlo a 420 y anotarlo. Verificar ads/new/step4 (mismo componente inline).",
             "status": "pending",
             "dependencies": [],
-            "testStrategy": "PlaceSearch.test.tsx: encabezados condicionales y orden; tsc + lint; smoke adb en mapa y en step4."
+            "testStrategy": "PlaceSearch.test.tsx: encabezados condicionales y orden; tsc + lint; smoke adb en mapa y en step4.",
+            "parentId": "undefined"
           },
           {
             "id": 3,
@@ -12314,7 +12322,8 @@
               1,
               2
             ],
-            "testStrategy": "Sonda SQL + capturas del smoke."
+            "testStrategy": "Sonda SQL + capturas del smoke.",
+            "parentId": "undefined"
           }
         ],
         "updatedAt": "2026-09-08T19:59:48.974Z"
@@ -12322,8 +12331,8 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-09-08T00:13:33.869Z",
-      "taskCount": 280,
+      "lastModified": "2026-09-08T20:00:25.414Z",
+      "taskCount": 282,
       "completedCount": 200,
       "tags": [
         "master"
