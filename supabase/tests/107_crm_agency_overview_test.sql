@@ -102,6 +102,18 @@
 --   agency_id=B vía el trigger) aparecería IGUAL como "sin gestor" en A — fuga de un lead que
 --   ni siquiera es de A (ver FRONTERA_AGENCIA más abajo).
 --   temperature = private.crm_temperature(suspended_agent_id, lead.user_id, now()).
+-- D-UNMANAGED-REMOVED (#278 hardening(269.1), decisión de Abraham 2026-09-07: retirado =
+--   suspendido para la banda): el agente cuenta como "sin gestor" si HOY tiene una membresía
+--   status IN ('suspended','removed') EN p_agency_id Y NINGUNA status='active' en p_agency_id.
+--   Semi-join (exists / not exists), NO join: agency_members_agency_user_active solo es única
+--   para 'active' y redeem-invitation INSERTA una fila nueva al readmitir
+--   (20260905200003:193), así que un retirado readmitido acumula removed + active en la misma
+--   agencia (con join saldría sin gestor teniendo gestor: READMIT1) y un retirado dos veces
+--   acumula 2 removed (con join el lead saldría duplicado: REMOVED2). Solo entran los leads
+--   captados MIENTRAS era miembro (leads.agency_id ya fijado): private.set_lead_agency_id no
+--   cambia — un lead NUEVO de un ex-miembro sigue con agency_id NULL (regla PII #203.1), y por
+--   eso el fixture de AGENT_REMOVED fija agency_id=A explícito. reassign_lead_atomic no valida
+--   el status del agente origen: ASIGNAR ya sirve para estos leads.
 --   first_contact_at = leads.first_contact_at (columna existente, sin cómputo).
 --   lead_display_name = trim(first_name || ' ' || last_name) del BUSCADOR (users del
 --   lead.user_id) — mismo patrón que full_name de crm_leads_page.
@@ -143,7 +155,7 @@
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(70);
+select plan(76);
 
 -- ── Helper de impersonación (mismo patrón que 02/.../100/101/102/103/104/106) ───────────────
 create or replace function pg_temp.act_as(p_uid uuid, p_role text default 'authenticated')
@@ -186,6 +198,13 @@ end $$;
 --   022 AGENT_XAGENCY     — agent  SUSPENDIDO en A, ACTIVO en B (FRONTERA_AGENCIA): su lead
 --                            nuevo resuelve agency_id=B (vía trigger) → NO debe aparecer como
 --                            'unmanaged' de A aunque esté suspendido EN A.
+--   023 AGENT_REMOVED     — agent  RETIRADO DOS VECES en A (2 filas removed, #278): 1 lead
+--                            abierto captado cuando era miembro (agency_id=A explícito) →
+--                            'unmanaged' de A, EXACTAMENTE 1 vez.
+--   024 AGENT_READMIT     — agent  RETIRADO y READMITIDO en A (removed + active, #278): 1 lead
+--                            → agent row «Zulema Readmit», NUNCA 'unmanaged'.
+--   025 AGENT_REMOVED_X   — agent  RETIRADO en A, ACTIVO en B (#278, frontera): su lead nuevo
+--                            resuelve agency_id=B (vía trigger) → NO es 'unmanaged' de A.
 -- ════════════════════════════════════════════════════════════════════════════
 
 insert into auth.users (id, email) values
@@ -203,7 +222,10 @@ insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-000000269013', 'staletrans.269e1@test.local'),
   ('00000000-0000-0000-0000-000000269014', 'staleyoung.269e1@test.local'),
   ('00000000-0000-0000-0000-000000269021', 'cross.269e1@test.local'),
-  ('00000000-0000-0000-0000-000000269022', 'xagency.269e1@test.local');
+  ('00000000-0000-0000-0000-000000269022', 'xagency.269e1@test.local'),
+  ('00000000-0000-0000-0000-000000269023', 'removed.269e1@test.local'),
+  ('00000000-0000-0000-0000-000000269024', 'readmit.269e1@test.local'),
+  ('00000000-0000-0000-0000-000000269025', 'removedx.269e1@test.local');
 
 insert into auth.users (id, email)
 select ('00000000-0000-0000-0000-000000269' || i)::uuid, 'u' || i || '.269e1@test.local'
@@ -212,7 +234,10 @@ from generate_series(101, 142) as i;
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-000000269201', 'hot.269e1@test.local'),
   ('00000000-0000-0000-0000-000000269202', 'cold.269e1@test.local'),
-  ('00000000-0000-0000-0000-000000269203', 'closed.269e1@test.local');
+  ('00000000-0000-0000-0000-000000269203', 'closed.269e1@test.local'),
+  ('00000000-0000-0000-0000-000000269204', 'buscador3.269e1@test.local'),
+  ('00000000-0000-0000-0000-000000269205', 'buscador4.269e1@test.local'),
+  ('00000000-0000-0000-0000-000000269206', 'buscador5.269e1@test.local');
 
 update public.users set first_name = 'Zeta', last_name = 'Admin'
   where id = '00000000-0000-0000-0000-000000269002';
@@ -232,6 +257,10 @@ update public.users set first_name = 'Delta', last_name = 'Young'
   where id = '00000000-0000-0000-0000-000000269014';
 update public.users set first_name = 'Xavier', last_name = 'Cross'
   where id = '00000000-0000-0000-0000-000000269021';
+update public.users set first_name = 'Zulema', last_name = 'Readmit'
+  where id = '00000000-0000-0000-0000-000000269024';
+update public.users set first_name = 'Iker', last_name = 'Buscador3'
+  where id = '00000000-0000-0000-0000-000000269204';
 update public.users set first_name = 'Gonzalo', last_name = 'Buscador1'
   where id = '00000000-0000-0000-0000-000000269201';
 update public.users set first_name = 'Hilda', last_name = 'Buscador2'
@@ -260,7 +289,13 @@ insert into public.agency_members (id, agency_id, user_id, member_role, status) 
   ('00000000-0000-0000-0000-000000269322', '00000000-0000-0000-0000-000000269301', '00000000-0000-0000-0000-000000269021', 'agent',  'active'),    -- AGENT_CROSS, ACTIVO en A
   ('00000000-0000-0000-0000-000000269323', '00000000-0000-0000-0000-000000269302', '00000000-0000-0000-0000-000000269021', 'agent',  'suspended'), -- AGENT_CROSS, histórico SUSPENDIDO en B
   ('00000000-0000-0000-0000-000000269324', '00000000-0000-0000-0000-000000269301', '00000000-0000-0000-0000-000000269022', 'agent',  'suspended'), -- AGENT_XAGENCY, SUSPENDIDO en A
-  ('00000000-0000-0000-0000-000000269325', '00000000-0000-0000-0000-000000269302', '00000000-0000-0000-0000-000000269022', 'agent',  'active');    -- AGENT_XAGENCY, ACTIVO en B
+  ('00000000-0000-0000-0000-000000269325', '00000000-0000-0000-0000-000000269302', '00000000-0000-0000-0000-000000269022', 'agent',  'active'),    -- AGENT_XAGENCY, ACTIVO en B
+  ('00000000-0000-0000-0000-000000269328', '00000000-0000-0000-0000-000000269301', '00000000-0000-0000-0000-000000269023', 'agent',  'removed'),   -- AGENT_REMOVED, 1ª estancia en A (#278)
+  ('00000000-0000-0000-0000-000000269329', '00000000-0000-0000-0000-000000269301', '00000000-0000-0000-0000-000000269023', 'agent',  'removed'),   -- AGENT_REMOVED, 2ª estancia en A (#278)
+  ('00000000-0000-0000-0000-000000269330', '00000000-0000-0000-0000-000000269301', '00000000-0000-0000-0000-000000269024', 'agent',  'removed'),   -- AGENT_READMIT, estancia vieja en A (#278)
+  ('00000000-0000-0000-0000-000000269331', '00000000-0000-0000-0000-000000269301', '00000000-0000-0000-0000-000000269024', 'agent',  'active'),    -- AGENT_READMIT, READMITIDO en A (#278)
+  ('00000000-0000-0000-0000-000000269332', '00000000-0000-0000-0000-000000269301', '00000000-0000-0000-0000-000000269025', 'agent',  'removed'),   -- AGENT_REMOVED_X, RETIRADO de A (#278)
+  ('00000000-0000-0000-0000-000000269333', '00000000-0000-0000-0000-000000269302', '00000000-0000-0000-0000-000000269025', 'agent',  'active');    -- AGENT_REMOVED_X, ACTIVO en B (#278)
 
 insert into public.properties (id, owner_user_id, agency_id, property_type, operation_type, address, location, price, status) values
   ('00000000-0000-0000-0000-000000269401', '00000000-0000-0000-0000-000000269001',
@@ -392,6 +427,16 @@ insert into public.leads (id, agent_id, user_id, status, first_contact_at) value
 insert into public.lead_origin_properties (id, lead_id, property_id, contacted_at) values
   ('00000000-0000-0000-0000-000000269801', '00000000-0000-0000-0000-000000269601', '00000000-0000-0000-0000-000000269401', now() - interval '1 hour');
 
+-- ── #278 SIN_GESTOR_RETIRADO — AGENT_REMOVED (023): lead captado cuando aún era miembro de A;
+--    agency_id=A EXPLÍCITO porque el trigger #203 ya no lo resolvería (removed → NULL, regla
+--    PII). AGENT_READMIT (024): removed + active en A → su lead resuelve A vía trigger.
+--    AGENT_REMOVED_X (025): removed en A, active en B → su lead resuelve B vía trigger. ──────
+insert into public.leads (id, agent_id, user_id, agency_id, status, first_contact_at) values
+  ('00000000-0000-0000-0000-000000269604', '00000000-0000-0000-0000-000000269023', '00000000-0000-0000-0000-000000269204', '00000000-0000-0000-0000-000000269301', 'new', '2026-03-03 09:00:00+00');
+insert into public.leads (id, agent_id, user_id, status, created_at) values
+  ('00000000-0000-0000-0000-000000269605', '00000000-0000-0000-0000-000000269024', '00000000-0000-0000-0000-000000269205', 'new', now()),
+  ('00000000-0000-0000-0000-000000269606', '00000000-0000-0000-0000-000000269025', '00000000-0000-0000-0000-000000269206', 'new', now());
+
 -- ── Wrapper RED: jsonb_agg + sentinel de error (ver cabecera) — DESPUÉS de los fixtures pero
 --    ANTES de cualquier invocación autorizada; el bloque ACLREAL (más abajo) es la PRIMERA
 --    invocación real de la función completa (gotcha 203.1). ─────────────────────────────────────
@@ -443,6 +488,14 @@ returns boolean language sql as $$
     select 1 from jsonb_array_elements(p_arr) e
     where e ->> 'kind' = p_kind and e ->> p_match_key = p_match_val
   );
+$$;
+
+-- Cuántas veces aparece una llave dentro de un kind — kind_has_match es ciego a los duplicados
+-- (#278 REMOVED2: un join contra 2 filas removed del mismo agente duplicaría el lead).
+create or replace function pg_temp.count_match(p_arr jsonb, p_kind text, p_match_key text, p_match_val text)
+returns int language sql as $$
+  select count(*)::int from jsonb_array_elements(p_arr) e
+  where e ->> 'kind' = p_kind and e ->> p_match_key = p_match_val;
 $$;
 
 -- Secuencia ORDENADA de un campo, filtrada por kind — usa WITH ORDINALITY + ORDER BY explícito
@@ -540,7 +593,8 @@ select is(
 reset role;
 
 -- ════════════════════════════════════════════════════════════════════════════
--- 4) HAPPY PATH — OWNER y ADMIN ven el mismo universo: 9 agent rows + 2 unmanaged = 11.
+-- 4) HAPPY PATH — OWNER y ADMIN ven el mismo universo: 10 agent rows + 3 unmanaged = 13
+--    (#278: +1 agent row READMIT, +1 unmanaged REMOVED).
 --    🔴 HAPPY1/HAPPY3/HAPPY4 llevan el literal OBJETIVO (post-fix de FRONTERA_AGENCIA, §13):
 --    contra la migración actual (20260906400001, sin el filtro leads.agency_id=p_agency_id) el
 --    lead de AGENT_XAGENCY se cuela como unmanaged de más (actual=12/3/12) — mismo hueco que
@@ -552,22 +606,22 @@ reset role;
 select pg_temp.act_as('00000000-0000-0000-0000-000000269001'); -- OWNER
 select is(
   jsonb_array_length(pg_temp.overview_json('00000000-0000-0000-0000-000000269301')),
-  11, 'HAPPY1_owner_ve_11_filas_totales'
+  13, 'HAPPY1_owner_ve_13_filas_totales'
 );
 select is(
   pg_temp.count_kind(pg_temp.overview_json('00000000-0000-0000-0000-000000269301'), 'agent'),
-  9, 'HAPPY2_owner_ve_9_agent_rows_OWNER_sin_leads_y_VIEWER_excluidos'
+  10, 'HAPPY2_owner_ve_10_agent_rows_OWNER_sin_leads_y_VIEWER_excluidos'
 );
 select is(
   pg_temp.count_kind(pg_temp.overview_json('00000000-0000-0000-0000-000000269301'), 'unmanaged'),
-  2, 'HAPPY3_owner_ve_2_unmanaged_rows_cerrado_y_XAGENCY_excluidos'
+  3, 'HAPPY3_owner_ve_3_unmanaged_rows_cerrado_XAGENCY_READMIT_y_REMOVED_X_excluidos'
 );
 reset role;
 
 select pg_temp.act_as('00000000-0000-0000-0000-000000269002'); -- ADMIN
 select is(
   jsonb_array_length(pg_temp.overview_json('00000000-0000-0000-0000-000000269301')),
-  11, 'HAPPY4_admin_ve_las_mismas_11_filas'
+  13, 'HAPPY4_admin_ve_las_mismas_13_filas'
 );
 reset role;
 
@@ -579,12 +633,12 @@ reset role;
 select pg_temp.act_as('00000000-0000-0000-0000-000000269001'); -- OWNER
 select is(
   pg_temp.seq_field(pg_temp.overview_json('00000000-0000-0000-0000-000000269301'), 'agent', 'agent_name'),
-  '["Alfa Pierde", "Beta Zero", "Ceci Transitioned", "Delta Young", "Meso Acum", "Nu Noflag", "Xavier Cross", "Yara Slow", "Zeta Admin"]'::jsonb,
+  '["Alfa Pierde", "Beta Zero", "Ceci Transitioned", "Delta Young", "Meso Acum", "Nu Noflag", "Xavier Cross", "Yara Slow", "Zeta Admin", "Zulema Readmit"]'::jsonb,
   'ORDER1_agent_rows_por_agent_name_ASC'
 );
 select is(
   pg_temp.seq_field(pg_temp.overview_json('00000000-0000-0000-0000-000000269301'), 'unmanaged', 'lead_display_name'),
-  '["Gonzalo Buscador1", "Hilda Buscador2"]'::jsonb,
+  '["Gonzalo Buscador1", "Hilda Buscador2", "Iker Buscador3"]'::jsonb,
   'ORDER2_unmanaged_por_temperature_DESC_lead_id_ASC'
 );
 reset role;
@@ -885,6 +939,44 @@ select is(
 select is(
   pg_temp.safe_numeric(pg_temp.field_of(pg_temp.overview_json('00000000-0000-0000-0000-000000269301'), 'agent', 'agent_id', '00000000-0000-0000-0000-000000269021', 'avg_temperature')),
   0::numeric, 'FRONTERA3_avg_temperature_de_CROSS_cuenta_SOLO_el_lead_de_A_sin_senal'
+);
+reset role;
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- 14) SIN_GESTOR_RETIRADO (#278 hardening(269.1)) — D-UNMANAGED-REMOVED: un miembro RETIRADO
+--     cuenta como suspendido para la banda (decisión de Abraham); semi-join, sin duplicados ni
+--     readmitidos. 🔴 REMOVED1 (y HAPPY1/3/4, ORDER2) en rojo contra 20260906400001;
+--     REMOVED2/READMIT1 pasan hoy y cazan el fix INGENUO (`am.status in (...)` en el join).
+-- ════════════════════════════════════════════════════════════════════════════
+
+-- Sanity check de la fixture (trigger #203 vigente): el lead de AGENT_REMOVED_X resuelve a B
+-- (su membresía ACTIVA), nunca a la retirada de A.
+select is(
+  (select agency_id::text from public.leads where id = '00000000-0000-0000-0000-000000269606'),
+  '00000000-0000-0000-0000-000000269302',
+  'REMOVED_X_SETUP_lead_de_retirado_en_A_activo_en_B_resuelve_a_B_via_trigger_203'
+);
+
+select pg_temp.act_as('00000000-0000-0000-0000-000000269001'); -- OWNER
+select is(
+  pg_temp.kind_has_match(pg_temp.overview_json('00000000-0000-0000-0000-000000269301'), 'unmanaged', 'lead_id', '00000000-0000-0000-0000-000000269604'),
+  true, 'REMOVED1_lead_abierto_de_agente_RETIRADO_de_A_ES_unmanaged_de_A'
+);
+select is(
+  pg_temp.count_match(pg_temp.overview_json('00000000-0000-0000-0000-000000269301'), 'unmanaged', 'lead_id', '00000000-0000-0000-0000-000000269604'),
+  1, 'REMOVED2_con_2_filas_removed_del_mismo_agente_el_lead_aparece_EXACTAMENTE_1_vez'
+);
+select is(
+  pg_temp.kind_has_match(pg_temp.overview_json('00000000-0000-0000-0000-000000269301'), 'unmanaged', 'lead_id', '00000000-0000-0000-0000-000000269605'),
+  false, 'READMIT1_retirado_y_READMITIDO_en_A_tiene_gestor_su_lead_NO_es_unmanaged'
+);
+select is(
+  pg_temp.kind_has_match(pg_temp.overview_json('00000000-0000-0000-0000-000000269301'), 'agent', 'agent_id', '00000000-0000-0000-0000-000000269024'),
+  true, 'READMIT2_el_readmitido_aparece_como_agent_row'
+);
+select is(
+  pg_temp.kind_has_match(pg_temp.overview_json('00000000-0000-0000-0000-000000269301'), 'unmanaged', 'lead_id', '00000000-0000-0000-0000-000000269606'),
+  false, 'FRONTERA4_lead_de_retirado_en_A_pero_ACTIVO_en_B_NO_es_unmanaged_de_A'
 );
 reset role;
 
