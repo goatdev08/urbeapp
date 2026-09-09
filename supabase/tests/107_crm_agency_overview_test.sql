@@ -155,7 +155,7 @@
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;
-select plan(76);
+select plan(77);
 
 -- ── Helper de impersonación (mismo patrón que 02/.../100/101/102/103/104/106) ───────────────
 create or replace function pg_temp.act_as(p_uid uuid, p_role text default 'authenticated')
@@ -204,7 +204,10 @@ end $$;
 --   024 AGENT_READMIT     — agent  RETIRADO y READMITIDO en A (removed + active, #278): 1 lead
 --                            → agent row «Zulema Readmit», NUNCA 'unmanaged'.
 --   025 AGENT_REMOVED_X   — agent  RETIRADO en A, ACTIVO en B (#278, frontera): su lead nuevo
---                            resuelve agency_id=B (vía trigger) → NO es 'unmanaged' de A.
+--                            resuelve agency_id=B (vía trigger) → NO es 'unmanaged' de A; y su
+--                            lead VIEJO captado en A (agency_id=A explícito) SÍ es 'unmanaged'
+--                            de A — nadie en A lo gestiona aunque el agente siga activo en B
+--                            (mutante e del guardian: el not-exists debe acotarse a p_agency_id).
 -- ════════════════════════════════════════════════════════════════════════════
 
 insert into auth.users (id, email) values
@@ -237,7 +240,8 @@ insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-000000269203', 'closed.269e1@test.local'),
   ('00000000-0000-0000-0000-000000269204', 'buscador3.269e1@test.local'),
   ('00000000-0000-0000-0000-000000269205', 'buscador4.269e1@test.local'),
-  ('00000000-0000-0000-0000-000000269206', 'buscador5.269e1@test.local');
+  ('00000000-0000-0000-0000-000000269206', 'buscador5.269e1@test.local'),
+  ('00000000-0000-0000-0000-000000269207', 'buscador6.269e1@test.local');
 
 update public.users set first_name = 'Zeta', last_name = 'Admin'
   where id = '00000000-0000-0000-0000-000000269002';
@@ -261,6 +265,8 @@ update public.users set first_name = 'Zulema', last_name = 'Readmit'
   where id = '00000000-0000-0000-0000-000000269024';
 update public.users set first_name = 'Iker', last_name = 'Buscador3'
   where id = '00000000-0000-0000-0000-000000269204';
+update public.users set first_name = 'Julia', last_name = 'Buscador6'
+  where id = '00000000-0000-0000-0000-000000269207';
 update public.users set first_name = 'Gonzalo', last_name = 'Buscador1'
   where id = '00000000-0000-0000-0000-000000269201';
 update public.users set first_name = 'Hilda', last_name = 'Buscador2'
@@ -432,7 +438,9 @@ insert into public.lead_origin_properties (id, lead_id, property_id, contacted_a
 --    PII). AGENT_READMIT (024): removed + active en A → su lead resuelve A vía trigger.
 --    AGENT_REMOVED_X (025): removed en A, active en B → su lead resuelve B vía trigger. ──────
 insert into public.leads (id, agent_id, user_id, agency_id, status, first_contact_at) values
-  ('00000000-0000-0000-0000-000000269604', '00000000-0000-0000-0000-000000269023', '00000000-0000-0000-0000-000000269204', '00000000-0000-0000-0000-000000269301', 'new', '2026-03-03 09:00:00+00');
+  ('00000000-0000-0000-0000-000000269604', '00000000-0000-0000-0000-000000269023', '00000000-0000-0000-0000-000000269204', '00000000-0000-0000-0000-000000269301', 'new', '2026-03-03 09:00:00+00'),
+  -- AGENT_REMOVED_X: lead VIEJO captado en A antes de irse a B (agency_id=A explícito).
+  ('00000000-0000-0000-0000-000000269607', '00000000-0000-0000-0000-000000269025', '00000000-0000-0000-0000-000000269207', '00000000-0000-0000-0000-000000269301', 'new', '2026-03-04 09:00:00+00');
 insert into public.leads (id, agent_id, user_id, status, created_at) values
   ('00000000-0000-0000-0000-000000269605', '00000000-0000-0000-0000-000000269024', '00000000-0000-0000-0000-000000269205', 'new', now()),
   ('00000000-0000-0000-0000-000000269606', '00000000-0000-0000-0000-000000269025', '00000000-0000-0000-0000-000000269206', 'new', now());
@@ -593,8 +601,8 @@ select is(
 reset role;
 
 -- ════════════════════════════════════════════════════════════════════════════
--- 4) HAPPY PATH — OWNER y ADMIN ven el mismo universo: 10 agent rows + 3 unmanaged = 13
---    (#278: +1 agent row READMIT, +1 unmanaged REMOVED).
+-- 4) HAPPY PATH — OWNER y ADMIN ven el mismo universo: 10 agent rows + 4 unmanaged = 14
+--    (#278: +1 agent row READMIT, +2 unmanaged: REMOVED y el lead viejo de REMOVED_X en A).
 --    🔴 HAPPY1/HAPPY3/HAPPY4 llevan el literal OBJETIVO (post-fix de FRONTERA_AGENCIA, §13):
 --    contra la migración actual (20260906400001, sin el filtro leads.agency_id=p_agency_id) el
 --    lead de AGENT_XAGENCY se cuela como unmanaged de más (actual=12/3/12) — mismo hueco que
@@ -606,7 +614,7 @@ reset role;
 select pg_temp.act_as('00000000-0000-0000-0000-000000269001'); -- OWNER
 select is(
   jsonb_array_length(pg_temp.overview_json('00000000-0000-0000-0000-000000269301')),
-  13, 'HAPPY1_owner_ve_13_filas_totales'
+  14, 'HAPPY1_owner_ve_14_filas_totales'
 );
 select is(
   pg_temp.count_kind(pg_temp.overview_json('00000000-0000-0000-0000-000000269301'), 'agent'),
@@ -614,14 +622,14 @@ select is(
 );
 select is(
   pg_temp.count_kind(pg_temp.overview_json('00000000-0000-0000-0000-000000269301'), 'unmanaged'),
-  3, 'HAPPY3_owner_ve_3_unmanaged_rows_cerrado_XAGENCY_READMIT_y_REMOVED_X_excluidos'
+  4, 'HAPPY3_owner_ve_4_unmanaged_rows_cerrado_XAGENCY_READMIT_y_lead_B_de_REMOVED_X_excluidos'
 );
 reset role;
 
 select pg_temp.act_as('00000000-0000-0000-0000-000000269002'); -- ADMIN
 select is(
   jsonb_array_length(pg_temp.overview_json('00000000-0000-0000-0000-000000269301')),
-  13, 'HAPPY4_admin_ve_las_mismas_13_filas'
+  14, 'HAPPY4_admin_ve_las_mismas_14_filas'
 );
 reset role;
 
@@ -638,7 +646,7 @@ select is(
 );
 select is(
   pg_temp.seq_field(pg_temp.overview_json('00000000-0000-0000-0000-000000269301'), 'unmanaged', 'lead_display_name'),
-  '["Gonzalo Buscador1", "Hilda Buscador2", "Iker Buscador3"]'::jsonb,
+  '["Gonzalo Buscador1", "Hilda Buscador2", "Iker Buscador3", "Julia Buscador6"]'::jsonb,
   'ORDER2_unmanaged_por_temperature_DESC_lead_id_ASC'
 );
 reset role;
@@ -977,6 +985,12 @@ select is(
 select is(
   pg_temp.kind_has_match(pg_temp.overview_json('00000000-0000-0000-0000-000000269301'), 'unmanaged', 'lead_id', '00000000-0000-0000-0000-000000269606'),
   false, 'FRONTERA4_lead_de_retirado_en_A_pero_ACTIVO_en_B_NO_es_unmanaged_de_A'
+);
+-- Mutante e del guardian: si el not-exists mirara 'active' en CUALQUIER agencia, el lead viejo
+-- de A de un agente que hoy trabaja en B quedaría huérfano en silencio.
+select is(
+  pg_temp.kind_has_match(pg_temp.overview_json('00000000-0000-0000-0000-000000269301'), 'unmanaged', 'lead_id', '00000000-0000-0000-0000-000000269607'),
+  true, 'REMOVED_X1_lead_VIEJO_en_A_de_retirado_de_A_activo_en_B_SI_es_unmanaged_de_A'
 );
 reset role;
 
