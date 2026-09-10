@@ -12442,17 +12442,17 @@
         "status": "in-progress",
         "priority": "medium",
         "dependencies": [],
-        "updatedAt": "2026-09-10T19:49:59.526Z",
+        "updatedAt": "2026-09-10T19:51:26.266Z",
         "subtasks": [
           {
             "id": 1,
             "title": "key de FlashList con sufijo de vuelta",
             "description": "feed_key_extractor pasa a `property:<id>#<lap>` / `ad:<id>#<lap>`. Sin esto, la misma propiedad en dos vueltas colisiona y FlashList rompe el render. Va primera porque las otras tres la necesitan.",
-            "details": "CRÍTICA (mobile/**/lib/**). Footprint: mobile/src/features/feed/lib/feedKeyExtractor.ts + su test. Los ítems compuestos llevan `lap` (0 en la primera vuelta) y la key lo incorpora; con lap 0 la key puede conservar la forma actual si eso mantiene los snapshots.\n<info added on 2026-09-10T19:49:56.945Z>\nPLAN 285.1: approach = `export type LappedFeedItem = FeedItem & { lap?: number }` declarado en feedKeyExtractor.ts (interleaveAds.ts NO se toca); feed_key_extractor(item: LappedFeedItem) devuelve la forma actual `kind:id` cuando lap es undefined o 0 (los 5 EC de 170.4 siguen en verde) y `kind:id#lap` con lap ≥ 1. decisiones = analista + orquestador (rutinarias) · agente=orquestador (función pura de 3 líneas; guardian al cierre junto con 285.2) · skills=urbea-expo, urbea-testing · criticidad=CRÍTICA (mobile/**/lib/**) · impacto-prod=sin riesgo (cliente solo) · footprint=mobile/src/features/feed/lib/feedKeyExtractor.ts + mobile/src/features/feed/__tests__/feedKeyExtractor.test.ts.\n</info added on 2026-09-10T19:49:56.945Z>",
+            "details": "CRÍTICA (mobile/**/lib/**). Footprint: mobile/src/features/feed/lib/feedKeyExtractor.ts + su test. Los ítems compuestos llevan `lap` (0 en la primera vuelta) y la key lo incorpora; con lap 0 la key puede conservar la forma actual si eso mantiene los snapshots.\n<info added on 2026-09-10T19:49:56.945Z>\nPLAN 285.1: approach = `export type LappedFeedItem = FeedItem & { lap?: number }` declarado en feedKeyExtractor.ts (interleaveAds.ts NO se toca); feed_key_extractor(item: LappedFeedItem) devuelve la forma actual `kind:id` cuando lap es undefined o 0 (los 5 EC de 170.4 siguen en verde) y `kind:id#lap` con lap ≥ 1. decisiones = analista + orquestador (rutinarias) · agente=orquestador (función pura de 3 líneas; guardian al cierre junto con 285.2) · skills=urbea-expo, urbea-testing · criticidad=CRÍTICA (mobile/**/lib/**) · impacto-prod=sin riesgo (cliente solo) · footprint=mobile/src/features/feed/lib/feedKeyExtractor.ts + mobile/src/features/feed/__tests__/feedKeyExtractor.test.ts.\n</info added on 2026-09-10T19:49:56.945Z>\n<info added on 2026-09-10T19:51:22.224Z>\nHECHO 285.1 (orquestador, 2026-09-10). mobile/src/features/feed/lib/feedKeyExtractor.ts: `export type LappedFeedItem = FeedItem & { lap?: number | undefined }` (intersección local; interleaveAds.ts intacto) y feed_key_extractor(item: LappedFeedItem) → `kind:id` con lap ausente/0, `kind:id#lap` con lap ≥ 1. Test __tests__/feedKeyExtractor.test.ts +4 casos (EC-6 lap 0 = forma actual, EC-7 property #1, EC-8 ad #2, EC-9 misma propiedad en 3 vueltas → 3 keys). RED (commit): `Tests: 3 failed, 6 passed, 9 total` (EC-7/8/9 por aserción). GREEN: `Tests: 9 passed, 9 total`; `pnpm tsc --noEmit` sin errores. Guardian: se corre al cierre de 285.2 sobre ambas funciones puras.\n</info added on 2026-09-10T19:51:22.224Z>",
             "testStrategy": "Jest: la misma propiedad en lap 0 y lap 1 produce keys distintas; ítems de tipo ad idem; lap 0 estable.",
-            "status": "in-progress",
+            "status": "done",
             "dependencies": [],
-            "updatedAt": "2026-09-10T19:49:59.526Z",
+            "updatedAt": "2026-09-10T19:51:24.609Z",
             "parentId": "undefined"
           },
           {
@@ -12461,9 +12461,9 @@
             "description": "lib/feedShuffle.ts nuevo: shuffle_with_seed(items, seed) con PRNG puro; seed = hash(session_id) + lap. Misma semilla ⇒ misma permutación, mismos elementos, sin Date.now() ni Math.random(). Sin tramos de distancia (decisión Q4).",
             "details": "CRÍTICA (mobile/**/lib/**). Footprint: mobile/src/features/feed/lib/feedShuffle.ts (nuevo) + test. PRNG puro en ~10 líneas (mulberry32 o similar), Fisher–Yates; no instalar dependencias.\n<info added on 2026-09-10T19:49:57.022Z>\nPLAN 285.2: approach = mobile/src/features/feed/lib/feedShuffle.ts nuevo con `hash_seed(text): number` (FNV-1a 32 bits), `mulberry32(seed)` PRNG puro y `shuffle_with_seed<T>(items: readonly T[], seed: number): T[]` (Fisher–Yates sobre copia; no muta). Semilla de la vuelta = hash_seed(session_id) + lap (la compone el hook en 285.3). Sin Date.now(), sin Math.random(), sin dependencias nuevas. agente=orquestador · skills=urbea-expo, urbea-testing · criticidad=CRÍTICA (lib/**) · impacto-prod=sin riesgo · footprint=lib/feedShuffle.ts (nuevo) + __tests__/feedShuffle.test.ts (nuevo).\n</info added on 2026-09-10T19:49:57.022Z>",
             "testStrategy": "Jest: determinismo (misma semilla → misma permutación), mismos elementos (multiconjunto igual), semillas distintas → permutaciones distintas para n≥3, no muta la entrada, n=0 y n=1 sin error.",
-            "status": "pending",
+            "status": "in-progress",
             "dependencies": [],
-            "updatedAt": "2026-09-10T19:49:57.022Z",
+            "updatedAt": "2026-09-10T19:51:26.266Z",
             "parentId": "undefined"
           },
           {
@@ -12511,7 +12511,7 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-09-10T19:49:59.526Z",
+      "lastModified": "2026-09-10T19:51:26.266Z",
       "taskCount": 285,
       "completedCount": 206,
       "tags": [
