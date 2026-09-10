@@ -46,6 +46,10 @@ import { useFeedProperties } from './hooks/useFeedProperties';
 import { feed_key_extractor } from './lib/feedKeyExtractor';
 import type { FeedItem } from './lib/interleaveAds';
 
+/** #285.5 — chip de costura de vuelta: copy y duración (doc 047 Q3). */
+const LAP_CHIP_LABEL = 'Ya viste todo · volvemos a empezar';
+const LAP_CHIP_MS = 2000;
+
 export function FeedScreen() {
   const { height } = useWindowDimensions();
   const router = useRouter();
@@ -65,9 +69,26 @@ export function FeedScreen() {
   const top_row_y = insets.top > 40 ? insets.top - 6 : insets.top + spacing.s_4;
   // El botón de filtros (40) se centra con la pill (34).
   const filter_btn_y = top_row_y - (40 - FEED_SECTION_TABS_HEIGHT) / 2;
-  const { data, isLoading, error, loadInitial, refetch, loadMore } = useFeedProperties(filters);
+  const { data, isLoading, error, loadInitial, refetch, loadMore, lapCount } = useFeedProperties(filters);
   // #243.2: refrescando = cargando con datos ya en pantalla (el arranque usa skeleton).
   const is_refreshing = isLoading && data.length > 0;
+  // #285.5 — costura de vuelta del feed infinito (doc 047 Q3): cada vez que el
+  // hook cruza una vuelta (`lapCount` sube) se muestra ~2 s un chip con copy
+  // propio. Sin él, repetir inventario es indistinguible de un bug. El chip
+  // «Actualizando» manda si coinciden (misma posición); el de zona cuelga debajo
+  // de cualquiera de los dos. UI_FUERA_DEL_MOCKUP resuelta «en conjunto» (047 §9).
+  // Estado derivado con setState condicional en render (patrón de React para
+  // «prev !== prop»; el lint prohíbe setState síncrono dentro de un efecto):
+  // cada vuelta nueva enciende el chip y un timer lo apaga.
+  const [lap_chip, set_lap_chip] = useState({ lap: 0, visible: false });
+  if (lap_chip.lap !== lapCount) set_lap_chip({ lap: lapCount, visible: lapCount > 0 });
+  useEffect(() => {
+    if (!lap_chip.visible) return;
+    const timer = setTimeout(() => set_lap_chip((prev) => ({ ...prev, visible: false })), LAP_CHIP_MS);
+    return () => clearTimeout(timer);
+  }, [lap_chip]);
+  const show_lap_chip = lap_chip.visible && !is_refreshing;
+  const top_chip_visible = is_refreshing || show_lap_chip;
   const [filter_visible, set_filter_visible] = useState(false);
 
   // Carga la primera página al montar la pantalla.
@@ -318,6 +339,13 @@ export function FeedScreen() {
         tone="dark"
         top={top_row_y + FEED_SECTION_TABS_HEIGHT + spacing.s_8}
       />
+      {/* #285.5: chip efímero de reinicio de vuelta — misma posición, nunca a la vez. */}
+      <RefreshingChip
+        visible={show_lap_chip}
+        tone="dark"
+        label={LAP_CHIP_LABEL}
+        top={top_row_y + FEED_SECTION_TABS_HEIGHT + spacing.s_8}
+      />
       {filters.area != null && (
         <ZoneActiveChip
           dark
@@ -329,7 +357,7 @@ export function FeedScreen() {
               top_row_y +
               FEED_SECTION_TABS_HEIGHT +
               spacing.s_8 +
-              (is_refreshing ? REFRESHING_CHIP_HEIGHT + spacing.s_8 : 0),
+              (top_chip_visible ? REFRESHING_CHIP_HEIGHT + spacing.s_8 : 0),
           }}
         />
       )}

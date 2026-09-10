@@ -12442,7 +12442,7 @@
         "status": "in-progress",
         "priority": "medium",
         "dependencies": [],
-        "updatedAt": "2026-09-10T20:03:47.076Z",
+        "updatedAt": "2026-09-10T20:11:22.594Z",
         "subtasks": [
           {
             "id": 1,
@@ -12499,11 +12499,11 @@
             "description": "Al cruzar la costura, RefreshingChip con tone=\"dark\" y label propio («Ya viste todo · volvemos a empezar») ~2 s, en la pila que ya comparte con «Actualizando» y ZoneActiveChip (FeedScreen.tsx:316-335), mutuamente excluyente con el de refresco. RefreshingChip.tsx no se toca. Resuelve UI_FUERA_DEL_MOCKUP en conjunto.",
             "details": "LIGERA (pantalla). Footprint: mobile/src/features/feed/FeedScreen.tsx (+ el hook expone un evento/contador de vuelta). Depende de 285.3.\n<info added on 2026-09-10T19:49:57.253Z>\nPLAN 285.5: approach = FeedScreen consume `lapCount` del hook; al incrementarse muestra un RefreshingChip (tone=\"dark\", label «Ya viste todo · volvemos a empezar») ~2 s con un timer, mutuamente excluyente con el chip «Actualizando» (si is_refreshing, gana el de refresco) y en la misma pila que ZoneActiveChip. RefreshingChip.tsx no se toca. agente=mobile · criticidad=NO crítica (solo FeedScreen.tsx; la señal la expone 285.3) · verificación ligera: pnpm tsc --noEmit + pnpm lint + FeedScreen.filters.test.tsx sigue verde + smoke por CLI en emulador (cruzar 2 costuras, screencap, stopApp) · impacto-prod=sin riesgo · footprint=mobile/src/features/feed/FeedScreen.tsx.\n</info added on 2026-09-10T19:49:57.253Z>",
             "testStrategy": "pnpm tsc --noEmit + pnpm lint + test de pantalla si ya existe patrón; smoke por CLI en emulador con Abraham: cruzar 2 costuras, leer el chip por screencap, stopApp al terminar.",
-            "status": "pending",
+            "status": "in-progress",
             "dependencies": [
               3
             ],
-            "updatedAt": "2026-09-10T19:49:57.253Z",
+            "updatedAt": "2026-09-10T20:11:22.594Z",
             "parentId": "undefined"
           }
         ]
@@ -12511,7 +12511,7 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-09-10T19:58:13.519Z",
+      "lastModified": "2026-09-10T20:11:22.594Z",
       "taskCount": 285,
       "completedCount": 206,
       "tags": [
