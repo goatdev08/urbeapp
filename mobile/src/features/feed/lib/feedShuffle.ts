@@ -46,3 +46,20 @@ export function shuffle_with_seed<T>(items: readonly T[], seed: number): T[] {
   }
   return out;
 }
+
+/**
+ * avoid_adjacent_repeat — costura sin repetición pegada (#288.2, polish 288).
+ *
+ * PLAN (fase RED, NO implementado): si `items.length > 1` y
+ * `is_repeat(items[0])` es true, debe devolver una COPIA con el primer
+ * elemento movido al final (el resto conserva su orden relativo). En
+ * cualquier otro caso, copia idéntica. Nunca muta la entrada.
+ *
+ * ponytail: stub mínimo de la fase RED — copia sin rotar. Deja pasar los EC
+ * de "vacío", "1 ítem" y "no coincide" (una copia idéntica ya los cumple) y
+ * falla el EC "coincide → primero al final" (fase GREEN, subtarea 288.2).
+ */
+export function avoid_adjacent_repeat<T>(items: readonly T[], is_repeat: (first: T) => boolean): T[] {
+  void is_repeat;
+  return [...items];
+}

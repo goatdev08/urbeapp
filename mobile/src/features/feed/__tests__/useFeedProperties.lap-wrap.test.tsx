@@ -66,6 +66,13 @@
  *      bloqueado (0 fetch extra); al resolver la carga inicial, `data` trae
  *      su página y `lapCount` permanece en 0 (288.1, comportamiento ya
  *      vigente hoy — este caso debe pasar en verde).
+ * (14) #288.2 — la vuelta NUNCA abre con el mismo `property.id` con el que
+ *      terminó la página anterior: si `shuffle_with_seed` produciría un
+ *      primer ítem que coincide con el último `property` de `data`, el hook
+ *      lo rota al final (`avoid_adjacent_repeat`) antes de apendear.
+ *      `lapCount` y las keys `#lap` no cambian por la rotación.
+ * (15) #288.2 — sin coincidencia, la vuelta es EXACTAMENTE el orden que
+ *      produce `shuffle_with_seed` (la rotación no se dispara de más).
  */
 
 import { renderHook, act } from '@testing-library/react-native';
@@ -99,6 +106,7 @@ jest.mock('@/lib/supabase/client', () => ({ supabase: {} }));
 import { useFeedProperties } from '../hooks/useFeedProperties';
 import { fetchFeedProperties } from '../lib/feedProperties';
 import { feed_key_extractor, type LappedFeedItem } from '../lib/feedKeyExtractor';
+import { hash_seed, shuffle_with_seed } from '../lib/feedShuffle';
 import type { FeedItem } from '../lib/interleaveAds';
 import type { FeedPropertyWithUrl } from '../types';
 
@@ -590,5 +598,62 @@ describe('useFeedProperties — wrap de vuelta (#285.3)', () => {
     expect(result.current.isLoading).toBe(false);
     expect(property_ids(result.current.data)).toEqual([C.id]);
     expect(result.current.lapCount).toBe(0);
+  });
+
+  it('(EC-14) la_vuelta_no_abre_con_el_ultimo_video_servido: si el barajado determinista de la vuelta abriría con el mismo id con el que terminó la página anterior, ese id se rota al final y la vuelta abre con el siguiente', async () => {
+    const L = Array.from({ length: 6 }, (_, i) => make_feed_property(`seam-l${i + 1}`));
+    // Orden que producirá el hook en la vuelta 1 (misma llamada que hace
+    // load_more: shuffle_with_seed(data, hash_seed(session_id) + lap)).
+    const p = shuffle_with_seed(L, hash_seed(FIXED_SESSION_ID) + 1);
+    // Página inicial O: cualquier orden cuyo ÚLTIMO elemento sea p[0] — así
+    // el barajado de la vuelta coincidiría con el último video servido.
+    const O = [...L.filter((x) => x.id !== p[0]!.id), p[0]!];
+
+    mock_fetch_feed_properties.mockResolvedValueOnce({ data: O, nextCursor: null });
+    const { result } = await renderHook(() => useFeedProperties());
+    await act(async () => {
+      await result.current.loadInitial();
+    });
+    expect(property_ids(result.current.data)).toEqual(O.map((it) => it.id));
+
+    mock_fetch_feed_properties.mockResolvedValueOnce({ data: L, nextCursor: null });
+    await act(async () => {
+      await result.current.loadMore();
+    });
+
+    const lap_items = result.current.data.filter((it) => (it as LappedFeedItem).lap === 1);
+    const expected_ids = [...p.slice(1), p[0]!].map((it) => it.id);
+    expect(property_ids(lap_items)).toEqual(expected_ids);
+
+    // El primer ítem apendeado (índice O.length) NUNCA es el que cerró O.
+    expect((result.current.data[O.length] as FeedPropertyItem).property.id).not.toBe(p[0]!.id);
+    expect(result.current.lapCount).toBe(1);
+
+    const keys = result.current.data.map((item) => feed_key_extractor(item as LappedFeedItem));
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it('(EC-15) sin_coincidencia_no_se_rota: si el barajado determinista de la vuelta NO coincide con el último id servido, la vuelta es exactamente ese orden', async () => {
+    const L = Array.from({ length: 6 }, (_, i) => make_feed_property(`seam-nc${i + 1}`));
+    const p = shuffle_with_seed(L, hash_seed(FIXED_SESSION_ID) + 1);
+    // anchor: cualquier propiedad de L distinta de p[0] — O terminará en ella.
+    const anchor = L.find((x) => x.id !== p[0]!.id)!;
+    const O = [...L.filter((x) => x.id !== anchor.id), anchor];
+    expect(O[O.length - 1]!.id).not.toBe(p[0]!.id);
+
+    mock_fetch_feed_properties.mockResolvedValueOnce({ data: O, nextCursor: null });
+    const { result } = await renderHook(() => useFeedProperties());
+    await act(async () => {
+      await result.current.loadInitial();
+    });
+
+    mock_fetch_feed_properties.mockResolvedValueOnce({ data: L, nextCursor: null });
+    await act(async () => {
+      await result.current.loadMore();
+    });
+
+    const lap_items = result.current.data.filter((it) => (it as LappedFeedItem).lap === 1);
+    expect(property_ids(lap_items)).toEqual(p.map((it) => it.id));
+    expect(result.current.lapCount).toBe(1);
   });
 });
