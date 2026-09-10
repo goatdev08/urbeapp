@@ -12442,7 +12442,7 @@
         "status": "in-progress",
         "priority": "medium",
         "dependencies": [],
-        "updatedAt": "2026-09-10T20:11:22.594Z",
+        "updatedAt": "2026-09-10T20:13:43.619Z",
         "subtasks": [
           {
             "id": 1,
@@ -12497,13 +12497,13 @@
             "id": 5,
             "title": "chip efímero de reinicio de vuelta",
             "description": "Al cruzar la costura, RefreshingChip con tone=\"dark\" y label propio («Ya viste todo · volvemos a empezar») ~2 s, en la pila que ya comparte con «Actualizando» y ZoneActiveChip (FeedScreen.tsx:316-335), mutuamente excluyente con el de refresco. RefreshingChip.tsx no se toca. Resuelve UI_FUERA_DEL_MOCKUP en conjunto.",
-            "details": "LIGERA (pantalla). Footprint: mobile/src/features/feed/FeedScreen.tsx (+ el hook expone un evento/contador de vuelta). Depende de 285.3.\n<info added on 2026-09-10T19:49:57.253Z>\nPLAN 285.5: approach = FeedScreen consume `lapCount` del hook; al incrementarse muestra un RefreshingChip (tone=\"dark\", label «Ya viste todo · volvemos a empezar») ~2 s con un timer, mutuamente excluyente con el chip «Actualizando» (si is_refreshing, gana el de refresco) y en la misma pila que ZoneActiveChip. RefreshingChip.tsx no se toca. agente=mobile · criticidad=NO crítica (solo FeedScreen.tsx; la señal la expone 285.3) · verificación ligera: pnpm tsc --noEmit + pnpm lint + FeedScreen.filters.test.tsx sigue verde + smoke por CLI en emulador (cruzar 2 costuras, screencap, stopApp) · impacto-prod=sin riesgo · footprint=mobile/src/features/feed/FeedScreen.tsx.\n</info added on 2026-09-10T19:49:57.253Z>",
+            "details": "LIGERA (pantalla). Footprint: mobile/src/features/feed/FeedScreen.tsx (+ el hook expone un evento/contador de vuelta). Depende de 285.3.\n<info added on 2026-09-10T19:49:57.253Z>\nPLAN 285.5: approach = FeedScreen consume `lapCount` del hook; al incrementarse muestra un RefreshingChip (tone=\"dark\", label «Ya viste todo · volvemos a empezar») ~2 s con un timer, mutuamente excluyente con el chip «Actualizando» (si is_refreshing, gana el de refresco) y en la misma pila que ZoneActiveChip. RefreshingChip.tsx no se toca. agente=mobile · criticidad=NO crítica (solo FeedScreen.tsx; la señal la expone 285.3) · verificación ligera: pnpm tsc --noEmit + pnpm lint + FeedScreen.filters.test.tsx sigue verde + smoke por CLI en emulador (cruzar 2 costuras, screencap, stopApp) · impacto-prod=sin riesgo · footprint=mobile/src/features/feed/FeedScreen.tsx.\n</info added on 2026-09-10T19:49:57.253Z>\n<info added on 2026-09-10T20:13:41.191Z>\nHECHO 285.5 (orquestador, 2026-09-10). mobile/src/features/feed/FeedScreen.tsx: consume `lapCount` del hook; estado derivado `{lap, visible}` con setState CONDICIONAL en render (el lint react-hooks prohíbe setState síncrono dentro de un efecto — primer intento dio 1 error `set-state-in-effect`) + timer de 2 s (LAP_CHIP_MS) que lo apaga; segundo <RefreshingChip tone=\"dark\" label=\"Ya viste todo · volvemos a empezar\"> en la misma posición que «Actualizando», visible solo si no está refrescando; ZoneActiveChip cuelga debajo si cualquiera de los dos está visible (top_chip_visible). RefreshingChip.tsx intacto. Secuencia real: durante el fetch de la vuelta is_refreshing=true muestra «Actualizando»; al resolver sube lapCount y aparece el chip de vuelta ~2 s.\nVerificación (salida real): pnpm tsc --noEmit sin errores · pnpm lint `✖ 142 problems (0 errors, 142 warnings)` (ninguno nuevo en FeedScreen) · jest FeedScreen.filters.test.tsx `Tests: 2 passed, 2 total`.\nPENDIENTE (con Abraham, testing manual juntos): smoke por CLI en el emulador — cruzar 2 costuras, screencap del chip y del cambio de orden, dumpsys meminfo antes/después, stopApp al terminar. La subtarea queda en review hasta ese smoke.\n</info added on 2026-09-10T20:13:41.191Z>",
             "testStrategy": "pnpm tsc --noEmit + pnpm lint + test de pantalla si ya existe patrón; smoke por CLI en emulador con Abraham: cruzar 2 costuras, leer el chip por screencap, stopApp al terminar.",
-            "status": "in-progress",
+            "status": "review",
             "dependencies": [
               3
             ],
-            "updatedAt": "2026-09-10T20:11:22.594Z",
+            "updatedAt": "2026-09-10T20:13:43.619Z",
             "parentId": "undefined"
           }
         ]
@@ -12511,7 +12511,7 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-09-10T20:11:22.594Z",
+      "lastModified": "2026-09-10T20:13:43.619Z",
       "taskCount": 285,
       "completedCount": 206,
       "tags": [

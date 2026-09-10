@@ -90,6 +90,8 @@ import type { FeedItem } from '../lib/interleaveAds';
 import type { FeedPropertyWithUrl } from '../types';
 
 import { emitPropertyDeleted } from '@/lib/propertyEvents';
+import { EMPTY_FILTERS } from '@/features/search/lib/filterQuery';
+import type { FilterState } from '@/features/search/types';
 
 const mock_fetch_feed_properties = fetchFeedProperties as jest.MockedFunction<
   typeof fetchFeedProperties
@@ -399,5 +401,65 @@ describe('useFeedProperties — wrap de vuelta (#285.3)', () => {
     expect(result.current.lapCount).toBe(0);
     expect(result.current.data).toHaveLength(2);
     expect(property_ids(result.current.data)).toEqual([A.id, B.id]);
+  });
+
+  // ── Guardian 285.3 (mutantes h/h2): el reset de vuelta se prueba DESDE una
+  // vuelta COMPLETA (lapCount 1), no desde 0 — memoria
+  // reset_solo_se_prueba_desde_estado_poblado. Sin el reset, tras un
+  // pull-to-refresh la siguiente vuelta sería la 2 (keys `#2`, otra semilla).
+  it('(EC-9) loadinitial_tras_una_vuelta_completa_resetea_lapcount_y_la_siguiente_vuelta_vuelve_a_ser_la_1', async () => {
+    const A = make_feed_property('reset-a');
+    mock_fetch_feed_properties.mockResolvedValueOnce({ data: [A], nextCursor: null });
+    const { result } = await renderHook(() => useFeedProperties());
+    await act(async () => {
+      await result.current.loadInitial();
+    });
+    mock_fetch_feed_properties.mockResolvedValueOnce({ data: [A], nextCursor: null });
+    await act(async () => {
+      await result.current.loadMore();
+    });
+    expect(result.current.lapCount).toBe(1);
+    expect(laps_of(result.current.data)).toEqual([undefined, 1]);
+
+    // Pull-to-refresh: carga nueva desde cero.
+    mock_fetch_feed_properties.mockResolvedValueOnce({ data: [A], nextCursor: null });
+    await act(async () => {
+      await result.current.loadInitial();
+    });
+    expect(result.current.lapCount).toBe(0);
+    expect(laps_of(result.current.data)).toEqual([undefined]);
+
+    // La vuelta siguiente es otra vez la 1, no la 2.
+    mock_fetch_feed_properties.mockResolvedValueOnce({ data: [A], nextCursor: null });
+    await act(async () => {
+      await result.current.loadMore();
+    });
+    expect(result.current.lapCount).toBe(1);
+    expect(laps_of(result.current.data)).toEqual([undefined, 1]);
+  });
+
+  it('(EC-10) cambiar_la_identidad_de_filters_tras_una_vuelta_completa_resetea_lapcount_a_0', async () => {
+    const RADIO_5KM: FilterState = { ...EMPTY_FILTERS, radius_m: 5000 };
+    const SIN_LIMITE: FilterState = { ...EMPTY_FILTERS, radius_m: null };
+    const A = make_feed_property('filtros-a');
+    mock_fetch_feed_properties.mockResolvedValueOnce({ data: [A], nextCursor: null });
+    const { result, rerender } = await renderHook(({ f }: { f: FilterState }) => useFeedProperties(f), {
+      initialProps: { f: RADIO_5KM },
+    });
+    await act(async () => {
+      await result.current.loadInitial();
+    });
+    mock_fetch_feed_properties.mockResolvedValueOnce({ data: [A], nextCursor: null });
+    await act(async () => {
+      await result.current.loadMore();
+    });
+    expect(result.current.lapCount).toBe(1);
+
+    await act(async () => {
+      rerender({ f: SIN_LIMITE });
+    });
+    // #241.2 vacía la lista al cambiar filtros; #285.3 además pone la cuenta de vueltas en 0.
+    expect(result.current.data).toEqual([]);
+    expect(result.current.lapCount).toBe(0);
   });
 });
