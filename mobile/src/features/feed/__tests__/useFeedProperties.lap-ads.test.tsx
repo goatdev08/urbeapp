@@ -266,23 +266,14 @@ describe('useFeedProperties — anuncios cruzando la costura de vuelta (#285.4)'
     }
   });
 
-  it('(EC-LAP-ADS-2) ningun_anuncio_se_repite_antes_del_min_gap_a_traves_de_las_costuras: las apariciones del ÚNICO anuncio activo distan >= min_gap_between_repeats (16 = 2×ad_frequency_n) posiciones entre sí, incluso cruzando la costura de vuelta', async () => {
-    configure_ads_rpc(5);
-    const result = await run_initial_plus_laps(3);
-
-    const data = result.current.data as LappedFeedItem[];
-    const positions = data.flatMap((item, index) => (item.kind === 'ad' ? [index] : []));
-
-    // Presencia (no vacua): el único anuncio se sirvió más de una vez —
-    // condición necesaria para que el hueco entre apariciones sea evaluable.
-    expect(positions.length).toBeGreaterThanOrEqual(2);
-
-    const MIN_GAP = 16; // ad_frequency_n(8) * 2, fórmula de useFeedProperties.ts
-    for (let i = 1; i < positions.length; i++) {
-      const gap = positions[i]! - positions[i - 1]!;
-      expect(gap).toBeGreaterThanOrEqual(MIN_GAP);
-    }
-  });
+  // (EC-LAP-ADS-2) RETIRADO — decisión de Abraham (AskUserQuestion 2026-09-10):
+  // el hueco mínimo entre repeticiones (`min_gap_between_repeats`) rige POR
+  // COMPOSICIÓN, como desde #256 (`last_shown_at` es local a cada llamada);
+  // NO se arrastra entre páginas ni vueltas. Con 1 anuncio activo y
+  // ad_frequency_n=8, el anuncio se sirve en cada página/vuelta hasta agotar
+  // ad_max_per_session, y eso es lo que los anunciantes reciben hoy. La
+  // alternativa (memoria `ad_distances` entre composiciones) quedó como
+  // derivada producto(285.4) con el parche listo en la bitácora de 285.4.
 
   it('(EC-LAP-ADS-3) el_cap_de_sesion_es_de_sesion_no_por_vuelta: con ad_max_per_session=3, tras 1 loadInitial + 3 vueltas hay EXACTAMENTE 3 ads en total y la 3ª vuelta no trae ningún ad nuevo', async () => {
     configure_ads_rpc(3);
