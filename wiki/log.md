@@ -1169,3 +1169,5 @@ Se retira `is_admin()` de `leads_update`, `leads_delete` y `private.can_edit_lea
 ## [2026-09-08] tarea | #280 fix(266.3) — suite 92 del monitor determinista: el fixture apaga explícitamente las condiciones C (stale_snapshot) y D (jobs CRM) que no prueba; fallaba sola en un stack recién reseteado (2 avisos por admin). Solo tests; suite completa 111 archivos / 3650 en verde
 
 ## [2026-09-08] tarea | #278 hardening(269.1) — «Sin gestor» incluye al miembro retirado (decisión de Abraham: retirado = suspendido); crm_agency_overview con semi-join exists/not exists (readmitido = removed+active, retirado dos veces = 2 removed); pgTAP 107 plan 77; el mutante e del guardian destapó el lead viejo en A de un agente hoy activo en B; migración 20260908100001 desplegada a producción, sin OTA; sonda: 0 filas nuevas hoy
+
+## [2026-09-10] explore | aprobado tarea 285 — feed infinito: la vuelta se reinicia barajada al agotar el inventario (dirección A+D, sin techo, chip efímero; B reservada para follow+comentarios)

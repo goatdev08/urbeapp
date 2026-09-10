@@ -12432,12 +12432,87 @@
           }
         ],
         "updatedAt": "2026-09-08T22:29:04.314Z"
+      },
+      {
+        "id": "285",
+        "title": "feed infinito: la vuelta se reinicia barajada al agotar el inventario",
+        "description": "Origen: exploración 047 (.taskmaster/docs/exploraciones/047-feed-infinito-reinicio.md) · Pedido por: Abraham (2026-09-10) · Hoy el feed se queda QUIETO al llegar al último video: con active=8 en producción y PAGE_SIZE=10, nextCursor es null desde la primera página y load_more retorna en su primera línea sin efecto — sin mensaje, sin spinner, indistinguible de un cuelgue. Dirección elegida (A+D): al agotarse, el feed compone una VUELTA nueva sobre los ítems ya compuestos, barajada con semilla determinista, precedida de un re-fetch silencioso de la página 1, y lo hace SIN TECHO. Cliente solo: cero migraciones, cero EFs, cero contratos publicados → OTA.",
+        "details": "DECISIONES CERRADAS (doc 047 §20, AskUserQuestion 2026-09-10): activación siempre que se agote (con o sin filtros/zona) · orden barajado con semilla `session_id + lap` (puro, sin tramos de distancia) · SIN TECHO de vueltas (Abraham asume el gasto de Cloudflare Stream a sabiendas) · re-fetch silencioso de la página 1 en cada vuelta, NADA de memoria · anuncios recompuestos con interleave_ads_with_state respetando ad_max_per_session · costura señalada con chip efímero reusando RefreshingChip.\n\nARCHIVOS PREVISTOS: mobile/src/features/feed/lib/feedKeyExtractor.ts (CRÍTICA) · mobile/src/features/feed/lib/feedShuffle.ts (NUEVO, CRÍTICA) · mobile/src/features/feed/hooks/useFeedProperties.ts (CRÍTICA) · mobile/src/features/feed/FeedScreen.tsx (ligera). NO se toca: feedProperties.ts, interleaveAds.ts, RefreshingChip.tsx, VideoFeedItem.tsx, ni nada de supabase/**.\n\nREGLAS NO OBVIAS (doc 047 §10): 1. KEYS DUPLICADAS ROMPEN FLASHLIST: la key pasa a `property:<id>#<lap>` (feedKeyExtractor.ts:21-26, memoria flatlist_numcolumns_row_keys). 2. WRAP SOBRE LOS ÍTEMS COMPUESTOS, NUNCA MÓDULO rpc_ids.length (la sección Venta/Renta se filtra DESPUÉS del slice; ciclar sobre rpc_ids da páginas vacías). 3. CUOTA REAL DE CLOUDFLARE STREAM (§0.5.5): sin techo por decisión; la mitigación que YA existe y NO debe romperse es useFeedActiveIndex.ts:56-77 (corta la reproducción al ir a background o salir del tab); en pruebas verificar que reproduce y PARAR, E2E termina en stopApp. 4. INVARIANTES DE ANUNCIOS (170.3): already_shown_ref y since_last_ad_ref se arrastran a través de la costura de vuelta igual que a través de la de página (#256); clonar ítems kind:'ad' rompe «nunca dos seguidos» y min_gap_between_repeats; ad_impressions no se duplica (unique user_id, ad_id, session_id + ON CONFLICT DO NOTHING). 5. DEDUPE DE ENGAGEMENT INTACTO: videoEngagementDedupe.ts dedupea por (session_id, event_type, property_id) → las vueltas NO reemiten video_view/video_completed ni inflan métricas del agente ni temperatura del CRM. 6. URLs FIRMADAS: TTL 4 h (mint-video-url/index.ts:15) y Cloudflare responde 404 a token vencido; el re-fetch por vuelta lo mitiga. 7. PLAYER ESTABLE POR INSTANCIA (#61) + closure obsoleto de property_id al reciclar (memoria expo_video_capture_gotchas). 8. request_seq_ref (#249) sigue descartando respuestas tardías; el re-fetch de vuelta entra por el mismo turno. 9. Determinismo del barajado: sin Date.now() ni Math.random(). 10. PNPM siempre; smoke en emulador SOLO por CLI.\n\nSIN RIESGO DE PRODUCCIÓN VIVA (§0.5): cero migraciones, cero EFs, cero contratos publicados. Sale por OTA.\n\nDERIVADAS NOMBRADAS, NO CREADAS: producto(285) RPC de feed con epoch/ranking servidor (dirección B, reservada para follow+comentarios) · hardening(285) pausa por inactividad si el consumo medido de Stream lo justifica · poda por la cabeza de `data` si el smoke muestra crecimiento monótono de heap.",
+        "testStrategy": "TDD estricto (RED → GREEN → guardian con mutación real) en las 4 subtareas críticas por regla de path §5 (lib/** y hooks/**); verificación ligera en la 5ª. Jest/RNTL: unicidad de key en N vueltas; determinismo del barajado (misma semilla → misma permutación, mismos elementos, sin reloj real); wrap que dispara solo con nextCursor===null y sin techo (5 vueltas seguidas); un re-fetch por vuelta sin vaciar data ni levantar skeleton; invariantes de anuncios cruzando la costura (extender interleaveAds.page-seam.test.ts); dedupe de engagement intacto tras 3 vueltas. Gate: pnpm tsc --noEmit + pnpm lint + suite de mobile/src/features/feed verde. Smoke por CLI en emulador Android: swipes hasta cruzar 2 costuras, screencap para leer el chip y confirmar que el orden cambió, dumpsys meminfo antes/después, stopApp al terminar. Datos de prueba: NINGUNO — «se acaba el inventario» es el estado normal de producción hoy (active=8).",
+        "status": "in-progress",
+        "priority": "medium",
+        "dependencies": [],
+        "updatedAt": "2026-09-10T19:41:48.215Z",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "key de FlashList con sufijo de vuelta",
+            "description": "feed_key_extractor pasa a `property:<id>#<lap>` / `ad:<id>#<lap>`. Sin esto, la misma propiedad en dos vueltas colisiona y FlashList rompe el render. Va primera porque las otras tres la necesitan.",
+            "details": "CRÍTICA (mobile/**/lib/**). Footprint: mobile/src/features/feed/lib/feedKeyExtractor.ts + su test. Los ítems compuestos llevan `lap` (0 en la primera vuelta) y la key lo incorpora; con lap 0 la key puede conservar la forma actual si eso mantiene los snapshots.",
+            "testStrategy": "Jest: la misma propiedad en lap 0 y lap 1 produce keys distintas; ítems de tipo ad idem; lap 0 estable.",
+            "status": "pending",
+            "dependencies": [],
+            "updatedAt": "2026-09-10T19:41:42.399Z",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "barajado determinista por vuelta con semilla",
+            "description": "lib/feedShuffle.ts nuevo: shuffle_with_seed(items, seed) con PRNG puro; seed = hash(session_id) + lap. Misma semilla ⇒ misma permutación, mismos elementos, sin Date.now() ni Math.random(). Sin tramos de distancia (decisión Q4).",
+            "details": "CRÍTICA (mobile/**/lib/**). Footprint: mobile/src/features/feed/lib/feedShuffle.ts (nuevo) + test. PRNG puro en ~10 líneas (mulberry32 o similar), Fisher–Yates; no instalar dependencias.",
+            "testStrategy": "Jest: determinismo (misma semilla → misma permutación), mismos elementos (multiconjunto igual), semillas distintas → permutaciones distintas para n≥3, no muta la entrada, n=0 y n=1 sin error.",
+            "status": "pending",
+            "dependencies": [],
+            "updatedAt": "2026-09-10T19:41:42.399Z",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "wrap de vuelta en el hook con re-fetch de página 1",
+            "description": "useFeedProperties gana lap_ref: con nextCursor === null, load_more re-fetchea la página 1 (URLs re-minteadas), la baraja con 285.2 y la apende con lap+1. SIN TECHO. No vacía data, no levanta skeleton, respeta request_seq_ref (#249), y cambiar filters/sección resetea el contador de vuelta a 0. Wrap sobre los ítems compuestos, nunca módulo rpc_ids.length.",
+            "details": "CRÍTICA (mobile/**/hooks/**). Footprint: mobile/src/features/feed/hooks/useFeedProperties.ts + tests. Depende de 285.1 y 285.2.",
+            "testStrategy": "Jest/RNTL (RNTL 14: await renderHook/act): 5 vueltas seguidas apendean sin techo; un fetch de página 1 por vuelta; data no se vacía ni loading/refreshing se activan; respuesta tardía descartada por request_seq; cambio de filtros resetea lap; la vuelta 2 llega permutada respecto a la 1 y con lap=1 en sus ítems; reloj fijo en todos los casos.",
+            "status": "pending",
+            "dependencies": [
+              1,
+              2
+            ],
+            "updatedAt": "2026-09-10T19:41:42.399Z",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "anuncios en la costura de vuelta",
+            "description": "La vuelta se recompone con interleave_ads_with_state arrastrando already_shown_ref y since_last_ad_ref (nunca se reinician): ni dos anuncios seguidos ni el mismo a menos de min_gap_between_repeats, y el total de sesión nunca excede ad_max_per_session. Extender interleaveAds.page-seam.test.ts. interleaveAds.ts no se modifica.",
+            "details": "CRÍTICA (mobile/**/hooks/**). Footprint: mobile/src/features/feed/hooks/useFeedProperties.ts (compose_feed_items) + tests de costura. Depende de 285.3.",
+            "testStrategy": "Jest: cruzando la costura de vuelta no hay dos anuncios seguidos, no se repite un anuncio bajo min_gap_between_repeats, y el total de anuncios en 3 vueltas ≤ ad_max_per_session; los refs no se reinician.",
+            "status": "pending",
+            "dependencies": [
+              3
+            ],
+            "updatedAt": "2026-09-10T19:41:42.399Z",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "chip efímero de reinicio de vuelta",
+            "description": "Al cruzar la costura, RefreshingChip con tone=\"dark\" y label propio («Ya viste todo · volvemos a empezar») ~2 s, en la pila que ya comparte con «Actualizando» y ZoneActiveChip (FeedScreen.tsx:316-335), mutuamente excluyente con el de refresco. RefreshingChip.tsx no se toca. Resuelve UI_FUERA_DEL_MOCKUP en conjunto.",
+            "details": "LIGERA (pantalla). Footprint: mobile/src/features/feed/FeedScreen.tsx (+ el hook expone un evento/contador de vuelta). Depende de 285.3.",
+            "testStrategy": "pnpm tsc --noEmit + pnpm lint + test de pantalla si ya existe patrón; smoke por CLI en emulador con Abraham: cruzar 2 costuras, leer el chip por screencap, stopApp al terminar.",
+            "status": "pending",
+            "dependencies": [
+              3
+            ],
+            "updatedAt": "2026-09-10T19:41:42.399Z",
+            "parentId": "undefined"
+          }
+        ]
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-09-09T01:28:12.953Z",
-      "taskCount": 284,
+      "lastModified": "2026-09-10T19:41:48.215Z",
+      "taskCount": 285,
       "completedCount": 206,
       "tags": [
         "master"

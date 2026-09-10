@@ -4,17 +4,21 @@
     "type": "split",
     "children": [
       {
-        "id": "81eaab516814eb39",
+        "id": "b6362f2fdde12d45",
         "type": "tabs",
         "children": [
           {
-            "id": "31f50b2d835e432f",
+            "id": "3481fbf3c8cbb455",
             "type": "leaf",
             "state": {
-              "type": "graph",
-              "state": {},
-              "icon": "lucide-git-fork",
-              "title": "Vista gráfica"
+              "type": "markdown",
+              "state": {
+                "file": "codebase/mapa-codebase.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "mapa-codebase"
             }
           }
         ]
@@ -181,9 +185,12 @@
       "bases:Crear nueva base": false
     }
   },
-  "active": "31f50b2d835e432f",
+  "active": "3481fbf3c8cbb455",
   "lastOpenFiles": [
     "codebase/entornos-y-cuentas.md",
+    "conceptos/estrategia-releases.md",
+    "conceptos/storage-hibrido.md",
+    "decisiones/0011-ponytail-y-fases-del-workflow.md",
     "conceptos/busqueda-y-filtros.md",
     "README.md",
     "decisiones/0007-workflow-multiagente.md",
