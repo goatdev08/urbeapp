@@ -13,8 +13,9 @@
  *    con `lap` y APENDEA a `data`. SIN TECHO.
  *  - Con `data.length === 0` y `nextCursor === null` NO hace vuelta (mismo
  *    guard que hoy).
- *  - No vacía `data`; `isLoading` sigue el mismo patrón que un `load_more`
- *    normal (true solo mientras carga, `data` nunca se resetea a []).
+ *  - No vacía `data`; `isLoading` NO se enciende durante ningún `load_more`
+ *    (página o vuelta, 288.1) — pasa a significar SOLO carga inicial/refetch.
+ *    `data` nunca se resetea a [] durante una vuelta.
  *  - Respeta `request_seq_ref` (#249): una respuesta tardía de una vuelta se
  *    descarta si mientras tanto entró otra carga (loadInitial/filters).
  *  - Expone `lapCount: number` (vueltas cruzadas, 0 al inicio) y lo resetea a
@@ -43,8 +44,9 @@
  *     propiedades (8 ids) y el orden es determinista: dos hooks con el mismo
  *     `session_id` ven exactamente el mismo orden (mock de `get_app_session_id`
  *     fijo).
- * (5) durante la vuelta `data` NUNCA se vacía (no hay estado de skeleton) y
- *     `isLoading` vuelve a `false` al resolver.
+ * (5) durante la vuelta `isLoading` permanece en `false` en TODO momento —
+ *     ni se enciende mientras el fetch está en vuelo ni cambia al resolver
+ *     (288.1: loadMore deja de tocar isLoading); `data` nunca se vacía.
  * (6) con `data` vacío y `nextCursor` null NO hace vuelta (combinado con el
  *     caso positivo en el mismo test: primero se prueba que SÍ vuelve cuando
  *     `data` no está vacío, luego que deja de hacerlo al vaciarse).
@@ -53,6 +55,17 @@
  *     vuelve a 0.
  * (8) un fallo del fetch de vuelta pone `error` (mensaje exacto del `Error`
  *     rechazado) y NO incrementa `lapCount`; `data` no se corrompe.
+ * (11) `loadMore` de PÁGINA (cursor, no vuelta) tampoco enciende `isLoading`
+ *      en ningún momento, y `fetchFeedProperties` recibe el cursor como
+ *      primer argumento (288.1).
+ * (12) dos `loadMore()` disparados mientras el primero sigue en vuelo
+ *      producen UN solo fetch adicional (reentrada por ref, no por
+ *      `isLoading`); al resolver, `data` crece una sola vez y `lapCount` sube
+ *      a 1 (288.1).
+ * (13) `loadMore()` llamado mientras `loadInitial` sigue en vuelo sigue
+ *      bloqueado (0 fetch extra); al resolver la carga inicial, `data` trae
+ *      su página y `lapCount` permanece en 0 (288.1, comportamiento ya
+ *      vigente hoy — este caso debe pasar en verde).
  */
 
 import { renderHook, act } from '@testing-library/react-native';
@@ -262,7 +275,7 @@ describe('useFeedProperties — wrap de vuelta (#285.3)', () => {
     expect(order_hook_1).not.toEqual(EIGHT.map((p) => p.id));
   });
 
-  it('(EC-5) durante_la_vuelta_data_nunca_se_vacia_y_no_hay_skeleton: mientras el fetch de la vuelta está en vuelo, data conserva los items previos; al resolver, isLoading vuelve a false y data crece', async () => {
+  it('(EC-5) durante_la_vuelta_isloading_no_se_enciende_y_data_nunca_se_vacia: mientras el fetch de la vuelta está en vuelo, isLoading sigue en false y data conserva los items previos; al resolver, isLoading sigue en false y data crece', async () => {
     const A = make_feed_property('lap-skel-a');
     const B = make_feed_property('lap-skel-b');
     const C = make_feed_property('lap-skel-c');
@@ -286,8 +299,9 @@ describe('useFeedProperties — wrap de vuelta (#285.3)', () => {
       void result.current.loadMore();
     });
 
-    // El fetch de la vuelta sigue en vuelo: nunca se vació la lista previa.
-    expect(result.current.isLoading).toBe(true);
+    // El fetch de la vuelta sigue en vuelo: isLoading NO se enciende (288.1) y
+    // nunca se vació la lista previa.
+    expect(result.current.isLoading).toBe(false);
     expect(result.current.data).toHaveLength(3);
     expect(property_ids(result.current.data)).toEqual([A.id, B.id, C.id]);
 
@@ -460,6 +474,110 @@ describe('useFeedProperties — wrap de vuelta (#285.3)', () => {
     });
     // #241.2 vacía la lista al cambiar filtros; #285.3 además pone la cuenta de vueltas en 0.
     expect(result.current.data).toEqual([]);
+    expect(result.current.lapCount).toBe(0);
+  });
+
+  it('(EC-11) load_more_de_pagina_no_enciende_isloading: loadMore con cursor (página, no vuelta) nunca enciende isLoading — ni en vuelo ni al resolver — y fetchFeedProperties recibe el cursor como primer argumento', async () => {
+    const A = make_feed_property('pag-a');
+    const B = make_feed_property('pag-b');
+
+    mock_fetch_feed_properties.mockResolvedValueOnce({ data: [A], nextCursor: '10' });
+    const { result } = await renderHook(() => useFeedProperties());
+    await act(async () => {
+      await result.current.loadInitial();
+    });
+    expect(result.current.nextCursor).toBe('10');
+    expect(result.current.isLoading).toBe(false);
+
+    let resolve_page!: (page: { data: FeedPropertyWithUrl[]; nextCursor: string | null }) => void;
+    mock_fetch_feed_properties.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolve_page = resolve;
+        }),
+    );
+
+    await act(async () => {
+      void result.current.loadMore();
+    });
+
+    // Página en vuelo (no vuelta): isLoading sigue en false (288.1).
+    expect(result.current.isLoading).toBe(false);
+    expect(mock_fetch_feed_properties.mock.calls[1]?.[0]).toBe('10');
+
+    await act(async () => {
+      resolve_page({ data: [B], nextCursor: null });
+    });
+
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.data).toHaveLength(2);
+  });
+
+  it('(EC-12) dos_load_more_concurrentes_un_solo_fetch: dos loadMore() disparados mientras el primero sigue en vuelo producen UN solo fetch de vuelta; al resolver, data crece una sola vez y lapCount sube a 1', async () => {
+    const A = make_feed_property('conc-a');
+    const B = make_feed_property('conc-b');
+    const C = make_feed_property('conc-c');
+
+    mock_fetch_feed_properties.mockResolvedValueOnce({ data: [A, B, C], nextCursor: null });
+    const { result } = await renderHook(() => useFeedProperties());
+    await act(async () => {
+      await result.current.loadInitial();
+    });
+    expect(result.current.data).toHaveLength(3);
+
+    const D = make_feed_property('conc-d');
+    let resolve_lap!: (page: { data: FeedPropertyWithUrl[]; nextCursor: string | null }) => void;
+    mock_fetch_feed_properties.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolve_lap = resolve;
+        }),
+    );
+
+    await act(async () => {
+      void result.current.loadMore();
+      void result.current.loadMore();
+    });
+
+    // 1 fetch de la carga inicial + 1 de la vuelta: la reentrada NO disparó otro.
+    expect(mock_fetch_feed_properties).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      resolve_lap({ data: [D], nextCursor: null });
+    });
+
+    expect(result.current.data).toHaveLength(4);
+    expect(result.current.lapCount).toBe(1);
+  });
+
+  it('(EC-13) load_more_bloqueado_mientras_load_initial_en_vuelo: loadMore() llamado mientras loadInitial sigue en vuelo no dispara fetch extra; al resolver loadInitial, data trae la página inicial y lapCount sigue en 0', async () => {
+    let resolve_initial!: (page: { data: FeedPropertyWithUrl[]; nextCursor: string | null }) => void;
+    mock_fetch_feed_properties.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolve_initial = resolve;
+        }),
+    );
+    const { result } = await renderHook(() => useFeedProperties());
+
+    await act(async () => {
+      void result.current.loadInitial();
+    });
+    expect(result.current.isLoading).toBe(true);
+
+    await act(async () => {
+      void result.current.loadMore();
+    });
+
+    // El único fetch en vuelo sigue siendo el de loadInitial.
+    expect(mock_fetch_feed_properties).toHaveBeenCalledTimes(1);
+
+    const A = make_feed_property('bloq-a');
+    await act(async () => {
+      resolve_initial({ data: [A], nextCursor: null });
+    });
+
+    expect(property_ids(result.current.data)).toEqual([A.id]);
     expect(result.current.lapCount).toBe(0);
   });
 });
