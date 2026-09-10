@@ -35,7 +35,10 @@
  *     durante la vida del hook (nunca se resetea) para sostener el cap de
  *     sesión (`ad_max_per_session`) entre páginas.
  *
- * ponytail: sin estado extra — loading único para initial y loadMore.
+ * #288.1 — `isLoading` es SOLO la carga inicial/refetch (skeleton y chip
+ * «Actualizando» en FeedScreen). loadMore (página o vuelta) carga en silencio:
+ * su reentrada se guarda con `load_more_in_flight_ref`, no con estado —
+ * encenderlo pintaba «Actualizando» en cada costura y hacía visible la vuelta.
  *
  * Concurrencia (#249): la race SÍ era visible. Al aplicar un filtro, la carga
  * anterior sigue en vuelo y, si resolvía tarde, pisaba la página filtrada — el
@@ -75,9 +78,10 @@ export interface UseFeedPropertiesState {
   /** Carga la siguiente página y apende al array existente. */
   loadMore: () => Promise<void>;
   /**
-   * #285.3 (RED, stub): vueltas del feed infinito cruzadas en esta sesión del
-   * hook. 0 al montar; se resetea en loadInitial/refetch/cambio de filters.
-   * Lógica real pendiente (ver useFeedProperties.lap-wrap.test.tsx).
+   * #285.3: vueltas del feed infinito cruzadas en esta sesión del hook. 0 al
+   * montar; se resetea en loadInitial/refetch/cambio de filters. Desde #288
+   * FeedScreen ya no lo consume (sin chip de vuelta): queda como observable
+   * para tests y smoke (useFeedProperties.lap-wrap.test.tsx).
    */
   lapCount: number;
 }
@@ -359,6 +363,9 @@ export function useFeedProperties(filters?: FilterState): UseFeedPropertiesState
   // — la respuesta tardía se descarta, que es todo lo que el feed necesita.
   // Techo conocido: la petición desechada igual viaja por red (no se aborta).
   const request_seq_ref = useRef(0);
+  // #288.1 — loadMore en vuelo (página o vuelta). Ref, no estado: la carga de
+  // continuación no tiene UI propia; `isLoading` queda para initial/refetch.
+  const load_more_in_flight_ref = useRef(false);
 
   // #195 — LA ZONA VISTA GANA SOBRE EL GPS, del lado cliente.
   // `filters.area` es "buscar en esta zona" (#56): su centro sale del viewport
@@ -420,7 +427,7 @@ export function useFeedProperties(filters?: FilterState): UseFeedPropertiesState
   }, [coords, resolve_ad_zone_coords, filters, build_deps]);
 
   const load_more = useCallback(async () => {
-    if (isLoading || !coords) return;
+    if (isLoading || load_more_in_flight_ref.current || !coords) return;
     // #285.3 — VUELTA: sin cursor y con inventario ya servido, en vez de
     // quedarse quieto (el feed "colgado" del doc 047) se re-pide la página 1
     // (URLs firmadas re-minteadas: el TTL de 4 h vencería si se reusara
@@ -431,7 +438,7 @@ export function useFeedProperties(filters?: FilterState): UseFeedPropertiesState
     const is_lap = nextCursor === null;
     if (is_lap && data.length === 0) return;
     const seq = ++request_seq_ref.current;
-    set_is_loading(true);
+    load_more_in_flight_ref.current = true;
     set_error(null);
     try {
       const deps = build_deps();
@@ -458,7 +465,7 @@ export function useFeedProperties(filters?: FilterState): UseFeedPropertiesState
       if (seq !== request_seq_ref.current) return;
       set_error(e instanceof Error ? e.message : 'Error al cargar más');
     } finally {
-      if (seq === request_seq_ref.current) set_is_loading(false);
+      load_more_in_flight_ref.current = false;
     }
   }, [nextCursor, isLoading, coords, data.length, resolve_ad_zone_coords, filters, build_deps]);
 
@@ -498,7 +505,6 @@ export function useFeedProperties(filters?: FilterState): UseFeedPropertiesState
     loadInitial: load_initial,
     refetch: load_initial,
     loadMore: load_more,
-    // ponytail: stub RED — literal 0, sin lógica (#285.3, ver test-author).
     lapCount,
   };
 }

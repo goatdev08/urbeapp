@@ -550,18 +550,28 @@ describe('useFeedProperties — wrap de vuelta (#285.3)', () => {
     expect(result.current.lapCount).toBe(1);
   });
 
-  it('(EC-13) load_more_bloqueado_mientras_load_initial_en_vuelo: loadMore() llamado mientras loadInitial sigue en vuelo no dispara fetch extra; al resolver loadInitial, data trae la página inicial y lapCount sigue en 0', async () => {
-    let resolve_initial!: (page: { data: FeedPropertyWithUrl[]; nextCursor: string | null }) => void;
+  it('(EC-13) load_more_bloqueado_mientras_refetch_en_vuelo: con data poblado, un refetch (loadInitial) en vuelo y loadMore() encima → NO hay fetch extra (si lo hubiera, su turno pisaría al refetch y la vuelta se apendearía sobre datos viejos); al resolver, data es la página nueva y lapCount sigue en 0', async () => {
+    // Memoria reset_solo_se_prueba_desde_estado_poblado: desde data vacío este
+    // caso lo frena el guard `is_lap && data.length === 0`, no el bloqueo por
+    // carga inicial — el mutante que quita `isLoading` del guard sobrevivía.
+    const A = make_feed_property('bloq-a');
+    const B = make_feed_property('bloq-b');
+    mock_fetch_feed_properties.mockResolvedValueOnce({ data: [A, B], nextCursor: null });
+    const { result } = await renderHook(() => useFeedProperties());
+    await act(async () => {
+      await result.current.loadInitial();
+    });
+    expect(property_ids(result.current.data)).toEqual([A.id, B.id]);
+
+    let resolve_refetch!: (page: { data: FeedPropertyWithUrl[]; nextCursor: string | null }) => void;
     mock_fetch_feed_properties.mockImplementationOnce(
       () =>
         new Promise((resolve) => {
-          resolve_initial = resolve;
+          resolve_refetch = resolve;
         }),
     );
-    const { result } = await renderHook(() => useFeedProperties());
-
     await act(async () => {
-      void result.current.loadInitial();
+      void result.current.refetch();
     });
     expect(result.current.isLoading).toBe(true);
 
@@ -569,15 +579,16 @@ describe('useFeedProperties — wrap de vuelta (#285.3)', () => {
       void result.current.loadMore();
     });
 
-    // El único fetch en vuelo sigue siendo el de loadInitial.
-    expect(mock_fetch_feed_properties).toHaveBeenCalledTimes(1);
+    // El único fetch en vuelo sigue siendo el del refetch.
+    expect(mock_fetch_feed_properties).toHaveBeenCalledTimes(2);
 
-    const A = make_feed_property('bloq-a');
+    const C = make_feed_property('bloq-c');
     await act(async () => {
-      resolve_initial({ data: [A], nextCursor: null });
+      resolve_refetch({ data: [C], nextCursor: null });
     });
 
-    expect(property_ids(result.current.data)).toEqual([A.id]);
+    expect(result.current.isLoading).toBe(false);
+    expect(property_ids(result.current.data)).toEqual([C.id]);
     expect(result.current.lapCount).toBe(0);
   });
 });
