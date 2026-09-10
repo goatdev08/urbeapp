@@ -12442,68 +12442,68 @@
         "status": "in-progress",
         "priority": "medium",
         "dependencies": [],
-        "updatedAt": "2026-09-10T19:41:48.215Z",
+        "updatedAt": "2026-09-10T19:49:59.526Z",
         "subtasks": [
           {
             "id": 1,
             "title": "key de FlashList con sufijo de vuelta",
             "description": "feed_key_extractor pasa a `property:<id>#<lap>` / `ad:<id>#<lap>`. Sin esto, la misma propiedad en dos vueltas colisiona y FlashList rompe el render. Va primera porque las otras tres la necesitan.",
-            "details": "CRÍTICA (mobile/**/lib/**). Footprint: mobile/src/features/feed/lib/feedKeyExtractor.ts + su test. Los ítems compuestos llevan `lap` (0 en la primera vuelta) y la key lo incorpora; con lap 0 la key puede conservar la forma actual si eso mantiene los snapshots.",
+            "details": "CRÍTICA (mobile/**/lib/**). Footprint: mobile/src/features/feed/lib/feedKeyExtractor.ts + su test. Los ítems compuestos llevan `lap` (0 en la primera vuelta) y la key lo incorpora; con lap 0 la key puede conservar la forma actual si eso mantiene los snapshots.\n<info added on 2026-09-10T19:49:56.945Z>\nPLAN 285.1: approach = `export type LappedFeedItem = FeedItem & { lap?: number }` declarado en feedKeyExtractor.ts (interleaveAds.ts NO se toca); feed_key_extractor(item: LappedFeedItem) devuelve la forma actual `kind:id` cuando lap es undefined o 0 (los 5 EC de 170.4 siguen en verde) y `kind:id#lap` con lap ≥ 1. decisiones = analista + orquestador (rutinarias) · agente=orquestador (función pura de 3 líneas; guardian al cierre junto con 285.2) · skills=urbea-expo, urbea-testing · criticidad=CRÍTICA (mobile/**/lib/**) · impacto-prod=sin riesgo (cliente solo) · footprint=mobile/src/features/feed/lib/feedKeyExtractor.ts + mobile/src/features/feed/__tests__/feedKeyExtractor.test.ts.\n</info added on 2026-09-10T19:49:56.945Z>",
             "testStrategy": "Jest: la misma propiedad en lap 0 y lap 1 produce keys distintas; ítems de tipo ad idem; lap 0 estable.",
-            "status": "pending",
+            "status": "in-progress",
             "dependencies": [],
-            "updatedAt": "2026-09-10T19:41:42.399Z",
+            "updatedAt": "2026-09-10T19:49:59.526Z",
             "parentId": "undefined"
           },
           {
             "id": 2,
             "title": "barajado determinista por vuelta con semilla",
             "description": "lib/feedShuffle.ts nuevo: shuffle_with_seed(items, seed) con PRNG puro; seed = hash(session_id) + lap. Misma semilla ⇒ misma permutación, mismos elementos, sin Date.now() ni Math.random(). Sin tramos de distancia (decisión Q4).",
-            "details": "CRÍTICA (mobile/**/lib/**). Footprint: mobile/src/features/feed/lib/feedShuffle.ts (nuevo) + test. PRNG puro en ~10 líneas (mulberry32 o similar), Fisher–Yates; no instalar dependencias.",
+            "details": "CRÍTICA (mobile/**/lib/**). Footprint: mobile/src/features/feed/lib/feedShuffle.ts (nuevo) + test. PRNG puro en ~10 líneas (mulberry32 o similar), Fisher–Yates; no instalar dependencias.\n<info added on 2026-09-10T19:49:57.022Z>\nPLAN 285.2: approach = mobile/src/features/feed/lib/feedShuffle.ts nuevo con `hash_seed(text): number` (FNV-1a 32 bits), `mulberry32(seed)` PRNG puro y `shuffle_with_seed<T>(items: readonly T[], seed: number): T[]` (Fisher–Yates sobre copia; no muta). Semilla de la vuelta = hash_seed(session_id) + lap (la compone el hook en 285.3). Sin Date.now(), sin Math.random(), sin dependencias nuevas. agente=orquestador · skills=urbea-expo, urbea-testing · criticidad=CRÍTICA (lib/**) · impacto-prod=sin riesgo · footprint=lib/feedShuffle.ts (nuevo) + __tests__/feedShuffle.test.ts (nuevo).\n</info added on 2026-09-10T19:49:57.022Z>",
             "testStrategy": "Jest: determinismo (misma semilla → misma permutación), mismos elementos (multiconjunto igual), semillas distintas → permutaciones distintas para n≥3, no muta la entrada, n=0 y n=1 sin error.",
             "status": "pending",
             "dependencies": [],
-            "updatedAt": "2026-09-10T19:41:42.399Z",
+            "updatedAt": "2026-09-10T19:49:57.022Z",
             "parentId": "undefined"
           },
           {
             "id": 3,
             "title": "wrap de vuelta en el hook con re-fetch de página 1",
             "description": "useFeedProperties gana lap_ref: con nextCursor === null, load_more re-fetchea la página 1 (URLs re-minteadas), la baraja con 285.2 y la apende con lap+1. SIN TECHO. No vacía data, no levanta skeleton, respeta request_seq_ref (#249), y cambiar filters/sección resetea el contador de vuelta a 0. Wrap sobre los ítems compuestos, nunca módulo rpc_ids.length.",
-            "details": "CRÍTICA (mobile/**/hooks/**). Footprint: mobile/src/features/feed/hooks/useFeedProperties.ts + tests. Depende de 285.1 y 285.2.",
+            "details": "CRÍTICA (mobile/**/hooks/**). Footprint: mobile/src/features/feed/hooks/useFeedProperties.ts + tests. Depende de 285.1 y 285.2.\n<info added on 2026-09-10T19:49:57.099Z>\nPLAN 285.3: approach = en useFeedProperties, `lap_ref` (0 en la primera vuelta) y estado expuesto `lapCount` (número de vueltas cruzadas; 285.5 lo consume). load_more: si nextCursor === null y data.length > 0 y no hay carga en curso → fetchFeedProperties(undefined, deps, filters) (página 1 re-minteada, mismo patrón que load_initial), lap_ref += 1, barajar las PROPIEDADES de esa página con shuffle_with_seed(props, hash_seed(get_app_session_id()) + lap), componer con compose_feed_items como CONTINUACIÓN (skip_first_position=false, mismo criterio que la costura de página #256; already_shown_ref/since_last_ad_ref se arrastran), marcar cada ítem con lap y apendear a data. Sin techo. No vacía data, no toca isLoading de forma que levante skeleton (usar el mismo flag que load_more normal), respeta request_seq_ref; load_initial/refetch y cambio de filters ponen lap_ref = 0 y lapCount = 0. nextCursor tras la vuelta = el que devuelva la página 1 (si el inventario cabe en una página, null otra vez → la siguiente load_more hace otra vuelta). Wrap sobre ítems compuestos de la página re-fetcheada, nunca módulo rpc_ids. decisiones: exponer lapCount aquí (analista) · continuación para ads (orquestador) · agente=test-author + mobile + guardian · skills=urbea-expo, urbea-testing · criticidad=CRÍTICA (hooks/**) · impacto-prod=sin riesgo · footprint=hooks/useFeedProperties.ts + __tests__/useFeedProperties.lap-wrap.test.tsx (nuevo, RNTL 14 async).\n</info added on 2026-09-10T19:49:57.099Z>",
             "testStrategy": "Jest/RNTL (RNTL 14: await renderHook/act): 5 vueltas seguidas apendean sin techo; un fetch de página 1 por vuelta; data no se vacía ni loading/refreshing se activan; respuesta tardía descartada por request_seq; cambio de filtros resetea lap; la vuelta 2 llega permutada respecto a la 1 y con lap=1 en sus ítems; reloj fijo en todos los casos.",
             "status": "pending",
             "dependencies": [
               1,
               2
             ],
-            "updatedAt": "2026-09-10T19:41:42.399Z",
+            "updatedAt": "2026-09-10T19:49:57.099Z",
             "parentId": "undefined"
           },
           {
             "id": 4,
             "title": "anuncios en la costura de vuelta",
             "description": "La vuelta se recompone con interleave_ads_with_state arrastrando already_shown_ref y since_last_ad_ref (nunca se reinician): ni dos anuncios seguidos ni el mismo a menos de min_gap_between_repeats, y el total de sesión nunca excede ad_max_per_session. Extender interleaveAds.page-seam.test.ts. interleaveAds.ts no se modifica.",
-            "details": "CRÍTICA (mobile/**/hooks/**). Footprint: mobile/src/features/feed/hooks/useFeedProperties.ts (compose_feed_items) + tests de costura. Depende de 285.3.",
+            "details": "CRÍTICA (mobile/**/hooks/**). Footprint: mobile/src/features/feed/hooks/useFeedProperties.ts (compose_feed_items) + tests de costura. Depende de 285.3.\n<info added on 2026-09-10T19:49:57.176Z>\nPLAN 285.4: approach = verificación de invariantes de anuncios a través de la costura de vuelta sobre lo que 285.3 ya compone con interleave_ads_with_state: ni dos anuncios seguidos, ninguno repetido bajo min_gap_between_repeats, total ≤ ad_max_per_session en 3 vueltas, refs no reiniciados. Esperado: cero cambios en interleaveAds.ts; si la implementación de 285.3 ya cumple, la subtarea es solo RED (tests) + confirmación; si no, GREEN mínimo en compose_feed_items. agente=test-author + mobile + guardian · criticidad=CRÍTICA (hooks/**) · impacto-prod=sin riesgo · footprint=hooks/useFeedProperties.ts + __tests__/useFeedProperties.ads.test.tsx o archivo dedicado a la costura de vuelta.\n</info added on 2026-09-10T19:49:57.176Z>",
             "testStrategy": "Jest: cruzando la costura de vuelta no hay dos anuncios seguidos, no se repite un anuncio bajo min_gap_between_repeats, y el total de anuncios en 3 vueltas ≤ ad_max_per_session; los refs no se reinician.",
             "status": "pending",
             "dependencies": [
               3
             ],
-            "updatedAt": "2026-09-10T19:41:42.399Z",
+            "updatedAt": "2026-09-10T19:49:57.176Z",
             "parentId": "undefined"
           },
           {
             "id": 5,
             "title": "chip efímero de reinicio de vuelta",
             "description": "Al cruzar la costura, RefreshingChip con tone=\"dark\" y label propio («Ya viste todo · volvemos a empezar») ~2 s, en la pila que ya comparte con «Actualizando» y ZoneActiveChip (FeedScreen.tsx:316-335), mutuamente excluyente con el de refresco. RefreshingChip.tsx no se toca. Resuelve UI_FUERA_DEL_MOCKUP en conjunto.",
-            "details": "LIGERA (pantalla). Footprint: mobile/src/features/feed/FeedScreen.tsx (+ el hook expone un evento/contador de vuelta). Depende de 285.3.",
+            "details": "LIGERA (pantalla). Footprint: mobile/src/features/feed/FeedScreen.tsx (+ el hook expone un evento/contador de vuelta). Depende de 285.3.\n<info added on 2026-09-10T19:49:57.253Z>\nPLAN 285.5: approach = FeedScreen consume `lapCount` del hook; al incrementarse muestra un RefreshingChip (tone=\"dark\", label «Ya viste todo · volvemos a empezar») ~2 s con un timer, mutuamente excluyente con el chip «Actualizando» (si is_refreshing, gana el de refresco) y en la misma pila que ZoneActiveChip. RefreshingChip.tsx no se toca. agente=mobile · criticidad=NO crítica (solo FeedScreen.tsx; la señal la expone 285.3) · verificación ligera: pnpm tsc --noEmit + pnpm lint + FeedScreen.filters.test.tsx sigue verde + smoke por CLI en emulador (cruzar 2 costuras, screencap, stopApp) · impacto-prod=sin riesgo · footprint=mobile/src/features/feed/FeedScreen.tsx.\n</info added on 2026-09-10T19:49:57.253Z>",
             "testStrategy": "pnpm tsc --noEmit + pnpm lint + test de pantalla si ya existe patrón; smoke por CLI en emulador con Abraham: cruzar 2 costuras, leer el chip por screencap, stopApp al terminar.",
             "status": "pending",
             "dependencies": [
               3
             ],
-            "updatedAt": "2026-09-10T19:41:42.399Z",
+            "updatedAt": "2026-09-10T19:49:57.253Z",
             "parentId": "undefined"
           }
         ]
@@ -12511,7 +12511,7 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-09-10T19:41:48.215Z",
+      "lastModified": "2026-09-10T19:49:59.526Z",
       "taskCount": 285,
       "completedCount": 206,
       "tags": [
