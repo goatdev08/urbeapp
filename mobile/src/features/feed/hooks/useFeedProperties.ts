@@ -57,12 +57,14 @@ import {
   type AdsFailureClient,
   type AdsFailureStage,
 } from '../lib/adsFailureSignal';
+import type { LappedFeedItem } from '../lib/feedKeyExtractor';
 import { fetchFeedProperties, mint_videos, type FeedPropertiesDeps } from '../lib/feedProperties';
+import { hash_seed, shuffle_with_seed } from '../lib/feedShuffle';
 import { interleave_ads_with_state, type FeedAd, type FeedItem } from '../lib/interleaveAds';
 import type { FeedPropertyWithUrl } from '../types';
 
 export interface UseFeedPropertiesState {
-  data: FeedItem[];
+  data: LappedFeedItem[];
   isLoading: boolean;
   error: string | null;
   nextCursor: string | null;
@@ -72,6 +74,12 @@ export interface UseFeedPropertiesState {
   refetch: () => Promise<void>;
   /** Carga la siguiente página y apende al array existente. */
   loadMore: () => Promise<void>;
+  /**
+   * #285.3 (RED, stub): vueltas del feed infinito cruzadas en esta sesión del
+   * hook. 0 al montar; se resetea en loadInitial/refetch/cambio de filters.
+   * Lógica real pendiente (ver useFeedProperties.lap-wrap.test.tsx).
+   */
+  lapCount: number;
 }
 
 /** Config del kill-switch, forma de la fila de `ads_feed_config()`. */
@@ -318,7 +326,7 @@ async function compose_feed_items(
 
 export function useFeedProperties(filters?: FilterState): UseFeedPropertiesState {
   const { coords } = useLocation();
-  const [data, set_data] = useState<FeedItem[]>([]);
+  const [data, set_data] = useState<LappedFeedItem[]>([]);
   // ponytail: arranca en true — FeedScreen siempre llama loadInitial en mount;
   // esto evita un frame de "empty state" antes de que useEffect dispare.
   const [isLoading, set_is_loading] = useState(true);
@@ -332,6 +340,13 @@ export function useFeedProperties(filters?: FilterState): UseFeedPropertiesState
   // loadInitial/refetch lo reinicia ANTES de componer (una carga nueva no
   // hereda el cierre de una sesión de scroll distinta).
   const since_last_ad_ref = useRef<number | undefined>(undefined);
+  // #285.3 — feed infinito (doc 047 A+D): número de vuelta vigente. 0 = el
+  // inventario todavía no se agotó; N≥1 = ya se re-sirvió N veces. Vive en un
+  // ref (lo lee la carga en vuelo) y se espeja en `lapCount` para la UI (285.5).
+  // SIN TECHO por decisión de Abraham (§20 Q5): la mitigación de cuota es que
+  // useFeedActiveIndex corta la reproducción fuera de foreground/tab.
+  const lap_ref = useRef(0);
+  const [lapCount, set_lap_count] = useState(0);
 
   // #249 — SOLO LA PETICIÓN VIGENTE ESCRIBE ESTADO.
   // Al aplicar un filtro, la petición del filtro ANTERIOR sigue en vuelo (no se
@@ -380,6 +395,8 @@ export function useFeedProperties(filters?: FilterState): UseFeedPropertiesState
     // coord real → "flash".
     if (!coords) return;
     const seq = ++request_seq_ref.current;
+    lap_ref.current = 0; // 285.3: carga nueva = vuelta 0; una vuelta en vuelo llega tarde y se descarta
+    set_lap_count(0);
     set_is_loading(true);
     set_error(null);
     try {
@@ -403,18 +420,38 @@ export function useFeedProperties(filters?: FilterState): UseFeedPropertiesState
   }, [coords, resolve_ad_zone_coords, filters, build_deps]);
 
   const load_more = useCallback(async () => {
-    if (!nextCursor || isLoading || !coords) return;
+    if (isLoading || !coords) return;
+    // #285.3 — VUELTA: sin cursor y con inventario ya servido, en vez de
+    // quedarse quieto (el feed "colgado" del doc 047) se re-pide la página 1
+    // (URLs firmadas re-minteadas: el TTL de 4 h vencería si se reusara
+    // memoria), se baraja con semilla `session + vuelta` (determinista: misma
+    // sesión y vuelta → mismo orden) y se APENDEA como continuación. El wrap
+    // es sobre los ítems compuestos de esa página, nunca módulo rpc_ids. Con
+    // data vacío no hay nada que repetir: is_empty se mantiene.
+    const is_lap = nextCursor === null;
+    if (is_lap && data.length === 0) return;
     const seq = ++request_seq_ref.current;
     set_is_loading(true);
     set_error(null);
     try {
       const deps = build_deps();
-      const result = await fetchFeedProperties(nextCursor, deps, filters);
+      const result = await fetchFeedProperties(is_lap ? undefined : nextCursor, deps, filters);
       if (seq !== request_seq_ref.current) return; // mismo corte previo a componer
-      const items = await compose_feed_items(deps?.supabase, resolve_ad_zone_coords(coords), result.data, already_shown_ref, false, since_last_ad_ref);
+      // Las páginas 2+ de una vuelta heredan su número (mismas keys `#lap`);
+      // solo la página 1 de la vuelta se baraja — hoy el inventario cabe en una.
+      const lap = is_lap ? lap_ref.current + 1 : lap_ref.current;
+      const page = is_lap
+        ? shuffle_with_seed(result.data, hash_seed(get_app_session_id()) + lap)
+        : result.data;
+      const composed = await compose_feed_items(deps?.supabase, resolve_ad_zone_coords(coords), page, already_shown_ref, false, since_last_ad_ref);
       // Una página pedida ANTES de aplicar el filtro no se apende al feed ya
       // refiltrado: sería contenido de la búsqueda anterior colado al final.
       if (seq !== request_seq_ref.current) return;
+      const items: LappedFeedItem[] = lap > 0 ? composed.map((item) => ({ ...item, lap })) : composed;
+      if (is_lap) {
+        lap_ref.current = lap;
+        set_lap_count(lap);
+      }
       set_data((prev) => [...prev, ...items]);
       set_next_cursor(result.nextCursor);
     } catch (e) {
@@ -423,7 +460,7 @@ export function useFeedProperties(filters?: FilterState): UseFeedPropertiesState
     } finally {
       if (seq === request_seq_ref.current) set_is_loading(false);
     }
-  }, [nextCursor, isLoading, coords, resolve_ad_zone_coords, filters, build_deps]);
+  }, [nextCursor, isLoading, coords, data.length, resolve_ad_zone_coords, filters, build_deps]);
 
   // #241.2: al cambiar la identidad de `filters` (sección Venta/Renta, sheet,
   // zona) se VACÍA la lista antes de que llegue la página nueva. Sin esto el
@@ -441,6 +478,8 @@ export function useFeedProperties(filters?: FilterState): UseFeedPropertiesState
     }
     set_data([]);
     set_next_cursor(null);
+    lap_ref.current = 0; // 285.3: filtros nuevos = inventario nuevo, la cuenta de vueltas vuelve a 0
+    set_lap_count(0);
   }, [filters]);
 
   useEffect(
@@ -459,5 +498,7 @@ export function useFeedProperties(filters?: FilterState): UseFeedPropertiesState
     loadInitial: load_initial,
     refetch: load_initial,
     loadMore: load_more,
+    // ponytail: stub RED — literal 0, sin lógica (#285.3, ver test-author).
+    lapCount,
   };
 }

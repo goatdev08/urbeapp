@@ -28,6 +28,20 @@
 
 import type { FeedItem } from './interleaveAds';
 
-export function feed_key_extractor(item: FeedItem): string {
-  return item.kind === 'property' ? `property:${item.property.id}` : `ad:${item.ad.id}`;
+/**
+ * #285.1 — vuelta del feed infinito (doc 047). `lap` es el número de vuelta
+ * del ítem (0 o ausente = primera vuelta). Intersección de tipo declarada AQUÍ
+ * y no en interleaveAds.ts: el intercalado de anuncios no sabe de vueltas, el
+ * hook marca los ítems al apendear la vuelta y solo la key los distingue.
+ */
+export type LappedFeedItem = FeedItem & { lap?: number | undefined };
+
+/**
+ * `kind:id` en la primera vuelta (forma de 170.4, intacta) y `kind:id#lap`
+ * desde la segunda: la misma propiedad repetida en vueltas distintas NO puede
+ * compartir key o FlashList rompe el render (memoria flatlist_numcolumns_row_keys).
+ */
+export function feed_key_extractor(item: LappedFeedItem): string {
+  const base = item.kind === 'property' ? `property:${item.property.id}` : `ad:${item.ad.id}`;
+  return item.lap != null && item.lap > 0 ? `${base}#${item.lap}` : base;
 }
