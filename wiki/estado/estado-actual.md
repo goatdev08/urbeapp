@@ -3,7 +3,17 @@ tipo: estado
 actualizado: 2026-09-08
 ---
 
-## Hoy (2026-09-10) — #285: el feed ya es infinito (vuelta barajada al agotar el inventario)
+## Hoy (2026-09-10, noche) — #288: la vuelta del feed ya no se nota
+Abraham probó #285 y no le convenció la UX: «el cambio debe ser fluido, imperceptible». Propuse 4 direcciones; eligió **1 + 2 + 3** (costura silenciosa, vuelta lista antes del final, sin video repetido pegado). Derivada `polish(285)` #288, 4 subtareas, mergeada a `main`; solo JS → mismo OTA que #285 cuando lo pida.
+- **Qué delataba la vuelta.** «Actualizando» salía en CADA carga de página (`isLoading` compartido) y justo después el chip de vuelta; el fetch de la vuelta arrancaba a 0.3 pantallas del final; el barajado podía abrir con el último video.
+- **Qué cambió.** `isLoading` = solo carga inicial/refetch; `loadMore` silencioso con reentrada por ref; `onEndReachedThreshold` 2; `avoid_adjacent_repeat` sobre el barajado; chip de vuelta retirado.
+- **Trade-off que dejé explicado (§0, disparador d).** La precarga ansiosa que describí como opción 2 se cambió por precarga por umbral: la ansiosa compone anuncios al abrir la app que nadie ve (consume el tope por sesión) y rompe 24 fixtures de la suite de anuncios. Techo conocido: red lenta + swipe muy rápido → fin de lista con rebote, sin chip.
+- **Guardians.** 288.1: el EC de «loadMore bloqueado durante loadInitial» era vacuo desde data vacío (lo tapaba el guard de inventario vacío) → reescrito desde estado poblado con un refetch en vuelo; los 3 mutantes mueren. 288.2: 3 mutantes mueren.
+- **Smoke adb.** 70 swipes, ~9 vueltas: 0 chips, 0 «same key», ninguna vuelta abre con el último video; 1 posible rebote solo en la primera vuelta fría de la sesión a ritmo rápido, ninguno en las 8 siguientes. Si Abraham lo ve en el teléfono → derivada polish(288) precarga ansiosa.
+- **Proceso.** Un `git stash` por descuido en un comando de diagnóstico; revertido al instante con `stash pop`, sin pérdida. Registrado en memoria.
+- **Pendiente:** OTA (#285 + #288) cuando Abraham lo pida; Follow #78 / comentarios #289 en pausa (doc 048 sigue sin promover; el id 288 ya lo usó esta derivada).
+
+## Antes (2026-09-10) — #285: el feed ya es infinito (vuelta barajada al agotar el inventario)
 Pedido de Abraham tras cerrar #278/#280: «que el feed sea realmente infinito». Exploración 047 con 4 direcciones; eligió **A + D** (vuelta en cliente + barajado con semilla), **chip efímero**, **sin techo** de vueltas y activación siempre. Tarea #285 (5 subtareas) en PR #170; solo JS → sale por OTA cuando Abraham lo pida.
 - **Qué hace.** Con `nextCursor === null` y datos en pantalla, `load_more` re-pide la página 1 (URLs firmadas frescas), la baraja con `shuffle_with_seed(page, hash_seed(session_id) + lap)` y la apendea como continuación; cada ítem lleva `lap` y la key de FlashList pasa a `kind:id#lap`. `lapCount` expuesto → chip «Ya viste todo · volvemos a empezar» 2 s (`RefreshingChip` reusado). Reset a 0 en refetch y cambio de filtros. Sin backend.
 - **Decisiones de Abraham en el camino.** Sin techo (asume el gasto de Stream; la mitigación existente es que la reproducción se corta fuera de foreground/tab; pausa por inactividad queda nombrada, no abierta). Y el hueco mínimo entre repeticiones de un anuncio **sigue por composición** como desde #256: el test-author destapó que con 1 anuncio y páginas de 8 el mismo anuncio vuelve cada 9 ítems en cada vuelta; llevar la memoria entre composiciones cambiaba la frecuencia que reciben los anunciantes (4 trazas a mano lo documentan) → conservado, parche archivado en la bitácora de 285.4 y derivada **#287**.

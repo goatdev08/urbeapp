@@ -1173,3 +1173,5 @@ Se retira `is_admin()` de `leads_update`, `leads_delete` y `private.can_edit_lea
 ## [2026-09-10] explore | aprobado tarea 285 — feed infinito: la vuelta se reinicia barajada al agotar el inventario (dirección A+D, sin techo, chip efímero; B reservada para follow+comentarios)
 
 ## [2026-09-10] tarea | #285 feed infinito — al agotar el inventario el feed re-pide la página 1 y la apendea barajada con semilla sesión+vuelta (keys `#lap`, `lapCount`, chip «Ya viste todo · volvemos a empezar»); sin techo por decisión de Abraham; min_gap de anuncios sigue por composición (derivada #287); derivada #286 (2º corte de request_seq_ref sin test); smoke adb: 3 vueltas con orden distinto, memoria estable
+
+## [2026-09-10] tarea | #288 polish(285) costura de vuelta imperceptible — `isLoading` solo en carga inicial/refetch (loadMore silencioso, reentrada por ref), `onEndReachedThreshold` 2, `avoid_adjacent_repeat` en la vuelta, chip de vuelta retirado; precarga ansiosa descartada con trade-off explicado; smoke adb 70 swipes / 9 vueltas sin chips ni claves duplicadas
