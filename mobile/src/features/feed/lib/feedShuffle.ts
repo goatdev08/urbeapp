@@ -46,3 +46,19 @@ export function shuffle_with_seed<T>(items: readonly T[], seed: number): T[] {
   }
   return out;
 }
+
+/**
+ * avoid_adjacent_repeat — costura sin repetición pegada (#288.2).
+ *
+ * Si `items.length > 1` y `is_repeat(items[0])`, devuelve una COPIA con el
+ * primer elemento movido al final (el resto conserva su orden relativo); en
+ * cualquier otro caso, copia idéntica. Nunca muta la entrada. El hook lo aplica
+ * al barajado de cada vuelta contra el último video servido: dos veces seguidas
+ * el mismo video se lee como bug, no como vuelta. Sigue siendo determinista
+ * por sesión (misma entrada → misma salida).
+ */
+export function avoid_adjacent_repeat<T>(items: readonly T[], is_repeat: (first: T) => boolean): T[] {
+  const copy = [...items];
+  if (copy.length > 1 && is_repeat(copy[0] as T)) copy.push(copy.shift() as T);
+  return copy;
+}

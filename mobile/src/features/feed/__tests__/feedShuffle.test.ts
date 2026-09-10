@@ -10,7 +10,7 @@
  * en lógica que se testea). Sin dependencias nuevas.
  */
 
-import { hash_seed, shuffle_with_seed } from '../lib/feedShuffle';
+import { avoid_adjacent_repeat, hash_seed, shuffle_with_seed } from '../lib/feedShuffle';
 
 const EIGHT = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'] as const;
 
@@ -91,5 +91,55 @@ describe('shuffle_with_seed — alcanza todas las permutaciones (#285.2, guardia
     for (let seed = 1; seed <= 50; seed++) orders.add(shuffle_with_seed(['a', 'b', 'c'], seed).join(''));
     expect(orders.size).toBe(6);
     expect(orders).toContain('abc');
+  });
+});
+
+/**
+ * avoid_adjacent_repeat (#288.2, costura sin repetición pegada)
+ * SUT: mobile/src/features/feed/lib/feedShuffle.ts
+ *
+ * EDGE CASES (RED):
+ * (EC-12) vacio_devuelve_copia_vacia: [] → [].
+ * (EC-13) un_solo_item_devuelve_copia_identica: 1 ítem → copia con el mismo
+ *   único elemento (NO se asegura si is_repeat se invoca o no con 1 ítem).
+ * (EC-14) coincide_mueve_el_primero_al_final_y_el_resto_en_orden: is_repeat(items[0])
+ *   true con length > 1 → [items[1], items[2], ..., items[0]].
+ * (EC-15) no_coincide_devuelve_copia_identica: is_repeat(items[0]) false →
+ *   mismo orden, misma longitud (toEqual) pero NO la misma referencia (not.toBe).
+ * (EC-16) nunca_muta_la_entrada: la entrada se congela con Object.freeze antes
+ *   de llamar; si el helper mutara, freeze la haría lanzar en modo estricto.
+ */
+describe('avoid_adjacent_repeat (#288.2)', () => {
+  it('(EC-12) vacio_devuelve_copia_vacia', () => {
+    const out = avoid_adjacent_repeat<string>([], () => true);
+    expect(out).toEqual([]);
+  });
+
+  it('(EC-13) un_solo_item_devuelve_copia_identica', () => {
+    const input = ['solo'];
+    const out = avoid_adjacent_repeat(input, () => true);
+    expect(out).toEqual(['solo']);
+    expect(out).not.toBe(input);
+  });
+
+  it('(EC-14) coincide_mueve_el_primero_al_final_y_el_resto_en_orden', () => {
+    const input = ['p1', 'p2', 'p3', 'p4'];
+    const is_repeat = (first: string) => first === 'p1';
+    const out = avoid_adjacent_repeat(input, is_repeat);
+    expect(out).toEqual(['p2', 'p3', 'p4', 'p1']);
+  });
+
+  it('(EC-15) no_coincide_devuelve_copia_identica', () => {
+    const input = ['p1', 'p2', 'p3', 'p4'];
+    const is_repeat = (first: string) => first === 'OTRO_ID_QUE_NUNCA_COINCIDE';
+    const out = avoid_adjacent_repeat(input, is_repeat);
+    expect(out).toEqual(['p1', 'p2', 'p3', 'p4']);
+    expect(out).not.toBe(input);
+  });
+
+  it('(EC-16) nunca_muta_la_entrada', () => {
+    const input = Object.freeze(['p1', 'p2', 'p3']);
+    expect(() => avoid_adjacent_repeat(input, (first) => first === 'p1')).not.toThrow();
+    expect(input).toEqual(['p1', 'p2', 'p3']);
   });
 });
