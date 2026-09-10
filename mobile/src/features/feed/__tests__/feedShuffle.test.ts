@@ -80,3 +80,16 @@ describe('hash_seed (#285.2)', () => {
     expect(shuffle_with_seed(EIGHT, base + 1)).not.toEqual(shuffle_with_seed(EIGHT, base + 2));
   });
 });
+
+// Guardian 285.2 — mutante g: `Math.floor(next() * i)` (sin el +1) convierte
+// Fisher–Yates en Sattolo: ningún elemento puede quedarse en su sitio y solo se
+// alcanzan (n−1)! permutaciones. Esperado de fuente independiente (combinatoria):
+// sobre 3 elementos existen 6 órdenes; con 50 semillas deben aparecer los 6.
+describe('shuffle_with_seed — alcanza todas las permutaciones (#285.2, guardian)', () => {
+  it('(EC-11) sobre_3_elementos_y_50_semillas_aparecen_los_6_ordenes_posibles_incluida_la_identidad', () => {
+    const orders = new Set<string>();
+    for (let seed = 1; seed <= 50; seed++) orders.add(shuffle_with_seed(['a', 'b', 'c'], seed).join(''));
+    expect(orders.size).toBe(6);
+    expect(orders).toContain('abc');
+  });
+});
