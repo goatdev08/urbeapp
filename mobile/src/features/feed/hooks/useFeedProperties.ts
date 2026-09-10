@@ -72,6 +72,12 @@ export interface UseFeedPropertiesState {
   refetch: () => Promise<void>;
   /** Carga la siguiente página y apende al array existente. */
   loadMore: () => Promise<void>;
+  /**
+   * #285.3 (RED, stub): vueltas del feed infinito cruzadas en esta sesión del
+   * hook. 0 al montar; se resetea en loadInitial/refetch/cambio de filters.
+   * Lógica real pendiente (ver useFeedProperties.lap-wrap.test.tsx).
+   */
+  lapCount: number;
 }
 
 /** Config del kill-switch, forma de la fila de `ads_feed_config()`. */
@@ -459,5 +465,7 @@ export function useFeedProperties(filters?: FilterState): UseFeedPropertiesState
     loadInitial: load_initial,
     refetch: load_initial,
     loadMore: load_more,
+    // ponytail: stub RED — literal 0, sin lógica (#285.3, ver test-author).
+    lapCount: 0,
   };
 }
