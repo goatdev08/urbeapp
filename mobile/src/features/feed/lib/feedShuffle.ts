@@ -48,18 +48,17 @@ export function shuffle_with_seed<T>(items: readonly T[], seed: number): T[] {
 }
 
 /**
- * avoid_adjacent_repeat — costura sin repetición pegada (#288.2, polish 288).
+ * avoid_adjacent_repeat — costura sin repetición pegada (#288.2).
  *
- * PLAN (fase RED, NO implementado): si `items.length > 1` y
- * `is_repeat(items[0])` es true, debe devolver una COPIA con el primer
- * elemento movido al final (el resto conserva su orden relativo). En
- * cualquier otro caso, copia idéntica. Nunca muta la entrada.
- *
- * ponytail: stub mínimo de la fase RED — copia sin rotar. Deja pasar los EC
- * de "vacío", "1 ítem" y "no coincide" (una copia idéntica ya los cumple) y
- * falla el EC "coincide → primero al final" (fase GREEN, subtarea 288.2).
+ * Si `items.length > 1` y `is_repeat(items[0])`, devuelve una COPIA con el
+ * primer elemento movido al final (el resto conserva su orden relativo); en
+ * cualquier otro caso, copia idéntica. Nunca muta la entrada. El hook lo aplica
+ * al barajado de cada vuelta contra el último video servido: dos veces seguidas
+ * el mismo video se lee como bug, no como vuelta. Sigue siendo determinista
+ * por sesión (misma entrada → misma salida).
  */
 export function avoid_adjacent_repeat<T>(items: readonly T[], is_repeat: (first: T) => boolean): T[] {
-  void is_repeat;
-  return [...items];
+  const copy = [...items];
+  if (copy.length > 1 && is_repeat(copy[0] as T)) copy.push(copy.shift() as T);
+  return copy;
 }

@@ -62,7 +62,7 @@ import {
 } from '../lib/adsFailureSignal';
 import type { LappedFeedItem } from '../lib/feedKeyExtractor';
 import { fetchFeedProperties, mint_videos, type FeedPropertiesDeps } from '../lib/feedProperties';
-import { hash_seed, shuffle_with_seed } from '../lib/feedShuffle';
+import { avoid_adjacent_repeat, hash_seed, shuffle_with_seed } from '../lib/feedShuffle';
 import { interleave_ads_with_state, type FeedAd, type FeedItem } from '../lib/interleaveAds';
 import type { FeedPropertyWithUrl } from '../types';
 
@@ -447,8 +447,16 @@ export function useFeedProperties(filters?: FilterState): UseFeedPropertiesState
       // Las páginas 2+ de una vuelta heredan su número (mismas keys `#lap`);
       // solo la página 1 de la vuelta se baraja — hoy el inventario cabe en una.
       const lap = is_lap ? lap_ref.current + 1 : lap_ref.current;
+      // #288.2 — la vuelta no abre con el último video servido: si el feed
+      // termina en propiedad y el barajado la repite en la posición 0, esa
+      // propiedad se va al final (si termina en anuncio no hay pegado posible).
+      const last = data[data.length - 1];
+      const last_property_id = last?.kind === 'property' ? last.property.id : null;
       const page = is_lap
-        ? shuffle_with_seed(result.data, hash_seed(get_app_session_id()) + lap)
+        ? avoid_adjacent_repeat(
+            shuffle_with_seed(result.data, hash_seed(get_app_session_id()) + lap),
+            (first) => first.id === last_property_id,
+          )
         : result.data;
       const composed = await compose_feed_items(deps?.supabase, resolve_ad_zone_coords(coords), page, already_shown_ref, false, since_last_ad_ref);
       // Una página pedida ANTES de aplicar el filtro no se apende al feed ya
@@ -467,7 +475,7 @@ export function useFeedProperties(filters?: FilterState): UseFeedPropertiesState
     } finally {
       load_more_in_flight_ref.current = false;
     }
-  }, [nextCursor, isLoading, coords, data.length, resolve_ad_zone_coords, filters, build_deps]);
+  }, [nextCursor, isLoading, coords, data, resolve_ad_zone_coords, filters, build_deps]);
 
   // #241.2: al cambiar la identidad de `filters` (sección Venta/Renta, sheet,
   // zona) se VACÍA la lista antes de que llegue la página nueva. Sin esto el
