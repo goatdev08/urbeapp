@@ -1,0 +1,685 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Urbea — Preview hoja de comentarios (289.1)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Hanken+Grotesk:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  /* ═══════════════════════════════════════════════════════════════════════
+     TOKENS — literales calcados 1:1 de mobile/src/theme/theme.ts (no de
+     urbea-identidad-visual.html, que aún trae el verde Salvia #5A8A5E viejo).
+     Naming snake_case por convención del skill urbea-design. El comentario
+     junto a cada variable es el nombre EXACTO del export en theme.ts para
+     que 289.8 (portar a RN) sea un mapeo directo, no una reinterpretación.
+     ═══════════════════════════════════════════════════════════════════════ */
+  :root{
+    --font_display: 'Space Grotesk', system-ui, -apple-system, 'Segoe UI', sans-serif; /* fonts.display (SpaceGrotesk_600SemiBold) */
+    --font_sans:    'Hanken Grotesk', system-ui, -apple-system, 'Segoe UI', sans-serif; /* fonts.sans / sans_semibold / sans_bold */
+
+    --color_primary:      #1A5E44; /* colors.primary — verde canónico del logo */
+    --color_primary_soft: #5E9379; /* colors.primary_soft */
+    --color_primary_tint: #DCE8E1; /* colors.primary_tint */
+    --color_primary_deep: #123A2C; /* colors.primary_deep */
+    --color_accent:       #9A7150; /* colors.accent — arcilla */
+    --color_accent_tint:  #EADBCE; /* colors.accent_tint */
+    --color_surface:      #FFFFFF; /* colors.surface */
+    --color_paper:        #F6F2EB; /* colors.paper — fondo gestión claro */
+    --color_paper_2:      #EEE7DC; /* colors.paper_2 */
+    --color_paper_3:      #E3DCCF; /* colors.paper_3 — bordes cálidos */
+    --color_ink:          #1E1A15; /* colors.ink */
+    --color_ink_feed:     #17140F; /* colors.ink_feed — scrim/overlay */
+    --color_gray_1:       #A39A8C; /* colors.gray_1 */
+    --color_gray_2:       #857C70; /* colors.gray_2 */
+    --color_gray_3:       #6B6256; /* colors.gray_3 */
+    --color_danger:       #C94B3E; /* colors.danger */
+
+    --temp_cooling: #8A6A1E; /* colors.temp_cooling — reusado para chip "en revisión" (ámbar, sin inventar color nuevo) */
+
+    --r_8:8px; --r_12:12px; --r_16:16px; --r_24:24px; --r_pill:999px; /* radii.* */
+    --s_4:4px; --s_8:8px; --s_12:12px; --s_16:16px; --s_20:20px; --s_24:24px; --s_32:32px; /* spacing.* */
+
+    /* shadows.sm / shadows.md (comentario CSS-origen en theme.ts) */
+    --sh_sm: 0 1px 3px rgba(30,22,12,.08), 0 1px 2px rgba(30,22,12,.06);
+    --sh_md: 0 8px 22px -8px rgba(30,22,12,.22);
+  }
+
+  *{ box-sizing:border-box; }
+  body{
+    margin:0;
+    background:#EDE7DA;
+    color:var(--color_ink);
+    font-family:var(--font_sans);
+    font-weight:400;
+    padding:32px 20px 64px;
+  }
+  .wrap{ max-width:1220px; margin:0 auto; }
+
+  .spec{
+    background:var(--color_surface); border:1px solid var(--color_paper_3);
+    border-radius:var(--r_16); padding:22px 26px; box-shadow:var(--sh_md); margin-bottom:30px;
+  }
+  .spec h1{ font-family:var(--font_display); font-weight:700; font-size:21px; letter-spacing:-.01em; margin:0 0 4px; }
+  .spec .sub{ font-size:13px; color:var(--color_gray_2); margin:0 0 14px; line-height:1.55; max-width:900px; }
+  .spec .chips{ display:flex; gap:8px; flex-wrap:wrap; }
+  .spec .tag{ font-family:ui-monospace,monospace; font-size:10.5px; letter-spacing:.03em; padding:5px 10px; border-radius:var(--r_pill); background:var(--color_paper_2); color:var(--color_gray_2); }
+  .spec .tag b{ color:var(--color_primary); font-weight:600; }
+
+  .section{ margin-bottom:48px; }
+  .section-head{ display:flex; align-items:baseline; gap:12px; margin-bottom:6px; }
+  .section-num{ font-family:ui-monospace,monospace; font-size:13px; font-weight:600; color:#FFFFFF; background:var(--color_primary); width:26px; height:26px; border-radius:8px; display:flex; align-items:center; justify-content:center; flex:none; }
+  .section-title{ font-family:var(--font_display); font-weight:700; font-size:19px; letter-spacing:-.01em; }
+  .section-desc{ font-size:12.5px; color:var(--color_gray_2); margin:2px 0 18px 38px; max-width:820px; line-height:1.55; }
+
+  .row-flex{ display:flex; gap:26px; flex-wrap:wrap; align-items:flex-start; }
+
+  .device{
+    width:360px; background:var(--color_paper); color:var(--color_ink);
+    border-radius:var(--r_24); border:1px solid var(--color_paper_3);
+    box-shadow:var(--sh_md); overflow:hidden; flex:none; position:relative;
+  }
+  .device.tall{ height:660px; }
+  .device.mid{ height:420px; }
+
+  /* ── mini-frame del detalle (entrada) ─────────────────────────────────── */
+  .hero-mock{ height:210px; background:linear-gradient(160deg,#2c3b30,#17140F); position:relative; }
+  .hero-mock .backbtn{ position:absolute; top:16px; left:16px; width:34px; height:34px; border-radius:17px; background:rgba(23,20,15,.36); border:1px solid rgba(255,255,255,.2); display:flex; align-items:center; justify-content:center; }
+  .rail{ position:absolute; right:14px; bottom:18px; display:flex; flex-direction:column; align-items:center; gap:12px; }
+  .rail-btn{ width:46px; height:46px; border-radius:23px; background:rgba(23,20,15,.36); border:1px solid rgba(255,255,255,.2); display:flex; align-items:center; justify-content:center; position:relative; }
+  .rail-btn.new{ outline:2px dashed var(--color_primary_soft); outline-offset:3px; }
+  .rail-count{ position:absolute; bottom:-16px; font-family:ui-monospace,monospace; font-size:9.5px; font-weight:600; color:#FDFBF6; text-shadow:0 1px 2px rgba(0,0,0,.6); }
+  .detail-body{ padding:16px 20px; }
+  .detail-body .title{ font-family:var(--font_display); font-weight:700; font-size:19px; letter-spacing:-.01em; }
+  .detail-body .price{ font-family:var(--font_display); font-weight:600; font-size:22px; color:var(--color_primary_deep); margin-top:6px; }
+
+  /* ── cabecera de la hoja (compartida entre direcciones) ───────────────── */
+  .sheet-scrim{ position:absolute; inset:0; background:rgba(23,20,15,.42); }
+  .sheet-box{ position:absolute; left:0; right:0; bottom:0; background:var(--color_paper); border-top-left-radius:var(--r_24); border-top-right-radius:var(--r_24); box-shadow:0 -10px 26px -12px rgba(30,22,12,.4); display:flex; flex-direction:column; }
+  .sheet-handle{ width:36px; height:4px; border-radius:2px; background:var(--color_paper_3); margin:10px auto 6px; flex:none; }
+  .sheet-head{ display:flex; align-items:center; justify-content:space-between; padding:6px 20px 12px; border-bottom:1px solid var(--color_paper_3); flex:none; }
+  .sheet-head h4{ font-family:var(--font_display); font-weight:700; font-size:16px; margin:0; }
+  .sheet-head .count{ font-family:ui-monospace,monospace; font-size:11px; color:var(--color_gray_2); margin-left:6px; }
+  .sheet-close{ width:28px; height:28px; border-radius:14px; background:var(--color_paper_2); display:flex; align-items:center; justify-content:center; }
+  .sheet-list{ flex:1; overflow:hidden; padding:2px 0 4px; }
+  .ver-mas{ text-align:center; padding:10px; font-size:12px; font-weight:600; color:var(--color_primary); }
+
+  /* ── icon defs ─────────────────────────────────────────────────────────── */
+  svg.ic{ display:block; }
+
+  /* ═══ DIRECCIÓN A — tarjeta compacta, hoja 60%, input docked ═══════════ */
+  .dirA .c-card{ display:flex; gap:9px; padding:10px 20px; }
+  .dirA .c-avatar{ width:32px; height:32px; border-radius:16px; background:var(--color_paper_2); display:flex; align-items:center; justify-content:center; font-family:var(--font_sans); font-weight:700; font-size:12px; color:var(--color_gray_2); flex:none; }
+  .dirA .c-name{ font-family:var(--font_sans); font-weight:600; font-size:12.5px; color:var(--color_ink); }
+  .dirA .c-time{ font-family:ui-monospace,monospace; font-size:10px; color:var(--color_gray_2); margin-left:6px; }
+  .dirA .c-body{ font-family:var(--font_sans); font-weight:400; font-size:13px; line-height:1.42; color:var(--color_ink); margin-top:2px; }
+  .dirA .c-chip{ display:inline-flex; align-items:center; gap:4px; font-size:9.5px; font-weight:600; letter-spacing:.03em; padding:2px 7px; border-radius:var(--r_pill); margin-left:7px; }
+  .dirA .input-bar{ flex:none; border-top:1px solid var(--color_paper_3); padding:10px 20px; display:flex; align-items:center; gap:10px; background:var(--color_surface); }
+  .dirA .input-field{ flex:1; background:var(--color_paper_2); border-radius:var(--r_12); padding:9px 12px; font-size:12.5px; color:var(--color_gray_2); }
+  .dirA .send-btn{ width:34px; height:34px; border-radius:17px; background:var(--color_primary); display:flex; align-items:center; justify-content:center; flex:none; }
+
+  /* ═══ DIRECCIÓN B — tarjeta editorial, nombre display, hoja 90%, input flotante ═══ */
+  .dirB .c-card{ display:flex; gap:12px; padding:14px 22px; }
+  .dirB .c-avatar{ width:40px; height:40px; border-radius:20px; background:var(--color_accent_tint); display:flex; align-items:center; justify-content:center; font-family:var(--font_display); font-weight:600; font-size:13px; color:var(--color_accent); flex:none; }
+  .dirB .c-name{ font-family:var(--font_display); font-weight:600; font-size:15px; letter-spacing:-.005em; color:var(--color_ink); }
+  .dirB .c-time{ font-family:ui-monospace,monospace; font-size:10px; color:var(--color_gray_2); display:block; margin-top:1px; }
+  .dirB .c-body{ font-family:var(--font_sans); font-weight:400; font-size:14px; line-height:1.5; color:var(--color_ink); margin-top:6px; }
+  .dirB .c-chip{ display:inline-flex; align-items:center; gap:5px; font-size:10px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; padding:4px 9px; border-radius:8px; margin-top:8px; }
+  .dirB .input-wrap{ flex:none; padding:10px 18px 16px; background:linear-gradient(180deg,rgba(246,242,235,0),var(--color_paper) 40%); }
+  .dirB .input-pill{ display:flex; align-items:center; gap:10px; background:var(--color_surface); border-radius:var(--r_pill); padding:8px 8px 8px 16px; box-shadow:var(--sh_md); }
+  .dirB .input-pill .field{ flex:1; font-size:13px; color:var(--color_gray_2); }
+  .dirB .send-btn{ width:36px; height:36px; border-radius:18px; background:var(--color_primary); display:flex; align-items:center; justify-content:center; flex:none; }
+
+  /* ═══ DIRECCIÓN C — hilo compacto, riel de color por estado, contador circular ═══ */
+  .dirC .c-card{ display:flex; gap:10px; padding:9px 20px; border-bottom:1px solid var(--color_paper_2); position:relative; }
+  .dirC .c-card::before{ content:''; position:absolute; left:0; top:0; bottom:0; width:3px; background:transparent; }
+  .dirC .c-card.st-review::before{ background:var(--temp_cooling); }
+  .dirC .c-avatar{ width:26px; height:26px; border-radius:13px; background:var(--color_paper_2); display:flex; align-items:center; justify-content:center; font-family:var(--font_sans); font-weight:700; font-size:10.5px; color:var(--color_gray_2); flex:none; }
+  .dirC .c-line{ display:flex; align-items:baseline; gap:6px; flex-wrap:wrap; }
+  .dirC .c-name{ font-family:var(--font_sans); font-weight:700; font-size:12px; }
+  .dirC .c-time{ font-family:ui-monospace,monospace; font-size:9.5px; color:var(--color_gray_2); }
+  .dirC .c-body{ font-family:var(--font_sans); font-size:12.5px; line-height:1.38; color:var(--color_ink); margin-top:1px; }
+  .dirC .c-chip{ font-family:ui-monospace,monospace; font-size:8.5px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; color:var(--temp_cooling); }
+  .dirC .input-bar{ flex:none; border-top:1px solid var(--color_paper_3); padding:8px 16px; display:flex; align-items:center; gap:8px; background:var(--color_surface); }
+  .dirC .input-field{ flex:1; font-size:12px; color:var(--color_gray_2); background:var(--color_paper_2); border-radius:var(--r_8); padding:8px 10px; }
+  .dirC .counter-ring{ width:30px; height:30px; border-radius:15px; display:flex; align-items:center; justify-content:center; flex:none; position:relative; }
+
+  .chip-review{ background:#F3E8CC; color:var(--temp_cooling); }
+  .chip-hidden{ background:var(--color_paper_3); color:var(--color_gray_3); }
+
+  .tradeoff-box{
+    margin-top:4px; padding-top:8px; font-size:11.5px; color:var(--color_gray_2); line-height:1.55;
+    border-top:1px dashed var(--color_paper_3); max-width:340px;
+  }
+  .alt-tag{
+    display:inline-flex; align-items:center; gap:6px; font-family:ui-monospace,monospace; font-size:10px; font-weight:600;
+    letter-spacing:.05em; color:#FFFFFF; background:var(--color_gray_2); padding:3px 9px; border-radius:5px; margin-bottom:10px; width:fit-content;
+  }
+  .alt-col{ display:flex; flex-direction:column; align-items:flex-start; }
+  .alt-col.rec .device{ border:1.5px solid var(--color_primary); }
+  .alt-col.rec .alt-tag{ background:var(--color_primary); }
+
+  .empty-block{ text-align:center; padding:40px 26px; }
+  .empty-icon{ width:52px; height:52px; margin:0 auto 14px; border-radius:18px; background:var(--color_surface); border:1px solid var(--color_paper_3); display:flex; align-items:center; justify-content:center; }
+  .empty-title{ font-family:var(--font_display); font-size:15px; font-weight:600; letter-spacing:-.01em; }
+  .empty-sub{ margin-top:8px; font-size:11.5px; line-height:1.5; color:var(--color_gray_2); max-width:220px; margin-left:auto; margin-right:auto; }
+
+  .skeleton{ background:var(--color_paper_2); border-radius:var(--r_8); }
+
+  .toast{
+    position:absolute; left:14px; right:14px; bottom:16px; background:var(--color_ink);
+    color:#FDFBF6; border-radius:12px; padding:11px 14px; font-size:12px; font-weight:500;
+    display:flex; align-items:center; gap:8px; box-shadow:0 10px 24px -10px rgba(0,0,0,.5); z-index:5;
+  }
+
+  .menu-pop{ position:absolute; background:var(--color_surface); border:1px solid var(--color_paper_3); border-radius:var(--r_12); box-shadow:var(--sh_md); overflow:hidden; z-index:6; }
+  .menu-item{ display:flex; align-items:center; gap:8px; padding:10px 14px; font-size:12.5px; font-weight:600; white-space:nowrap; }
+  .menu-item.danger{ color:var(--color_danger); }
+  .menu-item + .menu-item{ border-top:1px solid var(--color_paper_2); }
+
+  .reason-row{ display:flex; align-items:center; gap:10px; padding:11px 20px; border-bottom:1px solid var(--color_paper_3); }
+  .radio{ width:18px; height:18px; border-radius:9px; border:1.5px solid var(--color_paper_3); flex:none; display:flex; align-items:center; justify-content:center; }
+  .radio.sel{ border-color:var(--color_primary); }
+  .radio.sel::after{ content:''; width:9px; height:9px; border-radius:5px; background:var(--color_primary); }
+
+  .approve-box{
+    max-width:900px; margin-top:16px; background:var(--color_surface);
+    border:1.5px solid var(--color_primary); border-radius:var(--r_16); padding:16px 20px;
+  }
+  .approve-box h4{ font-family:var(--font_display); font-weight:700; font-size:13px; margin:0 0 8px; color:var(--color_primary); text-transform:uppercase; letter-spacing:.04em; }
+  .approve-box ul{ margin:0; padding-left:18px; font-size:12.5px; line-height:1.6; color:var(--color_gray_2); }
+  .approve-box li{ margin-bottom:6px; }
+  .approve-box b{ color:var(--color_ink); }
+  .approve-box code{ background:var(--color_paper_2); padding:1px 5px; border-radius:4px; font-family:ui-monospace,monospace; font-size:11px; }
+
+  .footer-notes{
+    background:var(--color_surface); border:1px solid var(--color_paper_3); border-radius:var(--r_16);
+    padding:22px 26px; box-shadow:var(--sh_md); max-width:920px; margin:0 auto;
+  }
+  .footer-notes h2{ font-family:var(--font_display); font-weight:700; font-size:16px; margin:0 0 12px; }
+  .footer-notes ul{ margin:0; padding-left:18px; font-size:12.5px; line-height:1.65; color:var(--color_gray_2); }
+  .footer-notes li{ margin-bottom:8px; }
+  .footer-notes b{ color:var(--color_ink); }
+  .footer-notes code{ background:var(--color_paper_2); padding:1px 5px; border-radius:4px; font-family:ui-monospace,monospace; font-size:11px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ícono defs (aproximación visual de phosphor-react-native; en RN son los
+       componentes reales: ChatCircle, Flag, EyeSlash, X, PaperPlaneTilt, Lock) -->
+  <svg style="display:none">
+    <symbol id="i-chat" viewBox="0 0 24 24" fill="none"><path d="M4 5h16v11H9l-4 4V5z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></symbol>
+    <symbol id="i-flag" viewBox="0 0 24 24" fill="none"><path d="M6 3v18M6 4h11l-2.5 3.5L17 11H6" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></symbol>
+    <symbol id="i-eyeslash" viewBox="0 0 24 24" fill="none"><path d="M3 3l18 18M10.6 5.2C11 5 11.5 5 12 5c5 0 8.5 4 9.5 7-.4 1.1-1.2 2.4-2.3 3.5M6.5 6.7C4.4 8 3 9.9 2.5 12c1 3 4.5 7 9.5 7 1.4 0 2.7-.3 3.8-.9M9.9 10a3 3 0 0 0 4.2 4.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24" fill="none"><path d="M4 12l16-7-6 16-2.5-6.5L4 12z" fill="currentColor"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24" fill="none"><rect x="5" y="10" width="14" height="10" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M8 10V7a4 4 0 0 1 8 0v3" stroke="currentColor" stroke-width="1.7"/></symbol>
+    <symbol id="i-dots" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="3.4" stroke="currentColor" stroke-width="1.6"/><path d="M5 20c0-3.6 3.1-6.4 7-6.4s7 2.8 7 6.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+  </svg>
+
+  <div class="spec">
+    <h1>Preview aprobable — hoja de comentarios (289.1)</h1>
+    <p class="sub">
+      Componente de <b>firma</b> (nueva superficie de UGC sobre gestión-claro; ni
+      <code>urbea-identidad-visual.html</code> ni <code>Urbea Prototipo (standalone).html</code> la dibujan —
+      exploración <code>048-follow-comentarios-reportes.md</code>, decisión de intake UI-a: preview dentro de esta
+      subtarea). Fase <b>PROPUESTA</b>: 3 direcciones de layout/tipografía, todas realizables con
+      <code>Modal + KeyboardAvoidingView + react-native-safe-area-context</code>, cero dependencias nativas nuevas.
+      El techo de <b>289.8</b> (portar a RN) es exactamente lo que Abraham apruebe aquí.
+    </p>
+    <div class="chips">
+      <span class="tag">gate: <b>CLAUDE.md §8</b> — componente de firma, aprobación humana antes de portar</span>
+      <span class="tag">tipografía: <b>Space Grotesk</b> + <b>Hanken Grotesk</b> (tokens de <code>theme.ts</code>)</span>
+      <span class="tag">entrada: <b>SOLO desde el detalle</b> (rail del feed → derivada #290, ya decidido)</span>
+      <span class="tag">sin nativo: <b>Modal · KeyboardAvoidingView · safe-area-context</b></span>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       SECCIÓN 1 — ENTRADA: 4º botón en el rail de acciones del detalle
+       ═══════════════════════════════════════════════════════════════════ -->
+  <div class="section" id="sec1">
+    <div class="section-head"><div class="section-num">1</div><div class="section-title">Entrada — 4º botón en el rail de acciones</div></div>
+    <div class="section-desc">
+      Calco exacto de <code>ActionButtons.tsx</code> (glass pill 46×46, <code>rgba(23,20,15,0.36)</code>,
+      borde <code>rgba(255,255,255,0.2)</code>, columna con <code>gap:12</code>). El 4º botón (ícono de
+      comentario + contador) se agrega bajo Reportar — mismo patrón de "ausente si no aplica" que ya usa
+      Like (sin video) y Reportar (owner). Tap abre la hoja de la sección 2.
+    </div>
+    <div class="row-flex">
+      <div class="device">
+        <div class="hero-mock">
+          <div class="backbtn"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M15 18l-6-6 6-6" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          <div class="rail">
+            <div class="rail-btn"><svg class="ic" width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M12 21s-7.5-4.6-9.5-9.1C1 8.4 3 5 6.6 5c2 0 3.4 1.2 4.4 2.7C12 6.2 13.4 5 15.4 5 19 5 21 8.4 19.5 11.9 17.5 16.4 12 21 12 21z" stroke="#fff" stroke-width="1.6"/></svg></div>
+            <div class="rail-btn"><svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M6 3h12v18l-6-4-6 4V3z" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg></div>
+            <div class="rail-btn"><svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" style="color:#fff"><use href="#i-flag"/></svg></div>
+            <div class="rail-btn new">
+              <svg class="ic" width="19" height="19" viewBox="0 0 24 24" fill="none" style="color:#fff"><use href="#i-chat"/></svg>
+              <span class="rail-count">24</span>
+            </div>
+          </div>
+        </div>
+        <div class="detail-body">
+          <div class="title">Depa 2 rec · Roma Norte</div>
+          <div class="price">$4,200,000</div>
+        </div>
+      </div>
+
+      <div style="flex:1; min-width:300px; max-width:520px;">
+        <div class="tradeoff-box" style="max-width:none; border-top:none; padding-top:0">
+          Único elemento <b>nuevo</b> del rail (recuadro punteado = anotación de este preview, no se dibuja
+          en RN). El contador reusa <code>properties.comment_count</code> (columna aditiva propuesta en el
+          bloque 2 de la exploración 048) — mismo mecanismo que <code>like_count</code>/<code>save_count</code>.
+          Sin badge de "nuevo"/no-leído: el PRD no lo pide y añadiría estado que sincronizar.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       SECCIÓN 2 — 3 DIRECCIONES DE LA HOJA
+       ═══════════════════════════════════════════════════════════════════ -->
+  <div class="section" id="sec2">
+    <div class="section-head"><div class="section-num">2</div><div class="section-title">3 direcciones — hoja de comentarios</div></div>
+    <div class="section-desc">
+      Varían densidad de tarjeta, jerarquía tipográfica (nombre en Hanken/UI vs. Space Grotesk/display),
+      altura de la hoja, tratamiento de chips de estado y posición del input. Las 3 son
+      <code>Modal transparent + KeyboardAvoidingView + safe-area-context</code> — ninguna usa
+      <code>@gorhom/bottom-sheet</code> ni gestos de arrastre.
+    </div>
+
+    <div class="row-flex">
+
+      <!-- ── A: RECOMENDADA ─────────────────────────────────────────────── -->
+      <div class="alt-col rec">
+        <span class="alt-tag">RECOMENDADA — A: tarjeta compacta · hoja 60% · input docked</span>
+        <div class="device tall dirA">
+          <div class="hero-mock" style="height:120px"></div>
+          <div class="sheet-scrim"></div>
+          <div class="sheet-box" style="height:60%">
+            <div class="sheet-handle"></div>
+            <div class="sheet-head">
+              <h4>Comentarios<span class="count">24</span></h4>
+              <div class="sheet-close"><svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" style="color:var(--color_ink)"><use href="#i-x"/></svg></div>
+            </div>
+            <div class="sheet-list">
+              <div class="c-card">
+                <div class="c-avatar">KI</div>
+                <div style="flex:1; min-width:0">
+                  <span class="c-name">Karla Ibarra</span><span class="c-time">hace 2 h</span>
+                  <div class="c-body">¿La cocina tiene barra o es cerrada? se ve muy amplia en el video 😍</div>
+                </div>
+              </div>
+              <div class="c-card">
+                <div class="c-avatar">FR</div>
+                <div style="flex:1; min-width:0">
+                  <span class="c-name">Fernando Reyes (tú)</span><span class="c-time">hace 5 min</span>
+                  <span class="c-chip chip-review">EN REVISIÓN</span>
+                  <div class="c-body">Yo compré algo similar hace poco, contáctenme al 33...</div>
+                </div>
+              </div>
+              <div class="c-card">
+                <div class="c-avatar">RS</div>
+                <div style="flex:1; min-width:0">
+                  <span class="c-name">Renata Solís</span><span class="c-time">hace 1 d</span>
+                  <div class="c-body">Se ve espectacular, ¿acepta crédito Infonavit?</div>
+                </div>
+              </div>
+              <div class="ver-mas">Ver más comentarios</div>
+            </div>
+            <div class="input-bar">
+              <div class="input-field">Escribe un comentario…</div>
+              <div class="send-btn"><svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" style="color:#fff"><use href="#i-send"/></svg></div>
+            </div>
+          </div>
+        </div>
+        <div class="tradeoff-box">
+          <b>Gana:</b> máxima densidad (más comentarios visibles sin scroll), hoja baja (60%) deja ver
+          contexto del detalle detrás, input "docked" idéntico al patrón ya construido en
+          <code>ReportPropertySheet.tsx</code> (cero superficie nueva de layout). <b>Pierde:</b> el
+          comentario se siente más "utilitario" que social — menos foco en quién habla.
+        </div>
+      </div>
+
+      <!-- ── B ───────────────────────────────────────────────────────────── -->
+      <div class="alt-col">
+        <span class="alt-tag">B: tarjeta editorial · hoja 90% · input flotante</span>
+        <div class="device tall dirB">
+          <div class="hero-mock" style="height:60px"></div>
+          <div class="sheet-scrim"></div>
+          <div class="sheet-box" style="height:90%">
+            <div class="sheet-handle"></div>
+            <div class="sheet-head">
+              <h4>Comentarios<span class="count">24</span></h4>
+              <div class="sheet-close"><svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none"><use href="#i-x"/></svg></div>
+            </div>
+            <div class="sheet-list">
+              <div class="c-card">
+                <div class="c-avatar">KI</div>
+                <div style="flex:1; min-width:0">
+                  <span class="c-name">Karla Ibarra</span><span class="c-time">hace 2 h</span>
+                  <div class="c-body">¿La cocina tiene barra o es cerrada? se ve muy amplia en el video 😍</div>
+                </div>
+              </div>
+              <div class="c-card">
+                <div class="c-avatar">FR</div>
+                <div style="flex:1; min-width:0">
+                  <span class="c-name">Fernando Reyes (tú)</span><span class="c-time">hace 5 min</span>
+                  <div class="c-body">Yo compré algo similar hace poco, contáctenme al 33...</div>
+                  <span class="c-chip chip-review">EN REVISIÓN — solo tú la ves</span>
+                </div>
+              </div>
+              <div class="c-card">
+                <div class="c-avatar">RS</div>
+                <div style="flex:1; min-width:0">
+                  <span class="c-name">Renata Solís</span><span class="c-time">hace 1 d</span>
+                  <div class="c-body">Se ve espectacular, ¿acepta crédito Infonavit?</div>
+                </div>
+              </div>
+              <div class="ver-mas">Ver más comentarios</div>
+            </div>
+            <div class="input-wrap">
+              <div class="input-pill">
+                <span class="field">Escribe un comentario…</span>
+                <div class="send-btn"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" style="color:#fff"><use href="#i-send"/></svg></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="tradeoff-box">
+          <b>Gana:</b> nombre en Space Grotesk le da voz/peso editorial al comentario (más "social",
+          coherente con el feed inmersivo); hoja 90% = casi pantalla completa, foco total en la conversación.
+          <b>Pierde:</b> menos comentarios por vistazo (más alto por tarjeta), tapa casi todo el detalle
+          detrás (se pierde contexto de la propiedad mientras se lee), la píldora flotante exige un
+          degradado extra detrás para no "flotar en el aire" sobre texto.
+        </div>
+      </div>
+
+      <!-- ── C ───────────────────────────────────────────────────────────── -->
+      <div class="alt-col">
+        <span class="alt-tag">C: hilo compacto · riel de color · hoja 75%</span>
+        <div class="device tall dirC">
+          <div class="hero-mock" style="height:100px"></div>
+          <div class="sheet-scrim"></div>
+          <div class="sheet-box" style="height:75%">
+            <div class="sheet-handle"></div>
+            <div class="sheet-head">
+              <h4>Comentarios<span class="count">24</span></h4>
+              <div class="sheet-close"><svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none"><use href="#i-x"/></svg></div>
+            </div>
+            <div class="sheet-list">
+              <div class="c-card">
+                <div class="c-avatar">KI</div>
+                <div style="flex:1; min-width:0">
+                  <div class="c-line"><span class="c-name">Karla Ibarra</span><span class="c-time">hace 2 h</span></div>
+                  <div class="c-body">¿La cocina tiene barra o es cerrada? se ve muy amplia en el video 😍</div>
+                </div>
+              </div>
+              <div class="c-card st-review">
+                <div class="c-avatar">FR</div>
+                <div style="flex:1; min-width:0">
+                  <div class="c-line"><span class="c-name">Fernando Reyes (tú)</span><span class="c-time">hace 5 min</span><span class="c-chip">· EN REVISIÓN</span></div>
+                  <div class="c-body">Yo compré algo similar hace poco, contáctenme al 33...</div>
+                </div>
+              </div>
+              <div class="c-card">
+                <div class="c-avatar">RS</div>
+                <div style="flex:1; min-width:0">
+                  <div class="c-line"><span class="c-name">Renata Solís</span><span class="c-time">hace 1 d</span></div>
+                  <div class="c-body">Se ve espectacular, ¿acepta crédito Infonavit?</div>
+                </div>
+              </div>
+              <div class="c-card">
+                <div class="c-avatar">DM</div>
+                <div style="flex:1; min-width:0">
+                  <div class="c-line"><span class="c-name">Diego Martínez</span><span class="c-time">hace 2 d</span></div>
+                  <div class="c-body">¿Cuánto de mantenimiento tiene el edificio?</div>
+                </div>
+              </div>
+              <div class="ver-mas">Ver más comentarios</div>
+            </div>
+            <div class="input-bar">
+              <div class="input-field">Escribe un comentario…</div>
+              <div class="counter-ring" style="background:conic-gradient(var(--color_primary) 8%, var(--color_paper_3) 0)">
+                <div style="width:24px;height:24px;border-radius:12px;background:var(--color_surface);display:flex;align-items:center;justify-content:center;font-family:ui-monospace,monospace;font-size:7.5px;color:var(--color_gray_2)">40/500</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="tradeoff-box">
+          <b>Gana:</b> máxima densidad de todas (sin card ni fondo, solo divisores — cabe un comentario
+          más por pantalla que A), el riel de color a la izquierda es reconocible de un vistazo (mismo
+          lenguaje que el riel de temperatura del CRM, sección 267/269). <b>Pierde:</b> el riel de color como
+          único indicador de estado es un patrón <i>nuevo</i> para UGC (en el CRM el riel es temperatura,
+          aquí sería estado de moderación) — exige leyenda la primera vez; el contador circular es bonito
+          pero un dato más para calcular en cada tecla.
+        </div>
+      </div>
+
+    </div>
+
+    <div class="approve-box">
+      <h4>Qué aprobar</h4>
+      <ul>
+        <li><b>Recomendación: A</b> — mejor balance densidad/contexto, input docked reusa el patrón exacto
+          de <code>ReportPropertySheet.tsx</code> (cero diseño nuevo en ese renglón), hoja baja (60%) dejando
+          ver la propiedad detrás ayuda a no perder el "de qué se habla" mientras se lee.</li>
+        <li><b>Elemento fijo en las 3 (no varía):</b> handle superior, cabecera título+contador+cierre,
+          "Ver más" al final de la lista — son lenguaje de hoja ya establecido en el sistema (269, perfil).</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       SECCIÓN 3 — ESTADOS (sobre la dirección recomendada A)
+       ═══════════════════════════════════════════════════════════════════ -->
+  <div class="section" id="sec3">
+    <div class="section-head"><div class="section-num">3</div><div class="section-title">Estados</div></div>
+    <div class="section-desc">
+      Todos dibujados con el lenguaje de la dirección A (recomendada); si Abraham aprueba B o C, el mismo
+      set de estados se recalca con esos tokens sin rediseño (son variables de card, no de estado).
+    </div>
+
+    <div class="row-flex">
+
+      <!-- vacío -->
+      <div class="device mid dirA">
+        <div class="sheet-head" style="border-bottom:none; padding-top:16px"><h4>Comentarios<span class="count">0</span></h4><div class="sheet-close"><svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none"><use href="#i-x"/></svg></div></div>
+        <div class="empty-block">
+          <div class="empty-icon"><svg class="ic" width="22" height="22" viewBox="0 0 24 24" fill="none" style="color:var(--color_primary)"><use href="#i-chat"/></svg></div>
+          <div class="empty-title">Sé el primero en comentar</div>
+          <div class="empty-sub">Comparte tu opinión sobre esta propiedad.</div>
+        </div>
+      </div>
+
+      <!-- cargando -->
+      <div class="device mid dirA">
+        <div class="sheet-head" style="border-bottom:none; padding-top:16px"><h4>Comentarios</h4><div class="sheet-close"><svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none"><use href="#i-x"/></svg></div></div>
+        <div style="padding:4px 20px">
+          <div style="display:flex;gap:9px;margin-bottom:16px"><div class="skeleton" style="width:32px;height:32px;border-radius:16px"></div><div style="flex:1"><div class="skeleton" style="width:40%;height:10px;margin-bottom:8px"></div><div class="skeleton" style="width:90%;height:10px;margin-bottom:5px"></div><div class="skeleton" style="width:60%;height:10px"></div></div></div>
+          <div style="display:flex;gap:9px"><div class="skeleton" style="width:32px;height:32px;border-radius:16px"></div><div style="flex:1"><div class="skeleton" style="width:35%;height:10px;margin-bottom:8px"></div><div class="skeleton" style="width:75%;height:10px"></div></div></div>
+        </div>
+      </div>
+
+      <!-- autor eliminado -->
+      <div class="device mid dirA">
+        <div class="sheet-head" style="border-bottom:none; padding-top:16px"><h4>Comentarios<span class="count">3</span></h4><div class="sheet-close"><svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none"><use href="#i-x"/></svg></div></div>
+        <div class="c-card dirA">
+          <div class="c-avatar" style="background:var(--color_paper_3)"><svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" style="color:var(--color_gray_2)"><use href="#i-user"/></svg></div>
+          <div style="flex:1; min-width:0">
+            <span class="c-name" style="color:var(--color_gray_2); font-style:italic">Usuario eliminado</span><span class="c-time">hace 3 d</span>
+            <div class="c-body">Excelente ubicación, muy cerca del metro.</div>
+          </div>
+        </div>
+        <div class="tradeoff-box" style="max-width:none; margin:0 20px">Texto conservado (§25 del PRD); solo el nombre/foto se anonimizan — la FK no puede ser <code>on delete cascade</code> (decisión de esquema en 289.2, no de este preview).</div>
+      </div>
+
+    </div>
+
+    <div class="row-flex" style="margin-top:26px">
+
+      <!-- oculto (solo gestor) -->
+      <div class="device mid dirA">
+        <div class="sheet-head" style="border-bottom:none; padding-top:16px"><h4>Comentarios<span class="count">3</span></h4><div class="sheet-close"><svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none"><use href="#i-x"/></svg></div></div>
+        <div class="c-card dirA" style="opacity:.55">
+          <div class="c-avatar">DM</div>
+          <div style="flex:1; min-width:0">
+            <span class="c-name">Diego Martínez</span><span class="c-time">hace 4 d</span>
+            <span class="c-chip chip-hidden"><svg class="ic" width="9" height="9" viewBox="0 0 24 24" fill="none" style="vertical-align:-1px"><use href="#i-eyeslash"/></svg> OCULTO</span>
+            <div class="c-body">contáctenme directo al whats 55 1234...</div>
+          </div>
+        </div>
+        <div class="tradeoff-box" style="max-width:none; margin:0 20px">Ocultado por el gestor de la propiedad — <b>solo él/agencia/admin lo ve</b> (con el chip); un usuario cualquiera no lo lista en absoluto (filtrado por RLS, no por UI).</div>
+      </div>
+
+      <!-- filtro rechazó -->
+      <div class="device mid dirA">
+        <div class="sheet-head" style="border-bottom:none; padding-top:16px"><h4>Comentarios<span class="count">24</span></h4><div class="sheet-close"><svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none"><use href="#i-x"/></svg></div></div>
+        <div style="flex:1"></div>
+        <div style="padding:0 20px 8px">
+          <div style="font-size:11px; color:var(--color_danger); line-height:1.4">Tu comentario incluye datos de contacto; quítalos para publicarlo.</div>
+        </div>
+        <div class="input-bar">
+          <div class="input-field" style="color:var(--color_ink)">llámenme al 33 1234 5678</div>
+          <div class="send-btn" style="background:var(--color_gray_1)"><svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" style="color:#fff"><use href="#i-send"/></svg></div>
+        </div>
+      </div>
+
+      <!-- sin sesión -->
+      <div class="device mid dirA">
+        <div class="sheet-head" style="border-bottom:none; padding-top:16px"><h4>Comentarios<span class="count">24</span></h4><div class="sheet-close"><svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none"><use href="#i-x"/></svg></div></div>
+        <div style="flex:1"></div>
+        <div style="padding:14px 20px; display:flex; align-items:center; gap:10px; border-top:1px solid var(--color_paper_3); background:var(--color_paper_2)">
+          <svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" style="color:var(--color_gray_2)"><use href="#i-lock"/></svg>
+          <span style="flex:1; font-size:12.5px; font-weight:600; color:var(--color_gray_3)">Inicia sesión para comentar</span>
+          <div style="background:var(--color_primary); color:#fff; font-size:11.5px; font-weight:700; padding:8px 14px; border-radius:var(--r_8)">Entrar</div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="approve-box">
+      <h4>Qué aprobar</h4>
+      <ul>
+        <li><b>«En revisión» y «Oculto» son distintos:</b> "en revisión" (<code>held_for_review</code>) lo ve
+          SOLO el autor mientras el filtro EF decide; "oculto" (<code>hidden</code>) lo ve solo quien lo
+          ocultó/gestiona — un tercero nunca ve ninguno de los dos (RLS, no maquetado condicional en el
+          cliente).</li>
+        <li><b>«Filtro rechazó» vs. «en revisión»:</b> el input muestra el mensaje inline como feedback
+          inmediato de que el envío quedará marcado, no como bloqueo duro — el comentario SÍ se publica
+          (con chip). Si 289.5 (EF <code>post-comment</code>) decide que algún patrón se bloquea sin enviar
+          en vez de marcar, es un ajuste de copy, no de layout.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       SECCIÓN 4 — ACCIONES: REPORTAR Y OCULTAR
+       ═══════════════════════════════════════════════════════════════════ -->
+  <div class="section" id="sec4">
+    <div class="section-head"><div class="section-num">4</div><div class="section-title">Acciones por comentario — Reportar y Ocultar</div></div>
+    <div class="section-desc">
+      Menú por comentario (⋯ o long-press). <b>Reportar</b> para cualquier autenticado (motivos del enunciado:
+      spam · ofensivo · contacto/fraude · otro con texto — mapeo final al enum SQL es decisión de 289.3, no
+      de este preview). <b>Ocultar</b> solo visible si la sesión gestiona la propiedad (dueño / dueño-admin de
+      agencia / admin de plataforma).
+    </div>
+
+    <div class="row-flex">
+
+      <!-- menú -->
+      <div class="device mid dirA">
+        <div class="sheet-head" style="padding-top:16px"><h4>Comentarios</h4><div class="sheet-close"><svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none"><use href="#i-x"/></svg></div></div>
+        <div class="c-card" style="position:relative">
+          <div class="c-avatar">KI</div>
+          <div style="flex:1; min-width:0">
+            <span class="c-name">Karla Ibarra</span><span class="c-time">hace 2 h</span>
+            <div class="c-body">¿La cocina tiene barra o es cerrada?</div>
+          </div>
+          <svg class="ic" width="16" height="16" viewBox="0 0 24 24" style="color:var(--color_gray_2); margin-top:2px"><use href="#i-dots"/></svg>
+          <div class="menu-pop" style="top:34px; right:18px">
+            <div class="menu-item"><svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none"><use href="#i-eyeslash"/></svg> Ocultar</div>
+            <div class="menu-item danger"><svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none"><use href="#i-flag"/></svg> Reportar</div>
+          </div>
+        </div>
+        <div class="tradeoff-box" style="max-width:none; margin:8px 20px 0">Vista del <b>gestor</b> de la propiedad — ve ambas opciones. Un usuario cualquiera solo ve "Reportar".</div>
+      </div>
+
+      <!-- hoja de reporte -->
+      <div class="device tall" style="height:420px">
+        <div class="sheet-head" style="padding-top:16px"><h4>Reportar comentario</h4><div class="sheet-close"><svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none"><use href="#i-x"/></svg></div></div>
+        <div class="reason-row"><div class="radio sel"></div><span style="font-size:13px; font-weight:600">Spam</span></div>
+        <div class="reason-row"><div class="radio"></div><span style="font-size:13px; font-weight:600">Ofensivo</span></div>
+        <div class="reason-row"><div class="radio"></div><span style="font-size:13px; font-weight:600">Contacto / fraude</span></div>
+        <div class="reason-row" style="border-bottom:none"><div class="radio"></div><span style="font-size:13px; font-weight:600">Otro</span></div>
+        <div style="padding:0 20px 16px; margin-top:auto">
+          <div style="background:var(--color_primary); color:#fff; text-align:center; font-weight:700; font-size:13.5px; padding:13px; border-radius:var(--r_12)">Enviar reporte</div>
+        </div>
+      </div>
+
+      <!-- confirmación -->
+      <div class="device mid" style="display:flex; align-items:center; justify-content:center">
+        <div class="toast" style="position:static; width:auto; margin:0 20px">
+          <svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none"><use href="#i-check"/></svg>
+          Reportado, gracias
+        </div>
+      </div>
+
+    </div>
+
+    <div class="approve-box">
+      <h4>Qué aprobar</h4>
+      <ul>
+        <li><b>Reuso directo:</b> la hoja de reporte calca <code>ReportPropertySheet.tsx</code> (radio list +
+          texto condicional en "Otro" + submit deshabilitado hasta elegir motivo) — mismo componente
+          adaptado con nuevos <code>REASONS</code>, no una pantalla nueva.</li>
+        <li><b>UI_FUERA_DEL_MOCKUP:</b> feedback tras <b>Ocultar</b> — ninguna referencia (ni el enunciado de
+          esta subtarea) dibuja qué ve el gestor al ocultar un comentario; sin aviso, no sabe si funcionó.
+          Costo <b>XS</b> (mismo toast de arriba, texto "Comentario ocultado").
+          <br>→ <b>(1) en conjunto:</b> incluirlo en 289.8 al portar la hoja — una línea de estado + el
+          toast que ya se dibuja en esta sección para "Reportado, gracias".
+          <br>→ <b>(2) default — derivada:</b> <code>producto(289.1): feedback de "Comentario ocultado" con
+          deshacer</code>, dependencies=["289"].</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       NOTAS FINALES
+       ═══════════════════════════════════════════════════════════════════ -->
+  <div class="footer-notes">
+    <h2>Notas para Abraham</h2>
+    <ul>
+      <li><b>Aprobación por pantalla (CLAUDE.md §8):</b> nada de esto se porta a RN (289.8) hasta que
+        Abraham apruebe una dirección — recomendada <b>A</b>. Puede aprobar A completa, o mezclar (p. ej.
+        chips de B con densidad de A) — decisión suya, este preview solo propone.</li>
+      <li><b>Tokens de <code>theme.ts</code> usados:</b> <code>colors.primary/primary_soft/primary_tint/
+        primary_deep</code>, <code>colors.accent/accent_tint</code>, <code>colors.paper/paper_2/paper_3</code>,
+        <code>colors.ink/ink_feed</code>, <code>colors.gray_1/gray_2/gray_3</code>, <code>colors.danger</code>,
+        <code>colors.temp_cooling</code> (reusado para el chip ámbar "en revisión" — sin inventar color),
+        <code>fonts.display/sans/sans_semibold</code>, <code>radii.r_8/r_12/r_16/r_24/r_pill</code>,
+        <code>spacing.s_4..s_32</code>, <code>shadows.md</code>.</li>
+      <li><b>Íconos:</b> aproximación visual con SVG inline; en RN son <code>phosphor-react-native</code> ya
+        instalado (<code>ChatCircle</code>, <code>Flag</code>, <code>EyeSlash</code>, <code>X</code>,
+        <code>PaperPlaneTilt</code>, <code>Lock</code>, <code>DotsThree</code>, <code>Check</code>,
+        <code>UserCircle</code>) — mismo criterio que <code>ActionButtons.tsx</code>.</li>
+      <li><b>Cupo <code>UI_FUERA_DEL_MOCKUP</code> (§8):</b> 1/2 usado en esta subtarea (feedback de
+        Ocultar, sección 4). La hoja completa NO cuenta contra el cupo — ya fue resuelta como decisión de
+        intake (UI-a) en la exploración 048.</li>
+      <li><b>Verificación de este preview:</b> HTML/CSS/SVG inline puro, sin JS, sin recursos externos salvo
+        Google Fonts — cero riesgo de producción (fuera del bundle de <code>mobile/</code>). Servir con
+        <code>python3 -m http.server</code> desde <code>mobile/design-previews/</code>, nunca <code>file://</code>.</li>
+      <li><b>Siguiente paso:</b> Abraham aprueba dirección (y las 2 opciones del punto Ocultar) → 289.2
+        (migración <code>comments</code>) puede arrancar en paralelo (no depende del preview) → 289.8 porta
+        la dirección aprobada a <code>mobile/src/features/property-detail/components/CommentsSheet.tsx</code>.</li>
+    </ul>
+  </div>
+
+</div>
+</body>
+</html>
