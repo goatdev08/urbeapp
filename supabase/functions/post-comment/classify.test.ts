@@ -159,6 +159,18 @@ Deno.test("TELB2_ocho_digitos_pegados_en_el_umbral_va_a_revision", () => {
 
 // ── Email ────────────────────────────────────────────────────────────────────────
 
+Deno.test("EMAIL4_correo_con_tld_fuera_de_la_lista_cae_solo_por_la_rama_email", () => {
+  // guardian 289.5: sin este caso EMAIL_REGEX era un mutante vivo (dominio.com lo
+  // atrapaba antes la regla de dominio bare).
+  const result = classify_comment("escríbeme a alguien@correo.es", []);
+  assertEquals(result, "held_for_review");
+});
+
+Deno.test("URL5_dominio_bare_mx_va_a_revision", () => {
+  const result = classify_comment("visita ejemplo.mx", []);
+  assertEquals(result, "held_for_review");
+});
+
 Deno.test("EMAIL1_direccion_de_correo_va_a_revision", () => {
   const result = classify_comment("escríbeme a alguien@dominio.com por favor", []);
   assertEquals(result, "held_for_review");
