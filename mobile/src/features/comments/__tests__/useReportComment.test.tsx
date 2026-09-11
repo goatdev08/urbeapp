@@ -81,6 +81,7 @@
 import { renderHook, act } from '@testing-library/react-native';
 
 import { useAuth } from '@/features/auth/context';
+import { make_binding_sensitive_supabase_mock } from '@/test-utils/supabaseMock';
 
 import { useReportComment, type SubmitCommentReportResult } from '../hooks/useReportComment';
 
@@ -108,32 +109,38 @@ const GENERIC_ERROR_MESSAGE = 'No se pudo enviar el reporte. Intenta de nuevo.';
 const mock_use_auth = useAuth as jest.MockedFunction<typeof useAuth>;
 
 // ---------------------------------------------------------------------------
-// Helpers de mock del cliente supabase-js (calco useReportProperty.test.tsx)
+// Helpers de mock del cliente supabase-js (calco useReportProperty.test.tsx,
+// migrado a make_binding_sensitive_supabase_mock — hallazgo guardián 289.7
+// ciclo 1, m23: un `from` de objeto plano no detecta `client.from`
+// DESPRENDIDO del cliente, solo el `insert()` desprendido del builder).
 // ---------------------------------------------------------------------------
 
 type InsertResult = { error: { message: string; code?: string } | null };
 type InsertCall = Record<string, unknown>;
 
 function make_client(behavior: () => Promise<InsertResult>): {
-  client: { from: jest.Mock };
+  client: any;
   calls: { table: string; row: InsertCall }[];
   was_detached: () => boolean;
+  _mock_from: jest.Mock;
 } {
   const calls: { table: string; row: InsertCall }[] = [];
   let detached = false;
 
-  const from = jest.fn((table: string) => {
-    const builder = {
-      insert(this: unknown, row: InsertCall) {
-        if (this !== builder) detached = true;
-        calls.push({ table, row });
-        return behavior();
-      },
-    };
-    return builder;
+  const mock = make_binding_sensitive_supabase_mock({
+    from: (table: string) => {
+      const builder = {
+        insert(this: unknown, row: InsertCall) {
+          if (this !== builder) detached = true;
+          calls.push({ table, row });
+          return behavior();
+        },
+      };
+      return builder;
+    },
   });
 
-  return { client: { from }, calls, was_detached: () => detached };
+  return { client: mock.client, calls, was_detached: () => detached, _mock_from: mock._mock_from };
 }
 
 const ok_insert = (): Promise<InsertResult> => Promise.resolve({ error: null });
@@ -212,9 +219,9 @@ describe('useReportComment — happy path', () => {
       await result.current.report(COMMENT_ID_A, 'duplicate');
     });
 
-    expect(mock.client.from).toHaveBeenCalledWith('comment_reports');
-    expect(mock.client.from).not.toHaveBeenCalledWith('property_reports');
-    expect(mock.client.from).not.toHaveBeenCalledWith('user_reports');
+    expect(mock._mock_from).toHaveBeenCalledWith('comment_reports');
+    expect(mock._mock_from).not.toHaveBeenCalledWith('property_reports');
+    expect(mock._mock_from).not.toHaveBeenCalledWith('user_reports');
   });
 });
 

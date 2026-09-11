@@ -98,6 +98,10 @@
  * ### 🔴 Integridad del cliente supabase-js (#205)
  * - (EC-18) from_no_se_desprende_del_cliente_el_flujo_completo_no_lanza
  * - (EC-21) segunda_pagina_tambien_usa_from_ligado_al_cliente_no_solo_la_primera
+ *
+ * ### 🔴 Paginación exacta (hallazgo guardián 289.7, ciclo 1: m11/m24 sobrevivían)
+ * - (EC-22) la_query_pide_limit_page_size_mas_1_el_truco_limit_uno_que_hace_has_more_exacto
+ * - (EC-23) ordena_por_created_at_desc_e_id_desc_el_2o_order_desempata_el_keyset
  */
 
 import { renderHook, act } from '@testing-library/react-native';
@@ -188,6 +192,12 @@ describe('useComments — happy path', () => {
 
     const eq_calls = calls.comments![0]!.filter((c) => c.method === 'eq');
     expect(eq_calls).toContainEqual({ method: 'eq', args: ['property_id', PROPERTY_ID] });
+
+    // 🔧 Hallazgo guardián 289.7 (ciclo 1, m26): nadie aseguraba columnas
+    // explícitas — un select('*') pasaba sin que ningún test lo notara.
+    const select_call = calls.comments![0]!.find((c) => c.method === 'select');
+    expect(select_call?.args[0]).not.toBe('*');
+    expect(select_call?.args[0]).toBe('id, property_id, user_id, body, status, created_at');
   });
 
   it('EC-3 filtra .neq("status","deleted") y NO agrega un .in de status explícito', async () => {
@@ -317,14 +327,20 @@ describe('useComments — 🔴 PRD §18.1/§18.2', () => {
   });
 
   it('EC-9 load_more apenda SIN DUPLICAR ids que ya están en items', async () => {
+    // 🔧 Fix guardián 289.7 (ciclo 1, m5): la versión original repetía R2 (una
+    // fila que NUNCA había entrado a items — se descartó como extra del
+    // LIMIT+1 en la 1ª página) y no probaba nada: sin el id realmente
+    // presente en items, el filtro de dedupe nunca se ejercitaba (mutante
+    // "load_more sin dedupe" sobrevivía, 0/21 fallan). Ahora la 2ª página
+    // repite R1 (que SÍ está en items) junto con R2 (nuevo) — si el dedupe
+    // se quita, R1 se duplicaría en el resultado.
     const R1: CommentRow = { id: 'c-10', property_id: PROPERTY_ID, user_id: 'u-1', body: 'r1', status: 'visible', created_at: '2026-09-05T12:00:00.000Z' };
     const R2: CommentRow = { id: 'c-9', property_id: PROPERTY_ID, user_id: 'u-1', body: 'r2', status: 'visible', created_at: '2026-09-05T11:00:00.000Z' };
-    const R4: CommentRow = { id: 'c-7', property_id: PROPERTY_ID, user_id: 'u-1', body: 'r4', status: 'visible', created_at: '2026-09-05T09:00:00.000Z' };
 
     const { client } = build_client({
       comments: [
-        { data: [R1, R2], error: null }, // page_size=2, exactamente 2 → has_more false ya… forzamos con page_size=1
-        { data: [R2, R4], error: null }, // servidor repite R2 por un glitch de límite
+        { data: [R1, R2], error: null }, // page_size=1 → limit=2; 2 filas → has_more=true, se descarta R2 (extra), queda [R1]
+        { data: [R1, R2], error: null }, // el servidor repite AMBAS filas (incluye R1, ya presente en items)
       ],
       agent_public_profiles: [{ data: [], error: null }],
     });
@@ -341,8 +357,10 @@ describe('useComments — 🔴 PRD §18.1/§18.2', () => {
       await result.current.load_more();
     });
 
-    // 2ª página trae [R2, R4] (limit=2, exactamente 2 → has_more false, sin descarte).
-    expect(result.current.items.map((i) => i.id)).toEqual(['c-10', 'c-9', 'c-7']);
+    // R1 (ya en items) se descarta por dedupe; solo R2 (nuevo) se apenda —
+    // si el filtro se quita, R1 aparecería duplicado.
+
+    expect(result.current.items.map((i) => i.id)).toEqual(['c-10', 'c-9']);
   });
 });
 
@@ -428,12 +446,35 @@ describe('useComments — 🔴 ramas no obvias', () => {
 
 describe('useComments — boundary / error', () => {
   it('EC-11 sonda del primer render: loading=true, items=[], has_more=false, error=null', async () => {
-    const { client } = build_client({
-      comments: [{ data: [ROW_A], error: null }],
-      agent_public_profiles: [{ data: [], error: null }],
+    // 🔧 Fix RED (bug evidente, reportado en green-7.md): un mock que SÍ
+    // resuelve (como el original con ROW_A) queda completamente drenado por
+    // el propio `await renderHook(...)` — RNTL14/React18: `render()` envuelve
+    // el montaje en `act()` AWAITED, que vacía la cola de microtareas hasta
+    // quedar quieto, así que una cadena 100% basada en microtasks (como la de
+    // este mock) siempre termina resuelta antes de que `renderHook` retorne.
+    // Mismo patrón ya usado en useMyAds.test.tsx (EC-10/EC-11) y en EC-20 de
+    // este mismo archivo: una promesa que NUNCA resuelve es la única forma de
+    // aislar el estado SÍNCRONO del primer render.
+    const pending = new Promise<{ data: unknown; error: unknown }>(() => {});
+    const mock = make_binding_sensitive_supabase_mock({
+      from: (table: string) =>
+        table === 'comments'
+          ? {
+              select: jest.fn().mockReturnThis(),
+              eq: jest.fn().mockReturnThis(),
+              neq: jest.fn().mockReturnThis(),
+              order: jest.fn().mockReturnThis(),
+              limit: jest.fn().mockReturnThis(),
+              then: (resolve: (v: unknown) => void) => pending.then(resolve),
+            }
+          : {
+              select: jest.fn().mockReturnThis(),
+              in: jest.fn().mockReturnThis(),
+              then: (resolve: (v: unknown) => void) => Promise.resolve({ data: [], error: null }).then(resolve),
+            },
     });
 
-    const { result } = await renderHook(() => useComments(PROPERTY_ID, { supabase: client }));
+    const { result } = await renderHook(() => useComments(PROPERTY_ID, { supabase: mock.client }));
 
     expect(result.current.loading).toBe(true);
     expect(result.current.items).toEqual([]);
@@ -646,5 +687,46 @@ describe('useComments — 🔴 no desprender métodos de supabase-js (#205)', ()
       threw = e;
     }
     expect(threw).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 🔴 Paginación exacta — LIMIT+1 y desempate por id (hallazgo guardián 289.7,
+// ciclo 1: los mutantes "limit sin +1" y "sin .order('id')" sobrevivían
+// porque ningún test aserta estos dos hechos directamente).
+// ---------------------------------------------------------------------------
+
+describe('useComments — 🔴 paginación exacta (LIMIT+1 y desempate)', () => {
+  it('EC-22 la query pide .limit(page_size + 1) — el truco LIMIT+1 que hace has_more exacto', async () => {
+    const { client, calls } = build_client({
+      comments: [{ data: [], error: null }],
+      agent_public_profiles: [{ data: [], error: null }],
+    });
+
+    await renderHook(() => useComments(PROPERTY_ID, { page_size: 7, supabase: client }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const limit_call = calls.comments![0]!.find((c) => c.method === 'limit');
+    expect(limit_call?.args[0]).toBe(8);
+  });
+
+  it("EC-23 ordena por (created_at desc, id desc) — el 2º order desempata el keyset", async () => {
+    const { client, calls } = build_client({
+      comments: [{ data: [], error: null }],
+      agent_public_profiles: [{ data: [], error: null }],
+    });
+
+    await renderHook(() => useComments(PROPERTY_ID, { supabase: client }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const orders = calls.comments![0]!.filter((c) => c.method === 'order').map((c) => c.args);
+    expect(orders).toEqual([
+      ['created_at', { ascending: false }],
+      ['id', { ascending: false }],
+    ]);
   });
 });
