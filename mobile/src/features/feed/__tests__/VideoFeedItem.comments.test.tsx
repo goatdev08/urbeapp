@@ -49,6 +49,9 @@
  * - (VC-10) comment_count_inicial_viene_de_la_propiedad
  * - (VC-11) comment_count_ausente_en_la_propiedad_cae_a_cero
  * - (VC-12) contador_sube_uno_tras_publicar_sin_refetch
+ *
+ * ### Remate H2 (guardian 289.10): otros efectos no reanudan detrás de la hoja
+ * - (VC-13) hoja_abierta_bloquea_reanudar_por_isactive_o_reemplazo_de_fuente
  */
 
 import React from 'react';
@@ -497,6 +500,52 @@ describe('VideoFeedItem — botón de comentarios en el rail (289.10)', () => {
     });
 
     expect(last_overlay_props().commentCount).toBe(10);
+  });
+
+  // ── (VC-13) remate H2: otros efectos de play() no conocen comments_open ──
+
+  it('(VC-13) hoja_abierta_bloquea_reanudar_por_isactive_o_reemplazo_de_fuente: con la hoja abierta, un toggle de isActive o un reemplazo de fuente (reciclaje/refetch) NO reanuda el video; al cerrar la hoja con el ítem aún activo, SÍ reanuda', async () => {
+    let view: RenderResult;
+    const property = make_property();
+    await act(async () => {
+      view = await render(<VideoFeedItem property={property} isActive={true} />);
+    });
+    expect(fake_player.playing).toBe(true);
+
+    // Abrir la hoja — pausa (VC-4).
+    await act(async () => {
+      (last_overlay_props().onComments as () => void)();
+    });
+    expect(fake_player.playing).toBe(false);
+
+    // El efecto de visibilidad (isActive) se re-dispara (false→true) mientras
+    // la hoja sigue abierta — sin el guard de H2, esto reanudaría el video
+    // DETRÁS del Modal.
+    await act(async () => {
+      view.rerender(<VideoFeedItem property={property} isActive={false} />);
+    });
+    await act(async () => {
+      view.rerender(<VideoFeedItem property={property} isActive={true} />);
+    });
+    expect(fake_player.playing).toBe(false);
+
+    // El efecto de replaceAsync (reciclaje de FlashList / refetch de filtros
+    // re-firma la URL) también se re-dispara mientras la hoja sigue abierta.
+    await act(async () => {
+      view.rerender(
+        <VideoFeedItem
+          property={{ ...property, signed_url: 'https://cdn.example/video-B.mp4' }}
+          isActive={true}
+        />,
+      );
+    });
+    expect(fake_player.playing).toBe(false);
+
+    // Cerrar la hoja con el ítem aún activo → SÍ reanuda.
+    await act(async () => {
+      (last_sheet_props().on_dismiss as () => void)();
+    });
+    expect(fake_player.playing).toBe(true);
   });
 
 });

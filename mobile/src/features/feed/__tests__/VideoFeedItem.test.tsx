@@ -86,6 +86,20 @@ jest.mock('@/features/feed/hooks/useVideoEngagementEvents', () => ({
   useVideoEngagementEvents: jest.fn(),
 }));
 
+// 289.10: el rail ahora abre CommentsSheet (import estático arrastra
+// @/features/auth/context → @/lib/supabase/client, que revienta en este
+// entorno de test sin EXPO_PUBLIC_SUPABASE_URL si no se mockea el módulo
+// completo — mismo motivo documentado en ActionButtons.test.tsx). Este
+// archivo no ejercita comentarios (cobertura propia en
+// VideoFeedItem.comments.test.tsx); los mocks solo evitan el crash de import.
+jest.mock('@/features/auth/context', () => ({
+  useAuth: jest.fn(() => ({ user: null })),
+}));
+
+jest.mock('@/features/comments/components/CommentsSheet', () => ({
+  CommentsSheet: () => null,
+}));
+
 jest.mock('@/features/feed/lib/appSession', () => ({
   get_app_session_id: jest.fn(() => 'sesion-uuid-test-fija'),
 }));

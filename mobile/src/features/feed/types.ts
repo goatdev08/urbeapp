@@ -50,10 +50,11 @@ export type FeedProperty = {
    */
   agent_photo_url: string | null;
   /**
-   * Total de comentarios visibles (properties.comment_count, 289.10) — stub de
-   * tipo SOLO (RED de 289.10): opcional porque FEED_SELECT/build_feed_data
-   * todavía no lo piden ni lo mapean (ver feedProperties.comment-count.test.ts).
-   * GREEN lo vuelve obligatorio con fail-open a 0.
+   * Total de comentarios visibles (properties.comment_count, 289.10) — el
+   * select del feed lo pide y build_feed_data mapea fail-open a 0 (ver
+   * feedProperties.comment-count.test.ts). Opcional en el TIPO nada más para
+   * no romper fixtures de otros tests que aún no lo pasan; en runtime nunca
+   * es undefined (siempre 0 o el conteo real).
    */
   comment_count?: number;
   video: FeedPropertyVideo;

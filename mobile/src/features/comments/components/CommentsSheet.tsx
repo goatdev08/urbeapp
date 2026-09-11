@@ -73,6 +73,12 @@ export interface CommentsSheetProps {
   comment_count: number;
   /** ¿La sesión puede Ocultar/Restaurar comentarios ajenos? (ActionButtons calcula el techo, ver su docblock). */
   can_hide: boolean;
+  /**
+   * Callback opcional (289.10) — el caller (rail del feed) lo usa para subir
+   * su contador local +1 sin refetch cuando se publica un comentario nuevo.
+   * Aditivo: no rompe callers existentes que no lo pasan.
+   */
+  on_comment_posted?: () => void;
 }
 
 export function CommentsSheet({
@@ -81,6 +87,7 @@ export function CommentsSheet({
   property_id,
   comment_count,
   can_hide,
+  on_comment_posted,
 }: CommentsSheetProps): React.JSX.Element {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
@@ -107,6 +114,7 @@ export function CommentsSheet({
             }
           : null,
       });
+      on_comment_posted?.();
     },
   });
 

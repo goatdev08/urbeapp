@@ -135,8 +135,6 @@ export function PropertyDetailScreen(): React.JSX.Element {
             property_video_id={primary_video_id}
             owner_user_id={data.agent.id}
             is_owner={is_agent_self}
-            comment_count={data.comment_count}
-            can_hide={is_agent_self}
           />
         </View>
       </View>

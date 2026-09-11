@@ -18,24 +18,20 @@
  *     (is_owner=false). El hook useReportProperty repite el guard como 2ª
  *     capa; owner_user_id/is_owner son opcionales para no romper callers
  *     existentes que aún no los pasan (el botón simplemente no aparece).
- *   - Comentarios (289.8): SIEMPRE presente (a diferencia de like/reportar) —
- *     preview aprobado 289.1 §1 lo dibuja como único elemento fijo del rail,
- *     sin condición de ausencia. `comment_count` (columna aditiva
- *     properties.comment_count) y `can_hide` (permiso de Ocultar/Restaurar
- *     dentro de la hoja) son opcionales/default para no romper callers
- *     existentes.
+ *   - Comentarios: el botón vivió aquí en 289.8; decisión de Abraham
+ *     2026-09-11 (289.10, tras el smoke) lo mudó al rail del feed
+ *     (PropertyOverlay) — el detalle vuelve a exactamente 3 botones
+ *     (like/save/reportar).
  */
 
 import React, { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { ChatCircle, Flag } from 'phosphor-react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { Flag } from 'phosphor-react-native';
 
 import { useLikeProperty } from '@/features/feed/hooks/useLikeProperty';
 import { useSaveProperty } from '@/features/feed/hooks/useSaveProperty';
 import { LikeButton } from '@/components/LikeButton';
 import { SaveButton } from '@/components/SaveButton';
-import { CommentsSheet } from '@/features/comments/components/CommentsSheet';
-import { fonts } from '@/theme/theme';
 import { useReportProperty } from '../hooks/useReportProperty';
 import { ReportPropertySheet } from './ReportPropertySheet';
 
@@ -58,23 +54,6 @@ export type ActionButtonsProps = {
   owner_user_id?: string;
   /** true si la sesión actual ES el owner — oculta "Reportar" (default false). */
   is_owner?: boolean;
-  /**
-   * Total de comentarios visibles (289.8) — properties.comment_count.
-   * Default 0 (callers existentes que aún no lo pasan).
-   */
-  comment_count?: number;
-  /**
-   * ¿La sesión puede Ocultar/Restaurar comentarios ajenos dentro de la hoja?
-   * (289.8) Default false.
-   *
-   * ponytail: techo = solo owner (mismo valor que is_owner) — el PRD también
-   * habilita a un admin de agencia y a un admin de plataforma (preview
-   * 289.1 §4: "dueño / dueño-admin de agencia / admin de plataforma"), pero
-   * PropertyDetail no expone el rol de agencia de la sesión ni is_admin()
-   * (footprint de esta subtarea no incluye ese fetch nuevo). Ampliar cuando
-   * exista esa señal en el detalle.
-   */
-  can_hide?: boolean;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -86,8 +65,6 @@ export function ActionButtons({
   property_video_id,
   owner_user_id,
   is_owner = false,
-  comment_count = 0,
-  can_hide = false,
 }: ActionButtonsProps): React.JSX.Element {
   // Hooks siempre llamados (reglas de hooks — no pueden ser condicionales).
   // Cuando no hay video se pasa '' como fallback; el botón like no se renderiza,
@@ -135,9 +112,6 @@ export function ActionButtons({
         <ReportAction property_id={property_id} owner_user_id={owner_user_id} />
       )}
 
-      {/* Comentarios (289.8): siempre presente — único elemento nuevo del rail */}
-      <CommentsAction property_id={property_id} comment_count={comment_count} can_hide={can_hide} />
-
     </View>
   );
 }
@@ -184,53 +158,6 @@ function ReportAction({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CommentsAction — botón "Comentarios" + CommentsSheet, aislados en su propio
-// componente para que la hoja (y los hooks de comments, que llaman useAuth
-// internamente) solo se monten cuando el usuario la abre — mismo patrón que
-// ReportAction/ReportProfileAction (AgentCard.tsx).
-// ─────────────────────────────────────────────────────────────────────────────
-
-function CommentsAction({
-  property_id,
-  comment_count,
-  can_hide,
-}: {
-  property_id: string;
-  comment_count: number;
-  can_hide: boolean;
-}): React.JSX.Element {
-  const [sheet_visible, set_sheet_visible] = useState(false);
-
-  return (
-    <>
-      <Pressable
-        onPress={() => set_sheet_visible(true)}
-        style={styles.btn}
-        accessibilityRole="button"
-        accessibilityLabel="Comentarios"
-      >
-        <ChatCircle size={19} color="#FFFFFF" weight="bold" />
-        {comment_count > 0 && (
-          <Text style={styles.comment_count} numberOfLines={1}>
-            {comment_count}
-          </Text>
-        )}
-      </Pressable>
-
-      {sheet_visible && (
-        <CommentsSheet
-          visible={sheet_visible}
-          on_dismiss={() => set_sheet_visible(false)}
-          property_id={property_id}
-          comment_count={comment_count}
-          can_hide={can_hide}
-        />
-      )}
-    </>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Estilos
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -251,16 +178,5 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.2)',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  // Contador del botón Comentarios (preview 289.1 §1, .rail-count)
-  comment_count: {
-    position: 'absolute',
-    bottom: -16,
-    fontFamily: fonts.mono_medium,
-    fontSize: 9.5,
-    color: '#FDFBF6',
-    textShadowColor: 'rgba(0,0,0,0.6)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
   },
 });

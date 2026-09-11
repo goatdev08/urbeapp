@@ -95,10 +95,4 @@ export type PropertyDetail = {
   agent: AgentInfo;
   agency: AgencyInfo | null;
   videos: PropertyVideoDetail[];
-  /**
-   * Total de comentarios visibles (289.8) — columna aditiva
-   * `properties.comment_count`, mantenida por trigger (migración
-   * 20260910100001). Fail-open a 0 si la fila/fixture no la trae todavía.
-   */
-  comment_count: number;
 };

@@ -21,6 +21,7 @@
  * - (EC-3) sin_sesion_muestra_cta_inicia_sesion_y_no_el_input
  * - (EC-4) long_press_ocultar_solo_aparece_con_can_hide
  * - (EC-5) long_press_ocultar_ausente_sin_can_hide
+ * - (EC-6) 289.10 (remate H1 guardian): publicar_invoca_on_comment_posted_una_vez
  */
 
 import React from 'react';
@@ -210,6 +211,45 @@ describe('CommentsSheet', () => {
     expect(buttons.some((b) => b.text === 'Ocultar')).toBe(false);
     // Ajeno (no autor) → sí debe ofrecer "Reportar"
     expect(buttons.some((b) => b.text === 'Reportar')).toBe(true);
+  });
+
+  // ── (EC-6) 289.10 (remate H1 guardian): on_comment_posted se invoca 1 vez ──
+  // usePostComment está mockeado a nivel de módulo — CommentsSheet arma su
+  // propio `on_posted` y se lo pasa como 2º argumento. Este test captura ESE
+  // callback (lo que la config real recibiría) y lo invoca a mano, simulando
+  // lo que el hook real hace tras un post() exitoso — sin este test, borrar
+  // `on_comment_posted?.()` de CommentsSheet.tsx deja la suite en verde.
+
+  it('(EC-6) publicar_invoca_on_comment_posted_una_vez: tras publicar (on_posted del hook) → on_comment_posted (prop del caller) se invoca exactamente 1 vez', async () => {
+    mock_use_comments.mockReturnValue(make_comments_return([]));
+    const on_comment_posted = jest.fn();
+
+    await render(
+      <CommentsSheet
+        visible
+        property_id={PROPERTY_ID}
+        comment_count={0}
+        can_hide={false}
+        on_dismiss={jest.fn()}
+        on_comment_posted={on_comment_posted}
+      />,
+    );
+
+    const posted_config = mock_use_post_comment.mock.calls[0]?.[1] as
+      | { on_posted?: (comment: unknown) => void }
+      | undefined;
+    expect(typeof posted_config?.on_posted).toBe('function');
+
+    posted_config!.on_posted!({
+      id: 'comentario-nuevo',
+      property_id: PROPERTY_ID,
+      user_id: ME_ID,
+      body: 'Comentario recién publicado',
+      status: 'visible',
+      created_at: new Date().toISOString(),
+    });
+
+    expect(on_comment_posted).toHaveBeenCalledTimes(1);
   });
 
 });

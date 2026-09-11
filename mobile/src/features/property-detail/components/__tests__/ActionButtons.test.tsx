@@ -60,7 +60,8 @@
  * fallan hasta que GREEN quite CommentsAction de ActionButtons.tsx.
  * - (EC-13) boton_comentarios_ya_no_existe_en_el_detalle
  * - (EC-14) commentssheet_nunca_se_monta_desde_el_detalle
- * - (EC-15) boton_comentarios_ausente_incluso_con_comment_count_positivo
+ * - (EC-15) boton_comentarios_ausente_sin_rastro_de_contador (H3 guardian:
+ *   ActionButtonsProps ya no acepta comment_count, se quitó del todo)
  *
  * 289.8/289.10: CommentsSheet se mockea (import estático real arrastra
  * @/features/auth/context + @/lib/supabase/client vía sus hooks, mismo motivo
@@ -400,14 +401,18 @@ describe('ActionButtons', () => {
     expect(mock_comments_sheet).not.toHaveBeenCalled();
   });
 
-  // ── (EC-15) 289.10: ausente incluso con comment_count positivo ───────────
+  // ── (EC-15) 289.10 (H3 guardian): sin rastro de contador de comentarios ───
+  // Remate H3: `ActionButtonsProps` ya NO acepta `comment_count` (el botón se
+  // mudó al rail del feed, #289.10) — se quitó del todo en vez de dejarlo
+  // aceptado-pero-ignorado (código muerto). Este caso ya no simula un caller
+  // legado (el prop no existe); confirma que ningún texto de contador queda
+  // flotando en el árbol del detalle.
 
-  it('(EC-15) boton_comentarios_ausente_incluso_con_comment_count_positivo: comment_count=24 (prop legada, si el caller aún la pasa) → el botón sigue sin renderizarse y el "24" no aparece', async () => {
+  it('(EC-15) boton_comentarios_ausente_sin_rastro_de_contador: sin la prop (ya no existe en el tipo) → ni el botón ni ningún texto de contador aparecen', async () => {
     const { queryByLabelText, queryByText } = await render(
       <ActionButtons
         property_id={TEST_PROPERTY_ID}
         property_video_id={TEST_VIDEO_ID}
-        comment_count={24}
       />
     );
 
