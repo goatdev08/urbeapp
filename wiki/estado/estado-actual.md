@@ -11,7 +11,8 @@ Abraham probó #285 y no le convenció la UX: «el cambio debe ser fluido, imper
 - **Guardians.** 288.1: el EC de «loadMore bloqueado durante loadInitial» era vacuo desde data vacío (lo tapaba el guard de inventario vacío) → reescrito desde estado poblado con un refetch en vuelo; los 3 mutantes mueren. 288.2: 3 mutantes mueren.
 - **Smoke adb.** 70 swipes, ~9 vueltas: 0 chips, 0 «same key», ninguna vuelta abre con el último video; 1 posible rebote solo en la primera vuelta fría de la sesión a ritmo rápido, ninguno en las 8 siguientes. Si Abraham lo ve en el teléfono → derivada polish(288) precarga ansiosa.
 - **Proceso.** Un `git stash` por descuido en un comando de diagnóstico; revertido al instante con `stash pop`, sin pérdida. Registrado en memoria.
-- **Pendiente:** OTA (#285 + #288) cuando Abraham lo pida; Follow #78 / comentarios #289 en pausa (doc 048 sigue sin promover; el id 288 ya lo usó esta derivada).
+- **OTA publicado (2026-09-10, noche).** Abraham probó #288 en el emulador («funciona muy bien») y pidió el OTA: #285 + #288 salieron juntos a `preview` (Android, runtime `374ba3dd…`, grupo `e0ae09a3`) y `production` (iOS, runtime `ca62b26a…`, grupo `d0d622f3`); ambos runtimes coinciden con los builds 1.0.6 instalados (entrega real, no NO-OP). Se aplica al siguiente arranque de la app.
+- **Pendiente:** smoke de Abraham en el teléfono tras el OTA; Follow #78 / comentarios #289 en pausa (doc 048 sigue sin promover; el id 288 ya lo usó esta derivada).
 
 ## Antes (2026-09-10) — #285: el feed ya es infinito (vuelta barajada al agotar el inventario)
 Pedido de Abraham tras cerrar #278/#280: «que el feed sea realmente infinito». Exploración 047 con 4 direcciones; eligió **A + D** (vuelta en cliente + barajado con semilla), **chip efímero**, **sin techo** de vueltas y activación siempre. Tarea #285 (5 subtareas) en PR #170; solo JS → sale por OTA cuando Abraham lo pida.
