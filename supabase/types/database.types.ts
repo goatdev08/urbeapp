@@ -859,6 +859,96 @@ export type Database = {
         }
         Relationships: []
       }
+      comment_reports: {
+        Row: {
+          comment_id: string
+          created_at: string
+          id: string
+          reason: Database["public"]["Enums"]["property_report_reason"]
+          reason_text: string | null
+          reported_by_user_id: string
+          status: string
+        }
+        Insert: {
+          comment_id: string
+          created_at?: string
+          id?: string
+          reason: Database["public"]["Enums"]["property_report_reason"]
+          reason_text?: string | null
+          reported_by_user_id: string
+          status?: string
+        }
+        Update: {
+          comment_id?: string
+          created_at?: string
+          id?: string
+          reason?: Database["public"]["Enums"]["property_report_reason"]
+          reason_text?: string | null
+          reported_by_user_id?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "comment_reports_comment_id_fkey"
+            columns: ["comment_id"]
+            isOneToOne: false
+            referencedRelation: "comments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comment_reports_reported_by_user_id_fkey"
+            columns: ["reported_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      comments: {
+        Row: {
+          body: string
+          created_at: string
+          id: string
+          property_id: string
+          status: Database["public"]["Enums"]["comment_status"]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          id?: string
+          property_id: string
+          status?: Database["public"]["Enums"]["comment_status"]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          id?: string
+          property_id?: string
+          status?: Database["public"]["Enums"]["comment_status"]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "comments_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comments_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       events_raw: {
         Row: {
           agent_id: string | null
@@ -1338,6 +1428,7 @@ export type Database = {
           closed_reason:
             | Database["public"]["Enums"]["property_closed_reason"]
             | null
+          comment_count: number
           contact_count: number
           created_at: string
           currency: string
@@ -1377,6 +1468,7 @@ export type Database = {
           closed_reason?:
             | Database["public"]["Enums"]["property_closed_reason"]
             | null
+          comment_count?: number
           contact_count?: number
           created_at?: string
           currency?: string
@@ -1416,6 +1508,7 @@ export type Database = {
           closed_reason?:
             | Database["public"]["Enums"]["property_closed_reason"]
             | null
+          comment_count?: number
           contact_count?: number
           created_at?: string
           currency?: string
@@ -2054,8 +2147,63 @@ export type Database = {
           },
         ]
       }
+      pg_all_foreign_keys: {
+        Row: {
+          fk_columns: unknown[] | null
+          fk_constraint_name: unknown
+          fk_schema_name: unknown
+          fk_table_name: unknown
+          fk_table_oid: unknown
+          is_deferrable: boolean | null
+          is_deferred: boolean | null
+          match_type: string | null
+          on_delete: string | null
+          on_update: string | null
+          pk_columns: unknown[] | null
+          pk_constraint_name: unknown
+          pk_index_name: unknown
+          pk_schema_name: unknown
+          pk_table_name: unknown
+          pk_table_oid: unknown
+        }
+        Relationships: []
+      }
+      tap_funky: {
+        Row: {
+          args: string | null
+          is_definer: boolean | null
+          is_strict: boolean | null
+          is_visible: boolean | null
+          kind: unknown
+          langoid: unknown
+          name: unknown
+          oid: unknown
+          owner: unknown
+          returns: string | null
+          returns_set: boolean | null
+          schema: unknown
+          volatility: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
+      _cleanup: { Args: never; Returns: boolean }
+      _contract_on: { Args: { "": string }; Returns: unknown }
+      _currtest: { Args: never; Returns: number }
+      _db_privs: { Args: never; Returns: unknown[] }
+      _extensions: { Args: never; Returns: unknown[] }
+      _get: { Args: { "": string }; Returns: number }
+      _get_latest: { Args: { "": string }; Returns: number[] }
+      _get_note: { Args: { "": string }; Returns: string }
+      _is_verbose: { Args: never; Returns: boolean }
+      _prokind: { Args: { p_oid: unknown }; Returns: unknown }
+      _query: { Args: { "": string }; Returns: string }
+      _refine_vol: { Args: { "": string }; Returns: string }
+      _retval: { Args: { "": string }; Returns: string }
+      _table_privs: { Args: never; Returns: unknown[] }
+      _temptypes: { Args: { "": string }; Returns: string }
+      _todo: { Args: never; Returns: string }
       ad_metrics_for_agency: {
         Args: { p_agency_id: string; p_from?: string; p_to?: string }
         Returns: {
@@ -2143,6 +2291,42 @@ export type Database = {
         }[]
       }
       check_rollup_health: { Args: never; Returns: undefined }
+      col_is_null:
+        | {
+            Args: {
+              column_name: unknown
+              description?: string
+              schema_name: unknown
+              table_name: unknown
+            }
+            Returns: string
+          }
+        | {
+            Args: {
+              column_name: unknown
+              description?: string
+              table_name: unknown
+            }
+            Returns: string
+          }
+      col_not_null:
+        | {
+            Args: {
+              column_name: unknown
+              description?: string
+              schema_name: unknown
+              table_name: unknown
+            }
+            Returns: string
+          }
+        | {
+            Args: {
+              column_name: unknown
+              description?: string
+              table_name: unknown
+            }
+            Returns: string
+          }
       create_ad_campaign_atomic: {
         Args: {
           p_creative_id: string
@@ -2233,6 +2417,29 @@ export type Database = {
         }[]
       }
       crm_suggested_message: { Args: { p_lead_id: string }; Returns: string }
+      diag:
+        | {
+            Args: { msg: unknown }
+            Returns: {
+              error: true
+            } & "Could not choose the best candidate function between: public.diag(msg => text), public.diag(msg => anyelement). Try renaming the parameters or the function itself in the database so function overloading can be resolved"
+          }
+        | {
+            Args: { msg: string }
+            Returns: {
+              error: true
+            } & "Could not choose the best candidate function between: public.diag(msg => text), public.diag(msg => anyelement). Try renaming the parameters or the function itself in the database so function overloading can be resolved"
+          }
+      diag_test_name: { Args: { "": string }; Returns: string }
+      do_tap:
+        | { Args: never; Returns: string[] }
+        | { Args: { "": string }; Returns: string[] }
+      fail:
+        | { Args: never; Returns: string }
+        | { Args: { "": string }; Returns: string }
+      findfuncs: { Args: { "": string }; Returns: string[] }
+      finish: { Args: { exception_on_failure?: boolean }; Returns: string[] }
+      format_type_string: { Args: { "": string }; Returns: string }
       get_lead_stats: {
         Args: { p_lead_ids: string[] }
         Returns: {
@@ -2267,6 +2474,7 @@ export type Database = {
         }
         Returns: string
       }
+      has_unique: { Args: { "": string }; Returns: string }
       import_neighborhoods_batch: {
         Args: { p_rows: Json }
         Returns: {
@@ -2274,6 +2482,9 @@ export type Database = {
           skipped: number
         }[]
       }
+      in_todo: { Args: never; Returns: boolean }
+      is_empty: { Args: { "": string }; Returns: string }
+      isnt_empty: { Args: { "": string }; Returns: string }
       lead_activity: {
         Args: { p_cursor?: string; p_lead_id: string; p_limit?: number }
         Returns: {
@@ -2282,6 +2493,7 @@ export type Database = {
           occurred_at: string
         }[]
       }
+      lives_ok: { Args: { "": string }; Returns: string }
       moderate_ad_atomic: {
         Args: {
           p_ad_id: string
@@ -2307,8 +2519,14 @@ export type Database = {
         }
         Returns: undefined
       }
+      no_plan: { Args: never; Returns: boolean[] }
       notify_ads_expiring_soon: { Args: never; Returns: number }
+      num_failed: { Args: never; Returns: number }
       org_can_advertise: { Args: { p_agency_id: string }; Returns: boolean }
+      os_name: { Args: never; Returns: string }
+      pass:
+        | { Args: never; Returns: string }
+        | { Args: { "": string }; Returns: string }
       pending_legal_consents: {
         Args: never
         Returns: {
@@ -2317,6 +2535,9 @@ export type Database = {
           version: string
         }[]
       }
+      pg_version: { Args: never; Returns: string }
+      pg_version_num: { Args: never; Returns: number }
+      pgtap_version: { Args: never; Returns: number }
       place_at_point: {
         Args: { p_lat: number; p_lng: number }
         Returns: {
@@ -2441,6 +2662,10 @@ export type Database = {
         }
         Returns: undefined
       }
+      resolve_comment_reports_atomic: {
+        Args: { p_action: string; p_comment_id: string; p_reason?: string }
+        Returns: undefined
+      }
       resolve_property_reports_atomic: {
         Args: {
           p_action_type: string
@@ -2451,6 +2676,9 @@ export type Database = {
         Returns: undefined
       }
       rollup_ad_impressions_monthly: { Args: never; Returns: undefined }
+      runtests:
+        | { Args: never; Returns: string[] }
+        | { Args: { "": string }; Returns: string[] }
       search_places: {
         Args: {
           p_lat?: number
@@ -2491,6 +2719,9 @@ export type Database = {
             }
             Returns: undefined
           }
+      skip:
+        | { Args: { "": string }; Returns: string }
+        | { Args: { how_many: number; why: string }; Returns: string }
       snapshot_lead_temperature: {
         Args: { p_day?: string }
         Returns: undefined
@@ -2503,6 +2734,16 @@ export type Database = {
           old_agency_id: string
         }[]
       }
+      throws_ok: { Args: { "": string }; Returns: string }
+      todo:
+        | { Args: { how_many: number }; Returns: boolean[] }
+        | { Args: { how_many: number; why: string }; Returns: boolean[] }
+        | { Args: { why: string }; Returns: boolean[] }
+        | { Args: { how_many: number; why: string }; Returns: boolean[] }
+      todo_end: { Args: never; Returns: boolean[] }
+      todo_start:
+        | { Args: never; Returns: boolean[] }
+        | { Args: { "": string }; Returns: boolean[] }
       upgrade_to_agent_atomic: {
         Args: { p_token: string; p_user_id: string }
         Returns: {
@@ -2546,6 +2787,7 @@ export type Database = {
       agent_application_type: "independent" | "under_agency"
       agent_interest_source: "landing" | "app"
       agent_interest_status: "new" | "contacted" | "archived"
+      comment_status: "visible" | "held_for_review" | "hidden" | "deleted"
       consent_type: "terms" | "privacy" | "age" | "whatsapp"
       deletion_request_reason:
         | "not_useful"
@@ -2616,7 +2858,9 @@ export type Database = {
       user_role: "user" | "agent" | "admin"
     }
     CompositeTypes: {
-      [_ in never]: never
+      _time_trial_type: {
+        a_time: number | null
+      }
     }
   }
 }
@@ -2777,6 +3021,7 @@ export const Constants = {
       agent_application_type: ["independent", "under_agency"],
       agent_interest_source: ["landing", "app"],
       agent_interest_status: ["new", "contacted", "archived"],
+      comment_status: ["visible", "held_for_review", "hidden", "deleted"],
       consent_type: ["terms", "privacy", "age", "whatsapp"],
       deletion_request_reason: [
         "not_useful",
