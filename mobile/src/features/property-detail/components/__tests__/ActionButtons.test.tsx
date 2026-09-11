@@ -51,12 +51,18 @@
  * - (EC-11) owner_ve_su_propia_publicacion_boton_reportar_no_se_renderiza
  * - (EC-12) no_owner_ve_boton_reportar_visible
  *
- * ### Comentarios (289.8) — 4º botón, siempre presente
- * - (EC-13) boton_comentarios_siempre_presente_incluso_sin_owner_user_id
- * - (EC-14) boton_comentarios_muestra_el_contador_cuando_comment_count_mayor_a_cero
- * - (EC-15) boton_comentarios_sin_contador_cuando_comment_count_es_cero
+ * ### Comentarios (289.10) — RED: el 4º botón SE QUITA del detalle
+ * Decisión de Abraham (2026-09-11, tras el smoke): el botón de comentarios
+ * vive SOLO en el rail del feed (PropertyOverlay) — el detalle vuelve a 3
+ * botones (like/save/reportar). Los 3 casos de abajo INVIERTEN los que
+ * 289.8 había dejado en verde (boton_comentarios_siempre_presente_*,
+ * *_muestra_el_contador_*, *_sin_contador_*): ahora afirman AUSENCIA, y
+ * fallan hasta que GREEN quite CommentsAction de ActionButtons.tsx.
+ * - (EC-13) boton_comentarios_ya_no_existe_en_el_detalle
+ * - (EC-14) commentssheet_nunca_se_monta_desde_el_detalle
+ * - (EC-15) boton_comentarios_ausente_incluso_con_comment_count_positivo
  *
- * 289.8: CommentsSheet se mockea (import estático real arrastra
+ * 289.8/289.10: CommentsSheet se mockea (import estático real arrastra
  * @/features/auth/context + @/lib/supabase/client vía sus hooks, mismo motivo
  * documentado arriba para useReportProperty) — el botón "Comentarios" solo
  * monta la hoja al pulsar, así que estos tests (que no pulsan) no la
@@ -94,11 +100,12 @@ jest.mock('@/features/property-detail/hooks/useReportProperty', () => ({
   useReportProperty: jest.fn(),
 }));
 
-// 289.8: el botón "Comentarios" monta CommentsSheet solo al pulsar — estos
-// tests no lo pulsan, pero el import estático igual arrastra sus hooks
-// (useComments/usePostComment/useAuth, etc.); se stubea a un componente vacío.
+// 289.8/289.10: el import estático de CommentsSheet arrastra sus hooks
+// (useComments/usePostComment/useAuth, etc.); se stubea a un espía — 289.10
+// (EC-14) asierta que NUNCA se invoca (el detalle ya no lo monta).
+const mock_comments_sheet = jest.fn(() => null);
 jest.mock('@/features/comments/components/CommentsSheet', () => ({
-  CommentsSheet: () => null,
+  CommentsSheet: mock_comments_sheet,
 }));
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -358,9 +365,9 @@ describe('ActionButtons', () => {
     expect(queryByLabelText('Reportar publicación')).not.toBeNull();
   });
 
-  // ── (EC-13) Comentarios: siempre presente, incluso sin owner_user_id ──────
+  // ── (EC-13) 289.10: el botón "Comentarios" YA NO existe en el detalle ─────
 
-  it('(EC-13) boton_comentarios_siempre_presente_incluso_sin_owner_user_id: sin owner_user_id (like/save solos) → botón "Comentarios" igual visible', async () => {
+  it('(EC-13) boton_comentarios_ya_no_existe_en_el_detalle: el rail del detalle vuelve a 3 botones (like/save/reportar) → "Comentarios" no se renderiza', async () => {
     const { queryByLabelText } = await render(
       <ActionButtons
         property_id={TEST_PROPERTY_ID}
@@ -368,13 +375,35 @@ describe('ActionButtons', () => {
       />
     );
 
-    expect(queryByLabelText('Comentarios')).not.toBeNull();
+    expect(queryByLabelText('Comentarios')).toBeNull();
   });
 
-  // ── (EC-14) Comentarios: contador visible cuando comment_count > 0 ────────
+  // ── (EC-14) 289.10: el rail vuelve a exactamente 3 botones ───────────────
 
-  it('(EC-14) boton_comentarios_muestra_el_contador_cuando_comment_count_mayor_a_cero: comment_count=24 → "24" visible', async () => {
-    const { queryByText } = await render(
+  it('(EC-14) rail_vuelve_a_exactamente_3_botones_con_owner_presente: con owner_user_id + is_owner=false (like+save+reportar habilitados) → exactamente 3 botones, ninguno "Comentarios" — sin este conteo, un 4º botón residual (aunque no se llame "Comentarios") pasaría inadvertido', async () => {
+    mock_use_report.mockReturnValue({
+      submit_report: jest.fn().mockResolvedValue({ ok: true }),
+      is_submitting: false,
+      error_message: null,
+    });
+
+    const { queryAllByRole } = await render(
+      <ActionButtons
+        property_id={TEST_PROPERTY_ID}
+        property_video_id={TEST_VIDEO_ID}
+        owner_user_id="owner-uuid-detalle-xyz"
+        is_owner={false}
+      />
+    );
+
+    expect(queryAllByRole('button')).toHaveLength(3);
+    expect(mock_comments_sheet).not.toHaveBeenCalled();
+  });
+
+  // ── (EC-15) 289.10: ausente incluso con comment_count positivo ───────────
+
+  it('(EC-15) boton_comentarios_ausente_incluso_con_comment_count_positivo: comment_count=24 (prop legada, si el caller aún la pasa) → el botón sigue sin renderizarse y el "24" no aparece', async () => {
+    const { queryByLabelText, queryByText } = await render(
       <ActionButtons
         property_id={TEST_PROPERTY_ID}
         property_video_id={TEST_VIDEO_ID}
@@ -382,21 +411,8 @@ describe('ActionButtons', () => {
       />
     );
 
-    expect(queryByText('24')).not.toBeNull();
-  });
-
-  // ── (EC-15) Comentarios: sin contador cuando comment_count=0 (default) ────
-
-  it('(EC-15) boton_comentarios_sin_contador_cuando_comment_count_es_cero: sin comment_count (default 0) → botón visible sin número', async () => {
-    const { queryByLabelText, queryByText } = await render(
-      <ActionButtons
-        property_id={TEST_PROPERTY_ID}
-        property_video_id={TEST_VIDEO_ID}
-      />
-    );
-
-    expect(queryByLabelText('Comentarios')).not.toBeNull();
-    expect(queryByText('0')).toBeNull();
+    expect(queryByLabelText('Comentarios')).toBeNull();
+    expect(queryByText('24')).toBeNull();
   });
 
 });

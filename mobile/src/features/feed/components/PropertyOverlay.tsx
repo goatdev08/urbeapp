@@ -72,6 +72,15 @@ export type PropertyOverlayProps = {
   onWhatsApp: (() => void) | null;
   /** Compartir la propiedad como link al video. */
   onShare: () => void;
+  /**
+   * Botón de comentarios del rail (289.10) — stub de tipo SOLO (RED): el
+   * componente todavía no los destructura ni renderiza el botón (ver
+   * PropertyOverlay.comments.test.tsx). Opcionales para no romper
+   * PropertyOverlay.cacheKey.test.tsx, que no los pasa.
+   */
+  onComments?: () => void;
+  /** Contador vivo de comentarios (289.10) — ver onComments arriba. */
+  commentCount?: number;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
