@@ -24,6 +24,19 @@
  * 🔴 NO DOBLE-SUBMIT, semántica IGNORAR: mientras `is_submitting` es true,
  * una segunda llamada resuelve de inmediato a `{ ok: false, status: null }`
  * SIN invocar la EF ni esperar a la primera — la primera sigue intacta.
+ *
+ * 🔴 289.6: `resolve()` gana una rama `kind:'comment'` (unión discriminada,
+ * `kind` opcional para property → default, backward-compat con los 22 tests
+ * vigentes de useResolveReport.test.tsx, que llaman resolve() SIN kind y no
+ * se tocan). La rama comment invoca la EF NUEVA `moderate-comment` (nunca
+ * `moderate-property`) con body `{comment_id, action, reason?}`. Como esa EF
+ * responde `{ok, comment_id, action}` SIN `status` (a diferencia de
+ * moderate-property), el `status` de éxito se DERIVA client-side del
+ * `action` enviado (mapa `COMMENT_ACTION_STATUS`, valores reales del enum
+ * `comment_status`, 20260910100001_comments.sql:49) para conservar
+ * `ResolveReportResult` sin cambiarlo. Mismo `extract_error_code` +
+ * `map_revision_error` (mapa reusado, se le agregan 3 códigos nuevos en
+ * revision_error_messages.ts sin tocar los 7 existentes).
  */
 
 import { useCallback, useMemo, useReducer, useRef } from 'react';
@@ -38,11 +51,30 @@ export type ResolveReportAction =
   | 'keep_suspended'
   | 'delete';
 
-export interface ResolveReportParams {
+export type CommentResolveAction = 'restore' | 'keep_hidden' | 'delete_comment';
+
+export interface ResolvePropertyReportParams {
+  kind?: 'property';
   property_id: string;
   action: ResolveReportAction;
   reason?: string;
 }
+
+export interface ResolveCommentReportParams {
+  kind: 'comment';
+  comment_id: string;
+  action: CommentResolveAction;
+  reason?: string;
+}
+
+export type ResolveReportParams = ResolvePropertyReportParams | ResolveCommentReportParams;
+
+/** Status derivado client-side para la rama comment (la EF no lo devuelve). */
+const COMMENT_ACTION_STATUS: Record<CommentResolveAction, string> = {
+  restore: 'visible',
+  keep_hidden: 'hidden',
+  delete_comment: 'deleted',
+};
 
 export type ResolveReportResult =
   | { ok: true; status: string }
@@ -103,6 +135,30 @@ export function useResolveReport(
   };
 
   /**
+   * Invoca `moderate-comment` (rama comment, 289.6) y mapea el resultado.
+   * La EF no devuelve `status` — se deriva del `action` enviado.
+   */
+  const invoke_comment_resolve = (
+    body: Record<string, unknown>,
+    action: CommentResolveAction,
+  ): Promise<InternalResult> => {
+    const client = get_client();
+    return (
+      client.functions.invoke('moderate-comment', { body }) as Promise<{
+        data: unknown;
+        error: unknown | null;
+      }>
+    ).then(async ({ data, error }) => {
+      if (error) {
+        const code = await extract_error_code(error);
+        return { ok: false as const, status: null, error_msg: map_revision_error(code) };
+      }
+      void data;
+      return { ok: true as const, status: COMMENT_ACTION_STATUS[action] };
+    });
+  };
+
+  /**
    * Wrapper SÍNCRONO que fija is_submitting=true antes del primer await. No
    * es async — devuelve la Promise de action() sin añadir una suspensión
    * extra, para que la lectura del mismo tick vea `true`.
@@ -147,6 +203,26 @@ export function useResolveReport(
       // ni tocar el estado de la primera.
       if (is_working_ref.current) {
         return Promise.resolve({ ok: false, status: null });
+      }
+
+      // Rama comment (289.6): kind es el discriminante explícito, nunca se
+      // infiere de qué campos vinieron — sin kind (o kind:'property') sigue
+      // exactamente el camino de siempre, moderate-property.
+      if (params.kind === 'comment') {
+        const comment_body: Record<string, unknown> = {
+          comment_id: params.comment_id,
+          action: params.action,
+        };
+        if (params.reason !== undefined) {
+          comment_body.reason = params.reason;
+        }
+
+        return run_action(() => invoke_comment_resolve(comment_body, params.action)).then(
+          (result) => {
+            if (result.ok && deps?.onSuccess) deps.onSuccess();
+            return result;
+          },
+        );
       }
 
       const body: Record<string, unknown> = {

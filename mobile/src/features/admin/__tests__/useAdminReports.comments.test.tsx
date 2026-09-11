@@ -133,6 +133,9 @@
  * - (EC-13) error_en_comment_reports_no_descarta_los_items_property_ya_cargados
  * - (EC-14) error_en_property_reports_no_descarta_los_items_comment_ya_cargados
  * - (EC-15) ambas_fuentes_fallan_reports_es_arreglo_vacio_nunca_null_con_error_message_seteado
+ * - (EC-16) comment_reports_RECHAZA_la_promesa_red_caida_no_cuelga_loading_y_property_sigue
+ *   (guardian 289.6: sin este caso el try/catch de fetch_comment_items era un mutante vivo —
+ *   EC-13 solo cubría el envelope {data:null,error}, no el reject)
  */
 
 import { renderHook } from '@testing-library/react-native';
@@ -648,5 +651,20 @@ describe('useAdminReports — fail-soft cruzado entre las dos fuentes', () => {
 
     expect(result.current.error_message).not.toBeNull();
     expect(result.current.reports).toEqual([]);
+  });
+
+  it('(EC-16) comment_reports rechaza la promesa (red caída): loading no se cuelga y property sigue', async () => {
+    mock_supabase_holder.client = make_supabase_mock({
+      property_reports: { data: [make_raw_property_report_row()], error: null },
+      comment_reports: () => Promise.reject(new Error('network down')),
+    });
+
+    const { result } = await renderHook(() => useAdminReports());
+
+    expect(result.current.is_loading).toBe(false);
+    expect(result.current.error_message).not.toBeNull();
+    const items = (result.current.reports ?? []) as unknown as LocalQueueItem[];
+    expect(items.some((i) => i.kind === 'property')).toBe(true);
+    expect(items.some((i) => i.kind === 'comment')).toBe(false);
   });
 });

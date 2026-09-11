@@ -95,8 +95,38 @@
  * — nombre con prefijo "mock" requerido por Jest para referenciar dentro del
  * factory). Cadena `.from('property_reports').select(cols).eq(col, val).order(col, opts)`
  * — `.order()` es el eslabón TERMINAL que devuelve la promesa `{data, error}`.
- * `.eq()` se registra en `calls.eq` (plural, arreglo) para poder verificar
- * EC-7 (una sola llamada, con `status`/`new`, nunca con `reported_by_user_id`).
+ * `.eq()` se registra en `calls.property_reports.eq` (plural, arreglo) para
+ * poder verificar EC-7 (una sola llamada, con `status`/`new`, nunca con
+ * `reported_by_user_id`).
+ *
+ * 🔴 MOCK MULTI-TABLA (actualizado 289.6, cola mezclada): `useAdminReports()`
+ * ahora dispara TRES queries (property_reports SIEMPRE, comment_reports
+ * SIEMPRE, agent_public_profiles solo si hubo comentarios — ver
+ * useAdminReports.comments.test.tsx, archivo hermano de esa extensión, que
+ * este archivo NO cubre). El mock original devolvía la MISMA cadena
+ * genérica para cualquier `.from(<tabla>)`, lo cual bastaba cuando solo
+ * existía una fuente pero rompía en cuanto el hook consultó una segunda
+ * tabla (8 de los 14 tests de este archivo, EC-1/4/5/7/10/11/13/14,
+ * truenan contra el hook post-289.6 con el mock viejo — ver bitácora de
+ * 289.6). `make_supabase_mock(override?)` ahora rutea por tabla: SOLO
+ * `property_reports` respeta `override` (con el mismo default de siempre,
+ * una fila); `comment_reports` y `agent_public_profiles` responden `{data:
+ * [], error: null}` por default — así las 12 aserciones que NO le
+ * interesan a los comentarios siguen midiendo EXACTAMENTE la rama property,
+ * sin contaminarse por una segunda fuente que ni conocían. `calls` pasa a
+ * un objeto por tabla (`calls.property_reports.{select,eq,order}`,
+ * `calls.comment_reports.{...}`, `calls.agent_public_profiles.{select,in}`)
+ * + `calls.from` (arreglo plano de nombres de tabla, para los pocos
+ * asserts que solo necesitan confirmar QUÉ tablas se tocaron). El criterio
+ * "todo-o-nada" de EC-10/EC-11/EC-14 (una fuente falla → `reports=null`)
+ * era exclusivo del diseño de UNA sola fuente; con dos fuentes en fail-soft
+ * CRUZADO (lección 269.5, ver useAdminReports.ts) un error de
+ * property_reports ya no vacía todo el arreglo — solo dobla `error_message`
+ * + apaga `is_loading`, y `reports` queda `[]` porque comment_reports (la
+ * OTRA fuente) sigue respondiendo vacía-pero-exitosa por default. La
+ * intención original de esos 3 tests (un error real SIEMPRE se refleja,
+ * nunca se fabrica un resultado silenciosamente exitoso) se conserva
+ * intacta — solo cambia la forma del valor "sin datos" de `null` a `[]`.
  *
  * GOTCHAS RNTL ya pagados: `renderHook` con `await` + `act`; sin `await` el
  * `result` es `undefined` (rntl14_renderhook_async).
@@ -184,23 +214,37 @@ function make_raw_report_row(overrides: Record<string, unknown> = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// Factory del mock de cliente — jest.mock del módulo (NO DI), cadena
-// .from().select().eq().order() — `.order()` es el eslabón TERMINAL.
+// Factory del mock de cliente — jest.mock del módulo (NO DI), MULTI-TABLA
+// (289.6): .from(table) devuelve una cadena distinta según la tabla; solo
+// property_reports respeta `override`, comment_reports/agent_public_profiles
+// responden vacío-sin-error por default (mismo patrón que
+// useAdminReports.comments.test.tsx).
 // ---------------------------------------------------------------------------
 
 type Override = RawResult | Promise<RawResult> | (() => Promise<RawResult>);
 
-interface MockCalls {
-  from: string[];
+interface QueryCalls {
   select: string[];
   eq: [string, unknown][];
   order: [string, unknown][];
 }
 
-function make_supabase_mock(override?: Override) {
-  const calls: MockCalls = { from: [], select: [], eq: [], order: [] };
+interface MockCalls {
+  from: string[];
+  property_reports: QueryCalls;
+  comment_reports: QueryCalls;
+  agent_public_profiles: { select: string[]; in: [string, unknown[]][] };
+}
 
-  function resolve_result(): Promise<RawResult> {
+function make_supabase_mock(override?: Override) {
+  const calls: MockCalls = {
+    from: [],
+    property_reports: { select: [], eq: [], order: [] },
+    comment_reports: { select: [], eq: [], order: [] },
+    agent_public_profiles: { select: [], in: [] },
+  };
+
+  function resolve_property_result(): Promise<RawResult> {
     if (override === undefined) {
       return Promise.resolve({ data: [make_raw_report_row()], error: null });
     }
@@ -208,29 +252,60 @@ function make_supabase_mock(override?: Override) {
     return override instanceof Promise ? override : Promise.resolve(override);
   }
 
-  const chain: Record<string, unknown> = {};
-  chain.select = jest.fn((cols: string) => {
-    calls.select.push(cols);
+  function make_select_eq_order_chain(
+    bucket: 'property_reports' | 'comment_reports',
+    resolver: () => Promise<RawResult>,
+  ) {
+    const chain: Record<string, unknown> = {};
+    chain.select = jest.fn((cols: string) => {
+      calls[bucket].select.push(cols);
+      return chain;
+    });
+    chain.eq = jest.fn((col: string, val: unknown) => {
+      calls[bucket].eq.push([col, val]);
+      return chain;
+    });
+    chain.order = jest.fn((col: string, opts: unknown) => {
+      calls[bucket].order.push([col, opts]);
+      return resolver();
+    });
     return chain;
+  }
+
+  const property_chain = make_select_eq_order_chain('property_reports', resolve_property_result);
+  // comment_reports SIEMPRE vacío-sin-error en este archivo — sus 15 edge
+  // cases propios viven en useAdminReports.comments.test.tsx, no aquí.
+  const comment_chain = make_select_eq_order_chain('comment_reports', () =>
+    Promise.resolve({ data: [], error: null }),
+  );
+
+  const profiles_chain: Record<string, unknown> = {};
+  profiles_chain.select = jest.fn((cols: string) => {
+    calls.agent_public_profiles.select.push(cols);
+    return profiles_chain;
   });
-  chain.eq = jest.fn((col: string, val: unknown) => {
-    calls.eq.push([col, val]);
-    return chain;
-  });
-  chain.order = jest.fn((col: string, opts: unknown) => {
-    calls.order.push([col, opts]);
-    return resolve_result();
+  profiles_chain.in = jest.fn((col: string, vals: unknown[]) => {
+    calls.agent_public_profiles.in.push([col, vals]);
+    return Promise.resolve({ data: [], error: null });
   });
 
   const mock_from = jest.fn().mockImplementation((table: string) => {
     calls.from.push(table);
-    return chain;
+    if (table === 'property_reports') return property_chain;
+    if (table === 'comment_reports') return comment_chain;
+    if (table === 'agent_public_profiles') return profiles_chain;
+    throw new Error(`tabla no mockeada en este test: ${table}`);
   });
 
   return { from: mock_from, _calls: calls };
 }
 
 function make_pending_client() {
+  // Cadena única reusada para CUALQUIER tabla — property_reports Y
+  // comment_reports quedan pendientes para siempre, que es exactamente lo
+  // que EC-9 necesita (is_loading nunca se apaga porque Promise.all nunca
+  // se asienta). agent_public_profiles no se alcanza a invocar (comment
+  // nunca resuelve), así que no necesita cadena propia aquí.
   const chain = {
     select: jest.fn().mockReturnThis(),
     eq: jest.fn().mockReturnThis(),
@@ -342,29 +417,32 @@ describe('useAdminReports', () => {
 
   // ── EC-4: construcción exacta de la query ─────────────────────────────────
 
-  it('(EC-4) la_query_se_construye_con_eq_status_new_y_order_created_at_descending: .eq() y .order() reciben los argumentos exactos (property_reports_queue_idx es (status, created_at desc))', async () => {
+  it('(EC-4) la_query_se_construye_con_eq_status_new_y_order_created_at_descending: .eq() y .order() reciben los argumentos exactos EN property_reports (property_reports_queue_idx es (status, created_at desc))', async () => {
     await renderHook(() => useAdminReports());
 
     const calls = mock_supabase_holder.client._calls;
 
-    expect(calls.from).toEqual(['property_reports']);
-    expect(calls.eq).toHaveLength(1);
-    expect(calls.eq[0]?.[0]).toBe('status');
-    expect(calls.eq[0]?.[1]).toBe('new');
+    // 289.6: la cola ahora también toca comment_reports (siempre) — lo que
+    // este EC clava es la construcción EXACTA de la query DE property_reports
+    // específicamente, no que sea la única tabla tocada.
+    expect(calls.from).toContain('property_reports');
+    expect(calls.property_reports.eq).toHaveLength(1);
+    expect(calls.property_reports.eq[0]?.[0]).toBe('status');
+    expect(calls.property_reports.eq[0]?.[1]).toBe('new');
 
-    expect(calls.order).toHaveLength(1);
-    expect(calls.order[0]?.[0]).toBe('created_at');
-    expect(calls.order[0]?.[1]).toEqual({ ascending: false });
+    expect(calls.property_reports.order).toHaveLength(1);
+    expect(calls.property_reports.order[0]?.[0]).toBe('created_at');
+    expect(calls.property_reports.order[0]?.[1]).toEqual({ ascending: false });
   });
 
   // ── EC-5: select trae columnas de display, no el whitelist de edición ────
 
-  it('(EC-5) el_select_incluye_las_columnas_propias_y_el_embed_de_display_sin_el_whitelist_de_edicion: el string de .select() trae las columnas propias + el embed de display, sin ningún campo del whitelist de edit-property', async () => {
+  it('(EC-5) el_select_incluye_las_columnas_propias_y_el_embed_de_display_sin_el_whitelist_de_edicion: el string de .select() de property_reports trae las columnas propias + el embed de display, sin ningún campo del whitelist de edit-property', async () => {
     await renderHook(() => useAdminReports());
 
     const calls = mock_supabase_holder.client._calls;
-    expect(calls.select).toHaveLength(1);
-    const select_arg = calls.select[0] ?? '';
+    expect(calls.property_reports.select).toHaveLength(1);
+    const select_arg = calls.property_reports.select[0] ?? '';
 
     // Columnas propias de property_reports.
     expect(select_arg).toContain('reason_text');
@@ -407,15 +485,17 @@ describe('useAdminReports', () => {
 
   // ── EC-7: nunca se filtra por reported_by_user_id ─────────────────────────
 
-  it('(EC-7) no_se_filtra_por_reported_by_user_id_la_cola_es_de_admin_no_mis_reportes: la única llamada .eq() es status/new — jamás reported_by_user_id', async () => {
+  it('(EC-7) no_se_filtra_por_reported_by_user_id_la_cola_es_de_admin_no_mis_reportes: la única llamada .eq() EN property_reports es status/new — jamás reported_by_user_id', async () => {
     await renderHook(() => useAdminReports());
 
     const calls = mock_supabase_holder.client._calls;
     // Si el hook agregara un segundo .eq('reported_by_user_id', ...) (patrón
     // "mis X" aplicado por error a una cola de ADMIN), esta lista tendría
-    // longitud 2 y ocultaría reportes de otros usuarios al admin.
-    expect(calls.eq).toHaveLength(1);
-    expect(calls.eq.some(([col]) => col === 'reported_by_user_id')).toBe(false);
+    // longitud 2 y ocultaría reportes de otros usuarios al admin. Se mide
+    // por tabla (289.6): comment_reports tiene su propio .eq('status','new')
+    // en useAdminReports.comments.test.tsx, que no es lo que este EC vigila.
+    expect(calls.property_reports.eq).toHaveLength(1);
+    expect(calls.property_reports.eq.some(([col]) => col === 'reported_by_user_id')).toBe(false);
   });
 
   // ── EC-8: orden interno del grupo, sin reordenar ──────────────────────────
@@ -470,7 +550,7 @@ describe('useAdminReports', () => {
 
   // ── EC-10: error de PostgREST ──────────────────────────────────────────────
 
-  it('(EC-10) error_de_postgrest_reports_null_y_mensaje_neutro_es_mx: un error de la query deja reports null y un mensaje neutro en español', async () => {
+  it('(EC-10) error_de_postgrest_en_property_reports_setea_mensaje_neutro_y_apaga_loading: un error de la query de property_reports deja error_message seteado y is_loading false (289.6: fail-soft cruzado — comment_reports, la otra fuente, sigue vacía-exitosa por default, así que reports queda [] y no null; la intención original —  un error real SIEMPRE se refleja, nunca se fabrica éxito silencioso— se conserva)', async () => {
     mock_supabase_holder.client = make_supabase_mock({
       data: null,
       error: { message: 'RLS denied' },
@@ -480,18 +560,18 @@ describe('useAdminReports', () => {
 
     expect(result.current.is_loading).toBe(false);
     expect(result.current.error_message).toBe(NEUTRAL_ERROR_MESSAGE);
-    expect(result.current.reports).toBeNull();
+    expect(result.current.reports).toEqual([]);
   });
 
   // ── EC-11: data null sin error ─────────────────────────────────────────────
 
-  it('(EC-11) data_null_sin_error_se_trata_como_error_nunca_como_lista_vacia_fabricada: data null sin error produce error_message, no un array vacío silencioso', async () => {
+  it('(EC-11) data_null_sin_error_en_property_reports_se_trata_como_error_nunca_como_exito_silencioso: data null sin error en property_reports produce error_message (289.6: reports queda [] — comment_reports, la otra fuente, no falló — pero el error de property SIEMPRE se refleja, nunca se pierde)', async () => {
     mock_supabase_holder.client = make_supabase_mock({ data: null, error: null });
 
     const { result } = await renderHook(() => useAdminReports());
 
     expect(result.current.error_message).toBe(NEUTRAL_ERROR_MESSAGE);
-    expect(result.current.reports).toBeNull();
+    expect(result.current.reports).toEqual([]);
   });
 
   // ── EC-12: refetch crea un grupo nuevo ─────────────────────────────────────
@@ -571,7 +651,7 @@ describe('useAdminReports', () => {
 
   // ── EC-14: rechazo de promesa ───────────────────────────────────────────────
 
-  it('(EC-14) rechazo_de_promesa_tambien_cae_en_mensaje_neutro_sin_lanzar: un reject (no un {error}) de la query no tumba el hook y produce el mismo mensaje neutro', async () => {
+  it('(EC-14) rechazo_de_promesa_en_property_reports_tambien_cae_en_mensaje_neutro_sin_lanzar: un reject (no un {error}) de la query de property_reports no tumba el hook y produce el mismo mensaje neutro (289.6: reports queda [], comment_reports no falló)', async () => {
     mock_supabase_holder.client = make_supabase_mock(() => Promise.reject(new Error('network down')));
 
     let thrown: unknown = null;
@@ -585,6 +665,6 @@ describe('useAdminReports', () => {
 
     expect(thrown).toBeNull();
     expect(final_state?.error_message).toBe(NEUTRAL_ERROR_MESSAGE);
-    expect(final_state?.reports).toBeNull();
+    expect(final_state?.reports).toEqual([]);
   });
 });
