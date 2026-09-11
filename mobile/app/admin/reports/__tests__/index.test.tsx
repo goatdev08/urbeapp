@@ -46,12 +46,22 @@
  * `app/(protected)/ads/__tests__/index.test.tsx`. Precedente exacto del
  * patrón disabled (`.props.accessibilityState?.disabled` + press-no-llama):
  * `src/features/property-detail/components/__tests__/ReportPropertySheet.test.tsx`.
+ *
+ * 🔴 289.6 (cola mezclada): `reports` ahora es una unión `kind:'property' |
+ * 'comment'`; la pantalla pinta `CommentReportCard` para los items de
+ * comentario, con sus propias acciones (restore/keep_hidden/delete_comment)
+ * vía el MISMO `resolve` mockeado (unión discriminada por `kind` en
+ * useResolveReport, 289.6). Casos nuevos (EC-R7/R8/R9): la tarjeta de
+ * comentario muestra body/autor/dirección; sus botones llaman `resolve` con
+ * `kind:'comment'`; resolver un comentario nunca invoca `resolve` con
+ * `property_id` (los dos tipos de tarjeta no se cruzan).
  */
 
 import React from 'react';
 import { render, act, cleanup, screen, fireEvent } from '@testing-library/react-native';
 
 import type {
+  AdminCommentReportQueueItem,
   AdminReportQueueItem,
   UseAdminReportsResult,
 } from '@/features/admin/hooks/useAdminReports';
@@ -93,6 +103,7 @@ type RenderResult = Awaited<ReturnType<typeof render>>;
 // ---------------------------------------------------------------------------
 
 const SUSPENDED_ITEM: AdminReportQueueItem = {
+  kind: 'property',
   property_id: 'prop-1',
   property: {
     id: 'prop-1',
@@ -118,6 +129,22 @@ const ACTIVE_ITEM: AdminReportQueueItem = {
   ...SUSPENDED_ITEM,
   property_id: 'prop-2',
   property: { ...SUSPENDED_ITEM.property, id: 'prop-2', status: 'active' },
+};
+
+// 289.6 — item 'comment' de la cola mezclada.
+const COMMENT_ITEM: AdminCommentReportQueueItem = {
+  kind: 'comment',
+  id: 'creport-1',
+  comment_id: 'comment-1',
+  body: 'Este departamento no existe, es un fraude.',
+  status: 'hidden',
+  author_display_name: 'Andrea Pérez',
+  property_id: 'prop-9',
+  property_title: 'Av. Chapultepec 123, Guadalajara',
+  reason: 'inappropriate',
+  reason_text: null,
+  created_at: '2026-09-10T12:00:00Z',
+  report_count: 1,
 };
 
 function admin_reports(overrides: Partial<UseAdminReportsResult>): UseAdminReportsResult {
@@ -333,5 +360,101 @@ describe('EC-R6: estado_vacio', () => {
 
     expect(screen.getByTestId('empty-state')).toBeTruthy();
     expect(screen.queryByTestId('report-prop-1')).toBeNull();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// (EC-R7/R8/R9) 289.6 — tarjeta de comentario en la cola mezclada
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('EC-R7: tarjeta_de_comentario_muestra_body_autor_y_direccion', () => {
+  it('item kind:"comment" → pinta el texto del comentario, el autor público y la dirección de la propiedad', async () => {
+    mock_use_admin_reports.mockReturnValue(admin_reports({ reports: [COMMENT_ITEM] }));
+
+    await render_screen();
+
+    expect(screen.getByTestId('comment-report-comment-1')).toBeTruthy();
+    expect(screen.getByText(COMMENT_ITEM.body)).toBeTruthy();
+    expect(screen.getByText(COMMENT_ITEM.author_display_name)).toBeTruthy();
+    expect(screen.getByText(COMMENT_ITEM.property_title)).toBeTruthy();
+  });
+});
+
+describe('EC-R8: botones_de_comentario_llaman_resolve_con_kind_comment', () => {
+  it('Restaurar/Mantener oculto/Eliminar (con motivo) invocan resolve con kind:"comment" y la acción exacta de cada botón', async () => {
+    const mock_resolve = jest.fn<Promise<ResolveReportResult>, [any]>(() =>
+      Promise.resolve({ ok: true, status: 'visible' }),
+    );
+    mock_use_admin_reports.mockReturnValue(admin_reports({ reports: [COMMENT_ITEM] }));
+    mock_use_resolve_report.mockReturnValue(resolve_report({ resolve: mock_resolve }));
+
+    await render_screen();
+
+    await fireEvent.press(screen.getByTestId('comment-restore-comment-1'));
+    await fireEvent.press(screen.getByTestId('comment-keep-hidden-comment-1'));
+
+    // Eliminar exige motivo (irreversible, mismo criterio que 'delete' de
+    // property) — deshabilitado sin texto.
+    expect(
+      screen.getByTestId('comment-delete-comment-1').props.accessibilityState?.disabled,
+    ).toBe(true);
+    await fireEvent.changeText(
+      screen.getByTestId('comment-reason-input-comment-1'),
+      'Confirmado, se elimina',
+    );
+    await fireEvent.press(screen.getByTestId('comment-delete-comment-1'));
+
+    expect(mock_resolve).toHaveBeenCalledTimes(3);
+    expect(mock_resolve).toHaveBeenNthCalledWith(1, {
+      kind: 'comment',
+      comment_id: 'comment-1',
+      action: 'restore',
+    });
+    expect(mock_resolve).toHaveBeenNthCalledWith(2, {
+      kind: 'comment',
+      comment_id: 'comment-1',
+      action: 'keep_hidden',
+    });
+    expect(mock_resolve).toHaveBeenNthCalledWith(3, {
+      kind: 'comment',
+      comment_id: 'comment-1',
+      action: 'delete_comment',
+      reason: 'Confirmado, se elimina',
+    });
+    // Ninguna llamada lleva property_id — las dos tarjetas no se cruzan.
+    for (const call of mock_resolve.mock.calls) {
+      expect(call[0]).not.toHaveProperty('property_id');
+    }
+  });
+});
+
+describe('EC-R9: resolver_un_comentario_no_toca_un_item_de_propiedad', () => {
+  it('cola mezclada (property + comment) → resolver el comentario llama resolve UNA vez, sin afectar el cableado de la tarjeta de propiedad', async () => {
+    const mock_resolve = jest.fn<Promise<ResolveReportResult>, [any]>(() =>
+      Promise.resolve({ ok: true, status: 'visible' }),
+    );
+    mock_use_admin_reports.mockReturnValue(
+      admin_reports({ reports: [SUSPENDED_ITEM, COMMENT_ITEM] }),
+    );
+    mock_use_resolve_report.mockReturnValue(resolve_report({ resolve: mock_resolve }));
+
+    await render_screen();
+
+    // Ambas tarjetas coexisten en la misma lista.
+    expect(screen.getByTestId('report-prop-1')).toBeTruthy();
+    expect(screen.getByTestId('comment-report-comment-1')).toBeTruthy();
+
+    await fireEvent.press(screen.getByTestId('comment-restore-comment-1'));
+
+    expect(mock_resolve).toHaveBeenCalledTimes(1);
+    expect(mock_resolve).toHaveBeenCalledWith({
+      kind: 'comment',
+      comment_id: 'comment-1',
+      action: 'restore',
+    });
+    // La tarjeta de propiedad sigue intacta — sus botones no se dispararon.
+    expect(
+      screen.getByTestId('restore-prop-1').props.accessibilityState?.disabled,
+    ).not.toBe(true);
   });
 });

@@ -49,6 +49,14 @@ export type FeedProperty = {
    * mint de keys). null si el agente no tiene foto.
    */
   agent_photo_url: string | null;
+  /**
+   * Total de comentarios visibles (properties.comment_count, 289.10) — el
+   * select del feed lo pide y build_feed_data mapea fail-open a 0 (ver
+   * feedProperties.comment-count.test.ts). Opcional en el TIPO nada más para
+   * no romper fixtures de otros tests que aún no lo pasan; en runtime nunca
+   * es undefined (siempre 0 o el conteo real).
+   */
+  comment_count?: number;
   video: FeedPropertyVideo;
 };
 

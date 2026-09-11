@@ -42,6 +42,12 @@ const REVISION_ERROR_MESSAGES: Record<string, string> = {
   INVALID_TRANSITION: 'Esta propiedad no puede moderarse en su estado actual.',
   NOTHING_TO_MODERATE: 'No hay ninguna revisión ni publicación pendiente que moderar.',
   DB_ERROR: 'No pudimos guardar la moderación. Intenta de nuevo.',
+  // Códigos de moderate-comment (289.6) — mismo mapa, reusado sin tocar los
+  // 7 de arriba. ADMIN_REQUIRED es el remapeo homologado del 403 (NO
+  // FORBIDDEN, ver supabase/functions/moderate-comment/handler.ts).
+  ADMIN_REQUIRED: 'Solo un administrador puede moderar comentarios.',
+  COMMENT_NOT_FOUND: 'El comentario no existe o fue eliminado.',
+  INVALID_ACTION: 'Esa acción no es válida para este comentario.',
 };
 
 /**

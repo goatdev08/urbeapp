@@ -83,5 +83,8 @@ Los tres pasaron TODA la suite mockeada en verde y solo aparecieron al verificar
 ## Detalle exhaustivo
 - `docs/PRD.md` §14 (wizard+autosave), §15 (moderación, pipeline, estados, re-revisión, visibilidad — **§15.1 suspendido en beta**, ver `wiki/decisiones/0010-prd-canonico-beta-sin-pagos.md`), §16 (cierre) · migraciones `20260809000002`-`20260809000005` · [[db-schema-map]]
 
+## Comentarios (#289)
+Los comentarios tienen su propia cola de reportes, auto-ocultar 3/24 h y RPC de resolución, mezclados en `/admin/reports` con los de propiedades: [[comentarios-moderacion]].
+
 ## Relacionados
 [[propiedades-y-video]] · [[panel-admin]] · [[rls-seguridad]] · [[notificaciones]] · [[0010-prd-canonico-beta-sin-pagos]]

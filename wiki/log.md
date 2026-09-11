@@ -1177,3 +1177,7 @@ Se retira `is_admin()` de `leads_update`, `leads_delete` y `private.can_edit_lea
 ## [2026-09-10] tarea | #288 polish(285) costura de vuelta imperceptible — `isLoading` solo en carga inicial/refetch (loadMore silencioso, reentrada por ref), `onEndReachedThreshold` 2, `avoid_adjacent_repeat` en la vuelta, chip de vuelta retirado; precarga ansiosa descartada con trade-off explicado; smoke adb 70 swipes / 9 vueltas sin chips ni claves duplicadas
 
 ## [2026-09-10] release | OTA #285+#288 (feed infinito con costura imperceptible) publicado a preview (Android, runtime 374ba3dd…) y production (iOS, runtime ca62b26a…); runtimes verificados contra los builds 1.0.6
+
+## [2026-09-10] explore | aprobado tareas 289 y 78 — comentarios (C1+C2+R1: planos por propiedad, EF post-comment con filtro mínimo, comment_reports + auto-ocultar 3/24h + cola existente, preview HTML de la hoja) y follow F1 redefinido en #78 dependiente de #289 (orden enmendado por Abraham: comentarios primero); Q10 radar = aceptar y documentar
+
+## [2026-09-11] tarea | #289 comentarios por publicación con filtro mínimo y reportes en la cola de moderación — comments + comment_count, EF post-comment (filtro determinista + app_config.comment_filter_words), comment_reports + auto-ocultar 3/24h + resolve_comment_reports_atomic, EF moderate-comment, 3 avisos, cola /admin/reports mezclada, hooks + CommentsSheet (dirección A) + 4.º botón; backend DESPLEGADO; Q10 privacidad escrita; derivadas #290 #291 #292; primera tarea en auto+paralelo

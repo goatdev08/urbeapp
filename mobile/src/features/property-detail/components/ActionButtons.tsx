@@ -18,6 +18,10 @@
  *     (is_owner=false). El hook useReportProperty repite el guard como 2ª
  *     capa; owner_user_id/is_owner son opcionales para no romper callers
  *     existentes que aún no los pasan (el botón simplemente no aparece).
+ *   - Comentarios: el botón vivió aquí en 289.8; decisión de Abraham
+ *     2026-09-11 (289.10, tras el smoke) lo mudó al rail del feed
+ *     (PropertyOverlay) — el detalle vuelve a exactamente 3 botones
+ *     (like/save/reportar).
  */
 
 import React, { useState } from 'react';

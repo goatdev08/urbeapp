@@ -22,6 +22,8 @@ import { Play } from 'phosphor-react-native';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 
+import { useAuth } from '@/features/auth/context';
+import { CommentsSheet } from '@/features/comments/components/CommentsSheet';
 import { PropertyOverlay } from './PropertyOverlay';
 import { HeartAnimation } from './HeartAnimation';
 import { useLikeProperty } from '../hooks/useLikeProperty';
@@ -102,6 +104,24 @@ function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedIte
   const { isSaved, toggleSave } = useSaveProperty({
     property_id: property.id,
   });
+
+  // ── Comentarios en el rail (289.10) ─────────────────────────────────────
+  // can_hide = sesión === propietario (mismo techo que ActionButtons/289.8).
+  const { user } = useAuth();
+  const can_hide_comments = user !== null && user.id === property.owner_user_id;
+
+  const [comments_open, set_comments_open] = useState(false);
+  // ponytail: mismo patrón que `media` arriba — el contador sube LOCAL (+1 al
+  // publicar, sin refetch) pero se resetea solo cuando FlashList recicla esta
+  // instancia hacia otra property (id distinto), nunca por un re-render normal.
+  const [comment_count_override, set_comment_count_override] = useState<{
+    id: string;
+    count: number;
+  } | null>(null);
+  const comment_count =
+    comment_count_override?.id === property.id
+      ? comment_count_override.count
+      : (property.comment_count ?? 0);
 
   // Contacto por WhatsApp — el MISMO camino que el detalle: la EF crea el lead
   // y devuelve el template §19.3. Ver el comentario de handle_whatsapp abajo.
@@ -204,6 +224,35 @@ function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedIte
     is_active_ref.current = isActive;
   }, [isActive]);
 
+  // Guardian 289.10 (H2): los efectos de abajo (replaceAsync().then() y el de
+  // visibilidad) también llaman player.play() y NO conocían comments_open —
+  // un refetch/reciclaje de FlashList mientras la hoja está abierta reanudaba
+  // el video DETRÁS del Modal (cuota de Stream quemándose a ciegas). Mismo
+  // patrón de ref que is_active_ref: evita meter comments_open en las deps de
+  // esos efectos (que solo deben reaccionar a isActive/la fuente).
+  const comments_open_ref = useRef(comments_open);
+  useEffect(() => {
+    comments_open_ref.current = comments_open;
+  }, [comments_open]);
+
+  // Abrir/cerrar la hoja de comentarios (289.10) — pausa real mientras está
+  // abierta (cuota de Stream + UX, video_playback_burns_quota) y reanuda al
+  // cerrar SOLO si el ítem sigue activo (is_active_ref: el usuario pudo haber
+  // deslizado fuera mientras la hoja estaba abierta).
+  const handle_open_comments = useCallback(() => {
+    player.pause();
+    set_comments_open(true);
+  }, [player]);
+
+  const handle_close_comments = useCallback(() => {
+    set_comments_open(false);
+    if (is_active_ref.current) player.play();
+  }, [player]);
+
+  const handle_comment_posted = useCallback(() => {
+    set_comment_count_override({ id: property.id, count: comment_count + 1 });
+  }, [property.id, comment_count]);
+
   // Cambio de fuente en la MISMA instancia: FlashList recicló el ítem hacia
   // otra property, o el refetch (filtros/pull-to-refresh) re-firmó la URL del
   // mismo video. Se reemplaza el medio dentro del player vivo y se resetea el
@@ -217,7 +266,8 @@ function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedIte
     void player
       .replaceAsync(property.signed_url)
       .then(() => {
-        if (is_active_ref.current) player.play();
+        // H2: no reanudar detrás de la hoja de comentarios abierta.
+        if (is_active_ref.current && !comments_open_ref.current) player.play();
       })
       .catch(() => set_has_error(true));
   }, [player, property.signed_url]);
@@ -319,7 +369,10 @@ function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedIte
   // porque isActive no cambió.
   useEffect(() => {
     if (isActive) {
-      player.play();
+      // H2 (guardian 289.10): is_active_ref.current ya es true aquí (mismo
+      // tick que isActive) — el guard es simétrico al de replaceAsync().then()
+      // de arriba; no reanudar mientras la hoja de comentarios está abierta.
+      if (is_active_ref.current && !comments_open_ref.current) player.play();
       // eslint-disable-next-line react-hooks/set-state-in-effect -- sincroniza el override manual de pausa con isActive (ver comentario arriba).
       set_is_paused(false);
       // 112.2: registra la vista al activarse. Fire-and-forget + dedupe interno
@@ -423,7 +476,22 @@ function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedIte
           onPropertyPress={handle_property_press}
           onWhatsApp={handle_whatsapp}
           onShare={handle_share}
+          onComments={handle_open_comments}
+          commentCount={comment_count}
         />
+
+        {/* Hoja de comentarios (289.10) — montada SOLO mientras está abierta,
+            mismo patrón que CommentsAction en ActionButtons.tsx. */}
+        {comments_open && (
+          <CommentsSheet
+            visible={comments_open}
+            on_dismiss={handle_close_comments}
+            property_id={property.id}
+            comment_count={comment_count}
+            can_hide={can_hide_comments}
+            on_comment_posted={handle_comment_posted}
+          />
+        )}
       </View>
     </GestureDetector>
   );

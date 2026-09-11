@@ -25,7 +25,7 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Bathtub, Bed, BookmarkSimple, Heart, type Icon, ShareNetwork, WhatsappLogo } from 'phosphor-react-native';
+import { Bathtub, Bed, BookmarkSimple, ChatCircle, Heart, type Icon, ShareNetwork, WhatsappLogo } from 'phosphor-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useR2Urls } from '@/hooks/useR2Urls';
@@ -72,6 +72,15 @@ export type PropertyOverlayProps = {
   onWhatsApp: (() => void) | null;
   /** Compartir la propiedad como link al video. */
   onShare: () => void;
+  /**
+   * Botón de comentarios del rail (289.10) — abre CommentsSheet sobre el feed
+   * (sustituye al 4º botón del detalle). Opcional para no romper
+   * PropertyOverlay.cacheKey.test.tsx (no lo pasa): sin él el botón no se
+   * renderiza.
+   */
+  onComments?: () => void;
+  /** Contador vivo de comentarios (289.10). Fail-open a 0 si se omite. */
+  commentCount?: number;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -88,8 +97,11 @@ export function PropertyOverlay({
   onPropertyPress,
   onWhatsApp,
   onShare,
+  onComments,
+  commentCount,
 }: PropertyOverlayProps) {
   const insets = useSafeAreaInsets();
+  const comment_count = commentCount ?? 0;
 
   // #145.4: foto real del agente. agent_photo_url es key R2 o URL legacy —
   // useR2Urls resuelve/pasa según corresponda (fail-soft → null → inicial).
@@ -152,6 +164,27 @@ export function PropertyOverlay({
           onPress={onSave}
           accessibilityLabel={isSaved ? 'Quitar de guardados' : 'Guardar propiedad'}
         />
+
+        {/* Comentarios (289.10) — sustituye al 4º botón del detalle, ahora
+            vive en el rail del feed junto a like/guardar. onComments es
+            opcional para no romper PropertyOverlay.cacheKey.test.tsx (no lo
+            pasa) — sin él el botón simplemente no se renderiza. */}
+        {onComments && (
+          <Pressable
+            testID="overlay-comments-btn"
+            onPress={onComments}
+            style={({ pressed }) => [styles.action_btn, pressed && styles.btn_pressed]}
+            accessibilityRole="button"
+            accessibilityLabel="Comentarios"
+          >
+            <ChatCircle size={22} color="#FFFFFF" weight="bold" />
+            {comment_count > 0 && (
+              <Text style={styles.comment_count} numberOfLines={1}>
+                {comment_count}
+              </Text>
+            )}
+          </Pressable>
+        )}
 
         {/* WhatsApp directo — visible solo si el agente tiene teléfono.
             Verde de marca WhatsApp para reconocimiento inmediato. */}
@@ -371,6 +404,17 @@ const styles = StyleSheet.create({
   btn_pressed: {
     transform: [{ scale: 0.88 }],
     opacity: 0.85,
+  },
+  /** Contador del botón de comentarios — mismo patrón que ActionButtons.comment_count. */
+  comment_count: {
+    position: 'absolute',
+    bottom: -16,
+    fontFamily: fonts.mono_medium,
+    fontSize: 11,
+    color: '#FFFFFF',
+    textShadowColor: 'rgba(23,20,15,0.55)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
 
   // Info inferior izquierda

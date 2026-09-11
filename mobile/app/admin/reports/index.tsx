@@ -38,10 +38,12 @@ import {
 
 import {
   useAdminReports,
+  type AdminCommentReportQueueItem,
   type AdminReportQueueItem,
 } from '@/features/admin/hooks/useAdminReports';
 import {
   useResolveReport,
+  type CommentResolveAction,
   type ResolveReportAction,
 } from '@/features/admin/hooks/useResolveReport';
 import { format_price } from '@/lib/formatPrice';
@@ -81,6 +83,13 @@ const ACTION_LABELS: Record<ResolveReportAction, string> = {
   request_changes: 'Pedir cambios',
   keep_suspended: 'Mantener suspendida',
   delete: 'Eliminar',
+};
+
+/** 289.6 — etiquetas propias de la rama comentario (distintas de ACTION_LABELS). */
+const COMMENT_ACTION_LABELS: Record<CommentResolveAction, string> = {
+  restore: 'Restaurar',
+  keep_hidden: 'Mantener oculto',
+  delete_comment: 'Eliminar',
 };
 
 function format_reason(row: { reason: string; reason_text: string | null }): string {
@@ -202,6 +211,103 @@ function ReportCard({ item, is_submitting, on_resolve }: ReportCardProps): React
 }
 
 // ---------------------------------------------------------------------------
+// Tarjeta de comentario reportado (289.6) — mismos tokens/estilos que
+// ReportCard (card/card_header/section_label/reason_input/actions_row/
+// botones), solo cambia el contenido: no hay `property.status` que
+// condicione las acciones (un comentario reportado siempre puede
+// resolverse) ni un embed de reportes individuales — comment_reports.ts
+// ya colapsa el grupo a su reporte MÁS RECIENTE (reason/reason_text) +
+// report_count. Solo `delete_comment` exige motivo (irreversible, mismo
+// criterio que 'delete' en ReportCard); restore/keep_hidden no piden.
+// ---------------------------------------------------------------------------
+
+interface CommentReportCardProps {
+  item: AdminCommentReportQueueItem;
+  is_submitting: boolean;
+  on_resolve: (comment_id: string, action: CommentResolveAction, reason?: string) => void;
+}
+
+function CommentReportCard({
+  item,
+  is_submitting,
+  on_resolve,
+}: CommentReportCardProps): React.ReactElement {
+  const [reason, set_reason] = useState('');
+  const can_act = !is_submitting;
+  const can_delete = can_act && reason.trim().length > 0;
+
+  return (
+    <View style={styles.card} testID={`comment-report-${item.comment_id}`}>
+      <View style={styles.card_header}>
+        <Text style={styles.card_address} numberOfLines={2}>
+          {item.property_title}
+        </Text>
+        <View style={styles.status_badge}>
+          <Text style={styles.status_badge_text}>Comentario</Text>
+        </View>
+      </View>
+
+      <Text style={styles.card_meta}>{item.author_display_name}</Text>
+      <Text style={styles.comment_body} numberOfLines={4}>
+        {item.body}
+      </Text>
+
+      <Text style={styles.section_label}>
+        {item.report_count === 1 ? '1 reporte' : `${item.report_count} reportes`}
+      </Text>
+      <Text style={styles.report_row}>• {format_reason(item)}</Text>
+
+      <Text style={styles.section_label}>Motivo</Text>
+      <TextInput
+        style={styles.reason_input}
+        value={reason}
+        onChangeText={set_reason}
+        placeholder="Obligatorio para eliminar. Queda en el registro de moderación."
+        placeholderTextColor={colors.gray_1}
+        multiline
+        editable={can_act}
+        testID={`comment-reason-input-${item.comment_id}`}
+      />
+
+      <View style={styles.actions_row}>
+        <Pressable
+          style={[styles.primary_button, !can_act && styles.button_disabled]}
+          disabled={!can_act}
+          onPress={() => on_resolve(item.comment_id, 'restore')}
+          accessibilityRole="button"
+          accessibilityLabel={`Restaurar comentario de ${item.author_display_name}`}
+          testID={`comment-restore-${item.comment_id}`}
+        >
+          <Text style={styles.primary_text}>{COMMENT_ACTION_LABELS.restore}</Text>
+        </Pressable>
+        <Pressable
+          style={[styles.secondary_button, !can_act && styles.button_disabled]}
+          disabled={!can_act}
+          onPress={() => on_resolve(item.comment_id, 'keep_hidden')}
+          accessibilityRole="button"
+          accessibilityLabel={`Mantener oculto el comentario de ${item.author_display_name}`}
+          testID={`comment-keep-hidden-${item.comment_id}`}
+        >
+          <Text style={styles.secondary_text}>{COMMENT_ACTION_LABELS.keep_hidden}</Text>
+        </Pressable>
+      </View>
+      <View style={styles.actions_row}>
+        <Pressable
+          style={[styles.danger_button, !can_delete && styles.button_disabled]}
+          disabled={!can_delete}
+          onPress={() => on_resolve(item.comment_id, 'delete_comment', reason)}
+          accessibilityRole="button"
+          accessibilityLabel={`Eliminar comentario de ${item.author_display_name}`}
+          testID={`comment-delete-${item.comment_id}`}
+        >
+          <Text style={styles.danger_text}>{COMMENT_ACTION_LABELS.delete_comment}</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Pantalla
 // ---------------------------------------------------------------------------
 
@@ -214,6 +320,20 @@ export default function AdminReportsScreen(): React.ReactElement {
   const handle_resolve = useCallback(
     (property_id: string, action: ResolveReportAction, reason?: string) => {
       void resolve(reason !== undefined ? { property_id, action, reason } : { property_id, action });
+    },
+    [resolve],
+  );
+
+  // 289.6: misma instancia de useResolveReport que handle_resolve — resolver
+  // un comentario no toca ni refetch-ea nada distinto de una propiedad
+  // (mismo onSuccess → refetch); solo cambia el `kind` y el body enviado.
+  const handle_resolve_comment = useCallback(
+    (comment_id: string, action: CommentResolveAction, reason?: string) => {
+      void resolve(
+        reason !== undefined
+          ? { kind: 'comment', comment_id, action, reason }
+          : { kind: 'comment', comment_id, action },
+      );
     },
     [resolve],
   );
@@ -254,6 +374,9 @@ export default function AdminReportsScreen(): React.ReactElement {
     );
   }
 
+  // 289.6: la cola mezcla items 'property' y 'comment' en UN solo array
+  // (reports), ya intercalados por fecha — la pantalla no filtra, solo
+  // decide qué tarjeta pintar por `item.kind`.
   const list = reports ?? [];
 
   return (
@@ -264,7 +387,7 @@ export default function AdminReportsScreen(): React.ReactElement {
           <Text style={styles.title}>Reportes</Text>
           {list.length > 0 && (
             <Text style={styles.subtitle}>
-              {list.length === 1 ? '1 propiedad reportada' : `${list.length} propiedades reportadas`}
+              {list.length === 1 ? '1 reporte pendiente' : `${list.length} reportes pendientes`}
             </Text>
           )}
         </View>
@@ -278,10 +401,18 @@ export default function AdminReportsScreen(): React.ReactElement {
 
       <FlatList
         data={list}
-        keyExtractor={(item) => item.property_id}
-        renderItem={({ item }) => (
-          <ReportCard item={item} is_submitting={is_submitting} on_resolve={handle_resolve} />
-        )}
+        keyExtractor={(item) => (item.kind === 'property' ? item.property_id : item.comment_id)}
+        renderItem={({ item }) =>
+          item.kind === 'property' ? (
+            <ReportCard item={item} is_submitting={is_submitting} on_resolve={handle_resolve} />
+          ) : (
+            <CommentReportCard
+              item={item}
+              is_submitting={is_submitting}
+              on_resolve={handle_resolve_comment}
+            />
+          )
+        }
         contentContainerStyle={
           list.length === 0 ? styles.list_empty_container : styles.list_content
         }
@@ -325,6 +456,7 @@ const styles = StyleSheet.create({
   card_header: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
   card_address: { flex: 1, fontSize: 16, fontWeight: '600', color: colors.ink, marginRight: spacing.s_8 },
   card_meta: { fontSize: 13, color: colors.gray_2, marginTop: spacing.s_4 },
+  comment_body: { fontSize: 14, color: colors.ink, marginTop: spacing.s_8 },
 
   status_badge: {
     borderRadius: radii.r_pill,

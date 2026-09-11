@@ -1,9 +1,18 @@
 ---
 tipo: estado
-actualizado: 2026-09-08
+actualizado: 2026-09-11
 ---
 
-## Hoy (2026-09-10, noche) — #288: la vuelta del feed ya no se nota
+## Hoy (2026-09-11) — #289: comentarios por publicación con filtro mínimo y reportes en la cola de moderación
+Primera tarea corrida **en auto y en paralelo** por pedido de Abraham (RED/GREEN/guardian de 2–3 subtareas a la vez sobre el mismo árbol, footprints disjuntos, commits por path, bitácoras en el scratchpad volcadas con `tm-log`). 9 subtareas cerradas; backend **DESPLEGADO** al remoto y verificado; rama `tarea/289-comentarios` sin PR todavía.
+- **Qué hay.** Tabla `comments` (≤500, `comment_status`), `properties.comment_count` por trigger (solo `visible`), RLS status-only con grant por columna, sin insert/delete directos; EF `post-comment` con filtro determinista (teléfono/email/URL/lista `app_config.comment_filter_words`, calibrable sin publicar app) → `visible|held_for_review`; `comment_reports` con auto-ocultar 3/24 h y RPC `resolve_comment_reports_atomic`; EF hermana `moderate-comment`; 3 avisos nuevos; cola `/admin/reports` mezclada por fecha; hooks + hoja (dirección A del preview) + 4.º botón del detalle. Concepto: [[comentarios-moderacion]].
+- **Decisiones de Abraham.** EF hermana (no extender `moderate-property`); una lista mezclada por fecha; rail del feed → #290; toast tras ocultar → #291; dirección A; Q10 «comentar es un acto público» escrita en [[privacidad-datos]].
+- **Guardians.** 289.2 7/7 mutantes; 289.3 7 + 1 equivalente (`count(*)` = `count(distinct)` por el índice único); 289.4 9/9; 289.5 9 + 2 huecos cerrados (EMAIL4/URL5) + hallazgo de producción aplicado (`deleted_at` en el fetcher); 289.6 EF 13/13, mobile 11 + EC-16 añadido; 289.7 FAIL→ciclo 2 (EC-9 vacuo, LIMIT+1, order id). Dos guardians murieron por ENOTFOUND: el orquestador re-corrió sus loops desde `progreso.txt`.
+- **Verificación.** pgTAP 115 archivos / 3901 asserts; Deno 61 + 26; Jest 212 suites / 2659; tsc 0; `pnpm lint` verde. Deploy por `supabase db query --linked -f` + filas manuales en `schema_migrations` (sin MCP), EFs con `--import-map --use-api`.
+- **Techos nombrados.** `can_hide` en la hoja = solo dueño (la RLS admite owner/admin de agencia); `private.can_manage_property()` desactualizado → #292 `hardening(289.2)`.
+- **Pendiente:** smoke juntos (emulador contra producción ya desplegada); PR + merge y OTA cuando Abraham lo pida; luego #78 Follow F1.
+
+## Antes (2026-09-10, noche) — #288: la vuelta del feed ya no se nota
 Abraham probó #285 y no le convenció la UX: «el cambio debe ser fluido, imperceptible». Propuse 4 direcciones; eligió **1 + 2 + 3** (costura silenciosa, vuelta lista antes del final, sin video repetido pegado). Derivada `polish(285)` #288, 4 subtareas, mergeada a `main`; solo JS → mismo OTA que #285 cuando lo pida.
 - **Qué delataba la vuelta.** «Actualizando» salía en CADA carga de página (`isLoading` compartido) y justo después el chip de vuelta; el fetch de la vuelta arrancaba a 0.3 pantallas del final; el barajado podía abrir con el último video.
 - **Qué cambió.** `isLoading` = solo carga inicial/refetch; `loadMore` silencioso con reentrada por ref; `onEndReachedThreshold` 2; `avoid_adjacent_repeat` sobre el barajado; chip de vuelta retirado.
