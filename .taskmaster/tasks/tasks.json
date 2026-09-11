@@ -5851,98 +5851,82 @@
       },
       {
         "id": "78",
-        "title": "Ola 2 — Comentarios + Follow + Compartir (deep links)",
-        "description": "Comentarios moderados (§18), follow a agentes (§20) y compartir contenido con deep links (§21).",
-        "details": "PRD §18 (comentarios + moderación, enfoque MVP §18.3), §20 (follow), §21 (compartir + deep link). Módulos nuevos. Toca migraciones, RLS, EF de moderación de comentarios, UI, deep links `urbea.com/v/[id]`. Épica del camino a producción (ADR 0008 / docs/PRD-beta.md). Spec detallado (modelo de datos, RLS, EF, pantallas, estados, edge cases, tests, subtareas) se redacta SECUENCIAL al entrar su ola, con aprobación de Abraham; add-task roto → subtareas por escritura directa en tasks.json.",
-        "testStrategy": "TDD estricto en lógica crítica (supabase/functions/**, migrations/**, lib/hooks/validation): RED→GREEN→guardian. Verificación ligera (tsc/lint/smoke) en UI. Se detalla al specificar la ola.",
+        "title": "follow de cuentas (F1): seguir publicadores, conteo público y aviso «Nuevo seguidor»",
+        "description": "Origen: exploración 048 (.taskmaster/docs/exploraciones/048-follow-comentarios-reportes.md) · Pedido por: Abraham (2026-09-10; va DESPUÉS de comentarios #289). Redefinida el 2026-09-10: la tarea original «Ola 2 — Comentarios + Follow + Compartir» se reparte así: comentarios y sus reportes → #289; compartir ya existe parcialmente (mobile/src/lib/shareProperty.ts) y la página web del deep link (§21/§4.3) queda fuera, como proyecto aparte. Follow unidireccional sin aprobación a cualquier publicador con perfil público; el agente ve SOLO el conteo (nunca la lista, protege el k-anonimato del radar del CRM); aviso in-app new_follower; sin sección «Siguiendo» ni aviso de «nuevo video» por ahora.",
+        "details": "DECISIONES CERRADAS (doc 048, AskUserQuestion 2026-09-10): a quién = cualquier publicador con perfil público (agent_public_profiles cubre todos los roles desde #250/#254) · el agente ve solo el conteo (Q4) · sin «Siguiendo» en el feed (reservado a la dirección B de #285) ni fan-out de «nuevo video» (Q5/Q6) · stat «Seguidores» SUSTITUYE una columna en ProfessionalStats.tsx (propio: Publicaciones · Seguidores · Me gusta; ajeno igual) — decidido en conjunto, no derivada.\nMODELO: follows(follower_user_id → users cascade, followed_user_id → users cascade, created_at, PK(follower,followed), CHECK follower <> followed) · users.follower_count int NOT NULL DEFAULT 0 CHECK (>=0) por trigger atómico (calco 20260701000001) · el conteo público sale de agent_public_profiles con la columna nueva AL FINAL (contrato publicado: solo se ensancha) · RLS: follows_select = follower_user_id=auth.uid() OR is_admin(); insert/delete = follower_user_id=auth.uid(); sin UPDATE; cero a anon.\nNOTIFICACIÓN new_follower al seguido en la misma transacción sin EXCEPTION, dedupe por (seguido, seguidor) mientras el follow viva, deep_link a la ruta de perfil existente. Sin push.\nUI (el prototipo SÍ la dibuja): píldora «Seguir» en la fila del agente del PropertyOverlay (borde blanco 1.5 px, radio 20, padding 6/16, 700 13 px) y en ProfileActions/ProfileHeader; mini-spec escrito basta, no requiere preview (§8). Hook useFollow optimista con rollback calcado de useLikeProperty.\nGATE §0.5: columnas aditivas, vista ampliada al final, migración idempotente + rollback ruidoso + pgTAP; JS puro → OTA.\nFUERA: follow a agencias (F4), lista de seguidores, «Siguiendo», fan-out de publicación, follow como señal de temperatura del CRM.",
+        "testStrategy": "TDD estricto en migración (pgTAP: CHECK auto-follow, insert a nombre de otro negado por impersonación, conteo coincide con filas tras follow/unfollow repetido con backfill, vista conserva orden de columnas, rollback round-trip ruidoso), en la notificación (un aviso por follow nuevo, dedupe) y en useFollow (RNTL 14: optimismo, rollback, idempotencia). Verificación ligera en UI (tsc + lint + smoke adb: seguir desde el feed y desde el perfil, conteo sube en el perfil ajeno; stopApp).",
         "status": "pending",
         "dependencies": [
-          "66",
-          "71",
-          "74"
+          "289"
         ],
-        "priority": "low",
+        "priority": "medium",
         "subtasks": [
           {
             "id": 1,
-            "title": "Tabla comments + moderación por reglas (§18.2)",
-            "description": "Tabla comments con estados y filtro por lista configurable → held_for_review.",
-            "details": "public.comments(id, video_id, author_id, body, status published|held_for_review|hidden, created_at) + auditoría de moderación (original, autor, propiedad, acción, actor §18.2). EF de filtro: regex/lista configurable (insultos, spam, links, teléfonos/correos, discriminación, sexual, amenazas) → held_for_review; si pasa → published. Lista en tabla editable por admin (§28.9). CRÍTICA (frontera + moderación).",
-            "testStrategy": "Deno/pgTAP: comentario con teléfono/insulto → held_for_review; limpio → published; auditoría registrada.",
+            "title": "migración follows: tabla, follower_count por trigger atómico, RLS y vista pública ampliada",
+            "description": "Crea follows, users.follower_count, trigger de conteo SECURITY DEFINER, policies select/insert/delete, grants a authenticated, agent_public_profiles con follower_count AL FINAL; rollback 1:1 ruidoso.",
+            "details": "CRÍTICA (supabase/migrations/**). Calco de 20260701000001 + 20260905200003. pgTAP no detecta la falta de SECURITY DEFINER: revisión manual.",
+            "testStrategy": "pgTAP: CHECK follower<>followed; insert a nombre de otro negado (JWT); unfollow idempotente; conteo tras 3 follow/unfollow; anon 0 filas; orden de columnas de la vista; rollback.",
             "status": "pending",
             "dependencies": [],
-            "priority": "high",
+            "updatedAt": "2026-09-11T00:58:28.921Z",
             "parentId": "undefined"
           },
           {
             "id": 2,
-            "title": "UI de comentarios + acciones",
-            "description": "Ver/crear comentarios (autenticados); agente oculta (no borra); reportar; notif nuevo comentario.",
-            "details": "mobile/feed: comentarios visibles a autenticados (§18.1); crear; agente/inmobiliaria oculta comentarios de sus publicaciones sin borrar (§18.2); reportar comentario. Gancho notificación \"nuevo comentario\" al publicador (§22.3). Preguntas directas van por WhatsApp, no Q&A (§18.1). NO crítica (UI).",
-            "testStrategy": "pnpm tsc/lint; smoke: comentar, ocultar como agente, reportar.",
+            "title": "aviso new_follower en la misma transacción",
+            "description": "Trigger AFTER INSERT en follows que inserta en notifications al seguido, sin EXCEPTION, con dedupe por índice parcial; deep_link al perfil del seguidor (ruta existente).",
+            "details": "CRÍTICA (supabase/migrations/**). Patrón 20260826000001.",
+            "testStrategy": "pgTAP: un aviso por follow, ninguno al repetir tras unfollow/follow si el índice lo dedupe (decidir en el plan), body legible; Jest: deep_link resuelve.",
             "status": "pending",
             "dependencies": [
               1
             ],
-            "priority": "medium",
+            "updatedAt": "2026-09-11T00:58:28.921Z",
             "parentId": "undefined"
           },
           {
             "id": 3,
-            "title": "Follow de agentes (§20)",
-            "description": "Tabla follows (solo agentes) + follow/unfollow; notif nuevo seguidor y nuevo video de agente seguido.",
-            "details": "public.follows(follower_id, agent_id, created_at). Solo perfiles de agente son seguibles (premium no, §20/§23.2). El follow es al agente (conserva followers al cambiar de agencia, ya en 71.6). Ganchos: \"nuevo seguidor\" (in-app, §22.3) y \"nuevo video de un agente que sigues\" (push+in-app). mobile + table.",
-            "testStrategy": "pgTAP/smoke: seguir agente; premium no seguible; nuevo video notifica a seguidores.",
+            "title": "hook useFollow optimista y conteo en el perfil",
+            "description": "useFollow(user_id) con estado inicial desde follows (.eq(follower_user_id) explícito), toggle optimista con rollback; useAgentProfile expone follower_count desde la vista.",
+            "details": "CRÍTICA (mobile/**/hooks/**). Calco de useLikeProperty. No desprender métodos del cliente.",
+            "testStrategy": "RNTL 14: estado inicial con sonda del primer render, toggle optimista, rollback al fallar, doble tap no duplica.",
             "status": "pending",
             "dependencies": [
               1
             ],
-            "priority": "medium",
+            "updatedAt": "2026-09-11T00:58:28.921Z",
             "parentId": "undefined"
           },
           {
             "id": 4,
-            "title": "Compartir video (§21)",
-            "description": "Share nativo del SO con deep link permanente al video + evento share_clicked.",
-            "details": "mobile: API nativa de share (sheet iOS/Android); comparte el deep link del video (no el archivo), permanente mientras la propiedad esté activa (§21). Registra share_clicked en events_raw (video_id, user_id, ts). No se trackea canal (§21). Compartir perfil = no MVP. NO crítica (UI).",
-            "testStrategy": "pnpm tsc/lint; smoke: share abre sheet; evento registrado.",
+            "title": "UI: píldora «Seguir» en overlay y perfil, stat «Seguidores» sustituye una columna",
+            "description": "FollowButton reusable en PropertyOverlay (fila del agente) y ProfileActions; ProfessionalStats pasa a Publicaciones · Seguidores · Me gusta (propio y ajeno); oculto en el propio perfil.",
+            "details": "NO crítica (components). Mini-spec con los tokens del prototipo; nada nativo.",
+            "testStrategy": "tsc + lint + smoke adb (seguir desde feed y perfil, conteo sube; stopApp).",
             "status": "pending",
             "dependencies": [
-              1
+              3
             ],
-            "priority": "low",
+            "updatedAt": "2026-09-11T00:58:28.921Z",
             "parentId": "undefined"
           },
           {
             "id": 5,
-            "title": "Página web del deep link (§4.3/§21)",
-            "description": "Página web mínima urbea.com/v/[id]: reproduce HLS, datos públicos, CTA descarga, fallback \"no disponible\".",
-            "details": "Web ligera (repo web público en Next.js/Vercel, creado aquí y ampliado a landing en Ola 3): reproduce el HLS de Stream, muestra datos públicos básicos (§4.3), CTA de descarga/registro para acciones bloqueadas, y fallback \"Esta propiedad ya no está disponible\" + CTA si sold/rented/expired/deleted (§21). El link es permanente. Hace Compartir 100% funcional.",
-            "testStrategy": "Smoke: link de propiedad activa reproduce; link de cerrada muestra fallback.",
-            "status": "pending",
-            "dependencies": [
-              4
-            ],
-            "priority": "medium",
-            "parentId": "undefined"
-          },
-          {
-            "id": 6,
-            "title": "Ingest + verificación",
-            "description": "Ingest al vault y verificación E2E.",
-            "details": "E2E: comentar (+moderación), seguir agente (+notif), compartir (+página web). Ingest: mapa-codebase (comments, follows, share, web /v/[id]), conceptos engagement (estado vivo), log.md.",
-            "testStrategy": "Smoke; revisión del vault.",
+            "title": "deploy, vault y smoke",
+            "description": "Despliega la migración (apply_migration) y verifica por impersonación; ingest al vault (concepto follow, mapa-codebase, privacidad-datos con la decisión «solo conteo», log); smoke con Abraham; OTA cuando él lo pida.",
+            "details": "NO crítica. Backend antes del PR.",
+            "testStrategy": "Sonda DO block + RAISE; wiki lint.",
             "status": "pending",
             "dependencies": [
               2,
-              3,
-              5
+              4
             ],
-            "priority": "high",
+            "updatedAt": "2026-09-11T00:58:28.921Z",
             "parentId": "undefined"
           }
         ],
-        "updatedAt": "2026-07-13T00:00:00.000Z"
+        "updatedAt": "2026-09-11T00:58:28.921Z"
       },
       {
         "id": "79",
@@ -12598,6 +12582,155 @@
             "parentId": "undefined"
           }
         ]
+      },
+      {
+        "id": "289",
+        "title": "comentarios por publicación con filtro mínimo y reportes integrados a la cola de moderación (C1+C2+R1)",
+        "description": "Origen: exploración 048 (.taskmaster/docs/exploraciones/048-follow-comentarios-reportes.md) · Pedido por: Abraham (2026-09-10, prometido a testers el 2026-09-05; hoy pidió comentarios ANTES que follow). Comentarios planos por propiedad, sin edición, con borrado propio lógico; se escriben vía Edge Function post-comment con filtro determinista mínimo (teléfono, email, URL, lista en app_config) que desvía a held_for_review SOLO lo que matchea; el publicador o el owner/admin activo de su agencia puede OCULTAR (nunca borrar); reportes en tabla propia comment_reports calcando property_reports, auto-ocultar a 3 reportantes distintos en 24 h en la misma transacción y resolución en la cola /admin/reports existente con auditoría en admin_actions. La hoja de comentarios es componente de firma: preview HTML aprobable por Abraham dentro de esta tarea antes de portar a RN.",
+        "details": "DECISIONES CERRADAS (doc 048, AskUserQuestion 2026-09-10): orden = comentarios primero, follow después (#78 depende de esta) · modelo = plano, POR PROPIEDAD (no por video), sin edición, borrado propio = status deleted + deleted_at conservando el cuerpo (§18.2) · escritura = EF post-comment con filtro determinista mínimo (C2), lista calibrable en app_config sin publicar app · reportes = comment_reports + auto-ocultar 3/24h + cola existente (R1) · privacidad Q10 = ACEPTAR Y DOCUMENTAR que un comentario público da al agente identidad+timestamp de un no-lead (comentar es acto deliberadamente público, distinto del comportamiento que protege crm_radar_anon); la posición se escribe en wiki/conceptos/privacidad-datos.md ANTES de mergear · hoja de comentarios = preview HTML dentro de esta tarea (componente de firma, §8) · comentarios visibles solo a authenticated (§18.1), cero grants a anon.\nMODELO: comments(id uuid pk, property_id → properties on delete cascade, user_id → users, body text NOT NULL CHECK (body ~ '\\S' AND length(body) <= 500), status comment_status NOT NULL DEFAULT visible {visible|held_for_review|hidden|deleted}, hidden_by_user_id, hidden_reason, created_at/updated_at/deleted_at) · properties.comment_count int NOT NULL DEFAULT 0 CHECK (>=0) por trigger atómico (calco 20260701000001, SECURITY DEFINER search_path='', GREATEST(0, n-1); cuenta solo status=visible) · comment_reports(comment_id, user_id, reason property_report_reason, details, created_at; UNIQUE(comment_id,user_id); CHECK other exige texto) · trigger AFTER INSERT sin EXCEPTION: 3 reportantes distintos en 24 h → comments.status=hidden en la misma transacción; el 4º reporte es no-op · RPC de resolución atómica (restore | keep_hidden | delete_comment) que escribe admin_actions o revienta.\nRLS: comments_select = status=visible OR user_id=auth.uid() OR private.can_manage_property(property_id) OR private.is_admin() · comments_insert = SOLO service role (la EF es la frontera); si el plan decide INSERT directo bajo RLS para el camino sin filtro, user_id=auth.uid() · comments_update = solo cambio de status por can_manage_property/is_admin (autor: solo a deleted) · comments_delete = nadie desde el cliente · ⚠️ lección 269.3: si comments_update comparte expresión con comments_select, los negativos por conteo de filas no prueban nada → asertar contra el helper SECURITY DEFINER o aislar la policy en la transacción del test · identidad del comentarista SIEMPRE vía agent_public_profiles (nunca ampliar users_select) · el cliente filtra explícito .eq(property_id) aunque la RLS ya filtre (policies con OR is_admin()).\nNOTIFICACIONES (misma transacción, sin EXCEPTION, motivo en body además de data, dedupe por índice parcial donde el disparo es único; lecciones #234/#237/#240): comment_on_my_property → publicador · comment_hidden → autor (con motivo) · admin_comment_report → admins (dedupe por ancla). Cada deep_link a una ruta que EXISTE bajo mobile/app/ (typed routes desactivados: verificar montando, no con tsc). Sin push (§28.4 fase 2).\nGATE §0.5: columnas aditivas (comment_count al final; select('*') viejos la ignoran) · cero contratos publicados tocados · migraciones idempotentes + rollback 1:1 RUIDOSO (lección 220.3) + pgTAP · gotcha enum: crear el tipo comment_status y usarlo en la misma migración es válido; el gotcha de 20260809000002 aplica solo a ALTER TYPE ADD VALUE · EF nuevas post-comment (+ moderate-comment o extensión aditiva de moderate-property: EVALUAR EN EL PLAN, el precedente #220.3 «1 EF con action parametrizada» aguantó pero moderar un comentario no es moderar una propiedad) · deploy remoto con --import-map/--use-api y verificación por impersonación JWT · todo JS puro (Modal + KeyboardAvoidingView + safe-area-context, phosphor ya instalado) → OTA, sin rebuild; @gorhom/bottom-sheet o pickers nativos quedan PROHIBIDOS por esta tarea.\nREUSO (mapa-codebase): ReportPropertySheet.tsx (hoja de motivos, ya la reusan propiedad y perfil) · useReportProperty.ts / useReportUser.ts (forma del INSERT directo) · mobile/app/admin/reports/index.tsx + useAdminReports.ts + useResolveReport.ts (cola) · supabase/functions/moderate-property/ (handler con action) · 20260828000002 (patrón auto-acción 3/24h) · 20260828000004 (resolución atómica) · 20260826000001 (espejos a notifications) · 20260701000001 (trigger de conteo) · agent_public_profiles · patrón cursor de crm_leads_page para useComments · lecciones vivas: trim() solo recorta ASCII (body ~ '\\S'), CHECK que evalúa NULL se cumple (NOT NULL explícito), RNTL 14 renderHook async + await act, unmount dentro de act, bombas de fecha en la ventana de 24 h (fijar reloj, 4 TZ).\nFUERA DE ALCANCE (Abraham 2026-09-10): hilos/respuestas (§18.1 manda las preguntas a WhatsApp) · moderación previa para todo · tabla polimórfica content_reports (contrato publicado) · sanción de cuentas / resolución de user_reports (R4, épica aparte) · comentario como señal de temperatura del CRM (contrato publicado) · push · contador de comentarios en el rail del PropertyOverlay (3ª propuesta de §8: solo se nombra; el plan decide si la entrada vive en el detalle).\nARCHIVOS PREVISTOS: supabase/migrations/2026091*_comments.sql + _comment_reports.sql + _notify_social.sql (+ rollbacks/ + supabase/tests/10x_*.sql) · supabase/functions/post-comment/ (+ moderate-comment/ o moderate-property/ ampliada) · mobile/src/features/comments/{hooks,components,lib}/** · mobile/src/features/property-detail/components/ActionButtons.tsx · mobile/app/admin/reports/index.tsx · mobile/src/features/admin/hooks/{useAdminReports,useResolveReport}.ts · wiki/conceptos/privacidad-datos.md (+ concepto nuevo comentarios-moderacion) · preview HTML en previews/ o raíz según el patrón de #269.\nDERIVADAS: #290 (usuario 2026-09-10, rail del feed)",
+        "testStrategy": "TDD estricto por regla de path (§5): migraciones (pgTAP por impersonación JWT: autor / tercero / publicador / owner y admin activos de la agencia / miembro suspended / admin / anon; CHECK whitespace Unicode y NULL; dedupe de reportes; ventana deslizante de 24 h contando reportantes DISTINTOS con reloj fijado; auditoría obligatoria que revienta la operación; round-trip del rollback ruidoso), EFs (Deno: filtro determinista con falsos positivos documentados, autor validado por JWT, held_for_review solo al matchear, moderación con action inválida → 4xx), hooks (Jest/RNTL 14: paginación por cursor, optimismo con rollback, ocultar/reportar, estados held/hidden/deleted). Verificación ligera (tsc + lint + smoke adb) en preview, UI y cierre. Smoke en emulador por CLI (comentar, reportar ×3 con cuentas distintas → se oculta, restaurar desde /admin/reports) sin reproducir video; smoke en dispositivo real con Abraham. Sondas SQL contra producción solo con DO block + RAISE.",
+        "status": "pending",
+        "dependencies": [
+          "219",
+          "220"
+        ],
+        "priority": "high",
+        "updatedAt": "2026-09-11T04:35:38.818Z",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "preview HTML de la hoja de comentarios (componente de firma)",
+            "description": "Diseñar en HTML aprobable la hoja de comentarios: lista paginada, tarjeta (foto + nombre públicos, texto, fecha relativa), input con teclado, estados vacío / held_for_review («en revisión», solo el autor la ve) / oculto / eliminado («Usuario eliminado» si aplica), acciones Ocultar (publicador/agencia) y Reportar. Fase PROPUESTA: 2–4 direcciones de layout/tipografía de UGC sobre gestión-claro. Abraham aprueba antes de portar a RN (§8).",
+            "details": "NO crítica (docs/preview). Lenguaje visual de urbea-identidad-visual.html + escala de layout del prototipo. Sin dependencias nativas nuevas: lo que se dibuje debe poder hacerse con Modal + KeyboardAvoidingView + safe-area-context. Registrar la dirección elegida en la bitácora; el preview aprobado es el techo de 289.8.\n<info added on 2026-09-11T04:35:19.000Z>\nPLAN 289.1: approach = preview HTML `mobile/design-previews/289-comentarios.html` (convención confirmada por 269-crm-equipo.html), servido por http 127.0.0.1 (nunca file://). Fase PROPUESTA: 2–4 direcciones de layout/tipografía de UGC sobre gestión-claro para la hoja (lista paginada, tarjeta foto+nombre+texto+fecha relativa, input con teclado, estados vacío / held_for_review «en revisión» solo para el autor / oculto / «Usuario eliminado», acciones Ocultar y Reportar), todo realizable con Modal + KeyboardAvoidingView + safe-area-context, sin nativo. Techo de 289.8 = lo que Abraham apruebe. decisiones = entrada SOLO desde el detalle (rail del feed → derivada #290 producto(289)) · agente=design · skills=urbea-design · criticidad=no · impacto-prod=sin riesgo · footprint=mobile/design-previews/289-comentarios.html (nuevo).\n</info added on 2026-09-11T04:35:19.000Z>",
+            "testStrategy": "Preview servido por http 127.0.0.1 (no file://); revisión visual con Abraham; sin código de app.",
+            "status": "pending",
+            "dependencies": [],
+            "updatedAt": "2026-09-11T04:35:19.000Z",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "migración comments: enum, tabla, comment_count por trigger atómico, RLS y pgTAP",
+            "description": "Crea comment_status, comments, properties.comment_count (aditiva, al final) con trigger AFTER INSERT/UPDATE/DELETE que cuenta solo visible; policies comments_select/update (status-only) y ninguna delete; grants solo a authenticated; rollback 1:1 ruidoso.",
+            "details": "CRÍTICA (supabase/migrations/**). Sutilezas: body ~ '\\S' (trim solo ASCII) + NOT NULL explícito (CHECK NULL se cumple); SECURITY DEFINER search_path='' en el trigger (pgTAP corre como superusuario y NO detecta su ausencia: revisión manual); negativos de comments_update contra el helper o aislando la policy (lección 269.3); comment_count con backfill idempotente.\n<info added on 2026-09-11T04:35:19.131Z>\nPLAN 289.2: approach = migración `supabase/migrations/20260910100001_comments.sql` + rollback 1:1 ruidoso en `rollbacks/` + `supabase/tests/112_comments_test.sql`. Enum comment_status (visible|held_for_review|hidden|deleted) creado y usado en la misma migración (válido; el gotcha 20260809000002 es solo ALTER TYPE ADD VALUE). Tabla comments con CHECK `body is not null and body ~ '\\S' and length(body) <= 500` (calco 20260828000001). properties.comment_count AL FINAL, trigger AFTER INSERT OR UPDATE OF status OR DELETE, SECURITY DEFINER search_path='' (calco 20260701000001; pgTAP no detecta su ausencia → revisión manual), cuenta solo status='visible' con GREATEST(0,…), backfill idempotente. RLS: comments_select = status='visible' OR user_id=auth.uid() OR <gestor> OR is_admin(); comments_update = solo status por <gestor>/is_admin() (autor solo a 'deleted'); sin comments_insert para authenticated (la EF post-comment escribe con service_role); sin delete. 🔴 <gestor> = expresión COMPLETA de properties_update (owner_user_id=auth.uid() OR is_agency_owner_of(owner_user_id) OR agency_role_of(agency_id)='admin'), NO private.can_manage_property() a secas: el helper está desactualizado (le falta la rama agency_role_of='admin', hallazgo del analista). REUSO_CON_RESERVA: private.can_manage_property() · diverge de properties_update desde 20260805000003 · NO cabe (helper usado por 10 policies, toca migraciones publicadas) → se calca la expresión y se nombra derivada hardening(289.2) en la bitácora. Negativos de comments_update contra el helper o aislando la policy en la transacción (lección 269.3). agente=supabase · skills=urbea-supabase, urbea-testing · criticidad=CRÍTICA (supabase/migrations/**) · impacto-prod=sin riesgo (aditivo; select('*') viejos ignoran la columna) · footprint=las 3 rutas nuevas arriba.\n</info added on 2026-09-11T04:35:19.131Z>",
+            "testStrategy": "pgTAP: CHECKs (whitespace Unicode, NULL, 501 chars), select por rol (anon 0 filas; authenticated no ve hidden/held; autor ve el suyo; publicador y owner/admin activos ven todo lo de su propiedad; suspended no), update de status por rol, delete negada a todos, conteo tras insert/hide/delete repetidos, round-trip del rollback.",
+            "status": "pending",
+            "dependencies": [],
+            "updatedAt": "2026-09-11T04:35:19.131Z",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "migración comment_reports: dedupe, auto-ocultar 3/24h y RPC de resolución atómica",
+            "description": "Tabla comment_reports (reusa el enum property_report_reason, UNIQUE(comment_id,user_id), CHECK other exige texto), RLS insert = user_id=auth.uid() y select solo admin/propio, trigger AFTER INSERT sin EXCEPTION que oculta el comentario al 3er reportante distinto en 24 h, RPC SECURITY DEFINER de resolución (restore | keep_hidden | delete_comment) que escribe admin_actions en la misma transacción o revienta.",
+            "details": "CRÍTICA (supabase/migrations/**). Calco de 20260828000002 (auto-acción) y 20260828000004 (resolución atómica). El mismo reportante repetido NO cuenta dos veces; reportar un comentario ya hidden es no-op; rollback ruidoso.\n<info added on 2026-09-11T04:35:19.260Z>\nPLAN 289.3: approach = `supabase/migrations/20260910200001_comment_reports.sql` + rollback + `supabase/tests/113_comment_reports_test.sql`. Tabla comment_reports(comment_id FK cascade, reported_by_user_id, reason property_report_reason, reason_text, status new|resolved, created_at) con UNIQUE(comment_id, reported_by_user_id) y CHECK `reason <> 'other' or (reason_text is not null and reason_text ~ '\\S')` calcado literal de 20260828000001. RLS insert = reported_by_user_id=auth.uid() y no autor del comentario; select = propio OR is_admin(). Trigger AFTER INSERT sin EXCEPTION (calco 20260828000002): 3 reportantes DISTINTOS en 24 h → comments.status='hidden' en la misma transacción; ya hidden → no-op; el mismo reportante no cuenta dos veces. RPC `resolve_comment_reports_atomic(comment_id, action restore|keep_hidden|delete_comment, reason)` SECURITY DEFINER calco de 20260828000004: lock+snapshot, guard de origen, transición, cierre de reportes new, 1 fila en admin_actions o revienta. decisiones = Abraham: tabla propia + auto-ocultar + cola existente (R1) · agente=supabase · skills=urbea-supabase, urbea-testing · criticidad=CRÍTICA · impacto-prod=sin riesgo (aditivo, reusa el enum sin tocarlo) · footprint=3 rutas nuevas. Tests con reloj fijado y 4 TZ (bomba de fecha).\n</info added on 2026-09-11T04:35:19.260Z>",
+            "testStrategy": "pgTAP con reloj fijado (4 TZ): 2 reportantes → visible; 3 distintos → hidden en la misma transacción; 4º → no-op; dedupe por UNIQUE; other sin texto rechazado; resolución por no-admin negada; fallo de admin_actions revierte la resolución; round-trip del rollback.",
+            "status": "pending",
+            "dependencies": [
+              2
+            ],
+            "updatedAt": "2026-09-11T04:35:19.260Z",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "notificaciones sociales: comment_on_my_property, comment_hidden y admin_comment_report",
+            "description": "Funciones/trigger que insertan en notifications en la misma transacción del evento (sin EXCEPTION): al publicador cuando aparece un comentario visible en su propiedad; al autor cuando su comentario pasa a hidden (motivo en body y data); a los admins cuando entra un reporte (dedupe por ancla comment_id mientras esté sin resolver). deep_link a rutas que existen bajo mobile/app/.",
+            "details": "CRÍTICA (supabase/migrations/**). Patrón 20260826000001 + 20260905300001. Sin push. Verificar cada deep_link montando la ruta (typed routes desactivados).\n<info added on 2026-09-11T04:35:19.397Z>\nPLAN 289.4: approach = `supabase/migrations/20260910300001_notify_social_comments.sql` + rollback + `supabase/tests/114_notify_social_comments_test.sql`. notifications.type es text libre (sin enum) y NotificationCard es presentacional (title/body/deep_link vienen del INSERT) → CERO cambios en mobile/src/features/notifications/**. Tres escritores en la misma transacción, sin EXCEPTION, patrón índice único parcial + on conflict do nothing (20260905200002/20260822000001): comment_on_my_property → publicador al insertar/pasar a visible (deep_link /property/[id], existe); comment_hidden → autor con motivo en body y data (deep_link /property/[id]); admin_comment_report → admins al primer reporte new (dedupe por comment_id mientras no se resuelva; deep_link /admin/reports, existe). Nada para held_for_review. agente=supabase · skills=urbea-supabase, urbea-testing · criticidad=CRÍTICA · impacto-prod=sin riesgo · footprint=3 rutas nuevas + Jest mínimo que monte las rutas de deep_link.\n</info added on 2026-09-11T04:35:19.397Z>",
+            "testStrategy": "pgTAP: un aviso por evento, ninguno para held_for_review, dedupe del aviso admin por comentario, body con motivo, rollback ruidoso. Jest: cada deep_link nuevo resuelve a una pantalla existente.",
+            "status": "pending",
+            "dependencies": [
+              2,
+              3
+            ],
+            "updatedAt": "2026-09-11T04:35:19.397Z",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Edge Function post-comment con filtro determinista mínimo",
+            "description": "EF que valida el JWT del autor, el body (\\S, ≤500), que la propiedad esté active, aplica el filtro (teléfono, email, URL, lista de palabras en app_config) y hace el INSERT con service role en status visible o held_for_review según matchee; responde el comentario creado con su status para que la UI lo pinte de inmediato.",
+            "details": "CRÍTICA (supabase/functions/**). Service layer + handler testeable (patrón moderate-property). Falsos positivos documentados («depa 5B» no es teléfono). Lista en app_config para calibrar sin publicar app (patrón #266). Deploy con --import-map y --use-api.\n<info added on 2026-09-11T04:35:19.529Z>\nPLAN 289.5: approach = EF `supabase/functions/post-comment/{index.ts,handler.ts,types.ts,handler.test.ts}` calco del patrón DI de moderate-property. Valida JWT (user_id SIEMPRE del JWT), body (\\S, ≤500), propiedad active, aplica filtro determinista (regex teléfono ≥8 dígitos con separadores, email, URL/dominio, lista de palabras de app_config key `comment_filter_words` jsonb []) → status held_for_review solo si matchea, si no visible; INSERT con service_role; responde el comentario con su status. Lectura de app_config con maybeSingle + try/catch + fallback a lista vacía (patrón mint-video-url, `// ponytail:` fail-open). Incluye la migración semilla `20260910400001_seed_comment_filter_words.sql` (INSERT … ON CONFLICT DO NOTHING, rollback DELETE de la key) — decisión: va aquí y no en 289.2 (recomendación del analista). Falsos positivos documentados en tests («depa 5B» no es teléfono). Deploy con --import-map y --use-api. agente=supabase · skills=urbea-supabase, urbea-testing · criticidad=CRÍTICA (supabase/functions/** + migrations) · impacto-prod=sin riesgo (EF y key nuevas) · footprint=las rutas arriba.\n</info added on 2026-09-11T04:35:19.529Z>",
+            "testStrategy": "Deno: sin JWT 401; body vacío/whitespace/largo 400; propiedad no active 404/409; teléfono/email/URL/palabra → held_for_review; texto limpio → visible; app_config ausente → filtro base sin lista; el INSERT usa el user_id del JWT y nunca el del body.",
+            "status": "pending",
+            "dependencies": [
+              2
+            ],
+            "updatedAt": "2026-09-11T04:35:19.529Z",
+            "parentId": "undefined"
+          },
+          {
+            "id": 6,
+            "title": "moderación de comentarios: EF de resolución y cola /admin/reports con tipo comentario",
+            "description": "Resolución admin desde la app: EF moderate-comment (o extensión aditiva de moderate-property con target, decidir en el plan) que llama la RPC de 289.3; la cola /admin/reports lista reportes de comentario con su texto y autor, y ofrece restaurar / mantener oculto / eliminar; useAdminReports y useResolveReport crecen sin romper el flujo de propiedades.",
+            "details": "CRÍTICA (supabase/functions/** + mobile/**/hooks/**). Espejos a notifications ya vienen de 289.4. El cliente filtra explícito por tipo.\n<info added on 2026-09-11T04:35:19.665Z>\nPLAN 289.6: approach = DECISIÓN Abraham 2026-09-10: EF hermana `supabase/functions/moderate-comment/{index.ts,handler.ts,types.ts,handler.test.ts}` (NO extender moderate-property: sus Records exhaustivos no admiten una tercera unión y es contrato publicado con 55 tests verdes; trade-off: ~40 líneas de boilerplate duplicado a cambio de máquinas de estado aisladas). Llama resolve_comment_reports_atomic con action restore|keep_hidden|delete_comment. Cola: DECISIÓN Abraham = UNA LISTA MEZCLADA POR FECHA: `useAdminReports.ts` pasa a unión discriminada `AdminReportQueueItem = {kind:'property',…} | {kind:'comment',…}` con segunda query a comment_reports (.eq('status','new') explícito) fusionada y ordenada en cliente; `useResolveReport.ts` acepta el kind y llama la EF correspondiente; `mobile/app/admin/reports/index.tsx` pinta tarjeta de comentario (texto + autor público + propiedad) y ACTION_LABELS propios; flujo de propiedades intacto (sus tests siguen verdes). Try/catch en la lectura (lección 269.5). agente=supabase (EF) y mobile (hooks/pantalla) en serie dentro de la subtarea · skills=urbea-supabase, urbea-expo, urbea-testing · criticidad=CRÍTICA (functions/** + hooks/**) · impacto-prod=sin riesgo (aditivo) · footprint=EF nueva + useAdminReports.ts + useResolveReport.ts + mobile/app/admin/reports/index.tsx (+ sus tests).\n</info added on 2026-09-11T04:35:19.665Z>",
+            "testStrategy": "Deno: action inválida 400, no-admin 403, éxito escribe admin_actions. Jest/RNTL: la cola muestra ambos tipos, resolver un comentario no toca el estado de propiedades, error de red no cuelga loading (try/catch, lección 269.5).",
+            "status": "pending",
+            "dependencies": [
+              3,
+              4
+            ],
+            "updatedAt": "2026-09-11T04:35:19.665Z",
+            "parentId": "undefined"
+          },
+          {
+            "id": 7,
+            "title": "hooks del cliente: useComments, usePostComment, useHideComment y useReportComment",
+            "description": "useComments paginado por cursor (created_at,id) filtrando .eq(property_id) explícito e identidad vía agent_public_profiles; usePostComment invoca la EF y hace append optimista con rollback; useHideComment cambia status (publicador/agencia) con optimismo; useReportComment = INSERT directo calcado de useReportProperty; borrado propio = status deleted.",
+            "details": "CRÍTICA (mobile/**/hooks/**). No desprender client.rpc/functions.invoke (this perdido). Dependencias por contenido, no por referencia de array (loop infinito).\n<info added on 2026-09-11T04:35:19.801Z>\nPLAN 289.7: approach = carpeta nueva `mobile/src/features/comments/{hooks,components,__tests__}` calcando property-detail/. useComments(property_id): paginado por cursor (created_at,id) con .eq('property_id') explícito, identidad vía join a agent_public_profiles, dependencias por contenido (no arrays por referencia), refetch explícito, try/catch. usePostComment: functions.invoke('post-comment') sin desprender el método, append optimista con rollback, held_for_review visible solo para el autor con marca. useHideComment: update status (hidden|visible) por el gestor con optimismo. useReportComment: calco exacto de useReportProperty.ts (insert directo, guard «no mi propio comentario», other exige texto, 23505 → duplicado). Borrado propio = update status='deleted' + deleted_at. agente=mobile · skills=urbea-expo, urbea-testing · criticidad=CRÍTICA (mobile/**/hooks/**) · impacto-prod=sin riesgo · footprint=4 hooks nuevos + tests RNTL 14 (renderHook async + await act, unmount en act, sonda del primer render).\n</info added on 2026-09-11T04:35:19.801Z>",
+            "testStrategy": "Jest/RNTL 14 (renderHook async + await act, unmount en act): página 1 y siguiente sin duplicar ids; optimismo y rollback al fallar la EF; held_for_review visible solo para el autor; hide/report actualizan la lista sin refetch; error de red no cuelga loading.",
+            "status": "pending",
+            "dependencies": [
+              2,
+              3,
+              5
+            ],
+            "updatedAt": "2026-09-11T04:35:19.801Z",
+            "parentId": "undefined"
+          },
+          {
+            "id": 8,
+            "title": "UI: hoja de comentarios portada del preview, entrada en el detalle y acciones Ocultar/Reportar",
+            "description": "Porta a RN el preview aprobado en 289.1 (CommentsSheet con lista, tarjeta, input y estados), abre desde el detalle de la propiedad (ActionButtons.tsx) con el contador comment_count, y reusa ReportPropertySheet para los motivos; Ocultar solo visible a quien puede gestionar la propiedad.",
+            "details": "NO crítica (components/pantallas). Modal + KeyboardAvoidingView + react-native-safe-area-context (nunca SafeAreaView de RN, edge-to-edge SDK 56); teclado en Android verificado por adb. Techo = preview aprobado; lo que falte se propone, no se recorta.\n<info added on 2026-09-11T04:35:19.933Z>\nPLAN 289.8: approach = `mobile/src/features/comments/components/CommentsSheet.tsx` portado del preview aprobado en 289.1 (Modal + KeyboardAvoidingView + react-native-safe-area-context; nunca SafeAreaView de RN); entrada = 4º elemento en `mobile/src/features/property-detail/components/ActionButtons.tsx` con comment_count (patrón condicional can_report → can_comment); Reportar reusa ReportPropertySheet.tsx sin modificar; Ocultar solo para quien gestiona la propiedad. Rail del PropertyOverlay NO entra (derivada #290 producto(289), decisión Abraham). Techo = preview aprobado; lo que falte se propone. agente=mobile · skills=urbea-expo · criticidad=no (components) · impacto-prod=sin riesgo (JS puro → OTA) · footprint=CommentsSheet.tsx (+ subcomponentes), ActionButtons.tsx + su test. Verificación: tsc + lint + suite comments + smoke adb (comentar, held propio, reportar desde 2ª cuenta, ocultar como publicador; teclado Android; screencap; stopApp; sin reproducir video).\n</info added on 2026-09-11T04:35:19.933Z>",
+            "testStrategy": "pnpm tsc --noEmit + pnpm lint + suite de comments verde; smoke adb: comentar, ver el propio held («en revisión»), reportar desde una segunda cuenta, ocultar como publicador; screencap; stopApp. Sin reproducir video.",
+            "status": "pending",
+            "dependencies": [
+              1,
+              7
+            ],
+            "updatedAt": "2026-09-11T04:35:19.933Z",
+            "parentId": "undefined"
+          },
+          {
+            "id": 9,
+            "title": "privacidad, deploy y cierre: posición Q10 escrita, migraciones y EFs desplegadas, vault y smoke con Abraham",
+            "description": "Escribe en wiki/conceptos/privacidad-datos.md la decisión «comentar es un acto público: se acepta que deanonimiza al comentarista frente al radar del CRM»; despliega migraciones (apply_migration) y EFs al remoto y verifícalas por impersonación; gate §0.5; ingest al vault (concepto comentarios-moderacion, mapa-codebase, log); smoke en dispositivo real con Abraham; OTA solo cuando él lo pida.",
+            "details": "NO crítica (docs/vault/deploy). Orden: backend desplegado y verificado ANTES del PR; el OTA es decisión de Abraham.\n<info added on 2026-09-11T04:35:20.067Z>\nPLAN 289.9: approach = (1) `wiki/conceptos/privacidad-datos.md`: posición Q10 «comentar es un acto público: se acepta que da al agente identidad+timestamp de un no-lead; distinto del comportamiento que protege crm_radar_anon» ANTES del PR; (2) deploy remoto: migraciones 20260910100001–400001 por apply_migration en orden, EFs post-comment y moderate-comment con --import-map --use-api; verificación por impersonación JWT + sonda DO block + RAISE (0 filas en comments, policies presentes, key app_config sembrada); (3) gate §0.5 escrito en la bitácora; (4) ingest: concepto nuevo `wiki/conceptos/comentarios-moderacion.md`, mapa-codebase, estado-actual, log; (5) smoke en dispositivo real con Abraham; OTA solo cuando él lo pida. agente=supabase (deploy) + orquestador (vault) · skills=urbea-supabase, urbea-context · criticidad=no · impacto-prod=es el gate real (backend desplegado y verificado antes del PR) · footprint=wiki/** + deploy.\n</info added on 2026-09-11T04:35:20.067Z>",
+            "testStrategy": "Sonda DO block + RAISE contra producción (0 filas en comments antes del OTA; policies presentes); wiki lint de enlaces; smoke juntos.",
+            "status": "pending",
+            "dependencies": [
+              6,
+              8
+            ],
+            "updatedAt": "2026-09-11T04:35:20.067Z",
+            "parentId": "undefined"
+          }
+        ]
+      },
+      {
+        "id": "290",
+        "title": "producto(289): ícono de comentarios con contador en el rail del PropertyOverlay del feed",
+        "description": "Origen: subtarea 289.8 · Detectado por: usuario (AskUserQuestion 2026-09-10, UI_FUERA_DEL_MOCKUP). En #289 la hoja de comentarios se abre solo desde el detalle (ActionButtons). En un feed vertical lo natural es también un ícono con contador en el rail del PropertyOverlay, junto a like/guardar/compartir, que abra la misma CommentsSheet desde el feed. Ninguna referencia canónica lo dibuja; Abraham lo decide viendo la hoja funcionando.",
+        "details": "Footprint previsto: mobile/src/features/feed/components/PropertyOverlay.tsx (rail) + reuso de CommentsSheet y useComments de #289. comment_count ya viaja en la fila de properties (columna aditiva). Sin nativo → OTA. Smoke en el feed sin reproducir video. Costo S.",
+        "testStrategy": "Verificación ligera (components): tsc + lint + test del overlay con el nuevo ícono; smoke adb: abrir la hoja desde el feed, cerrar, el video no se reproduce durante el smoke.",
+        "status": "pending",
+        "dependencies": [
+          "289"
+        ],
+        "priority": "low",
+        "updatedAt": "2026-09-11T04:35:38.818Z",
+        "subtasks": []
       }
     ],
     "metadata": {
