@@ -77,6 +77,8 @@ type QueryRow = {
   price_visible?: boolean | null;
   half_bathrooms?: number | null;
   built_square_meters?: number | null;
+  /** Columna aditiva (289.8, migración 20260910100001) — opcional por fail-open (fixtures/caché viejos). */
+  comment_count?: number | null;
   address: string;
   property_type: PropertyDetail['property_type'];
   operation_type: PropertyDetail['operation_type'];
@@ -124,7 +126,7 @@ export function usePropertyDetail(id: string): UsePropertyDetailResult {
       const { data: row, error: row_error } = (await supabase
         .from('properties')
         .select(
-          `id, price, currency, price_visible, address, property_type, operation_type,
+          `id, price, currency, price_visible, comment_count, address, property_type, operation_type,
            bedrooms, bathrooms, half_bathrooms, square_meters, built_square_meters, description,
            pet_friendly, allows_no_guarantor, student_friendly,
            amenities, location, owner_user_id, agency_id,
@@ -233,6 +235,7 @@ export function usePropertyDetail(id: string): UsePropertyDetailResult {
             ? { id: raw_agency.id, name: raw_agency.name, logo_url: raw_agency.logo_url }
             : null,
         videos,
+        comment_count: row.comment_count ?? 0,
       });
     } catch (e) {
       set_error(e instanceof Error ? e.message : 'Error desconocido');

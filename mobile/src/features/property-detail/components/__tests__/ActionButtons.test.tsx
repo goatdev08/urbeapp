@@ -50,6 +50,17 @@
  * ### Hardening 220.5 (mutantes M8 — guard de owner en can_report)
  * - (EC-11) owner_ve_su_propia_publicacion_boton_reportar_no_se_renderiza
  * - (EC-12) no_owner_ve_boton_reportar_visible
+ *
+ * ### Comentarios (289.8) — 4º botón, siempre presente
+ * - (EC-13) boton_comentarios_siempre_presente_incluso_sin_owner_user_id
+ * - (EC-14) boton_comentarios_muestra_el_contador_cuando_comment_count_mayor_a_cero
+ * - (EC-15) boton_comentarios_sin_contador_cuando_comment_count_es_cero
+ *
+ * 289.8: CommentsSheet se mockea (import estático real arrastra
+ * @/features/auth/context + @/lib/supabase/client vía sus hooks, mismo motivo
+ * documentado arriba para useReportProperty) — el botón "Comentarios" solo
+ * monta la hoja al pulsar, así que estos tests (que no pulsan) no la
+ * necesitan real.
  */
 
 import React from 'react';
@@ -81,6 +92,13 @@ jest.mock('@/features/feed/hooks/useSaveProperty', () => ({
 // existe para que el import estático no evalúe el módulo real (ver docblock).
 jest.mock('@/features/property-detail/hooks/useReportProperty', () => ({
   useReportProperty: jest.fn(),
+}));
+
+// 289.8: el botón "Comentarios" monta CommentsSheet solo al pulsar — estos
+// tests no lo pulsan, pero el import estático igual arrastra sus hooks
+// (useComments/usePostComment/useAuth, etc.); se stubea a un componente vacío.
+jest.mock('@/features/comments/components/CommentsSheet', () => ({
+  CommentsSheet: () => null,
 }));
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -338,6 +356,47 @@ describe('ActionButtons', () => {
     );
 
     expect(queryByLabelText('Reportar publicación')).not.toBeNull();
+  });
+
+  // ── (EC-13) Comentarios: siempre presente, incluso sin owner_user_id ──────
+
+  it('(EC-13) boton_comentarios_siempre_presente_incluso_sin_owner_user_id: sin owner_user_id (like/save solos) → botón "Comentarios" igual visible', async () => {
+    const { queryByLabelText } = await render(
+      <ActionButtons
+        property_id={TEST_PROPERTY_ID}
+        property_video_id={TEST_VIDEO_ID}
+      />
+    );
+
+    expect(queryByLabelText('Comentarios')).not.toBeNull();
+  });
+
+  // ── (EC-14) Comentarios: contador visible cuando comment_count > 0 ────────
+
+  it('(EC-14) boton_comentarios_muestra_el_contador_cuando_comment_count_mayor_a_cero: comment_count=24 → "24" visible', async () => {
+    const { queryByText } = await render(
+      <ActionButtons
+        property_id={TEST_PROPERTY_ID}
+        property_video_id={TEST_VIDEO_ID}
+        comment_count={24}
+      />
+    );
+
+    expect(queryByText('24')).not.toBeNull();
+  });
+
+  // ── (EC-15) Comentarios: sin contador cuando comment_count=0 (default) ────
+
+  it('(EC-15) boton_comentarios_sin_contador_cuando_comment_count_es_cero: sin comment_count (default 0) → botón visible sin número', async () => {
+    const { queryByLabelText, queryByText } = await render(
+      <ActionButtons
+        property_id={TEST_PROPERTY_ID}
+        property_video_id={TEST_VIDEO_ID}
+      />
+    );
+
+    expect(queryByLabelText('Comentarios')).not.toBeNull();
+    expect(queryByText('0')).toBeNull();
   });
 
 });

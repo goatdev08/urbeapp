@@ -132,6 +132,7 @@ function make_property_detail(): PropertyDetail {
     },
     agency: null,
     videos: [],
+    comment_count: 0,
   };
 }
 
