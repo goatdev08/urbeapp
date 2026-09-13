@@ -1,9 +1,17 @@
 ---
 tipo: estado
-actualizado: 2026-09-11
+actualizado: 2026-09-13
 ---
 
-## Hoy (2026-09-11) — #289: comentarios por publicación con filtro mínimo y reportes en la cola de moderación
+## Hoy (2026-09-13) — derivadas #291 y #292 de comentarios, en paralelo por worktrees
+Abraham pidió arrancar por #291 y #292 y revisar qué quedó planeado de panel admin, reportes y notificaciones. Las dos tareas corrieron a la vez en worktrees propios (`t291` móvil con `node_modules` por symlink, `t292` backend contra la misma base local) con ramas separadas; Taskmaster y vault se tocan solo desde `main`.
+- **#291 `producto(289.1)`** — toast «Comentario ocultado» con «Deshacer» en `CommentsSheet` (4 s, solo tras Ocultar, Deshacer por `useHideComment`). Tests EC-7..EC-10; tsc/lint verdes. Dos gotchas de arnés a memoria: `fireEvent` es Promise en RNTL 14 (sin `await` el siguiente test renderiza `null`) y `useFakeTimers` necesita `doNotFake: queueMicrotask/setImmediate/nextTick` o React no re-renderiza tras el timer.
+- **#292 `hardening(289.2)`** — `private.can_manage_property` alineado con `properties_update` (#202) e `is_property_comment_manager` delega. Sonda previa en producción: 0 suspendidos, 1 removed sin propiedades, 3 borradores sin `agency_id` de owners únicos que son admins de plataforma, 0 admins de agencia → nadie vivo cambia. Consumidores vivos: solo `videos_select`/`videos_update` (no ~10). pgTAP 116 (25), guardian 7/7 mutantes, suite 3926 verde.
+- **Cierre (con el go de Abraham).** #292 desplegado al remoto (version `20260913083503`; md5 remoto = local; sonda de impersonación idéntica antes/después). PRs #173 (#291, `f804cc6`) y #174 (#292, `8b82379`) mergeados; OTA de #291 publicado a `preview` (Android, runtime `374ba3dd…`, grupo `85c7afd5`) y `production` (iOS, runtime `ca62b26a…`, grupo `c5c158ef`). Ambas tareas `done`. Siguiente: `/tm-plan 78` (Follow F1).
+- **Pendiente:** smoke del toast en el teléfono de Abraham.
+- **Planeación revisada.** Panel admin + reportes + notificaciones de comentarios YA están integrados en #289 (cola `/admin/reports` con `kind=comment`, EF `moderate-comment`, 3 avisos). Sigue sin planear: push (#77, §28.4 fase 2), preferencias por tipo (§22.4), resolución de `user_reports` y sanción de cuentas (R4), panel admin web (#81, deferred).
+
+## Antes (2026-09-11) — #289: comentarios por publicación con filtro mínimo y reportes en la cola de moderación
 Primera tarea corrida **en auto y en paralelo** por pedido de Abraham (RED/GREEN/guardian de 2–3 subtareas a la vez sobre el mismo árbol, footprints disjuntos, commits por path, bitácoras en el scratchpad volcadas con `tm-log`). 9 subtareas cerradas; backend **DESPLEGADO** al remoto y verificado; rama `tarea/289-comentarios` sin PR todavía.
 - **Qué hay.** Tabla `comments` (≤500, `comment_status`), `properties.comment_count` por trigger (solo `visible`), RLS status-only con grant por columna, sin insert/delete directos; EF `post-comment` con filtro determinista (teléfono/email/URL/lista `app_config.comment_filter_words`, calibrable sin publicar app) → `visible|held_for_review`; `comment_reports` con auto-ocultar 3/24 h y RPC `resolve_comment_reports_atomic`; EF hermana `moderate-comment`; 3 avisos nuevos; cola `/admin/reports` mezclada por fecha; hooks + hoja (dirección A del preview) + 4.º botón del detalle. Concepto: [[comentarios-moderacion]].
 - **Decisiones de Abraham.** EF hermana (no extender `moderate-property`); una lista mezclada por fecha; rail del feed → #290; toast tras ocultar → #291; dirección A; Q10 «comentar es un acto público» escrita en [[privacidad-datos]].

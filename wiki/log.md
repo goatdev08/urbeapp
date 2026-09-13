@@ -1183,3 +1183,9 @@ Se retira `is_admin()` de `leads_update`, `leads_delete` y `private.can_edit_lea
 ## [2026-09-11] tarea | #289 comentarios por publicación con filtro mínimo y reportes en la cola de moderación — comments + comment_count, EF post-comment (filtro determinista + app_config.comment_filter_words), comment_reports + auto-ocultar 3/24h + resolve_comment_reports_atomic, EF moderate-comment, 3 avisos, cola /admin/reports mezclada, hooks + CommentsSheet (dirección A) + 4.º botón; backend DESPLEGADO; Q10 privacidad escrita; derivadas #290 #291 #292; primera tarea en auto+paralelo
 
 ## [2026-09-11] release | PR #172 (#289) mergeado a main (ae55d51) y OTA publicado a preview (Android, runtime 374ba3dd…) y production (iOS, runtime ca62b26a…); botón de comentarios en el rail del feed (289.10, absorbe #290)
+
+## [2026-09-13] tarea | #291 producto(289.1): toast «Comentario ocultado» con Deshacer en la hoja de comentarios — `CommentsSheet` (+4 tests RNTL); gotchas RNTL 14 (`await fireEvent`, fake timers `doNotFake`) a memoria. Rama `tarea/291-toast-comentario-ocultado`, pendiente PR/OTA.
+
+## [2026-09-13] tarea | #292 hardening(289.2): `private.can_manage_property` alineado con `properties_update` (#202), `is_property_comment_manager` delega — migración `20260913100001` + rollback + pgTAP 116 (25), guardian 7/7, suite 3926. Consumidores vivos solo `videos_select`/`videos_update`. Rama `tarea/292-can-manage-property-alineado`; deploy remoto (292.2) pendiente del go.
+
+## [2026-09-13] release | #292 desplegado al remoto (`20260913083503`, sonda idéntica); PRs #173 (#291) y #174 (#292) mergeados a main; OTA #291 publicado a preview (Android `374ba3dd…`) y production (iOS `ca62b26a…`), entrega verificada con `update:list`.
