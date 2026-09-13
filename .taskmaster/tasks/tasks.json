@@ -5865,68 +5865,68 @@
             "id": 1,
             "title": "migración follows: tabla, follower_count por trigger atómico, RLS y vista pública ampliada",
             "description": "Crea follows, users.follower_count, trigger de conteo SECURITY DEFINER, policies select/insert/delete, grants a authenticated, agent_public_profiles con follower_count AL FINAL; rollback 1:1 ruidoso.",
-            "details": "CRÍTICA (supabase/migrations/**). Calco de 20260701000001 + 20260905200003. pgTAP no detecta la falta de SECURITY DEFINER: revisión manual.",
+            "details": "CRÍTICA (supabase/migrations/**). Calco de 20260701000001 + 20260905200003. pgTAP no detecta la falta de SECURITY DEFINER: revisión manual.\n<info added on 2026-09-13T23:16:14.443Z>\nPLAN 78.1: approach = calco de 20260701000001 (trigger de conteo SECURITY DEFINER search_path='' + GREATEST(0,…) + backfill) y de 20260905200003 (CREATE OR REPLACE VIEW agent_public_profiles con follower_count AL FINAL). Tabla follows(follower_user_id→users cascade, followed_user_id→users cascade, created_at, PK(follower,followed), CHECK follower<>followed); users.follower_count int NOT NULL DEFAULT 0 CHECK (>=0); RLS follows_select = follower_user_id=auth.uid() OR is_admin(), insert/delete = follower_user_id=auth.uid(), sin UPDATE, cero grants a anon. · decisiones = cerradas en doc 048 (cualquier publicador con perfil público; el agente ve SOLO el conteo). · agente=supabase · skills=urbea-supabase,urbea-testing · criticidad=crítica (supabase/migrations/**) · impacto-prod=sin riesgo (aditivo puro; los 5 consumidores de agent_public_profiles listan columnas explícitas, ninguno select('*')) · footprint=supabase/migrations/2026091X_follows.sql + rollbacks/ + supabase/tests/117_follows_test.sql. Gotchas para RED/guardian: pgTAP corre como superusuario y NO detecta la ausencia de SECURITY DEFINER en el trigger (revisión manual en guardian, lección #13.2); el negativo de is_admin() en follows_select va en su propio helper (pgtap_policy_dominada_por_select); rollback ruidoso round-trip; la vista debe conservar el orden de columnas.\n</info added on 2026-09-13T23:16:14.443Z>",
             "testStrategy": "pgTAP: CHECK follower<>followed; insert a nombre de otro negado (JWT); unfollow idempotente; conteo tras 3 follow/unfollow; anon 0 filas; orden de columnas de la vista; rollback.",
             "status": "pending",
             "dependencies": [],
-            "updatedAt": "2026-09-11T00:58:28.921Z",
+            "updatedAt": "2026-09-13T23:16:14.443Z",
             "parentId": "undefined"
           },
           {
             "id": 2,
             "title": "aviso new_follower en la misma transacción",
             "description": "Trigger AFTER INSERT en follows que inserta en notifications al seguido, sin EXCEPTION, con dedupe por índice parcial; deep_link al perfil del seguidor (ruta existente).",
-            "details": "CRÍTICA (supabase/migrations/**). Patrón 20260826000001.",
+            "details": "CRÍTICA (supabase/migrations/**). Patrón 20260826000001.\n<info added on 2026-09-13T23:16:14.525Z>\nPLAN 78.2: approach = calco de notify_comment_on_my_property (20260910300001): función SECURITY DEFINER + trigger AFTER INSERT en follows que inserta notifications(type='new_follower', user_id=followed, related_entity_id=follower, deep_link='/profile/<follower>') en la MISMA transacción, sin bloque EXCEPTION. · DECISIÓN DE ABRAHAM (2026-09-13): CADA follow nuevo avisa — SIN índice único de dedupe; al dejar de seguir se borra la fila, un refollow es evento nuevo (patrón 'evento de transición' de notify_comment_hidden). Techo conocido: permite farmear el aviso con follow/unfollow repetido — se acepta; se anota con // ponytail: en la migración. · agente=supabase · skills=urbea-supabase,urbea-testing · criticidad=crítica · impacto-prod=sin riesgo (aditivo; notifications.type es texto libre, sin ALTER TYPE; el cliente no mapea por tipo — NotificationCard genérico; ruta /profile/[id] existe en mobile/app/(protected)/profile/[id].tsx) · footprint=supabase/migrations/2026091Y_notify_new_follower.sql + rollbacks/ + supabase/tests/118_notify_new_follower_test.sql. Paralelizable con 78.3 (footprints disjuntos).\n</info added on 2026-09-13T23:16:14.525Z>",
             "testStrategy": "pgTAP: un aviso por follow, ninguno al repetir tras unfollow/follow si el índice lo dedupe (decidir en el plan), body legible; Jest: deep_link resuelve.",
             "status": "pending",
             "dependencies": [
               1
             ],
-            "updatedAt": "2026-09-11T00:58:28.921Z",
+            "updatedAt": "2026-09-13T23:16:14.525Z",
             "parentId": "undefined"
           },
           {
             "id": 3,
             "title": "hook useFollow optimista y conteo en el perfil",
             "description": "useFollow(user_id) con estado inicial desde follows (.eq(follower_user_id) explícito), toggle optimista con rollback; useAgentProfile expone follower_count desde la vista.",
-            "details": "CRÍTICA (mobile/**/hooks/**). Calco de useLikeProperty. No desprender métodos del cliente.",
+            "details": "CRÍTICA (mobile/**/hooks/**). Calco de useLikeProperty. No desprender métodos del cliente.\n<info added on 2026-09-13T23:16:14.611Z>\nPLAN 78.3: approach = hook useFollow(followed_user_id) optimista con rollback, calcado de useLikeProperty PERO con precarga del estado inicial por query propia (.eq('follower_user_id', user.id) explícito, memoria flatlist_numcolumns_row_keys — useLikeProperty no precarga); insert/delete directos bajo RLS (sin EF; patrón property_reports/likes); idempotente (doble tap no duplica: PK); is_working_ref; nunca desprender client.from (#205). Home del archivo = mobile/src/features/profile/hooks/useFollow.ts (dueño conceptual: identidad del agente), importado desde el feed. useAgentProfile añade follower_count al select() de agent_public_profiles y al tipo AgentProfile (number ?? 0). · agente=mobile · skills=urbea-expo,urbea-testing · criticidad=crítica (mobile/**/hooks/**) · impacto-prod=sin riesgo (JS puro → OTA; la columna existe en remoto solo tras 78.5 — el select explícito de follower_count NO debe entrar al OTA antes del deploy: orden backend-primero en 78.5) · footprint=mobile/src/features/profile/hooks/useFollow.ts (nuevo) + useAgentProfile.ts + profile/types.ts + __tests__/useFollow.test.tsx + useAgentProfile.test.tsx. RNTL 14: await renderHook/act, await fireEvent (memoria rntl14_fireevent_promise_y_fake_timers_donotfake).\n</info added on 2026-09-13T23:16:14.611Z>",
             "testStrategy": "RNTL 14: estado inicial con sonda del primer render, toggle optimista, rollback al fallar, doble tap no duplica.",
             "status": "pending",
             "dependencies": [
               1
             ],
-            "updatedAt": "2026-09-11T00:58:28.921Z",
+            "updatedAt": "2026-09-13T23:16:14.611Z",
             "parentId": "undefined"
           },
           {
             "id": 4,
             "title": "UI: píldora «Seguir» en overlay y perfil, stat «Seguidores» sustituye una columna",
             "description": "FollowButton reusable en PropertyOverlay (fila del agente) y ProfileActions; ProfessionalStats pasa a Publicaciones · Seguidores · Me gusta (propio y ajeno); oculto en el propio perfil.",
-            "details": "NO crítica (components). Mini-spec con los tokens del prototipo; nada nativo.",
+            "details": "NO crítica (components). Mini-spec con los tokens del prototipo; nada nativo.\n<info added on 2026-09-13T23:16:14.694Z>\nPLAN 78.4: approach = componente reusable mobile/src/components/FollowButton.tsx (mini-spec, sin preview: píldora radio 20, padding 6/16, 700 13px Hanken; variante dark = borde blanco 1.5px + texto blanco sobre el overlay del feed, tal cual el prototipo; variante light = borde colors.ink (activo: fondo primary + texto blanco / 'Siguiendo') sobre paper en el perfil). PropertyOverlay: agent_row pasa a dos Pressable hermanos (avatar+nombre → onAgentPress; píldora → onFollow), NO anidados; oculta la píldora si owner_user_id === user.id. VideoFeedItem cablea useFollow(property.owner_user_id). Perfil: DECISIÓN DE ABRAHAM (2026-09-13, UI_FUERA_DEL_MOCKUP en conjunto): la píldora clara entra en la fila de ProfileActions del perfil AJENO (oculta en el propio). ProfessionalStats: propio y ajeno → Publicaciones · Seguidores · Me gusta (retira 'Guardados' del propio — cerrado en intake UI-b); punto de merge stats + data.follower_count en ProfileScreen. · agente=mobile · skills=urbea-expo,urbea-design,urbea-testing · criticidad=no crítica (components/pantallas → tsc+lint+RNTL smoke) · impacto-prod=sin riesgo (OTA) · footprint=mobile/src/components/FollowButton.tsx (nuevo) + feed/components/PropertyOverlay.tsx + VideoFeedItem.tsx + profile/components/ProfileActions.tsx + ProfileHeader.tsx + ProfessionalStats.tsx + profile/ProfileScreen.tsx (+ useAgentStats.ts solo si el merge va ahí) + tests existentes extendidos. Tokens desde theme.ts; layout del prototipo, color/tipografía de la identidad.\n</info added on 2026-09-13T23:16:14.694Z>",
             "testStrategy": "tsc + lint + smoke adb (seguir desde feed y perfil, conteo sube; stopApp).",
             "status": "pending",
             "dependencies": [
               3
             ],
-            "updatedAt": "2026-09-11T00:58:28.921Z",
+            "updatedAt": "2026-09-13T23:16:14.694Z",
             "parentId": "undefined"
           },
           {
             "id": 5,
             "title": "deploy, vault y smoke",
             "description": "Despliega la migración (apply_migration) y verifica por impersonación; ingest al vault (concepto follow, mapa-codebase, privacidad-datos con la decisión «solo conteo», log); smoke con Abraham; OTA cuando él lo pida.",
-            "details": "NO crítica. Backend antes del PR.",
+            "details": "NO crítica. Backend antes del PR.\n<info added on 2026-09-13T23:16:14.778Z>\nPLAN 78.5: approach = gate §0.5 ejecutado: (1) deploy de 78.1 y 78.2 al remoto con supabase db query --linked -f + fila manual en schema_migrations (memoria supabase_remote_deploy_apply_migration), (2) verificar por catálogo (md5 pg_get_functiondef, pg_policies de follows, columnas de agent_public_profiles con follower_count al final) y por impersonación (agente de prueba: follow/unfollow + conteo), (3) regenerar supabase/types/database.types.ts contra local (cortar la última línea de PostHog), (4) vault: mapa-codebase (fila backend + móvil), página de identidad pública / perfil, privacidad-datos (Q4: el agente ve SOLO el conteo, nunca la lista — protege el k-anonimato del radar del CRM), notificaciones (tipo new_follower), log.md, (5) smoke adb con Abraham: seguir desde el feed y desde el perfil, conteo sube en el perfil ajeno, aviso al seguido; stopApp. Orden de release: backend PRIMERO (la columna nueva debe existir antes de que el OTA la seleccione), luego PR/merge y OTA solo cuando Abraham lo pida. · agente=supabase (deploy) + orquestador (vault) · skills=urbea-supabase,urbea-context · criticidad=no crítica · impacto-prod=sin riesgo, pero es el paso que despliega · footprint=supabase/types/database.types.ts + wiki/**.\n</info added on 2026-09-13T23:16:14.778Z>",
             "testStrategy": "Sonda DO block + RAISE; wiki lint.",
             "status": "pending",
             "dependencies": [
               2,
               4
             ],
-            "updatedAt": "2026-09-11T00:58:28.921Z",
+            "updatedAt": "2026-09-13T23:16:14.778Z",
             "parentId": "undefined"
           }
         ],
-        "updatedAt": "2026-09-11T00:58:28.921Z"
+        "updatedAt": "2026-09-13T23:16:14.778Z"
       },
       {
         "id": "79",
