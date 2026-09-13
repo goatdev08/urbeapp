@@ -153,11 +153,12 @@ select is(
 );
 
 -- 5) Privacidad (#116): la vista NO gana el teléfono crudo ni la fecha de nacimiento.
+-- #78: follower_count se suma AL FINAL (contador, no lista de seguidores).
 reset role;
 select columns_are(
   'public', 'agent_public_profiles',
-  array['user_id', 'full_name', 'profile_photo_url', 'has_phone'],
-  '5) la vista expone EXACTAMENTE user_id/full_name/profile_photo_url/has_phone — sin phone crudo, sin date_of_birth, sin presupuesto'
+  array['user_id', 'full_name', 'profile_photo_url', 'has_phone', 'follower_count'],
+  '5) la vista expone EXACTAMENTE user_id/full_name/profile_photo_url/has_phone/follower_count — sin phone crudo, sin date_of_birth, sin presupuesto'
 );
 
 -- 6) La RLS de users NO se abrió: la fila del admin sigue invisible para la buscadora.

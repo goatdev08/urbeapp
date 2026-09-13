@@ -63,10 +63,13 @@ reset role;
 -- #250: se suma has_phone (booleano DERIVADO de users.phone) para que el botón
 -- de WhatsApp no dependa de leer users.phone en el cliente. El número crudo
 -- sigue fuera de la vista.
+-- #78: se suma follower_count (contador denormalizado, AL FINAL) — el agente
+-- ve SOLO el conteo, nunca la lista de seguidores (esa vive en public.follows,
+-- con su propia RLS).
 select columns_are(
   'public', 'agent_public_profiles',
-  array['user_id', 'full_name', 'profile_photo_url', 'has_phone'],
-  '2) la vista expone EXACTAMENTE user_id/full_name/profile_photo_url/has_phone — sin presupuesto, ubicación ni filtros'
+  array['user_id', 'full_name', 'profile_photo_url', 'has_phone', 'follower_count'],
+  '2) la vista expone EXACTAMENTE user_id/full_name/profile_photo_url/has_phone/follower_count — sin presupuesto, ubicación ni filtros'
 );
 
 -- ── 3) user_preferences directo sigue bloqueado por RLS (fila ajena) ─────────

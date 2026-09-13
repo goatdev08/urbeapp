@@ -148,6 +148,14 @@ insert into auth.users (id, email) values
 
 update public.users set role = 'admin' where id = '00000000-0000-0000-0000-000000117004';
 
+-- B necesita fila en user_preferences: agent_public_profiles hace INNER JOIN con
+-- user_preferences (fail-open probado en 96_identidad_publica_test #4) — sin
+-- identidad pública elegida, el usuario no aparece en la vista aunque tenga
+-- seguidores (el conteo sigue vivo en users.follower_count).
+insert into public.user_preferences (user_id, full_name)
+values ('00000000-0000-0000-0000-000000117002', 'B seguido')
+on conflict (user_id) do update set full_name = excluded.full_name;
+
 -- ════════════════════════════════════════════════════════════════════════════
 -- 1) ESTRUCTURA — catálogo puro, seguro aunque el SUT no exista todavía (EC-1, EC-4, EC-8,
 --    EC-9, EC-10 — la parte de forma).
