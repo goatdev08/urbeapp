@@ -22,18 +22,19 @@
  * - (EC-4) long_press_ocultar_solo_aparece_con_can_hide
  * - (EC-5) long_press_ocultar_ausente_sin_can_hide
  * - (EC-6) 289.10 (remate H1 guardian): publicar_invoca_on_comment_posted_una_vez
+ * - (EC-7..EC-10) #291 producto(289.1): toast «Comentario ocultado» con Deshacer
  */
 
 import React from 'react';
 import { Alert } from 'react-native';
-import { render, fireEvent } from '@testing-library/react-native';
+import { render, fireEvent, act, waitFor } from '@testing-library/react-native';
 
 import { useComments } from '../hooks/useComments';
 import { usePostComment } from '../hooks/usePostComment';
 import { useHideComment } from '../hooks/useHideComment';
 import { useReportComment } from '../hooks/useReportComment';
 import { useAuth } from '@/features/auth/context';
-import { CommentsSheet } from '../components/CommentsSheet';
+import { CommentsSheet, HIDDEN_TOAST_MS } from '../components/CommentsSheet';
 import type { CommentItem } from '../types';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -250,6 +251,93 @@ describe('CommentsSheet', () => {
     });
 
     expect(on_comment_posted).toHaveBeenCalledTimes(1);
+  });
+
+  // ── #291 producto(289.1): toast «Comentario ocultado» con «Deshacer» ────
+  // Alert.alert está mockeado: se captura el botón "Ocultar" del menú y se
+  // invoca su onPress a mano (lo que el Alert nativo haría al tocarlo).
+  // Cada caso desmonta DENTRO de act (memoria rntl_unmount_fuera_de_act): el
+  // toast deja un timer vivo y el cleanup automático fuera de act dejaba a los
+  // tests siguientes con un árbol vacío (render → null, useComments sin llamar).
+
+  async function render_and_press_hide(set_status: jest.Mock) {
+    const alert_spy = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+    mock_use_hide_comment.mockReturnValue({ set_status, busy: false, error: null });
+    const comments_return = make_comments_return([
+      make_comment({ id: 'c1', user_id: OTHER_ID, status: 'visible' }),
+    ]);
+    mock_use_comments.mockReturnValue(comments_return);
+
+    const utils = await render(
+      <CommentsSheet visible property_id={PROPERTY_ID} comment_count={1} can_hide on_dismiss={jest.fn()} />,
+    );
+    // RNTL 14: fireEvent devuelve Promise — sin await el act() de abajo se solapa
+    // ("overlapping act() calls") y el siguiente render del archivo queda vacío.
+    await fireEvent(utils.getByLabelText('Comentario de Karla Ibarra'), 'longPress');
+    const buttons = alert_spy.mock.calls[0]?.[2] as { text: string; onPress?: () => void }[];
+    const hide_button = buttons.find((b) => b.text === 'Ocultar');
+    expect(hide_button?.onPress).toBeDefined();
+    await act(async () => {
+      hide_button!.onPress!();
+    });
+    return { ...utils, comments_return };
+  }
+
+  it('(EC-7) ocultar_ok_muestra_toast_con_deshacer: set_status resuelve true → «Comentario ocultado» y botón «Deshacer» visibles', async () => {
+    const set_status = jest.fn().mockResolvedValue(true);
+    const { getByText, getByLabelText, comments_return, unmount } = await render_and_press_hide(set_status);
+
+    expect(set_status).toHaveBeenCalledWith('c1', 'hidden');
+    expect(comments_return.update).toHaveBeenCalledWith('c1', { status: 'hidden' });
+    expect(getByText('Comentario ocultado')).toBeTruthy();
+    expect(getByLabelText('Deshacer')).toBeTruthy();
+    await act(async () => unmount());
+  });
+
+  it('(EC-8) deshacer_restaura_y_cierra_el_toast: Deshacer → set_status(c1, visible) + update local + el toast desaparece', async () => {
+    const set_status = jest.fn().mockResolvedValue(true);
+    const { getByLabelText, queryByText, comments_return, unmount } = await render_and_press_hide(set_status);
+
+    await fireEvent.press(getByLabelText('Deshacer'));
+
+    expect(set_status).toHaveBeenLastCalledWith('c1', 'visible');
+    expect(comments_return.update).toHaveBeenLastCalledWith('c1', { status: 'visible' });
+    await waitFor(() => expect(queryByText('Comentario ocultado')).toBeNull());
+    await act(async () => unmount());
+  });
+
+  it('(EC-9) ocultar_falla_no_muestra_toast: set_status resuelve false → sin toast y sin update local', async () => {
+    const set_status = jest.fn().mockResolvedValue(false);
+    const { queryByText, comments_return, unmount } = await render_and_press_hide(set_status);
+
+    expect(comments_return.update).not.toHaveBeenCalled();
+    expect(queryByText('Comentario ocultado')).toBeNull();
+    await act(async () => unmount());
+  });
+
+  it('(EC-10) toast_se_cierra_solo_tras_HIDDEN_TOAST_MS: sin tocar Deshacer, el toast desaparece al vencer el timer y NO llama a set_status otra vez', async () => {
+    // doNotFake: React vacía el act con queueMicrotask y el scheduler corre en
+    // setImmediate; falsificarlos deja el setState del timer sin re-render.
+    jest.useFakeTimers({ doNotFake: ['queueMicrotask', 'setImmediate', 'nextTick'] });
+    try {
+      const set_status = jest.fn().mockResolvedValue(true);
+      const { queryByText, unmount } = await render_and_press_hide(set_status);
+      expect(queryByText('Comentario ocultado')).toBeTruthy();
+
+      await act(async () => {
+        jest.advanceTimersByTime(HIDDEN_TOAST_MS - 1);
+      });
+      expect(queryByText('Comentario ocultado')).toBeTruthy();
+
+      await act(async () => {
+        jest.advanceTimersByTime(1);
+      });
+      expect(queryByText('Comentario ocultado')).toBeNull();
+      expect(set_status).toHaveBeenCalledTimes(1);
+      await act(async () => unmount());
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
 });
