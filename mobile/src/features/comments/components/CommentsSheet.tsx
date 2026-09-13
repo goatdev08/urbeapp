@@ -25,11 +25,13 @@
  * ReportPropertySheet.tsx SIN modificarlo (mismos tipos de motivo — 1:1 con
  * property_report_reason, ver comments/types.ts).
  *
- * 🔴 UI_FUERA_DEL_MOCKUP — feedback tras Ocultar: EXCLUIDO de esta subtarea
- * por decisión de Abraham (derivada #291, producto(289.1)). Ocultar/Restaurar
- * solo actualiza la lista local (el chip cambia) — sin toast.
+ * Feedback tras Ocultar (#291, producto(289.1)): toast oscuro «Comentario
+ * ocultado» con «Deshacer» (vuelve el status a visible por el mismo hook) que
+ * se auto-oculta a los 4 s. Solo tras Ocultar — Restaurar y Eliminar siguen
+ * actualizando la lista local sin aviso. Mismo patrón de toast que
+ * AssignLeadSheet.tsx (View + tokens ink/paper), sin dependencia nueva.
  */
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -60,6 +62,8 @@ import type { CommentItem } from '../types';
 import { CommentCard } from './CommentCard';
 
 const MAX_BODY_LENGTH = 500;
+/** Duración del toast «Comentario ocultado» (#291). */
+export const HIDDEN_TOAST_MS = 4000;
 
 export interface CommentsSheetProps {
   visible: boolean;
@@ -97,6 +101,23 @@ export function CommentsSheet({
   const report_comment = useReportComment();
   const [report_target_id, set_report_target_id] = useState<string | null>(null);
   const [body, set_body] = useState('');
+  /** id del comentario recién ocultado mientras el toast con «Deshacer» está en pantalla (#291). */
+  const [hidden_toast_id, set_hidden_toast_id] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (hidden_toast_id === null) return;
+    const timer = setTimeout(() => set_hidden_toast_id(null), HIDDEN_TOAST_MS);
+    return () => clearTimeout(timer);
+  }, [hidden_toast_id]);
+
+  const handle_undo_hide = (): void => {
+    const comment_id = hidden_toast_id;
+    if (comment_id === null) return;
+    void hide_comment.set_status(comment_id, 'visible').then((ok) => {
+      if (ok) comments.update(comment_id, { status: 'visible' });
+      set_hidden_toast_id(null);
+    });
+  };
 
   const post_comment = usePostComment(property_id, {
     on_posted: (posted) => {
@@ -137,7 +158,9 @@ export function CommentsSheet({
         text: comment.status === 'hidden' ? 'Restaurar' : 'Ocultar',
         onPress: () => {
           void hide_comment.set_status(comment.id, next_status).then((ok) => {
-            if (ok) comments.update(comment.id, { status: next_status });
+            if (!ok) return;
+            comments.update(comment.id, { status: next_status });
+            if (next_status === 'hidden') set_hidden_toast_id(comment.id);
           });
         },
       });
@@ -242,6 +265,20 @@ export function CommentsSheet({
                   onEndReachedThreshold={0.4}
                   showsVerticalScrollIndicator={false}
                 />
+              )}
+
+              {hidden_toast_id !== null && (
+                <View style={styles.toast} testID="hidden-toast">
+                  <Text style={styles.toast_text}>Comentario ocultado</Text>
+                  <Pressable
+                    onPress={handle_undo_hide}
+                    hitSlop={8}
+                    accessibilityRole="button"
+                    accessibilityLabel="Deshacer"
+                  >
+                    <Text style={styles.toast_action}>Deshacer</Text>
+                  </Pressable>
+                </View>
               )}
             </View>
 
@@ -455,6 +492,31 @@ const styles = StyleSheet.create({
   },
   send_btn_disabled: {
     backgroundColor: colors.gray_1,
+  },
+  toast: {
+    position: 'absolute',
+    left: spacing.s_12 + 2,
+    right: spacing.s_12 + 2,
+    bottom: spacing.s_12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.s_8,
+    backgroundColor: colors.ink,
+    borderRadius: radii.r_12,
+    paddingVertical: spacing.s_8 + 3,
+    paddingHorizontal: spacing.s_12 + 2,
+    ...shadows.md,
+  },
+  toast_text: {
+    fontFamily: fonts.sans_semibold,
+    fontSize: 12,
+    color: '#FDFBF6',
+  },
+  toast_action: {
+    fontFamily: fonts.sans_bold,
+    fontSize: 12,
+    color: colors.paper_2,
   },
   input_error: {
     fontFamily: fonts.sans,
