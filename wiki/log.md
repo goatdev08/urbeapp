@@ -1207,3 +1207,5 @@ Se retira `is_admin()` de `leads_update`, `leads_delete` y `private.can_edit_lea
 ## [2026-09-14] tarea | #294 pin chincheta vectorial — `MapPinIcon.tsx` pasa de Phosphor duotone a una réplica del 📍 de iOS en react-native-svg (cabeza teñida por operación, vertical), idéntica en Android e iOS; aprobado sobre preview HTML; pines inline y tab intactos
 
 ## [2026-09-14] release | #294 mergeada (PR #177, `f168b27`) y OTA publicado — Android preview `01a09e8e…` (runtime 374ba3dd…), iOS production `01a09e8f…` (runtime ca62b26a…)
+
+## [2026-09-14] tarea | #295 fix(289.8): el teclado tapaba la hoja de comentarios en Android — `CommentsSheet.tsx`: KAV `padding` en ambas plataformas, `flex: 1` (el `height: '60%'` se resolvía dos veces → hoja al 36 %; ahora 60 % real) y `keyboardVerticalOffset={-insets.bottom}`; verificado por CLI en el emulador con teclado real
