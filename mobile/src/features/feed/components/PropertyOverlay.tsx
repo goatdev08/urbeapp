@@ -421,7 +421,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 14,
     flexDirection: 'column',
-    gap: 22,          // expo SDK 56 / RN 0.76+ soporta gap en estilos
+    gap: 14,          // polish #293 (Abraham): 22 → 14, íconos más juntos; el conteo (bottom −16) sigue libre del ícono siguiente (empieza en +23)
     alignItems: 'center',
   },
   // 293.3: sin cápsula glass (variante B aprobada en 293.1 — el realce de

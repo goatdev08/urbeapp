@@ -8,6 +8,7 @@ actualizado: 2026-09-14
 - **Gate humano (293.1):** preview HTML publicado como Artifact (frames claro/oscuro × variantes A/B/C); Abraham aprobó y eligió **B** (ícono-sombra + text-shadow) con el recordatorio explícito de que la píldora «Seguir» va pegada al nombre.
 - **Cliente:** `like_count` en `FEED_SELECT` (TDD 293.2, guardian 4/4 mutantes); `RailIcon` en `components/` (lo usan feed, `LikeButton`/`SaveButton` y `ActionButtons` del detalle); conteos ocultos en 0 con `format_count`; fila del agente en línea con avatar 36 y píldora radio 8 / borde 1 px; `AdFeedItem` logo 36; mockup canónico pantalla 4 sincronizado (prototipo standalone intacto).
 - **Verificación:** tsc limpio, lint 0 errores, Jest 220 suites / 2717 tests; smoke por CLI en emulador (like por botón y doble tap mueven el mismo número, 12 ítems sin conteos rancios, detalle consistente). Fricción resuelta y guardada en memoria: Metro con `CI=1` apaga el watcher y sirve código viejo; DNS del emulador muerto tras días vivo.
+- **Polish pedido por Abraham tras ver el resultado:** rail gap 22 → 14 e interior de la píldora «Seguir» a la mitad (padding 3/8); mockup y preview sincronizados, en la misma rama.
 - **Pendiente:** go de Abraham para PR + merge; su smoke en dispositivo (nombre largo truncado, costura con anuncio real, iOS); OTA cuando lo pida — se puede empaquetar con el OTA pendiente de #78.
 
 ## Antes (2026-09-14) — #78 Follow F1: seguir publicadores, conteo público y aviso «Nuevo seguidor»

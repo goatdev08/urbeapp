@@ -78,8 +78,8 @@ export function FollowButton({ followed_user_id, variant, testID }: FollowButton
 const styles = StyleSheet.create({
   pill: {
     borderRadius: 8,
-    paddingVertical: 6,
-    paddingHorizontal: 16,
+    paddingVertical: 3, // polish #293 (Abraham): padding a la mitad (6/16 → 3/8)
+    paddingHorizontal: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
