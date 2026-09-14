@@ -3,7 +3,14 @@ tipo: estado
 actualizado: 2026-09-14
 ---
 
-## Hoy (2026-09-14) — #78 Follow F1: seguir publicadores, conteo público y aviso «Nuevo seguidor»
+## Hoy (2026-09-14) — #293 rediseño del overlay del feed (rail outline, conteos, «Seguir» pegado)
+`/tm-tarea 293 auto` en serie (293.2 → 293.5 → 293.1 → 293.3 → 293.4 → 293.6 → 293.7), rama `tarea/293-overlay-feed` desde el `main` que ya trae #78; **7/7 subtareas done, commits locales, PR pendiente del go de Abraham**; OTA cuando lo pida (100 % JS, mismo fingerprint).
+- **Gate humano (293.1):** preview HTML publicado como Artifact (frames claro/oscuro × variantes A/B/C); Abraham aprobó y eligió **B** (ícono-sombra + text-shadow) con el recordatorio explícito de que la píldora «Seguir» va pegada al nombre.
+- **Cliente:** `like_count` en `FEED_SELECT` (TDD 293.2, guardian 4/4 mutantes); `RailIcon` en `components/` (lo usan feed, `LikeButton`/`SaveButton` y `ActionButtons` del detalle); conteos ocultos en 0 con `format_count`; fila del agente en línea con avatar 36 y píldora radio 8 / borde 1 px; `AdFeedItem` logo 36; mockup canónico pantalla 4 sincronizado (prototipo standalone intacto).
+- **Verificación:** tsc limpio, lint 0 errores, Jest 220 suites / 2717 tests; smoke por CLI en emulador (like por botón y doble tap mueven el mismo número, 12 ítems sin conteos rancios, detalle consistente). Fricción resuelta y guardada en memoria: Metro con `CI=1` apaga el watcher y sirve código viejo; DNS del emulador muerto tras días vivo.
+- **Pendiente:** go de Abraham para PR + merge; su smoke en dispositivo (nombre largo truncado, costura con anuncio real, iOS); OTA cuando lo pida — se puede empaquetar con el OTA pendiente de #78.
+
+## Antes (2026-09-14) — #78 Follow F1: seguir publicadores, conteo público y aviso «Nuevo seguidor»
 `/tm-plan 78` + `/tm-tarea 78 auto` en serie (78.1 → 78.3 → 78.2 → 78.4 → 78.5), rama `tarea/78-follow-f1` → **PR #175 mergeado a `main` (`516d12f`, 2026-09-14) con el go de Abraham**; OTA pendiente de que lo pida; su smoke en dispositivo (seguir desde feed y perfil ajeno, conteo sube, aviso «Nuevo seguidor») sigue pendiente antes del OTA. La rama de #293 nace de este `main`.
 - **Decisiones de Abraham (plan):** píldora «Seguir» también en el perfil ajeno **en conjunto** (variante clara del mismo `FollowButton`); aviso `new_follower` **sin dedupe** (cada follow nuevo avisa; techo «farmear» aceptado y anotado con `ponytail:`).
 - **Backend (78.1/78.2, TDD):** `follows` + `users.follower_count` por trigger + RLS «solo conteo, nunca la lista» + `agent_public_profiles` con `follower_count` al final; `notify_new_follower` en la misma transacción. pgTAP 117 (53) y 118 (19); guardians 8/8 y 9/9 mutantes. El guardian tumbó una rama de admin en `follows_delete` sin cobertura (se retiró). **DESPLEGADO** al remoto (versiones `20260914005918/19`, md5 = local, sonda 0→1→0 con aviso «Agente Prueba empezó a seguirte.» y suplantación 42501, sin residuos).
