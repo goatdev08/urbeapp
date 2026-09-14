@@ -1190,6 +1190,6 @@ Se retira `is_admin()` de `leads_update`, `leads_delete` y `private.can_edit_lea
 
 ## [2026-09-13] release | #292 desplegado al remoto (`20260913083503`, sonda idéntica); PRs #173 (#291) y #174 (#292) mergeados a main; OTA #291 publicado a preview (Android `374ba3dd…`) y production (iOS `ca62b26a…`), entrega verificada con `update:list`.
 
-## [2026-09-14] tarea | #78 follow de cuentas F1 — `follows` + `follower_count` por trigger + RLS «solo conteo» + vista ampliada al final (117/53), aviso `new_follower` sin dedupe (118/19), `useFollow` optimista (14 EC), `FollowButton` en overlay y perfil ajeno, «Seguidores» sustituye a «Guardados»; backend desplegado (`20260914005918/19`, sonda limpia); PR y OTA pendientes de Abraham
+## [2026-09-14] tarea | #78 follow de cuentas F1 — `follows` + `follower_count` por trigger + RLS «solo conteo» + vista ampliada al final (117/53), aviso `new_follower` sin dedupe (118/19), `useFollow` optimista (14 EC), `FollowButton` en overlay y perfil ajeno, «Seguidores» sustituye a «Guardados»; backend desplegado (`20260914005918/19`, sonda limpia); PR #175 mergeado (`516d12f`); OTA y smoke en dispositivo pendientes de Abraham
 
 ## [2026-09-13] explore | aprobado tarea 293 — producto(9): rediseño del overlay del feed (rail outline sin cápsula, conteos like/comentarios, «Seguir» pegado al nombre) — doc 049
