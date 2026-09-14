@@ -75,6 +75,13 @@ jest.mock('@/features/property-detail/utils/whatsapp', () => ({
   open_whatsapp_text: (...args: unknown[]) => mock_open_whatsapp_text(...args),
 }));
 
+// FollowButton (78.4, siempre presente en la fila de perfil ajeno) llama
+// useFollow → useAuth; esta suite no envuelve en AuthProvider (no es lo que
+// se prueba aquí).
+jest.mock('@/features/profile/hooks/useFollow', () => ({
+  useFollow: () => ({ is_following: false, loading: false, is_own: false, toggle_follow: jest.fn() }),
+}));
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
 // ─────────────────────────────────────────────────────────────────────────────
