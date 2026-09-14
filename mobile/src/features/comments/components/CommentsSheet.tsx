@@ -38,7 +38,6 @@ import {
   FlatList,
   KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -194,8 +193,24 @@ export function CommentsSheet({
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={on_dismiss} statusBarTranslucent>
       <Pressable style={styles.overlay} onPress={on_dismiss}>
+        {/*
+          Teclado (fix 2026-09-14, Abraham: «tapa todo el componente»):
+          - `padding` TAMBIÉN en Android — con `behavior` undefined el KAV no
+            hacía nada ahí y un Modal `statusBarTranslucent` no se redimensiona
+            con `adjustResize`, así que el teclado cubría la hoja entera.
+          - `kb_wrap` con `flex: 1` para que el KAV tenga alto DEFINIDO: con
+            alto auto, Yoga resolvía el `height: '60%'` de la hoja dos veces
+            (60 % de 60 % = 36 % de la pantalla, y con teclado 36 % de lo que
+            quedaba → la hoja se encogía). Ahora es el 60 % real del preview,
+            medido sobre el espacio libre encima del teclado.
+          - `keyboardVerticalOffset={-insets.bottom}`: el teclado ya cubre la
+            barra de navegación / home indicator, así que el `paddingBottom:
+            insets.bottom` de la hoja queda detrás de él en vez de como franja
+            vacía entre el input y el teclado.
+        */}
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior="padding"
+          keyboardVerticalOffset={-insets.bottom}
           style={styles.kb_wrap}
         >
           {/* onPress vacío para detener la propagación al overlay (tap-fuera cierra) */}
@@ -356,6 +371,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   kb_wrap: {
+    flex: 1,
     justifyContent: 'flex-end',
   },
   sheet: {
