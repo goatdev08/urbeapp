@@ -47,7 +47,7 @@ export interface FeedPropertiesDeps {
   coords?: { latitude: number; longitude: number };
 }
 
-const PAGE_SIZE = 10;
+export const PAGE_SIZE = 10;
 const DEFAULT_RADIUS_M = 5000;
 const MAX_EXPANSION_ATTEMPTS = 3;
 const RADIUS_MULTIPLIER = 2;
@@ -76,14 +76,14 @@ export type MintedVideo = {
 type RpcRow = { id: string; distance_m: number };
 
 /** Fila de la vista agent_public_profiles — identidad pública del publicador (#250). */
-type ProfileRow = {
+export type ProfileRow = {
   user_id: string;
   full_name: string | null;
   profile_photo_url: string | null;
   has_phone: boolean;
 };
 
-type QueryRow = {
+export type QueryRow = {
   id: string;
   price: number;
   operation_type: string;
@@ -110,7 +110,7 @@ type QueryRow = {
 // publicador es admin (users_select solo abre la rama pública a role='agent'
 // verificado) — las 8 propiedades activas de producción salían anónimas y sin
 // WhatsApp. De paso el teléfono CRUDO deja de viajar al cliente (#116).
-const FEED_SELECT = `id, price, operation_type, property_type, currency, price_visible, address, bedrooms, bathrooms, owner_user_id, agency_id, created_at, comment_count, like_count,
+export const FEED_SELECT = `id, price, operation_type, property_type, currency, price_visible, address, bedrooms, bathrooms, owner_user_id, agency_id, created_at, comment_count, like_count,
        property_videos(id, storage_path, position, thumbnail_url)`;
 
 /** Columnas de identidad pública que el feed necesita de la vista. */
@@ -141,7 +141,7 @@ export async function mint_videos(client: any, property_ids: string[]): Promise<
  * ponytail: fail-open. Si la query falla, el feed sigue mostrando propiedades
  * sin identidad en vez de romperse; la identidad es decoración.
  */
-async function fetch_agent_profiles(
+export async function fetch_agent_profiles(
   client: any,
   owner_user_ids: string[],
 ): Promise<Map<string, ProfileRow>> {
@@ -167,7 +167,7 @@ async function fetch_agent_profiles(
  * (radius_m=null) y el path de proximidad — ambos necesitan exactamente la
  * misma resolución de URLs (#58.3, ponytail: reusa en vez de duplicar).
  */
-function build_feed_data(
+export function build_feed_data(
   rows: QueryRow[],
   videos: MintedVideo[],
   profiles: Map<string, ProfileRow>,
