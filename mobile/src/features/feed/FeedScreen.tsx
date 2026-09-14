@@ -39,7 +39,7 @@ import { VideoFeedItem } from './components/VideoFeedItem';
 import { AdFeedItem } from './components/AdFeedItem';
 import { FeedSkeleton } from './components/FeedSkeleton';
 import { FEED_SECTION_TABS_HEIGHT, FeedSectionTabs, feed_top_row_y } from './components/FeedSectionTabs';
-import { FEED_SECTIONS } from '@/features/search/lib/feedSection';
+import { FEED_TABS } from '@/features/search/lib/feedSection';
 import { release_splash } from '@/lib/splash-gate';
 import { useFeedActiveIndex } from './hooks/useFeedActiveIndex';
 import { useFeedProperties } from './hooks/useFeedProperties';
@@ -51,10 +51,10 @@ export function FeedScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { viewabilityConfigCallbackPairs, isItemActive } = useFeedActiveIndex();
-  const { filters, active_filter_count, clear_filters, set_filter, section, set_section } =
+  const { filters, active_filter_count, clear_filters, set_filter, feed_tab, set_feed_tab } =
     useFilters();
-  // #241: label de la sección activa para el copy del vacío ("en venta"/"en renta").
-  const section_label = (FEED_SECTIONS.find((s) => s.value === section)?.label ?? 'Venta').toLowerCase();
+  // #241/#296.3: label del tab activo para el copy del vacío ("en venta"/"en renta"/"para ti"...).
+  const section_label = (FEED_TABS.find((t) => t.value === feed_tab)?.label ?? 'Para ti').toLowerCase();
   // Coordenada superior compartida por la fila de tabs, el botón de filtros
   // (ahora a la izquierda) y la banda de chips/badge que cuelga debajo.
   // Fórmula centralizada en FeedSectionTabs.tsx (`feed_top_row_y`) — AdFeedItem
@@ -284,12 +284,12 @@ export function FeedScreen() {
             pointerEvents="none"
           />
 
-          {/* Secciones Venta · Renta (#241) — fila deslizable que arranca tras
-              el botón de filtros (296.2: ya no centrada). set_section cambia
-              la identidad de `filters` → useFeedProperties vacía la lista y
-              loadInitial recarga (skeleton). 296.3 conecta las 5 tabs del
-              store nuevo; por ahora sigue pasando FEED_SECTIONS (2 tabs). */}
-          <FeedSectionTabs tabs={FEED_SECTIONS} value={section} on_change={set_section} style={{ top: top_row_y }} />
+          {/* 5 tabs del feed — Para ti · Siguiendo · Nuevos · Venta · Renta (#296.3,
+              sustituye las 2 secciones de #241) — fila deslizable que arranca tras
+              el botón de filtros (296.2: ya no centrada). set_feed_tab cambia
+              feed_tab (store propio) → `filters.operation_types` se deriva y
+              useFeedProperties vacía la lista; loadInitial recarga (skeleton). */}
+          <FeedSectionTabs tabs={FEED_TABS} value={feed_tab} on_change={set_feed_tab} style={{ top: top_row_y }} />
 
           <TouchableOpacity
             style={[styles.filter_btn, { top: filter_btn_y }]}
