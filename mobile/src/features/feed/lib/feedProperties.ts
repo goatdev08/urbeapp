@@ -100,6 +100,8 @@ type QueryRow = {
   created_at: string;
   /** Columna aditiva (289.10, ya existe desde 289.8) — opcional por fail-open (fixtures/caché viejos). */
   comment_count?: number | null;
+  /** Columna aditiva (#293, ya existe desde 20260604000005) — opcional por fail-open (fixtures/caché viejos). */
+  like_count?: number | null;
   property_videos: { id: string; storage_path: string; position: number; thumbnail_url: string | null }[];
 };
 
@@ -108,7 +110,7 @@ type QueryRow = {
 // publicador es admin (users_select solo abre la rama pública a role='agent'
 // verificado) — las 8 propiedades activas de producción salían anónimas y sin
 // WhatsApp. De paso el teléfono CRUDO deja de viajar al cliente (#116).
-const FEED_SELECT = `id, price, operation_type, property_type, currency, price_visible, address, bedrooms, bathrooms, owner_user_id, agency_id, created_at, comment_count,
+const FEED_SELECT = `id, price, operation_type, property_type, currency, price_visible, address, bedrooms, bathrooms, owner_user_id, agency_id, created_at, comment_count, like_count,
        property_videos(id, storage_path, position, thumbnail_url)`;
 
 /** Columnas de identidad pública que el feed necesita de la vista. */
@@ -210,6 +212,7 @@ function build_feed_data(
       agency_id: row.agency_id,
       created_at: row.created_at,
       comment_count: row.comment_count ?? 0,
+      like_count: row.like_count ?? 0,
       agent_has_phone,
       agent_name,
       agent_photo_url,

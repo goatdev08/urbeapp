@@ -123,6 +123,19 @@ function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedIte
       ? comment_count_override.count
       : (property.comment_count ?? 0);
 
+  // Conteo optimista de likes (293.3/293.2) — a diferencia de comment_count
+  // (que necesita un override porque publicar un comentario NO refresca
+  // property.comment_count), aquí no hace falta estado propio: isLiked YA es
+  // el optimismo (useLikeProperty lo cambia antes del round-trip) y
+  // property.like_count llega fresco en cada render/reciclaje de FlashList.
+  // ponytail: techo #156 — useLikeProperty nace SIEMPRE con initialLiked=false
+  // y no resetea su estado cuando FlashList recicla la celda hacia OTRA
+  // property (misma instancia de componente); si el usuario ya le había dado
+  // like a esta property_video_id en una celda anterior, isLiked puede seguir
+  // en true tras el reciclaje y este número sale +1 de más. No se resuelve
+  // aquí (fuera de alcance de 293.3).
+  const like_count = Math.max(0, (property.like_count ?? 0) + (isLiked ? 1 : 0));
+
   // Contacto por WhatsApp — el MISMO camino que el detalle: la EF crea el lead
   // y devuelve el template §19.3. Ver el comentario de handle_whatsapp abajo.
   const { contact_agent } = useContactAgent();
@@ -478,6 +491,7 @@ function VideoFeedItemComponent({ property, isActive, onVideoEnd }: VideoFeedIte
           onShare={handle_share}
           onComments={handle_open_comments}
           commentCount={comment_count}
+          likeCount={like_count}
         />
 
         {/* Hoja de comentarios (289.10) — montada SOLO mientras está abierta,

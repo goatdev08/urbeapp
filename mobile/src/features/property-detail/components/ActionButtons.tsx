@@ -8,8 +8,13 @@
  *   - useSaveProperty (feed/hooks) — save por property_id ÚNICO (schema 0006, sin video_id)
  *   - useReportProperty (property-detail/hooks, 220.5) — INSERT directo a property_reports
  *
- * Estilo: glass pill 46×46 px, borderRadius 23 — mismo patrón que PropertyOverlay.tsx.
- * ponytail: estilos glass copiados de PropertyOverlay.action_btn (rgba hardcoded).
+ * Estilo (293.6): caja táctil outline 46×46 SIN fondo/borde/radio — mismo
+ * lenguaje que el rail del feed (293.3). El contenedor (RAIL_ACTION_BOX) y el
+ * ícono de doble trazo (RailIcon) se reusan desde `@/components/RailIcon`
+ * (antes copiados a mano con rgba hardcoded). Los 3 botones (like/save/
+ * reportar) quedan visualmente idénticos al rail del feed: like/save lo
+ * heredan porque LikeButton/SaveButton (293.6, ajuste tras smoke) ahora
+ * dibujan su ícono con RailIcon internamente; "Reportar" lo usa directo aquí.
  *
  * Reglas de visibilidad:
  *   - Like: SOLO cuando property_video_id !== null (likes.property_video_id es required).
@@ -30,6 +35,7 @@ import { Flag } from 'phosphor-react-native';
 
 import { useLikeProperty } from '@/features/feed/hooks/useLikeProperty';
 import { useSaveProperty } from '@/features/feed/hooks/useSaveProperty';
+import { RAIL_ACTION_BOX, RailIcon } from '@/components/RailIcon';
 import { LikeButton } from '@/components/LikeButton';
 import { SaveButton } from '@/components/SaveButton';
 import { useReportProperty } from '../hooks/useReportProperty';
@@ -143,7 +149,7 @@ function ReportAction({
         accessibilityRole="button"
         accessibilityLabel="Reportar publicación"
       >
-        <Flag size={20} color="#FFFFFF" weight="bold" />
+        <RailIcon icon={Flag} color="#FFFFFF" weight="bold" />
       </Pressable>
 
       <ReportPropertySheet
@@ -167,16 +173,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
-  // ponytail: glass pill 46×46 idéntico a PropertyOverlay.action_btn
-  //   (rgba hardcoded del mockup .fbtn — no hay token en theme.ts todavía)
-  btn: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    backgroundColor: 'rgba(23,20,15,0.36)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  // 293.6: caja táctil compartida con el rail del feed (RAIL_ACTION_BOX,
+  // exportada desde PropertyOverlay.tsx) — outline aprobado en 293.1/293.3,
+  // ya sin la cápsula glass copiada a mano.
+  btn: RAIL_ACTION_BOX,
 });

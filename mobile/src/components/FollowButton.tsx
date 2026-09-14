@@ -77,9 +77,9 @@ export function FollowButton({ followed_user_id, variant, testID }: FollowButton
 
 const styles = StyleSheet.create({
   pill: {
-    borderRadius: 20,
-    paddingVertical: 6,
-    paddingHorizontal: 16,
+    borderRadius: 8,
+    paddingVertical: 3, // polish #293 (Abraham): padding a la mitad (6/16 → 3/8)
+    paddingHorizontal: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -90,7 +90,7 @@ const styles = StyleSheet.create({
 
   // Variante 'dark' (overlay del feed, sobre video)
   dark: {
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: colors.on_primary,
     backgroundColor: 'transparent',
   },
@@ -107,7 +107,7 @@ const styles = StyleSheet.create({
 
   // Variante 'light' (perfil, fondo paper)
   light: {
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: colors.ink,
     backgroundColor: 'transparent',
   },

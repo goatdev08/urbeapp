@@ -57,6 +57,14 @@ export type FeedProperty = {
    * es undefined (siempre 0 o el conteo real).
    */
   comment_count?: number;
+  /**
+   * Total de likes (properties.like_count, mantenido por trigger
+   * update_like_count() — 20260604000005/20260701000001, #293). El select
+   * del feed lo pide y build_feed_data mapea fail-open a 0 (ver
+   * feedProperties.like-count.test.ts). Opcional en el TIPO nada más por
+   * fixtures; en runtime nunca es undefined.
+   */
+  like_count?: number;
   video: FeedPropertyVideo;
 };
 

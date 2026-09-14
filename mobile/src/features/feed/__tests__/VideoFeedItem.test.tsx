@@ -104,11 +104,13 @@ jest.mock('@/features/feed/lib/appSession', () => ({
   get_app_session_id: jest.fn(() => 'sesion-uuid-test-fija'),
 }));
 
-// PropertyOverlay/HeartAnimation → marcadores nulos. Su render no es lo que se
-// prueba aquí (dependen de safe-area-context/gradientes/reanimated — ruido
-// para un test de wiring) y ningún test asierta sobre su contenido.
+// PropertyOverlay/HeartAnimation → marcador. Su render no es lo que se prueba
+// aquí (dependen de safe-area-context/gradientes/reanimated — ruido para un
+// test de wiring); 293.3 SÍ necesita leer las props que recibe (likeCount),
+// así que captura — mismo patrón que VideoFeedItem.comments.test.tsx.
+const mock_property_overlay = jest.fn((_props: Record<string, unknown>) => null);
 jest.mock('@/features/feed/components/PropertyOverlay', () => ({
-  PropertyOverlay: () => null,
+  PropertyOverlay: (props: Record<string, unknown>) => mock_property_overlay(props),
 }));
 
 jest.mock('@/features/feed/components/HeartAnimation', () => ({
@@ -224,6 +226,11 @@ const mock_use_save_property = useSaveProperty as jest.MockedFunction<typeof use
 // ---------------------------------------------------------------------------
 
 let fake_player: FakePlayer;
+
+function last_overlay_props(): Record<string, unknown> {
+  const calls = mock_property_overlay.mock.calls;
+  return calls[calls.length - 1]![0];
+}
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -440,6 +447,41 @@ describe('VideoFeedItem — wiring de telemetría (112.2)', () => {
     });
 
     expect(report_progress_a).toHaveBeenCalledTimes(1);
+  });
+
+  // ── 293.3 — regla optimista de like_count ────────────────────────────────
+  // display = max(0, (property.like_count ?? 0) + (isLiked ? 1 : 0)).
+
+  it('(LC-1) like_count_pasa_directo_cuando_no_esta_liked: isLiked=false → PropertyOverlay recibe likeCount === property.like_count', async () => {
+    mock_use_like_property.mockReturnValue({ isLiked: false, toggleLike: jest.fn(), likeOnly: jest.fn() });
+
+    await act(async () => {
+      await render(<VideoFeedItem property={make_property({ like_count: 5 })} isActive={true} />);
+    });
+
+    expect(last_overlay_props().likeCount).toBe(5);
+  });
+
+  it('(LC-2) like_count_suma_uno_cuando_isliked_es_true: isLiked=true → PropertyOverlay recibe likeCount === property.like_count + 1 — el botón y el doble-tap comparten el MISMO isLiked, así que mueven el mismo número', async () => {
+    mock_use_like_property.mockReturnValue({ isLiked: true, toggleLike: jest.fn(), likeOnly: jest.fn() });
+
+    await act(async () => {
+      await render(<VideoFeedItem property={make_property({ like_count: 5 })} isActive={true} />);
+    });
+
+    expect(last_overlay_props().likeCount).toBe(6);
+  });
+
+  it('(LC-3) like_count_ausente_cae_a_cero_mas_isliked: property.like_count=undefined + isLiked=true → likeCount=1, nunca NaN/undefined', async () => {
+    mock_use_like_property.mockReturnValue({ isLiked: true, toggleLike: jest.fn(), likeOnly: jest.fn() });
+    const property = make_property();
+    delete (property as { like_count?: number }).like_count;
+
+    await act(async () => {
+      await render(<VideoFeedItem property={property} isActive={true} />);
+    });
+
+    expect(last_overlay_props().likeCount).toBe(1);
   });
 
 });

@@ -13,6 +13,19 @@
  * fallback a la inicial (del nombre si existe) cuando no hay foto. El tap
  * (avatar o nombre) navega al perfil público vía onAgentPress con feedback
  * de presión (mismo scale/opacity que los botones del rail).
+ *
+ * 293.3: rail sin cápsula glass (solo caja táctil 46×46) — realce de
+ * contraste variante B aprobada en 293.1 (preview
+ * .taskmaster/docs/exploraciones/049-rediseno-layout-overlay-feed/preview/overlay.html):
+ * cada ícono del rail se dibuja dos veces vía RailIcon (copia negra
+ * semitransparente 1px detrás + ícono blanco/verde encima). Conteos bajo
+ * like/comentarios con format_count (LikeButton.tsx), ocultos en 0. Fila del
+ * agente en línea (avatar 36 · nombre · píldora «Seguir» pegada, gap fijo).
+ *
+ * 293.6 (ajuste tras smoke): RailIcon/RAIL_ICON_SIZE/RAIL_ACTION_BOX se
+ * mudaron a `@/components/RailIcon` — LikeButton/SaveButton (components/)
+ * también los consumen y un `components/` importando de este feature estaba
+ * al revés.
  */
 
 import React, { useState } from 'react';
@@ -29,6 +42,8 @@ import { Bathtub, Bed, BookmarkSimple, ChatCircle, Heart, type Icon, ShareNetwor
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { FollowButton } from '@/components/FollowButton';
+import { format_count } from '@/components/LikeButton';
+import { RAIL_ACTION_BOX, RailIcon } from '@/components/RailIcon';
 import { useR2Urls } from '@/hooks/useR2Urls';
 import { format_price } from '@/lib/formatPrice';
 import { colors, fonts, glass, radii, spacing } from '@/theme/theme';
@@ -82,6 +97,13 @@ export type PropertyOverlayProps = {
   onComments?: () => void;
   /** Contador vivo de comentarios (289.10). Fail-open a 0 si se omite. */
   commentCount?: number;
+  /**
+   * Conteo optimista de likes (293.3/293.2) — VideoFeedItem ya calcula
+   * max(0, property.like_count + (isLiked?1:0)) atado a property.id; este
+   * componente solo lo pinta. Fail-open a 0 si se omite (oculto, igual que
+   * commentCount).
+   */
+  likeCount?: number;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -100,9 +122,11 @@ export function PropertyOverlay({
   onShare,
   onComments,
   commentCount,
+  likeCount,
 }: PropertyOverlayProps) {
   const insets = useSafeAreaInsets();
   const comment_count = commentCount ?? 0;
+  const like_count = likeCount ?? 0;
 
   // #145.4: foto real del agente. agent_photo_url es key R2 o URL legacy —
   // useR2Urls resuelve/pasa según corresponda (fail-soft → null → inicial).
@@ -158,6 +182,7 @@ export function PropertyOverlay({
           active={isLiked}
           onPress={onLike}
           accessibilityLabel={isLiked ? 'Quitar like' : 'Dar like'}
+          count={like_count}
         />
         <ActionButton
           icon={BookmarkSimple}
@@ -171,33 +196,29 @@ export function PropertyOverlay({
             opcional para no romper PropertyOverlay.cacheKey.test.tsx (no lo
             pasa) — sin él el botón simplemente no se renderiza. */}
         {onComments && (
-          <Pressable
+          <ActionButton
             testID="overlay-comments-btn"
+            icon={ChatCircle}
+            active={false}
             onPress={onComments}
-            style={({ pressed }) => [styles.action_btn, pressed && styles.btn_pressed]}
-            accessibilityRole="button"
             accessibilityLabel="Comentarios"
-          >
-            <ChatCircle size={22} color="#FFFFFF" weight="bold" />
-            {comment_count > 0 && (
-              <Text style={styles.comment_count} numberOfLines={1}>
-                {comment_count}
-              </Text>
-            )}
-          </Pressable>
+            count={comment_count}
+          />
         )}
 
         {/* WhatsApp directo — visible solo si el agente tiene teléfono.
             Verde de marca WhatsApp para reconocimiento inmediato. */}
         {onWhatsApp && (
-          <Pressable
+          <ActionButton
+            icon={WhatsappLogo}
+            active={false}
             onPress={onWhatsApp}
-            style={({ pressed }) => [styles.whatsapp_btn, pressed && styles.btn_pressed]}
-            accessibilityRole="button"
             accessibilityLabel="Contactar por WhatsApp"
-          >
-            <WhatsappLogo size={24} color="#FFFFFF" weight="fill" />
-          </Pressable>
+            // polish #293 (Abraham): sin círculo — el propio logo relleno en
+            // verde WhatsApp, misma caja/sombra/ranura que el resto del rail.
+            color={WHATSAPP_GREEN}
+            weight="fill"
+          />
         )}
 
         {/* Compartir — link al video, glass neutro como like/guardar. */}
@@ -215,8 +236,10 @@ export function PropertyOverlay({
         pointerEvents="box-none"
       >
         {/* Fila del agente (78.4): DOS hermanos NO anidados — el Pressable de
-            avatar+nombre (#145.4, intacto) y la píldora de «Seguir», empujada
-            al extremo derecho (marginLeft:'auto', tal cual el prototipo).
+            avatar+nombre (#145.4, en línea desde 293.3) y la píldora de
+            «Seguir», PEGADA al nombre (follow_button_wrap: marginLeft fijo,
+            recordatorio explícito de Abraham en la aprobación de 293.1 — ya
+            no marginLeft:'auto' al extremo derecho como en el prototipo).
             box-none: la fila no captura toques fuera de sus hijos. */}
         <View style={styles.agent_row} pointerEvents="box-none">
           <Pressable
@@ -313,6 +336,13 @@ type ActionButtonProps = {
   active: boolean;
   onPress: () => void;
   accessibilityLabel: string;
+  /** Conteo bajo el ícono (like y comentarios, 293.3). Oculto si es 0/undefined. */
+  count?: number;
+  testID?: string;
+  /** Color del ícono; por defecto blanco (activo: primary_soft). */
+  color?: string;
+  /** Peso Phosphor; por defecto bold (activo: fill). */
+  weight?: 'bold' | 'fill';
 };
 
 function ActionButton({
@@ -320,21 +350,33 @@ function ActionButton({
   active,
   onPress,
   accessibilityLabel,
+  count,
+  testID,
+  color,
+  weight,
 }: ActionButtonProps) {
   return (
     <Pressable
+      testID={testID}
       onPress={onPress}
       // Feedback táctil: encoge al presionar (fluidez percibida, flash 2026-07-06)
       style={({ pressed }) => [styles.action_btn, pressed && styles.btn_pressed]}
       accessibilityLabel={accessibilityLabel}
       accessibilityRole="button"
     >
-      <IconCmp
-        size={22}
+      <RailIcon
+        icon={IconCmp}
         // Activo = verde claro de marca (cohesión con el acento verde del logo)
-        color={active ? colors.primary_soft : '#FFFFFF'}
-        weight={active ? 'fill' : 'bold'}
+        color={color ?? (active ? colors.primary_soft : '#FFFFFF')}
+        weight={weight ?? (active ? 'fill' : 'bold')}
       />
+      {/* Ranura del conteo SIEMPRE presente (polish #293, cohesión): así el
+          paso vertical del rail es idéntico haya o no número — antes el Text
+          absoluto hacía que «corazón→guardar» se viera distinto que
+          «guardar→comentarios». Vacía cuando el conteo es 0/undefined. */}
+      <Text style={styles.count_label} numberOfLines={1}>
+        {count !== undefined && count > 0 ? format_count(count) : ''}
+      </Text>
     </Pressable>
   );
 }
@@ -370,11 +412,17 @@ function ActionButton({
  * no para el feed (ver el comentario de ese token).
  */
 export const INFO_BOTTOM = Platform.OS === 'ios' ? glass.floating_content_bottom_offset_ios : 80;
-const RAIL_BOTTOM = Platform.OS === 'ios' ? glass.floating_content_bottom_offset_ios + 20 : 100;
+// polish #293 (Abraham): el rail baja hasta la base del bloque de info (antes
+// arrancaba 20 más arriba) para quedar más pegado a la tab bar, como en Reels.
+const RAIL_BOTTOM = INFO_BOTTOM;
 
 /** Color de texto de specs — blanco cálido semitransparente. Hardcodeado porque
  * el feed es siempre oscuro (ponytail: dual-mode diferido). */
 const SPEC_COLOR = 'rgba(246,242,235,0.85)';
+
+/** Verde de marca WhatsApp — el logo relleno es la única nota de color del rail
+ * (polish #293: antes era un círculo sólido de 46/40 con el logo en blanco). */
+const WHATSAPP_GREEN = '#25D366';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Estilos
@@ -386,44 +434,40 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 14,
     flexDirection: 'column',
-    gap: 22,          // expo SDK 56 / RN 0.76+ soporta gap en estilos
+    gap: 10,          // polish #293 (Abraham): paso uniforme = caja 46 + 10; el conteo ya vive DENTRO de la caja
     alignItems: 'center',
   },
-  action_btn: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    // ponytail: glass pill oscuro hardcodeado — colores del mockup .fbtn
-    backgroundColor: 'rgba(23,20,15,0.36)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  whatsapp_btn: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    // Verde WhatsApp sólido — CTA de contacto reconocible en el rail.
-    backgroundColor: '#25D366',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  // 293.3: sin cápsula glass (variante B aprobada en 293.1 — el realce de
+  // contraste lo da RailIcon, no un fondo). Caja táctil 46×46 intacta
+  // (#245: sustituir un componente = copiar su LAYOUT, no solo sus props).
+  // 293.6: RAIL_ACTION_BOX (y RailIcon) viven en @/components/RailIcon —
+  // ActionButtons.tsx y LikeButton/SaveButton también los consumen.
+  action_btn: RAIL_ACTION_BOX,
   /** Estado presionado de los botones del rail — encoge + atenúa. */
   btn_pressed: {
     transform: [{ scale: 0.88 }],
     opacity: 0.85,
   },
-  /** Contador del botón de comentarios — mismo patrón que ActionButtons.comment_count. */
-  comment_count: {
-    position: 'absolute',
-    bottom: -16,
+  /**
+   * Conteo bajo like/comentarios (293.3) — mismo patrón que ANTES tenía solo
+   * el botón de comentarios (Text absoluto bottom -16, mono_medium 11,
+   * blanco), ahora con textShadow reforzado (variante B aprobada en 293.1:
+   * sin cápsula de fondo, el conteo necesita su propio contraste).
+   */
+  count_label: {
+    // En flujo (polish #293): ícono 28 + 8 + ranura 12 = 48 centrados en la caja
+    // 46 (1 dp de desborde visual por lado, la caja táctil no cambia). Con el
+    // paso de 56 el número queda CENTRADO en el aire entre dos glifos (28 dp:
+    // 8 arriba, 8 abajo) — pedido de Abraham, 2ª ronda de polish.
+    height: 12,
+    lineHeight: 12,
+    marginTop: 8,
     fontFamily: fonts.mono_medium,
     fontSize: 11,
     color: '#FFFFFF',
-    textShadowColor: 'rgba(23,20,15,0.55)',
+    textShadowColor: 'rgba(0,0,0,0.85)',
     textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
+    textShadowRadius: 3,
   },
 
   // Info inferior izquierda
@@ -432,18 +476,21 @@ const styles = StyleSheet.create({
     left: 16,
     right: 74, // deja margen para el rail (14px right + 46px ancho + 14px gap)
   },
-  /** Fila del agente (78.4): avatar+nombre a la izquierda, píldora «Seguir» al
-   * extremo derecho. Sin alignSelf propio — se estira al ancho de `info`
-   * (default de un View columna) para que marginLeft:'auto' del wrap tenga
-   * espacio libre que consumir, igual que el div.flex del prototipo. */
+  /** Fila del agente (78.4): avatar+nombre a la izquierda, píldora «Seguir»
+   * pegada al nombre (293.3 — ya no empujada al extremo derecho). */
   agent_row: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: spacing.s_12,
   },
   /** Pressable de avatar+nombre — angosto (alignSelf:'flex-start', #145.4)
-   * para no capturar toques fuera de sí mismo dentro de la fila. */
+   * para no capturar toques fuera de sí mismo dentro de la fila.
+   * 293.3: EN LÍNEA (avatar · nombre a la derecha, antes apilados) — gap fijo
+   * entre avatar y nombre, mismo lenguaje que el preview aprobado (293.1). */
   agent_info: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.s_8,
     alignSelf: 'flex-start',
     // flexShrink:1 (default RN es 0): con la píldora de «Seguir» como hermana
     // en la fila, este bloque debe poder ceder ancho en vez de empujarla
@@ -455,15 +502,20 @@ const styles = StyleSheet.create({
     transform: [{ scale: 0.94 }],
     opacity: 0.8,
   },
-  /** Empuja la píldora de «Seguir» al extremo derecho de la fila (prototipo:
-   * margin-left:auto en .agent-row). */
+  /**
+   * 293.3: píldora «Seguir» PEGADA al nombre (recordatorio explícito de
+   * Abraham en la aprobación de 293.1) — gap fijo tras el nombre, NUNCA
+   * marginLeft:'auto' al extremo derecho de la fila (comportamiento previo).
+   * flexShrink:0: nunca se comprime, el nombre es el que cede ancho.
+   */
   follow_button_wrap: {
-    marginLeft: 'auto',
+    marginLeft: spacing.s_8,
+    flexShrink: 0,
   },
   agent_avatar: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     // Fondo del fallback de inicial; la foto lo cubre por completo cuando hay.
     backgroundColor: '#6f5742',
     borderWidth: 2,
@@ -475,16 +527,16 @@ const styles = StyleSheet.create({
   agent_photo: {
     width: '100%',
     height: '100%',
-    borderRadius: 15, // 17 - 2 de borde
+    borderRadius: 16, // 18 - 2 de borde
   },
   agent_initial: {
     fontFamily: fonts.sans_bold,
     fontSize: 13,
     color: '#F6F2EB',
   },
-  /** Nombre público del agente bajo el avatar (#145.4). */
+  /** Nombre público del agente, a la derecha del avatar (293.3: antes debajo,
+   * con marginTop — ahora en línea, sin él). */
   agent_name: {
-    marginTop: spacing.s_4,
     flexShrink: 1,
     fontFamily: fonts.sans_bold,
     fontSize: 13,

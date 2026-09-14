@@ -419,12 +419,14 @@ const styles = StyleSheet.create({
     gap: spacing.s_8,
   },
   identity: { flexDirection: 'row', alignItems: 'center', gap: spacing.s_8 },
-  // Gemelo de `agent_avatar` de PropertyOverlay (mismo fondo, borde y overflow);
-  // conserva el 28 que ya tenía esta fila para no mover el bloque de contenido.
+  // 293.4: mismo tamaño que `agent_avatar` de PropertyOverlay (36/18, antes 28/14)
+  // para que la costura propiedad → anuncio → propiedad no salte al deslizar.
+  // ponytail: estilo duplicado con PropertyOverlay.agent_avatar/agent_name, token
+  // compartido cuando haya un 3er consumidor de este layout de identidad.
   logo: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: '#6f5742',
     borderWidth: 2,
     borderColor: colors.primary_soft,
@@ -432,8 +434,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     overflow: 'hidden',
   },
-  logo_photo: { width: '100%', height: '100%', borderRadius: 12 },
-  logo_initial: { fontFamily: fonts.sans_bold, fontSize: 12, color: '#F6F2EB' },
+  logo_photo: { width: '100%', height: '100%', borderRadius: 16 },
+  logo_initial: { fontFamily: fonts.sans_bold, fontSize: 13, color: '#F6F2EB' },
   // Mismo tratamiento que `agent_name` de PropertyOverlay: marfil + sombra, no
   // gris — sobre un fotograma claro el gray_1 se perdía (#248).
   agency: {

@@ -3,8 +3,8 @@ tipo: concepto
 dominio: producto
 estado: vivo
 fuentes: [docs/PRD.md §9, docs/PRD-MVP-demo.md, .taskmaster (tarea #9)]
-codigo: [supabase/migrations/20260604000006_engagement_crm.sql, supabase/migrations/20260701000001_engagement_count_triggers.sql, supabase/functions/mint-video-url/, mobile/src/features/feed/, mobile/src/features/saved/, mobile/src/components/LikeButton.tsx, mobile/src/components/SaveButton.tsx, mobile/src/features/feed/components/FeedSectionTabs.tsx, mobile/src/features/search/lib/feedSection.ts, mobile/src/features/feed/lib/videoFit.ts, mobile/src/features/feed/components/FeedSectionTabs.tsx, mobile/src/features/feed/lib/feedShuffle.ts, mobile/src/features/feed/lib/feedKeyExtractor.ts]
-actualizado: 2026-09-03
+codigo: [mobile/src/components/RailIcon.tsx, supabase/migrations/20260604000006_engagement_crm.sql, supabase/migrations/20260701000001_engagement_count_triggers.sql, supabase/functions/mint-video-url/, mobile/src/features/feed/, mobile/src/features/saved/, mobile/src/components/LikeButton.tsx, mobile/src/components/SaveButton.tsx, mobile/src/features/feed/components/FeedSectionTabs.tsx, mobile/src/features/search/lib/feedSection.ts, mobile/src/features/feed/lib/videoFit.ts, mobile/src/features/feed/components/FeedSectionTabs.tsx, mobile/src/features/feed/lib/feedShuffle.ts, mobile/src/features/feed/lib/feedKeyExtractor.ts]
+actualizado: 2026-09-14
 ---
 
 # Feed vertical de video
@@ -44,6 +44,13 @@ También #242.1: los tabs Venta · Renta se leen mejor (blanco puro/72 %, sombra
 
 ## Indicador de refresco propio (#243.2, 2026-09-03)
 El spinner nativo del pull-to-refresh (gray_1) quedaba invisible bajo el scrim y los tabs. Ahora el `RefreshControl` es transparente (solo gesto) y mientras `isLoading && data.length > 0` aparece `RefreshingChip` («Actualizando» + `UrbeaLoader` «Trazo») centrado debajo de los tabs; el chip de zona activa baja mientras refresca. Ver [[design-system]].
+
+## Overlay limpio: rail outline, conteos y «Seguir» pegado (#293, 2026-09-13)
+- **Decisión (doc 049, dirección B «Urbea limpio», referencia Reels):** las acciones del rail (corazón, guardar, comentarios, compartir) son ícono outline blanco 28 px **sin cápsula glass**; WhatsApp es el mismo ícono del rail pero **relleno en verde #25D366** (única nota de color; el círculo sólido se quitó en el polish de Abraham). Conteo **solo bajo like y comentarios**, formato compacto (`format_count`: 42 · 1.2k · 3.4M) y **oculto en 0**.
+- **Contraste sin fondo:** variante **B** elegida por Abraham en el preview (frame claro = peor caso): `RailIcon` dibuja el ícono dos veces (copia negra rgba(0,0,0,.4) desplazada 1 px detrás) y el conteo lleva `textShadow`; sin gradiente extra detrás del rail. Caja táctil 46×46 intacta (#245).
+- **Conteo de likes:** `like_count` entra a `FEED_SELECT` (fail-open a 0, TDD `feedProperties.like-count.test.ts`) y `VideoFeedItem` lo muestra optimista `max(0, like_count + (isLiked ? 1 : 0))` — like por botón y por doble tap mueven el mismo número. 🔒 Techo heredado de #156: `useLikeProperty` nace sin `initialLiked`, así que un like previo puede sumar +1 visual.
+- **Fila del agente:** avatar 36 · nombre a la derecha (1 línea, `flexShrink`) · píldora «Seguir» **pegada al nombre** (gap 8; ya no `marginLeft:'auto'` al borde). `AdFeedItem` alinea el logo del anunciante (36) para que la costura propiedad → anuncio no salte; el detalle (`ActionButtons`) usa el mismo `RailIcon`.
+- Verificado en emulador por CLI (12 ítems, conteos por ítem sin rancios al reciclar); pendiente en dispositivo de Abraham: nombre ≥ 28 caracteres truncado y la costura con un anuncio real (preview-ads no tenía anuncios).
 
 ## Datos / técnico
 - `likes` (`user_id`, `property_video_id`, único). Videos de [[propiedades-y-video]] (`status='ready'`).

@@ -9,6 +9,13 @@
  * ponytail: sin fondo propio — el consumidor provee el estilo de contenedor
  *   (glass pill en ActionButtons, sin fondo en feed overlay, etc.).
  *   Solo animamos el icono.
+ *
+ * 293.6 (ajuste tras smoke): el ícono se pinta con RailIcon (doble trazo de
+ * contraste — copia negra 1px detrás + ícono de color) en vez de un Heart
+ * suelto, para que el único consumidor real (ActionButtons, rail del
+ * detalle) quede idéntico al rail del feed. Default de `size` sube a
+ * RAIL_ICON_SIZE (28, antes 24) por el mismo motivo. Animated.View sigue
+ * envolviendo el ícono — la animación de escala no cambia.
  */
 
 import React, { useEffect } from 'react';
@@ -22,6 +29,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Heart } from 'phosphor-react-native';
 
+import { RailIcon, RAIL_ICON_SIZE } from './RailIcon';
 import { colors } from '@/theme/theme';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -35,7 +43,7 @@ export type LikeButtonProps = {
   onPress: () => void;
   /** Recuento a mostrar al lado del icono (formateado). Omitir si no se quiere. */
   count?: number;
-  /** Tamaño en px del icono (default 24). */
+  /** Tamaño en px del icono (default RAIL_ICON_SIZE=28, igual al rail del feed). */
   size?: number;
   /** Estilo del Pressable externo (útil para proveer el contenedor glass pill). */
   style?: StyleProp<ViewStyle>;
@@ -50,8 +58,12 @@ export type LikeButtonProps = {
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Formatea un conteo: 1200 → "1.2k", 3_400_000 → "3.4M", 42 → "42". */
-function format_count(n: number): string {
+/**
+ * Formatea un conteo: 1200 → "1.2k", 3_400_000 → "3.4M", 42 → "42".
+ * Exportado (293.3): PropertyOverlay.tsx reusa el MISMO formato para los
+ * conteos del rail del feed (like/comentarios) — una línea, no se duplica.
+ */
+export function format_count(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
   return String(n);
@@ -65,7 +77,7 @@ export function LikeButton({
   active,
   onPress,
   count,
-  size = 24,
+  size = RAIL_ICON_SIZE,
   style,
   accessibilityLabel,
 }: LikeButtonProps): React.JSX.Element {
@@ -96,7 +108,8 @@ export function LikeButton({
       accessibilityRole="button"
     >
       <Animated.View style={[styles.icon_wrap, animated_style]}>
-        <Heart
+        <RailIcon
+          icon={Heart}
           size={size}
           color={icon_color}
           weight={active ? 'fill' : 'bold'}
