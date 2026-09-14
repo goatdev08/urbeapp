@@ -21,6 +21,11 @@
  * semitransparente 1px detrás + ícono blanco/verde encima). Conteos bajo
  * like/comentarios con format_count (LikeButton.tsx), ocultos en 0. Fila del
  * agente en línea (avatar 36 · nombre · píldora «Seguir» pegada, gap fijo).
+ *
+ * 293.6 (ajuste tras smoke): RailIcon/RAIL_ICON_SIZE/RAIL_ACTION_BOX se
+ * mudaron a `@/components/RailIcon` — LikeButton/SaveButton (components/)
+ * también los consumen y un `components/` importando de este feature estaba
+ * al revés.
  */
 
 import React, { useState } from 'react';
@@ -38,6 +43,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { FollowButton } from '@/components/FollowButton';
 import { format_count } from '@/components/LikeButton';
+import { RAIL_ACTION_BOX, RailIcon } from '@/components/RailIcon';
 import { useR2Urls } from '@/hooks/useR2Urls';
 import { format_price } from '@/lib/formatPrice';
 import { colors, fonts, glass, radii, spacing } from '@/theme/theme';
@@ -369,38 +375,6 @@ function ActionButton({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Subcomponente RailIcon (293.3) — ícono con realce de contraste
-// ─────────────────────────────────────────────────────────────────────────────
-
-type RailIconProps = {
-  icon: Icon;
-  color: string;
-  weight?: 'thin' | 'light' | 'regular' | 'bold' | 'fill' | 'duotone';
-};
-
-/**
- * RailIcon — ícono outline del rail del feed con una copia negra
- * semitransparente desplazada 1px detrás del ícono de color (variante B
- * aprobada en 293.1: el rail perdió la cápsula glass de fondo y necesita su
- * propio realce de contraste contra fachadas claras/cielo blanco). Sin
- * dependencia nueva — el mismo componente Phosphor se renderiza dos veces.
- * Exportado: 293.6 (ActionButtons del detalle) lo reusa.
- */
-export function RailIcon({ icon: IconCmp, color, weight = 'bold' }: RailIconProps) {
-  return (
-    <View style={styles.icon_slot}>
-      <IconCmp
-        size={RAIL_ICON_SIZE}
-        color={ICON_SHADOW_COLOR}
-        weight={weight}
-        style={styles.icon_shadow_layer}
-      />
-      <IconCmp size={RAIL_ICON_SIZE} color={color} weight={weight} />
-    </View>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Constantes de layout
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -437,12 +411,6 @@ const RAIL_BOTTOM = Platform.OS === 'ios' ? glass.floating_content_bottom_offset
  * el feed es siempre oscuro (ponytail: dual-mode diferido). */
 const SPEC_COLOR = 'rgba(246,242,235,0.85)';
 
-/** Tamaño de los íconos outline del rail (293.1, ~28px). */
-const RAIL_ICON_SIZE = 28;
-/** Copia negra detrás del ícono blanco — variante B aprobada en 293.1 (ver
- * preview .../049-rediseno-layout-overlay-feed/preview/overlay.html §legend). */
-const ICON_SHADOW_COLOR = 'rgba(0,0,0,0.4)';
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Estilos
 // ─────────────────────────────────────────────────────────────────────────────
@@ -456,25 +424,12 @@ const styles = StyleSheet.create({
     gap: 22,          // expo SDK 56 / RN 0.76+ soporta gap en estilos
     alignItems: 'center',
   },
-  action_btn: {
-    // 293.3: sin cápsula glass (variante B aprobada en 293.1 — el realce de
-    // contraste lo da RailIcon, no un fondo). Caja táctil 46×46 intacta
-    // (#245: sustituir un componente = copiar su LAYOUT, no solo sus props).
-    width: 46,
-    height: 46,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  icon_slot: {
-    width: RAIL_ICON_SIZE,
-    height: RAIL_ICON_SIZE,
-  },
-  /** Copia negra del ícono, 1px abajo/derecha, DETRÁS del ícono de color. */
-  icon_shadow_layer: {
-    position: 'absolute',
-    top: 1,
-    left: 1,
-  },
+  // 293.3: sin cápsula glass (variante B aprobada en 293.1 — el realce de
+  // contraste lo da RailIcon, no un fondo). Caja táctil 46×46 intacta
+  // (#245: sustituir un componente = copiar su LAYOUT, no solo sus props).
+  // 293.6: RAIL_ACTION_BOX (y RailIcon) viven en @/components/RailIcon —
+  // ActionButtons.tsx y LikeButton/SaveButton también los consumen.
+  action_btn: RAIL_ACTION_BOX,
   whatsapp_btn: {
     width: 46,
     height: 46,

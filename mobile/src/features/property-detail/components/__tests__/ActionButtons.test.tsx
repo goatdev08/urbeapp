@@ -109,6 +109,7 @@ jest.mock('@/features/comments/components/CommentsSheet', () => ({
   CommentsSheet: mock_comments_sheet,
 }));
 
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Constantes de test
 // ─────────────────────────────────────────────────────────────────────────────

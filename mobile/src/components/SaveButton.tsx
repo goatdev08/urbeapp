@@ -8,6 +8,10 @@
  *
  * ponytail: 2 callers (ActionButtons + eventual feed overlay) no justifican extraer
  *   un hook useToggleAnimation separado. Inline idéntico al LikeButton.
+ *
+ * 293.6 (ajuste tras smoke): mismo cambio que LikeButton — el ícono se pinta
+ * con RailIcon (doble trazo de contraste) y el default de `size` sube a
+ * RAIL_ICON_SIZE (28, antes 22) para quedar idéntico al rail del feed.
  */
 
 import React, { useEffect } from 'react';
@@ -21,6 +25,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { BookmarkSimple } from 'phosphor-react-native';
 
+import { RailIcon, RAIL_ICON_SIZE } from './RailIcon';
 import { colors } from '@/theme/theme';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -32,7 +37,7 @@ export type SaveButtonProps = {
   active: boolean;
   /** Callback cuando el usuario presiona. La lógica de toggle la maneja el padre. */
   onPress: () => void;
-  /** Tamaño en px del icono (default 22, consistente con ActionButtons). */
+  /** Tamaño en px del icono (default RAIL_ICON_SIZE=28, igual al rail del feed). */
   size?: number;
   /** Estilo del Pressable externo (contenedor glass pill u otro). */
   style?: StyleProp<ViewStyle>;
@@ -50,7 +55,7 @@ export type SaveButtonProps = {
 export function SaveButton({
   active,
   onPress,
-  size = 22,
+  size = RAIL_ICON_SIZE,
   style,
   accessibilityLabel,
 }: SaveButtonProps): React.JSX.Element {
@@ -81,7 +86,8 @@ export function SaveButton({
       accessibilityRole="button"
     >
       <Animated.View style={[styles.icon_wrap, animated_style]}>
-        <BookmarkSimple
+        <RailIcon
+          icon={BookmarkSimple}
           size={size}
           color={icon_color}
           weight={active ? 'fill' : 'bold'}
