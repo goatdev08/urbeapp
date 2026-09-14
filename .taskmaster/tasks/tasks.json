@@ -12910,13 +12910,39 @@
           }
         ],
         "updatedAt": "2026-09-14T05:45:35.204Z"
+      },
+      {
+        "id": "294",
+        "title": "producto(185): pin chincheta vectorial (réplica del 📍 de iOS) en los tres mapas, idéntico en Android",
+        "description": "Origen: tarea 185 (pin único MapPinSimple) · Detectado por: usuario (Abraham, 2026-09-14). Sustituir el Phosphor duotone de los marcadores por una réplica vectorial del emoji 📍 de iOS dibujada con react-native-svg, para que Android e iOS pinten exactamente el mismo pin (el emoji como texto lo dibuja la fuente de cada sistema y la de Apple no se puede empaquetar).",
+        "details": "Un solo archivo: mobile/src/components/MapPinIcon.tsx (lo consumen PropertyMarker, PropertyMap y la mira central de MapPicker; anchors intactos por lienzo cuadrado con la punta abajo-centro). Decisiones de Abraham sobre el preview HTML (artifact ee4f3d84): colores de Urbea (cabeza salvia renta / arcilla venta, no rojo), vertical sin inclinación. Fuera de alcance: pines inline (dirección, chip de zona, sugerencias, tab Mapa) siguen con Phosphor. 100% JS, OTA-safe. Sin cambio en supabase/.",
+        "testStrategy": "pnpm tsc --noEmit, pnpm lint, suites de map/property-detail/publish en verde; smoke en emulador Android (mapa global) + smoke de Abraham en iOS tras OTA.",
+        "status": "done",
+        "dependencies": [
+          "185"
+        ],
+        "priority": "medium",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Portar la chincheta a MapPinIcon.tsx con react-native-svg y verificar en emulador",
+            "description": "Cabeza con gradiente radial + brillo, cuello y aguja con gradientes lineales, sombra elipse; shade_hex para los stops; viewBox 64x64 centrado en x=32.",
+            "details": "\n<info added on 2026-09-14T06:11:18.627Z>\nHECHO 294.1 — chincheta vectorial en MapPinIcon.tsx (2026-09-14)\n\nArchivo: mobile/src/components/MapPinIcon.tsx (único cambio). Phosphor MapPinSimple duotone → Svg de react-native-svg: cabeza Circle con RadialGradient (4 stops derivados de `color` con shade_hex ±0.45/-0.25) + brillo Ellipse, cuello y aguja Path con LinearGradient metálico, sombra Ellipse opacity .22. Sin filter. viewBox 64×64 cuadrado con la punta en (32, ~63) → PropertyMarker/PropertyMap/MapPicker no cambian (anchor y márgenes siguen válidos). Se quitó el guard de tema (#186): ya no hay contorno que cambiar. Id del gradiente de cabeza por color (`pin-head-<hex>`) para que salvia y arcilla convivan en el mismo mapa.\n\nDecisiones de Abraham sobre el preview (artifact ee4f3d84-6604-4568-aa0d-0f9c4c865532): colores de Urbea (no rojo), vertical (sin inclinación). Alcance: solo marcadores de mapa; pines inline y tab siguen Phosphor.\n\nVerificación (salida real):\n- pnpm tsc --noEmit → sin salida (0 errores)\n- pnpm lint → ✖ 150 problems (0 errors, 150 warnings)  [preexistentes]\n- pnpm jest src/features/map src/features/property-detail src/features/publish → Test Suites: 43 passed, 43 total · Tests: 510 passed, 510 total\n- Smoke emulador Android (Metro watch en 8081, backend .env.local = PRODUCCIÓN mvpvqmyhrrkwbnpctpuq, solo lectura): tab Mapa → pin arcilla (venta) en Tlaquepaque renderiza esfera con brillo + aguja + sombra sin pin rojo duplicado (#64 sigue cubierto). Capturas: scratchpad/smoke-294-mapa2.png y smoke-294-crop.png.\nPendiente: iOS y detalle/wizard los ve Abraham.\n</info added on 2026-09-14T06:11:18.627Z>",
+            "testStrategy": "tsc + lint + jest map/detail/publish; captura del mapa global en Android.",
+            "status": "done",
+            "dependencies": [],
+            "updatedAt": "2026-09-14T06:13:25.659Z",
+            "parentId": "undefined"
+          }
+        ],
+        "updatedAt": "2026-09-14T06:13:25.659Z"
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-09-14T05:02:25.320Z",
-      "taskCount": 293,
-      "completedCount": 213,
+      "lastModified": "2026-09-14T06:13:25.659Z",
+      "taskCount": 294,
+      "completedCount": 214,
       "tags": [
         "master"
       ]
