@@ -56,6 +56,7 @@
  *
  * ### Boundary / error
  * - (EC-12) cambio_de_followed_user_id_entre_renders_nueva_precarga
+ * - (EC-12b) precarga_vieja_que_resuelve_tarde_no_pisa_el_estado_del_id_nuevo (guardian)
  * - (EC-13) unmount_antes_de_resolver_precarga_sin_warning_de_act
  */
 
@@ -387,6 +388,10 @@ describe('useFollow', () => {
     });
 
     expect(mock_supabase._mock_insert).toHaveBeenCalledTimes(1);
+    // Guardian 78.3: sin el guard de vuelo el segundo tap lee prev=true y entra a la
+    // rama DELETE (el insert seguiría en 1); el bug real es ese delete + el flip.
+    expect(mock_supabase._mock_delete).not.toHaveBeenCalled();
+    expect(result.current.is_following).toBe(true);
 
     await act(async () => {
       resolve_insert({ error: null });
@@ -394,6 +399,7 @@ describe('useFollow', () => {
     });
 
     expect(mock_supabase._mock_insert).toHaveBeenCalledTimes(1);
+    expect(mock_supabase._mock_delete).not.toHaveBeenCalled();
   });
 
   // ── (EC-10) user null — no llama from, no crashea ────────────────────────
@@ -465,6 +471,46 @@ describe('useFollow', () => {
 
     await waitFor(() => expect(mock_supabase._mock_from).toHaveBeenCalledTimes(2));
     expect(mock_supabase._precarga_builder.eq).toHaveBeenLastCalledWith('followed_user_id', OTHER_FOLLOWED_ID);
+  });
+
+  // ── (EC-12b) Carrera de precargas — gana la del id vigente ───────────────
+  // Guardian 78.3: el flag `ignore` del cleanup no protege el unmount (React 18
+  // ya no avisa) sino ESTA carrera: la precarga vieja resuelve DESPUÉS de la nueva.
+
+  it('(EC-12b) precarga_vieja_que_resuelve_tarde_no_pisa_el_estado_del_id_nuevo', async () => {
+    const old_precarga = make_deferred<PrecargaResult>();
+    const new_precarga = make_deferred<PrecargaResult>();
+    const precargas = [old_precarga.promise, new_precarga.promise];
+    const mock_supabase = make_mock_supabase_follow({
+      maybe_single: () => precargas.shift() ?? Promise.resolve({ data: null, error: null }),
+    });
+
+    const { result, rerender } = await renderHook(
+      ({ followed_user_id }: { followed_user_id: string }) =>
+        useFollow({ followed_user_id, supabase: mock_supabase }),
+      { initialProps: { followed_user_id: FOLLOWED_ID } }
+    );
+
+    await act(async () => {
+      rerender({ followed_user_id: OTHER_FOLLOWED_ID });
+    });
+    expect(mock_supabase._mock_maybe_single).toHaveBeenCalledTimes(2);
+
+    // La nueva resuelve primero: sí sigue al id nuevo.
+    await act(async () => {
+      new_precarga.resolve({ data: { followed_user_id: OTHER_FOLLOWED_ID }, error: null });
+      await Promise.resolve();
+    });
+    expect(result.current.is_following).toBe(true);
+    expect(result.current.loading).toBe(false);
+
+    // La vieja llega tarde con "no sigue": debe ignorarse.
+    await act(async () => {
+      old_precarga.resolve({ data: null, error: null });
+      await Promise.resolve();
+    });
+    expect(result.current.is_following).toBe(true);
+    expect(result.current.loading).toBe(false);
   });
 
   // ── (EC-13) Unmount antes de resolver la precarga ────────────────────────

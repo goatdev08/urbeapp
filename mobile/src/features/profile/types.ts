@@ -127,4 +127,10 @@ export interface AgentProfile {
   member_since: UserRow['created_at'] | null;
   /** Nombre de la agencia (null si el agente es independiente). */
   agency_name: AgencyRow['name'] | null;
+  /**
+   * Número de seguidores — de la vista `agent_public_profiles.follower_count`
+   * (columna mantenida por trigger atómico, migración 20260914100001, #78).
+   * 0 cuando la vista no trae fila (agente sin seguidores/sin onboarding).
+   */
+  follower_count: number;
 }

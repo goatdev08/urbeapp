@@ -46,12 +46,14 @@ export interface UseAgentProfileState {
 /**
  * Forma de la fila de agent_public_profiles relevante para el perfil.
  * `has_phone` (migración 20260905200003, #255): derivado, no requiere leer
- * users.phone crudo.
+ * users.phone crudo. `follower_count` (migración 20260914100001, #78):
+ * columna aún no generada en database.types.ts (se regenera en 78.5).
  */
 type PrefsRow = {
   full_name: string | null;
   profile_photo_url: string | null;
   has_phone: boolean;
+  follower_count: number | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -105,7 +107,7 @@ export function useAgentProfile(agent_id: string): UseAgentProfileState {
         // 20260905200003, #255).
         const prefs_query = supabase
           .from('agent_public_profiles')
-          .select('full_name, profile_photo_url, has_phone')
+          .select('full_name, profile_photo_url, has_phone, follower_count')
           .eq('user_id', agent_id)
           .maybeSingle();
 
@@ -155,6 +157,9 @@ export function useAgentProfile(agent_id: string): UseAgentProfileState {
             has_phone: prefs?.has_phone ?? false,
             member_since: user_data?.created_at ?? null,
             agency_name: raw_agency?.name ?? null,
+            // #78: sin fila de la vista (agente sin follows), el conteo es 0 —
+            // mismo trato fail-closed que has_phone.
+            follower_count: prefs?.follower_count ?? 0,
           },
         });
       }
