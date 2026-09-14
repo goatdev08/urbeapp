@@ -12827,11 +12827,11 @@
             "title": "preview HTML aprobable del overlay (rail outline + conteos + fila del agente) sobre frame claro y oscuro",
             "description": "Agente design. Mockup HTML del overlay rediseñado servido por http 127.0.0.1 (no file://), dos frames: fachada clara al sol y frame oscuro. Decide el realce de contraste (gradiente tenue del rail y/o ícono-sombra) y la escala (tamaño de ícono, gap del rail, formato de conteo, avatar/gap de la fila del agente, píldora radio ~8 borde 1 px). Abraham aprueba antes de portar.",
             "details": "Entregable: .taskmaster/docs/exploraciones/049-rediseno-layout-overlay-feed/preview/*.html. Tokens de theme.ts; íconos Phosphor regular/light; WhatsApp verde #25D366 intacto. Bloquea 293.3 y 293.4. Ponytail vuelve a aplicar al portar.\n<info added on 2026-09-14T03:12:19.980Z>\nPLAN (/tm-plan 293, 2026-09-13): preview HTML aprobable del overlay del feed sobre frame claro y frame oscuro (video claro de día vs video oscuro de noche), servido por http 127.0.0.1 (nunca file://, chrome_mcp_file_url_gotcha) y publicado además como Artifact para que Abraham lo abra desde el teléfono. Es fase de PROPUESTA dentro de la ejecución: el agente design muestra 2–3 variantes del realce de contraste sin cápsula lado a lado (A: LinearGradient tenue vertical detrás del rail · B: ícono-sombra duplicado en negro desplazado 1 px · C: A+B) para que Abraham elija UNA; todo lo demás va ya cerrado por el doc 049: rail = corazón, comentario, guardar, compartir outline blanco ~28 px sin fondo, WhatsApp verde #25D366 sólido intacto, conteo bajo like y comentarios en fonts.mono_medium 11, fila del agente = avatar 36 · nombre a la derecha · píldora «Seguir» pegada al nombre (gap 8, no marginLeft:auto), píldora radio 8 / borde 1 px / «Siguiendo» tras seguir, bloque inferior (badges, dirección, precio, CTA) idéntico al actual.\nDecisiones del usuario (AskUserQuestion 2026-09-13): conteos en 0 se OCULTAN (misma convención que comment_count hoy) · formato compacto reusando format_count de mobile/src/components/LikeButton.tsx (42 · 1.2k · 3.4M) — el preview debe mostrar un ítem con 0 (sin número), uno con 42 y uno con 1.2k, y un nombre de agente de 1 palabra y otro de ≥ 28 caracteres truncado con la píldora completa.\nTokens: leer mobile/src/theme/theme.ts (colores, fonts, spacing) para que el HTML use los mismos valores; nada de colores nuevos.\nagente=design · skills=urbea-design · criticidad=no (doc/preview, cero runtime) · impacto-prod=sin riesgo · footprint=.taskmaster/docs/exploraciones/049-rediseno-layout-overlay-feed/preview/overlay.html (nuevo) · bloquea a 293.3 y 293.4: no se escribe estilo RN hasta que Abraham apruebe y elija variante; la elección se registra en esta bitácora.\nOrden global acordado: 293.2 → 293.5 → 293.1 → 293.3 → 293.4 → 293.6 → 293.7 (las dos independientes sin gate humano van primero; el preview justo antes de lo que bloquea).\n</info added on 2026-09-14T03:12:19.980Z>",
-            "status": "pending",
+            "status": "in-progress",
             "dependencies": [],
             "parentId": "293",
             "testStrategy": "Aprobación explícita de Abraham en el chat (frame claro + oscuro). Sin código RN.",
-            "updatedAt": "2026-09-14T03:12:19.980Z"
+            "updatedAt": "2026-09-14T03:39:40.382Z"
           },
           {
             "id": 2,
@@ -12875,12 +12875,12 @@
             "id": 5,
             "title": "FollowButton: nuevo estilo de píldora (radio ~8, borde 1 px) en ambas variantes + verificación del perfil ajeno",
             "description": "styles.pill de FollowButton.tsx: radio 20 → ~8, borde 1.5 → 1, en dark y light. Verificar en ProfileActions.tsx que la píldora light no desalinee la fila con el botón de WhatsApp del perfil ajeno.",
-            "details": "FollowButton.test.tsx no asserta estilo: el radio se verifica visualmente por CLI. Independiente; paralelizable con 293.3.\n<info added on 2026-09-14T03:12:20.347Z>\nPLAN (/tm-plan 293, 2026-09-13): cambio de dos números en styles.pill de mobile/src/components/FollowButton.tsx — borderRadius 20 → 8 y borderWidth 1.5 → 1 — en AMBAS variantes (dark: feed sobre video · light: perfil ajeno), conservando altura/padding para que el texto «Seguir»/«Siguiendo» no cambie de caja; el Pressable ya se ajusta al largo del texto (paddingHorizontal 16, sin width fijo), así que la píldora «se ajusta al nombre» solo cuando 293.3 quite el marginLeft:'auto' del wrapper en el overlay — aquí no se toca el overlay. ProfileActions.tsx (perfil ajeno) no cambia código: solo se verifica en pantalla que la variante light siga alineada con el botón de WhatsApp de al lado (misma altura).\nTests: FollowButton.test.tsx (FB-1..FB-4) y ProfileActions.whatsapp_rpc.test.tsx no asertan estilo → siguen verdes sin tocar; la verificación del radio es visual (screencap del feed y del perfil ajeno).\nagente=mobile · skills=urbea-expo · criticidad=no (mobile/src/components/**) · impacto-prod=sin riesgo · footprint=mobile/src/components/FollowButton.tsx (ProfileActions.tsx solo lectura/smoke). Independiente: va SEGUNDA (tras 293.2, antes del gate del preview) para dejar la píldora lista cuando 293.3 la monte en la fila del agente.\n</info added on 2026-09-14T03:12:20.347Z>",
-            "status": "in-progress",
+            "details": "FollowButton.test.tsx no asserta estilo: el radio se verifica visualmente por CLI. Independiente; paralelizable con 293.3.\n<info added on 2026-09-14T03:12:20.347Z>\nPLAN (/tm-plan 293, 2026-09-13): cambio de dos números en styles.pill de mobile/src/components/FollowButton.tsx — borderRadius 20 → 8 y borderWidth 1.5 → 1 — en AMBAS variantes (dark: feed sobre video · light: perfil ajeno), conservando altura/padding para que el texto «Seguir»/«Siguiendo» no cambie de caja; el Pressable ya se ajusta al largo del texto (paddingHorizontal 16, sin width fijo), así que la píldora «se ajusta al nombre» solo cuando 293.3 quite el marginLeft:'auto' del wrapper en el overlay — aquí no se toca el overlay. ProfileActions.tsx (perfil ajeno) no cambia código: solo se verifica en pantalla que la variante light siga alineada con el botón de WhatsApp de al lado (misma altura).\nTests: FollowButton.test.tsx (FB-1..FB-4) y ProfileActions.whatsapp_rpc.test.tsx no asertan estilo → siguen verdes sin tocar; la verificación del radio es visual (screencap del feed y del perfil ajeno).\nagente=mobile · skills=urbea-expo · criticidad=no (mobile/src/components/**) · impacto-prod=sin riesgo · footprint=mobile/src/components/FollowButton.tsx (ProfileActions.tsx solo lectura/smoke). Independiente: va SEGUNDA (tras 293.2, antes del gate del preview) para dejar la píldora lista cuando 293.3 la monte en la fila del agente.\n</info added on 2026-09-14T03:12:20.347Z>\n<info added on 2026-09-14T03:39:36.605Z>\nHECHO 293.5 (orquestador /tm-tarea 293 auto, 2026-09-13 — cambio de 3 números, aplicado directo sin agente): mobile/src/components/FollowButton.tsx styles.pill.borderRadius 20 → 8; styles.dark.borderWidth 1.5 → 1; styles.light.borderWidth 1.5 → 1. Altura/padding intactos (paddingVertical 6, paddingHorizontal 16, sin width fijo: el Pressable ya se ajusta al largo del texto; que la píldora quede pegada al nombre lo resuelve 293.3 al quitar marginLeft:'auto' del wrapper). ProfileActions.tsx sin cambios (consume variant=\"light\"; su .button de WhatsApp tiene height 38 fijo — la posible diferencia de altura con la píldora es preexistente, no la introduce este cambio). Salida real: `pnpm jest src/components/__tests__/FollowButton.test.tsx src/features/profile/__tests__/ProfileActions.whatsapp_rpc.test.tsx` → Test Suites: 2 passed, 2 total · Tests: 10 passed, 10 total; `pnpm tsc --noEmit` exit 0; `pnpm lint` ✖ 150 problems (0 errors, 150 warnings) preexistentes. Verificación visual del radio (feed + perfil ajeno) queda en el smoke por CLI de 293.3 y en el de Abraham en dispositivo (la píldora sola no cambia de caja). impacto-prod: sin riesgo (100 % JS, OTA-safe).\n</info added on 2026-09-14T03:39:36.605Z>",
+            "status": "done",
             "dependencies": [],
             "parentId": "293",
             "testStrategy": "tsc + lint + FollowButton.test.tsx + ProfileActions.whatsapp_rpc.test.tsx; screenshot del perfil ajeno.",
-            "updatedAt": "2026-09-14T03:38:14.104Z"
+            "updatedAt": "2026-09-14T03:39:38.450Z"
           },
           {
             "id": 6,
@@ -12909,12 +12909,12 @@
             "updatedAt": "2026-09-14T03:12:20.533Z"
           }
         ],
-        "updatedAt": "2026-09-14T03:38:14.104Z"
+        "updatedAt": "2026-09-14T03:39:40.382Z"
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-09-14T03:38:14.104Z",
+      "lastModified": "2026-09-14T03:39:40.382Z",
       "taskCount": 293,
       "completedCount": 212,
       "tags": [
