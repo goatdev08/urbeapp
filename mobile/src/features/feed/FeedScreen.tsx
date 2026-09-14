@@ -11,7 +11,7 @@
  * la guardia contra disparos duplicados vive en loadMore (hook).
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Platform,
   StyleSheet,
@@ -21,16 +21,23 @@ import {
   useWindowDimensions,
   RefreshControl,
 } from 'react-native';
-import { FlashList, type ListRenderItemInfo } from '@shopify/flash-list';
+import { FlashList, type FlashListRef, type ListRenderItemInfo } from '@shopify/flash-list';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { MagnifyingGlass, MapPinSimple, SlidersHorizontal, VideoCamera } from 'phosphor-react-native';
+import {
+  MagnifyingGlass,
+  MapPinSimple,
+  SlidersHorizontal,
+  UsersThree,
+  VideoCamera,
+} from 'phosphor-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, spacing } from '@/theme/theme';
 import { REFRESHING_CHIP_HEIGHT, RefreshingChip } from '@/components/RefreshingChip';
 import { EmptyState } from '@/features/profile/components/EmptyState';
 import { format_radius_m } from '@/features/map/lib/formatRadius';
+import { useAuth } from '@/features/auth/context';
 import { useFilters } from '../search/filterStore';
 import { FilterSheet } from '../search/components/FilterSheet';
 import { ZoneActiveChip } from '../search/components/ZoneActiveChip';
@@ -38,34 +45,59 @@ import { ZoneActiveChip } from '../search/components/ZoneActiveChip';
 import { VideoFeedItem } from './components/VideoFeedItem';
 import { AdFeedItem } from './components/AdFeedItem';
 import { FeedSkeleton } from './components/FeedSkeleton';
-import { FEED_SECTION_TABS_HEIGHT, FeedSectionTabs } from './components/FeedSectionTabs';
-import { FEED_SECTIONS } from '@/features/search/lib/feedSection';
+import { FEED_SECTION_TABS_HEIGHT, FeedSectionTabs, feed_top_row_y } from './components/FeedSectionTabs';
+import { FEED_TABS } from '@/features/search/lib/feedSection';
 import { release_splash } from '@/lib/splash-gate';
 import { useFeedActiveIndex } from './hooks/useFeedActiveIndex';
 import { useFeedProperties } from './hooks/useFeedProperties';
-import { feed_key_extractor } from './lib/feedKeyExtractor';
+import { feed_key_extractor, type LappedFeedItem } from './lib/feedKeyExtractor';
 import type { FeedItem } from './lib/interleaveAds';
 
 export function FeedScreen() {
   const { height } = useWindowDimensions();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { viewabilityConfigCallbackPairs, isItemActive } = useFeedActiveIndex();
-  const { filters, active_filter_count, clear_filters, set_filter, section, set_section } =
+  const { viewabilityConfigCallbackPairs, isItemActive, activeIndex } = useFeedActiveIndex();
+  const { filters, active_filter_count, clear_filters, set_filter, feed_tab, set_feed_tab } =
     useFilters();
-  // #241: label de la sección activa para el copy del vacío ("en venta"/"en renta").
-  const section_label = (FEED_SECTIONS.find((s) => s.value === section)?.label ?? 'Venta').toLowerCase();
-  // Coordenada superior compartida por tabs (centro) y botón de filtros (derecha).
-  // #242.1: pegado al borde superior. En iOS con notch/Dynamic Island el inset
-  // (44–62) trae ~10 pt de aire extra debajo del hardware → restamos 6 y la
-  // pill queda a ~5 pt de la isla sin tocarla (smoke iPhone 17, 2026-09-03).
-  // Con status bar clásica (iOS sin notch = 20, Android edge-to-edge = alto
-  // exacto de la barra) NO hay aire: la hora/wifi viven dentro del inset, así
-  // que ahí sumamos s_4.
-  const top_row_y = insets.top > 40 ? insets.top - 6 : insets.top + spacing.s_4;
+  // #241/#296.3: label del tab activo para el copy del vacío ("en venta"/"en renta"/"para ti"...).
+  const section_label = (FEED_TABS.find((t) => t.value === feed_tab)?.label ?? 'Para ti').toLowerCase();
+  // Coordenada superior compartida por la fila de tabs, el botón de filtros
+  // (ahora a la izquierda) y la banda de chips/badge que cuelga debajo.
+  // Fórmula centralizada en FeedSectionTabs.tsx (`feed_top_row_y`) — AdFeedItem
+  // la reusa para posicionar el badge legal (296.2).
+  const top_row_y = feed_top_row_y(insets.top);
   // El botón de filtros (40) se centra con la pill (34).
   const filter_btn_y = top_row_y - (40 - FEED_SECTION_TABS_HEIGHT) / 2;
-  const { data, isLoading, error, loadInitial, refetch, loadMore } = useFeedProperties(filters);
+  // 296.4: «Siguiendo» filtra por los follows de la persona logueada; sin
+  // sesión (user null) la fuente por_owner resuelve vacío sin tocar la red.
+  const { user } = useAuth();
+  const {
+    data,
+    isLoading,
+    error,
+    loadInitial,
+    refetch,
+    loadMore,
+    restoredScrollIndex,
+    noteScrollIndex,
+  } = useFeedProperties(filters, feed_tab, user?.id ?? null);
+  // 296.5 — posición por tab: el índice activo se anota en la caché del tab
+  // cargado y, al volver a un tab con caché, la FlashList salta al índice
+  // guardado sin animación (restoredScrollIndex vuelve a null tras refetch).
+  const list_ref = useRef<FlashListRef<LappedFeedItem>>(null);
+  useEffect(() => {
+    noteScrollIndex(activeIndex);
+  }, [activeIndex, noteScrollIndex]);
+  useEffect(() => {
+    if (restoredScrollIndex == null || restoredScrollIndex >= data.length) return;
+    // ponytail: try/catch — si la lista aún no midió, scrollToIndex lanza/rechaza; se ignora.
+    try {
+      void list_ref.current?.scrollToIndex({ index: restoredScrollIndex, animated: false })?.catch(() => {});
+    } catch {
+      /* lista sin layout todavía */
+    }
+  }, [restoredScrollIndex, data.length]);
   // #243.2: refrescando = cargando con datos ya en pantalla (el arranque usa
   // skeleton). Desde #288.1 `isLoading` es SOLO carga inicial/refetch: las
   // páginas y las vueltas del feed infinito cargan en silencio.
@@ -144,12 +176,14 @@ export function FeedScreen() {
         </View>
       )}
 
-      {/* Sin resultados: se ramifica en 3 niveles, EN ESTE ORDEN:
-          1. zona activa (filters.area != null) — PRIMERA condición: `area`
-             NO cuenta en active_filter_count (decisión 56.1), así que una
-             zona sin resultados y sin otros filtros caería por error en el
-             "BD-vacía" de abajo (con CTA "Publicar propiedad", incorrecto
-             para este caso) si no se revisa primero.
+      {/* Sin resultados: se ramifica en 4 niveles, EN ESTE ORDEN:
+          0. tab "Siguiendo" (296.4) — PRIMERA condición: sin follows (o sin sesión) el feed de esta fuente siempre
+             sale vacío; nunca skeleton infinito, CTA vuelve a "Para ti".
+          1. zona activa (filters.area != null) — `area` NO cuenta en
+             active_filter_count (decisión 56.1), así que una zona sin
+             resultados y sin otros filtros caería por error en el "BD-vacía"
+             de abajo (con CTA "Publicar propiedad", incorrecto para este
+             caso) si no se revisa primero.
           2. filtered-empty (hay otros filtros activos): CTA limpia filtros;
              el cambio de identidad de `filters` re-dispara loadInitial
              (useEffect de useFeedProperties) — no hace falta un refetch
@@ -158,7 +192,16 @@ export function FeedScreen() {
              wizard de publicación (comportamiento previo, sin cambios). */}
       {is_empty && (
         <View style={styles.state_root}>
-          {filters.area != null ? (
+          {feed_tab === 'siguiendo' ? (
+            <EmptyState
+              dark
+              icon={UsersThree}
+              message="Aún no sigues a nadie con propiedades"
+              subtitle="Sigue a publicadores desde su perfil para ver aquí sus videos."
+              cta_label="Explorar el feed"
+              onPressCta={() => set_feed_tab('para_ti')}
+            />
+          ) : filters.area != null ? (
             <EmptyState
               dark
               icon={MapPinSimple}
@@ -209,6 +252,7 @@ export function FeedScreen() {
               Todas estas props son ScrollViewProps, que FlashList v2 re-exporta
               directamente (extiende Omit<ScrollViewProps, 'maintainVisibleContentPosition'>). */}
           <FlashList
+            ref={list_ref}
             data={data}
             keyExtractor={feed_key_extractor}
             renderItem={render_item}
@@ -266,10 +310,12 @@ export function FeedScreen() {
       )}
 
       {/*
-       * Botón de filtros — top-right flotante sobre el feed oscuro.
+       * Botón de filtros — top-left flotante sobre el feed oscuro (296.2:
+       * antes a la derecha; se mueve para dejarle todo el ancho derecho a la
+       * fila de tabs deslizable).
        * Estética: fondo semi-translúcido oscuro (ink_feed) + ícono gris claro,
        * para no romper la inmersión del feed de video.
-       * Posición: safe-area top + s_4 de holgura (#242.1), alineado a la derecha.
+       * Posición: safe-area top + s_4 de holgura (#242.1), alineado a la izquierda.
        * El FilterSheet (panel claro) se abre encima del feed vía Modal nativo.
        * Se renderiza una sola vez (feed principal + empty state) — oculto
        * en skeleton y error (ver show_filters).
@@ -285,10 +331,13 @@ export function FeedScreen() {
             pointerEvents="none"
           />
 
-          {/* Secciones Venta · Renta (#241) — centradas en la misma fila que el
-              botón de filtros. set_section cambia la identidad de `filters` →
-              useFeedProperties vacía la lista y loadInitial recarga (skeleton). */}
-          <FeedSectionTabs section={section} on_change={set_section} style={{ top: top_row_y }} />
+          {/* 5 tabs del feed — Para ti · Siguiendo · Nuevos · Venta · Renta (#296.3,
+              sustituye las 2 secciones de #241) — fila deslizable que arranca tras
+              el botón de filtros (296.2: ya no centrada). set_feed_tab cambia
+              feed_tab (store propio) → `filters.operation_types` se deriva y
+              loadInitial cambia de identidad: con caché del tab (296.5) restaura
+              al instante; sin caché (1ª visita) recarga con skeleton. */}
+          <FeedSectionTabs tabs={FEED_TABS} value={feed_tab} on_change={set_feed_tab} style={{ top: top_row_y }} />
 
           <TouchableOpacity
             style={[styles.filter_btn, { top: filter_btn_y }]}
@@ -322,7 +371,7 @@ export function FeedScreen() {
        * feed principal), no solo cuando show_filters — de ahí que se renderice
        * fuera del bloque anterior. onPress revierte a modo cercanía GPS (#42).
        * Mismo `top` que filter_btn; sin overlap porque el chip queda centrado
-       * y el botón de filtros a la derecha (ver ZoneActiveChip.tsx).
+       * y el botón de filtros a la izquierda (296.2; ver ZoneActiveChip.tsx).
        */}
       {/* #243.2: chip «Actualizando» (UrbeaLoader) debajo de los tabs mientras
           el pull-to-refresh recarga. Si además hay zona activa, esta cuelga debajo. */}
@@ -395,7 +444,7 @@ const styles = StyleSheet.create({
   },
   filter_btn: {
     position: 'absolute',
-    right: spacing.s_16,
+    left: spacing.s_16,
     width: 40,
     height: 40,
     borderRadius: 20,

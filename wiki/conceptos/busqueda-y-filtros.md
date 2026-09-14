@@ -3,8 +3,8 @@ tipo: concepto
 dominio: producto
 estado: vivo
 fuentes: [docs/PRD.md §9-12, docs/PRD-MVP-demo.md]
-codigo: [supabase/migrations/0005_properties_and_videos.sql, mobile/src/features/search/lib/filterQuery.ts, mobile/src/features/search/lib/zones.ts, mobile/src/features/search/lib/filterStorage.ts, mobile/src/features/search/filterStore.tsx, mobile/src/features/search/components/FilterSheet.tsx, mobile/src/features/search/components/RadiusSelector.tsx, mobile/src/features/search/types.ts, mobile/src/features/search/lib/feedSection.ts, mobile/src/features/feed/components/FeedSectionTabs.tsx]
-actualizado: 2026-09-03
+codigo: [supabase/migrations/0005_properties_and_videos.sql, mobile/src/features/search/lib/filterQuery.ts, mobile/src/features/search/lib/zones.ts, mobile/src/features/search/lib/filterStorage.ts, mobile/src/features/search/filterStore.tsx, mobile/src/features/search/components/FilterSheet.tsx, mobile/src/features/search/components/RadiusSelector.tsx, mobile/src/features/search/types.ts, mobile/src/features/search/lib/feedSection.ts, mobile/src/features/search/lib/feedTabStorage.ts, mobile/src/features/feed/components/FeedSectionTabs.tsx, mobile/src/features/feed/lib/feedSources.ts]
+actualizado: 2026-09-14
 ---
 
 # Búsqueda y filtros
@@ -24,7 +24,7 @@ actualizado: 2026-09-03
 
 - **Búsqueda de lugares en el mapa (#157, vivo)**: el "autocomplete server-side" dejó de estar diferido — RPC `search_places` (colonias del catálogo DCAH `mx_neighborhoods` + municipios, GIN trgm sobre `name_normalized`, guard <2 chars; **v3 #282 (2026-09-08): con coords del usuario la cercanía por bucket de ≈5 km manda sobre prefijo y similitud — «provi» desde GDL da Providencia (Guadalajara) y sus secciones primero, La Providencia (Tonalá) antes que las Providencias a 50 km; sin coords el orden es el de la v2**) consumida por `usePlaceSearch` (debounce 300ms + anti-stale); el dropdown `PlaceSearch` agrupa por tipo con encabezados Colonias / Municipios / Direcciones (#282.2). Seleccionar colonia → perímetro (`get_neighborhood_geojson`) + filtro espacial `properties_within_neighborhood` (ST_Intersects, A1 flaco) vía 3er parámetro `neighborhood_id` de `fetchMapProperties` — estado LOCAL del mapa, NO entra a `FilterState` ni al badge (D6); colonia y `area` mutuamente excluyentes (D9). Municipio → bbox precalculado → reusa `filters.area` (D5). ⚠️ Esto NO toca el gotcha 🔒 de `properties.zone` (sigue sin índice y sin ILIKE — el trgm vive en el CATÁLOGO, no en properties). Ver [[mapa-y-ubicacion]].
 
-## Secciones Venta · Renta (#241, 2026-09-03)
+## Secciones Venta · Renta (#241, 2026-09-03) — superado por #296 (abajo)
 - **El feed tiene dos secciones y cada una lleva fijo su filtro de operación.** Tabs de texto sobre el video (`FeedSectionTabs`, estilo TikTok; decisión de Abraham 2026-09-02, no píldora); **default Venta**; la elección persiste con los filtros.
 - **No hay estado nuevo — una sola verdad:** la sección ES `filters.operation_types` con exactamente un valor (`'sale' | 'rent'`), en el `FilterState` que feed y mapa comparten → **el mapa sigue la sección**. `lib/feedSection.ts` (`section_from_filters` / `with_section`) es el único que sabe la forma canónica; el `FilterProvider` la sostiene como invariante: arranca con la default, **normaliza al hidratar** (un `urbea_filters` persistido antes de #241 podía traer `[]` o `['rent','sale']` → default) y `clear_filters` **conserva** la sección (es el canal que ves, no un filtro que se limpia).
 - Consecuencias: el grupo «Operación» **salió del FilterSheet**; `get_active_filter_count` **no cuenta** `operation_types` (como `radius_m` y `area`); `'both'` sigue siendo valor de dato — `build_filter_query` lo agrega solo, así una propiedad `both` aparece en las dos secciones.
@@ -43,3 +43,9 @@ Baños, m², amueblado, búsqueda fuzzy por texto libre (pg_trgm sobre `zone`/`a
 
 ## Relacionados
 [[feed-vertical-video]] · [[mapa-y-ubicacion]] · [[propiedades-y-video]]
+
+## La tab del feed como estado propio (#296, 2026-09-14)
+- **#296 reabre el modelo de #241:** la sección deja de ser `filters.operation_types` y pasa a ser `feed_tab: 'para_ti' | 'siguiendo' | 'nuevos' | 'venta' | 'renta'` (`lib/feedSection.ts`: `FEED_TABS`, `DEFAULT_FEED_TAB='para_ti'`, `is_feed_tab`, `operation_types_for_tab`, `with_tab`; `section_from_filters`/`with_section` desaparecen). 🔒 **El eje de fuente NUNCA entra a `FilterState`** (regresión a evitar: el mapa heredaría «Siguiendo»); el `FilterProvider` lo lleva como `useState` aparte y expone `feed_tab`/`set_feed_tab`; los `filters` que salen del contexto son `useMemo(with_tab(raw, feed_tab))`, así `operation_types` siempre = `operation_types_for_tab(feed_tab)` y **el mapa sigue la tab** (Venta→venta, Renta→renta, las demás→ambas) sin cambios propios.
+- **Persistencia propia** (`lib/feedTabStorage.ts`, patrón de `filterStorage.ts`): key `urbea_feed_tab`, string plano, `load_feed_tab` fail-safe (nulo/basura/throw → `'para_ti'`), `save_feed_tab` inmediato al tap (sin debounce: un tap es un evento discreto). El JSON legacy de `urbea_filters` sigue hidratando por merge; su `operation_types` guardado **ya no manda** (el tab gana). `clear_filters` conserva el tab; el tab no cuenta en `active_filter_count`.
+- Las fuentes por tab (proximidad / por_owner / ordenada) y la caché viven en el feed: ver [[feed-vertical-video]].
+

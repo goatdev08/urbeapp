@@ -20,6 +20,14 @@
  *   · Color accent_soft sólido (#C2A07C) + texto ink. NO usa primary ni accent
  *     puros: esos son los chips Renta/Venta de PropertyOverlay, y reusar su
  *     color en el badge legal crearía justo la ambigüedad que hay que evitar.
+ *   · 296.2 — RE-APROBADO en nueva posición (preview 050, exploración
+ *     `.taskmaster/docs/exploraciones/050-…/preview/chrome.html`, decisión
+ *     Abraham 2026-09-14): la fila de tabs pasa a ancho completo sin reservar
+ *     hueco para el badge, así que el badge se mueve a la DERECHA y baja una
+ *     fila — vive en la misma banda que RefreshingChip/ZoneActiveChip
+ *     (`feed_top_row_y(insets.top) + FEED_SECTION_TABS_HEIGHT + s_8`). Sigue
+ *     fuera del bloque de contenido, sin condicionarse a nada: solo cambió
+ *     dónde, no el invariante legal.
  * ════════════════════════════════════════════════════════════════════════════
  *
  * #192 — identidad del anunciante (logo + nombre, mismo tratamiento que la
@@ -65,6 +73,7 @@ import { colors, fonts, radii, spacing, type_scale } from '@/theme/theme';
 import { useLocation } from '@/features/location/LocationProvider';
 import { build_cta_target, linkify_description } from '@/features/ads/lib/adCtaLink';
 
+import { FEED_SECTION_TABS_HEIGHT, feed_top_row_y } from './FeedSectionTabs';
 import { INFO_BOTTOM } from './PropertyOverlay';
 import { ad_impression_queue } from '../lib/adImpressionQueue';
 import { get_app_session_id } from '../lib/appSession';
@@ -96,6 +105,8 @@ export function AdFeedItem({ ad, isActive }: AdFeedItemProps) {
   // safe-area, no contra números fijos. En Android la tab bar es una pill
   // FLOTANTE que el sistema no reporta en `insets.bottom` — de ahí el
   // INFO_BOTTOM de PropertyOverlay, que ya resolvió esto en #65.11.
+  // 296.2: el badge ya no usa insets.top directo — comparte la fórmula
+  // `feed_top_row_y` de FeedSectionTabs (misma banda que el chrome superior).
   const insets = useSafeAreaInsets();
   const { coords } = useLocation();
   const router = useRouter();
@@ -275,9 +286,15 @@ export function AdFeedItem({ ad, isActive }: AdFeedItemProps) {
       {/* 🔴 Badge legal — fuera del bloque de contenido, sin condicionar a nada.
           213: una promo reusa el MISMO badge con el texto "Anuncio" (decisión
           de Abraham) en vez de "Patrocinado" — es el mismo elemento legal,
-          solo cambia el copy según el tipo de anuncio. */}
+          solo cambia el copy según el tipo de anuncio.
+          296.2: a la derecha, una fila abajo del chrome superior — misma
+          banda que RefreshingChip/ZoneActiveChip (feed_top_row_y +
+          FEED_SECTION_TABS_HEIGHT + s_8). */}
       <View
-        style={[styles.badge, { top: insets.top + spacing.s_8 }]}
+        style={[
+          styles.badge,
+          { top: feed_top_row_y(insets.top) + FEED_SECTION_TABS_HEIGHT + spacing.s_8 },
+        ]}
         testID="ad-sponsored-badge"
       >
         <Megaphone size={14} weight="fill" color={colors.ink} />
@@ -395,8 +412,9 @@ const styles = StyleSheet.create({
   },
   badge: {
     position: 'absolute',
-    // `top` se inyecta en el render: insets.top + aire (#206).
-    left: spacing.s_16,
+    // `top` se inyecta en el render: feed_top_row_y(insets.top) +
+    // FEED_SECTION_TABS_HEIGHT + s_8 (296.2 — antes insets.top + s_8).
+    right: spacing.s_16,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.s_4,

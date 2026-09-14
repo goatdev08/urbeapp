@@ -1,12 +1,17 @@
 /**
- * Tests — FeedSectionTabs (#241.2, ajustado en #248).
+ * Tests — FeedSectionTabs (#241.2, ajustado en #248, genérico en #296.2).
  *
  * Por qué existe: #248 encoge la pill para que el badge legal «Patrocinado»
- * de AdFeedItem (anclado arriba-izquierda) deje de rozar la tab izquierda. Un
- * cambio de tamaño se puede pasar de mano en silencio: encoger de más rompe
- * el mínimo de 44 pt de área táctil o la legibilidad sobre el video, y ambos
- * son invisibles para el resto de la suite. Estos casos fijan el techo y el
- * piso de ese ajuste, además del comportamiento de selección.
+ * de AdFeedItem (hoy a la derecha, una fila abajo) deje de rozar la tab
+ * izquierda. Un cambio de tamaño se puede pasar de mano en silencio: encoger
+ * de más rompe el mínimo de 44 pt de área táctil o la legibilidad sobre el
+ * video, y ambos son invisibles para el resto de la suite. Estos casos fijan
+ * el techo y el piso de ese ajuste, además del comportamiento de selección.
+ *
+ * #296.2: el componente deja de asumir 2 Pressables fijos — recibe `tabs`/
+ * `value` de forma genérica y se vuelve una fila deslizable (ScrollView
+ * horizontal). El caso EC-T7 cubre las 5 tabs del preview aprobado (296.1);
+ * la conexión al store real de 5 secciones es 296.3.
  */
 import React from 'react';
 import { StyleSheet, type TextStyle, type ViewStyle } from 'react-native';
@@ -19,6 +24,18 @@ import { FeedSectionTabs, FEED_SECTION_TABS_HEIGHT } from '../FeedSectionTabs';
 /** Mínimo de área táctil (HIG / Material). */
 const MIN_TOUCH_TARGET = 44;
 
+/**
+ * #296.3: el componente es genérico (ver EC-T7) — este archivo ya no depende
+ * de FEED_SECTIONS (obsoleto, feedSection.ts lo elimina en 296.3 GREEN junto
+ * con FeedSection/DEFAULT_FEED_SECTION/section_from_filters/with_section).
+ * Los casos EC-T1..EC-T6 fijan el comportamiento genérico con un par de tabs
+ * local, sin acoplarse al store de dominio.
+ */
+const SALE_RENT_TABS = [
+  { value: 'sale', label: 'Venta' },
+  { value: 'rent', label: 'Renta' },
+] as const;
+
 function flat_view(style: unknown): ViewStyle {
   return (StyleSheet.flatten(style as ViewStyle) ?? {}) as ViewStyle;
 }
@@ -29,7 +46,7 @@ function flat_text(style: unknown): TextStyle {
 
 describe('FeedSectionTabs — selección', () => {
   it('(EC-T1) pinta las dos secciones y marca como seleccionada SOLO la activa', async () => {
-    const r = await render(<FeedSectionTabs section="sale" on_change={jest.fn()} />);
+    const r = await render(<FeedSectionTabs tabs={SALE_RENT_TABS} value="sale" on_change={jest.fn()} />);
 
     expect(r.getByText('Venta')).toBeTruthy();
     expect(r.getByText('Renta')).toBeTruthy();
@@ -39,7 +56,7 @@ describe('FeedSectionTabs — selección', () => {
 
   it('(EC-T2) tocar la sección inactiva llama on_change con SU valor', async () => {
     const on_change = jest.fn();
-    const r = await render(<FeedSectionTabs section="sale" on_change={on_change} />);
+    const r = await render(<FeedSectionTabs tabs={SALE_RENT_TABS} value="sale" on_change={on_change} />);
 
     fireEvent.press(r.getByTestId('feed-section-rent'));
 
@@ -48,9 +65,29 @@ describe('FeedSectionTabs — selección', () => {
   });
 });
 
+describe('FeedSectionTabs — #296.2: genérico, fila deslizable', () => {
+  it('(EC-T7) con 5 tabs renderiza los 5 testIDs y el contenedor es una ScrollView horizontal', async () => {
+    const tabs = [
+      { value: 'para_ti', label: 'Para ti' },
+      { value: 'siguiendo', label: 'Siguiendo' },
+      { value: 'nuevos', label: 'Nuevos' },
+      { value: 'venta', label: 'Venta' },
+      { value: 'renta', label: 'Renta' },
+    ] as const;
+    const r = await render(<FeedSectionTabs tabs={tabs} value="para_ti" on_change={jest.fn()} />);
+
+    for (const tab of tabs) {
+      expect(r.getByTestId(`feed-section-${tab.value}`)).toBeTruthy();
+    }
+
+    const scroll = r.getByTestId('feed-section-tabs-scroll');
+    expect(scroll.props.horizontal).toBe(true);
+  });
+});
+
 describe('FeedSectionTabs — #248: la pill encogió sin perder contraste ni área táctil', () => {
   it('(EC-T3) 🔴 la pill + su hitSlop siguen dando al menos 44 pt de alto tocable', async () => {
-    const r = await render(<FeedSectionTabs section="sale" on_change={jest.fn()} />);
+    const r = await render(<FeedSectionTabs tabs={SALE_RENT_TABS} value="sale" on_change={jest.fn()} />);
     const tab = r.getByTestId('feed-section-sale');
 
     // hitSlop numérico: se aplica a los cuatro lados.
@@ -60,14 +97,14 @@ describe('FeedSectionTabs — #248: la pill encogió sin perder contraste ni ár
   });
 
   it('(EC-T4) la pill mide 30 (menos que los 34 de #241.2) y el label no baja de 15 — encoger de más la volvería ilegible sobre el video', async () => {
-    const r = await render(<FeedSectionTabs section="sale" on_change={jest.fn()} />);
+    const r = await render(<FeedSectionTabs tabs={SALE_RENT_TABS} value="sale" on_change={jest.fn()} />);
 
     expect(FEED_SECTION_TABS_HEIGHT).toBe(30);
     expect(flat_text(r.getByText('Venta').props.style).fontSize).toBe(15);
   });
 
   it('(EC-T5) 🔴 el contraste se conserva: la activa mantiene la pill salvia con texto on_primary', async () => {
-    const r = await render(<FeedSectionTabs section="sale" on_change={jest.fn()} />);
+    const r = await render(<FeedSectionTabs tabs={SALE_RENT_TABS} value="sale" on_change={jest.fn()} />);
 
     expect(flat_view(r.getByTestId('feed-section-sale').props.style).backgroundColor).toBe(
       colors.primary,
@@ -76,7 +113,7 @@ describe('FeedSectionTabs — #248: la pill encogió sin perder contraste ni ár
   });
 
   it('(EC-T6) 🔴 la inactiva conserva el blanco al 72 % y la sombra que la hace legible sobre un fotograma claro', async () => {
-    const r = await render(<FeedSectionTabs section="sale" on_change={jest.fn()} />);
+    const r = await render(<FeedSectionTabs tabs={SALE_RENT_TABS} value="sale" on_change={jest.fn()} />);
     const label = flat_text(r.getByText('Renta').props.style);
 
     expect(label.color).toBe('rgba(255,255,255,0.72)');

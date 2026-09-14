@@ -35,6 +35,8 @@ jest.mock('@/features/location/LocationProvider', () => {
 });
 
 jest.mock('@/lib/supabase/client', () => ({ supabase: {} }));
+// 296.4: FeedScreen lee useAuth() para el user_id de «Siguiendo»; sin AuthProvider el hook lanza.
+jest.mock('@/features/auth/context', () => ({ useAuth: () => ({ user: null }) }));
 
 jest.mock('expo-router', () => ({
   useRouter: () => ({ push: jest.fn() }),

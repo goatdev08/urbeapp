@@ -175,6 +175,14 @@ describe('AdFeedItem — 🔴 el badge legal', () => {
     const r = await render(<AdFeedItem ad={make_ad()} isActive={false} />);
     expect(r.getByText('Patrocinado')).toBeTruthy();
   });
+
+  it('(EC-21) 🔴 296.2: el badge vive a la DERECHA — right:16, sin `left`', async () => {
+    const r = await render(<AdFeedItem ad={make_ad()} isActive />);
+    const badge_style = StyleSheet.flatten(r.getByTestId('ad-sponsored-badge').props.style) ?? {};
+
+    expect(badge_style.right).toBe(16);
+    expect(badge_style.left).toBeUndefined();
+  });
 });
 
 describe('AdFeedItem — identidad y descripción (#192)', () => {
