@@ -12969,7 +12969,7 @@
         "description": "Origen: exploración 050 (aprobada 2026-09-14) · Detectado por: usuario (Abraham). Una sola fila de tabs superiores deslizable horizontalmente en el feed, con 5 tabs: Para ti (default sin sesión guardada; = feed de cercanía actual renombrado), Siguiendo (propiedades cuyo owner_user_id está entre mis follows; empty state con CTA), Nuevos (consulta directa a properties ordenada por published_at desc, sin radio, filtros dentro de la query), Venta y Renta (como hoy). La tab elegida persiste entre sesiones y deriva operation_types (venta→['sale'], renta→['rent'], resto→ambas); el mapa sigue esa derivación. Cambio de tab instantáneo: caché por tab + prefetch de las vecinas + restauración de scroll, una sola FlashList y un solo player. Solo tap, sin swipe. Botón de filtros a la izquierda a la altura de las tabs y badge legal «Patrocinado» de AdFeedItem a la derecha. Chrome superior = componente de firma → preview HTML aprobable antes de portar a RN. Cero migraciones; sale por OTA.",
         "details": "Doc: .taskmaster/docs/exploraciones/050-tabs-superiores-feed-y-filtro-izquierda.md (decisiones del intake y criterios de aceptación completos).\n\nFases (subtareas a crear en /tm-plan, en serie): (1) preview HTML aprobable del chrome superior — frames: tab activa/inactiva, con y sin anuncio (badge a la derecha), empty state de Siguiendo; (2) chrome: FeedSectionTabs.tsx de 2 Pressables a fila ScrollView horizontal (nestedScrollEnabled, render inline — precedente dead zone Android #231), botón de filtros left:s_16 en FeedScreen.tsx, badge legal right:s_16 en AdFeedItem.tsx, offsets de RefreshingChip/ZoneActiveChip sin cambio de alto — ligera; (3) estado feed_tab ('para_ti'|'siguiendo'|'nuevos'|'venta'|'renta') en store propio persistido en AsyncStorage con el patrón del filterStore (hidratación fail-safe → 'para_ti', debounce 500 ms) y derivación de operation_types que reemplaza a section_from_filters/with_section como fuente de la sección (search/lib/feedSection.ts, filterStore.tsx) — crítica; (4) resolución por tab en feed/lib: proximidad (fetchFeedProperties intacta), por_owner (follows → owner_user_id in), ordenada (PostgREST properties + build_filter_query + status='active' + order published_at desc + rango) — crítica; reusar mint_videos, build_feed_data, fetch_agent_profiles, interleave_ads_with_state, feed_key_extractor; (5) caché por tab Map<tab,{items,next_cursor,lap,scroll_index,fetched_at}> + re-mint si fetched_at > TTL de URL firmada (~4 h) + prefetch en idle de la página 1 de las tabs vecinas (datos/URLs, nunca reproducción) + lap preservado por tab (keys kind:id#lap) — crítica + guardian; (6) smoke Android + iOS por CLI (sin skeleton en el 2º tap medido por dumps de UI, frame con anuncio, empty state), terminando en stopApp; sincronizar pantalla 4 de urbea-identidad-visual.html; ingest al vault (feed, design-system, mapa-codebase); OTA.\n\nReglas no obvias: properties_within_radius es contrato publicado (§0.5.2) — no se toca; follows_select solo abre filas del propio follower (#78) — el cliente resuelve 'a quién sigo', jamás 'quién sigue a X'; invariante A1: radius_m/area nunca pasan por build_filter_query; operation_type='both' aparece en Venta y Renta; bounces obligatorio en iOS para pull-to-refresh (#241); un solo video reproduciendo (cuota Stream §0.5.5); ponytail full en ejecución.\n\nREUSO_CON_RESERVA aceptado por Abraham (Q9): el pipeline 'RPC → slice 10 → filtros client-side' es deuda (páginas cortas) y se amplifica en Siguiendo → marcar // ponytail: deuda y abrir derivada hardening(296): filtros y follows dentro de una RPC aditiva.\n\nFase 2 (NO en esta tarea): ranking real §9.8 detrás de «Para ti» = #74.3 (pending), conectar, no duplicar.\n\nDERIVADAS: (por abrir al cerrar) hardening(296) páginas cortas · enlace #74.3",
         "testStrategy": "Crítico (TDD estricto + guardian): store feed_tab + derivación de operation_types; resolvedor por tab (por_owner, ordenada); caché/prefetch/frescura/lap (lib/**, hooks/**) — reset y restauración probados desde estado poblado. Ligero: tabs, posición del botón y del badge, empty states → pnpm tsc --noEmit + pnpm lint + smoke CLI (adb/simctl) con un frame de anuncio, terminando en stopApp. Medición explícita del 'sin spinner': dumps de UI antes/después del tap (patrón #285/#288). Nuevos verificable contra una consulta SQL de solo lectura en producción. Cero migraciones → sin pgTAP nuevo.",
-        "status": "pending",
+        "status": "in-progress",
         "dependencies": [
           "78",
           "293",
@@ -12981,12 +12981,13 @@
             "id": 1,
             "title": "Preview HTML aprobable del chrome superior del feed (5 tabs deslizables, filtros a la izquierda, badge legal a la derecha)",
             "description": "Componente de firma (§8): preview HTML aprobable ANTES de portar a RN. Frames: tab activa/inactiva con las 5 tabs (Para ti · Siguiendo · Nuevos · Venta · Renta) en fila deslizable; feed con anuncio (badge «Patrocinado» a la derecha, botón de filtros a la izquierda, sin superposición); empty state de «Siguiendo» con CTA. Divergencia exigida: 2–3 alternativas de layout de la fila (subrayado vs. pill vs. peso tipográfico) con trade-off.",
-            "details": "Tokens y lenguaje visual de urbea-identidad-visual.html (verde #1A5E44, Space Grotesk/Hanken Grotesk, feed oscuro #17140F); layout del Urbea Prototipo (standalone).html. Reusar la geometría vigente: FEED_SECTION_TABS_HEIGHT, top_row_y, spacing.s_16. El badge legal re-aprueba el gate de 170.8 en su nueva posición (derecha). Entregable: un HTML en .taskmaster/docs/previews/ (o donde vivan los previews previos) servido por http 127.0.0.1 para revisión; Abraham aprueba una variante. Sin código RN.\n<info added on 2026-09-14T07:06:55.038Z>\nPLAN: approach=preview HTML aprobable del chrome superior (componente de firma §8) con 2–3 variantes de la fila de tabs (subrayado / pill / peso tipográfico) y frames: 5 tabs (activa/inactiva, fila deslizable), feed con anuncio (botón de filtros a la izquierda + badge «Patrocinado» a la derecha, sin superposición, re-aprueba gate 170.8), empty state de «Siguiendo» con CTA «Explorar el feed» → tab Para ti (decisión de Abraham, /tm-plan 2026-09-14). Tokens de urbea-identidad-visual.html (verde #1A5E44, Space Grotesk/Hanken Grotesk, feed oscuro #17140F), layout del Urbea Prototipo (standalone).html, geometría vigente FEED_SECTION_TABS_HEIGHT=30 / top_row_y / s_16 · decisiones del usuario: CTA Siguiendo → Para ti; ubicación del preview = convención de la exploración 049 (default sensato, no preguntado): .taskmaster/docs/exploraciones/050-tabs-superiores-feed-y-filtro-izquierda/preview/chrome.html, servido por http 127.0.0.1 (Chrome MCP rechaza file://) · agente=design · skills=urbea-design · criticidad=no (HTML fuera de mobile/, sin lógica) · impacto-prod=sin riesgo · footprint=.taskmaster/docs/exploraciones/050-tabs-superiores-feed-y-filtro-izquierda/preview/chrome.html (nuevo); lectura de urbea-identidad-visual.html (pantalla 4, ~860-900) y Urbea Prototipo (standalone).html. GATE: /tm-tarea pausa aquí hasta que Abraham apruebe una variante por escrito; la elección se registra en esta bitácora antes de lanzar 296.2.\n</info added on 2026-09-14T07:06:55.038Z>",
+            "details": "Tokens y lenguaje visual de urbea-identidad-visual.html (verde #1A5E44, Space Grotesk/Hanken Grotesk, feed oscuro #17140F); layout del Urbea Prototipo (standalone).html. Reusar la geometría vigente: FEED_SECTION_TABS_HEIGHT, top_row_y, spacing.s_16. El badge legal re-aprueba el gate de 170.8 en su nueva posición (derecha). Entregable: un HTML en .taskmaster/docs/previews/ (o donde vivan los previews previos) servido por http 127.0.0.1 para revisión; Abraham aprueba una variante. Sin código RN.\n<info added on 2026-09-14T07:06:55.038Z>\nPLAN: approach=preview HTML aprobable del chrome superior (componente de firma §8) con 2–3 variantes de la fila de tabs (subrayado / pill / peso tipográfico) y frames: 5 tabs (activa/inactiva, fila deslizable), feed con anuncio (botón de filtros a la izquierda + badge «Patrocinado» a la derecha, sin superposición, re-aprueba gate 170.8), empty state de «Siguiendo» con CTA «Explorar el feed» → tab Para ti (decisión de Abraham, /tm-plan 2026-09-14). Tokens de urbea-identidad-visual.html (verde #1A5E44, Space Grotesk/Hanken Grotesk, feed oscuro #17140F), layout del Urbea Prototipo (standalone).html, geometría vigente FEED_SECTION_TABS_HEIGHT=30 / top_row_y / s_16 · decisiones del usuario: CTA Siguiendo → Para ti; ubicación del preview = convención de la exploración 049 (default sensato, no preguntado): .taskmaster/docs/exploraciones/050-tabs-superiores-feed-y-filtro-izquierda/preview/chrome.html, servido por http 127.0.0.1 (Chrome MCP rechaza file://) · agente=design · skills=urbea-design · criticidad=no (HTML fuera de mobile/, sin lógica) · impacto-prod=sin riesgo · footprint=.taskmaster/docs/exploraciones/050-tabs-superiores-feed-y-filtro-izquierda/preview/chrome.html (nuevo); lectura de urbea-identidad-visual.html (pantalla 4, ~860-900) y Urbea Prototipo (standalone).html. GATE: /tm-tarea pausa aquí hasta que Abraham apruebe una variante por escrito; la elección se registra en esta bitácora antes de lanzar 296.2.\n</info added on 2026-09-14T07:06:55.038Z>\n<info added on 2026-09-14T07:21:37.398Z>\nHECHO (agente design): preview HTML del chrome superior en .taskmaster/docs/exploraciones/050-tabs-superiores-feed-y-filtro-izquierda/preview/chrome.html (convención 049), servido en http://127.0.0.1:8766/chrome.html. 3 variantes de la fila de tabs con trade-off: A subrayado corto (mismo enfoque ya rechazado en #241 tras el smoke iOS 2026-09-03), B pill con fondo colors.primary (evolución directa del FeedSectionTabs vigente — RECOMENDADA), C solo peso+opacidad (mismo riesgo de distinguibilidad que motivó el pill). Frames: comparación de las 3 (Para ti activa, filtro a la izquierda, fila desbordada con «Renta» cortada), B con anuncio (badge «Patrocinado» a la derecha, hueco FIJO de 128px reservado en la fila de tabs — no condicional al tipo de ítem — re-aprueba gate 170.8), B empty state «Siguiendo» (ícono + texto + CTA «Explorar el feed» → Para ti, sin skeleton). Geometría preservada: top_row_y, filter_btn_y, chips en top_row_y + FEED_SECTION_TABS_HEIGHT + s_8; solo cambia el eje horizontal. UI_FUERA_DEL_MOCKUP: ninguno nuevo (los 2 hallazgos ya se resolvieron en la exploración 050). Corrección del orquestador: faltaba <meta charset=\"utf-8\"> (mojibake en la captura headless) — añadido.\nVerificación real:\n$ curl -s -o /dev/null -w \"HTTP %{http_code} — %{size_download} bytes\\n\" http://127.0.0.1:8766/chrome.html\nHTTP 200 — 24895 bytes\n(captura headless con Chrome --headless=new revisada por el orquestador: renderiza las 3 variantes y los 3 frames; en la fila de tabs solo caben ~2.5 tabs de 5 por el hueco fijo de 128px — punto abierto para la aprobación.)\nGATE: pendiente de aprobación escrita de Abraham (variante + tratamiento del hueco del badge) antes de lanzar 296.2.\n</info added on 2026-09-14T07:21:37.398Z>\n<info added on 2026-09-14T08:22:50.505Z>\nAPROBACIÓN (Abraham, 2026-09-14, AskUserQuestion en /tm-tarea 296 auto): variante B — pill con fondo colors.primary — APROBADA. Hueco del badge: NO se reserva hueco fijo; la fila de tabs usa todo el ancho (left 64 = s_16 + 40 + s_8 → borde derecho, deslizable con fade de ~24px) y en anuncios el badge legal «Patrocinado»/«Anuncio» BAJA una fila: top = top_row_y + FEED_SECTION_TABS_HEIGHT + s_8, right = s_16 (misma banda que RefreshingChip/ZoneActiveChip; los chips van izquierda/centro, el badge derecha — vigilar solape en 296.2). Preview actualizado por el agente design en su sitio: A y C rotuladas «descartada», B marcada APROBADA en cabecera/leyenda/frames, frame de anuncio con el badge en su nueva posición, footer con la geometría real.\n$ curl -s -o /dev/null -w \"HTTP %{http_code} — %{size_download} bytes\\n\" http://127.0.0.1:8766/chrome.html\nHTTP 200 — 26888 bytes\nNota para 296.2: top_row_y hoy se calcula solo en FeedScreen.tsx:65 (insets.top > 40 ? insets.top - 6 : insets.top + s_4) y AdFeedItem ancla su badge a insets.top + s_8 por su cuenta → compartir la fórmula (helper exportado desde FeedSectionTabs.tsx) para que el badge caiga en la banda de los chips.\n</info added on 2026-09-14T08:22:50.505Z>",
             "testStrategy": "Ligera: el preview abre en el navegador, muestra los frames listados y Abraham aprueba una variante por escrito (la elección se registra en la bitácora de esta subtarea).",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "priority": null,
-            "updatedAt": "2026-09-14T07:06:55.038Z"
+            "updatedAt": "2026-09-14T08:22:52.961Z",
+            "parentId": "undefined"
           },
           {
             "id": 2,
@@ -12999,7 +13000,8 @@
               1
             ],
             "priority": null,
-            "updatedAt": "2026-09-14T07:06:55.119Z"
+            "updatedAt": "2026-09-14T07:06:55.119Z",
+            "parentId": "undefined"
           },
           {
             "id": 3,
@@ -13012,7 +13014,8 @@
               2
             ],
             "priority": null,
-            "updatedAt": "2026-09-14T07:06:55.202Z"
+            "updatedAt": "2026-09-14T07:06:55.202Z",
+            "parentId": "undefined"
           },
           {
             "id": 4,
@@ -13025,7 +13028,8 @@
               3
             ],
             "priority": null,
-            "updatedAt": "2026-09-14T07:06:55.284Z"
+            "updatedAt": "2026-09-14T07:06:55.284Z",
+            "parentId": "undefined"
           },
           {
             "id": 5,
@@ -13038,7 +13042,8 @@
               4
             ],
             "priority": null,
-            "updatedAt": "2026-09-14T07:06:55.366Z"
+            "updatedAt": "2026-09-14T07:06:55.366Z",
+            "parentId": "undefined"
           },
           {
             "id": 6,
@@ -13051,16 +13056,17 @@
               5
             ],
             "priority": null,
-            "updatedAt": "2026-09-14T07:06:55.450Z"
+            "updatedAt": "2026-09-14T07:06:55.450Z",
+            "parentId": "undefined"
           }
         ],
-        "updatedAt": "2026-09-14T07:06:55.450Z"
+        "updatedAt": "2026-09-14T08:22:52.961Z"
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-09-14T06:38:24.694Z",
-      "taskCount": 295,
+      "lastModified": "2026-09-14T08:22:52.961Z",
+      "taskCount": 296,
       "completedCount": 215,
       "tags": [
         "master"

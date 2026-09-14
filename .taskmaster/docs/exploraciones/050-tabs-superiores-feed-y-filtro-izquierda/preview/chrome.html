@@ -1,0 +1,545 @@
+<meta charset="utf-8">
+<title>Chrome superior del feed — 5 tabs + filtro a la izquierda (296.1)</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&family=Hanken+Grotesk:wght@400;600;700&display=swap">
+<style>
+  :root {
+    --font-display: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+    --font-sans: 'Hanken Grotesk', ui-sans-serif, system-ui, sans-serif;
+
+    /* tokens de mobile/src/theme/theme.ts — ninguno inventado */
+    --paper: #F6F2EB;
+    --ink: #1E1A15;
+    --gray-1: #A39A8C;
+    --gray-2: #857C70;
+    --gray-3: #6B6256;
+    --primary: #1A5E44;      /* colors.primary — verde canónico del logo */
+    --primary-soft: #5E9379;
+    --accent-soft: #C2A07C;  /* colors.accent_soft — badge legal, #170.8 */
+    --ink-feed: #17140F;
+  }
+  :root:not([data-theme="light"]) {
+    @media (prefers-color-scheme: dark) {
+      --page-bg: #17140F;
+      --page-text: #F6F2EB;
+      --page-muted: #A39A8C;
+      --page-border: rgba(255,255,255,0.12);
+      --chip-bg: rgba(255,255,255,0.06);
+    }
+  }
+  :root, :root[data-theme="light"] {
+    --page-bg: #F6F2EB;
+    --page-text: #1E1A15;
+    --page-muted: #6B6256;
+    --page-border: #E3DCCF;
+    --chip-bg: #EEE7DC;
+  }
+  :root[data-theme="dark"] {
+    --page-bg: #17140F;
+    --page-text: #F6F2EB;
+    --page-muted: #A39A8C;
+    --page-border: rgba(255,255,255,0.12);
+    --chip-bg: rgba(255,255,255,0.06);
+  }
+
+  body { background: var(--page-bg); color: var(--page-text); font-family: var(--font-sans); }
+  .wrap { max-width: 1320px; margin: 0 auto; padding: 28px 16px 64px; }
+
+  h1 { font-family: var(--font-display); font-size: 22px; letter-spacing: -0.2px; margin: 0 0 6px; }
+  .subtitle { color: var(--page-muted); font-size: 14px; margin: 0 0 20px; max-width: 74ch; line-height: 1.5; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 28px; }
+  .legend-item {
+    flex: 1 1 280px;
+    border: 1px solid var(--page-border);
+    background: var(--chip-bg);
+    border-radius: 12px;
+    padding: 12px 14px;
+    position: relative;
+  }
+  .legend-item.rec { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary) inset; }
+  .legend-item.discarded { opacity: 0.62; }
+  .legend-item b { font-family: var(--font-display); font-size: 14px; }
+  .legend-item .star { color: var(--primary); font-weight: 700; }
+  .legend-item p { margin: 4px 0 0; font-size: 12.5px; color: var(--page-muted); line-height: 1.45; }
+
+  .approval-banner {
+    border: 1px solid var(--primary);
+    background: rgba(26,94,68,0.10);
+    color: var(--page-text);
+    border-radius: 12px;
+    padding: 10px 14px;
+    font-size: 13px;
+    margin-bottom: 16px;
+  }
+
+  .section-title { font-family: var(--font-display); font-size: 17px; margin: 40px 0 4px; }
+  .section-note { font-size: 12.5px; color: var(--page-muted); margin: 0 0 18px; max-width: 78ch; line-height: 1.5; }
+
+  .frames-row { display: flex; flex-wrap: wrap; gap: 28px; justify-content: center; }
+
+  .frame-wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%; max-width: 340px; }
+  .frame-wrap.discarded { opacity: 0.55; }
+  .frame-label { font-family: var(--font-display); font-size: 15px; text-align: center; }
+  .frame-label span { color: var(--page-muted); font-family: var(--font-sans); font-size: 12px; }
+
+  /* Marco de teléfono: diseño fijo 390x844, escalado por JS (misma técnica
+     que overlay.html de la exploración 049) para no desbordar ni verse
+     diminuto. */
+  .phone-outer {
+    position: relative;
+    width: 100%;
+    max-width: 340px;
+    aspect-ratio: 390 / 844;
+    overflow: hidden;
+    border-radius: 36px;
+    background: #000;
+    box-shadow: 0 8px 22px -8px rgba(30,22,12,.35);
+  }
+  .phone { position: absolute; top: 0; left: 0; width: 390px; height: 844px; transform-origin: top left; }
+
+  /* Fondo "peor caso de contraste" — fachada clara, mismo patrón que 049 —
+     porque el chrome superior debe leerse incluso sobre un fotograma blanco. */
+  .bg-light {
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(circle at 72% 10%, rgba(255,255,255,0.95), rgba(255,255,255,0) 44%),
+      linear-gradient(180deg, #F8F6F1 0%, #F1ECDF 36%, #E7DEC7 60%, #D9CBAC 82%, #C9B98F 100%);
+  }
+  .bg-light::after {
+    content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 50%;
+    background:
+      repeating-linear-gradient(90deg, rgba(255,255,255,0.35) 0 54px, rgba(201,185,143,0.25) 54px 60px),
+      linear-gradient(180deg, rgba(216,203,172,0.4), rgba(180,163,124,0.55));
+  }
+  .bg-dark {
+    position: absolute; inset: 0;
+    background: var(--ink-feed);
+  }
+  .gradient-top {
+    position: absolute; left: 0; right: 0; top: 0; height: 40%;
+    background: linear-gradient(to bottom, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0) 100%);
+  }
+  .gradient-bottom {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 40%;
+    background: linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0.72) 100%);
+  }
+  .play-ghost {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    width: 64px; height: 64px; border-radius: 32px;
+    background: rgba(23,20,15,0.30);
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  /* ── Chrome superior ───────────────────────────────────────────────── */
+  /* Geometría real de FeedScreen.tsx: top_row_y = insets.top>40 ? insets.top-6
+     : insets.top+s_4; filter_btn_y = top_row_y - (40-30)/2. Canvas fijo con
+     insets.top=59 (Dynamic Island) → top_row_y=53, filter_btn_y=48. */
+  .filter-btn {
+    position: absolute;
+    left: 16px;    /* spacing.s_16 — ahora a la IZQUIERDA (antes right: s_16) */
+    top: 48px;
+    width: 40px; height: 40px; border-radius: 20px;
+    background: rgba(23,20,15,0.60);
+    display: flex; align-items: center; justify-content: center;
+  }
+  /* Fila de tabs: deslizable horizontal, sin scrollbar visible, ancho COMPLETO
+     desde el botón de filtros hasta el borde derecho de la pantalla (decisión
+     de Abraham 2026-09-14: no se reserva hueco fijo para el badge — el badge
+     baja de banda en vez de comerle ancho a las tabs, ver `.ad-badge`).
+     `mask-image` desvanece los últimos ~24px como insinuación de scroll,
+     sin depender de un color de fondo sólido (el fondo es video). */
+  .tabs-row {
+    position: absolute;
+    left: 64px;   /* filter_btn (16+40) + gap s_8 */
+    right: 0;
+    top: 53px;
+    height: 30px; /* FEED_SECTION_TABS_HEIGHT — se conserva; lo que cuelga
+                     debajo (RefreshingChip/ZoneActiveChip, y ahora también
+                     el badge legal) sigue usando top_row_y + 30 + s_8 */
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-right: 16px; /* spacing.s_16 — aire antes del borde real */
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(to right, black calc(100% - 24px), transparent 100%);
+    mask-image: linear-gradient(to right, black calc(100% - 24px), transparent 100%);
+  }
+  .tabs-row::-webkit-scrollbar { display: none; }
+  .tab { flex-shrink: 0; white-space: nowrap; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+
+  /* Variante A — subrayado corto bajo la activa */
+  .tabs-a .tab {
+    padding: 6px 4px 8px;
+    font-family: 'Hanken Grotesk'; font-weight: 600; font-size: 14px;
+    color: rgba(255,255,255,0.72);
+    text-shadow: 0 1px 4px rgba(0,0,0,0.6);
+    position: relative;
+  }
+  .tabs-a .tab.active { color: #fff; font-weight: 700; }
+  .tabs-a .tab.active::after {
+    content: ''; position: absolute; left: 50%; bottom: 1px; transform: translateX(-50%);
+    width: 18px; height: 3px; border-radius: 2px;
+    background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.55);
+  }
+
+  /* Variante B — pill/chip con fondo [APROBADA 2026-09-14] — evolución
+     directa de FeedSectionTabs.tsx actual (mismo verde colors.primary, mismo
+     criterio de contraste ya aprobado por Abraham). */
+  .tabs-b .tab {
+    padding: 5px 12px;
+    border-radius: 15px;
+    font-family: 'Hanken Grotesk'; font-weight: 600; font-size: 15px;
+    color: rgba(255,255,255,0.72);
+    text-shadow: 0 1px 4px rgba(0,0,0,0.6);
+  }
+  .tabs-b .tab.active {
+    background: var(--primary);
+    color: #fff; font-weight: 700;
+    text-shadow: none;
+  }
+
+  /* Variante C — solo peso tipográfico + opacidad */
+  .tabs-c .tab {
+    padding: 6px 6px;
+    font-family: 'Hanken Grotesk'; font-weight: 600; font-size: 14px;
+    color: rgba(255,255,255,0.58);
+    text-shadow: 0 1px 4px rgba(0,0,0,0.55);
+  }
+  .tabs-c .tab.active {
+    color: #fff; font-weight: 700; font-size: 15px;
+    text-shadow: 0 1px 5px rgba(0,0,0,0.65);
+  }
+
+  /* Badge legal «Patrocinado»/«Anuncio» — AdFeedItem.tsx, a la DERECHA.
+     Decisión de Abraham 2026-09-14: BAJA una fila en vez de compartir la
+     banda de tabs/filtro — vive en la misma banda que RefreshingChip/
+     ZoneActiveChip (top_row_y + FEED_SECTION_TABS_HEIGHT + s_8), alineado a
+     la derecha. Re-aprueba el gate de 170.8 en esta nueva posición. */
+  .ad-badge {
+    position: absolute;
+    top: 91px; /* top_row_y(53) + FEED_SECTION_TABS_HEIGHT(30) + s_8(8) */
+    right: 16px; /* spacing.s_16 */
+    display: flex; align-items: center; gap: 4px;
+    padding: 4px 8px;
+    border-radius: 8px;
+    background: var(--accent-soft);
+  }
+  .ad-badge span { color: var(--ink); font-size: 12px; font-weight: 700; letter-spacing: 0.5px; font-family: 'Hanken Grotesk'; }
+
+  /* Bloque inferior mínimo del anuncio (contexto, no el foco del frame) */
+  .ad-bottom { position: absolute; left: 16px; right: 16px; bottom: 96px; }
+  .ad-identity { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .ad-logo {
+    width: 36px; height: 36px; border-radius: 18px;
+    background: #6f5742; border: 2px solid var(--primary-soft);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--paper); font-family: 'Hanken Grotesk'; font-weight: 700; font-size: 13px;
+  }
+  .ad-agency { color: var(--paper); font-family: 'Hanken Grotesk'; font-weight: 700; font-size: 13px; text-shadow: 0 1px 3px rgba(23,20,15,0.55); }
+  .ad-title { font-family: var(--font-display); font-weight: 600; font-size: 20px; color: #fff; margin-bottom: 4px; }
+  .ad-desc { color: var(--gray-1); font-size: 13px; margin-bottom: 10px; line-height: 1.4; }
+  .ad-cta {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: var(--primary); color: #fff;
+    padding: 11px 18px; border-radius: 12px;
+    font-family: 'Hanken Grotesk'; font-weight: 700; font-size: 14px;
+  }
+
+  /* ── Empty state «Siguiendo» ──────────────────────────────────────── */
+  .empty-body {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 0 32px;
+  }
+  .empty-disc {
+    width: 72px; height: 72px; border-radius: 36px;
+    background: rgba(94,147,121,0.16);
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: 16px;
+  }
+  .empty-title { font-family: var(--font-display); font-size: 22px; color: var(--paper); text-align: center; margin-bottom: 8px; }
+  .empty-subtitle { font-family: 'Hanken Grotesk'; font-size: 14.5px; color: var(--gray-1); text-align: center; line-height: 1.5; }
+  .empty-cta {
+    margin-top: 20px;
+    padding: 12px 24px;
+    border-radius: 999px;
+    background: var(--primary);
+    color: #fff;
+    font-family: 'Hanken Grotesk'; font-weight: 700; font-size: 15px;
+    cursor: pointer;
+    box-shadow: 0 8px 20px -6px rgba(26,94,68,0.5);
+  }
+
+  .frame-caption { font-size: 12.5px; color: var(--page-muted); text-align: center; max-width: 320px; line-height: 1.4; }
+
+  .footer-note {
+    margin-top: 44px; padding-top: 18px; border-top: 1px solid var(--page-border);
+    font-size: 12.5px; color: var(--page-muted); line-height: 1.6;
+  }
+  .footer-note code { font-family: ui-monospace, 'SFMono-Regular', Menlo, monospace; font-size: 11px; }
+  .footer-note h3 { font-family: var(--font-display); font-size: 14px; color: var(--page-text); margin: 18px 0 4px; }
+</style>
+
+<div class="wrap">
+  <h1>Chrome superior del feed — 5 tabs deslizables + filtro a la izquierda (296.1)</h1>
+  <p class="subtitle">
+    Componente de firma (§8) de la exploración 050. Fila superior con <b>Para ti · Siguiendo ·
+    Nuevos · Venta · Renta</b>, deslizable horizontalmente (solo tap, sin swipe de páginas);
+    botón de filtros movido de la derecha a la <b>izquierda</b>; badge legal «Patrocinado» de
+    los anuncios movido a la <b>derecha y una fila abajo</b> (re-aprueba el gate de 170.8 en su
+    nueva posición). Verificado sobre el <b>peor caso de contraste</b> (fachada clara al sol,
+    igual que en la exploración 049).
+  </p>
+
+  <div class="approval-banner">
+    ✅ <b>Variante B (pill) — APROBADA por Abraham, 2026-09-14.</b> A y C quedan como registro
+    de la divergencia exigida en fase de propuesta (§0); ninguna de las dos se porta a RN.
+  </div>
+
+  <div class="legend">
+    <div class="legend-item discarded">
+      <b>A — Subrayado corto</b> <span style="color:var(--page-muted); font-weight:400;">(estilo TikTok) — descartada</span>
+      <p>Barra blanca de 3px bajo la tab activa, sin fondo. Más "limpio" visualmente, pero
+      <b>este mismo enfoque ya se probó y se rechazó</b> en el 2 tabs actuales (#241: "el
+      subrayado de 3px no se distinguía" en el smoke iOS 2026-09-03) — riesgo de legibilidad
+      ya documentado, no hipotético.</p>
+    </div>
+    <div class="legend-item rec">
+      <b><span class="star">★</span> B — Pill con fondo</b> <span style="color:var(--primary); font-weight:700;">[APROBADA]</span>
+      <p>Evolución directa de <code>FeedSectionTabs.tsx</code> hoy en producción: la activa lleva
+      fondo <code>colors.primary</code> sólido. Es el patrón que Abraham ya aprobó precisamente
+      porque el subrayado falló. Cero riesgo nuevo de legibilidad; con 5 tabs pesa un poco más
+      visualmente que A/C.</p>
+    </div>
+    <div class="legend-item discarded">
+      <b>C — Solo peso + opacidad</b> <span style="color:var(--page-muted); font-weight:400;">— descartada</span>
+      <p>Sin fondo ni línea: la activa sube a blanco 100% + bold + 1pt más grande: la inactiva
+      qudea en blanco ~58%. El más minimalista y barato, pero el más difícil de distinguir de
+      un vistazo rápido en video en movimiento — mismo riesgo que motivó el pill en #241, en
+      forma más sutil.</p>
+    </div>
+  </div>
+
+  <div class="section-title">Comparación de variantes (histórico) — feed normal («Para ti» activa)</div>
+  <p class="section-note">
+    Botón de filtros a la izquierda (antes derecha); fila de 5 tabs a <b>ancho completo</b>
+    (desde el botón de filtros hasta el borde derecho de la pantalla, sin hueco reservado) con
+    scroll lateral — un desvanecido de ~24px en el borde derecho insinúa que hay más para
+    deslizar, en vez de cortar la tab a lo bruto. Sin anuncio en este frame → sin badge legal.
+  </p>
+  <div class="frames-row" id="row-variants"></div>
+
+  <div class="section-title">Variante B (APROBADA) — con anuncio, sin superposición</div>
+  <p class="section-note">
+    Decisión de Abraham 2026-09-14: la fila de tabs usa el ancho completo (no reserva hueco) y
+    en su lugar el badge «Patrocinado» <b>baja una fila</b> — se pinta debajo de la fila de tabs,
+    alineado a la derecha, en la <b>misma banda vertical que <code>RefreshingChip</code>/
+    <code>ZoneActiveChip</code></b> (<code>top_row_y + FEED_SECTION_TABS_HEIGHT + s_8</code>).
+    Re-aprueba el gate legal de 170.8 en esta posición. ⚠️ <b>Riesgo a vigilar en 296.2:</b> esa
+    banda ya la ocupan los chips efímeros «Actualizando» (pull-to-refresh) y «Zona activa», hoy
+    centrados/hacia la izquierda — si algún día un chip creciera hacia la derecha o el badge
+    ensanchara, colisionarían en el mismo renglón; en este preview no se solapan porque el badge
+    vive a la derecha y los chips a la izquierda/centro, pero es una banda ahora compartida por
+    tres elementos, no dos.
+  </p>
+  <div class="frames-row" id="row-ad"></div>
+
+  <div class="section-title">Variante B (APROBADA) — empty state «Siguiendo»</div>
+  <p class="section-note">
+    Sin follows con inventario: nunca pantalla negra muda ni skeleton infinito — ícono +
+    explicación corta + CTA «Explorar el feed» que regresa a «Para ti» (toca el botón).
+    El chrome superior (tabs + filtro) sigue visible para poder cambiar de tab sin volver atrás.
+  </p>
+  <div class="frames-row" id="row-empty"></div>
+
+  <div class="footer-note">
+    <h3>Tokens usados (ninguno inventado)</h3>
+    <code>colors.primary #1A5E44</code> · <code>colors.primary_soft #5E9379</code> ·
+    <code>colors.accent_soft #C2A07C</code> (badge legal, igual que hoy) ·
+    <code>colors.ink_feed #17140F</code> · <code>colors.paper #F6F2EB</code> ·
+    <code>colors.gray_1 #A39A8C</code> · <code>spacing.s_16</code> · fuentes
+    <code>Space Grotesk</code> (display) + <code>Hanken Grotesk</code> (UI).
+    <h3>Geometría (decisión de Abraham 2026-09-14)</h3>
+    <code>top_row_y = insets.top&gt;40 ? insets.top-6 : insets.top+s_4</code> ·
+    <code>filter_btn_y = top_row_y - (40-FEED_SECTION_TABS_HEIGHT)/2</code> ·
+    la fila de tabs ya NO reserva ancho para el badge: va de <code>left: 64</code> (filtro + gap)
+    a <code>right: 0</code>, con un <code>mask-image</code> que desvanece los últimos 24px como
+    insinuación de scroll. El badge legal se une a la banda que ya usan
+    <code>RefreshingChip</code>/<code>ZoneActiveChip</code>:
+    <code>top_row_y + FEED_SECTION_TABS_HEIGHT + s_8</code>, <code>right: s_16</code> — misma
+    fórmula, ahora con tres elementos posibles en esa banda (chips a la izquierda/centro, badge
+    a la derecha). Canvas de diseño: <code>insets.top=59</code> (Dynamic Island) →
+    <code>top_row_y=53</code>, <code>filter_btn_y=48</code>, banda de chips/badge en
+    <code>top=91</code>.
+    <h3>UI_FUERA_DEL_MOCKUP</h3>
+    Ya registrado y resuelto en la exploración 050 (cupo §8/§0 de 2 propuestas agotado ahí,
+    decisión de Abraham 2026-09-14, Q6/Q7): tabs de N fuentes + reubicación del filtro, y la
+    colisión filtro↔badge. Este preview es la <b>opción 1 (en conjunto)</b> ya elegida para
+    ambos — nada nuevo que proponer aquí.
+  </div>
+</div>
+
+<script>
+  // Ícono SlidersHorizontal, weight 'bold' — path real de
+  // mobile/node_modules/phosphor-react-native/src/defs/SlidersHorizontal.tsx
+  // (el mismo que usa hoy el botón de filtros, colors.gray_1, size 20).
+  const ICON_SLIDERS = "M40 92h30.06a36 36 0 0 0 67.88 0H216a12 12 0 0 0 0-24h-78.06a36 36 0 0 0-67.88 0H40a12 12 0 0 0 0 24m64-24a12 12 0 1 1-12 12 12 12 0 0 1 12-12m112 96h-14.06a36 36 0 0 0-67.88 0H40a12 12 0 0 0 0 24h94.06a36 36 0 0 0 67.88 0H216a12 12 0 0 0 0-24m-48 24a12 12 0 1 1 12-12 12 12 0 0 1-12 12";
+  // Megaphone, weight 'fill' — path real de defs/Megaphone.tsx (igual que
+  // AdFeedItem.tsx: size 14, weight fill, color colors.ink).
+  const ICON_MEGAPHONE = "M32 80a8 8 0 0 1 8-8h37.17a28 28 0 0 1 53.66 0H216a8 8 0 0 1 0 16h-85.17a28 28 0 0 1-53.66 0H40a8 8 0 0 1-8-8m184 88h-21.17a28 28 0 0 0-53.66 0H40a8 8 0 0 0 0 16h101.17a28 28 0 0 0 53.66 0H216a8 8 0 0 0 0-16";
+  // UsersThree, weight 'duotone' — defs/UsersThree.tsx (dos paths: relleno
+  // tenue + trazo sólido), mismo tratamiento que EmptyState.tsx con `dark`.
+  const ICON_USERS_LIGHT = "M168 144a40 40 0 1 1-40-40 40 40 0 0 1 40 40M64 56a32 32 0 1 0 32 32 32 32 0 0 0-32-32m128 0a32 32 0 1 0 32 32 32 32 0 0 0-32-32";
+  const ICON_USERS_BOLD = "M244.8 150.4a8 8 0 0 1-11.2-1.6A51.6 51.6 0 0 0 192 128a8 8 0 0 1 0-16 24 24 0 1 0-23.24-30 8 8 0 1 1-15.5-4A40 40 0 1 1 219 117.51a67.94 67.94 0 0 1 27.43 21.68 8 8 0 0 1-1.63 11.21M190.92 212a8 8 0 1 1-13.85 8 57 57 0 0 0-98.15 0 8 8 0 1 1-13.84-8 72.06 72.06 0 0 1 33.74-29.92 48 48 0 1 1 58.36 0A72.06 72.06 0 0 1 190.92 212M128 176a32 32 0 1 0-32-32 32 32 0 0 0 32 32m-56-56a8 8 0 0 0-8-8 24 24 0 1 1 23.24-30 8 8 0 1 0 15.5-4A40 40 0 1 0 37 117.51a67.94 67.94 0 0 0-27.4 21.68 8 8 0 1 0 12.8 9.61A51.6 51.6 0 0 1 64 128a8 8 0 0 0 8-8";
+
+  const TABS = [
+    { key: 'para_ti',   label: 'Para ti' },
+    { key: 'siguiendo', label: 'Siguiendo' },
+    { key: 'nuevos',    label: 'Nuevos' },
+    { key: 'venta',     label: 'Venta' },
+    { key: 'renta',     label: 'Renta' },
+  ];
+
+  function filterBtnHTML() {
+    return '<div class="filter-btn">'
+      + '<svg width="20" height="20" viewBox="0 0 256 256" fill="' + '#A39A8C' + '"><path d="' + ICON_SLIDERS + '"/></svg>'
+      + '</div>';
+  }
+
+  function tabsRowHTML(variant, active, extraClass) {
+    const items = TABS.map((t) =>
+      '<div class="tab' + (t.key === active ? ' active' : '') + '" data-key="' + t.key + '">' + t.label + '</div>'
+    ).join('');
+    return '<div class="tabs-row tabs-' + variant.toLowerCase() + (extraClass ? ' ' + extraClass : '') + '">' + items + '</div>';
+  }
+
+  function adBadgeHTML(isPromo) {
+    return '<div class="ad-badge">'
+      + '<svg width="14" height="14" viewBox="0 0 256 256" fill="#1E1A15"><path d="' + ICON_MEGAPHONE + '"/></svg>'
+      + '<span>' + (isPromo ? 'Anuncio' : 'Patrocinado') + '</span>'
+      + '</div>';
+  }
+
+  // ── Frame 1 — comparación de variantes (feed normal, sin anuncio) ──────
+  function variantFrameHTML(variant, label) {
+    return ''
+      + '<div class="phone-outer"><div class="phone">'
+      + '<div class="bg-light"></div>'
+      + '<div class="gradient-top"></div>'
+      + '<div class="gradient-bottom"></div>'
+      + '<div class="play-ghost"><svg width="26" height="26" viewBox="0 0 24 24" fill="#fff"><path d="M8 5v14l11-7z"/></svg></div>'
+      + filterBtnHTML()
+      + tabsRowHTML(variant, 'para_ti')
+      + '</div></div>';
+  }
+
+  function renderVariants() {
+    const variants = [
+      { key: 'A', label: 'Variante A · subrayado — descartada' },
+      { key: 'B', label: 'Variante B · pill — ★ APROBADA' },
+      { key: 'C', label: 'Variante C · peso + opacidad — descartada' },
+    ];
+    document.getElementById('row-variants').innerHTML = variants.map((v) =>
+      '<div class="frame-wrap' + (v.key !== 'B' ? ' discarded' : '') + '">'
+      + '<div class="frame-label">' + v.label + '</div>'
+      + variantFrameHTML(v.key, v.label)
+      + '<div class="frame-caption">Fondo claro (peor caso) · «Para ti» activa · filtro a la izquierda · fila a ancho completo, desvanecido de ~24px insinúa el scroll.</div>'
+      + '</div>'
+    ).join('');
+  }
+
+  // ── Frame 2 — variante B con anuncio, sin superposición ─────────────────
+  function adFrameHTML() {
+    return ''
+      + '<div class="phone-outer"><div class="phone">'
+      + '<div class="bg-light"></div>'
+      + '<div class="gradient-top"></div>'
+      + '<div class="gradient-bottom"></div>'
+      + filterBtnHTML()
+      + tabsRowHTML('B', 'para_ti')
+      + adBadgeHTML(false)
+      + '<div class="ad-bottom">'
+      +   '<div class="ad-identity">'
+      +     '<div class="ad-logo">V</div>'
+      +     '<div class="ad-agency">Vlad Inmobiliaria</div>'
+      +   '</div>'
+      +   '<div class="ad-title">Preventa en Providencia</div>'
+      +   '<div class="ad-desc">Entrega 2027 · financiamiento directo con la desarrolladora.</div>'
+      +   '<div class="ad-cta">Ver más</div>'
+      + '</div>'
+      + '</div></div>';
+  }
+
+  function renderAd() {
+    document.getElementById('row-ad').innerHTML =
+      '<div class="frame-wrap">'
+      + '<div class="frame-label">Variante B (APROBADA) <span>· con anuncio</span></div>'
+      + adFrameHTML()
+      + '<div class="frame-caption">Tabs a ancho completo (sin hueco); badge «Patrocinado» baja una fila, a la derecha, en la banda de RefreshingChip/ZoneActiveChip — cero superposición hoy. Re-aprueba el gate de 170.8 en esta posición.</div>'
+      + '</div>';
+  }
+
+  // ── Frame 3 — empty state «Siguiendo» ───────────────────────────────────
+  function emptyFrameHTML() {
+    return ''
+      + '<div class="phone-outer"><div class="phone">'
+      + '<div class="bg-dark"></div>'
+      + filterBtnHTML()
+      + tabsRowHTML('B', 'siguiendo', 'scroll-siguiendo')
+      + '<div class="empty-body">'
+      +   '<div class="empty-disc">'
+      +     '<svg width="34" height="34" viewBox="0 0 256 256">'
+      +       '<path d="' + ICON_USERS_LIGHT + '" fill="#5E9379" opacity="0.35"/>'
+      +       '<path d="' + ICON_USERS_BOLD + '" fill="#5E9379"/>'
+      +     '</svg>'
+      +   '</div>'
+      +   '<div class="empty-title">Aún no sigues a nadie</div>'
+      +   '<div class="empty-subtitle">Sigue a un agente o inmobiliaria para ver aquí sus nuevas publicaciones.</div>'
+      +   '<div class="empty-cta" onclick="goToParaTi(this)">Explorar el feed</div>'
+      + '</div>'
+      + '</div></div>';
+  }
+
+  function renderEmpty() {
+    document.getElementById('row-empty').innerHTML =
+      '<div class="frame-wrap">'
+      + '<div class="frame-label">Variante B <span>· empty state «Siguiendo»</span></div>'
+      + emptyFrameHTML()
+      + '<div class="frame-caption">Sin skeleton infinito ni pantalla negra muda. El chrome superior sigue visible: se puede tocar «Para ti» directo, sin pasar por el CTA.</div>'
+      + '</div>';
+  }
+
+  // El CTA "Explorar el feed" activa visualmente la tab «Para ti» en su propia
+  // fila — pequeño guiño interactivo, sin navegación real (es un preview).
+  function goToParaTi(btn) {
+    const row = btn.closest('.phone').querySelector('.tabs-row');
+    row.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.dataset.key === 'para_ti'));
+  }
+
+  // Tap directo en cualquier tab también la activa (dentro de su propia fila) —
+  // deja explorar el gesto "solo tap" pedido en Q8 de la exploración.
+  document.addEventListener('click', (e) => {
+    const tab = e.target.closest('.tab');
+    if (!tab) return;
+    const row = tab.closest('.tabs-row');
+    row.querySelectorAll('.tab').forEach((t) => t.classList.remove('active'));
+    tab.classList.add('active');
+  });
+
+  function scaleFrames() {
+    document.querySelectorAll('.phone-outer').forEach((outer) => {
+      const inner = outer.querySelector('.phone');
+      const s = outer.clientWidth / 390;
+      inner.style.transform = 'scale(' + s + ')';
+    });
+  }
+
+  renderVariants();
+  renderAd();
+  renderEmpty();
+  scaleFrames();
+  window.addEventListener('resize', scaleFrames);
+</script>
