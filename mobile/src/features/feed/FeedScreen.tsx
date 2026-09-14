@@ -24,13 +24,20 @@ import {
 import { FlashList, type ListRenderItemInfo } from '@shopify/flash-list';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { MagnifyingGlass, MapPinSimple, SlidersHorizontal, VideoCamera } from 'phosphor-react-native';
+import {
+  MagnifyingGlass,
+  MapPinSimple,
+  SlidersHorizontal,
+  UsersThree,
+  VideoCamera,
+} from 'phosphor-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, spacing } from '@/theme/theme';
 import { REFRESHING_CHIP_HEIGHT, RefreshingChip } from '@/components/RefreshingChip';
 import { EmptyState } from '@/features/profile/components/EmptyState';
 import { format_radius_m } from '@/features/map/lib/formatRadius';
+import { useAuth } from '@/features/auth/context';
 import { useFilters } from '../search/filterStore';
 import { FilterSheet } from '../search/components/FilterSheet';
 import { ZoneActiveChip } from '../search/components/ZoneActiveChip';
@@ -62,7 +69,14 @@ export function FeedScreen() {
   const top_row_y = feed_top_row_y(insets.top);
   // El botón de filtros (40) se centra con la pill (34).
   const filter_btn_y = top_row_y - (40 - FEED_SECTION_TABS_HEIGHT) / 2;
-  const { data, isLoading, error, loadInitial, refetch, loadMore } = useFeedProperties(filters);
+  // 296.4: «Siguiendo» filtra por los follows de la persona logueada; sin
+  // sesión (user null) la fuente por_owner resuelve vacío sin tocar la red.
+  const { user } = useAuth();
+  const { data, isLoading, error, loadInitial, refetch, loadMore } = useFeedProperties(
+    filters,
+    feed_tab,
+    user?.id ?? null,
+  );
   // #243.2: refrescando = cargando con datos ya en pantalla (el arranque usa
   // skeleton). Desde #288.1 `isLoading` es SOLO carga inicial/refetch: las
   // páginas y las vueltas del feed infinito cargan en silencio.
@@ -141,12 +155,14 @@ export function FeedScreen() {
         </View>
       )}
 
-      {/* Sin resultados: se ramifica en 3 niveles, EN ESTE ORDEN:
-          1. zona activa (filters.area != null) — PRIMERA condición: `area`
-             NO cuenta en active_filter_count (decisión 56.1), así que una
-             zona sin resultados y sin otros filtros caería por error en el
-             "BD-vacía" de abajo (con CTA "Publicar propiedad", incorrecto
-             para este caso) si no se revisa primero.
+      {/* Sin resultados: se ramifica en 4 niveles, EN ESTE ORDEN:
+          0. tab "Siguiendo" (296.4) — PRIMERA condición: sin follows (o sin sesión) el feed de esta fuente siempre
+             sale vacío; nunca skeleton infinito, CTA vuelve a "Para ti".
+          1. zona activa (filters.area != null) — `area` NO cuenta en
+             active_filter_count (decisión 56.1), así que una zona sin
+             resultados y sin otros filtros caería por error en el "BD-vacía"
+             de abajo (con CTA "Publicar propiedad", incorrecto para este
+             caso) si no se revisa primero.
           2. filtered-empty (hay otros filtros activos): CTA limpia filtros;
              el cambio de identidad de `filters` re-dispara loadInitial
              (useEffect de useFeedProperties) — no hace falta un refetch
@@ -155,7 +171,16 @@ export function FeedScreen() {
              wizard de publicación (comportamiento previo, sin cambios). */}
       {is_empty && (
         <View style={styles.state_root}>
-          {filters.area != null ? (
+          {feed_tab === 'siguiendo' ? (
+            <EmptyState
+              dark
+              icon={UsersThree}
+              message="Aún no sigues a nadie con propiedades"
+              subtitle="Sigue a publicadores desde su perfil para ver aquí sus videos."
+              cta_label="Explorar el feed"
+              onPressCta={() => set_feed_tab('para_ti')}
+            />
+          ) : filters.area != null ? (
             <EmptyState
               dark
               icon={MapPinSimple}

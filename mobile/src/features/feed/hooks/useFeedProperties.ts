@@ -1,11 +1,21 @@
 /**
- * useFeedProperties — hook React que envuelve fetchFeedProperties y compone
- * el feed heterogéneo (propiedades + anuncios intercalados, 170.4).
+ * useFeedProperties — hook React que envuelve fetch_feed_page (feedSources.ts)
+ * y compone el feed heterogéneo (propiedades + anuncios intercalados, 170.4).
  *
  * Expone: data (FeedItem[]), isLoading, error, nextCursor, loadInitial,
  * refetch, loadMore. Paginación acumulativa: loadMore apende al array
  * existente.
  *
+ * `feed_tab`/`user_id` (#296.4, default 'para_ti'/null): viajan tal cual a
+ * `fetch_feed_page` como `{tab, user_id}` — el despacho por fuente
+ * (proximidad/por_owner/ordenada) vive en feedSources.ts, no aquí. Ambos
+ * entran a las deps de loadInitial/loadMore (cambiar de tab o de usuario
+ * recarga igual que cambiar `filters`). Única excepción propia del hook: la
+ * VUELTA de "Nuevos" (`feed_tab === 'nuevos'`) NO se baraja — se re-sirve la
+ * página 1 en el orden exacto que devolvió fetch_feed_page (decisión de
+ * Abraham); el resto de tabs conserva el barajado de #285.3/#288.2.
+ *
+
  * `filters` (opcional, #12.7): al cambiar de identidad (el FilterProvider crea
  * un objeto nuevo en cada set_filter/clear_filters), loadInitial cambia de
  * identidad y el efecto de FeedScreen que depende de loadInitial se vuelve a
@@ -61,9 +71,11 @@ import {
   type AdsFailureStage,
 } from '../lib/adsFailureSignal';
 import type { LappedFeedItem } from '../lib/feedKeyExtractor';
-import { fetchFeedProperties, mint_videos, type FeedPropertiesDeps } from '../lib/feedProperties';
+import { mint_videos, type FeedPropertiesDeps } from '../lib/feedProperties';
+import { fetch_feed_page } from '../lib/feedSources';
 import { avoid_adjacent_repeat, hash_seed, shuffle_with_seed } from '../lib/feedShuffle';
 import { interleave_ads_with_state, type FeedAd, type FeedItem } from '../lib/interleaveAds';
+import type { FeedTab } from '@/features/search/lib/feedSection';
 import type { FeedPropertyWithUrl } from '../types';
 
 export interface UseFeedPropertiesState {
@@ -328,7 +340,11 @@ async function compose_feed_items(
   return result.items;
 }
 
-export function useFeedProperties(filters?: FilterState): UseFeedPropertiesState {
+export function useFeedProperties(
+  filters?: FilterState,
+  feed_tab: FeedTab = 'para_ti',
+  user_id: string | null = null,
+): UseFeedPropertiesState {
   const { coords } = useLocation();
   const [data, set_data] = useState<LappedFeedItem[]>([]);
   // ponytail: arranca en true — FeedScreen siempre llama loadInitial en mount;
@@ -408,7 +424,7 @@ export function useFeedProperties(filters?: FilterState): UseFeedPropertiesState
     set_error(null);
     try {
       const deps = build_deps();
-      const result = await fetchFeedProperties(undefined, deps, filters);
+      const result = await fetch_feed_page(undefined, deps, filters, { tab: feed_tab, user_id });
       // Se corta ANTES de componer: una página que ya no se va a pintar no
       // debe firmar anuncios ni sumar a `already_shown_ref` (el cap de sesión
       // contaría impresiones que nadie llegó a ver).
@@ -424,7 +440,7 @@ export function useFeedProperties(filters?: FilterState): UseFeedPropertiesState
     } finally {
       if (seq === request_seq_ref.current) set_is_loading(false);
     }
-  }, [coords, resolve_ad_zone_coords, filters, build_deps]);
+  }, [coords, resolve_ad_zone_coords, filters, feed_tab, user_id, build_deps]);
 
   const load_more = useCallback(async () => {
     if (isLoading || load_more_in_flight_ref.current || !coords) return;
@@ -442,7 +458,10 @@ export function useFeedProperties(filters?: FilterState): UseFeedPropertiesState
     set_error(null);
     try {
       const deps = build_deps();
-      const result = await fetchFeedProperties(is_lap ? undefined : nextCursor, deps, filters);
+      const result = await fetch_feed_page(is_lap ? undefined : nextCursor, deps, filters, {
+        tab: feed_tab,
+        user_id,
+      });
       if (seq !== request_seq_ref.current) return; // mismo corte previo a componer
       // Las páginas 2+ de una vuelta heredan su número (mismas keys `#lap`);
       // solo la página 1 de la vuelta se baraja — hoy el inventario cabe en una.
@@ -452,12 +471,22 @@ export function useFeedProperties(filters?: FilterState): UseFeedPropertiesState
       // propiedad se va al final (si termina en anuncio no hay pegado posible).
       const last = data[data.length - 1];
       const last_property_id = last?.kind === 'property' ? last.property.id : null;
-      const page = is_lap
-        ? avoid_adjacent_repeat(
-            shuffle_with_seed(result.data, hash_seed(get_app_session_id()) + lap),
-            (first) => first.id === last_property_id,
-          )
-        : result.data;
+      // #296.4 — decisión de Abraham: "Nuevos" (única tab que resuelve a la
+      // fuente `ordenada`, ver source_for_tab en feedSources.ts) NO se baraja
+      // en la vuelta: re-sirve la página 1 en el mismo orden exacto de
+      // fetch_feed_page. El resto de tabs conserva #285.3/#288.2 intacto.
+      // ponytail: comparación directa contra el tab (no una llamada a
+      // source_for_tab) — el seam de este hook es fetch_feed_page, no el
+      // resolutor de fuente; evita depender de un segundo export del mismo
+      // módulo mockeado en useFeedProperties.tabs.test.tsx.
+      const is_ordered_tab = feed_tab === 'nuevos';
+      const page =
+        is_lap && !is_ordered_tab
+          ? avoid_adjacent_repeat(
+              shuffle_with_seed(result.data, hash_seed(get_app_session_id()) + lap),
+              (first) => first.id === last_property_id,
+            )
+          : result.data;
       const composed = await compose_feed_items(deps?.supabase, resolve_ad_zone_coords(coords), page, already_shown_ref, false, since_last_ad_ref);
       // Una página pedida ANTES de aplicar el filtro no se apende al feed ya
       // refiltrado: sería contenido de la búsqueda anterior colado al final.
@@ -475,7 +504,7 @@ export function useFeedProperties(filters?: FilterState): UseFeedPropertiesState
     } finally {
       load_more_in_flight_ref.current = false;
     }
-  }, [nextCursor, isLoading, coords, data, resolve_ad_zone_coords, filters, build_deps]);
+  }, [nextCursor, isLoading, coords, data, resolve_ad_zone_coords, filters, feed_tab, user_id, build_deps]);
 
   // #241.2: al cambiar la identidad de `filters` (sección Venta/Renta, sheet,
   // zona) se VACÍA la lista antes de que llegue la página nueva. Sin esto el
