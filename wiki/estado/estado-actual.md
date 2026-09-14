@@ -1,9 +1,16 @@
 ---
 tipo: estado
-actualizado: 2026-09-13
+actualizado: 2026-09-14
 ---
 
-## Hoy (2026-09-13) — derivadas #291 y #292 de comentarios, en paralelo por worktrees
+## Hoy (2026-09-14) — #78 Follow F1: seguir publicadores, conteo público y aviso «Nuevo seguidor»
+`/tm-plan 78` + `/tm-tarea 78 auto` en serie (78.1 → 78.3 → 78.2 → 78.4 → 78.5), rama `tarea/78-follow-f1`, **sin PR ni OTA todavía**.
+- **Decisiones de Abraham (plan):** píldora «Seguir» también en el perfil ajeno **en conjunto** (variante clara del mismo `FollowButton`); aviso `new_follower` **sin dedupe** (cada follow nuevo avisa; techo «farmear» aceptado y anotado con `ponytail:`).
+- **Backend (78.1/78.2, TDD):** `follows` + `users.follower_count` por trigger + RLS «solo conteo, nunca la lista» + `agent_public_profiles` con `follower_count` al final; `notify_new_follower` en la misma transacción. pgTAP 117 (53) y 118 (19); guardians 8/8 y 9/9 mutantes. El guardian tumbó una rama de admin en `follows_delete` sin cobertura (se retiró). **DESPLEGADO** al remoto (versiones `20260914005918/19`, md5 = local, sonda 0→1→0 con aviso «Agente Prueba empezó a seguirte.» y suplantación 42501, sin residuos).
+- **Cliente (78.3/78.4):** `useFollow` (14 EC; el guardian cazó un EC-9 vacuo — sin guard de vuelo el 2º tap entraba a la rama delete — y pidió la carrera de precargas, EC-12b), `follower_count` en `useAgentProfile`, `FollowButton` en la fila del agente del overlay y en `ProfileActions` ajeno, stat «Seguidores» en lugar de «Guardados». Tipos regenerados (solo adiciones); `UserProfile` de auth omite `follower_count`. Jest 218 suites / 2707, tsc 0, lint 0 errores.
+- **Pendiente:** smoke con Abraham (seguir desde el feed y desde el perfil, conteo sube, aviso al seguido; stopApp), PR + merge, OTA cuando él lo pida (backend ya está en producción, así que el orden cliente-después queda cumplido).
+
+## Antes (2026-09-13) — derivadas #291 y #292 de comentarios, en paralelo por worktrees
 Abraham pidió arrancar por #291 y #292 y revisar qué quedó planeado de panel admin, reportes y notificaciones. Las dos tareas corrieron a la vez en worktrees propios (`t291` móvil con `node_modules` por symlink, `t292` backend contra la misma base local) con ramas separadas; Taskmaster y vault se tocan solo desde `main`.
 - **#291 `producto(289.1)`** — toast «Comentario ocultado» con «Deshacer» en `CommentsSheet` (4 s, solo tras Ocultar, Deshacer por `useHideComment`). Tests EC-7..EC-10; tsc/lint verdes. Dos gotchas de arnés a memoria: `fireEvent` es Promise en RNTL 14 (sin `await` el siguiente test renderiza `null`) y `useFakeTimers` necesita `doNotFake: queueMicrotask/setImmediate/nextTick` o React no re-renderiza tras el timer.
 - **#292 `hardening(289.2)`** — `private.can_manage_property` alineado con `properties_update` (#202) e `is_property_comment_manager` delega. Sonda previa en producción: 0 suspendidos, 1 removed sin propiedades, 3 borradores sin `agency_id` de owners únicos que son admins de plataforma, 0 admins de agencia → nadie vivo cambia. Consumidores vivos: solo `videos_select`/`videos_update` (no ~10). pgTAP 116 (25), guardian 7/7 mutantes, suite 3926 verde.

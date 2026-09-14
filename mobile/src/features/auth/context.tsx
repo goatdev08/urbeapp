@@ -29,7 +29,9 @@ import type { Database } from '@/types/database';
 // 2 (migración) revoque el grant de esa columna sin romper el login de las apps
 // instaladas. Cuando esta versión haya llegado por OTA, el backend cierra la
 // columna. Si la ves reaparecer aquí, el paso 2 vuelve a ser imposible.
-export type UserProfile = Omit<Database['public']['Tables']['users']['Row'], 'date_of_birth'>;
+// follower_count (#78) tampoco viaja aquí: el conteo público sale de la vista
+// agent_public_profiles (useAgentProfile); la sesión no lo necesita.
+export type UserProfile = Omit<Database['public']['Tables']['users']['Row'], 'date_of_birth' | 'follower_count'>;
 
 /** Columnas de public.users que el cliente pide — todas MENOS date_of_birth (#116). */
 export const USER_PROFILE_COLUMNS =
