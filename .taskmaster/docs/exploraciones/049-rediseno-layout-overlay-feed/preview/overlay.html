@@ -1,0 +1,489 @@
+<title>Overlay del feed 293</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600&family=Hanken+Grotesk:wght@400;600;700&family=DM+Mono:wght@500&display=swap">
+<style>
+  :root {
+    --font-display: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+    --font-sans: 'Hanken Grotesk', ui-sans-serif, system-ui, sans-serif;
+    --font-mono: 'DM Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+
+    /* tokens de mobile/src/theme/theme.ts — ninguno inventado */
+    --paper: #F6F2EB;
+    --ink: #1E1A15;
+    --gray-3: #6B6256;
+    --gray-1: #A39A8C;
+    --primary: #1A5E44;
+    --primary-soft: #5E9379;
+    --silver: #C2C2BD;
+  }
+  :root:not([data-theme="light"]) {
+    @media (prefers-color-scheme: dark) {
+      --page-bg: #17140F;      /* colors.ink_feed */
+      --page-text: #F6F2EB;    /* colors.paper */
+      --page-muted: #A39A8C;   /* colors.gray_1 */
+      --page-border: rgba(255,255,255,0.12);
+      --chip-bg: rgba(255,255,255,0.06);
+    }
+  }
+  :root, :root[data-theme="light"] {
+    --page-bg: #F6F2EB;       /* colors.paper */
+    --page-text: #1E1A15;     /* colors.ink */
+    --page-muted: #6B6256;    /* colors.gray_3 */
+    --page-border: #E3DCCF;   /* colors.paper_3 */
+    --chip-bg: #EEE7DC;       /* colors.paper_2 */
+  }
+  :root[data-theme="dark"] {
+    --page-bg: #17140F;
+    --page-text: #F6F2EB;
+    --page-muted: #A39A8C;
+    --page-border: rgba(255,255,255,0.12);
+    --chip-bg: rgba(255,255,255,0.06);
+  }
+
+  body {
+    background: var(--page-bg);
+    color: var(--page-text);
+    font-family: var(--font-sans);
+  }
+
+  .wrap { max-width: 1280px; margin: 0 auto; padding: 28px 16px 60px; }
+
+  h1 {
+    font-family: var(--font-display);
+    font-size: 22px;
+    letter-spacing: -0.2px;
+    margin: 0 0 6px;
+  }
+  .subtitle { color: var(--page-muted); font-size: 14px; margin: 0 0 20px; max-width: 62ch; }
+
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 10px;
+    margin-bottom: 28px;
+  }
+  .legend-item {
+    flex: 1 1 260px;
+    border: 1px solid var(--page-border);
+    background: var(--chip-bg);
+    border-radius: 12px;
+    padding: 12px 14px;
+  }
+  .legend-item b { font-family: var(--font-display); font-size: 14px; }
+  .legend-item p { margin: 4px 0 0; font-size: 12.5px; color: var(--page-muted); line-height: 1.4; }
+
+  .section-title {
+    font-family: var(--font-display);
+    font-size: 17px;
+    margin: 36px 0 4px;
+  }
+  .section-note { font-size: 12.5px; color: var(--page-muted); margin: 0 0 18px; }
+
+  .frames-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 28px;
+    justify-content: center;
+  }
+
+  .frame-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    max-width: 390px;
+  }
+  .frame-label {
+    font-family: var(--font-display);
+    font-size: 15px;
+  }
+  .frame-label span { color: var(--page-muted); font-family: var(--font-sans); font-size: 12px; }
+
+  /* Marco de teléfono: diseño fijo a 390x844 (mockup real), escalado
+     proporcionalmente en JS para nunca desbordar el ancho disponible —
+     así se ve completo tanto en el teléfono (~400px) como en escritorio. */
+  .phone-outer {
+    position: relative;
+    width: 100%;
+    max-width: 390px;
+    aspect-ratio: 390 / 844;
+    overflow: hidden;
+    border-radius: 36px;
+    background: #000;
+    box-shadow: 0 8px 22px -8px rgba(30,22,12,.35);
+  }
+  .phone {
+    position: absolute;
+    top: 0; left: 0;
+    width: 390px;
+    height: 844px;
+    transform-origin: top left;
+  }
+  .bg { position: absolute; inset: 0; }
+  .bg-light {
+    background:
+      radial-gradient(circle at 72% 12%, rgba(255,255,255,0.95), rgba(255,255,255,0) 42%),
+      linear-gradient(180deg, #F8F6F1 0%, #F1ECDF 38%, #E7DEC7 62%, #D9CBAC 82%, #C9B98F 100%);
+  }
+  /* silueta muy tenue de fachada — solo para dar contexto, sigue siendo
+     mayormente blanco/beige: es el peor caso de contraste a propósito */
+  .bg-light::after {
+    content: '';
+    position: absolute; left: 0; right: 0; bottom: 0; height: 46%;
+    background:
+      repeating-linear-gradient(90deg, rgba(255,255,255,0.35) 0 54px, rgba(201,185,143,0.25) 54px 60px),
+      linear-gradient(180deg, rgba(216,203,172,0.4), rgba(180,163,124,0.55));
+  }
+  .bg-dark {
+    background:
+      radial-gradient(circle at 26% 18%, rgba(255,196,120,0.22), rgba(255,196,120,0) 46%),
+      linear-gradient(180deg, #1C1712 0%, #14100C 45%, #0C0A08 100%);
+  }
+  .bg-dark::after {
+    content: '';
+    position: absolute; left: 0; right: 0; bottom: 0; height: 40%;
+    background: linear-gradient(180deg, rgba(0,0,0,0), rgba(0,0,0,0.5));
+  }
+
+  /* Gradiente dual — idéntico al de PropertyOverlay.tsx hoy */
+  .gradient-dual {
+    position: absolute; inset: 0;
+    background: linear-gradient(
+      to bottom,
+      rgba(23,20,15,0.35) 0%,
+      transparent 26%,
+      transparent 52%,
+      rgba(23,20,15,0.86) 100%
+    );
+  }
+
+  /* Variante A / C: realce por gradiente localizado detrás del rail */
+  .rail-gradient {
+    position: absolute;
+    right: 0; bottom: 0;
+    width: 150px; height: 62%;
+    background: linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0.35) 100%);
+  }
+
+  .rail {
+    position: absolute;
+    right: 14px;
+    bottom: 140px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 22px;
+  }
+  .action-btn {
+    width: 46px; height: 46px;
+    display: flex; align-items: center; justify-content: center;
+    position: relative;
+  }
+  .icon-slot { position: relative; width: 28px; height: 28px; }
+  .icon-shadow-layer { position: absolute; top: 1px; left: 1px; }
+  .icon-white-layer { position: absolute; top: 0; left: 0; }
+  .count-label {
+    position: absolute;
+    bottom: -15px; left: 50%;
+    transform: translateX(-50%);
+    font-family: var(--font-mono);
+    font-weight: 500;
+    font-size: 11px;
+    color: #FFFFFF;
+    white-space: nowrap;
+    text-shadow: 0 1px 2px rgba(23,20,15,0.55);
+  }
+  .count-label.count-shadow {
+    text-shadow: 0 1px 3px rgba(0,0,0,0.85), 0 0 2px rgba(0,0,0,0.6);
+  }
+  .whatsapp-btn {
+    width: 46px; height: 46px; border-radius: 23px;
+    background: #25D366; /* colors.whatsapp — única excepción sólida */
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  .info {
+    position: absolute;
+    left: 16px; right: 74px;
+    bottom: 80px;
+  }
+  .agent-row {
+    display: flex;
+    align-items: center;
+    gap: 8px; /* pegada al nombre, NO marginLeft:auto */
+    margin-bottom: 12px;
+  }
+  .agent-avatar {
+    width: 36px; height: 36px; border-radius: 18px;
+    border: 2px solid var(--primary-soft);
+    background: #6f5742;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--paper);
+    font-family: var(--font-sans); font-weight: 700; font-size: 14px;
+    flex-shrink: 0;
+  }
+  .agent-name {
+    color: var(--paper);
+    font-family: var(--font-sans); font-weight: 700; font-size: 13px;
+    text-shadow: 0 1px 3px rgba(23,20,15,0.55);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+  .follow-pill {
+    flex-shrink: 0;
+    border: 1px solid #FFFFFF;
+    border-radius: 8px; /* radii.r_8 */
+    background: transparent;
+    color: #FFFFFF;
+    font-family: var(--font-sans); font-weight: 700; font-size: 13px;
+    padding: 6px 14px;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .follow-pill.following {
+    background: #FFFFFF;
+    color: var(--ink);
+    border-color: #FFFFFF;
+  }
+  .chips-row { display: flex; gap: 6px; margin-bottom: 8px; }
+  .chip-op {
+    background: var(--primary);
+    color: #FFFFFF;
+    font-family: var(--font-sans); font-weight: 700; font-size: 11px;
+    padding: 5px 10px; border-radius: 999px; letter-spacing: 0.1px;
+  }
+  .chip-type {
+    background: rgba(23,20,15,0.36);
+    border: 1px solid rgba(255,255,255,0.2);
+    color: var(--paper);
+    font-family: var(--font-sans); font-weight: 700; font-size: 11px;
+    padding: 4px 10px; border-radius: 999px; letter-spacing: 0.1px;
+  }
+  .address {
+    font-family: var(--font-display); font-weight: 600;
+    font-size: 19px; line-height: 21px; letter-spacing: -0.19px;
+    color: var(--paper);
+    margin-bottom: 4px;
+  }
+  .price {
+    font-family: var(--font-display); font-weight: 600;
+    font-size: 22px; line-height: 26px; letter-spacing: -0.22px;
+    color: #FFFFFF;
+    margin-bottom: 8px;
+  }
+  .specs-row { display: flex; align-items: center; gap: 6px; }
+  .spec-text { font-family: var(--font-sans); font-size: 12px; color: rgba(246,242,235,0.85); }
+  .spec-divider { width: 1px; height: 12px; background: rgba(194,194,189,0.35); margin: 0 4px; }
+
+  .frame-caption { font-size: 12.5px; color: var(--page-muted); text-align: center; max-width: 340px; line-height: 1.4; }
+  .frame-meta { font-family: var(--font-mono); font-size: 10.5px; color: var(--page-muted); text-align: center; }
+
+  .footer-note {
+    margin-top: 40px;
+    padding-top: 18px;
+    border-top: 1px solid var(--page-border);
+    font-size: 12.5px;
+    color: var(--page-muted);
+    line-height: 1.5;
+  }
+  .footer-note code { font-family: var(--font-mono); font-size: 11px; }
+</style>
+
+<div class="wrap">
+  <h1>Overlay del feed — realce de contraste sin cápsula (293.1)</h1>
+  <p class="subtitle">
+    Rail outline (corazón, comentario, guardar, compartir) sin círculo ni fondo, conteo bajo like/comentarios,
+    fila de agente en línea (avatar · nombre · «Seguir» pegado). Elige <b>UNA</b> variante de realce —
+    verificado sobre el <b>frame claro</b> (fachada al sol, el peor caso de contraste) y el <b>frame oscuro</b>.
+  </p>
+
+  <div class="legend">
+    <div class="legend-item">
+      <b>A — Gradiente del rail</b>
+      <p>LinearGradient tenue vertical detrás del rail (transparente → negro ~35%), íconos sin sombra propia.
+      Barato (expo-linear-gradient ya está montado) pero solo protege la zona del rail, no el nombre/precio.</p>
+    </div>
+    <div class="legend-item">
+      <b>B — Ícono-sombra + text-shadow</b>
+      <p>Sin gradiente; cada ícono se duplica en negro ~35% desplazado 1px detrás del blanco, y los conteos
+      llevan text-shadow reforzado. Funciona en Android e iOS sin dependencia nueva; un render extra por ícono.</p>
+    </div>
+    <div class="legend-item">
+      <b>C — A + B combinadas</b>
+      <p>Máxima legibilidad en fachada blanca (el caso más duro), pero es la que más "ensucia" visualmente
+      el video si el realce se nota de más.</p>
+    </div>
+  </div>
+
+  <div class="section-title">Frame claro — fachada al sol (peor caso de contraste)</div>
+  <p class="section-note">Cielo blanco/beige simulado con gradiente CSS, sin imagen externa.</p>
+  <div class="frames-row" id="row-light"></div>
+
+  <div class="section-title">Frame oscuro — interior de noche</div>
+  <p class="section-note">Interior oscuro con un tenue resplandor cálido de lámpara, simulado con gradiente CSS.</p>
+  <div class="frames-row" id="row-dark"></div>
+
+  <div class="footer-note">
+    Tokens de <code>mobile/src/theme/theme.ts</code>: <code>colors.primary #1A5E44</code>,
+    <code>colors.primary_soft #5E9379</code>, <code>colors.paper #F6F2EB</code>,
+    <code>colors.ink_feed #17140F</code>, <code>colors.whatsapp #25D366</code>,
+    <code>radii.r_8</code>, <code>spacing.s_8/s_12</code>, <code>fonts.display/sans/sans_bold/mono_medium</code>.
+    Íconos: paths reales de <code>phosphor-react-native</code> (weight <code>bold</code>, el mismo que usa hoy
+    <code>PropertyOverlay.tsx</code> para Heart/ChatCircle/BookmarkSimple/ShareNetwork/Bed/Bathtub;
+    <code>WhatsappLogo</code> en <code>fill</code>, intacto). La píldora «Seguir»/«Siguiendo» es tocable
+    (alterna el estado) en cada frame.
+  </div>
+</div>
+
+<script>
+  // ───────────────────────────────────────────────────────────────────────
+  // Paths SVG reales, copiados de mobile/node_modules/phosphor-react-native/
+  // src/defs/{Heart,ChatCircle,BookmarkSimple,ShareNetwork,WhatsappLogo,Bed,
+  // Bathtub}.tsx — weight 'bold' (el que usa hoy PropertyOverlay.tsx para
+  // estos íconos), 'fill' para WhatsappLogo (igual que hoy). viewBox 0 0 256 256.
+  // ───────────────────────────────────────────────────────────────────────
+  const ICONS = {
+    heart: "M178 36c-20.09 0-37.92 7.93-50 21.56C115.92 43.93 98.09 36 78 36a66.08 66.08 0 0 0-66 66c0 72.34 105.81 130.14 110.31 132.57a12 12 0 0 0 11.38 0C138.19 232.14 244 174.34 244 102a66.08 66.08 0 0 0-66-66m-5.49 142.36a328.7 328.7 0 0 1-44.51 31.8 328.7 328.7 0 0 1-44.51-31.8C61.82 159.77 36 131.42 36 102a42 42 0 0 1 42-42c17.8 0 32.7 9.4 38.89 24.54a12 12 0 0 0 22.22 0C145.3 69.4 160.2 60 178 60a42 42 0 0 1 42 42c0 29.42-25.82 57.77-47.49 76.36",
+    chat: "M128 20a108 108 0 0 0-96.15 157.23L21 209.66A20 20 0 0 0 46.34 235l32.43-10.81A108 108 0 1 0 128 20m0 192a84 84 0 0 1-42.06-11.27 12 12 0 0 0-6-1.62 12.1 12.1 0 0 0-3.8.62l-29.79 9.93 9.93-29.79a12 12 0 0 0-1-9.81A84 84 0 1 1 128 212",
+    bookmark: "M184 28H72a20 20 0 0 0-20 20v176a12 12 0 0 0 18.36 10.18l57.63-36 57.65 36A12 12 0 0 0 204 224V48a20 20 0 0 0-20-20m-4 174.35-45.65-28.53a12 12 0 0 0-12.72 0L76 202.35V52h104Z",
+    share: "M176 156a43.78 43.78 0 0 0-29.09 11l-40.81-26.2a44.07 44.07 0 0 0 0-25.6L146.91 89a43.83 43.83 0 1 0-13-20.17L93.09 95a44 44 0 1 0 0 65.94l40.81 26.26A44 44 0 1 0 176 156m0-120a20 20 0 1 1-20 20 20 20 0 0 1 20-20M64 148a20 20 0 1 1 20-20 20 20 0 0 1-20 20m112 72a20 20 0 1 1 20-20 20 20 0 0 1-20 20",
+    whatsapp: "m152.58 145.23 23 11.48A24 24 0 0 1 152 176a72.08 72.08 0 0 1-72-72 24 24 0 0 1 19.29-23.54l11.48 23L101 118a8 8 0 0 0-.73 7.51 56.47 56.47 0 0 0 30.15 30.15A8 8 0 0 0 138 155ZM232 128a104 104 0 0 1-152.88 91.82l-34.05 11.35a16 16 0 0 1-20.24-20.24l11.35-34.05A104 104 0 1 1 232 128m-40 24a8 8 0 0 0-4.42-7.16l-32-16a8 8 0 0 0-8 .5l-14.69 9.8a40.55 40.55 0 0 1-16-16l9.8-14.69a8 8 0 0 0 .5-8l-16-32A8 8 0 0 0 104 64a40 40 0 0 0-40 40 88.1 88.1 0 0 0 88 88 40 40 0 0 0 40-40",
+    bed: "M212 68H36V48a12 12 0 0 0-24 0v160a12 12 0 0 0 24 0v-28h196v28a12 12 0 0 0 24 0v-96a44.05 44.05 0 0 0-44-44m-112 88H36V92h64Zm132 0H124V92h88a20 20 0 0 1 20 20Z",
+    bath: "M240 92h-28.7a12 12 0 0 0-11.3-8h-64a12 12 0 0 0-11.3 8H68V52a8 8 0 0 1 8-8 8.5 8.5 0 0 1 8.24 6.39 12 12 0 0 0 23.52-4.78A32.22 32.22 0 0 0 44 52v40H16a12 12 0 0 0-12 12v40a60.07 60.07 0 0 0 56 59.85V216a12 12 0 0 0 24 0v-12h88v12a12 12 0 0 0 24 0v-12.15A60.07 60.07 0 0 0 252 144v-40a12 12 0 0 0-12-12m-92 16h40v24h-40Zm80 36a36 36 0 0 1-36 36H64a36 36 0 0 1-36-36v-28h96v28a12 12 0 0 0 12 12h64a12 12 0 0 0 12-12v-28h16Z",
+  };
+
+  function svg(name, size, color) {
+    return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 256 256" fill="' + color + '" xmlns="http://www.w3.org/2000/svg"><path d="' + ICONS[name] + '"/></svg>';
+  }
+
+  /** Idéntico a format_count de mobile/src/components/LikeButton.tsx. */
+  function formatCount(n) {
+    if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+    if (n >= 1_000) return (n / 1_000).toFixed(1) + 'k';
+    return String(n);
+  }
+
+  function actionIcon(name, variant, size) {
+    size = size || 28;
+    const hasShadow = variant === 'B' || variant === 'C';
+    if (!hasShadow) {
+      return '<span class="icon-slot">' + svg(name, size, '#FFFFFF') + '</span>';
+    }
+    return '<span class="icon-slot">'
+      + '<span class="icon-shadow-layer">' + svg(name, size, '#000000') + '</span>'
+      + '<span class="icon-white-layer">' + svg(name, size, '#FFFFFF') + '</span>'
+      + '</span>';
+  }
+
+  /** Conteo OCULTO en 0 (misma convención que comment_count hoy). */
+  function countLabel(value, variant) {
+    if (!value || value <= 0) return '';
+    const shadowClass = (variant === 'B' || variant === 'C') ? ' count-shadow' : '';
+    return '<span class="count-label' + shadowClass + '">' + formatCount(value) + '</span>';
+  }
+
+  // Datos de propiedad — idénticos en los 6 frames a propósito: lo único
+  // que varía por frame es lo que se está evaluando (variante, conteos,
+  // nombre del agente, estado de "Seguir").
+  const PROPERTY = {
+    address: 'Av. Chapultepec 1200, Col. Americana, Guadalajara',
+    price: '$18,500 / mes',
+    bedrooms: 3,
+    bathrooms: 2,
+  };
+
+  // Casos de datos repartidos entre los 6 frames (todos los pedidos por
+  // 293.1 aparecen al menos una vez):
+  //  - like 0 (oculto) + comentarios 42        → light-A
+  //  - like 1.2k + comentarios 0 (oculto)      → light-B, dark-C
+  //  - agente corto ("Vlad")                    → light-A, dark-B
+  //  - agente ≥28 chars truncado                → light-B, dark-C
+  //  - píldora "Siguiendo"                       → light-C, dark-B
+  const FRAMES = [
+    { lighting: 'light', variant: 'A', like: 0,       comments: 42,  name: 'Vlad',                                     following: false },
+    { lighting: 'light', variant: 'B', like: 1200,    comments: 0,   name: 'Inmobiliaria Vladimir Ramos y Asociados',  following: false },
+    { lighting: 'light', variant: 'C', like: 42,      comments: 8,   name: 'Ana Torres',                               following: true  },
+    { lighting: 'dark',  variant: 'A', like: 3400000, comments: 530, name: 'Santiago Ruiz',                            following: false },
+    { lighting: 'dark',  variant: 'B', like: 0,       comments: 1,   name: 'Vlad',                                     following: true  },
+    { lighting: 'dark',  variant: 'C', like: 1200,    comments: 0,   name: 'Inmobiliaria Vladimir Ramos y Asociados',  following: false },
+  ];
+
+  function frameHTML(f) {
+    const railGradient = (f.variant === 'A' || f.variant === 'C') ? '<div class="rail-gradient"></div>' : '';
+    const initial = f.name.trim().charAt(0).toUpperCase();
+    return ''
+      + '<div class="phone-outer"><div class="phone">'
+      + '<div class="bg bg-' + f.lighting + '"></div>'
+      + '<div class="gradient-dual"></div>'
+      + railGradient
+      + '<div class="rail">'
+      +   '<div class="action-btn">' + actionIcon('heart', f.variant) + countLabel(f.like, f.variant) + '</div>'
+      +   '<div class="action-btn">' + actionIcon('chat', f.variant) + countLabel(f.comments, f.variant) + '</div>'
+      +   '<div class="action-btn">' + actionIcon('bookmark', f.variant) + '</div>'
+      +   '<div class="action-btn">' + actionIcon('share', f.variant) + '</div>'
+      +   '<div class="whatsapp-btn">' + svg('whatsapp', 24, '#FFFFFF') + '</div>'
+      + '</div>'
+      + '<div class="info">'
+      +   '<div class="agent-row">'
+      +     '<div class="agent-avatar">' + initial + '</div>'
+      +     '<div class="agent-name" title="' + f.name + '">' + f.name + '</div>'
+      +     '<button class="follow-pill' + (f.following ? ' following' : '') + '" onclick="toggleFollow(this)">'
+      +       (f.following ? 'Siguiendo' : 'Seguir')
+      +     '</button>'
+      +   '</div>'
+      +   '<div class="chips-row">'
+      +     '<div class="chip-op">Renta</div>'
+      +     '<div class="chip-type">Departamento</div>'
+      +   '</div>'
+      +   '<div class="address">' + PROPERTY.address + '</div>'
+      +   '<div class="price">' + PROPERTY.price + '</div>'
+      +   '<div class="specs-row">'
+      +     svg('bed', 14, 'rgba(246,242,235,0.85)')
+      +     '<span class="spec-text">' + PROPERTY.bedrooms + '</span>'
+      +     '<div class="spec-divider"></div>'
+      +     svg('bath', 14, 'rgba(246,242,235,0.85)')
+      +     '<span class="spec-text">' + PROPERTY.bathrooms + '</span>'
+      +   '</div>'
+      + '</div>'
+      + '</div></div>';
+  }
+
+  function metaLine(f) {
+    const likeTxt = f.like > 0 ? formatCount(f.like) : '0 (oculto)';
+    const commentsTxt = f.comments > 0 ? formatCount(f.comments) : '0 (oculto)';
+    return 'like=' + likeTxt + ' · comentarios=' + commentsTxt + ' · agente="' + f.name + '" · ' + (f.following ? 'Siguiendo' : 'Seguir');
+  }
+
+  function wrapHTML(f) {
+    return ''
+      + '<div class="frame-wrap">'
+      +   '<div class="frame-label">Variante ' + f.variant + ' <span>· ' + (f.lighting === 'light' ? 'claro' : 'oscuro') + '</span></div>'
+      +   frameHTML(f)
+      +   '<div class="frame-meta">' + metaLine(f) + '</div>'
+      + '</div>';
+  }
+
+  function render() {
+    document.getElementById('row-light').innerHTML = FRAMES.filter(f => f.lighting === 'light').map(wrapHTML).join('');
+    document.getElementById('row-dark').innerHTML = FRAMES.filter(f => f.lighting === 'dark').map(wrapHTML).join('');
+    scaleFrames();
+  }
+
+  function toggleFollow(btn) {
+    const following = btn.classList.toggle('following');
+    btn.textContent = following ? 'Siguiendo' : 'Seguir';
+  }
+
+  // Escala cada marco de teléfono (diseño fijo 390x844) al ancho real
+  // disponible, para que nunca desborde a ~400px ni se vea diminuto en
+  // escritorio.
+  function scaleFrames() {
+    document.querySelectorAll('.phone-outer').forEach(function (outer) {
+      const inner = outer.querySelector('.phone');
+      const s = outer.clientWidth / 390;
+      inner.style.transform = 'scale(' + s + ')';
+    });
+  }
+
+  render();
+  window.addEventListener('resize', scaleFrames);
+</script>
