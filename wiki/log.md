@@ -1209,3 +1209,6 @@ Se retira `is_admin()` de `leads_update`, `leads_delete` y `private.can_edit_lea
 ## [2026-09-14] release | #294 mergeada (PR #177, `f168b27`) y OTA publicado — Android preview `01a09e8e…` (runtime 374ba3dd…), iOS production `01a09e8f…` (runtime ca62b26a…)
 
 ## [2026-09-14] tarea | #295 fix(289.8): el teclado tapaba la hoja de comentarios en Android — `CommentsSheet.tsx`: KAV `padding` en ambas plataformas, `flex: 1` (el `height: '60%'` se resolvía dos veces → hoja al 36 %; ahora 60 % real) y `keyboardVerticalOffset={-insets.bottom}`; verificado por CLI en el emulador con teclado real
+
+
+## [2026-09-14] release | #295 mergeada (PR #178, `9976386`) y OTA publicado — Android preview `01a09eb3-30f2…` (runtime 374ba3dd…), iOS production `01a09eb3-a4be…` (runtime ca62b26a…)
