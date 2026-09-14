@@ -456,10 +456,13 @@ const styles = StyleSheet.create({
    * sin cápsula de fondo, el conteo necesita su propio contraste).
    */
   count_label: {
-    // En flujo (polish #293): ícono 28 + ranura 12 = 40 centrados en la caja 46.
+    // En flujo (polish #293): ícono 28 + 8 + ranura 12 = 48 centrados en la caja
+    // 46 (1 dp de desborde visual por lado, la caja táctil no cambia). Con el
+    // paso de 56 el número queda CENTRADO en el aire entre dos glifos (28 dp:
+    // 8 arriba, 8 abajo) — pedido de Abraham, 2ª ronda de polish.
     height: 12,
     lineHeight: 12,
-    marginTop: 1,
+    marginTop: 8,
     fontFamily: fonts.mono_medium,
     fontSize: 11,
     color: '#FFFFFF',
