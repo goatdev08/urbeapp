@@ -18,12 +18,23 @@ import { StyleSheet, type TextStyle, type ViewStyle } from 'react-native';
 import { render, fireEvent } from '@testing-library/react-native';
 
 import { colors } from '@/theme/theme';
-import { FEED_SECTIONS } from '@/features/search/lib/feedSection';
 
 import { FeedSectionTabs, FEED_SECTION_TABS_HEIGHT } from '../FeedSectionTabs';
 
 /** Mínimo de área táctil (HIG / Material). */
 const MIN_TOUCH_TARGET = 44;
+
+/**
+ * #296.3: el componente es genérico (ver EC-T7) — este archivo ya no depende
+ * de FEED_SECTIONS (obsoleto, feedSection.ts lo elimina en 296.3 GREEN junto
+ * con FeedSection/DEFAULT_FEED_SECTION/section_from_filters/with_section).
+ * Los casos EC-T1..EC-T6 fijan el comportamiento genérico con un par de tabs
+ * local, sin acoplarse al store de dominio.
+ */
+const SALE_RENT_TABS = [
+  { value: 'sale', label: 'Venta' },
+  { value: 'rent', label: 'Renta' },
+] as const;
 
 function flat_view(style: unknown): ViewStyle {
   return (StyleSheet.flatten(style as ViewStyle) ?? {}) as ViewStyle;
@@ -35,7 +46,7 @@ function flat_text(style: unknown): TextStyle {
 
 describe('FeedSectionTabs — selección', () => {
   it('(EC-T1) pinta las dos secciones y marca como seleccionada SOLO la activa', async () => {
-    const r = await render(<FeedSectionTabs tabs={FEED_SECTIONS} value="sale" on_change={jest.fn()} />);
+    const r = await render(<FeedSectionTabs tabs={SALE_RENT_TABS} value="sale" on_change={jest.fn()} />);
 
     expect(r.getByText('Venta')).toBeTruthy();
     expect(r.getByText('Renta')).toBeTruthy();
@@ -45,7 +56,7 @@ describe('FeedSectionTabs — selección', () => {
 
   it('(EC-T2) tocar la sección inactiva llama on_change con SU valor', async () => {
     const on_change = jest.fn();
-    const r = await render(<FeedSectionTabs tabs={FEED_SECTIONS} value="sale" on_change={on_change} />);
+    const r = await render(<FeedSectionTabs tabs={SALE_RENT_TABS} value="sale" on_change={on_change} />);
 
     fireEvent.press(r.getByTestId('feed-section-rent'));
 
@@ -76,7 +87,7 @@ describe('FeedSectionTabs — #296.2: genérico, fila deslizable', () => {
 
 describe('FeedSectionTabs — #248: la pill encogió sin perder contraste ni área táctil', () => {
   it('(EC-T3) 🔴 la pill + su hitSlop siguen dando al menos 44 pt de alto tocable', async () => {
-    const r = await render(<FeedSectionTabs tabs={FEED_SECTIONS} value="sale" on_change={jest.fn()} />);
+    const r = await render(<FeedSectionTabs tabs={SALE_RENT_TABS} value="sale" on_change={jest.fn()} />);
     const tab = r.getByTestId('feed-section-sale');
 
     // hitSlop numérico: se aplica a los cuatro lados.
@@ -86,14 +97,14 @@ describe('FeedSectionTabs — #248: la pill encogió sin perder contraste ni ár
   });
 
   it('(EC-T4) la pill mide 30 (menos que los 34 de #241.2) y el label no baja de 15 — encoger de más la volvería ilegible sobre el video', async () => {
-    const r = await render(<FeedSectionTabs tabs={FEED_SECTIONS} value="sale" on_change={jest.fn()} />);
+    const r = await render(<FeedSectionTabs tabs={SALE_RENT_TABS} value="sale" on_change={jest.fn()} />);
 
     expect(FEED_SECTION_TABS_HEIGHT).toBe(30);
     expect(flat_text(r.getByText('Venta').props.style).fontSize).toBe(15);
   });
 
   it('(EC-T5) 🔴 el contraste se conserva: la activa mantiene la pill salvia con texto on_primary', async () => {
-    const r = await render(<FeedSectionTabs tabs={FEED_SECTIONS} value="sale" on_change={jest.fn()} />);
+    const r = await render(<FeedSectionTabs tabs={SALE_RENT_TABS} value="sale" on_change={jest.fn()} />);
 
     expect(flat_view(r.getByTestId('feed-section-sale').props.style).backgroundColor).toBe(
       colors.primary,
@@ -102,7 +113,7 @@ describe('FeedSectionTabs — #248: la pill encogió sin perder contraste ni ár
   });
 
   it('(EC-T6) 🔴 la inactiva conserva el blanco al 72 % y la sombra que la hace legible sobre un fotograma claro', async () => {
-    const r = await render(<FeedSectionTabs tabs={FEED_SECTIONS} value="sale" on_change={jest.fn()} />);
+    const r = await render(<FeedSectionTabs tabs={SALE_RENT_TABS} value="sale" on_change={jest.fn()} />);
     const label = flat_text(r.getByText('Renta').props.style);
 
     expect(label.color).toBe('rgba(255,255,255,0.72)');
