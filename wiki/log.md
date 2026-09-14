@@ -1197,3 +1197,5 @@ Se retira `is_admin()` de `leads_update`, `leads_delete` y `private.can_edit_lea
 ## [2026-09-13] tarea | #293 producto(9): rediseño del overlay del feed — rail outline sin cápsula (RailIcon, variante B aprobada en preview), conteos de like/comentarios ocultos en 0 (like_count en FEED_SELECT, TDD 293.2), fila del agente en línea con «Seguir» pegado al nombre (píldora radio 8 / borde 1 px), AdFeedItem y ActionButtons del detalle alineados, mockup pantalla 4 actualizado; 7/7 subtareas, 220 suites / 2717 tests; rama `tarea/293-overlay-feed` local, PR pendiente del go de Abraham; OTA cuando lo pida
 
 ## [2026-09-13] polish | #293 tras revisión de Abraham — rail gap 22 → 14 y padding de la píldora «Seguir» a la mitad (3/8); mockup y preview sincronizados; mismo PR
+
+## [2026-09-13] polish | #293 cohesión del rail — ranura de conteo fija dentro de la caja, WhatsApp 40 en caja 46, gap 10, base del rail = base de info (más pegado a la tab bar); preview y mockup sincronizados

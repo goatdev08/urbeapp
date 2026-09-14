@@ -166,24 +166,23 @@
   .rail {
     position: absolute;
     right: 14px;
-    bottom: 140px;
+    bottom: 80px; /* polish #293: base del rail = base de info */
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 14px;
+    gap: 10px;
   }
   .action-btn {
     width: 46px; height: 46px;
-    display: flex; align-items: center; justify-content: center;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
     position: relative;
   }
   .icon-slot { position: relative; width: 28px; height: 28px; }
   .icon-shadow-layer { position: absolute; top: 1px; left: 1px; }
   .icon-white-layer { position: absolute; top: 0; left: 0; }
   .count-label {
-    position: absolute;
-    bottom: -15px; left: 50%;
-    transform: translateX(-50%);
+    /* polish #293: en flujo, ranura fija de 12px SIEMPRE presente (paso uniforme) */
+    display: block; height: 12px; line-height: 12px; margin-top: 1px;
     font-family: var(--font-mono);
     font-weight: 500;
     font-size: 11px;
@@ -195,7 +194,7 @@
     text-shadow: 0 1px 3px rgba(0,0,0,0.85), 0 0 2px rgba(0,0,0,0.6);
   }
   .whatsapp-btn {
-    width: 46px; height: 46px; border-radius: 23px;
+    width: 40px; height: 40px; border-radius: 20px; margin: 3px 0; /* polish #293: círculo 40 en caja 46 */
     background: #25D366; /* colors.whatsapp — única excepción sólida */
     display: flex; align-items: center; justify-content: center;
   }
@@ -376,9 +375,9 @@
 
   /** Conteo OCULTO en 0 (misma convención que comment_count hoy). */
   function countLabel(value, variant) {
-    if (!value || value <= 0) return '';
     const shadowClass = (variant === 'B' || variant === 'C') ? ' count-shadow' : '';
-    return '<span class="count-label' + shadowClass + '">' + formatCount(value) + '</span>';
+    const txt = (!value || value <= 0) ? '' : formatCount(value);
+    return '<span class="count-label' + shadowClass + '">' + txt + '</span>';
   }
 
   // Datos de propiedad — idénticos en los 6 frames a propósito: lo único
@@ -418,9 +417,9 @@
       + '<div class="rail">'
       +   '<div class="action-btn">' + actionIcon('heart', f.variant) + countLabel(f.like, f.variant) + '</div>'
       +   '<div class="action-btn">' + actionIcon('chat', f.variant) + countLabel(f.comments, f.variant) + '</div>'
-      +   '<div class="action-btn">' + actionIcon('bookmark', f.variant) + '</div>'
-      +   '<div class="action-btn">' + actionIcon('share', f.variant) + '</div>'
-      +   '<div class="whatsapp-btn">' + svg('whatsapp', 24, '#FFFFFF') + '</div>'
+      +   '<div class="action-btn">' + actionIcon('bookmark', f.variant) + countLabel(0, f.variant) + '</div>'
+      +   '<div class="whatsapp-btn">' + svg('whatsapp', 22, '#FFFFFF') + '</div>'
+      +   '<div class="action-btn">' + actionIcon('share', f.variant) + countLabel(0, f.variant) + '</div>'
       + '</div>'
       + '<div class="info">'
       +   '<div class="agent-row">'

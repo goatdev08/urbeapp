@@ -196,20 +196,14 @@ export function PropertyOverlay({
             opcional para no romper PropertyOverlay.cacheKey.test.tsx (no lo
             pasa) — sin él el botón simplemente no se renderiza. */}
         {onComments && (
-          <Pressable
+          <ActionButton
             testID="overlay-comments-btn"
+            icon={ChatCircle}
+            active={false}
             onPress={onComments}
-            style={({ pressed }) => [styles.action_btn, pressed && styles.btn_pressed]}
-            accessibilityRole="button"
             accessibilityLabel="Comentarios"
-          >
-            <RailIcon icon={ChatCircle} color="#FFFFFF" weight="bold" />
-            {comment_count > 0 && (
-              <Text style={styles.count_label} numberOfLines={1}>
-                {format_count(comment_count)}
-              </Text>
-            )}
-          </Pressable>
+            count={comment_count}
+          />
         )}
 
         {/* WhatsApp directo — visible solo si el agente tiene teléfono.
@@ -217,11 +211,13 @@ export function PropertyOverlay({
         {onWhatsApp && (
           <Pressable
             onPress={onWhatsApp}
-            style={({ pressed }) => [styles.whatsapp_btn, pressed && styles.btn_pressed]}
+            style={({ pressed }) => [styles.action_btn, pressed && styles.btn_pressed]}
             accessibilityRole="button"
             accessibilityLabel="Contactar por WhatsApp"
           >
-            <WhatsappLogo size={24} color="#FFFFFF" weight="fill" />
+            <View style={styles.whatsapp_circle}>
+              <WhatsappLogo size={22} color="#FFFFFF" weight="fill" />
+            </View>
           </Pressable>
         )}
 
@@ -340,8 +336,9 @@ type ActionButtonProps = {
   active: boolean;
   onPress: () => void;
   accessibilityLabel: string;
-  /** Conteo bajo el ícono (solo like, 293.3). Oculto si es 0/undefined. */
+  /** Conteo bajo el ícono (like y comentarios, 293.3). Oculto si es 0/undefined. */
   count?: number;
+  testID?: string;
 };
 
 function ActionButton({
@@ -350,9 +347,11 @@ function ActionButton({
   onPress,
   accessibilityLabel,
   count,
+  testID,
 }: ActionButtonProps) {
   return (
     <Pressable
+      testID={testID}
       onPress={onPress}
       // Feedback táctil: encoge al presionar (fluidez percibida, flash 2026-07-06)
       style={({ pressed }) => [styles.action_btn, pressed && styles.btn_pressed]}
@@ -365,11 +364,13 @@ function ActionButton({
         color={active ? colors.primary_soft : '#FFFFFF'}
         weight={active ? 'fill' : 'bold'}
       />
-      {count !== undefined && count > 0 && (
-        <Text style={styles.count_label} numberOfLines={1}>
-          {format_count(count)}
-        </Text>
-      )}
+      {/* Ranura del conteo SIEMPRE presente (polish #293, cohesión): así el
+          paso vertical del rail es idéntico haya o no número — antes el Text
+          absoluto hacía que «corazón→guardar» se viera distinto que
+          «guardar→comentarios». Vacía cuando el conteo es 0/undefined. */}
+      <Text style={styles.count_label} numberOfLines={1}>
+        {count !== undefined && count > 0 ? format_count(count) : ''}
+      </Text>
     </Pressable>
   );
 }
@@ -405,7 +406,9 @@ function ActionButton({
  * no para el feed (ver el comentario de ese token).
  */
 export const INFO_BOTTOM = Platform.OS === 'ios' ? glass.floating_content_bottom_offset_ios : 80;
-const RAIL_BOTTOM = Platform.OS === 'ios' ? glass.floating_content_bottom_offset_ios + 20 : 100;
+// polish #293 (Abraham): el rail baja hasta la base del bloque de info (antes
+// arrancaba 20 más arriba) para quedar más pegado a la tab bar, como en Reels.
+const RAIL_BOTTOM = INFO_BOTTOM;
 
 /** Color de texto de specs — blanco cálido semitransparente. Hardcodeado porque
  * el feed es siempre oscuro (ponytail: dual-mode diferido). */
@@ -421,7 +424,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 14,
     flexDirection: 'column',
-    gap: 14,          // polish #293 (Abraham): 22 → 14, íconos más juntos; el conteo (bottom −16) sigue libre del ícono siguiente (empieza en +23)
+    gap: 10,          // polish #293 (Abraham): paso uniforme = caja 46 + 10; el conteo ya vive DENTRO de la caja
     alignItems: 'center',
   },
   // 293.3: sin cápsula glass (variante B aprobada en 293.1 — el realce de
@@ -430,11 +433,13 @@ const styles = StyleSheet.create({
   // 293.6: RAIL_ACTION_BOX (y RailIcon) viven en @/components/RailIcon —
   // ActionButtons.tsx y LikeButton/SaveButton también los consumen.
   action_btn: RAIL_ACTION_BOX,
-  whatsapp_btn: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    // Verde WhatsApp sólido — CTA de contacto reconocible en el rail.
+  /** Círculo verde de WhatsApp — 40 dentro de la caja 46 (polish #293):
+   * ocupa el mismo alto (3..43) que ícono+ranura de los demás botones, así el
+   * rail se lee con un solo ritmo. Verde sólido = única excepción al outline. */
+  whatsapp_circle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: '#25D366',
     alignItems: 'center',
     justifyContent: 'center',
@@ -451,8 +456,10 @@ const styles = StyleSheet.create({
    * sin cápsula de fondo, el conteo necesita su propio contraste).
    */
   count_label: {
-    position: 'absolute',
-    bottom: -16,
+    // En flujo (polish #293): ícono 28 + ranura 12 = 40 centrados en la caja 46.
+    height: 12,
+    lineHeight: 12,
+    marginTop: 1,
     fontFamily: fonts.mono_medium,
     fontSize: 11,
     color: '#FFFFFF',

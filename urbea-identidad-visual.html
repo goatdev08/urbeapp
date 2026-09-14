@@ -216,17 +216,17 @@ h2.sec{font-family:var(--display); font-weight:600; font-size:34px; letter-spaci
    traducción CSS de la doble capa de RailIcon) + text-shadow reforzado en
    el conteo, ya NO un fondo/borde glass. El botón de WhatsApp conserva su
    verde sólido + radio circular como excepción explícita (override inline). */
-.frail{position:absolute; right:14px; bottom:152px; z-index:4; display:flex; flex-direction:column; gap:14px; align-items:center}
+.frail{position:absolute; right:14px; bottom:152px; z-index:4; display:flex; flex-direction:column; gap:10px; align-items:center}
 .fbtn{
   position:relative;
-  width:46px; height:46px; display:grid; place-items:center; cursor:pointer;
+  width:46px; height:46px; display:flex; flex-direction:column; align-items:center; justify-content:center; cursor:pointer;
   color:#fff; transition:transform .3s var(--ease);
 }
 .fbtn:hover{transform:scale(1.08)}
 .fbtn svg{width:28px;height:28px; filter:drop-shadow(1px 1px 0 rgba(0,0,0,.4))}
 .fbtn.on{color:var(--color_accent_soft)}
 .fbtn.on svg{fill:var(--color_accent_soft); animation:breathe .9s var(--ease)}
-.fbtn .cnt{position:absolute; bottom:-16px; left:50%; transform:translateX(-50%); font-family:ui-monospace,monospace; font-size:11px; font-weight:500; color:#fff; white-space:nowrap; pointer-events:none; text-shadow:0 1px 3px rgba(0,0,0,.85), 0 0 2px rgba(0,0,0,.6)}
+.fbtn .cnt{display:block; height:12px; line-height:12px; margin-top:1px; font-family:ui-monospace,monospace; font-size:11px; font-weight:500; color:#fff; white-space:nowrap; pointer-events:none; text-shadow:0 1px 3px rgba(0,0,0,.85), 0 0 2px rgba(0,0,0,.6)}
 @keyframes breathe{0%{transform:scale(1)}40%{transform:scale(1.32)}100%{transform:scale(1)}}
 
 /* VARIANTE CLARA — media arriba, datos sobre papel */
@@ -392,7 +392,7 @@ h2.sec{font-family:var(--display); font-weight:600; font-size:34px; letter-spaci
 .feedscr .vph .play-btn{width:60px;height:60px}
 .feedscr::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(23,20,15,.35) 0%,transparent 26% 52%,rgba(23,20,15,.86) 100%)}
 .feed-top{position:absolute;top:12px;left:16px;right:16px;z-index:5;display:flex;align-items:center;gap:8px}
-.feed-rail{position:absolute;right:14px;bottom:140px;z-index:6;display:flex;flex-direction:column;gap:14px;align-items:center}
+.feed-rail{position:absolute;right:14px;bottom:118px;z-index:6;display:flex;flex-direction:column;gap:10px;align-items:center}
 .feed-info{position:absolute;left:16px;right:74px;bottom:118px;z-index:6;color:var(--color_paper)}
 /* 293.7: avatar · nombre · píldora «Seguir» en línea, PEGADA al nombre
    (gap 8, NUNCA margin-left:auto — recordatorio explícito de Abraham en la
