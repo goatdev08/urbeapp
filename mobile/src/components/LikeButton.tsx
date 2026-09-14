@@ -50,8 +50,12 @@ export type LikeButtonProps = {
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Formatea un conteo: 1200 → "1.2k", 3_400_000 → "3.4M", 42 → "42". */
-function format_count(n: number): string {
+/**
+ * Formatea un conteo: 1200 → "1.2k", 3_400_000 → "3.4M", 42 → "42".
+ * Exportado (293.3): PropertyOverlay.tsx reusa el MISMO formato para los
+ * conteos del rail del feed (like/comentarios) — una línea, no se duplica.
+ */
+export function format_count(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
   return String(n);
