@@ -1205,3 +1205,5 @@ Se retira `is_admin()` de `leads_update`, `leads_delete` y `private.can_edit_lea
 ## [2026-09-14] release | #293 mergeada (PR #176, `ebc17d0`) y OTA publicado — Android preview `01a09e78…` (runtime 374ba3dd…), iOS production `01a09e79…` (runtime ca62b26a…); entrega también el cliente de #78. Hallazgo: .env.local apuntaba a producción durante los smokes (like restaurado, follow accidental deshecho)
 
 ## [2026-09-14] tarea | #294 pin chincheta vectorial — `MapPinIcon.tsx` pasa de Phosphor duotone a una réplica del 📍 de iOS en react-native-svg (cabeza teñida por operación, vertical), idéntica en Android e iOS; aprobado sobre preview HTML; pines inline y tab intactos
+
+## [2026-09-14] release | #294 mergeada (PR #177, `f168b27`) y OTA publicado — Android preview `01a09e8e…` (runtime 374ba3dd…), iOS production `01a09e8f…` (runtime ca62b26a…)
