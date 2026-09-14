@@ -84,10 +84,19 @@
  *                     exactamente los items que trajo el prefetch.
  * ### scroll persistido por tab
  * (EC-CACHE-HOOK-15) noteScrollIndex guarda el índice en la entrada del tab
- *                     cargado; un regreso posterior expone
- *                     `restoredScrollIndex` con ese valor EXACTO.
+ *                     CARGADO (`loaded_tab_ref`), no en `feed_tab` (la prop):
+ *                     llamado justo tras un rerender a otro tab pero ANTES
+ *                     de su loadInitial (el dataset viejo sigue en `data`),
+ *                     debe escribir en la entrada del tab ANTERIOR, no en la
+ *                     del nuevo (que además ni existe todavía); un regreso
+ *                     posterior expone `restoredScrollIndex` con ese valor
+ *                     EXACTO.
  * (EC-CACHE-HOOK-16) tras un refetch, `restoredScrollIndex` vuelve a `null`
- *                     (dataset fresco, sin scroll heredado).
+ *                     Y la entrada del tab queda con `scroll_index` 0 —
+ *                     probado DESDE ESTADO POBLADO (un HIT previo con
+ *                     `restoredScrollIndex` ya en un valor no-null; si no,
+ *                     el caso es vacuo: `null` sería el estado inicial de
+ *                     todos modos).
  */
 
 import { renderHook, act } from '@testing-library/react-native';
@@ -115,7 +124,12 @@ import { InteractionManager } from 'react-native';
 
 import { useFeedProperties } from '../hooks/useFeedProperties';
 import { fetch_feed_page } from '../lib/feedSources';
-import { FEED_CACHE_TTL_MS, reset_feed_tab_cache } from '../lib/feedTabCache';
+import {
+  FEED_CACHE_TTL_MS,
+  feed_cache_key,
+  get_feed_tab_entry,
+  reset_feed_tab_cache,
+} from '../lib/feedTabCache';
 import { with_tab, type FeedTab } from '@/features/search/lib/feedSection';
 import { EMPTY_FILTERS } from '@/features/search/lib/filterQuery';
 import type { FilterState } from '@/features/search/types';
@@ -177,9 +191,60 @@ async function render_feed(initial: RenderProps) {
   );
 }
 
+type FeedPage = { data: FeedPropertyWithUrl[]; nextCursor: string | null };
+
+/**
+ * Reemplazo de la cola FIFO GLOBAL de `mockResolvedValueOnce` — el prefetch
+ * de vecinas (296.5) intercala llamadas a `fetch_feed_page` con las
+ * "principales" del test, y una cola FIFO global sin filtrar deja que una
+ * llamada de prefetch se coma la respuesta que un test había encolado para
+ * su siguiente llamada real (ver diagnóstico EC-CACHE-HOOK-1/2/4/6/7/8/9,
+ * bitácora 296.5). `respond_by_tab()` despacha por `ctx.tab` (4º argumento
+ * de `fetch_feed_page`, el mismo seam que EC-TAB-1/3 ya usan para filtrar):
+ * cada tab tiene su PROPIA cola FIFO, así que una llamada a 'nuevos' nunca
+ * consume la respuesta programada para 'para_ti'.
+ * `set(tab, pages)` REEMPLAZA la cola de ese tab (no acumula): si un test
+ * programa una respuesta "FUGA" para probar que NINGUNA llamada debe
+ * consumirla (hit), y luego programa la respuesta real de la SIGUIENTE
+ * llamada esperada a ese mismo tab, la fuga no debe quedar estorbando en la
+ * cola — se reemplaza entera.
+ * Sin respuesta programada para un tab, la llamada resuelve `undefined`
+ * (mismo fail-soft silencioso que el mock vacío de antes; EC-CACHE-HOOK-13
+ * ejerce ese camino en su propio test con `mockRejectedValueOnce`, sin tocar
+ * este helper).
+ */
+function respond_by_tab() {
+  const queues = new Map<FeedTab, FeedPage[]>();
+  mock_fetch_feed_page.mockImplementation((async (
+    ...args: Parameters<typeof fetch_feed_page>
+  ) => {
+    const ctx = args[3];
+    const queue = queues.get(ctx.tab);
+    if (!queue || queue.length === 0) return undefined;
+    return queue.shift();
+  }) as unknown as typeof fetch_feed_page);
+
+  return {
+    set(tab: FeedTab, pages: FeedPage[]) {
+      queues.set(tab, [...pages]);
+    },
+  };
+}
+
+/** Llamadas a `fetch_feed_page` cuyo `ctx.tab` es `tab` — ignora el prefetch de vecinas (mismo patrón que EC-TAB-1/3). */
+function calls_for_tab(tab: FeedTab) {
+  return mock_fetch_feed_page.mock.calls.filter((c) => (c[3] as { tab: FeedTab }).tab === tab);
+}
+
 beforeEach(() => {
   jest.useFakeTimers({ now: BASE_TIME, doNotFake: ['queueMicrotask', 'setImmediate'] });
-  jest.clearAllMocks();
+  // resetAllMocks (no solo clearAllMocks): además de vaciar mock.calls,
+  // QUITA cualquier `mockImplementation` que un test previo haya dejado en
+  // `mock_fetch_feed_page` vía `respond_by_tab()` — sin esto, un test que NO
+  // llama a `respond_by_tab()` heredaría la implementación (cerrada sobre un
+  // Map ya vacío/irrelevante) del test anterior en vez del comportamiento
+  // por-default de un `jest.fn()` recién creado.
+  jest.resetAllMocks();
   mock_use_location.mockReturnValue({
     coords: { latitude: 20.6597, longitude: -103.3496 },
     status: 'granted',
@@ -211,54 +276,52 @@ afterEach(() => {
 
 describe('useFeedProperties — cache-first por tab (#296.5)', () => {
   it('(EC-CACHE-HOOK-1) miss_inicial_dispara_fetch_y_restoredscrollindex_es_null', async () => {
-    mock_fetch_feed_page.mockResolvedValueOnce({
-      data: [make_feed_property('miss-a')],
-      nextCursor: null,
-    });
+    const feed = respond_by_tab();
+    feed.set('para_ti', [{ data: [make_feed_property('miss-a')], nextCursor: null }]);
     const { result } = await render_feed({ tab: 'para_ti', user_id: null });
 
     await act(async () => {
       await result.current.loadInitial();
     });
 
-    expect(mock_fetch_feed_page).toHaveBeenCalledTimes(1);
+    expect(calls_for_tab('para_ti')).toHaveLength(1);
     expect(result.current.restoredScrollIndex).toBeNull();
   });
 
   it('(EC-CACHE-HOOK-2) hit_desde_estado_poblado_no_refetchea_y_conserva_los_datos_originales', async () => {
     const filters: FilterState = { ...EMPTY_FILTERS };
-    mock_fetch_feed_page.mockResolvedValueOnce({
-      data: [make_feed_property('orig-1'), make_feed_property('orig-2')],
-      nextCursor: 'c-orig',
-    });
+    const feed = respond_by_tab();
+    feed.set('para_ti', [
+      { data: [make_feed_property('orig-1'), make_feed_property('orig-2')], nextCursor: 'c-orig' },
+    ]);
     const { result, rerender } = await render_feed({ filters, tab: 'para_ti', user_id: 'u1' });
     await act(async () => {
       await result.current.loadInitial();
     });
     expect(property_ids(result.current.data)).toEqual(['orig-1', 'orig-2']);
 
-    mock_fetch_feed_page.mockResolvedValueOnce({
-      data: [make_feed_property('otro-tab')],
-      nextCursor: null,
+    feed.set('nuevos', [{ data: [make_feed_property('otro-tab')], nextCursor: null }]);
+    await act(async () => {
+      await rerender({ filters, tab: 'nuevos', user_id: 'u1' });
     });
     await act(async () => {
-      rerender({ filters, tab: 'nuevos', user_id: 'u1' });
       await result.current.loadInitial();
     });
-    expect(mock_fetch_feed_page).toHaveBeenCalledTimes(2);
+    expect(calls_for_tab('para_ti')).toHaveLength(1);
+    expect(calls_for_tab('nuevos')).toHaveLength(1);
 
     // FUGA: si el regreso a 'para_ti' refetchea en vez de usar la caché,
-    // esta respuesta se colaría en `data`.
-    mock_fetch_feed_page.mockResolvedValueOnce({
-      data: [make_feed_property('fuga-si-esto-aparece')],
-      nextCursor: 'c-fuga',
+    // esta respuesta (encolada específicamente para 'para_ti') se colaría
+    // en `data`.
+    feed.set('para_ti', [{ data: [make_feed_property('fuga-si-esto-aparece')], nextCursor: 'c-fuga' }]);
+    await act(async () => {
+      await rerender({ filters, tab: 'para_ti', user_id: 'u1' });
     });
     await act(async () => {
-      rerender({ filters, tab: 'para_ti', user_id: 'u1' });
       await result.current.loadInitial();
     });
 
-    expect(mock_fetch_feed_page).toHaveBeenCalledTimes(2);
+    expect(calls_for_tab('para_ti')).toHaveLength(1);
     expect(property_ids(result.current.data)).toEqual(['orig-1', 'orig-2']);
     expect(result.current.nextCursor).toBe('c-orig');
     expect(result.current.isLoading).toBe(false);
@@ -280,12 +343,14 @@ describe('useFeedProperties — cache-first por tab (#296.5)', () => {
       nextCursor: null,
     });
     await act(async () => {
-      rerender({ filters, tab: 'nuevos', user_id: null });
+      await rerender({ filters, tab: 'nuevos', user_id: null });
+    });
+    await act(async () => {
       await result.current.loadInitial();
     });
 
-    act(() => {
-      rerender({ filters, tab: 'para_ti', user_id: null });
+    await act(async () => {
+      await rerender({ filters, tab: 'para_ti', user_id: null });
     });
 
     // Invoca loadInitial SIN esperar: en un hit no debe haber NINGÚN fetch en
@@ -302,44 +367,39 @@ describe('useFeedProperties — cache-first por tab (#296.5)', () => {
 
   it('(EC-CACHE-HOOK-4) loadmore_sobre_tab_restaurado_continua_desde_el_cursor_restaurado', async () => {
     const filters: FilterState = { ...EMPTY_FILTERS };
-    mock_fetch_feed_page.mockResolvedValueOnce({
-      data: [make_feed_property('cont-a')],
-      nextCursor: 'cursor-real',
-    });
+    const feed = respond_by_tab();
+    feed.set('nuevos', [{ data: [make_feed_property('cont-a')], nextCursor: 'cursor-real' }]);
     const { result, rerender } = await render_feed({ filters, tab: 'nuevos', user_id: null });
     await act(async () => {
       await result.current.loadInitial();
     });
 
-    mock_fetch_feed_page.mockResolvedValueOnce({
-      data: [make_feed_property('otro-tab')],
-      nextCursor: null,
+    feed.set('para_ti', [{ data: [make_feed_property('otro-tab')], nextCursor: null }]);
+    await act(async () => {
+      await rerender({ filters, tab: 'para_ti', user_id: null });
     });
     await act(async () => {
-      rerender({ filters, tab: 'para_ti', user_id: null });
       await result.current.loadInitial();
     });
 
-    // FUGA: si el regreso a 'nuevos' refetchea, este cursor equivocado se
-    // colaría como el `nextCursor` que loadMore debería usar.
-    mock_fetch_feed_page.mockResolvedValueOnce({
-      data: [make_feed_property('fuga-cursor')],
-      nextCursor: 'cursor-fuga',
+    // FUGA: si el regreso a 'nuevos' refetchea, este cursor equivocado (
+    // encolado específicamente para 'nuevos') se colaría como el
+    // `nextCursor` que loadMore debería usar.
+    feed.set('nuevos', [{ data: [make_feed_property('fuga-cursor')], nextCursor: 'cursor-fuga' }]);
+    await act(async () => {
+      await rerender({ filters, tab: 'nuevos', user_id: null });
     });
     await act(async () => {
-      rerender({ filters, tab: 'nuevos', user_id: null });
       await result.current.loadInitial();
     });
+    expect(calls_for_tab('nuevos')).toHaveLength(1); // sigue siendo hit: la fuga no se consumió
 
-    mock_fetch_feed_page.mockResolvedValueOnce({
-      data: [make_feed_property('cont-b')],
-      nextCursor: null,
-    });
+    feed.set('nuevos', [{ data: [make_feed_property('cont-b')], nextCursor: null }]);
     await act(async () => {
       await result.current.loadMore();
     });
 
-    const load_more_call = mock_fetch_feed_page.mock.calls.at(-1)!;
+    const load_more_call = calls_for_tab('nuevos').at(-1)!;
     expect(load_more_call[0]).toBe('cursor-real');
     expect(property_ids(result.current.data)).toEqual(['cont-a', 'cont-b']);
   });
@@ -369,13 +429,17 @@ describe('useFeedProperties — cache-first por tab (#296.5)', () => {
       nextCursor: null,
     });
     await act(async () => {
-      rerender({ filters, tab: 'para_ti', user_id: null });
+      await rerender({ filters, tab: 'para_ti', user_id: null });
+    });
+    await act(async () => {
       await result.current.loadInitial();
     });
     expect(result.current.lapCount).toBe(0);
 
     await act(async () => {
-      rerender({ filters, tab: 'nuevos', user_id: null });
+      await rerender({ filters, tab: 'nuevos', user_id: null });
+    });
+    await act(async () => {
       await result.current.loadInitial();
     });
 
@@ -388,66 +452,61 @@ describe('useFeedProperties — cache-first por tab (#296.5)', () => {
 
   it('(EC-CACHE-HOOK-6) refetch_reescribe_la_entrada_y_el_regreso_posterior_ve_los_datos_frescos_sin_refetch', async () => {
     const filters: FilterState = { ...EMPTY_FILTERS };
-    mock_fetch_feed_page.mockResolvedValueOnce({
-      data: [make_feed_property('refetch-orig')],
-      nextCursor: 'c1',
-    });
+    const feed = respond_by_tab();
+    feed.set('venta', [{ data: [make_feed_property('refetch-orig')], nextCursor: 'c1' }]);
     const { result, rerender } = await render_feed({ filters, tab: 'venta', user_id: null });
     await act(async () => {
       await result.current.loadInitial();
     });
 
-    mock_fetch_feed_page.mockResolvedValueOnce({
-      data: [make_feed_property('refetch-fresco')],
-      nextCursor: 'c2',
-    });
+    feed.set('venta', [{ data: [make_feed_property('refetch-fresco')], nextCursor: 'c2' }]);
     await act(async () => {
       await result.current.refetch();
     });
-    expect(mock_fetch_feed_page).toHaveBeenCalledTimes(2);
+    expect(calls_for_tab('venta')).toHaveLength(2);
 
-    mock_fetch_feed_page.mockResolvedValueOnce({
-      data: [make_feed_property('otro-tab')],
-      nextCursor: null,
+    feed.set('renta', [{ data: [make_feed_property('otro-tab')], nextCursor: null }]);
+    await act(async () => {
+      await rerender({ filters, tab: 'renta', user_id: null });
     });
     await act(async () => {
-      rerender({ filters, tab: 'renta', user_id: null });
       await result.current.loadInitial();
     });
-    expect(mock_fetch_feed_page).toHaveBeenCalledTimes(3);
+    // (Sin assert de conteo para 'renta' aquí: 'venta' tiene DOS vecinos
+    // —'nuevos' y 'renta'— así que tanto el miss inicial como el refetch de
+    // 'venta' agendan su propio intento de prefetch hacia 'renta'; cuántos
+    // de esos intentos ocurren es un detalle de implementación ajeno a lo
+    // que este caso verifica — el round-trip de caché de 'venta'.)
 
     // FUGA: si el regreso a 'venta' no usara la entrada RE-escrita por
-    // refetch (o refetcheara de más), esta respuesta contaminaría `data`.
-    mock_fetch_feed_page.mockResolvedValueOnce({
-      data: [make_feed_property('fuga')],
-      nextCursor: 'c-fuga',
+    // refetch (o refetcheara de más), esta respuesta (encolada
+    // específicamente para 'venta') contaminaría `data`.
+    feed.set('venta', [{ data: [make_feed_property('fuga')], nextCursor: 'c-fuga' }]);
+    await act(async () => {
+      await rerender({ filters, tab: 'venta', user_id: null });
     });
     await act(async () => {
-      rerender({ filters, tab: 'venta', user_id: null });
       await result.current.loadInitial();
     });
 
-    expect(mock_fetch_feed_page).toHaveBeenCalledTimes(3);
+    expect(calls_for_tab('venta')).toHaveLength(2);
     expect(property_ids(result.current.data)).toEqual(['refetch-fresco']);
   });
 
   it('(EC-CACHE-HOOK-7) edad_menor_al_ttl_sigue_siendo_hit_al_regresar', async () => {
     const filters: FilterState = { ...EMPTY_FILTERS };
-    mock_fetch_feed_page.mockResolvedValueOnce({
-      data: [make_feed_property('fresh-a')],
-      nextCursor: null,
-    });
+    const feed = respond_by_tab();
+    feed.set('para_ti', [{ data: [make_feed_property('fresh-a')], nextCursor: null }]);
     const { result, rerender } = await render_feed({ filters, tab: 'para_ti', user_id: null });
     await act(async () => {
       await result.current.loadInitial();
     });
 
-    mock_fetch_feed_page.mockResolvedValueOnce({
-      data: [make_feed_property('otro-tab')],
-      nextCursor: null,
+    feed.set('nuevos', [{ data: [make_feed_property('otro-tab')], nextCursor: null }]);
+    await act(async () => {
+      await rerender({ filters, tab: 'nuevos', user_id: null });
     });
     await act(async () => {
-      rerender({ filters, tab: 'nuevos', user_id: null });
       await result.current.loadInitial();
     });
 
@@ -455,36 +514,32 @@ describe('useFeedProperties — cache-first por tab (#296.5)', () => {
       jest.setSystemTime(BASE_TIME + FEED_CACHE_TTL_MS - 1);
     });
 
-    mock_fetch_feed_page.mockResolvedValueOnce({
-      data: [make_feed_property('fuga-fresh')],
-      nextCursor: null,
+    feed.set('para_ti', [{ data: [make_feed_property('fuga-fresh')], nextCursor: null }]);
+    await act(async () => {
+      await rerender({ filters, tab: 'para_ti', user_id: null });
     });
     await act(async () => {
-      rerender({ filters, tab: 'para_ti', user_id: null });
       await result.current.loadInitial();
     });
 
-    expect(mock_fetch_feed_page).toHaveBeenCalledTimes(2);
+    expect(calls_for_tab('para_ti')).toHaveLength(1);
     expect(property_ids(result.current.data)).toEqual(['fresh-a']);
   });
 
   it('(EC-CACHE-HOOK-8) edad_mayor_al_ttl_es_miss_y_refetchea_al_regresar', async () => {
     const filters: FilterState = { ...EMPTY_FILTERS };
-    mock_fetch_feed_page.mockResolvedValueOnce({
-      data: [make_feed_property('stale-a')],
-      nextCursor: null,
-    });
+    const feed = respond_by_tab();
+    feed.set('para_ti', [{ data: [make_feed_property('stale-a')], nextCursor: null }]);
     const { result, rerender } = await render_feed({ filters, tab: 'para_ti', user_id: null });
     await act(async () => {
       await result.current.loadInitial();
     });
 
-    mock_fetch_feed_page.mockResolvedValueOnce({
-      data: [make_feed_property('otro-tab')],
-      nextCursor: null,
+    feed.set('nuevos', [{ data: [make_feed_property('otro-tab')], nextCursor: null }]);
+    await act(async () => {
+      await rerender({ filters, tab: 'nuevos', user_id: null });
     });
     await act(async () => {
-      rerender({ filters, tab: 'nuevos', user_id: null });
       await result.current.loadInitial();
     });
 
@@ -492,25 +547,22 @@ describe('useFeedProperties — cache-first por tab (#296.5)', () => {
       jest.setSystemTime(BASE_TIME + FEED_CACHE_TTL_MS + 1);
     });
 
-    mock_fetch_feed_page.mockResolvedValueOnce({
-      data: [make_feed_property('post-ttl')],
-      nextCursor: null,
+    feed.set('para_ti', [{ data: [make_feed_property('post-ttl')], nextCursor: null }]);
+    await act(async () => {
+      await rerender({ filters, tab: 'para_ti', user_id: null });
     });
     await act(async () => {
-      rerender({ filters, tab: 'para_ti', user_id: null });
       await result.current.loadInitial();
     });
 
-    expect(mock_fetch_feed_page).toHaveBeenCalledTimes(3);
+    expect(calls_for_tab('para_ti')).toHaveLength(2);
     expect(property_ids(result.current.data)).toEqual(['post-ttl']);
   });
 
   it('(EC-CACHE-HOOK-9) cambiar_user_id_en_el_mismo_tab_es_miss_nunca_filtra_datos_de_otro_usuario', async () => {
     const filters: FilterState = { ...EMPTY_FILTERS };
-    mock_fetch_feed_page.mockResolvedValueOnce({
-      data: [make_feed_property('de-user-1')],
-      nextCursor: null,
-    });
+    const feed = respond_by_tab();
+    feed.set('siguiendo', [{ data: [make_feed_property('de-user-1')], nextCursor: null }]);
     const { result, rerender } = await render_feed({
       filters,
       tab: 'siguiendo',
@@ -519,18 +571,17 @@ describe('useFeedProperties — cache-first por tab (#296.5)', () => {
     await act(async () => {
       await result.current.loadInitial();
     });
-    const llamadas_tras_user1 = mock_fetch_feed_page.mock.calls.length;
+    const llamadas_tras_user1 = calls_for_tab('siguiendo').length;
 
-    mock_fetch_feed_page.mockResolvedValueOnce({
-      data: [make_feed_property('de-user-2')],
-      nextCursor: null,
+    feed.set('siguiendo', [{ data: [make_feed_property('de-user-2')], nextCursor: null }]);
+    await act(async () => {
+      await rerender({ filters, tab: 'siguiendo', user_id: 'user-2' });
     });
     await act(async () => {
-      rerender({ filters, tab: 'siguiendo', user_id: 'user-2' });
       await result.current.loadInitial();
     });
 
-    expect(mock_fetch_feed_page.mock.calls.length).toBeGreaterThan(llamadas_tras_user1);
+    expect(calls_for_tab('siguiendo').length).toBeGreaterThan(llamadas_tras_user1);
     expect(property_ids(result.current.data)).toEqual(['de-user-2']);
   });
 
@@ -599,44 +650,35 @@ describe('useFeedProperties — cache-first por tab (#296.5)', () => {
 
   it('(EC-CACHE-HOOK-12) un_vecino_ya_cacheado_como_tab_principal_no_se_vuelve_a_pedir_por_el_prefetch', async () => {
     const filters: FilterState = { ...EMPTY_FILTERS };
+    const feed = respond_by_tab();
     // 1. 'para_ti' como tab principal — su único vecino es 'siguiendo', que
     //    se prefetchea.
-    mock_fetch_feed_page.mockResolvedValueOnce({
-      data: [make_feed_property('pt-main')],
-      nextCursor: null,
-    });
-    mock_fetch_feed_page.mockResolvedValueOnce({
-      data: [make_feed_property('pt-prefetch-siguiendo')],
-      nextCursor: null,
-    });
+    feed.set('para_ti', [{ data: [make_feed_property('pt-main')], nextCursor: null }]);
+    feed.set('siguiendo', [{ data: [make_feed_property('pt-prefetch-siguiendo')], nextCursor: null }]);
     const { result, rerender } = await render_feed({ filters, tab: 'para_ti', user_id: null });
     await act(async () => {
       await result.current.loadInitial();
     });
     await act(async () => {});
-    expect(mock_fetch_feed_page).toHaveBeenCalledTimes(2);
+    expect(calls_for_tab('para_ti')).toHaveLength(1);
+    expect(calls_for_tab('siguiendo')).toHaveLength(1);
 
-    // 2. Navega a 'siguiendo' — su vecino 'para_ti' YA tiene entrada válida
-    //    (paso 1) y no debe re-pedirse; solo se prefetchea 'nuevos'.
-    mock_fetch_feed_page.mockResolvedValueOnce({
-      data: [make_feed_property('sig-main')],
-      nextCursor: null,
-    });
-    mock_fetch_feed_page.mockResolvedValueOnce({
-      data: [make_feed_property('sig-prefetch-nuevos')],
-      nextCursor: null,
+    // 2. Navega a 'siguiendo' — YA tiene entrada válida (paso 1, prefetcheada)
+    //    → HIT, sin nueva llamada para 'siguiendo'. Su vecino 'para_ti' YA
+    //    tiene entrada válida (paso 1, tab principal) y no debe re-pedirse;
+    //    solo se prefetchea 'nuevos' (sin entrada).
+    feed.set('nuevos', [{ data: [make_feed_property('sig-prefetch-nuevos')], nextCursor: null }]);
+    await act(async () => {
+      await rerender({ filters, tab: 'siguiendo', user_id: null });
     });
     await act(async () => {
-      rerender({ filters, tab: 'siguiendo', user_id: null });
       await result.current.loadInitial();
     });
     await act(async () => {});
 
-    expect(mock_fetch_feed_page).toHaveBeenCalledTimes(4);
-    const tabs_pedidos_paso_2 = mock_fetch_feed_page.mock.calls
-      .slice(2)
-      .map((c) => (c[3] as { tab: FeedTab }).tab);
-    expect(tabs_pedidos_paso_2).toEqual(['siguiendo', 'nuevos']);
+    expect(calls_for_tab('siguiendo')).toHaveLength(1); // hit: sin nueva llamada
+    expect(calls_for_tab('para_ti')).toHaveLength(1); // vecino ya cacheado: no se re-pide
+    expect(calls_for_tab('nuevos')).toHaveLength(1); // vecino sin cache: sí se prefetchea
   });
 
   it('(EC-CACHE-HOOK-13) el_fallo_de_un_vecino_en_el_prefetch_se_ignora_en_silencio', async () => {
@@ -663,14 +705,14 @@ describe('useFeedProperties — cache-first por tab (#296.5)', () => {
 
   it('(EC-CACHE-HOOK-14) navegar_a_un_vecino_ya_prefetcheado_es_un_hit_instantaneo_sin_fetch', async () => {
     const filters: FilterState = { ...EMPTY_FILTERS };
-    mock_fetch_feed_page.mockResolvedValueOnce({
-      data: [make_feed_property('main')],
-      nextCursor: null,
-    });
-    mock_fetch_feed_page.mockResolvedValueOnce({
-      data: [make_feed_property('vecino-prefetched-1'), make_feed_property('vecino-prefetched-2')],
-      nextCursor: 'c-vecino',
-    });
+    const feed = respond_by_tab();
+    feed.set('para_ti', [{ data: [make_feed_property('main')], nextCursor: null }]);
+    feed.set('siguiendo', [
+      {
+        data: [make_feed_property('vecino-prefetched-1'), make_feed_property('vecino-prefetched-2')],
+        nextCursor: 'c-vecino',
+      },
+    ]);
 
     const { result, rerender } = await render_feed({ filters, tab: 'para_ti', user_id: null });
     await act(async () => {
@@ -678,19 +720,25 @@ describe('useFeedProperties — cache-first por tab (#296.5)', () => {
     });
     await act(async () => {}); // deja correr el prefetch de 'siguiendo' (único vecino de para_ti)
 
-    expect(mock_fetch_feed_page).toHaveBeenCalledTimes(2);
+    expect(calls_for_tab('para_ti')).toHaveLength(1);
+    expect(calls_for_tab('siguiendo')).toHaveLength(1);
 
-    // FUGA: si el hit no usara la entrada prefetcheada, esta respuesta se colaría.
-    mock_fetch_feed_page.mockResolvedValueOnce({
-      data: [make_feed_property('fuga')],
-      nextCursor: 'c-fuga',
+    // FUGA: si el hit no usara la entrada prefetcheada, esta respuesta
+    // (encolada específicamente para 'siguiendo') se colaría.
+    feed.set('siguiendo', [{ data: [make_feed_property('fuga')], nextCursor: 'c-fuga' }]);
+    await act(async () => {
+      await rerender({ filters, tab: 'siguiendo', user_id: null });
     });
     await act(async () => {
-      rerender({ filters, tab: 'siguiendo', user_id: null });
       await result.current.loadInitial();
     });
 
-    expect(mock_fetch_feed_page).toHaveBeenCalledTimes(2);
+    // Sigue siendo hit para 'siguiendo' (0 llamadas nuevas para ESE tab); el
+    // GREEN corregido ahora SÍ prefetchea a partir de un hit (296.5), así que
+    // puede sumar una llamada para 'nuevos' (el otro vecino de 'siguiendo',
+    // sin cache) — eso no invalida "el hit fue instantáneo", que es lo que
+    // este caso afirma.
+    expect(calls_for_tab('siguiendo')).toHaveLength(1);
     expect(property_ids(result.current.data)).toEqual([
       'vecino-prefetched-1',
       'vecino-prefetched-2',
@@ -698,61 +746,93 @@ describe('useFeedProperties — cache-first por tab (#296.5)', () => {
     expect(result.current.nextCursor).toBe('c-vecino');
   });
 
-  it('(EC-CACHE-HOOK-15) notescrollindex_guarda_el_indice_y_un_regreso_posterior_expone_restoredscrollindex', async () => {
+  it('(EC-CACHE-HOOK-15) notescrollindex_escribe_en_el_tab_cargado_no_en_feed_tab_y_un_regreso_posterior_expone_restoredscrollindex', async () => {
     const filters: FilterState = { ...EMPTY_FILTERS };
-    mock_fetch_feed_page.mockResolvedValueOnce({
-      data: [make_feed_property('scroll-a')],
-      nextCursor: null,
-    });
+    const feed = respond_by_tab();
+    feed.set('venta', [{ data: [make_feed_property('scroll-a')], nextCursor: null }]);
     const { result, rerender } = await render_feed({ filters, tab: 'venta', user_id: null });
     await act(async () => {
       await result.current.loadInitial();
     });
 
-    act(() => {
-      result.current.noteScrollIndex(3);
+    // Cambia la prop `feed_tab` a 'renta' pero TODAVÍA NO llama loadInitial:
+    // el dataset de 'venta' sigue en `data` (loaded_tab_ref sigue en
+    // 'venta'). Un GREEN que escribiera con `feed_tab` (la prop, ya 'renta')
+    // en vez de con el tab CARGADO metería el índice en la entrada
+    // equivocada — la de 'renta', que encima ni siquiera existe todavía.
+    await act(async () => {
+      await rerender({ filters, tab: 'renta', user_id: null });
+    });
+    await act(() => {
+      result.current.noteScrollIndex(7);
     });
 
-    mock_fetch_feed_page.mockResolvedValueOnce({
-      data: [make_feed_property('scroll-b')],
-      nextCursor: null,
-    });
+    feed.set('renta', [{ data: [make_feed_property('scroll-b')], nextCursor: null }]);
     await act(async () => {
-      rerender({ filters, tab: 'renta', user_id: null });
       await result.current.loadInitial();
     });
 
+    const filters_key = feed_cache_key(filters, null);
+    expect(get_feed_tab_entry('venta', filters_key, Date.now())?.scroll_index).toBe(7);
+    expect(get_feed_tab_entry('renta', filters_key, Date.now())?.scroll_index).toBe(0);
+
+    // FUGA: si el regreso a 'venta' no fuera un hit, esta respuesta
+    // (encolada específicamente para 'venta') se colaría.
+    feed.set('venta', [{ data: [make_feed_property('fuga')], nextCursor: null }]);
     await act(async () => {
-      rerender({ filters, tab: 'venta', user_id: null });
+      await rerender({ filters, tab: 'venta', user_id: null });
+    });
+    await act(async () => {
       await result.current.loadInitial();
     });
 
-    expect(result.current.restoredScrollIndex).toBe(3);
+    expect(calls_for_tab('venta')).toHaveLength(1); // sigue siendo hit
+    expect(result.current.restoredScrollIndex).toBe(7);
   });
 
-  it('(EC-CACHE-HOOK-16) tras_un_refetch_restoredscrollindex_vuelve_a_null', async () => {
+  it('(EC-CACHE-HOOK-16) tras_un_refetch_restoredscrollindex_vuelve_a_null_y_la_entrada_queda_con_scroll_index_0', async () => {
     const filters: FilterState = { ...EMPTY_FILTERS };
-    mock_fetch_feed_page.mockResolvedValueOnce({
-      data: [make_feed_property('rs-a')],
-      nextCursor: null,
-    });
-    const { result } = await render_feed({ filters, tab: 'venta', user_id: null });
+    const feed = respond_by_tab();
+    feed.set('venta', [{ data: [make_feed_property('rs-a')], nextCursor: null }]);
+    const { result, rerender } = await render_feed({ filters, tab: 'venta', user_id: null });
     await act(async () => {
       await result.current.loadInitial();
     });
 
-    act(() => {
+    await act(() => {
       result.current.noteScrollIndex(5);
     });
 
-    mock_fetch_feed_page.mockResolvedValueOnce({
-      data: [make_feed_property('rs-b')],
-      nextCursor: null,
+    feed.set('renta', [{ data: [make_feed_property('rs-renta')], nextCursor: null }]);
+    await act(async () => {
+      await rerender({ filters, tab: 'renta', user_id: null });
     });
+    await act(async () => {
+      await result.current.loadInitial();
+    });
+
+    // ESTADO POBLADO (memoria reset_solo_se_prueba_desde_estado_poblado):
+    // antes de refetchear, confirma que el regreso a 'venta' SÍ restauró
+    // `restoredScrollIndex` a un valor no-null — si esto no se prueba, el
+    // `toBeNull()` de más abajo pasa aunque nadie lo haya reseteado nunca
+    // (sería el estado inicial de todos modos).
+    feed.set('venta', [{ data: [make_feed_property('fuga-antes-de-refetch')], nextCursor: null }]);
+    await act(async () => {
+      await rerender({ filters, tab: 'venta', user_id: null });
+    });
+    await act(async () => {
+      await result.current.loadInitial();
+    });
+    expect(calls_for_tab('venta')).toHaveLength(1); // sigue siendo hit
+    expect(result.current.restoredScrollIndex).toBe(5);
+
+    feed.set('venta', [{ data: [make_feed_property('rs-b')], nextCursor: null }]);
     await act(async () => {
       await result.current.refetch();
     });
 
     expect(result.current.restoredScrollIndex).toBeNull();
+    const filters_key = feed_cache_key(filters, null);
+    expect(get_feed_tab_entry('venta', filters_key, Date.now())?.scroll_index).toBe(0);
   });
 });

@@ -11,7 +11,7 @@
  * la guardia contra disparos duplicados vive en loadMore (hook).
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Platform,
   StyleSheet,
@@ -21,7 +21,7 @@ import {
   useWindowDimensions,
   RefreshControl,
 } from 'react-native';
-import { FlashList, type ListRenderItemInfo } from '@shopify/flash-list';
+import { FlashList, type FlashListRef, type ListRenderItemInfo } from '@shopify/flash-list';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import {
@@ -50,14 +50,14 @@ import { FEED_TABS } from '@/features/search/lib/feedSection';
 import { release_splash } from '@/lib/splash-gate';
 import { useFeedActiveIndex } from './hooks/useFeedActiveIndex';
 import { useFeedProperties } from './hooks/useFeedProperties';
-import { feed_key_extractor } from './lib/feedKeyExtractor';
+import { feed_key_extractor, type LappedFeedItem } from './lib/feedKeyExtractor';
 import type { FeedItem } from './lib/interleaveAds';
 
 export function FeedScreen() {
   const { height } = useWindowDimensions();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { viewabilityConfigCallbackPairs, isItemActive } = useFeedActiveIndex();
+  const { viewabilityConfigCallbackPairs, isItemActive, activeIndex } = useFeedActiveIndex();
   const { filters, active_filter_count, clear_filters, set_filter, feed_tab, set_feed_tab } =
     useFilters();
   // #241/#296.3: label del tab activo para el copy del vacío ("en venta"/"en renta"/"para ti"...).
@@ -72,11 +72,32 @@ export function FeedScreen() {
   // 296.4: «Siguiendo» filtra por los follows de la persona logueada; sin
   // sesión (user null) la fuente por_owner resuelve vacío sin tocar la red.
   const { user } = useAuth();
-  const { data, isLoading, error, loadInitial, refetch, loadMore } = useFeedProperties(
-    filters,
-    feed_tab,
-    user?.id ?? null,
-  );
+  const {
+    data,
+    isLoading,
+    error,
+    loadInitial,
+    refetch,
+    loadMore,
+    restoredScrollIndex,
+    noteScrollIndex,
+  } = useFeedProperties(filters, feed_tab, user?.id ?? null);
+  // 296.5 — posición por tab: el índice activo se anota en la caché del tab
+  // cargado y, al volver a un tab con caché, la FlashList salta al índice
+  // guardado sin animación (restoredScrollIndex vuelve a null tras refetch).
+  const list_ref = useRef<FlashListRef<LappedFeedItem>>(null);
+  useEffect(() => {
+    noteScrollIndex(activeIndex);
+  }, [activeIndex, noteScrollIndex]);
+  useEffect(() => {
+    if (restoredScrollIndex == null || restoredScrollIndex >= data.length) return;
+    // ponytail: try/catch — si la lista aún no midió, scrollToIndex lanza/rechaza; se ignora.
+    try {
+      void list_ref.current?.scrollToIndex({ index: restoredScrollIndex, animated: false })?.catch(() => {});
+    } catch {
+      /* lista sin layout todavía */
+    }
+  }, [restoredScrollIndex, data.length]);
   // #243.2: refrescando = cargando con datos ya en pantalla (el arranque usa
   // skeleton). Desde #288.1 `isLoading` es SOLO carga inicial/refetch: las
   // páginas y las vueltas del feed infinito cargan en silencio.
@@ -231,6 +252,7 @@ export function FeedScreen() {
               Todas estas props son ScrollViewProps, que FlashList v2 re-exporta
               directamente (extiende Omit<ScrollViewProps, 'maintainVisibleContentPosition'>). */}
           <FlashList
+            ref={list_ref}
             data={data}
             keyExtractor={feed_key_extractor}
             renderItem={render_item}
@@ -313,7 +335,8 @@ export function FeedScreen() {
               sustituye las 2 secciones de #241) — fila deslizable que arranca tras
               el botón de filtros (296.2: ya no centrada). set_feed_tab cambia
               feed_tab (store propio) → `filters.operation_types` se deriva y
-              useFeedProperties vacía la lista; loadInitial recarga (skeleton). */}
+              loadInitial cambia de identidad: con caché del tab (296.5) restaura
+              al instante; sin caché (1ª visita) recarga con skeleton. */}
           <FeedSectionTabs tabs={FEED_TABS} value={feed_tab} on_change={set_feed_tab} style={{ top: top_row_y }} />
 
           <TouchableOpacity

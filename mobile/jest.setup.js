@@ -191,3 +191,26 @@ afterEach(async () => {
     _react_internals.actQueue = null;
   }
 });
+
+/**
+ * #296.5 — feedTabCache.ts es un Map de MÓDULO (a propósito: sobrevive a
+ * cambios de tab/remounts dentro de la misma sesión de la app). Eso mismo lo
+ * hace persistir entre `it()` de un mismo archivo de test bajo Jest (cada
+ * archivo tiene su propio module registry, pero DENTRO de un archivo el
+ * registro se comparte entre tests) — sin este reset, ~40 suites del feed
+ * preexistentes a la caché (que no sabían de ella y nunca la resetean) veían
+ * un hit cruzado de OTRO `it()` con el mismo tab/filters/user_id por defecto
+ * ('para_ti'/sin filtros/null) y perdían su aislamiento (p.ej. gate-EC-1 de
+ * useFeedProperties.test.tsx: data ya no salía [] porque un test anterior,
+ * dentro del MISMO archivo, ya había poblado esa entrada).
+ * ponytail: require perezoso + try/catch — este setup corre para TODA la app
+ * móvil, no solo feed/; si el módulo no existe (aún no se hizo merge) o falla
+ * al cargar, no debe tumbar el resto de la suite.
+ */
+afterEach(() => {
+  try {
+    require('./src/features/feed/lib/feedTabCache').reset_feed_tab_cache();
+  } catch (_e) {
+    // sin feedTabCache.ts (rama vieja) o error al requerir: no-op.
+  }
+});

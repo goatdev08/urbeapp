@@ -44,6 +44,8 @@ export type UseFeedActiveIndexResult = {
   viewabilityConfigCallbackPairs: FeedViewabilityPairs;
   /** Devuelve true solo si el ítem en `index` debe reproducirse. */
   isItemActive: (index: number) => boolean;
+  /** #296.5: índice del ítem más visible — lo consume FeedScreen para noteScrollIndex. */
+  activeIndex: number;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -147,5 +149,6 @@ export function useFeedActiveIndex(): UseFeedActiveIndexResult {
   return {
     viewabilityConfigCallbackPairs: pairs,
     isItemActive,
+    activeIndex: active_index,
   };
 }

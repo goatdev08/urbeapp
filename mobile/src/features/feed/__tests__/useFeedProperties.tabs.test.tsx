@@ -147,8 +147,15 @@ describe('useFeedProperties — despacho por feed_tab (#296.4)', () => {
       await result.current.loadInitial();
     });
 
-    expect(mock_fetch_feed_page).toHaveBeenCalledTimes(1);
-    const call = mock_fetch_feed_page.mock.calls[0]!;
+    // #296.5: tras un loadInitial exitoso se prefetchean en idle las vecinas
+    // (neighbor_tabs) — se filtra por el tab VISIBLE ('para_ti') para que el
+    // conteo siga afirmando "una sola carga del tab visible con este ctx
+    // exacto", sin acoplarse a cuántas vecinas se pidan de más.
+    const calls_para_ti = mock_fetch_feed_page.mock.calls.filter(
+      (c) => (c[3] as { tab: string }).tab === 'para_ti',
+    );
+    expect(calls_para_ti).toHaveLength(1);
+    const call = calls_para_ti[0]!;
     expect(call[0]).toBeUndefined();
     expect(call[3]).toEqual({ tab: 'para_ti', user_id: null });
   });
@@ -183,8 +190,13 @@ describe('useFeedProperties — despacho por feed_tab (#296.4)', () => {
       await result.current.loadMore();
     });
 
-    expect(mock_fetch_feed_page).toHaveBeenCalledTimes(2);
-    const second_call = mock_fetch_feed_page.mock.calls[1]!;
+    // #296.5: mismo motivo que EC-TAB-1 — se filtra por el tab VISIBLE
+    // ('venta') para no contar las vecinas prefetcheadas en idle.
+    const calls_venta = mock_fetch_feed_page.mock.calls.filter(
+      (c) => (c[3] as { tab: string }).tab === 'venta',
+    );
+    expect(calls_venta).toHaveLength(2);
+    const second_call = calls_venta[1]!;
     expect(second_call[0]).toBe('10');
     expect(second_call[3]).toEqual({ tab: 'venta', user_id: 'user-xyz' });
   });

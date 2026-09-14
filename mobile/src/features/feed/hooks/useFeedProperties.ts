@@ -58,8 +58,10 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { InteractionManager } from 'react-native';
 
 import { useLocation } from '@/features/location/LocationProvider';
+import { EMPTY_FILTERS } from '@/features/search/lib/filterQuery';
 import type { FilterState } from '@/features/search/types';
 import { onPropertyDeleted } from '@/lib/propertyEvents';
 
@@ -73,9 +75,16 @@ import {
 import type { LappedFeedItem } from '../lib/feedKeyExtractor';
 import { mint_videos, type FeedPropertiesDeps } from '../lib/feedProperties';
 import { fetch_feed_page } from '../lib/feedSources';
+import {
+  feed_cache_key,
+  get_feed_tab_entry,
+  neighbor_tabs,
+  set_feed_tab_entry,
+  update_feed_tab_scroll,
+} from '../lib/feedTabCache';
 import { avoid_adjacent_repeat, hash_seed, shuffle_with_seed } from '../lib/feedShuffle';
 import { interleave_ads_with_state, type FeedAd, type FeedItem } from '../lib/interleaveAds';
-import type { FeedTab } from '@/features/search/lib/feedSection';
+import { with_tab, type FeedTab } from '@/features/search/lib/feedSection';
 import type { FeedPropertyWithUrl } from '../types';
 
 export interface UseFeedPropertiesState {
@@ -83,9 +92,17 @@ export interface UseFeedPropertiesState {
   isLoading: boolean;
   error: string | null;
   nextCursor: string | null;
-  /** Carga la primera página (descarta estado previo). */
+  /**
+   * Carga la primera página. #296.5 — cache-first por tab: con entrada
+   * vigente en feedTabCache restaura data/nextCursor/lapCount/scroll SIN
+   * fetch y sin encender isLoading; sin entrada (o vencida) cae al flujo de
+   * red de siempre y escribe la entrada al resolver.
+   */
   loadInitial: () => Promise<void>;
-  /** Alias de loadInitial para el patrón pull-to-refresh. */
+  /**
+   * #296.5: YA NO es alias de loadInitial — salta la caché siempre (pull-to-
+   * refresh pide datos frescos a propósito) y reescribe la entrada del tab.
+   */
   refetch: () => Promise<void>;
   /** Carga la siguiente página y apende al array existente. */
   loadMore: () => Promise<void>;
@@ -96,6 +113,10 @@ export interface UseFeedPropertiesState {
    * para tests y smoke (useFeedProperties.lap-wrap.test.tsx).
    */
   lapCount: number;
+  /** #296.5: scroll_index restaurado desde la caché en el último loadInitial-hit; null sin restauración (miss/refetch). */
+  restoredScrollIndex: number | null;
+  /** #296.5: guarda `index` como scroll_index del tab actualmente cargado (feedTabCache). */
+  noteScrollIndex: (index: number) => void;
 }
 
 /** Config del kill-switch, forma de la fila de `ads_feed_config()`. */
@@ -367,6 +388,24 @@ export function useFeedProperties(
   // useFeedActiveIndex corta la reproducción fuera de foreground/tab.
   const lap_ref = useRef(0);
   const [lapCount, set_lap_count] = useState(0);
+  // #296.5 — tab cuyo dataset está actualmente en `data` (lo usan
+  // noteScrollIndex/loadMore para escribir la entrada correcta de
+  // feedTabCache; puede diferir de `feed_tab` un instante entre el cambio de
+  // prop y el loadInitial que lo sigue).
+  const loaded_tab_ref = useRef<FeedTab>(feed_tab);
+  // #296.5 — scroll_index restaurado en el último HIT de caché; null tras un
+  // miss/refetch (dataset fresco, sin scroll heredado).
+  const [restoredScrollIndex, set_restored_scroll_index] = useState<number | null>(null);
+  // #296.5 — señal para disparar el prefetch de vecinos vía efecto (en vez de
+  // llamar InteractionManager.runAfterInteractions in-line dentro del propio
+  // fetch): así el prefetch corre en un tick de React separado del que
+  // resuelve loadInitial, no en el flujo síncrono que el propio loadInitial
+  // todavía está desenrollando.
+  const [prefetch_trigger, set_prefetch_trigger] = useState<{
+    tab: FeedTab;
+    filters_key: string;
+    deps: FeedPropertiesDeps | undefined;
+  } | null>(null);
 
   // #249 — SOLO LA PETICIÓN VIGENTE ESCRIBE ESTADO.
   // Al aplicar un filtro, la petición del filtro ANTERIOR sigue en vuelo (no se
@@ -411,36 +450,140 @@ export function useFeedProperties(
     return { supabase, coords };
   }, [coords]);
 
+  // #296.5 — prefetch en idle de la página 1 de los vecinos de `tab` (doc 050,
+  // opción I1) SIN entrada vigente. Corre tras CUALQUIER loadInitial exitoso
+  // (hit o miss) — un hit también deja la puerta abierta a que sus propios
+  // vecinos sigan sin caché. SOLO datos/URLs — nunca
+  // compone anuncios (evita el costo de ads_for_zone/mint en background) ni
+  // toca data/isLoading/error del tab visible. Fallos por vecino se ignoran
+  // en silencio: es trabajo de fondo, no una carga que el usuario pidió.
+  const schedule_neighbor_prefetch = useCallback(
+    (tab: FeedTab, filters_key: string, deps: FeedPropertiesDeps | undefined) => {
+      const active_filters = filters ?? EMPTY_FILTERS;
+      InteractionManager.runAfterInteractions(async () => {
+        for (const vecino of neighbor_tabs(tab)) {
+          if (get_feed_tab_entry(vecino, filters_key, Date.now())) continue;
+          try {
+            const result = await fetch_feed_page(undefined, deps, with_tab(active_filters, vecino), {
+              tab: vecino,
+              user_id,
+            });
+            set_feed_tab_entry(vecino, {
+              items: to_property_items(result.data),
+              next_cursor: result.nextCursor,
+              lap: 0,
+              scroll_index: 0,
+              fetched_at: Date.now(),
+              filters_key,
+            });
+          } catch {
+            // ponytail: un vecino caído no es un error del feed — es trabajo
+            // de fondo que nadie pidió todavía; se reintenta en el próximo
+            // loadInitial real de ese tab.
+          }
+        }
+      });
+    },
+    [filters, user_id],
+  );
+
+  // #296.5 — flujo de red compartido por loadInitial (rama miss) y refetch
+  // (siempre lo usa, salta la caché a propósito): fetch + composición +
+  // escritura de la entrada del tab + prefetch de vecinos.
+  const fetch_and_store = useCallback(
+    async (filters_key: string) => {
+      // #59: no cargar hasta que haya coords reales. Sin este guard, el primer
+      // loadInitial (coords null en cold start) traía el orden centrado en GDL
+      // (fallback del lib) y luego saltaba al orden por proximidad al llegar la
+      // coord real → "flash".
+      if (!coords) return;
+      const seq = ++request_seq_ref.current;
+      lap_ref.current = 0; // 285.3: carga nueva = vuelta 0; una vuelta en vuelo llega tarde y se descarta
+      set_lap_count(0);
+      set_is_loading(true);
+      set_error(null);
+      set_restored_scroll_index(null); // 296.5: dataset fresco, sin scroll heredado
+      try {
+        const deps = build_deps();
+        const result = await fetch_feed_page(undefined, deps, filters, { tab: feed_tab, user_id });
+        // Se corta ANTES de componer: una página que ya no se va a pintar no
+        // debe firmar anuncios ni sumar a `already_shown_ref` (el cap de sesión
+        // contaría impresiones que nadie llegó a ver).
+        if (seq !== request_seq_ref.current) return;
+        since_last_ad_ref.current = undefined; // 256: carga nueva, sin página anterior que heredar
+        const items = await compose_feed_items(deps?.supabase, resolve_ad_zone_coords(coords), result.data, already_shown_ref, true, since_last_ad_ref);
+        if (seq !== request_seq_ref.current) return; // llegó tarde: ya hay otra carga
+        set_data(items);
+        set_next_cursor(result.nextCursor);
+        loaded_tab_ref.current = feed_tab;
+        set_feed_tab_entry(feed_tab, {
+          items,
+          next_cursor: result.nextCursor,
+          lap: 0,
+          scroll_index: 0,
+          fetched_at: Date.now(),
+          filters_key,
+        });
+        set_prefetch_trigger({ tab: feed_tab, filters_key, deps });
+      } catch (e) {
+        if (seq !== request_seq_ref.current) return;
+        set_error(e instanceof Error ? e.message : 'Error al cargar el feed');
+      } finally {
+        if (seq === request_seq_ref.current) set_is_loading(false);
+      }
+    },
+    [coords, resolve_ad_zone_coords, filters, feed_tab, user_id, build_deps],
+  );
+
   const load_initial = useCallback(async () => {
-    // #59: no cargar hasta que haya coords reales. Sin este guard, el primer
-    // loadInitial (coords null en cold start) traía el orden centrado en GDL
-    // (fallback del lib) y luego saltaba al orden por proximidad al llegar la
-    // coord real → "flash".
-    if (!coords) return;
-    const seq = ++request_seq_ref.current;
-    lap_ref.current = 0; // 285.3: carga nueva = vuelta 0; una vuelta en vuelo llega tarde y se descarta
-    set_lap_count(0);
-    set_is_loading(true);
-    set_error(null);
-    try {
-      const deps = build_deps();
-      const result = await fetch_feed_page(undefined, deps, filters, { tab: feed_tab, user_id });
-      // Se corta ANTES de componer: una página que ya no se va a pintar no
-      // debe firmar anuncios ni sumar a `already_shown_ref` (el cap de sesión
-      // contaría impresiones que nadie llegó a ver).
-      if (seq !== request_seq_ref.current) return;
-      since_last_ad_ref.current = undefined; // 256: carga nueva, sin página anterior que heredar
-      const items = await compose_feed_items(deps?.supabase, resolve_ad_zone_coords(coords), result.data, already_shown_ref, true, since_last_ad_ref);
-      if (seq !== request_seq_ref.current) return; // llegó tarde: ya hay otra carga
-      set_data(items);
-      set_next_cursor(result.nextCursor);
-    } catch (e) {
-      if (seq !== request_seq_ref.current) return;
-      set_error(e instanceof Error ? e.message : 'Error al cargar el feed');
-    } finally {
-      if (seq === request_seq_ref.current) set_is_loading(false);
+    const filters_key = feed_cache_key(filters ?? EMPTY_FILTERS, user_id);
+    // #296.5 — el cache-check SOLO aplica al CAMBIAR de tab (loaded_tab_ref
+    // distinto de feed_tab): una llamada repetida a loadInitial() para el tab
+    // que YA está en pantalla (mismo identity de loadInitial, o un caller que
+    // lo invoca de nuevo a mano) sigue refrescando de red como siempre — es
+    // el comportamiento que #285.3/#249 ya tenían y varias suites verifican
+    // (p.ej. que una vuelta/lap se resetea al recargar). Sin este guard, una
+    // segunda llamada al MISMO tab "restauraba" su propio último estado en
+    // vez de refrescar. ponytail: techo conocido — un remount real de
+    // FeedScreen con el mismo tab (no solo un cambio de props) tampoco
+    // restaura desde caché; no lo cubre ningún caso de uso ni test dado.
+    const cached =
+      loaded_tab_ref.current !== feed_tab
+        ? get_feed_tab_entry(feed_tab, filters_key, Date.now())
+        : undefined;
+    if (cached) {
+      // #296.5 — HIT: restaura sin fetch, SIN encender isLoading ni siquiera
+      // un instante (ninguna rama de este bloque tiene `await`). Invalida
+      // cualquier carga anterior en vuelo (seq) para que una respuesta tardía
+      // no pise este tab recién restaurado.
+      ++request_seq_ref.current;
+      lap_ref.current = cached.lap;
+      set_lap_count(cached.lap);
+      since_last_ad_ref.current = undefined;
+      set_error(null);
+      set_data(cached.items);
+      set_next_cursor(cached.next_cursor);
+      set_restored_scroll_index(cached.scroll_index);
+      loaded_tab_ref.current = feed_tab;
+      set_prefetch_trigger({ tab: feed_tab, filters_key, deps: build_deps() });
+      return;
     }
-  }, [coords, resolve_ad_zone_coords, filters, feed_tab, user_id, build_deps]);
+    await fetch_and_store(filters_key);
+  }, [filters, feed_tab, user_id, fetch_and_store, build_deps]);
+
+  const refetch = useCallback(async () => {
+    const filters_key = feed_cache_key(filters ?? EMPTY_FILTERS, user_id);
+    await fetch_and_store(filters_key);
+  }, [filters, user_id, fetch_and_store]);
+
+  const note_scroll_index = useCallback((index: number) => {
+    update_feed_tab_scroll(loaded_tab_ref.current, index);
+  }, []);
+
+  useEffect(() => {
+    if (!prefetch_trigger) return;
+    schedule_neighbor_prefetch(prefetch_trigger.tab, prefetch_trigger.filters_key, prefetch_trigger.deps);
+  }, [prefetch_trigger, schedule_neighbor_prefetch]);
 
   const load_more = useCallback(async () => {
     if (isLoading || load_more_in_flight_ref.current || !coords) return;
@@ -498,6 +641,19 @@ export function useFeedProperties(
       }
       set_data((prev) => [...prev, ...items]);
       set_next_cursor(result.nextCursor);
+      // #296.5 — el tab cargado sigue siendo el mismo (loadMore nunca cambia
+      // de tab): actualiza SU entrada con los items acumulados y el cursor
+      // nuevo, preservando el scroll_index que ya tuviera.
+      const filters_key = feed_cache_key(filters ?? EMPTY_FILTERS, user_id);
+      const existing_entry = get_feed_tab_entry(loaded_tab_ref.current, filters_key, Date.now());
+      set_feed_tab_entry(loaded_tab_ref.current, {
+        items: [...data, ...items],
+        next_cursor: result.nextCursor,
+        lap: lap_ref.current,
+        scroll_index: existing_entry?.scroll_index ?? 0,
+        fetched_at: Date.now(),
+        filters_key,
+      });
     } catch (e) {
       if (seq !== request_seq_ref.current) return;
       set_error(e instanceof Error ? e.message : 'Error al cargar más');
@@ -540,8 +696,10 @@ export function useFeedProperties(
     error,
     nextCursor,
     loadInitial: load_initial,
-    refetch: load_initial,
+    refetch,
     loadMore: load_more,
     lapCount,
+    restoredScrollIndex,
+    noteScrollIndex: note_scroll_index,
   };
 }
