@@ -21,7 +21,7 @@
  *   - Patrón `await renderHook(...)`: igual que useEditProfile.test.tsx (RNTL 14
  *     renderHook es async — devuelve Promise que estabiliza efectos).
  *
- * EDGE CASES CUBIERTOS (6 casos):
+ * EDGE CASES CUBIERTOS (9 casos):
  *
  * ### Happy path
  * - EC-1: fetch_inicial_en_mount
@@ -36,6 +36,14 @@
  * ### Boundary / error
  * - EC-5: users_invisible_por_rls_no_tumba_la_pantalla  (#250)
  * - EC-6: ni_users_ni_vista_expone_agente_no_encontrado
+ *
+ * ### follower_count (subtarea 78.3, tarea #78 «follow de cuentas F1») — RED
+ *   HOY el select de agent_public_profiles pide 'full_name, profile_photo_url,
+ *   has_phone' (sin follower_count) y AgentProfile no declara el campo —
+ *   los 3 casos fallan intencionalmente hasta el GREEN.
+ * - EC-7: select_de_agent_public_profiles_pide_follower_count
+ * - EC-8: data_follower_count_refleja_el_valor_de_la_vista
+ * - EC-9: sin_fila_de_la_vista_follower_count_cero
  *
  * ── #250 (smoke de producción #222, 2026-09-03) ────────────────────────────
  * La query de `users` DEJA DE SER BLOQUEANTE. Antes usaba `.single()`, así que
@@ -173,6 +181,7 @@ function make_supabase_mock(opts: {
     _mock_maybe_single: mock_maybe_single,
     _mock_eq_users: mock_eq_users,
     _mock_eq_prefs: mock_eq_prefs,
+    _mock_select_prefs: mock_select_prefs,
   };
 }
 
@@ -316,5 +325,53 @@ describe('useAgentProfile', () => {
     expect(result.current.loading).toBe(false);
     expect(result.current.error).toBe('Agente no encontrado');
     expect(result.current.data).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// follower_count (subtarea 78.3, tarea #78 «follow de cuentas F1») — RED
+//
+// NO se toca `types.ts` (AgentProfile no declara `follower_count` todavía —
+// el GREEN lo agrega): igual que useAgentProfile.has_phone.test.ts, el cast
+// local `as unknown as WithFollowerCount` deja pasar tsc sin tocar el
+// archivo de producción; en runtime el objeto real (una vez implementado
+// el GREEN) sí traerá la propiedad.
+// ---------------------------------------------------------------------------
+
+type WithFollowerCount = { follower_count: number };
+
+describe('useAgentProfile — follower_count (#78)', () => {
+  it('(EC-7) select_de_agent_public_profiles_pide_follower_count: el select de la vista incluye follower_count en la lista de columnas', async () => {
+    await renderHook(() => useAgentProfile(TEST_AGENT_ID));
+
+    const select_arg = mock_supabase_holder.client._mock_select_prefs.mock.calls[0]?.[0] as string;
+    expect(select_arg).toContain('follower_count');
+  });
+
+  it('(EC-8) data_follower_count_refleja_el_valor_de_la_vista: la vista trae follower_count=42 → data.follower_count === 42', async () => {
+    mock_supabase_holder.client = make_supabase_mock({
+      prefs_result: {
+        data: { ...TEST_PREFS_DATA, follower_count: 42 } as unknown as typeof TEST_PREFS_DATA,
+        error: null,
+      },
+    });
+
+    const { result } = await renderHook(() => useAgentProfile(TEST_AGENT_ID));
+
+    expect(result.current.loading).toBe(false);
+    const data = result.current.data as unknown as WithFollowerCount | null;
+    expect(data?.follower_count).toBe(42);
+  });
+
+  it('(EC-9) sin_fila_de_la_vista_follower_count_cero: perfil solo en users (sin fila en agent_public_profiles) → data.follower_count === 0', async () => {
+    mock_supabase_holder.client = make_supabase_mock({
+      prefs_result: { data: null, error: null },
+    });
+
+    const { result } = await renderHook(() => useAgentProfile(TEST_AGENT_ID));
+
+    expect(result.current.loading).toBe(false);
+    const data = result.current.data as unknown as WithFollowerCount | null;
+    expect(data?.follower_count).toBe(0);
   });
 });

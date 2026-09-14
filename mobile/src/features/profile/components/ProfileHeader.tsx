@@ -148,7 +148,7 @@ export function ProfileHeader({
         <ProfessionalStats
           stats={stats ?? null}
           loading={loading}
-          is_own_profile={is_own_profile}
+          follower_count={profile.follower_count}
         />
       </View>
 

@@ -40,6 +40,8 @@ actualizado: 2026-08-08
 
 **No ve, nunca:** sus preferencias de búsqueda, sus likes/guardados en publicaciones de OTROS agentes, sus consentimientos, sus notificaciones, ni su actividad si nunca lo contactó.
 
+**Seguidores (#78, exploración 048 Q4, 2026-09-14):** el publicador ve **solo el conteo** (`agent_public_profiles.follower_count`), nunca quién lo sigue — `follows_select` abre únicamente las filas propias del seguidor (∨ admin de plataforma). Seguir a alguien es una señal de interés privada de quien la emite, igual que un like en publicaciones ajenas: exponer la lista deanonimizaría el radar del CRM por otra puerta. Sí se avisa al seguido con el nombre público del seguidor (`new_follower`): la persona eligió mostrarlo y el aviso es puntual, no una lista consultable. Ver [[perfil-agente]].
+
 ## Cómo se hace cumplir
 
 Dos helpers `security definer` en el schema `private` (no expuesto por PostgREST):

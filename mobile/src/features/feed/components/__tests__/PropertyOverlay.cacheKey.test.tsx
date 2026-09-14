@@ -45,6 +45,13 @@ jest.mock('@/hooks/useR2Urls', () => ({
   useR2Urls: jest.fn(),
 }));
 
+// FollowButton (78.4) llama useFollow → useAuth; esta suite no envuelve en
+// AuthProvider (no es lo que se prueba aquí) — se mockea igual que en
+// PropertyOverlay.comments.test.tsx.
+jest.mock('@/features/profile/hooks/useFollow', () => ({
+  useFollow: () => ({ is_following: false, loading: false, is_own: false, toggle_follow: jest.fn() }),
+}));
+
 const mock_use_r2_urls = useR2Urls as jest.MockedFunction<typeof useR2Urls>;
 
 const TEST_KEY = 'avatars/user-1/uuid-1';

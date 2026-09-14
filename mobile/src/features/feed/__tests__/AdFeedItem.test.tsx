@@ -33,6 +33,14 @@ jest.mock('@/features/location/LocationProvider', () => ({
   useLocation: () => ({ coords: { latitude: 20.6597, longitude: -103.3496 }, status: 'granted' }),
 }));
 
+// AdFeedItem solo importa la CONSTANTE INFO_BOTTOM de PropertyOverlay, pero
+// ese módulo ahora también carga FollowButton → useFollow → useAuth (78.4) —
+// sin este mock, useAuth arrastra el cliente de Supabase real (throw sin env
+// vars bajo Jest). Mismo mock que VideoFeedItem.test.tsx.
+jest.mock('@/features/auth/context', () => ({
+  useAuth: jest.fn(() => ({ user: null })),
+}));
+
 // 213: la rama promo navega con router.push('/property/[id]') — se mockea
 // como en el resto del repo (PropertyDetailScreen.test.tsx et al.), NUNCA se
 // carga expo-router real bajo Jest.

@@ -1017,6 +1017,39 @@ export type Database = {
           },
         ]
       }
+      follows: {
+        Row: {
+          created_at: string
+          followed_user_id: string
+          follower_user_id: string
+        }
+        Insert: {
+          created_at?: string
+          followed_user_id: string
+          follower_user_id: string
+        }
+        Update: {
+          created_at?: string
+          followed_user_id?: string
+          follower_user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "follows_followed_user_id_fkey"
+            columns: ["followed_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "follows_follower_user_id_fkey"
+            columns: ["follower_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lead_origin_properties: {
         Row: {
           contacted_at: string
@@ -2049,6 +2082,7 @@ export type Database = {
           deletion_pending_at: string | null
           email: string
           first_name: string | null
+          follower_count: number
           id: string
           is_verified_agent: boolean
           last_login_at: string | null
@@ -2071,6 +2105,7 @@ export type Database = {
           deletion_pending_at?: string | null
           email: string
           first_name?: string | null
+          follower_count?: number
           id: string
           is_verified_agent?: boolean
           last_login_at?: string | null
@@ -2093,6 +2128,7 @@ export type Database = {
           deletion_pending_at?: string | null
           email?: string
           first_name?: string | null
+          follower_count?: number
           id?: string
           is_verified_agent?: boolean
           last_login_at?: string | null
@@ -2132,6 +2168,7 @@ export type Database = {
     Views: {
       agent_public_profiles: {
         Row: {
+          follower_count: number | null
           full_name: string | null
           has_phone: boolean | null
           profile_photo_url: string | null

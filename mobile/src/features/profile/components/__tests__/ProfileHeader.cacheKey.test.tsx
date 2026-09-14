@@ -58,6 +58,7 @@ function make_profile(overrides: Partial<AgentProfile> = {}): AgentProfile {
     has_phone: false,
     member_since: '2026-08-01T10:00:00Z',
     agency_name: null,
+    follower_count: 0,
     ...overrides,
   };
 }

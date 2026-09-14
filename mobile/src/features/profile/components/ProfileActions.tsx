@@ -35,6 +35,7 @@ import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { BookmarkSimple, PencilSimple, WhatsappLogo } from 'phosphor-react-native';
 
+import { FollowButton } from '@/components/FollowButton';
 import { colors, fonts, radii, spacing } from '@/theme/theme';
 import { supabase } from '@/lib/supabase/client';
 import { open_whatsapp_text } from '@/features/property-detail/utils/whatsapp';
@@ -105,10 +106,6 @@ export function ProfileActions({
     );
   }
 
-  // Sin teléfono no hay nada que abrir: se omite la fila entera en vez de
-  // pintar un botón muerto.
-  if (!has_phone) return null;
-
   const greeting = agent_name != null ? `Hola ${agent_name}` : 'Hola';
 
   async function handle_press(): Promise<void> {
@@ -146,18 +143,26 @@ export function ProfileActions({
 
   return (
     <View style={styles.row}>
-      <Pressable
-        onPress={() => {
-          void handle_press();
-        }}
-        disabled={resolving}
-        accessibilityRole="button"
-        accessibilityLabel="Contactar por WhatsApp"
-        style={({ pressed }) => [styles.button, pressed && styles.button_pressed]}
-      >
-        <Text style={styles.button_text}>Contactar por WhatsApp</Text>
-        <WhatsappLogo size={ICON_SIZE} color={colors.ink} weight="fill" />
-      </Pressable>
+      {/* Píldora «Seguir» (78.4) — con ella la fila del perfil ajeno ya
+          siempre tiene contenido, así que WhatsApp deja de decidir sola si
+          la fila entera se pinta. */}
+      <FollowButton followed_user_id={agent_user_id} variant="light" testID="follow-button" />
+
+      {/* Sin teléfono no hay nada que abrir: se omite SOLO este botón. */}
+      {has_phone && (
+        <Pressable
+          onPress={() => {
+            void handle_press();
+          }}
+          disabled={resolving}
+          accessibilityRole="button"
+          accessibilityLabel="Contactar por WhatsApp"
+          style={({ pressed }) => [styles.button, pressed && styles.button_pressed]}
+        >
+          <Text style={styles.button_text}>Contactar por WhatsApp</Text>
+          <WhatsappLogo size={ICON_SIZE} color={colors.ink} weight="fill" />
+        </Pressable>
+      )}
     </View>
   );
 }

@@ -28,6 +28,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Bathtub, Bed, BookmarkSimple, ChatCircle, Heart, type Icon, ShareNetwork, WhatsappLogo } from 'phosphor-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { FollowButton } from '@/components/FollowButton';
 import { useR2Urls } from '@/hooks/useR2Urls';
 import { format_price } from '@/lib/formatPrice';
 import { colors, fonts, glass, radii, spacing } from '@/theme/theme';
@@ -213,38 +214,46 @@ export function PropertyOverlay({
         style={[styles.info, { bottom: insets.bottom + INFO_BOTTOM }]}
         pointerEvents="box-none"
       >
-        {/* Avatar + nombre del agente (#145.4) — foto real con fallback a
-            inicial; feedback de presión y tap → perfil público del agente. */}
-        <Pressable
-          onPress={onAgentPress}
-          style={({ pressed }) => [styles.agent_row, pressed && styles.agent_row_pressed]}
-          accessibilityRole="button"
-          accessibilityLabel={
-            property.agent_name
-              ? `Ver perfil de ${property.agent_name}`
-              : 'Ver perfil del agente'
-          }
-        >
-          <View style={styles.agent_avatar}>
-            {show_photo ? (
-              <Image
-                source={{ uri: avatar_url!, ...(avatar_cache_key ? { cacheKey: avatar_cache_key } : {}) }}
-                style={styles.agent_photo}
-                contentFit="cover"
-                onError={() => set_avatar_error(true)}
-              />
-            ) : (
-              <Text style={styles.agent_initial} numberOfLines={1}>
-                {agent_initial}
+        {/* Fila del agente (78.4): DOS hermanos NO anidados — el Pressable de
+            avatar+nombre (#145.4, intacto) y la píldora de «Seguir», empujada
+            al extremo derecho (marginLeft:'auto', tal cual el prototipo).
+            box-none: la fila no captura toques fuera de sus hijos. */}
+        <View style={styles.agent_row} pointerEvents="box-none">
+          <Pressable
+            onPress={onAgentPress}
+            style={({ pressed }) => [styles.agent_info, pressed && styles.agent_info_pressed]}
+            accessibilityRole="button"
+            accessibilityLabel={
+              property.agent_name
+                ? `Ver perfil de ${property.agent_name}`
+                : 'Ver perfil del agente'
+            }
+          >
+            <View style={styles.agent_avatar}>
+              {show_photo ? (
+                <Image
+                  source={{ uri: avatar_url!, ...(avatar_cache_key ? { cacheKey: avatar_cache_key } : {}) }}
+                  style={styles.agent_photo}
+                  contentFit="cover"
+                  onError={() => set_avatar_error(true)}
+                />
+              ) : (
+                <Text style={styles.agent_initial} numberOfLines={1}>
+                  {agent_initial}
+                </Text>
+              )}
+            </View>
+            {property.agent_name && (
+              <Text style={styles.agent_name} numberOfLines={1}>
+                {property.agent_name}
               </Text>
             )}
+          </Pressable>
+
+          <View style={styles.follow_button_wrap}>
+            <FollowButton followed_user_id={property.owner_user_id} variant="dark" testID="follow-button" />
           </View>
-          {property.agent_name && (
-            <Text style={styles.agent_name} numberOfLines={1}>
-              {property.agent_name}
-            </Text>
-          )}
-        </Pressable>
+        </View>
 
         {/* Bloque de info tappable → abre el detalle (/property/[id]).
             Separado del avatar (onAgentPress) y del doble-tap del video (like). */}
@@ -423,14 +432,33 @@ const styles = StyleSheet.create({
     left: 16,
     right: 74, // deja margen para el rail (14px right + 46px ancho + 14px gap)
   },
+  /** Fila del agente (78.4): avatar+nombre a la izquierda, píldora «Seguir» al
+   * extremo derecho. Sin alignSelf propio — se estira al ancho de `info`
+   * (default de un View columna) para que marginLeft:'auto' del wrap tenga
+   * espacio libre que consumir, igual que el div.flex del prototipo. */
   agent_row: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: spacing.s_12,
+  },
+  /** Pressable de avatar+nombre — angosto (alignSelf:'flex-start', #145.4)
+   * para no capturar toques fuera de sí mismo dentro de la fila. */
+  agent_info: {
     alignSelf: 'flex-start',
+    // flexShrink:1 (default RN es 0): con la píldora de «Seguir» como hermana
+    // en la fila, este bloque debe poder ceder ancho en vez de empujarla
+    // fuera de `info` (right:74) con un nombre largo.
+    flexShrink: 1,
   },
   /** Feedback de presión (#145.4) — mismo lenguaje que btn_pressed del rail. */
-  agent_row_pressed: {
+  agent_info_pressed: {
     transform: [{ scale: 0.94 }],
     opacity: 0.8,
+  },
+  /** Empuja la píldora de «Seguir» al extremo derecho de la fila (prototipo:
+   * margin-left:auto en .agent-row). */
+  follow_button_wrap: {
+    marginLeft: 'auto',
   },
   agent_avatar: {
     width: 34,
@@ -457,6 +485,7 @@ const styles = StyleSheet.create({
   /** Nombre público del agente bajo el avatar (#145.4). */
   agent_name: {
     marginTop: spacing.s_4,
+    flexShrink: 1,
     fontFamily: fonts.sans_bold,
     fontSize: 13,
     color: colors.paper,
