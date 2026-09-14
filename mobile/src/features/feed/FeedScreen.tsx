@@ -38,7 +38,7 @@ import { ZoneActiveChip } from '../search/components/ZoneActiveChip';
 import { VideoFeedItem } from './components/VideoFeedItem';
 import { AdFeedItem } from './components/AdFeedItem';
 import { FeedSkeleton } from './components/FeedSkeleton';
-import { FEED_SECTION_TABS_HEIGHT, FeedSectionTabs } from './components/FeedSectionTabs';
+import { FEED_SECTION_TABS_HEIGHT, FeedSectionTabs, feed_top_row_y } from './components/FeedSectionTabs';
 import { FEED_SECTIONS } from '@/features/search/lib/feedSection';
 import { release_splash } from '@/lib/splash-gate';
 import { useFeedActiveIndex } from './hooks/useFeedActiveIndex';
@@ -55,14 +55,11 @@ export function FeedScreen() {
     useFilters();
   // #241: label de la sección activa para el copy del vacío ("en venta"/"en renta").
   const section_label = (FEED_SECTIONS.find((s) => s.value === section)?.label ?? 'Venta').toLowerCase();
-  // Coordenada superior compartida por tabs (centro) y botón de filtros (derecha).
-  // #242.1: pegado al borde superior. En iOS con notch/Dynamic Island el inset
-  // (44–62) trae ~10 pt de aire extra debajo del hardware → restamos 6 y la
-  // pill queda a ~5 pt de la isla sin tocarla (smoke iPhone 17, 2026-09-03).
-  // Con status bar clásica (iOS sin notch = 20, Android edge-to-edge = alto
-  // exacto de la barra) NO hay aire: la hora/wifi viven dentro del inset, así
-  // que ahí sumamos s_4.
-  const top_row_y = insets.top > 40 ? insets.top - 6 : insets.top + spacing.s_4;
+  // Coordenada superior compartida por la fila de tabs, el botón de filtros
+  // (ahora a la izquierda) y la banda de chips/badge que cuelga debajo.
+  // Fórmula centralizada en FeedSectionTabs.tsx (`feed_top_row_y`) — AdFeedItem
+  // la reusa para posicionar el badge legal (296.2).
+  const top_row_y = feed_top_row_y(insets.top);
   // El botón de filtros (40) se centra con la pill (34).
   const filter_btn_y = top_row_y - (40 - FEED_SECTION_TABS_HEIGHT) / 2;
   const { data, isLoading, error, loadInitial, refetch, loadMore } = useFeedProperties(filters);
@@ -266,10 +263,12 @@ export function FeedScreen() {
       )}
 
       {/*
-       * Botón de filtros — top-right flotante sobre el feed oscuro.
+       * Botón de filtros — top-left flotante sobre el feed oscuro (296.2:
+       * antes a la derecha; se mueve para dejarle todo el ancho derecho a la
+       * fila de tabs deslizable).
        * Estética: fondo semi-translúcido oscuro (ink_feed) + ícono gris claro,
        * para no romper la inmersión del feed de video.
-       * Posición: safe-area top + s_4 de holgura (#242.1), alineado a la derecha.
+       * Posición: safe-area top + s_4 de holgura (#242.1), alineado a la izquierda.
        * El FilterSheet (panel claro) se abre encima del feed vía Modal nativo.
        * Se renderiza una sola vez (feed principal + empty state) — oculto
        * en skeleton y error (ver show_filters).
@@ -285,10 +284,12 @@ export function FeedScreen() {
             pointerEvents="none"
           />
 
-          {/* Secciones Venta · Renta (#241) — centradas en la misma fila que el
-              botón de filtros. set_section cambia la identidad de `filters` →
-              useFeedProperties vacía la lista y loadInitial recarga (skeleton). */}
-          <FeedSectionTabs section={section} on_change={set_section} style={{ top: top_row_y }} />
+          {/* Secciones Venta · Renta (#241) — fila deslizable que arranca tras
+              el botón de filtros (296.2: ya no centrada). set_section cambia
+              la identidad de `filters` → useFeedProperties vacía la lista y
+              loadInitial recarga (skeleton). 296.3 conecta las 5 tabs del
+              store nuevo; por ahora sigue pasando FEED_SECTIONS (2 tabs). */}
+          <FeedSectionTabs tabs={FEED_SECTIONS} value={section} on_change={set_section} style={{ top: top_row_y }} />
 
           <TouchableOpacity
             style={[styles.filter_btn, { top: filter_btn_y }]}
@@ -322,7 +323,7 @@ export function FeedScreen() {
        * feed principal), no solo cuando show_filters — de ahí que se renderice
        * fuera del bloque anterior. onPress revierte a modo cercanía GPS (#42).
        * Mismo `top` que filter_btn; sin overlap porque el chip queda centrado
-       * y el botón de filtros a la derecha (ver ZoneActiveChip.tsx).
+       * y el botón de filtros a la izquierda (296.2; ver ZoneActiveChip.tsx).
        */}
       {/* #243.2: chip «Actualizando» (UrbeaLoader) debajo de los tabs mientras
           el pull-to-refresh recarga. Si además hay zona activa, esta cuelga debajo. */}
@@ -395,7 +396,7 @@ const styles = StyleSheet.create({
   },
   filter_btn: {
     position: 'absolute',
-    right: spacing.s_16,
+    left: spacing.s_16,
     width: 40,
     height: 40,
     borderRadius: 20,
