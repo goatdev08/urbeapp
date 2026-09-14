@@ -193,11 +193,6 @@
   .count-label.count-shadow {
     text-shadow: 0 1px 3px rgba(0,0,0,0.85), 0 0 2px rgba(0,0,0,0.6);
   }
-  .whatsapp-btn {
-    width: 40px; height: 40px; border-radius: 20px; margin: 3px 0; /* polish #293: círculo 40 en caja 46 */
-    background: #25D366; /* colors.whatsapp — única excepción sólida */
-    display: flex; align-items: center; justify-content: center;
-  }
 
   .info {
     position: absolute;
@@ -361,15 +356,16 @@
     return String(n);
   }
 
-  function actionIcon(name, variant, size) {
+  function actionIcon(name, variant, size, color) {
     size = size || 28;
+    color = color || '#FFFFFF'; /* polish #293: WhatsApp = logo relleno verde, sin círculo */
     const hasShadow = variant === 'B' || variant === 'C';
     if (!hasShadow) {
-      return '<span class="icon-slot">' + svg(name, size, '#FFFFFF') + '</span>';
+      return '<span class="icon-slot">' + svg(name, size, color) + '</span>';
     }
     return '<span class="icon-slot">'
       + '<span class="icon-shadow-layer">' + svg(name, size, '#000000') + '</span>'
-      + '<span class="icon-white-layer">' + svg(name, size, '#FFFFFF') + '</span>'
+      + '<span class="icon-white-layer">' + svg(name, size, color) + '</span>'
       + '</span>';
   }
 
@@ -418,7 +414,7 @@
       +   '<div class="action-btn">' + actionIcon('heart', f.variant) + countLabel(f.like, f.variant) + '</div>'
       +   '<div class="action-btn">' + actionIcon('chat', f.variant) + countLabel(f.comments, f.variant) + '</div>'
       +   '<div class="action-btn">' + actionIcon('bookmark', f.variant) + countLabel(0, f.variant) + '</div>'
-      +   '<div class="whatsapp-btn">' + svg('whatsapp', 22, '#FFFFFF') + '</div>'
+      +   '<div class="action-btn">' + actionIcon('whatsapp', f.variant, 28, '#25D366') + countLabel(0, f.variant) + '</div>'
       +   '<div class="action-btn">' + actionIcon('share', f.variant) + countLabel(0, f.variant) + '</div>'
       + '</div>'
       + '<div class="info">'

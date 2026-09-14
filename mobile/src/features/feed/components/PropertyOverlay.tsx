@@ -209,16 +209,16 @@ export function PropertyOverlay({
         {/* WhatsApp directo — visible solo si el agente tiene teléfono.
             Verde de marca WhatsApp para reconocimiento inmediato. */}
         {onWhatsApp && (
-          <Pressable
+          <ActionButton
+            icon={WhatsappLogo}
+            active={false}
             onPress={onWhatsApp}
-            style={({ pressed }) => [styles.action_btn, pressed && styles.btn_pressed]}
-            accessibilityRole="button"
             accessibilityLabel="Contactar por WhatsApp"
-          >
-            <View style={styles.whatsapp_circle}>
-              <WhatsappLogo size={22} color="#FFFFFF" weight="fill" />
-            </View>
-          </Pressable>
+            // polish #293 (Abraham): sin círculo — el propio logo relleno en
+            // verde WhatsApp, misma caja/sombra/ranura que el resto del rail.
+            color={WHATSAPP_GREEN}
+            weight="fill"
+          />
         )}
 
         {/* Compartir — link al video, glass neutro como like/guardar. */}
@@ -339,6 +339,10 @@ type ActionButtonProps = {
   /** Conteo bajo el ícono (like y comentarios, 293.3). Oculto si es 0/undefined. */
   count?: number;
   testID?: string;
+  /** Color del ícono; por defecto blanco (activo: primary_soft). */
+  color?: string;
+  /** Peso Phosphor; por defecto bold (activo: fill). */
+  weight?: 'bold' | 'fill';
 };
 
 function ActionButton({
@@ -348,6 +352,8 @@ function ActionButton({
   accessibilityLabel,
   count,
   testID,
+  color,
+  weight,
 }: ActionButtonProps) {
   return (
     <Pressable
@@ -361,8 +367,8 @@ function ActionButton({
       <RailIcon
         icon={IconCmp}
         // Activo = verde claro de marca (cohesión con el acento verde del logo)
-        color={active ? colors.primary_soft : '#FFFFFF'}
-        weight={active ? 'fill' : 'bold'}
+        color={color ?? (active ? colors.primary_soft : '#FFFFFF')}
+        weight={weight ?? (active ? 'fill' : 'bold')}
       />
       {/* Ranura del conteo SIEMPRE presente (polish #293, cohesión): así el
           paso vertical del rail es idéntico haya o no número — antes el Text
@@ -414,6 +420,10 @@ const RAIL_BOTTOM = INFO_BOTTOM;
  * el feed es siempre oscuro (ponytail: dual-mode diferido). */
 const SPEC_COLOR = 'rgba(246,242,235,0.85)';
 
+/** Verde de marca WhatsApp — el logo relleno es la única nota de color del rail
+ * (polish #293: antes era un círculo sólido de 46/40 con el logo en blanco). */
+const WHATSAPP_GREEN = '#25D366';
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Estilos
 // ─────────────────────────────────────────────────────────────────────────────
@@ -433,17 +443,6 @@ const styles = StyleSheet.create({
   // 293.6: RAIL_ACTION_BOX (y RailIcon) viven en @/components/RailIcon —
   // ActionButtons.tsx y LikeButton/SaveButton también los consumen.
   action_btn: RAIL_ACTION_BOX,
-  /** Círculo verde de WhatsApp — 40 dentro de la caja 46 (polish #293):
-   * ocupa el mismo alto (3..43) que ícono+ranura de los demás botones, así el
-   * rail se lee con un solo ritmo. Verde sólido = única excepción al outline. */
-  whatsapp_circle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#25D366',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   /** Estado presionado de los botones del rail — encoge + atenúa. */
   btn_pressed: {
     transform: [{ scale: 0.88 }],

@@ -1199,3 +1199,5 @@ Se retira `is_admin()` de `leads_update`, `leads_delete` y `private.can_edit_lea
 ## [2026-09-13] polish | #293 tras revisión de Abraham — rail gap 22 → 14 y padding de la píldora «Seguir» a la mitad (3/8); mockup y preview sincronizados; mismo PR
 
 ## [2026-09-13] polish | #293 cohesión del rail — ranura de conteo fija dentro de la caja, WhatsApp 40 en caja 46, gap 10, base del rail = base de info (más pegado a la tab bar); preview y mockup sincronizados
+
+## [2026-09-13] polish | #293 WhatsApp sin círculo — logo relleno verde #25D366 como un ítem más del rail (ActionButton con color/weight); preview y mockup sincronizados
