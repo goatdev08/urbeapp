@@ -1201,3 +1201,5 @@ Se retira `is_admin()` de `leads_update`, `leads_delete` y `private.can_edit_lea
 ## [2026-09-13] polish | #293 cohesión del rail — ranura de conteo fija dentro de la caja, WhatsApp 40 en caja 46, gap 10, base del rail = base de info (más pegado a la tab bar); preview y mockup sincronizados
 
 ## [2026-09-13] polish | #293 WhatsApp sin círculo — logo relleno verde #25D366 como un ítem más del rail (ActionButton con color/weight); preview y mockup sincronizados
+
+## [2026-09-14] release | #293 mergeada (PR #176, `ebc17d0`) y OTA publicado — Android preview `01a09e78…` (runtime 374ba3dd…), iOS production `01a09e79…` (runtime ca62b26a…); entrega también el cliente de #78. Hallazgo: .env.local apuntaba a producción durante los smokes (like restaurado, follow accidental deshecho)
