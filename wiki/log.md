@@ -1210,5 +1210,6 @@ Se retira `is_admin()` de `leads_update`, `leads_delete` y `private.can_edit_lea
 
 ## [2026-09-14] tarea | #295 fix(289.8): el teclado tapaba la hoja de comentarios en Android — `CommentsSheet.tsx`: KAV `padding` en ambas plataformas, `flex: 1` (el `height: '60%'` se resolvía dos veces → hoja al 36 %; ahora 60 % real) y `keyboardVerticalOffset={-insets.bottom}`; verificado por CLI en el emulador con teclado real
 
+## [2026-09-14] explore | aprobado tarea 296 — tabs superiores del feed tipo TikTok (Para ti · Siguiendo · Nuevos · Venta · Renta) + filtros a la izquierda (exploración 050)
 
 ## [2026-09-14] release | #295 mergeada (PR #178, `9976386`) y OTA publicado — Android preview `01a09eb3-30f2…` (runtime 374ba3dd…), iOS production `01a09eb3-a4be…` (runtime ca62b26a…)
